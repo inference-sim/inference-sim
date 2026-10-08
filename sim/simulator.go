@@ -728,13 +728,18 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// Count output tokens at completion time (not inline per step) to avoid
 	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
 	// PI - InputLen counts decode-step increments (= OutputLen - 1 for normal completion).
-	// Add 1 for the prefill-generated first token (#1097) when decodeTokens falls short
-	// of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
-	// lands at InputLen+1 (one step past the InputLen threshold), so decodeTokens==OutputLen
-	// already — the guard prevents double-counting in that case.
-	decodeTokens := int(req.ProgressIndex) - int(req.InputLen())
-	if decodeTokens < len(req.OutputTokens) {
-		decodeTokens++ // prefill-generated first token (vLLM parity)
+	// Add 1 for the prefill-generated first token (#1097) when the decode-step count falls
+	// short of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
+	// lands at InputLen+1 (one step past the InputLen threshold), so the decode-step count
+	// == OutputLen already — the guard prevents double-counting in that case.
+	//
+	// R23 (single source of truth): this is THE output-token count for the request, and
+	// every derived per-request metric below must read it rather than re-derive one. The
+	// length-capped mean-ITL denominator re-derived its own from len(req.ITL) and came out
+	// a token short of vLLM's maxModelLen-input (#1891).
+	outputTokens := int(req.ProgressIndex) - int(req.InputLen())
+	if outputTokens < len(req.OutputTokens) {
+		outputTokens++ // prefill-generated first token (vLLM parity)
 	}
 	// Speculative decoding / MTP overshoot clamp (#1528, BC-4): DEFENSE-IN-DEPTH.
 	// Since #1657, FormBatch caps each decode grant at the request's completion
@@ -742,11 +747,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// and this clamp is not expected to bind. It stays as a last line of defense for
 	// INV-1 conservation: a request must never count MORE output tokens than it was
 	// assigned, whatever a future step-sizing path does. No-op for g=1 (feature off).
-	if decodeTokens > len(req.OutputTokens) {
-		decodeTokens = len(req.OutputTokens)
+	// For a LENGTH-CAPPED request this clamp provably never binds: processCompletions
+	// reaches the cap branch only via its `else if` (not natural completion), so
+	// ProgressIndex-InputLen < len(OutputTokens) strictly, hence outputTokens == PI-InputLen+1
+	// — it can fire only on a non-capped spec-decode overshoot, which is what keeps the
+	// shared `outputTokens` safe for the length-capped denominator below.
+	if outputTokens > len(req.OutputTokens) {
+		outputTokens = len(req.OutputTokens)
 	}
-	if decodeTokens > 0 {
-		sim.Metrics.TotalOutputTokens += decodeTokens
+	if outputTokens > 0 {
+		sim.Metrics.TotalOutputTokens += outputTokens
 	}
 
 	var itlSum int64
@@ -768,28 +778,31 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
 		reqTotalOutput := itlSum
 		if req.LengthCapped {
-			// #588: Use actual decode step count for length-capped requests.
-			// len(req.OutputTokens) is the pre-determined count; len(req.ITL) is actual.
-			// TPOT convention: exclude first generated token → denominator is len(ITL)-1.
-			var denom int
-			if sim.specEnabled {
-				// Under speculative decoding / MTP, each ITL entry covers g tokens, so
-				// len(ITL) counts STEPS, not tokens — using it would inflate TPOT by ~g.
-				// Use the token-derived count (ProgressIndex advance + prefill token).
-				//
-				// Caveat (PD): a PD decode sub-request at the MaxModelLen boundary emits
-				// its one final token even past MaxModelLen-1 (batch_formation.go floors
-				// the cap at 1, matching the pre-feature PD path, which never capped), so
-				// its ProgressIndex can land at MaxModelLen — one higher than a non-PD
-				// length-capped request, giving tokCount one larger. This asymmetry is
-				// pre-existing (PD emitted its final token unconditionally before this PR);
-				// it affects only the length-capped PD TPOT denominator by one token.
-				tokCount := int(req.ProgressIndex) - int(req.InputLen()) + 1
-				denom = max(tokCount-1, 1)
-			} else {
-				denom = max(len(req.ITL)-1, 1)
-			}
-			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(denom)
+			// #588: len(req.OutputTokens) is the oracle count, which a length cap never
+			// reaches, so the denominator comes from what the request actually emitted —
+			// `outputTokens` above, minus one for the TPOT convention of excluding the
+			// first generated token.
+			//
+			// NOT len(req.ITL) (#1891): an ITL entry is appended per decode STEP, and the
+			// first output token is charged to prefill (its latency is TTFT, not an ITL
+			// entry), so len(ITL) is already outputTokens-1 — fewer still under speculative
+			// decoding / MTP, where one entry covers g tokens. max(len(ITL)-1, 1) therefore
+			// divided by outputTokens-2, reporting TPOT as if the request had emitted one
+			// token fewer than vLLM's maxModelLen-input, and disagreed with this branch's
+			// former spec-decode arm, which already used the token-derived count — so a
+			// feature-off (g=1) run and a k=0 spec-decode run reported different TPOT for
+			// the same request. One expression now serves both: max(outputTokens-1, 1) is
+			// identical to that arm's max((PI-InputLen+1)-1, 1), because a length-capped
+			// request is always capped short of its oracle output and so always takes the
+			// prefill-token adjustment above (outputTokens == PI-InputLen+1).
+			//
+			// Caveat (PD): a PD decode sub-request at the MaxModelLen boundary emits its
+			// one final token even past MaxModelLen-1 (batch_formation.go floors the cap at
+			// 1, matching the pre-feature PD path, which never capped), so its
+			// ProgressIndex can land at MaxModelLen — one higher than a non-PD
+			// length-capped request, giving outputTokens one larger. The asymmetry is
+			// pre-existing and affects only the length-capped PD denominator, by one token.
+			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(outputTokens-1, 1))
 		} else {
 			// TPOT calculation in vLLM excludes the first generated token.
 			// No spec-decode branch needed here: a normally-completed request generated
@@ -1194,15 +1207,27 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// ProgressIndex increments, the request reaches PI=maxModelLen-1 and needs
 			// a completion path. This matches vLLM's effective behavior where the scheduler
 			// cap at max_model_len-1-num_computed prevents further scheduling.
-			// Note: vLLM completes length-capped requests via check_stop (num_tokens >= max_model_len)
-			// which fires AFTER the model appends the generated token, producing maxModelLen-input
-			// output tokens. BLIS completes at PI >= maxModelLen-1 (before the final token),
-			// producing maxModelLen-1-input tokens (1 fewer). This is because BLIS lacks vLLM's
-			// post-execution check_stop loop; processCompletions is the DES equivalent.
+			//
+			// This predicate IS vLLM's check_stop (#1891). vLLM stops a length-capped
+			// request when num_tokens >= max_model_len, evaluated after the model appends
+			// the generated token, which emits max_model_len - input output tokens.
+			// ProgressIndex is BLIS's num_computed_tokens, and it lags the generated-token
+			// count by exactly one — BLIS charges output token #1 to prefill completion,
+			// just as vLLM's num_computed lags num_tokens by the token the forward pass has
+			// just appended. So PI >= maxModelLen-1 is num_tokens >= max_model_len, the
+			// boundary token has been generated by the step that lands PI here (this pass
+			// runs in the same Step as the executeBatchStep that advanced it), and
+			// recordRequestCompletion counts maxModelLen - input output tokens (the
+			// prefill-charged token is added back there, #1097). Testing PI >= maxModelLen
+			// instead would emit one token too many and run the sequence past the context
+			// window. TestLengthCap_VLLMParityOutputTokens pins all three quantities.
 			//
 			// NOTE (R23 exception): Final-token KV allocation is intentionally skipped here.
 			// The normal completion path's AllocateKVBlocks for the last token is not useful
-			// for a force-terminated request whose blocks are immediately released.
+			// for a force-terminated request whose blocks are immediately released — and it
+			// is unobservable either way, since recordKVUsageMetrics samples usage at the end
+			// of executeBatchStep, before this pass runs. Allocating here would only risk a
+			// spurious KVAllocationFailures bump under a tight cache.
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
 			sim.Metrics.LengthCappedRequests++

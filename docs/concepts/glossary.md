@@ -86,7 +86,7 @@ The simulation time limit in ticks (microseconds). The simulation stops when the
 
 ### ITL (Inter-Token Latency)
 
-The observed time between consecutive decode steps for a single request. A request generating N output tokens produces N-1 ITL entries (the number of inter-token gaps). ITL varies with batch composition changes between steps. Mean ITL is reported as TPOT (Time Per Output Token).
+The observed time between consecutive decode steps for a single request. Without speculative decoding, a request generating N output tokens produces N-1 ITL entries (one per inter-token gap); under speculative decoding one entry covers several accepted tokens, so the entry count is lower than N-1. ITL varies with batch composition changes between steps. The per-request mean ITL is reported as TPOT (Time Per Output Token) — the ITL sum over `N-1`, where N is the number of output tokens the request *actually emitted* (for a [length-capped](#maxmodellen) request that is `maxModelLen - inputLen`, not its assigned output length). The aggregate `itl_mean_ms` and ITL percentiles are instead computed over the pooled per-step ITL samples across all requests (see [Latency Models](../guide/latency-models.md)).
 
 ### KV Cache
 
@@ -102,7 +102,7 @@ An open-source LLM inference routing and serving framework that BLIS is designed
 
 ### MaxModelLen
 
-Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - 1 - inputLen`. Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline and trained-physics modes, with [`rope_scaling`](#rope_scaling) factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
+Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`) — `ProgressIndex` is `num_computed_tokens`, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline and trained-physics modes, with [`rope_scaling`](#rope_scaling) factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### MFU (Model FLOPS Utilization)
 
