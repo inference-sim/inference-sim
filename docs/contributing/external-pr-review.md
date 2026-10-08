@@ -67,9 +67,10 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
   tighter than the proxy's — see below.)
 - **Egress lock — enabled, vanilla `NetworkPolicy`, no cluster-admin.** The runner pod runs under a
-  default-deny egress policy that allows only DNS, the `litellm-proxy` pod (by label), and public `:443`
-  with every private/VPC/metadata CIDR excluded. So the runner **cannot** reach LiteLLM, the metadata
-  endpoint, or any in-cluster service directly; LiteLLM is reachable only *through* the proxy, which
+  default-deny egress policy that allows only DNS (scoped to the `openshift-dns` namespace), the
+  `litellm-proxy` pod (by label), and public `:443` with every private/VPC/metadata CIDR excluded. So
+  the runner **cannot** reach LiteLLM, the metadata endpoint, or any in-cluster service except cluster
+  DNS directly; LiteLLM is reachable only *through* the proxy, which
   pins the hostname in nginx (VPC-LB IP rotation never touches the runner's policy). The earlier
   "vanilla policy breaks DNS" finding was a misdiagnosis: `172.21.0.10` is a ClusterIP, and Calico
   evaluates egress post-DNAT against the real CoreDNS pod, which a `namespaceSelector` peer on ports
@@ -107,6 +108,13 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   namespace-local LiteLLM relay, which any blis pod could already obtain from `nous-wiki-llm` directly.
 - **Platform trust.** We trust `claude-code-action` and the runner image to hold; actions are
   SHA-pinnable.
+- **DNS tunnelling.** The runner must reach cluster DNS, and if CoreDNS recursively resolves external
+  names a determined injection could encode data in QNAMEs to an attacker-controlled authoritative
+  server. The egress policy scopes `:53`/`:5353` to the `openshift-dns` namespace (so it cannot speak
+  DNS to arbitrary in-cluster services), but cannot by itself stop tunnelling through the legitimate
+  resolver. Accepted on the same basis as open `:443`: the session is keyless and the token is
+  read-only, so there is no high-value secret to encode — and the data a reviewer sees is the PR, which
+  is already public.
 
 ## Validation before enabling
 

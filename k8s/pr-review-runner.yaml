@@ -88,7 +88,12 @@ data:
       resolver ${LITELLM_RESOLVER} valid=30s ipv6=off;
       location / {
         # Variable proxy_pass: nginx does NOT append the matched location URI when
-        # the target is a variable, so $request_uri is added explicitly.
+        # the target is a variable, so $request_uri (full path + query, leading
+        # slash) is added explicitly. REQUIRES: nous-wiki-llm/base-url is a bare
+        # `https://host` with NO trailing slash and NO path — else this concatenates
+        # to `//...` or a doubled path and the upstream silently 404s. (The old
+        # literal `proxy_pass ${LITELLM_UPSTREAM};` relied on the same bare-host
+        # shape; the failure mode just moved from config-parse to runtime 404.)
         set $litellm_upstream ${LITELLM_UPSTREAM};
         proxy_pass $litellm_upstream$request_uri;
         # Inject auth in BOTH shapes: qa-review uses the OpenAI format
@@ -311,9 +316,16 @@ spec:
   - Egress
   egress:
   # DNS. 53 and 5353 because OpenShift CoreDNS pods listen on 5353 behind the :53
-  # service; both udp and tcp. namespaceSelector matches the post-DNAT CoreDNS pod.
+  # service; both udp and tcp. Scoped to the openshift-dns namespace by its
+  # guaranteed `kubernetes.io/metadata.name` label (NOT namespaceSelector {}), so
+  # the untrusted runner can speak :53 ONLY to cluster DNS, not to every
+  # namespace's services. Verified: external + in-cluster names still resolve.
+  # (This does not stop DNS tunnelling through the legit resolver — see the
+  # accepted residual in docs/contributing/external-pr-review.md.)
   - to:
-    - namespaceSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
     ports:
     - { protocol: UDP, port: 53 }
     - { protocol: TCP, port: 53 }
@@ -329,7 +341,11 @@ spec:
     - { protocol: TCP, port: 4000 }
   # Public :443 for GitHub (runner registration, git fetch, API). Every private /
   # metadata / IBM-VPC range is excluded, so this grants NO internal reach — in
-  # particular not LiteLLM (9.x VPC) and not the metadata endpoint.
+  # particular not LiteLLM (9.x VPC) and not the metadata endpoint. Public
+  # github.com is the ONLY intended :443 target; all IBM-internal 9.x is
+  # intentionally unreachable (excepting the whole 9.0.0.0/8 is a deliberate
+  # blanket — if a future internal :443 dependency lands in 9.x it will be
+  # blocked here by design, not by accident).
   - to:
     - ipBlock:
         cidr: 0.0.0.0/0
@@ -358,13 +374,19 @@ spec:
   policyTypes:
   - Egress
   egress:
+  # DNS, scoped to cluster DNS (see the runner policy above for the rationale).
   - to:
-    - namespaceSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
     ports:
     - { protocol: UDP, port: 53 }
     - { protocol: TCP, port: 53 }
     - { protocol: UDP, port: 5353 }
     - { protocol: TCP, port: 5353 }
+  # NOTE: these except lists are IPv4-only, so the lockdown assumes an IPv4-only
+  # egress path (the LiteLLM VPC endpoint is v4; nginx resolver is ipv6=off). On a
+  # dual-stack cluster an AAAA result would be unconstrained by these CIDRs.
   - to:
     - ipBlock:
         cidr: 0.0.0.0/0
