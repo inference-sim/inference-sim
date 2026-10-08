@@ -93,6 +93,13 @@ type ClusterSimulator struct {
 	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
 	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
+	// completionObservers are the routing policies subscribed to request-completion
+	// events (sim.RequestCompletionObserver), collected once at construction; nil
+	// when no configured scorer subscribes. Read by wireOnRequestDone.
+	completionObservers []sim.RequestCompletionObserver
+	// startObservers are the routing policies subscribed to first-token events
+	// (sim.RequestStartObserver); nil when none does. Read by wireOnFirstToken.
+	startObservers []sim.RequestStartObserver
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
@@ -240,6 +247,14 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// different shared pods). Only reject when PD is entirely disabled. (#1276)
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
+	}
+	// lora-residency models aggregated serving: under disaggregation the routed
+	// request's lifecycle runs on sub-requests with other IDs and no adapter, so
+	// its estimate would hold every decode route pending forever.
+	if (config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 ||
+		config.EncodeInstances > 0) && namesScorer("lora-residency",
+		config.RoutingScorerConfigs, config.PrefillScorerConfigs, config.DecodeScorerConfigs) {
+		panic("ClusterSimulator: the lora-residency scorer models aggregated serving only and cannot be used with PD/EPD disaggregation")
 	}
 
 	// Validate cluster-scoped LoRA adapter placement early (B-5, #1493, INV-PS2):
@@ -699,32 +714,22 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
 
+	// Collect routing policies whose scorers subscribe to request completions
+	// (sim.RequestCompletionObserver). Empty for every built-in scorer today, so
+	// the OnRequestDone guard below is unchanged unless a subscriber is configured.
+	cs.completionObservers = collectCompletionObservers(
+		cs.routingPolicy, cs.prefillRoutingPolicy, cs.decodeRoutingPolicy)
+	cs.startObservers = collectStartObservers(
+		cs.routingPolicy, cs.prefillRoutingPolicy, cs.decodeRoutingPolicy)
+
 	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
 	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
-		for _, inst := range cs.instances {
-			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
-				if cs.tenantTracker != nil {
-					cs.tenantTracker.OnComplete(req.TenantID)
-				}
-				// Remove from eviction tracker on normal completion (BC-3).
-				if cs.evictionTracker != nil {
-					cs.evictionTracker.Untrack(req.ID)
-				}
-				if onRequestDone == nil {
-					return nil
-				}
-				nextReqs := onRequestDone(req, tick)
-				for _, next := range nextReqs {
-					cs.pushArrival(next, next.ArrivalTime)
-				}
-				return nil // don't inject locally — route through cluster pipeline
-			}
-		}
+	for _, inst := range cs.instances {
+		cs.wireOnRequestDone(inst)
+		cs.wireOnFirstToken(inst)
 	}
 
 	return cs
@@ -1272,6 +1277,151 @@ func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {
 	return nil
 }
 
+// wireOnRequestDone installs inst's per-request terminal-state callback. It is the
+// single wiring site for both the startup path (NewClusterSimulator) and live-added
+// instances (addLiveInstance), so the two cannot drift (R4).
+//
+// The callback is installed only when something consumes it — the session
+// follow-up callback, the tenant tracker, the eviction tracker, or a routing policy
+// subscribed to request completions (cs.completionObservers) — and otherwise
+// inst.sim.OnRequestDone is left nil, exactly as before completion observers
+// existed. Within the callback, completion observers are notified once per terminal
+// request, with this instance's id, after the trackers and before session
+// follow-ups are generated.
+func (cs *ClusterSimulator) wireOnRequestDone(inst *InstanceSimulator) {
+	onRequestDone := cs.sessionCallback
+	observers := cs.completionObservers
+	if onRequestDone == nil && cs.tenantTracker == nil && cs.evictionTracker == nil && len(observers) == 0 {
+		return
+	}
+	instID := string(inst.ID())
+	inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+		// Phase 1B-2a: release tenant in-flight slot on every terminal state.
+		if cs.tenantTracker != nil {
+			cs.tenantTracker.OnComplete(req.TenantID)
+		}
+		// Remove from eviction tracker on normal completion (BC-3).
+		if cs.evictionTracker != nil {
+			cs.evictionTracker.Untrack(req.ID)
+		}
+		if len(observers) > 0 {
+			cs.notifyCompletion(req, instID, clientCompletionTick(inst.sim, req, tick))
+		}
+		if onRequestDone == nil {
+			return nil
+		}
+		nextReqs := onRequestDone(req, tick)
+		for _, next := range nextReqs {
+			cs.pushArrival(next, next.ArrivalTime)
+		}
+		return nil // don't inject locally — route through cluster pipeline
+	}
+}
+
+// wireOnFirstToken installs inst's first-token callback, fanning the event out to
+// the policies subscribed to it (cs.startObservers) with this instance's id. With
+// no subscriber inst.sim.OnFirstToken stays nil. Like wireOnRequestDone it is the
+// single wiring site for startup and live-added instances (R4).
+func (cs *ClusterSimulator) wireOnFirstToken(inst *InstanceSimulator) {
+	observers := cs.startObservers
+	if len(observers) == 0 {
+		return
+	}
+	instID := string(inst.ID())
+	inst.sim.OnFirstToken = func(req *sim.Request, tick int64) {
+		cs.scheduleLifecycle(tick, func() {
+			for _, obs := range observers {
+				obs.OnRequestStart(req, instID, tick)
+			}
+		})
+	}
+}
+
+// clientCompletionTick is when a client sees req end. The step reports
+// completion at its own end (tick), but the response ends after the last
+// token's processing time: RequestCompletionTimes, which recordRequestCompletion
+// sets before OnRequestDone fires, as ArrivalTime + FirstTokenTime + the
+// inter-token latencies, so never before the first token. For a 0- or 1-token
+// request, whose first token and completion come from the same step, reporting
+// completion at tick would deliver it before the first token. Requests that end
+// without completing (dropped, timed out) keep tick.
+func clientCompletionTick(s *sim.Simulator, req *sim.Request, tick int64) int64 {
+	if t, ok := s.Metrics.RequestCompletionTimes[req.ID]; ok && int64(t) > tick {
+		tick = int64(t)
+	}
+	return tick
+}
+
+// notifyCompletion tells the completion observers that req left instID at tick.
+// Like first tokens, it is delivered as a cluster event at tick, not when the
+// instance's step computes it: a step runs at its start time but completes
+// requests at its end, and a routing decision in between must not see that.
+func (cs *ClusterSimulator) notifyCompletion(req *sim.Request, instID string, tick int64) {
+	observers := cs.completionObservers
+	cs.scheduleLifecycle(tick, func() {
+		for _, obs := range observers {
+			obs.OnRequestCompletion(req, instID, tick)
+		}
+	})
+}
+
+// scheduleLifecycle runs fire as a cluster event at tick (or now, if tick has
+// passed), ordered after routing at the same tick: a router learns of a first
+// chunk or a completion only once it has happened.
+func (cs *ClusterSimulator) scheduleLifecycle(tick int64, fire func()) {
+	if tick < cs.clock {
+		tick = cs.clock
+	}
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &lifecycleObserverEvent{time: tick, fire: fire},
+		seqID: cs.nextSeqID(),
+	})
+}
+
+// collectStartObservers returns, in argument order, the non-nil policies that
+// implement sim.RequestStartObserver and report a subscriber, or nil.
+func collectStartObservers(policies ...sim.RoutingPolicy) []sim.RequestStartObserver {
+	var out []sim.RequestStartObserver
+	for _, p := range policies {
+		if p == nil {
+			continue
+		}
+		if o, ok := p.(sim.RequestStartObserver); ok && o.ObservesRequestStart() {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// namesScorer reports whether any of the scorer config lists names scorer.
+func namesScorer(scorer string, lists ...[]sim.ScorerConfig) bool {
+	for _, list := range lists {
+		for _, c := range list {
+			if c.Name == scorer {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// collectCompletionObservers returns, in argument order, the non-nil policies that
+// implement sim.RequestCompletionObserver and report a subscriber. Returns nil when
+// none does. The main, prefill and decode policies are distinct objects (each built
+// by its own NewRoutingPolicyWithCache call), so no de-duplication is needed.
+func collectCompletionObservers(policies ...sim.RoutingPolicy) []sim.RequestCompletionObserver {
+	var out []sim.RequestCompletionObserver
+	for _, p := range policies {
+		if p == nil {
+			continue
+		}
+		if o, ok := p.(sim.RequestCompletionObserver); ok && o.ObservesRequestCompletion() {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // addLiveInstance constructs, registers, and activates an InstanceSimulator for a
 // placement that succeeded while the cluster is already running.
 // Called from NodeReadyEvent.Execute (deferred placement) and DirectActuator.scaleUp
@@ -1322,26 +1472,10 @@ func (cs *ClusterSimulator) addLiveInstance(
 		cs.registerInstanceCacheQueryFn(id, inst)
 	}
 
-	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
-	onRequestDone := cs.sessionCallback
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
-		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-			if cs.tenantTracker != nil {
-				cs.tenantTracker.OnComplete(req.TenantID)
-			}
-			if cs.evictionTracker != nil {
-				cs.evictionTracker.Untrack(req.ID)
-			}
-			if onRequestDone == nil {
-				return nil
-			}
-			nextReqs := onRequestDone(req, tick)
-			for _, next := range nextReqs {
-				cs.pushArrival(next, next.ArrivalTime)
-			}
-			return nil // don't inject locally — route through cluster pipeline
-		}
-	}
+	// Wire OnRequestDone and OnFirstToken callbacks — the same helpers as the
+	// startup path in NewClusterSimulator (R4).
+	cs.wireOnRequestDone(inst)
+	cs.wireOnFirstToken(inst)
 
 	return true
 }

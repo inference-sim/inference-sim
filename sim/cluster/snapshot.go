@@ -31,6 +31,7 @@ type ObservabilityConfig struct {
 	CacheBlocks      FieldConfig // cache block hash map staleness (precise-prefix-cache, no-hit-lru)
 	PreemptionCount  FieldConfig
 	ResidentAdapters FieldConfig // resident LoRA adapter set staleness (lora-affinity scorer, #1469)
+	ActiveAdapters   FieldConfig // router-observable running/queued adapter set + MaxLoras (llmd-lora-affinity)
 }
 
 // DefaultObservabilityConfig returns a config where all fields use Immediate mode.
@@ -42,6 +43,7 @@ func DefaultObservabilityConfig() ObservabilityConfig {
 		CacheBlocks:      FieldConfig{Mode: Immediate},
 		PreemptionCount:  FieldConfig{Mode: Immediate},
 		ResidentAdapters: FieldConfig{Mode: Immediate},
+		ActiveAdapters:   FieldConfig{Mode: Immediate},
 	}
 }
 
@@ -57,6 +59,7 @@ func newObservabilityConfig(refreshInterval int64, cacheDelay int64) Observabili
 		config.KVUtilization = periodic
 		config.PreemptionCount = periodic
 		config.ResidentAdapters = periodic
+		config.ActiveAdapters = periodic
 	}
 	if cacheDelay > 0 {
 		config.CacheBlocks = FieldConfig{Mode: Periodic, Interval: cacheDelay}
@@ -94,6 +97,7 @@ type fieldTimestamps struct {
 	KVUtilization    int64
 	PreemptionCount  int64
 	ResidentAdapters int64
+	ActiveAdapters   int64
 }
 
 // cacheEntry holds a live instance reference and its current stale snapshot closure.
@@ -187,6 +191,10 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 		snap.ResidentAdapters = residentAdapterSet(inst)
 		lr.ResidentAdapters = clock
 	}
+	if p.shouldRefresh(p.config.ActiveAdapters, lr.ActiveAdapters, clock) {
+		snap.ActiveAdapters, snap.MaxLoras = activeAdapterSignal(inst)
+		lr.ActiveAdapters = clock
+	}
 
 	p.cache[id] = snap
 	p.lastRefresh[id] = lr
@@ -210,6 +218,21 @@ func residentAdapterSet(inst *InstanceSimulator) map[string]bool {
 	return set
 }
 
+// activeAdapterSignal returns the router-observable LoRA signal for
+// RoutingSnapshot.ActiveAdapters and .MaxLoras: the instance's running/queued
+// adapter counts and its GPU adapter capacity. Both are zero (nil, 0) when the
+// instance has no adapter capacity — LoRA is off there, and vLLM publishes no
+// vllm:lora_requests_info metric — which also skips the queue scan on every
+// non-LoRA run. The counts map is freshly built per refresh, so a Periodic cached
+// snapshot holds a frozen view (scrape staleness).
+func activeAdapterSignal(inst *InstanceSimulator) (map[string]int, int) {
+	capacity := inst.AdapterCapacity()
+	if capacity <= 0 {
+		return nil, 0
+	}
+	return inst.ActiveAdapterCounts(), capacity
+}
+
 // RefreshAll refreshes all fields for all instances regardless of mode.
 func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 	for id, inst := range p.instances {
@@ -223,6 +246,7 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 		snap.TotalKvCapacityTokens = inst.TotalKvCapacityTokens()
 		snap.KvTokensInUse = inst.KvTokensInUse()
 		snap.ResidentAdapters = residentAdapterSet(inst)
+		snap.ActiveAdapters, snap.MaxLoras = activeAdapterSignal(inst)
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{
 			PreemptionCount:  clock,
@@ -230,6 +254,7 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 			BatchSize:        clock,
 			KVUtilization:    clock,
 			ResidentAdapters: clock,
+			ActiveAdapters:   clock,
 		}
 	}
 }

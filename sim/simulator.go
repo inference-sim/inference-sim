@@ -173,6 +173,11 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+	// OnFirstToken is an optional callback invoked when a request's prefill
+	// completes and its first output token is produced, at that token's time. It
+	// fires again after a preemption re-prefills the request. Set by
+	// ClusterSimulator. Nil = no callback.
+	OnFirstToken func(req *Request, tick int64)
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -567,6 +572,37 @@ func (sim *Simulator) ResidentAdapterIDs() []string {
 		return nil
 	}
 	return sim.residentAdapters.ResidentIDs()
+}
+
+// ActiveAdapterCounts returns, per LoRA adapter id, the number of this instance's
+// requests that are queued (WaitQ, including gate-blocked cold misses and preempted
+// requests) or running (RunningBatch). Base-model requests (empty Adapter) are not
+// counted. Returns nil when no such request exists. This is the router-observable
+// analogue of vLLM's vllm:lora_requests_info running/waiting adapter labels — what
+// a real router can scrape — as opposed to ResidentAdapterIDs, which is the LRU's
+// ground truth. Each call builds a fresh map (the caller may retain it).
+func (sim *Simulator) ActiveAdapterCounts() map[string]int {
+	var counts map[string]int
+	add := func(r *Request) {
+		if r == nil || r.Adapter == "" {
+			return
+		}
+		if counts == nil {
+			counts = make(map[string]int)
+		}
+		counts[r.Adapter]++
+	}
+	if sim.WaitQ != nil {
+		for _, r := range sim.WaitQ.Items() {
+			add(r)
+		}
+	}
+	if sim.RunningBatch != nil {
+		for _, r := range sim.RunningBatch.Requests {
+			add(r)
+		}
+	}
+	return counts
 }
 
 // UnpinnedAdapterIDs returns the resident, unpinned adapter ids — the eviction seam's
@@ -1404,6 +1440,9 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 

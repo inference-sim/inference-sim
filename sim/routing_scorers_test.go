@@ -746,8 +746,8 @@ func cloneRegistry(src map[string]scorerConstructor) map[string]scorerConstructo
 }
 
 // stubScorerCtor is a minimal constructor used by the registration guard tests.
-func stubScorerCtor(_ int, _ cacheQueryFn) (scorerFunc, observerFunc) {
-	return scoreQueueDepth, nil
+func stubScorerCtor(_ int, _ cacheQueryFn) scorerParts {
+	return scorerParts{score: scoreQueueDepth}
 }
 
 // TestScorerRegistry_ReproducesSwitchSelection (BC-1): the registry must map
@@ -778,8 +778,9 @@ func TestScorerRegistry_ReproducesSwitchSelection(t *testing.T) {
 		{"load-aware", scoreLoadAware, false},
 		{"vllm-dp", scoreVLLMDP, false},
 		{"lora-affinity", scoreLoRAAffinity, false},
+		{"llmd-lora-affinity", scoreLLMDLoRAAffinity, false},
 	}
-	require.Len(t, cases, 11, "all 11 built-in scorers must be covered (BC-1)")
+	require.Len(t, cases, 12, "all 12 built-in scorers must be covered (BC-1)")
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

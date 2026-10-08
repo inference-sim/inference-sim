@@ -41,6 +41,7 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
 | `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
 | `vllm-dp` | vLLM data-parallel routing: `waiting × 4 + running` (inverted min-max) | DPLBAsyncMPClient.get_core_engine_for_request |
+| `llmd-lora-affinity` | Router-observable LoRA tiers from `ActiveAdapters` (queued ∪ running) and `MaxLoras`: 1.0 adapter active, 0.8 free adapter slot, 0.6 adapter only waiting (unreachable, as in current vLLM), else 0 — raw, not normalized; never reads ground-truth residency | lora-affinity-scorer (llm-d-router `loraaffinity`) |
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.

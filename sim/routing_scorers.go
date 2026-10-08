@@ -161,7 +161,20 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 // blockSize is used by block-hash-backed scorers (prefix-affinity); cacheFn by
 // cache-backed scorers (precise-prefix-cache, no-hit-lru); stateless scorers
 // ignore both. The registry maps names to these constructors (B-1, #1489).
-type scorerConstructor func(blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc)
+type scorerConstructor func(blockSize int, cacheFn cacheQueryFn) scorerParts
+
+// scorerParts is what a scorer constructor returns: the scoring function plus its
+// optional routing-decision observer and optional request-completion observer
+// (RequestCompletionObserver). The observers share the scorer's closure state.
+type scorerParts struct {
+	score      scorerFunc
+	observe    observerFunc           // nil for stateless scorers
+	onComplete completionObserverFunc // nil unless the scorer tracks completions
+	onStart    startObserverFunc      // nil unless the scorer tracks first tokens
+	// setClock, if non-nil, is called with RouterState.Clock before each routing
+	// decision, so a time-dependent scorer evaluates at the decision time.
+	setClock func(clock int64)
+}
 
 // scorerRegistry maps scorer names to their constructors. Unexported (R8) — all
 // access is via IsValidScorer / ValidScorerNames / newScorerWithObserver.
@@ -184,7 +197,7 @@ func registerScorer(name string, c scorerConstructor) {
 // stateless wraps a scorer func that ignores blockSize and cacheFn (returns a
 // nil observer), matching the pre-registry switch arms that returned (fn, nil).
 func stateless(fn scorerFunc) scorerConstructor {
-	return func(_ int, _ cacheQueryFn) (scorerFunc, observerFunc) { return fn, nil }
+	return func(_ int, _ cacheQueryFn) scorerParts { return scorerParts{score: fn} }
 }
 
 // init registers all built-in scorers. This is the single registration site
@@ -193,14 +206,20 @@ func stateless(fn scorerFunc) scorerConstructor {
 // reads the registry, so registration-vs-consumption ordering is a non-issue.
 func init() {
 	// Stateful / param-backed scorers (preserve the exact (scorer, observer) pairing).
-	registerScorer("prefix-affinity", func(blockSize int, _ cacheQueryFn) (scorerFunc, observerFunc) {
-		return newPrefixAffinityScorer(blockSize)
+	registerScorer("prefix-affinity", func(blockSize int, _ cacheQueryFn) scorerParts {
+		score, observe := newPrefixAffinityScorer(blockSize)
+		return scorerParts{score: score, observe: observe}
 	})
-	registerScorer("precise-prefix-cache", func(_ int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
-		return newPrecisePrefixCacheScorer(cacheFn) // stateless ground-truth: (scorer, nil)
+	registerScorer("precise-prefix-cache", func(_ int, cacheFn cacheQueryFn) scorerParts {
+		score, observe := newPrecisePrefixCacheScorer(cacheFn) // stateless ground-truth: (scorer, nil)
+		return scorerParts{score: score, observe: observe}
 	})
-	registerScorer("no-hit-lru", func(_ int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
-		return newNoHitLRUScorer(cacheFn)
+	registerScorer("no-hit-lru", func(_ int, cacheFn cacheQueryFn) scorerParts {
+		score, observe := newNoHitLRUScorer(cacheFn)
+		return scorerParts{score: score, observe: observe}
+	})
+	registerScorer("lora-residency", func(_ int, _ cacheQueryFn) scorerParts {
+		return newLoRAResidencyScorer()
 	})
 	// Stateless scorers.
 	registerScorer("queue-depth", stateless(scoreQueueDepth))
@@ -211,6 +230,7 @@ func init() {
 	registerScorer("load-aware", stateless(scoreLoadAware))
 	registerScorer("vllm-dp", stateless(scoreVLLMDP))
 	registerScorer("lora-affinity", stateless(scoreLoRAAffinity))
+	registerScorer("llmd-lora-affinity", stateless(scoreLLMDLoRAAffinity))
 }
 
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.
@@ -218,6 +238,13 @@ func init() {
 // blockSize is used by stateful scorers (e.g., prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
 func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
+	parts := newScorerParts(name, blockSize, cacheFn)
+	return parts.score, parts.observe
+}
+
+// newScorerParts is newScorerWithObserver plus the scorer's optional
+// request-completion observer. Panics on unknown name.
+func newScorerParts(name string, blockSize int, cacheFn cacheQueryFn) scorerParts {
 	ctor, ok := scorerRegistry[name]
 	if !ok {
 		panic(fmt.Sprintf("unknown scorer %q", name))

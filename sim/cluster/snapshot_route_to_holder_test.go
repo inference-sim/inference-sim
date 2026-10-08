@@ -69,6 +69,7 @@ func TestPinResidentAdaptersImmediate_OnlyChangesResidentAdapters(t *testing.T) 
 	assert.Equal(t, before.KVUtilization, after.KVUtilization, "KVUtilization must be unchanged")
 	assert.Equal(t, before.CacheBlocks, after.CacheBlocks, "CacheBlocks must be unchanged")
 	assert.Equal(t, before.PreemptionCount, after.PreemptionCount, "PreemptionCount must be unchanged")
+	assert.Equal(t, before.ActiveAdapters, after.ActiveAdapters, "ActiveAdapters must be unchanged")
 }
 
 // T1 / BC-9 (INV-6 no-op) + the §5.4 construction conditional: with a Periodic global

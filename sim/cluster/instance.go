@@ -205,6 +205,17 @@ func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 	return i.sim.ResidentAdapterIDs()
 }
 
+// ActiveAdapterCounts returns, per LoRA adapter id, the number of requests queued
+// or running on this instance (nil when none, or when the instance has no
+// simulator). Read by the snapshot provider to populate
+// RoutingSnapshot.ActiveAdapters — the router-observable adapter signal.
+func (i *InstanceSimulator) ActiveAdapterCounts() map[string]int {
+	if i.sim == nil {
+		return nil
+	}
+	return i.sim.ActiveAdapterCounts()
+}
+
 // UnpinnedAdapterIDs returns this instance's resident, unpinned adapter ids — the
 // eviction seam's candidate set — in LRU→MRU order, or nil when none are evictable.
 // Read by the periodic creation tick's context builder (Spec 3), which sorts it.
