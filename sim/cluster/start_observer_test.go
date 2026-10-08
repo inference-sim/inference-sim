@@ -64,6 +64,8 @@ func TestStartObserver_WireHelperNotifiesWithInstanceID(t *testing.T) {
 		require.NotNil(t, inst.sim.OnFirstToken)
 		inst.sim.OnFirstToken(&sim.Request{ID: "x"}, 7)
 	}
+	assert.Empty(t, rec.events, "delivered as a cluster event at the tick, not synchronously")
+	drainClusterEvents(cs)
 	ids := cs.Instances()
 	assert.Equal(t, []string{"x@" + string(ids[0].ID()), "x@" + string(ids[1].ID())}, rec.events)
 }
@@ -92,5 +94,6 @@ func TestStartObserver_LiveAddedInstanceSite(t *testing.T) {
 	require.NotNil(t, scaled, "precondition: scale-up created an instance")
 	require.NotNil(t, scaled.sim.OnFirstToken, "live-added instance must be wired")
 	scaled.sim.OnFirstToken(&sim.Request{ID: "y"}, 9)
+	drainClusterEvents(cs)
 	assert.Equal(t, []string{"y@" + string(scaled.ID())}, rec.events)
 }

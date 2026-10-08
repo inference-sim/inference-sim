@@ -171,6 +171,9 @@ type scorerParts struct {
 	observe    observerFunc           // nil for stateless scorers
 	onComplete completionObserverFunc // nil unless the scorer tracks completions
 	onStart    startObserverFunc      // nil unless the scorer tracks first tokens
+	// setClock, if non-nil, is called with RouterState.Clock before each routing
+	// decision, so a time-dependent scorer evaluates at the decision time.
+	setClock func(clock int64)
 }
 
 // scorerRegistry maps scorer names to their constructors. Unexported (R8) — all

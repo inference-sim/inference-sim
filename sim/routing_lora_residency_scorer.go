@@ -19,14 +19,13 @@ const loraResidencyDemandHalfLife = time.Minute
 // ActiveAdapters feed capacity and protection. It never reads ResidentAdapters,
 // the simulator's ground truth, which no router sees.
 //
-// It models aggregated serving: under prefill/decode disaggregation a request's
-// first token and completion happen on different pools, so the prefill pool's
-// estimate sees the request start and its completion settles it, but nothing
-// tracks the decode pool's adapter use.
+// It models aggregated serving only; NewClusterSimulator rejects it under PD/EPD
+// disaggregation, where the routed request's lifecycle runs on sub-requests.
 //
 // The CPU cache size is unknown to a router; it is taken as vLLM's default,
 // max_cpu_loras = max_loras. A base-model request (Adapter "") scores every
-// instance 1 and is not tracked. Ticks are microseconds.
+// instance 1 and is not tracked. Scores and demand are evaluated at the
+// routing clock. Ticks are microseconds.
 func newLoRAResidencyScorer() scorerParts {
 	model := residency.NewModel(0)
 	demand, err := lorascore.NewDemand(loraResidencyDemandHalfLife)
@@ -38,6 +37,9 @@ func newLoRAResidencyScorer() scorerParts {
 	started := map[string]bool{}    // request IDs whose first token was seen
 
 	at := func(tick int64) time.Time { return time.UnixMicro(tick) }
+	// clock is the routing decision's time (RouterState.Clock), which gateway
+	// queueing, admission and redirects can put well after req.ArrivalTime.
+	var clock int64
 
 	score := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		ids := make([]string, len(snapshots))
@@ -50,11 +52,11 @@ func newLoRAResidencyScorer() scorerParts {
 			}
 			model.ObserveActive(snap.ID, active)
 		}
-		adapter, now := "", time.Time{}
+		adapter := ""
 		if req != nil {
-			adapter, now = req.Adapter, at(req.ArrivalTime)
+			adapter = req.Adapter
 		}
-		return lorascore.Score(model, demand, adapter, adapter == "", ids, weights, now)
+		return lorascore.Score(model, demand, adapter, adapter == "", ids, weights, at(clock))
 	}
 	observe := func(req *Request, target string) {
 		if req == nil || req.Adapter == "" {
@@ -62,7 +64,7 @@ func newLoRAResidencyScorer() scorerParts {
 		}
 		routedTo[req.ID] = target
 		model.Routed(target, req.Adapter)
-		demand.Observe(req.Adapter, at(req.ArrivalTime))
+		demand.Observe(req.Adapter, at(clock))
 	}
 	onStart := func(req *Request, instanceID string, tick int64) {
 		if req == nil || routedTo[req.ID] != instanceID || started[req.ID] {
@@ -86,5 +88,6 @@ func newLoRAResidencyScorer() scorerParts {
 		delete(routedTo, req.ID)
 		delete(started, req.ID)
 	}
-	return scorerParts{score: score, observe: observe, onStart: onStart, onComplete: onComplete}
+	return scorerParts{score: score, observe: observe, onStart: onStart, onComplete: onComplete,
+		setClock: func(c int64) { clock = c }}
 }

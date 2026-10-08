@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation, 10=lifecycle observers
 	Execute(*ClusterSimulator)
 }
 
@@ -319,6 +319,11 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnComplete(e.request.TenantID)
 	}
+	// An evicted request leaves its instance as surely as a completed one, but
+	// EvictRequest does not fire OnRequestDone, so observers are told here.
+	if len(cs.completionObservers) > 0 {
+		cs.notifyCompletion(e.request, e.targetInstance, e.time)
+	}
 
 	cs.gatewayEvicted++
 	tier := e.request.SLOClass
@@ -328,6 +333,20 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	cs.shedByTier[tier]++
 
 }
+
+// lifecycleObserverEvent delivers a first-token or completion notification to
+// routing observers at the time it happened (ClusterSimulator.scheduleLifecycle).
+// Priority 10: after every other cluster event at the same tick, routing
+// included.
+type lifecycleObserverEvent struct {
+	time int64
+	fire func()
+}
+
+func (e *lifecycleObserverEvent) Timestamp() int64 { return e.time }
+func (e *lifecycleObserverEvent) Priority() int     { return 10 }
+
+func (e *lifecycleObserverEvent) Execute(*ClusterSimulator) { e.fire() }
 
 // GatewayQueueTTLEvent fires when a request's TTL expires while queued.
 // If the request is still in the gateway queue, it is removed and counted as expired.

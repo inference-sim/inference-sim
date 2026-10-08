@@ -240,6 +240,7 @@ type WeightedScoring struct {
 	// OnRequestStart, in scorer-config order.
 	completionObservers []completionObserverFunc
 	startObservers      []startObserverFunc
+	clockSetters        []func(int64)
 	rng                 *rand.Rand
 }
 
@@ -276,6 +277,10 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("WeightedScoring.Route: empty snapshots")
+	}
+
+	for _, set := range ws.clockSetters {
+		set(state.Clock)
 	}
 
 	// Compute composite scores from all scorers
@@ -483,6 +488,7 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		var observers []observerFunc
 		var completionObservers []completionObserverFunc
 		var startObservers []startObserverFunc
+		var clockSetters []func(int64)
 		for i, cfg := range scorerConfigs {
 			parts := newScorerParts(cfg.Name, int(blockSize), cacheFn)
 			scorers[i] = parts.score
@@ -495,10 +501,14 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 			if parts.onStart != nil {
 				startObservers = append(startObservers, parts.onStart)
 			}
+			if parts.setClock != nil {
+				clockSetters = append(clockSetters, parts.setClock)
+			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
 		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers,
-			completionObservers: completionObservers, startObservers: startObservers, rng: rng}
+			completionObservers: completionObservers, startObservers: startObservers,
+			clockSetters: clockSetters, rng: rng}
 	case "route-to-holder":
 		// D1 (#1490): strict LoRA-affinity routing. Delegates to an inner "weighted"
 		// policy built via the SAME canonical construction path (R4) — same

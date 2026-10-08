@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"container/heap"
 	"strings"
 	"testing"
 
@@ -53,6 +54,8 @@ func TestCompletionObserver_WireHelperNotifiesWithInstanceID(t *testing.T) {
 		require.NotNil(t, inst.sim.OnRequestDone)
 		assert.Nil(t, inst.sim.OnRequestDone(&sim.Request{ID: "x"}, 7), "no follow-ups")
 	}
+	assert.Empty(t, rec.events, "delivered as a cluster event at the tick, not synchronously")
+	drainClusterEvents(cs)
 	ids := cs.Instances()
 	assert.Equal(t, []string{"x@" + string(ids[0].ID()), "x@" + string(ids[1].ID())}, rec.events)
 }
@@ -82,5 +85,15 @@ func TestCompletionObserver_LiveAddedInstanceSite(t *testing.T) {
 	require.NotNil(t, scaled, "precondition: scale-up created an instance")
 	require.NotNil(t, scaled.sim.OnRequestDone, "live-added instance must be wired")
 	scaled.sim.OnRequestDone(&sim.Request{ID: "y"}, 9)
+	drainClusterEvents(cs)
 	assert.Equal(t, []string{"y@" + string(scaled.ID())}, rec.events)
+}
+
+// drainClusterEvents executes every queued cluster event, as the run loop would.
+func drainClusterEvents(cs *ClusterSimulator) {
+	for len(cs.clusterEvents) > 0 {
+		entry := heap.Pop(&cs.clusterEvents).(clusterEventEntry)
+		cs.clock = entry.event.Timestamp()
+		entry.event.Execute(cs)
+	}
 }

@@ -200,3 +200,33 @@ func TestLoRAResidency_BaseRequestsNotTracked(t *testing.T) {
 	s := r.score("y", 400)
 	assert.Equal(t, s["i0"], s["i1"], "a base-model request left a phantom slot on i0: %v", s)
 }
+
+// Review of PR #59, finding 4: demand is evaluated at the routing clock, not
+// at arrival. Both requests arrive at 0; a is routed at 600 s (gateway queueing,
+// say) and x at 0, so at 600 s a is hot and x has decayed ten half-lives:
+// evicting x (on i1) is the cheaper choice.
+func TestLoRAResidency_DemandAtRoutingClock(t *testing.T) {
+	r := newResidencyRig(t, 1, "i0", "i1")
+	const s600 = 600_000_000 // microseconds
+	for _, step := range []struct {
+		id, adapter, inst string
+		clock             int64
+	}{{"rx", "x", "i1", 0}, {"ra", "a", "i0", s600}} {
+		req := &Request{ID: step.id, Adapter: step.adapter, ArrivalTime: 0}
+		var only []RoutingSnapshot
+		for _, s := range r.snaps {
+			if s.ID == step.inst {
+				only = append(only, s)
+			}
+		}
+		require.Equal(t, step.inst, r.p.Route(req, &RouterState{Snapshots: only, Clock: step.clock}).TargetInstance)
+		r.start(req, step.inst, step.clock+1)
+		r.complete(req, step.inst, step.clock+2)
+	}
+	ws := r.p.(*WeightedScoring)
+	ws.clockSetters[0](s600)
+	// The probe also arrived at 0, so scoring at arrival rather than at the
+	// routing clock would see neither adapter's demand decayed.
+	s := ws.scorers[0](&Request{ID: "probe", Adapter: "y", ArrivalTime: 0}, r.snaps)
+	assert.Greater(t, s["i1"], s["i0"], "x has decayed by the routing clock, a has not: %v", s)
+}

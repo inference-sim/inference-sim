@@ -1,5 +1,5 @@
 // Vendored verbatim (import path aside) from tantawi/lora-control
-// epp-scorer/pkg/lorascore/residency/residency_test.go at fdeb55c. Keep in step with the source
+// epp-scorer/pkg/lorascore/residency/residency_test.go at f4cd838. Keep in step with the source
 // rather than editing here.
 
 package residency

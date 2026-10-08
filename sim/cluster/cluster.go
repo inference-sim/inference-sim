@@ -248,6 +248,14 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
+	// lora-residency models aggregated serving: under disaggregation the routed
+	// request's lifecycle runs on sub-requests with other IDs and no adapter, so
+	// its estimate would hold every decode route pending forever.
+	if (config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 ||
+		config.EncodeInstances > 0) && namesScorer("lora-residency",
+		config.RoutingScorerConfigs, config.PrefillScorerConfigs, config.DecodeScorerConfigs) {
+		panic("ClusterSimulator: the lora-residency scorer models aggregated serving only and cannot be used with PD/EPD disaggregation")
+	}
 
 	// Validate cluster-scoped LoRA adapter placement early (B-5, #1493, INV-PS2):
 	// build the read-only adapter registry once (nil when LoRA is off) and reject an
@@ -1296,8 +1304,8 @@ func (cs *ClusterSimulator) wireOnRequestDone(inst *InstanceSimulator) {
 		if cs.evictionTracker != nil {
 			cs.evictionTracker.Untrack(req.ID)
 		}
-		for _, obs := range observers {
-			obs.OnRequestCompletion(req, instID, tick)
+		if len(observers) > 0 {
+			cs.notifyCompletion(req, instID, tick)
 		}
 		if onRequestDone == nil {
 			return nil
@@ -1321,10 +1329,38 @@ func (cs *ClusterSimulator) wireOnFirstToken(inst *InstanceSimulator) {
 	}
 	instID := string(inst.ID())
 	inst.sim.OnFirstToken = func(req *sim.Request, tick int64) {
-		for _, obs := range observers {
-			obs.OnRequestStart(req, instID, tick)
-		}
+		cs.scheduleLifecycle(tick, func() {
+			for _, obs := range observers {
+				obs.OnRequestStart(req, instID, tick)
+			}
+		})
 	}
+}
+
+// notifyCompletion tells the completion observers that req left instID at tick.
+// Like first tokens, it is delivered as a cluster event at tick, not when the
+// instance's step computes it: a step runs at its start time but completes
+// requests at its end, and a routing decision in between must not see that.
+func (cs *ClusterSimulator) notifyCompletion(req *sim.Request, instID string, tick int64) {
+	observers := cs.completionObservers
+	cs.scheduleLifecycle(tick, func() {
+		for _, obs := range observers {
+			obs.OnRequestCompletion(req, instID, tick)
+		}
+	})
+}
+
+// scheduleLifecycle runs fire as a cluster event at tick (or now, if tick has
+// passed), ordered after routing at the same tick: a router learns of a first
+// chunk or a completion only once it has happened.
+func (cs *ClusterSimulator) scheduleLifecycle(tick int64, fire func()) {
+	if tick < cs.clock {
+		tick = cs.clock
+	}
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &lifecycleObserverEvent{time: tick, fire: fire},
+		seqID: cs.nextSeqID(),
+	})
 }
 
 // collectStartObservers returns, in argument order, the non-nil policies that
@@ -1340,6 +1376,18 @@ func collectStartObservers(policies ...sim.RoutingPolicy) []sim.RequestStartObse
 		}
 	}
 	return out
+}
+
+// namesScorer reports whether any of the scorer config lists names scorer.
+func namesScorer(scorer string, lists ...[]sim.ScorerConfig) bool {
+	for _, list := range lists {
+		for _, c := range list {
+			if c.Name == scorer {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // collectCompletionObservers returns, in argument order, the non-nil policies that

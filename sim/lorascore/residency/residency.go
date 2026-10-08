@@ -1,7 +1,6 @@
-// Vendored from tantawi/lora-control epp-scorer/pkg/lorascore/residency/residency.go
-// at fdeb55c, with one change: oldestEvictable's condition is rewritten by De
-// Morgan's law for staticcheck QF1001 (same truth table), to be made upstream
-// too. Keep in step with the source rather than editing here.
+// Vendored verbatim (import path aside) from tantawi/lora-control
+// epp-scorer/pkg/lorascore/residency/residency.go at f4cd838. Keep in step with the source
+// rather than editing here.
 
 // Package residency estimates, from the router's side, which LoRA adapters a
 // vLLM pod holds on GPU and in its CPU cache.

@@ -1,7 +1,6 @@
-// Vendored from tantawi/lora-control epp-scorer/pkg/lorascore/score.go at fdeb55c,
-// with one change: Demand.Share sums rates in sorted adapter order, so the
-// result does not depend on map iteration order (INV-6). Keep in step with
-// the source rather than editing here.
+// Vendored verbatim (import path aside) from tantawi/lora-control
+// epp-scorer/pkg/lorascore/score.go at f4cd838. Keep in step with the source
+// rather than editing here.
 
 // Package lorascore scores candidate pods for a LoRA request by the estimated
 // cost of serving it there: the adapter miss itself, the eviction it causes,
