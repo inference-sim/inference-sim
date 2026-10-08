@@ -747,6 +747,11 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// and this clamp is not expected to bind. It stays as a last line of defense for
 	// INV-1 conservation: a request must never count MORE output tokens than it was
 	// assigned, whatever a future step-sizing path does. No-op for g=1 (feature off).
+	// For a LENGTH-CAPPED request this clamp provably never binds: processCompletions
+	// reaches the cap branch only via its `else if` (not natural completion), so
+	// ProgressIndex-InputLen < len(OutputTokens) strictly, hence outputTokens == PI-InputLen+1
+	// — it can fire only on a non-capped spec-decode overshoot, which is what keeps the
+	// shared `outputTokens` safe for the length-capped denominator below.
 	if outputTokens > len(req.OutputTokens) {
 		outputTokens = len(req.OutputTokens)
 	}
