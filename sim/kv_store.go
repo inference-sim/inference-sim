@@ -29,7 +29,9 @@ type KVStore interface {
 // there is NO new sim.Event. A deferred request stays in the WaitQ (so INV-1
 // still_queued counts it and INV-8 keeps a StepEvent scheduled) and is re-examined
 // each step until its secondary→CPU promotion lands, then admitted; a bounded fetch
-// attempt guarantees it never defers forever (BC-T3).
+// attempt guarantees it never defers forever (BC-T3). When every waiting request is
+// deferred and nothing runs, the step loop sleeps until NextDeferralWake instead of
+// re-polling every (1-tick) empty step; admission lands on the same tick.
 type DeferrableKVStore interface {
 	// PollDeferred advances every tracked deferred request's state machine by one
 	// scheduler round (using completions applied by the preceding SetClock) and
@@ -46,6 +48,12 @@ type DeferrableKVStore interface {
 	// in-flight promotion bookkeeping do not leak. Idempotent; a no-op for an
 	// untracked id.
 	ClearDeferred(id string)
+	// NextDeferralWake returns the earliest tick at which a still-deferred request
+	// can change state (e.g. its promotion's transfer completes), and false when no
+	// request is deferred or the store cannot tell. When every waiting request is
+	// deferred and nothing runs, the scheduler sleeps until this tick rather than
+	// re-polling every tick.
+	NextDeferralWake(now int64) (int64, bool)
 }
 
 // ReloadReportingKVStore is the optional capability a KVStore implements when a

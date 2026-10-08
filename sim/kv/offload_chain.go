@@ -338,7 +338,9 @@ func (o *OffloadCache) SetClock(clock int64) {
 //     secondary→CPU fetch is DEFERRED — it is left in the WaitQ and re-polled each
 //     step (PollDeferred) until its promotion lands (then admitted) or the fetch is
 //     refused/lost (then recomputed). This realizes vLLM's step-boundary re-poll:
-//     the offload-attributable TTFT delay is a whole multiple of step time.
+//     the offload-attributable TTFT delay is a whole multiple of step time. With an
+//     empty batch the scheduler skips ahead to NextDeferralWake instead of taking
+//     1-tick empty steps, which lands on the same tick.
 //   - A running-request continuation (Phase-1 chunked prefill, decode sub-request,
 //     final-token alloc) never defers — it keeps the H1 background-promote path,
 //     where a false return means GPU pressure (preempt), not "skip".

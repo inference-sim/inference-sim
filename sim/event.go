@@ -70,11 +70,10 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
 
-	// If there's no Step scheduled and WaitQ has work, trigger one immediately.
-	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+	// If WaitQ has work, make sure a Step runs now: schedule one if none is pending,
+	// or pull an idle wake forward to this arrival.
+	if sim.WaitQ.Len() > 0 {
+		sim.scheduleStepBy(e.time)
 	}
 }
 
@@ -113,10 +112,19 @@ func (e *RequestLeftEvent) Execute(sim *Simulator) {
 //   - scheduler.update_from_output()
 type StepEvent struct {
 	time int64 // Scheduled execution time (in ticks)
+	// idleWake marks a step scheduled to wake an idle instance at the next tick a
+	// deferred request can change state. New work may supersede it (scheduleStepBy).
+	idleWake bool
+	// cancelled marks a superseded idle wake. ProcessNextEvent drops it without
+	// advancing the clock, like an orphaned TimeoutEvent.
+	cancelled bool
 }
 
 func (e *StepEvent) Timestamp() int64 { return e.time }
 func (e *StepEvent) Priority() int    { return PriorityStep }
+
+// Cancelled reports whether this step was superseded and must not run.
+func (e *StepEvent) Cancelled() bool { return e.cancelled }
 
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
