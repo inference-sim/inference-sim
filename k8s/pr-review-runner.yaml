@@ -84,8 +84,18 @@ data:
       # resolves ONCE at worker start and caches the IP for the worker's life, so
       # a VPC-LB IP rotation would silently break the proxy until a reload. Using
       # a resolver + a variable upstream forces per-request re-resolution, so the
-      # hostname — not a frozen IP — is what egress is pinned to.
+      # hostname — not a frozen IP — is what egress is pinned to. resolver_timeout
+      # 5s (not nginx's 30s default) so a DNS blip fails fast instead of hanging
+      # the review request for 30s per call.
       resolver ${LITELLM_RESOLVER} valid=30s ipv6=off;
+      resolver_timeout 5s;
+      # Local liveness endpoint — NOT proxied. The workflow preflights this before
+      # the review steps (which are continue-on-error) so a proxy-down condition
+      # fails loud instead of silently posting an empty review.
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
       location / {
         # Variable proxy_pass: nginx does NOT append the matched location URI when
         # the target is a variable, so $request_uri (full path + query, leading
@@ -332,9 +342,13 @@ spec:
     - { protocol: UDP, port: 5353 }
     - { protocol: TCP, port: 5353 }
   # The ONLY path to LiteLLM: the proxy pod, selected by label (no IP, so VPC-LB
-  # rotation is irrelevant here).
+  # rotation is irrelevant here). namespaceSelector is explicit (not relying on
+  # the same-namespace default) so the peer is unambiguously blis/app=litellm-proxy.
   - to:
-    - podSelector:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: blis
+      podSelector:
         matchLabels:
           app: litellm-proxy
     ports:

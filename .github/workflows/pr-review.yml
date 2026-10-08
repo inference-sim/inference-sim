@@ -192,6 +192,20 @@ jobs:
           scripts/pr_review/scrub_symlinks.sh "$WORKTREE"
           echo "path=$WORKTREE" >> "$GITHUB_OUTPUT"
 
+      # Preflight: the litellm-proxy must be reachable before the reviewers run.
+      # Both review steps are continue-on-error (one reviewer's failure must not
+      # sink the others), so without this a proxy-down condition would silently
+      # produce an empty review posted as if fine. This step is NOT
+      # continue-on-error — proxy-down fails the job loud. /healthz is served
+      # locally by the proxy (not forwarded to LiteLLM), so it checks liveness
+      # without spending a token.
+      - name: Preflight litellm-proxy
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            --retry-connrefused --max-time 10 "${LLM_PROXY_URL}/healthz"
+          echo "litellm-proxy reachable"
+
       # QA-REVIEW — the committed scripts, run as workflow steps (not the agent
       # skill). answerer.py --no-exec: its code-executing `go` tool is dropped;
       # read_file/grep/list_dir stay sandboxed to the worktree. Talks to the
