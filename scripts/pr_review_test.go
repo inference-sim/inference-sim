@@ -370,7 +370,7 @@ func TestPrReviewActionsArePinnedToSHA(t *testing.T) {
 func TestPrReviewKeyNeverInSession(t *testing.T) {
 	wf := prReviewWorkflow(t)
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;
-	// the external reviewer must NOT reference it — it uses the sidecar + a dummy.
+	// the external reviewer must NOT reference it — it uses the litellm-proxy + a dummy.
 	if strings.Contains(wf, "secrets.LITELLM_API_KEY") {
 		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the litellm-proxy pod")
 	}

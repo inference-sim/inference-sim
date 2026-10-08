@@ -77,10 +77,14 @@ data:
   default.conf.template: |
     server {
       # Bind 0.0.0.0: unlike the old same-pod sidecar (loopback-only), the runner
-      # is now a DIFFERENT pod and reaches this via the litellm-proxy Service. The
-      # credential-injecting proxy is kept off arbitrary callers by the
-      # litellm-proxy-ingress NetworkPolicy (runner label only) rather than by a
-      # loopback bind.
+      # is now a DIFFERENT pod and reaches this via the litellm-proxy Service.
+      # NOTE: this does NOT by itself restrict callers — the namespace-wide
+      # allow-same-namespace policy lets any blis pod reach :4000 today (the
+      # litellm-proxy-ingress policy only records the runner-only target state).
+      # The credential is safe anyway: it is injected outbound and never readable
+      # back, and any blis workload can already read nous-wiki-llm directly. See
+      # the header's point #2 for the full rationale.
+      server_tokens off;
       listen 0.0.0.0:4000;
       # Re-resolve the LiteLLM hostname every 30s. A literal `proxy_pass host`
       # resolves ONCE at worker start and caches the IP for the worker's life, so

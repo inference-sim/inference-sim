@@ -94,7 +94,12 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   delivery-loop `self-hosted` pool.
 - The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). **`base-url` must be a bare
   `https://host` with no trailing slash and no path** — the proxy appends `$request_uri`, so a
-  trailing slash or path produces doubled-slash/doubled-path upstream 404s.
+  trailing slash or path produces doubled-slash/doubled-path upstream 404s. **This proxy is pinned to
+  the current IBM LiteLLM endpoint, not a generic base-url swap:** the nginx `Host` header is
+  hardcoded to `ete-litellm.ai-models.vpc-int.res.ibm.com` (the VPC ingress routes by Host) and the
+  proxy's egress policy allows the IBM VPC (`9.0.0.0/8`) while blocking RFC1918. Pointing at a
+  different host or an RFC1918-hosted LiteLLM requires editing the `Host` header and the
+  `litellm-proxy-egress` except-list too, not just the secret.
 - A cluster whose DNS Service ClusterIP is `172.21.0.10` (the default on this ROKS cluster, used by the
   proxy's nginx `resolver`). On a cluster with a different DNS IP, override the `LITELLM_RESOLVER` env
   on the `litellm-proxy` container or nginx cannot resolve the upstream. The workflow is inert-but-safe
