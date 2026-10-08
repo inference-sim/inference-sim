@@ -207,7 +207,8 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	// count whenever the round stopped short of its oracle budget (output token #1 is
 	// charged to prefill completion). Using it as the growth amount made every accumulate
 	// round carry forward a context one token short, compounding across rounds (#1893);
-	// it survives here only as the raw diagnostic the two guards below are stated over.
+	// it survives here only as the raw quantity the drift diagnostics are stated over —
+	// the negative-drift log below and the over-cap corruption defence further down.
 	//
 	// A negative decodeSteps is unreachable in normal flow (ProgressIndex always
 	// >= InputLen once prefill completes) but worth logging if it ever happens — it would
