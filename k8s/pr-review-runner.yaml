@@ -26,12 +26,14 @@
 #      the sidecar's :443. Splitting the proxy into its own pod lets the runner be
 #      denied :443 to the internal VPC entirely while still reaching LiteLLM
 #      THROUGH the proxy. Residual trade vs. the old loopback-only bind: the proxy
-#      now listens on a routable pod IP. It is fronted by the `litellm-proxy`
-#      Service and an ingress NetworkPolicy scoped to the runner label; note the
-#      namespace-wide `allow-same-namespace` policy still permits any blis pod to
-#      reach :4000, so the proxy is a namespace-local LiteLLM relay, not a global
-#      one. Acceptable: PR content has no SA token (cannot create pods) and any
-#      blis workload can already read `nous-wiki-llm` directly.
+#      now listens on a routable pod IP, and the namespace-wide
+#      `allow-same-namespace` policy means ANY blis pod can currently reach :4000
+#      — so TODAY the proxy is a namespace-local LiteLLM relay, NOT caller-
+#      restricted. (The `litellm-proxy-ingress` policy records the runner-only
+#      target state but does not reduce reachability while that blanket policy
+#      stands — NetworkPolicies are additive.) Acceptable: PR content has no SA
+#      token (cannot create pods) and any blis workload can already read
+#      `nous-wiki-llm` directly.
 #
 #   3. A DEFAULT-DENY EGRESS NetworkPolicy on each pod (vanilla k8s, no Calico /
 #      cluster-admin needed — see #1881). The runner may egress ONLY to DNS, the

@@ -92,8 +92,13 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 - A self-hosted runner labelled **`pr-review-untrusted`** plus the **`litellm-proxy`** pod/Service and
   the three egress/ingress `NetworkPolicy` objects (`k8s/pr-review-runner.yaml`), isolated from the
   delivery-loop `self-hosted` pool.
-- The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
-  these exist — it is maintainer-gated, so it cannot fire accidentally.
+- The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). **`base-url` must be a bare
+  `https://host` with no trailing slash and no path** — the proxy appends `$request_uri`, so a
+  trailing slash or path produces doubled-slash/doubled-path upstream 404s.
+- A cluster whose DNS Service ClusterIP is `172.21.0.10` (the default on this ROKS cluster, used by the
+  proxy's nginx `resolver`). On a cluster with a different DNS IP, override the `LITELLM_RESOLVER` env
+  on the `litellm-proxy` container or nginx cannot resolve the upstream. The workflow is inert-but-safe
+  until these exist — it is maintainer-gated, so it cannot fire accidentally.
 
 ## Residual risks we accept
 
