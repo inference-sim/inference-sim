@@ -221,6 +221,9 @@ func init() {
 	registerScorer("lora-residency", func(_ int, _ cacheQueryFn) scorerParts {
 		return newLoRAResidencyScorer()
 	})
+	registerScorer("lora-residency-truth", func(_ int, _ cacheQueryFn) scorerParts {
+		return newLoRAResidencyTruthScorer()
+	})
 	// Stateless scorers.
 	registerScorer("queue-depth", stateless(scoreQueueDepth))
 	registerScorer("kv-utilization", stateless(scoreKVUtilization))

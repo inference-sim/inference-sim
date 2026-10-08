@@ -39,6 +39,18 @@ type RoutingSnapshot struct {
 	// when the interval is 0. Zero value (nil) ⇒ no adapter resident ⇒ scorer neutral,
 	// preserving byte-identical routing when the LoRA subsystem is inert (INV-6).
 	ResidentAdapters map[string]bool
+	// ResidentOrder is ResidentAdapters in the resident set's LRU→MRU order, and
+	// ResidentPinned the subset pinned by in-flight requests (never evictable).
+	// Ground truth, like ResidentAdapters and refreshed with it; read only by the
+	// lora-residency-truth scorer, the perfect-information reference for
+	// lora-residency. Nil when no adapter is resident or none is pinned.
+	ResidentOrder  []string
+	ResidentPinned map[string]bool
+	// LoadingAdapter is the adapter whose load is in progress ("" when none): its
+	// slot is already reserved (the victim was evicted at load start) but it joins
+	// ResidentAdapters only when the load completes. Refreshed with them; read only
+	// by lora-residency-truth.
+	LoadingAdapter string
 	// ActiveAdapters is the ROUTER-OBSERVABLE adapter signal: adapter id → number of
 	// this instance's requests that are queued or running with that adapter (only
 	// adapters with ≥1 such request appear). It mirrors vLLM's

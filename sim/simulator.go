@@ -574,6 +574,15 @@ func (sim *Simulator) ResidentAdapterIDs() []string {
 	return sim.residentAdapters.ResidentIDs()
 }
 
+// UnpinnedResidentAdapterIDs returns the resident adapter ids not pinned by an
+// in-flight request, in LRU→MRU order; nil when none (or no LoRA subsystem).
+func (sim *Simulator) UnpinnedResidentAdapterIDs() []string {
+	if sim.residentAdapters == nil {
+		return nil
+	}
+	return sim.residentAdapters.UnpinnedCandidates()
+}
+
 // ActiveAdapterCounts returns, per LoRA adapter id, the number of this instance's
 // requests that are queued (WaitQ, including gate-blocked cold misses and preempted
 // requests) or running (RunningBatch). Base-model requests (empty Adapter) are not

@@ -205,6 +205,15 @@ func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 	return i.sim.ResidentAdapterIDs()
 }
 
+// UnpinnedResidentAdapterIDs returns the instance's resident, unpinned adapter ids
+// in LRU→MRU order (nil when none, or when the instance has no simulator).
+func (i *InstanceSimulator) UnpinnedResidentAdapterIDs() []string {
+	if i.sim == nil {
+		return nil
+	}
+	return i.sim.UnpinnedResidentAdapterIDs()
+}
+
 // ActiveAdapterCounts returns, per LoRA adapter id, the number of requests queued
 // or running on this instance (nil when none, or when the instance has no
 // simulator). Read by the snapshot provider to populate
