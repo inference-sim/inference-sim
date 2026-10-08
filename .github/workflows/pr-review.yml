@@ -11,8 +11,9 @@ name: PR Review (external)
 #   - qa-review + blis read a SAFE READ-ONLY checkout (hooks disabled,
 #     persist-credentials off, submodules off, escaping symlinks scrubbed);
 #     qa runs --no-exec, blis has no Bash tool.
-#   - The LiteLLM key lives only in the runner pod's sidecar (k8s/pr-review-runner.yaml);
-#     this workflow talks to http://localhost:4000 with a DUMMY key.
+#   - The LiteLLM key lives only in the litellm-proxy pod (k8s/pr-review-runner.yaml);
+#     this workflow talks to the proxy Service with a DUMMY key, and the runner's
+#     egress NetworkPolicy blocks every path to LiteLLM except through that proxy.
 #
 # Three jobs, so the box that reads untrusted code cannot act:
 #   gate    (ubuntu-latest)         who-asked + what-PR; touches no PR content
@@ -28,10 +29,10 @@ on:
     types: [created]
 
 env:
-  # The reviewer talks to the in-pod sidecar, which injects the real key. A dummy
-  # is all this workflow ever holds — see k8s/pr-review-runner.yaml.
-  LLM_PROXY_URL: "http://localhost:4000"
-  LLM_DUMMY_KEY: "sidecar-injects-the-real-key"
+  # The reviewer talks to the litellm-proxy Service, which injects the real key. A
+  # dummy is all this workflow ever holds — see k8s/pr-review-runner.yaml.
+  LLM_PROXY_URL: "http://litellm-proxy.blis.svc.cluster.local:4000"
+  LLM_DUMMY_KEY: "proxy-injects-the-real-key"
 
 jobs:
   gate:
@@ -99,7 +100,7 @@ jobs:
   review:
     needs: gate
     if: needs.gate.outputs.allowed == 'true'
-    # Dedicated untrusted pool with the LiteLLM sidecar — NOT the delivery loop's
+    # Dedicated untrusted pool behind the litellm-proxy — NOT the delivery loop's
     # `self-hosted` runners. See k8s/pr-review-runner.yaml.
     runs-on: [pr-review-untrusted]
     timeout-minutes: 30
@@ -130,13 +131,13 @@ jobs:
           go-version: '1.26'
 
       # Assert the key really is absent from this job's environment (BC-3). The
-      # sidecar holds it; the workflow holds only the dummy. Fails loud if a real
-      # LiteLLM credential ever leaks into the env.
+      # litellm-proxy holds it; the workflow holds only the dummy. Fails loud if a
+      # real LiteLLM credential ever leaks into the env.
       - name: Assert no LiteLLM key in the session
         run: |
           set -uo pipefail
           if env | grep -iqE 'litellm_(api_)?key|LITELLM_API_KEY'; then
-            echo "::error::a LiteLLM key is present in the review job environment; it must live only in the sidecar"
+            echo "::error::a LiteLLM key is present in the review job environment; it must live only in the litellm-proxy"
             exit 1
           fi
           echo "no real LiteLLM key in the session (good)"
@@ -194,7 +195,7 @@ jobs:
       # QA-REVIEW — the committed scripts, run as workflow steps (not the agent
       # skill). answerer.py --no-exec: its code-executing `go` tool is dropped;
       # read_file/grep/list_dir stay sandboxed to the worktree. Talks to the
-      # sidecar with a dummy key.
+      # litellm-proxy with a dummy key.
       - name: Run qa-review
         id: qa
         continue-on-error: true
@@ -233,8 +234,8 @@ jobs:
 
       # BLIS — tool-restricted single session: read-only tools scoped to the
       # worktree + trusted docs, NO Bash/Edit/WebFetch/WebSearch, write confined
-      # to the verdict file by a PreToolUse hook. Talks to the sidecar with a
-      # dummy key.
+      # to the verdict file by a PreToolUse hook. Talks to the litellm-proxy with
+      # a dummy key.
       - name: Run blis-pr-review
         id: blis
         continue-on-error: true

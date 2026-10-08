@@ -61,19 +61,20 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `OVERRIDE_GITHUB_TOKEN` path and **skips the OIDC exchange** — which would otherwise need
   `id-token: write` on the untrusted box and would mint the Anthropic App's *write* token (#1883).
 - **Key out of the session:** LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
-  **only in a sidecar container** (`k8s/pr-review-runner.yaml`). The reviewer talks to
-  `http://localhost:4000` with a **dummy** key; the sidecar injects the real one (both
+  **only in a separate `litellm-proxy` pod** (`k8s/pr-review-runner.yaml`). The reviewer talks to the
+  `litellm-proxy` Service with a **dummy** key; the proxy injects the real one (both
   `Authorization: Bearer` for qa and `x-api-key` for blis). A runtime step asserts no real key is in
-  the job env.
-- **Egress lock — follow-up (not yet enabled).** A default-deny egress `NetworkPolicy` is the intended
-  belt-and-suspenders, but on this cluster the pod's DNS resolver (`172.21.0.10`) is a node-local/host
-  resolver that neither a `namespaceSelector` nor an `ipBlock: 0.0.0.0/0` egress peer matches, so every
-  vanilla `NetworkPolicy` form tried blocked DNS and broke the runner (a non-443 port *was* correctly
-  blocked, so the policy enforces — it just can't thread cluster DNS). Enabling it needs an
-  `AdminNetworkPolicy` or node-CIDR allowance, tracked as a follow-up. This is acceptable for v1 because
-  the **primary** control is that no high-value secret is in the session: the LiteLLM key is in the
-  sidecar, and the job's `GITHUB_TOKEN` is read-only (`contents`/`pull-requests: read`), so there is
-  nothing worth exfiltrating even over open 443.
+  the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
+  tighter than the proxy's — see below.)
+- **Egress lock — enabled, vanilla `NetworkPolicy`, no cluster-admin.** The runner pod runs under a
+  default-deny egress policy that allows only DNS, the `litellm-proxy` pod (by label), and public `:443`
+  with every private/VPC/metadata CIDR excluded. So the runner **cannot** reach LiteLLM, the metadata
+  endpoint, or any in-cluster service directly; LiteLLM is reachable only *through* the proxy, which
+  pins the hostname in nginx (VPC-LB IP rotation never touches the runner's policy). The earlier
+  "vanilla policy breaks DNS" finding was a misdiagnosis: `172.21.0.10` is a ClusterIP, and Calico
+  evaluates egress post-DNAT against the real CoreDNS pod, which a `namespaceSelector` peer on ports
+  53/5353 matches — so DNS survives. Calico/`AdminNetworkPolicy`/cluster-admin are **not** required
+  (that was the open ask in #1881; this closes it).
 - **Output scrub:** the combined comment passes `scripts/pr_review/scrub_secrets.py` before posting —
   a last line, not the control (the control is that there is no key to leak).
 - **Advisory:** the verdict is never a required status check, so an injected review cannot block a
@@ -87,20 +88,23 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 
 ## Infrastructure prerequisites (not created by the workflow)
 
-- A self-hosted runner labelled **`pr-review-untrusted`** with the **LiteLLM sidecar**
-  (`k8s/pr-review-runner.yaml`), isolated from the delivery-loop `self-hosted` pool.
-- The sidecar's `nous-wiki-llm` secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
+- A self-hosted runner labelled **`pr-review-untrusted`** plus the **`litellm-proxy`** pod/Service and
+  the three egress/ingress `NetworkPolicy` objects (`k8s/pr-review-runner.yaml`), isolated from the
+  delivery-loop `self-hosted` pool.
+- The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
   these exist — it is maintainer-gated, so it cannot fire accidentally.
-- (Follow-up) the egress `NetworkPolicy` once the cluster-DNS issue above is resolved.
 
 ## Residual risks we accept
 
 - **A weak/odd advisory comment.** An injection could nudge the LLM to write something unhelpful. It
   is visible, scrubbed, and non-authoritative; a human reads it.
 - **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
-  (it only reaches the in-pod sidecar).
-- **No egress-lock yet** (see the follow-up above). Mitigated by the keyless session + read-only token:
-  there is no high-value secret on the box to exfiltrate.
+  (it only reaches the `litellm-proxy`, which overwrites it).
+- **Proxy reachable namespace-wide.** The proxy listens on a routable pod IP; the namespace-wide
+  `allow-same-namespace` policy lets any blis pod reach `:4000` (an `litellm-proxy-ingress` policy
+  records the runner-only intent for if that blanket policy is tightened). The credential cannot be
+  read back through the proxy — it is injected outbound only — so the exposure is use as a
+  namespace-local LiteLLM relay, which any blis pod could already obtain from `nous-wiki-llm` directly.
 - **Platform trust.** We trust `claude-code-action` and the runner image to hold; actions are
   SHA-pinnable.
 
