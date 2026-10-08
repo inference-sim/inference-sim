@@ -44,8 +44,16 @@ type Request struct {
 	OutputTokens []TokenID // Pre-specified output tokens (already known for the simulation)
 	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
-	State         RequestState // queued, running, completed
-	ProgressIndex int64        // Total number of input tokens processed so far + number of output tokens generated so far
+	State RequestState // queued, running, completed
+	// ProgressIndex counts the input tokens processed so far, plus every output token a
+	// DECODE step has committed (one per step normally; the accepted-token count under
+	// speculative decoding / MTP). It is NOT the emitted-output count: BLIS charges output
+	// token #1 to prefill completion rather than to a decode step, so a request sitting at
+	// ProgressIndex == InputLen has already emitted one token, and one that emitted N
+	// tokens ends at InputLen + N − 1. Read EmittedOutputLen for "how many output tokens
+	// did this request produce" (R23) — ProgressIndex − InputLen alone is the decode-step
+	// count. Reset to 0 on preemption, since the request re-prefills from scratch.
+	ProgressIndex int64
 
 	TTFTSet          bool    // Tracks whether TTFT has been set
 	FirstTokenTime   int64   // Timestamp when first token was generated

@@ -20,9 +20,11 @@ import (
 //     input-token DELTAS + input_tokens_reset compaction markers, re-derived from the
 //     replayed absolute inputs via the shared EncodeSessionToTraceRecords law (#1613).
 //     The re-export header MUST also set session_context_growth: accumulate (caller's
-//     responsibility) so the corpus re-replays correctly. Model is left empty (routing
-//     safety) — every reachable accumulate corpus is converter-produced (empty
-//     Model/SLO/deadline/adapter), so this reproduces the converter shape exactly.
+//     responsibility) so the corpus re-replays correctly. EncodeSessionToTraceRecords is
+//     a minimal converter-oriented encoder, so the per-request metadata it does not emit
+//     (SLO / deadline / model / adapter / modality split) is copied back by
+//     copyReExportMetadata — field coverage matches the non-accumulate path below.
+//     prefix_group / prefix_length are deliberately NOT carried (see that helper).
 //   - "" (non-accumulate): each round's input is independent, so records carry the
 //     ABSOLUTE per-round suffix via RequestsToTraceRecords, preserving SLO / model /
 //     deadline / adapter / prefix. Follow-up records additionally inherit their
