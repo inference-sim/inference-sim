@@ -3138,19 +3138,21 @@ that sub-agents inherit the no-<code>Bash</code> deny on the pinned action versi
   <code>OVERRIDE_GITHUB_TOKEN</code> path and <strong>skips the OIDC exchange</strong> — which would otherwise need
   <code>id-token: write</code> on the untrusted box and would mint the Anthropic App's <em>write</em> token (#1883).</li>
 <li><strong>Key out of the session:</strong> LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
-  <strong>only in a sidecar container</strong> (<code>k8s/pr-review-runner.yaml</code>). The reviewer talks to
-  <code>http://localhost:4000</code> with a <strong>dummy</strong> key; the sidecar injects the real one (both
+  <strong>only in a separate <code>litellm-proxy</code> pod</strong> (<code>k8s/pr-review-runner.yaml</code>). The reviewer talks to the
+  <code>litellm-proxy</code> Service with a <strong>dummy</strong> key; the proxy injects the real one (both
   <code>Authorization: Bearer</code> for qa and <code>x-api-key</code> for blis). A runtime step asserts no real key is in
-  the job env.</li>
-<li><strong>Egress lock — follow-up (not yet enabled).</strong> A default-deny egress <code>NetworkPolicy</code> is the intended
-  belt-and-suspenders, but on this cluster the pod's DNS resolver (<code>172.21.0.10</code>) is a node-local/host
-  resolver that neither a <code>namespaceSelector</code> nor an <code>ipBlock: 0.0.0.0/0</code> egress peer matches, so every
-  vanilla <code>NetworkPolicy</code> form tried blocked DNS and broke the runner (a non-443 port <em>was</em> correctly
-  blocked, so the policy enforces — it just can't thread cluster DNS). Enabling it needs an
-  <code>AdminNetworkPolicy</code> or node-CIDR allowance, tracked as a follow-up. This is acceptable for v1 because
-  the <strong>primary</strong> control is that no high-value secret is in the session: the LiteLLM key is in the
-  sidecar, and the job's <code>GITHUB_TOKEN</code> is read-only (<code>contents</code>/<code>pull-requests: read</code>), so there is
-  nothing worth exfiltrating even over open 443.</li>
+  the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
+  tighter than the proxy's — see below.)</li>
+<li><strong>Egress lock — enabled, vanilla <code>NetworkPolicy</code>, no cluster-admin.</strong> The runner pod runs under a
+  default-deny egress policy that allows only DNS (scoped to the <code>openshift-dns</code> namespace), the
+  <code>litellm-proxy</code> pod (by label), and public <code>:443</code> with every private/VPC/metadata CIDR excluded. So
+  the runner <strong>cannot</strong> reach LiteLLM, the metadata endpoint, or any in-cluster service except cluster
+  DNS directly; LiteLLM is reachable only <em>through</em> the proxy, which
+  pins the hostname in nginx (VPC-LB IP rotation never touches the runner's policy). The earlier
+  "vanilla policy breaks DNS" finding was a misdiagnosis: <code>172.21.0.10</code> is a ClusterIP, and Calico
+  evaluates egress post-DNAT against the real CoreDNS pod, which a <code>namespaceSelector</code> peer on ports
+  53/5353 matches — so DNS survives. Calico/<code>AdminNetworkPolicy</code>/cluster-admin are <strong>not</strong> required
+  (that was the open ask in #1881; this closes it).</li>
 <li><strong>Output scrub:</strong> the combined comment passes <code>scripts/pr_review/scrub_secrets.py</code> before posting —
   a last line, not the control (the control is that there is no key to leak).</li>
 <li><strong>Advisory:</strong> the verdict is never a required status check, so an injected review cannot block a
@@ -3162,22 +3164,48 @@ token into the untrusted PR context. <code>/pr-review</code> uses a <strong>main
 reviewer holds a shell on untrusted input, so a single workflow with a write-access gate is enough.</p>
 <h2 id="infrastructure-prerequisites-not-created-by-the-workflow">Infrastructure prerequisites (not created by the workflow)<a class="headerlink" href="#infrastructure-prerequisites-not-created-by-the-workflow" title="Permanent link">&para;</a></h2>
 <ul>
-<li>A self-hosted runner labelled <strong><code>pr-review-untrusted</code></strong> with the <strong>LiteLLM sidecar</strong>
-  (<code>k8s/pr-review-runner.yaml</code>), isolated from the delivery-loop <code>self-hosted</code> pool.</li>
-<li>The sidecar's <code>nous-wiki-llm</code> secret (LiteLLM endpoint + key). The workflow is inert-but-safe until
-  these exist — it is maintainer-gated, so it cannot fire accidentally.</li>
-<li>(Follow-up) the egress <code>NetworkPolicy</code> once the cluster-DNS issue above is resolved.</li>
+<li>A self-hosted runner labelled <strong><code>pr-review-untrusted</code></strong> plus the <strong><code>litellm-proxy</code></strong> pod/Service and
+  the three egress/ingress <code>NetworkPolicy</code> objects (<code>k8s/pr-review-runner.yaml</code>), isolated from the
+  delivery-loop <code>self-hosted</code> pool.</li>
+<li>The proxy's <code>nous-wiki-llm</code> secret (LiteLLM endpoint + key). <strong><code>base-url</code> must be a bare
+  <code>https://host</code> with no trailing slash and no path</strong> — the proxy appends <code>$request_uri</code>, so a
+  trailing slash or path produces doubled-slash/doubled-path upstream 404s. <strong>This proxy is pinned to
+  the current IBM LiteLLM endpoint, not a generic base-url swap:</strong> the nginx <code>Host</code> header is
+  hardcoded to <code>ete-litellm.ai-models.vpc-int.res.ibm.com</code> (the VPC ingress routes by Host) and the
+  proxy's egress policy allows the IBM VPC (<code>9.0.0.0/8</code>) while blocking RFC1918. Pointing at a
+  different host or an RFC1918-hosted LiteLLM requires editing the <code>Host</code> header and the
+  <code>litellm-proxy-egress</code> except-list too, not just the secret.</li>
+<li>A cluster whose DNS Service ClusterIP is <code>172.21.0.10</code> (the default on this ROKS cluster, used by the
+  proxy's nginx <code>resolver</code>). On a cluster with a different DNS IP, override the <code>LITELLM_RESOLVER</code> env
+  on the <code>litellm-proxy</code> container or nginx cannot resolve the upstream.</li>
+<li>The standing namespace policy <code>allow-same-namespace</code> (an <code>Ingress</code> policy with <code>podSelector: {}</code>
+  that admits traffic from any pod in <code>blis</code>). The proxy's ingress reasoning assumes it: it is why
+  <code>litellm-proxy-ingress</code> is documented as recording intent rather than currently restricting callers.
+  If a fresh namespace lacks it, the new <code>litellm-proxy-ingress</code> policy instead makes the proxy
+  default-deny-ingress so ONLY the runner can reach <code>:4000</code> — stricter than described here, not weaker.
+  The workflow is inert-but-safe until these exist — it is maintainer-gated, so it cannot fire
+  accidentally.</li>
 </ul>
 <h2 id="residual-risks-we-accept">Residual risks we accept<a class="headerlink" href="#residual-risks-we-accept" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>A weak/odd advisory comment.</strong> An injection could nudge the LLM to write something unhelpful. It
   is visible, scrubbed, and non-authoritative; a human reads it.</li>
 <li><strong>Gateway spend.</strong> Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
-  (it only reaches the in-pod sidecar).</li>
-<li><strong>No egress-lock yet</strong> (see the follow-up above). Mitigated by the keyless session + read-only token:
-  there is no high-value secret on the box to exfiltrate.</li>
+  (it only reaches the <code>litellm-proxy</code>, which overwrites it).</li>
+<li><strong>Proxy reachable namespace-wide.</strong> The proxy listens on a routable pod IP; the namespace-wide
+  <code>allow-same-namespace</code> policy lets any blis pod reach <code>:4000</code> (an <code>litellm-proxy-ingress</code> policy
+  records the runner-only intent for if that blanket policy is tightened). The credential cannot be
+  read back through the proxy — it is injected outbound only — so the exposure is use as a
+  namespace-local LiteLLM relay, which any blis pod could already obtain from <code>nous-wiki-llm</code> directly.</li>
 <li><strong>Platform trust.</strong> We trust <code>claude-code-action</code> and the runner image to hold; actions are
   SHA-pinnable.</li>
+<li><strong>DNS tunnelling.</strong> The runner must reach cluster DNS, and if CoreDNS recursively resolves external
+  names a determined injection could encode data in QNAMEs to an attacker-controlled authoritative
+  server. The egress policy scopes <code>:53</code>/<code>:5353</code> to the <code>openshift-dns</code> namespace (so it cannot speak
+  DNS to arbitrary in-cluster services), but cannot by itself stop tunnelling through the legitimate
+  resolver. Accepted on the same basis as open <code>:443</code>: the session is keyless and the token is
+  read-only, so there is no high-value secret to encode — and the data a reviewer sees is the PR, which
+  is already public.</li>
 </ul>
 <h2 id="validation-before-enabling">Validation before enabling<a class="headerlink" href="#validation-before-enabling" title="Permanent link">&para;</a></h2>
 <p>Because the verdict is advisory, green CI is not the bar. Before relying on this: run an <strong>adversarial
