@@ -86,7 +86,7 @@ The simulation time limit in ticks (microseconds). The simulation stops when the
 
 ### ITL (Inter-Token Latency)
 
-The observed time between consecutive decode steps for a single request. A request generating N output tokens produces N-1 ITL entries (the number of inter-token gaps). ITL varies with batch composition changes between steps. Mean ITL is reported as TPOT (Time Per Output Token) — always the ITL sum over `N-1`, where N is the number of output tokens the request *actually emitted*. For a [length-capped](#maxmodellen) request that is `maxModelLen - inputLen`, not its assigned output length; under speculative decoding one ITL entry covers several tokens, so N-1 is not the entry count (see [Latency Models](../guide/latency-models.md)).
+The observed time between consecutive decode steps for a single request. Without speculative decoding, a request generating N output tokens produces N-1 ITL entries (one per inter-token gap); under speculative decoding one entry covers several accepted tokens, so the entry count is lower than N-1. ITL varies with batch composition changes between steps. The per-request mean ITL is reported as TPOT (Time Per Output Token) — the ITL sum over `N-1`, where N is the number of output tokens the request *actually emitted* (for a [length-capped](#maxmodellen) request that is `maxModelLen - inputLen`, not its assigned output length). The aggregate `itl_mean_ms` and ITL percentiles are instead computed over the pooled per-step ITL samples across all requests (see [Latency Models](../guide/latency-models.md)).
 
 ### KV Cache
 
