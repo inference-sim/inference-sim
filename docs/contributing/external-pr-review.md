@@ -138,3 +138,5 @@ Because the verdict is advisory, green CI is not the bar. Before relying on this
 dry-run** on a throwaway fork PR carrying an injection payload (title, comment, and a file body) and
 confirm the key is not exfiltrated, no PR code executes, and the comment is harmless; capture the
 containment proof (no real key in the job env); and get a human maintainer sign-off.
+
+<!-- smoke test for #1897: pr-review egress lockdown; delete this PR after. -->
