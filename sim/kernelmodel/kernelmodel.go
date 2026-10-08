@@ -24,37 +24,43 @@
 //     chunked-prefill tail changes the kernel's choice of attention law, and the
 //     simulation still runs.
 //
-// # Why the kernel is constructed here rather than through its own harness
+// # What this package does NOT do
 //
-// blis-latency-kernel has internal/harness.Open, which does exactly this loading. Go
-// forbids importing another module's internal packages, so it cannot be reused. The Open
-// below makes the same sequence of calls against the same public blis-schemas loaders; it
-// is loading, not modelling, and it holds no cost logic.
+// It no longer loads artifacts or reads deployment documents. blis-latency-kernel exports
+// Open, OpenPool and the accessors for everything a consumer needs from a resolved
+// deployment, so this package holds only what is genuinely its own: adapting a kernel to
+// sim.LatencyModel, translating a BLIS batch into the kernel's ReqShape, and turning the
+// kernel's byte answers into a KV block count.
+//
+// That was not always true. The kernel kept its loading in internal/harness, which Go
+// forbids importing across modules, so this package carried a copy of the sequence and its
+// own loadBundle, and retained the Scenario, the Deployment and a pool index to index back
+// into Pools[i] for engine settings and widths. Every line of that is gone. The copy was
+// bounded -- loading, not modelling -- but the retained documents were worse than
+// duplication: they were a second answer to "which pool is this", and when the two
+// disagreed a decode pool was priced at a prefill pool's parallelism and the simulation
+// still ran.
+//
+// Delegating also gained the kernel's validation. The copy did not validate, so a
+// deployment whose pools do not fill its cluster built a model and simulated.
 package kernelmodel
 
 import (
 	"fmt"
-	"path/filepath"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	schemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
-	"github.com/inference-sim/blis-schemas/spec/model"
-	"github.com/inference-sim/blis-schemas/spec/scenario"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// Repos locates the three artifact repositories a kernel is built from.
-type Repos struct {
-	Scenarios string // directory holding scenario YAML files
-	Catalog   string // blis-catalog root
-	Registry  string // blis-registry root
-}
+// Repos is blis-latency-kernel's Repos.
+//
+// An alias rather than a second type: the kernel's Open takes one, so a distinct type here
+// would mean converting at every call and would let the two drift if the kernel ever adds a
+// root. A kernelmodel.Repos{...} literal still compiles unchanged.
+type Repos = latencykernel.Repos
 
 // Model adapts a kernel to sim.LatencyModel.
 //
@@ -72,23 +78,14 @@ type Model struct {
 	outputTokenTicks int64
 	completionTicks  int64
 
-	// Retained for KVBudget (capacity.go), which needs the engine settings and the chip's
-	// memory to turn the kernel's byte answers into a block count.
+	// No documents are retained. Everything this adapter needs about the deployment --
+	// engine settings, the two parallel widths, the chip, the model name, the expert
+	// geometry -- is read from the kernel, which resolved it.
 	//
-	// Both documents are held because blis-schemas v0.2.0 splits them: a Scenario fixes
-	// the immutable problem (model, cluster inventory, engine version) and a Deployment
-	// carries the tunable layout (the pools, each with its own engine knobs). The engine
-	// settings KVBudget and Engine() read live on the Deployment's pool; the chip and
-	// cluster they are checked against live on the Scenario. Holding one and re-deriving
-	// the other would mean a caller could pair a deployment with a scenario it was not
-	// resolved against.
-	scenario      *scenario.Scenario
-	deployment    *deployment.Deployment
-	poolIndex     int
-	chipMemoryGiB float64
-	isMoE         bool
-	experts       int
-	expertsPerTok int
+	// It used to hold the Scenario, the Deployment and the pool index so it could index
+	// back into Pools[poolIndex]. That is a second source of truth for "which pool is
+	// this": the kernel's answer and this bookkeeping could disagree, and a disagreement
+	// prices a decode pool at a prefill pool's parallelism with nothing reporting it.
 }
 
 var _ sim.LatencyModel = (*Model)(nil)
@@ -99,11 +96,6 @@ var _ sim.LatencyModel = (*Model)(nil)
 const DecodeThreshold = 8
 
 // Open builds a kernel from a scenario file and adapts it.
-//
-// The loading sequence mirrors blis-latency-kernel's internal/harness.Open. It is
-// duplicated because Go forbids cross-module internal imports, and it is kept to loading
-// so that duplication carries no modelling risk: if these two ever disagree, the
-// disagreement is about which file was read, not about what a step costs.
 func Open(scenario string, r Repos) (*Model, error) {
 	return OpenPool(scenario, r, 0)
 }
@@ -112,95 +104,25 @@ func Open(scenario string, r Repos) (*Model, error) {
 //
 // A disaggregated scenario states a prefill pool and a decode pool, and the two differ in
 // the quantities that set step time -- tensor-parallel width, expert parallelism, the
-// engine's token budget. Pricing both from pool 0 would charge the decode pool the
-// prefill pool's parallelism, so a caller serving roles separately opens one model per
-// pool. Open is this function at pool 0, which is what a colocated scenario has.
-func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
-	sc, dep, err := loadBundle(filepath.Join(r.Scenarios, scenario))
-	if err != nil {
-		return nil, err
-	}
-	if poolIndex < 0 || poolIndex >= len(dep.Pools) {
-		return nil, fmt.Errorf("deployment %q states %d pool(s); pool %d was requested",
-			scenario, len(dep.Pools), poolIndex)
-	}
-	graph, err := schemas.LoadModelGraph(
-		filepath.Join(r.Catalog, "models", sc.Model, "graph.yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("model %q: %w", sc.Model, err)
-	}
-	chip, err := schemas.LoadChip(
-		filepath.Join(r.Catalog, "hardware", sc.Cluster.Hardware+".yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("hardware %q: %w", sc.Cluster.Hardware, err)
-	}
-	var fabric *hardware.Fabric
-	if sc.Cluster.Fabric != "" {
-		if fabric, err = schemas.LoadFabric(
-			filepath.Join(r.Catalog, "networks", sc.Cluster.Fabric+".yaml")); err != nil {
-			return nil, fmt.Errorf("fabric %q: %w", sc.Cluster.Fabric, err)
-		}
-	}
-	sets := make([]*coefficient.Set, 0, len(sc.Coefficients))
-	for _, name := range sc.Coefficients {
-		set, err := schemas.LoadCoefficientSet(
-			filepath.Join(r.Registry, "coefficients", name+".yaml"))
-		if err != nil {
-			return nil, fmt.Errorf("coefficient set %q: %w", name, err)
-		}
-		sets = append(sets, set)
-	}
-	devices, err := schemas.LoadStorageDevices(
-		filepath.Join(r.Catalog, "devices", "storage.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	pack := rules.Lookup(sc.EngineVersion)
-	if pack == nil {
-		return nil, fmt.Errorf("no engine rules for version %q; known versions are %v",
-			sc.EngineVersion, rules.Versions())
-	}
-	k, err := latencykernel.New(latencykernel.Inputs{
-		Scenario: sc, Deployment: dep, PoolIndex: poolIndex,
-		Model: graph, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: pack,
-	})
-	if err != nil {
-		return nil, err
-	}
-	m := New(k, chip.SMCount)
-	m.scenario = sc
-	m.deployment = dep
-	m.poolIndex = poolIndex
-	m.chipMemoryGiB = chip.MemoryGiB
-	m.isMoE = hasGroupedGEMM(graph)
-	m.experts, m.expertsPerTok = expertCounts(graph)
-	return m, nil
-}
-
-// hasGroupedGEMM reports whether any layer kind routes tokens through experts. It decides
-// the DP scaling in KVBudget, mirroring latency.CalculateKVBlocks' IsMoE gate: vLLM runs dp
-// independent EngineCores for an MoE model, each holding a full KV budget.
-func hasGroupedGEMM(g *model.Graph) bool {
-	experts, _ := expertCounts(g)
-	return experts > 0
-}
-
-// expertCounts returns the routed expert count and top-k of the first routed layer kind,
-// or zeroes where no layer routes.
+// engine's token budget. Pricing both from pool 0 would charge the decode pool the prefill
+// pool's parallelism, so a caller serving roles separately opens one model per pool. Open is
+// this function at pool 0, which is what a colocated scenario has.
 //
-// A caller that must state a model's expert geometry without an HF config reads it here.
-// The first routed kind is representative: a graph whose kinds disagreed on expert count
-// would describe two different MoE models in one file.
-func expertCounts(g *model.Graph) (experts, topK int) {
-	for _, kind := range g.LayerKinds {
-		for _, n := range kind.Nodes {
-			if n.Op == model.OpGroupedGEMM {
-				return n.Experts, n.TopK
-			}
-		}
+// The loading is blis-latency-kernel's own OpenPool. This used to reproduce that sequence --
+// scenario, deployment, model graph, chip, fabric, coefficient sets, storage devices, rules
+// pack -- because the kernel kept it in internal/ and Go forbids importing another module's
+// internal packages. The kernel now exports it, so the copy is gone: one answer to "which
+// files does this scenario imply", in the repository that owns the question.
+//
+// Delegating also gains the validation the kernel's New now runs. The copy here did not
+// validate, so a deployment whose pools do not fill its cluster, or whose local
+// data-parallel width does not divide a node, built a model and simulated.
+func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
+	k, err := latencykernel.OpenPool(scenario, r, poolIndex)
+	if err != nil {
+		return nil, err
 	}
-	return 0, 0
+	return New(k, k.Chip().SMCount), nil
 }
 
 // New adapts an already-built kernel. Exported so a caller that constructed a kernel
@@ -343,7 +265,7 @@ func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() 
 // The error text says "deployment" for the same reason -- a reader told the scenario lacks
 // a block_size would look in the wrong document.
 func (m *Model) Engine() (deployment.Engine, error) {
-	e := m.deployment.Pools[m.poolIndex].Engine
+	e := m.k.Engine()
 	if e.BlockSize <= 0 {
 		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
 	}
@@ -362,7 +284,7 @@ func (m *Model) Engine() (deployment.Engine, error) {
 // and KV budget, and splits requests disjointly across them. A single-instance simulator
 // modelling the aggregate must scale all three.
 func (m *Model) DataParallelWidth() int {
-	return m.deployment.Pools[m.poolIndex].Parallel.DP
+	return m.k.DataParallelWidth()
 }
 
 // StepEstimate exposes the kernel's full band for one batch: the overlap edge, the serialized
@@ -399,26 +321,28 @@ func (m *Model) Deployment() Deployment {
 	// exactly the v0.2.0 split: what traffic runs on which hardware is the problem, how
 	// it is laid out is the choice. Both are the pair this model was opened from, so the
 	// arms cannot describe different deployments.
-	p := m.deployment.Pools[m.poolIndex]
+	e := m.k.Engine()
 	return Deployment{
-		Model:          m.scenario.Model,
-		Hardware:       m.scenario.Cluster.Hardware,
-		TP:             p.Parallel.TP,
-		DP:             p.Parallel.DP,
-		ExpertParallel: p.Parallel.EnableExpertParallel,
-		MoE:            m.isMoE,
-		Experts:        m.experts,
-		ExpertsPerTok:  m.expertsPerTok,
-		Quantization:   p.Engine.Quantization,
-		CacheDType:     p.Engine.CacheDType,
+		Model:    m.k.ModelName(),
+		Hardware: m.k.Chip().Name,
+		TP:       m.k.TensorParallelWidth(),
+		DP:       m.k.DataParallelWidth(),
+		// The RESOLVED width, not the request: expert parallelism is on when the group is
+		// wider than one rank, which is what the kernel settled.
+		ExpertParallel: m.k.Resolved().ExpertParallelWidth > 1,
+		MoE:            m.k.Experts() > 0,
+		Experts:        m.k.Experts(),
+		ExpertsPerTok:  m.k.ExpertsPerToken(),
+		Quantization:   e.Quantization,
+		CacheDType:     e.CacheDType,
 		// The chip's total memory, which is what vLLM resolves its batch defaults from.
-		DeviceMemoryGiB: m.chipMemoryGiB,
+		DeviceMemoryGiB: m.k.Chip().MemoryGiB,
 		// Tri-state in the scenario, resolved here to the engine's default. vLLM caches
 		// unless told not to, so nil means ON and only an explicit false disables it.
-		PrefixCachingDisabled: p.Engine.EnablePrefixCaching != nil &&
-			!*p.Engine.EnablePrefixCaching,
-		BlockSize:  int64(p.Engine.BlockSize),
-		GPUMemUtil: p.Engine.GPUMemoryUtilization,
+		PrefixCachingDisabled: e.EnablePrefixCaching != nil &&
+			!*e.EnablePrefixCaching,
+		BlockSize:  int64(e.BlockSize),
+		GPUMemUtil: e.GPUMemoryUtilization,
 	}
 }
 

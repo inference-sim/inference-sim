@@ -74,21 +74,22 @@ type KVBudget struct {
 // simulation that silently ran with no KV would produce a number, and that number would be
 // meaningless.
 func (m *Model) KVBudget() (KVBudget, error) {
-	// Pools moved to the Deployment in blis-schemas v0.2.0: the layout and its engine
-	// knobs are the tunable configuration, where the Scenario fixes the problem.
-	pool := m.deployment.Pools[m.poolIndex]
-	util := pool.Engine.GPUMemoryUtilization
+	// From the kernel, which resolved this pool. Reading the Deployment document instead
+	// would mean holding it alongside and indexing back in -- a second answer to "which
+	// pool is this", which can disagree with the one the pricing used.
+	e := m.k.Engine()
+	util := e.GPUMemoryUtilization
 	if util <= 0 || util > 1 {
 		return KVBudget{}, fmt.Errorf(
 			"kernelmodel: gpu_memory_utilization must be in (0, 1], got %v", util)
 	}
-	blockSize := pool.Engine.BlockSize
+	blockSize := e.BlockSize
 	if blockSize <= 0 {
 		return KVBudget{}, fmt.Errorf(
 			"kernelmodel: block_size must be > 0, got %d", blockSize)
 	}
 
-	deviceBytes := int64(m.chipMemoryGiB * float64(gibToBytes))
+	deviceBytes := int64(m.k.Chip().MemoryGiB * float64(gibToBytes))
 	budget := int64(float64(deviceBytes) * util)
 	fixed := m.k.FixedBytes().Total()
 
@@ -105,7 +106,8 @@ func (m *Model) KVBudget() (KVBudget, error) {
 				"occupancy would look plausible and set the wrong resident batch",
 			float64(fixed)/float64(gibToBytes),
 			float64(deviceBytes)/float64(gibToBytes),
-			m.scenario.Model, pool.Parallel.TP, m.k.Resolved().ExpertParallelWidth)
+			m.k.ModelName(), m.k.TensorParallelWidth(),
+			m.k.Resolved().ExpertParallelWidth)
 	}
 
 	allocatable := budget - fixed
@@ -135,9 +137,9 @@ func (m *Model) KVBudget() (KVBudget, error) {
 	// DP scaling, matching latency.CalculateKVBlocks: dp independent EngineCores each hold
 	// a full budget and requests split disjointly across them. Gated on MoE for the same
 	// reason it is there -- a dense model is never scaled.
-	dp := pool.Parallel.DP
+	dp := m.k.DataParallelWidth()
 	scaled := false
-	if m.isMoE && dp > 1 {
+	if m.k.Experts() > 0 && dp > 1 {
 		blocks *= int64(dp)
 		scaled = true
 	}
