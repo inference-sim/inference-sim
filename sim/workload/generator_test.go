@@ -1939,7 +1939,7 @@ func TestGenerateWorkload_ConcurrencyClient_ZeroBudgetMeansNoFollowUps(t *testin
 
 	seed := wl.Requests[0]
 	seed.State = sim.StateCompleted
-	seed.ProgressIndex = int64(len(seed.InputTokens) + len(seed.OutputTokens))
+	seed.ProgressIndex = int64(len(seed.InputTokens) + len(seed.OutputTokens) - 1)
 	follow := sm.OnComplete(seed, 5000)
 	if follow != nil {
 		t.Errorf("expected nil follow-up with budget=0, got %d", len(follow))
@@ -2004,7 +2004,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 	// Simulate: seed 0 completes at tick 5000
 	seed0 := wl.Requests[0]
 	seed0.State = sim.StateCompleted
-	seed0.ProgressIndex = int64(len(seed0.InputTokens) + len(seed0.OutputTokens))
+	seed0.ProgressIndex = int64(len(seed0.InputTokens) + len(seed0.OutputTokens) - 1)
 	follow0 := sm.OnComplete(seed0, 5000)
 	if len(follow0) != 1 {
 		t.Fatalf("expected follow-up for user 0, got %d", len(follow0))
@@ -2028,7 +2028,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 	// Seed 1 completes → follow-up (budget: 4→3→2)
 	seed1 := wl.Requests[1]
 	seed1.State = sim.StateCompleted
-	seed1.ProgressIndex = int64(len(seed1.InputTokens) + len(seed1.OutputTokens))
+	seed1.ProgressIndex = int64(len(seed1.InputTokens) + len(seed1.OutputTokens) - 1)
 	follow1 := sm.OnComplete(seed1, 6000)
 	if len(follow1) != 1 {
 		t.Fatalf("expected follow-up for user 1")
@@ -2036,7 +2036,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 
 	// Follow-up for user 0 completes → follow-up (budget: 2→1)
 	follow0[0].State = sim.StateCompleted
-	follow0[0].ProgressIndex = int64(len(follow0[0].InputTokens) + len(follow0[0].OutputTokens))
+	follow0[0].ProgressIndex = int64(len(follow0[0].InputTokens) + len(follow0[0].OutputTokens) - 1)
 	follow0b := sm.OnComplete(follow0[0], 20_000)
 	if len(follow0b) != 1 {
 		t.Fatalf("expected follow-up for user 0 round 2")
@@ -2044,7 +2044,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 
 	// Follow-up for user 1 completes → follow-up (budget: 1→0)
 	follow1[0].State = sim.StateCompleted
-	follow1[0].ProgressIndex = int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens))
+	follow1[0].ProgressIndex = int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens) - 1)
 	follow1b := sm.OnComplete(follow1[0], 21_000)
 	if len(follow1b) != 1 {
 		t.Fatalf("expected follow-up for user 1 round 2")
@@ -2052,7 +2052,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 
 	// Budget exhausted — next completion should NOT generate follow-up
 	follow0b[0].State = sim.StateCompleted
-	follow0b[0].ProgressIndex = int64(len(follow0b[0].InputTokens) + len(follow0b[0].OutputTokens))
+	follow0b[0].ProgressIndex = int64(len(follow0b[0].InputTokens) + len(follow0b[0].OutputTokens) - 1)
 	followExhausted := sm.OnComplete(follow0b[0], 30_000)
 	if followExhausted != nil {
 		t.Errorf("BC-7: expected nil after budget exhausted, got %d follow-ups", len(followExhausted))
@@ -2089,7 +2089,7 @@ func TestConcurrencyMode_TimeoutCancelsSession(t *testing.T) {
 	}
 
 	seed.State = sim.StateCompleted
-	seed.ProgressIndex = 30
+	seed.ProgressIndex = 29 // 20 input + 10 emitted output, fully generated ⇒ InputLen+N-1
 	follow2 := sm.OnComplete(seed, 6000)
 	if follow2 != nil {
 		t.Errorf("BC-10: expected nil after session cancelled, got %d", len(follow2))

@@ -1314,14 +1314,14 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 	t.Run("full-output transitivity", func(t *testing.T) {
 		round0, sm := mk()
 		round0.State = sim.StateCompleted
-		round0.ProgressIndex = int64(round0.InputLen()) + 10 // full 10 output tokens
+		round0.ProgressIndex = int64(round0.InputLen()) + 10 - 1 // full 10 output tokens ⇒ InputLen+N-1
 		round1 := next(sm, round0, 1_000_000)
 		if round1.InputLen() != 150 { // 100 + 10 output + 40 delta
 			t.Fatalf("round1 len = %d, want 150", round1.InputLen())
 		}
 		round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
 		round1.State = sim.StateCompleted
-		round1.ProgressIndex = int64(round1.InputLen()) + 20
+		round1.ProgressIndex = int64(round1.InputLen()) + 20 - 1 // full 20 output tokens ⇒ InputLen+N-1
 		round2 := next(sm, round1, 2_000_000)
 		if round2.InputLen() != 195 { // 150 + 20 output + 25 delta
 			t.Fatalf("round2 len = %d, want 195", round2.InputLen())
@@ -1378,7 +1378,9 @@ func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
 
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) // full output generated
+		// Full output generated ⇒ the terminal index is InputLen+N-1 (every round of this
+		// trace carries a nonzero output, so the -1 never underflows past InputLen).
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) - 1
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
@@ -1452,7 +1454,8 @@ func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
 	sm := NewSessionManager(bps)
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		// Fully generated ⇒ terminal index InputLen+N-1 (every round here has N > 0).
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) - 1
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
@@ -1495,7 +1498,8 @@ func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
 	sm := NewSessionManager(bps)
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		// Fully generated ⇒ terminal index InputLen+N-1 (every round here has N > 0).
+		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) - 1
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
