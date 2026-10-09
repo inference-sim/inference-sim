@@ -9,7 +9,7 @@ import (
 
 // kvAutoCalcTestModel returns a model config with the fields CalculateKVBlocks
 // requires (IntermediateDim, VocabSize > 0), plus SwiGLU-family activation via
-// the KVCapacityParams. testRooflineModelConfig() lacks IntermediateDim/VocabSize,
+// the KVCapacityParams. testModelConfig() lacks IntermediateDim/VocabSize,
 // so per-instance KV tests use this dedicated config.
 func kvAutoCalcTestModel() sim.ModelConfig {
 	return sim.ModelConfig{
@@ -32,12 +32,12 @@ func kvAutoCalcTestParams() latency.KVCapacityParams {
 // valid model for per-instance KV recalculation.
 func baseSimCfgForKV(globalBlocks, blockSize int64, maxModelLen int64) sim.SimConfig {
 	return sim.SimConfig{
-		Horizon:       1_000_000,
-		Seed:          42,
-		KVCacheConfig: sim.NewKVCacheConfig(globalBlocks, blockSize, 0, 0, 0, 0),
-		BatchConfig:   sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs: sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcTestModel(), testRooflineHWCalib(),
+		Horizon:              1_000_000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(globalBlocks, blockSize, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(8, 2048, 0),
+		LatencyModelOverride: testFakeZeroQueueing(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcTestModel(), testHWCalib(),
 			"test-model", "H100", 1, 1, false, "", "roofline", maxModelLen),
 	}
 }
@@ -497,13 +497,13 @@ func TestApplyPerInstanceKVCapacity_EPGroupWidth(t *testing.T) {
 		tp             = 1
 	)
 	simCfg := sim.SimConfig{
-		Horizon:       1_000_000,
-		Seed:          42,
-		KVCacheConfig: sim.NewKVCacheConfig(globalSentinel, blockSize, 0, 0, 0, 0),
-		BatchConfig:   sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs: sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+		Horizon:              1_000_000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(globalSentinel, blockSize, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(8, 2048, 0),
+		LatencyModelOverride: testFakeZeroQueueing(),
 		// A per-replica config: own DP=1, expert parallelism on, logical EP-group width 2.
-		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testHWCalib(),
 			"test-moe", "H100", tp, 1, true, "", "roofline", 0,
 			sim.WithExpertParallelGroupDP(epGroupDP)),
 	}
@@ -558,14 +558,14 @@ func TestApplyPerInstanceKVCapacity_NoEPGroupWidthIsUnchanged(t *testing.T) {
 	}
 	withOption := sim.SimConfig{
 		Horizon: 1_000_000, Seed: 42,
-		KVCacheConfig: sim.NewKVCacheConfig(9999, 16, 0, 0, 0, 0),
-		BatchConfig:   sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs: sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+		KVCacheConfig:        sim.NewKVCacheConfig(9999, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(8, 2048, 0),
+		LatencyModelOverride: testFakeZeroQueueing(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testHWCalib(),
 			"test-moe", "H100", 1, 1, true, "", "roofline", 0, sim.WithExpertParallelGroupDP(1)),
 	}
 	without := withOption
-	without.ModelHardwareConfig = sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testRooflineHWCalib(),
+	without.ModelHardwareConfig = sim.NewModelHardwareConfig(kvAutoCalcMoEModel(), testHWCalib(),
 		"test-moe", "H100", 1, 1, true, "", "roofline", 0)
 
 	applyPerInstanceKVCapacity(&withOption, gpuMem, cfg, "H100")

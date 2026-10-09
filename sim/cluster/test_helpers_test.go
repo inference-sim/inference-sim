@@ -6,6 +6,8 @@ import (
 	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // testGenerateRequests replicates the exact algorithm from the old
@@ -68,9 +70,10 @@ func generateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
 	return int(math.Round(clampedVal))
 }
 
-// testRooflineModelConfig returns a minimal valid sim.ModelConfig for roofline tests.
-// Llama-3.1-8B-like values; used wherever tests need a valid model configuration.
-func testRooflineModelConfig() sim.ModelConfig {
+// testModelConfig returns a minimal valid sim.ModelConfig (Llama-3.1-8B-like values)
+// for tests that need one -- e.g. PD KV-transfer sizing reads it. Step time comes from
+// the fake latency model (testFakeLatency), never from these values.
+func testModelConfig() sim.ModelConfig {
 	return sim.ModelConfig{
 		NumLayers:     32,
 		HiddenDim:     4096,
@@ -80,15 +83,28 @@ func testRooflineModelConfig() sim.ModelConfig {
 	}
 }
 
-// testRooflineHWCalib returns a minimal valid sim.HardwareCalib for roofline tests.
-// H100-like values; used wherever tests need a valid hardware configuration.
-func testRooflineHWCalib() sim.HardwareCalib {
+// testHWCalib returns a minimal valid sim.HardwareCalib (H100-like values) for tests
+// that need one. Step time comes from the fake latency model, never from these values.
+func testHWCalib() sim.HardwareCalib {
 	return sim.HardwareCalib{
 		TFlopsPeak: 989.0,
 		BwPeakTBs:  3.35,
 		MfuPrefill: 0.55,
 		MfuDecode:  0.30,
 	}
+}
+
+// testFakeLatency is the latency model every cluster behavior test prices steps with:
+// the deterministic, stateless fake from sim/internal/testutil (default coefficients).
+// Set it as SimConfig.LatencyModelOverride so instances never build a pricing backend.
+func testFakeLatency() sim.LatencyModel { return fakelatency.New() }
+
+// testFakeZeroQueueing is testFakeLatency with no arrival-to-queue delay, for tests that
+// need a request to enter the wait queue at its arrival tick.
+func testFakeZeroQueueing() sim.LatencyModel {
+	c := testutil.DefaultFakeLatency()
+	c.QueueingTicks = 0
+	return fakelatency.WithCoeffs(c)
 }
 
 // newTestRequests creates test requests matching the old newTestWorkload(n) behavior:

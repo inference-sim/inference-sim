@@ -48,8 +48,7 @@ func newTestSimulatorForHook(t *testing.T) *Simulator {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 1000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "", 1, 1, false, "", "", 0),
 	})
 }
 
@@ -137,8 +136,7 @@ func TestSimulator_ProgressHook_FinalSnapshotClockClamped(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 1000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	})
 	sim.InjectArrival(newTestRequest("req-1", 0, 100, int(math.MaxInt16)))
 
@@ -224,8 +222,7 @@ func TestSimulator_ProgressHook_FreshSlicePerCall(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 1000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "", 1, 1, false, "", "", 0),
 	})
 	s.InjectArrival(newTestRequest("req-1", 0, 100, int(math.MaxInt16)))
 

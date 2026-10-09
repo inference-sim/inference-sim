@@ -11,12 +11,12 @@ import (
 func TestResolvePoolConfig_NoOverrides_ReturnsGlobalUnchanged(t *testing.T) {
 	// BC-P2-1: zero-valued overrides → identity
 	global := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
+		Horizon:              1000000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
 	}
 	overrides := PoolOverrides{} // all nil/zero
 
@@ -49,12 +49,12 @@ func TestResolvePoolConfig_NoOverrides_ReturnsGlobalUnchanged(t *testing.T) {
 func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	// BC-P2-2: each override field applies independently
 	global := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
+		Horizon:              1000000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
 	}
 
 	tp := 2
@@ -100,10 +100,10 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 
 func TestResolvePoolConfig_PartialOverrides_OnlySpecifiedFieldsChange(t *testing.T) {
 	global := sim.SimConfig{
-		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
+		KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
 	}
 
 	tp := 8
@@ -131,10 +131,10 @@ func TestResolvePoolConfig_PartialOverrides_OnlySpecifiedFieldsChange(t *testing
 
 func TestResolvePoolConfig_DoesNotMutateGlobal(t *testing.T) {
 	global := sim.SimConfig{
-		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+		KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 	}
 	origTP := global.TP
 
@@ -151,10 +151,10 @@ func TestResolveConfigForRole_Prefill(t *testing.T) {
 	tp := 8
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 		},
 		PrefillOverrides: PoolOverrides{TP: &tp},
 	}
@@ -169,10 +169,10 @@ func TestResolveConfigForRole_Decode(t *testing.T) {
 	tp := 2
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 		},
 		DecodeOverrides: PoolOverrides{TP: &tp},
 	}
@@ -193,10 +193,10 @@ func TestResolveConfigForRole_Shared(t *testing.T) {
 	decodeTP := 4
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 16, 1, false, "", "", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 16, 1, false, "", "", 0),
 		},
 		PrefillOverrides: PoolOverrides{TP: &prefillTP},
 		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
@@ -212,10 +212,10 @@ func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 	tp := 8
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 		},
 		PrefillOverrides: PoolOverrides{TP: &tp},
 	}
@@ -236,12 +236,12 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 8, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -288,12 +288,12 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -330,12 +330,12 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -391,10 +391,10 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 // R7: companion invariant test for the golden-value tests above.
 func TestResolvePoolConfig_Idempotent(t *testing.T) {
 	global := sim.SimConfig{
-		KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
+		KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 8192),
 	}
 
 	tp := 8
@@ -556,12 +556,12 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 	}
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:            numInstances,
 		PrefillInstances:        prefill,
@@ -610,7 +610,7 @@ func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
 		Horizon:             1000000,
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0), // 10000 blocks × 16 = 160000 tokens
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "", 131072),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 131072),
 	}
 
 	// AND per-pool override with smaller TotalKVBlocks (smaller GPU) and auto-capped MaxModelLen
@@ -691,10 +691,10 @@ func TestResolveConfigForRole_CrossPoolIsolation(t *testing.T) {
 	decodeTP := 2
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 		},
 		PrefillOverrides: PoolOverrides{TP: &prefillTP},
 		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
@@ -720,8 +720,8 @@ func TestResolveConfigForRole_SLOPriorityOverrides_Propagates(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
 			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:        sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "", 0),
 			SLOPriorityOverrides: overrides,
 		},
 	}
@@ -756,12 +756,12 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 	zero := 0
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:     4,
 		PrefillInstances: 2,
@@ -795,12 +795,12 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:    3,
 		SharedInstances: 3, // all instances are prefill-decode shared-role
@@ -831,12 +831,12 @@ func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 func TestNewClusterSimulator_PureSharedWithTransferContention(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:         2,
 		SharedInstances:      2,
@@ -857,12 +857,12 @@ func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
 	zero := 0
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:     4,
 		PrefillInstances: 2,
@@ -905,12 +905,12 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 	}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -940,7 +940,7 @@ func TestResolvePoolConfig_MoECommBackend_PerRole(t *testing.T) {
 	global := sim.SimConfig{
 		KVCacheConfig: sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
 		BatchConfig:   sim.NewBatchConfig(256, 2048, 0),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(),
 			"test-model", "H100", 4, 1, false, "allgather_reducescatter", "trained-physics", 8192),
 	}
 

@@ -12,12 +12,12 @@ import (
 func newTestDeploymentConfigWithModel(numInstances int, model string) DeploymentConfig {
 	cfg := newTestDeploymentConfig(numInstances)
 	cfg.SimConfig = sim.SimConfig{
-		Horizon:             math.MaxInt64,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), model, "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:              math.MaxInt64,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), model, "H100", 1, 1, false, "", "roofline", 0),
 	}
 	return cfg
 }

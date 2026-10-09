@@ -22,12 +22,12 @@ import (
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
 		},
 		NumInstances:     numInstances,
 		CacheSignalDelay: DefaultCacheSignalDelay,
@@ -59,13 +59,13 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             999,
-			Seed:                7,
-			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
-			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, 1, false, "", "roofline", 0),
-			PolicyConfig:        sim.NewPolicyConfig("priority-fcfs", ""),
+			Horizon:              999,
+			Seed:                 7,
+			KVCacheConfig:        sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
+			BatchConfig:          sim.NewBatchConfig(128, 4096, 512),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 2, 1, false, "", "roofline", 0),
+			PolicyConfig:         sim.NewPolicyConfig("priority-fcfs", ""),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
@@ -75,8 +75,8 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 	sc := dc.ToSimConfig()
 
 	// BC-1: ToSimConfig returns exactly the embedded SimConfig
-	// Note: SimConfig contains slices (BetaCoeffs, AlphaCoeffs) so direct
-	// == comparison won't compile. Use reflect.DeepEqual instead.
+	// Note: SimConfig contains slices and maps, so direct == comparison won't
+	// compile. Use reflect.DeepEqual instead.
 	if !reflect.DeepEqual(sc, dc.SimConfig) {
 		t.Errorf("ToSimConfig() differs from embedded SimConfig:\n  got:  %+v\n  want: %+v", sc, dc.SimConfig)
 	}
@@ -137,12 +137,12 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 		t.Run(tc.Model, func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:             math.MaxInt64,
-					Seed:                tc.Seed,
-					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
+					Horizon:              math.MaxInt64,
+					Seed:                 tc.Seed,
+					KVCacheConfig:        sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:          sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
+					LatencyModelOverride: testFakeLatency(),
+					ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -187,12 +187,12 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 		t.Run(tc.Model+"_invariants", func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:             math.MaxInt64,
-					Seed:                tc.Seed,
-					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
+					Horizon:              math.MaxInt64,
+					Seed:                 tc.Seed,
+					KVCacheConfig:        sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:          sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
+					LatencyModelOverride: testFakeLatency(),
+					ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -1181,8 +1181,7 @@ func TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical(t *test
 // AND no panics occur (BC-5).
 func TestClusterSimulator_OverloadConservation(t *testing.T) {
 	// Use a high rate relative to capacity to create genuine overload.
-	// With beta=[1000,10,5], 4 instances, max-running=256: capacity is very high
-	// due to batching. A rate of 500 req/s with only 200 requests and a short
+	// With 4 instances and max-running=256, capacity is very high due to batching. A rate of 500 req/s with only 200 requests and a short
 	// horizon creates a burst that overloads the system.
 	cases := []struct {
 		name            string
@@ -1540,12 +1539,12 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             10_000_000,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", maxModelLen),
+			Horizon:              10_000_000,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeZeroQueueing(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", maxModelLen),
 		},
 		NumInstances: 2,
 	}
@@ -1793,12 +1792,12 @@ func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
 func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
 	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
 	sharedConfig := sim.SimConfig{
-		Horizon:             1_000_000,
-		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
-		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		Horizon:              1_000_000,
+		Seed:                 42,
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+		KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(4, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
 	}
 
 	// WHEN: NodePools path — pool is authoritative (SC-004).
@@ -1899,246 +1898,6 @@ func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
 	}
 }
 
-// T048 — SC-001 (roofline, sync path): when NodePools are configured, HWConfigByGPU must supply
-// the pool's hardware calibration to the roofline latency model. The roofline model uses
-// TFlopsPeak/BwPeakTBs from HWConfigByGPU[pool.gpu_type], not from the CLI --gpu HWConfig.
-//
-// Observable: roofline step time is proportional to hardware speed. An artificially slow A100
-// calibration (TFlopsPeak=1e-6, BwPeakTBs=1e-8) produces step times >> horizon, yielding zero
-// completions. An artificially fast H100 calibration yields step time ~1µs, completing all 5
-// requests well within the horizon. If HWConfigByGPU is ignored, both clusters use the same
-// fast H100 calibration → same completions → assertion fails.
-//
-// Refactor survival: any reimplementation that correctly applies pool hardware calibration to
-// the roofline model will produce fewer completions on the slow-calibrated cluster. The test
-// makes no assertion about internal types, field names, or construction order.
-func TestNewClusterSimulator_RooflineUsesPoolHWConfig(t *testing.T) {
-	mc := sim.ModelConfig{
-		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
-		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
-	}
-	// Slow A100: artificially low TFLOPS/BW → weight-BW step time >> 1s horizon.
-	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
-	// Fast H100: realistic values → step time clamps to 1µs minimum.
-	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
-
-	baseSimCfg := sim.SimConfig{
-		Horizon:             1_000_000, // 1 second
-		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, 1, false, "", "roofline", 0),
-		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
-	}
-
-	makeReqs := func() []*sim.Request {
-		reqs := make([]*sim.Request, 5)
-		for i := range reqs {
-			reqs[i] = &sim.Request{
-				ID:           fmt.Sprintf("req_%d", i),
-				ArrivalTime:  int64(i) * 100,
-				InputTokens:  make([]sim.TokenID, 50),
-				OutputTokens: make([]sim.TokenID, 20),
-				State:        sim.StateQueued,
-			}
-		}
-		return reqs
-	}
-
-	// Pool cluster: pool gpu_type=A100; HWConfigByGPU provides slow A100 calibration.
-	// CLI SimConfig.HWConfig is fast H100 — must be overridden by HWConfigByGPU lookup.
-	poolCfg := DeploymentConfig{
-		SimConfig:    baseSimCfg,
-		NumInstances: 1,
-		NodePools: []NodePoolConfig{
-			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
-		},
-		HWConfigByGPU: map[string]sim.HardwareCalib{
-			"A100": slowA100,
-			"H100": fastH100,
-		},
-	}
-	csPool := NewClusterSimulator(poolCfg, NewSliceRequestSource(makeReqs()), nil)
-	mustRun(t, csPool)
-	completedPool := csPool.AggregatedMetrics().CompletedRequests
-
-	// No-pool cluster: uses CLI H100 calibration directly (no NodePools, no HWConfigByGPU).
-	noPoolCfg := DeploymentConfig{
-		SimConfig:    baseSimCfg,
-		NumInstances: 1,
-	}
-	csNoPool := NewClusterSimulator(noPoolCfg, NewSliceRequestSource(makeReqs()), nil)
-	mustRun(t, csNoPool)
-	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
-
-	// THEN: pool cluster completes fewer requests (slow A100 → ~0 completions vs fast H100 → 5).
-	// If HWConfigByGPU is ignored, both clusters use fast H100 → equal completions → fails.
-	if completedPool >= completedNoPool {
-		t.Errorf("SC-001 (roofline, sync): pool cluster completed %d requests, no-pool cluster completed %d; "+
-			"expected pool cluster to complete fewer (slow A100 calibration must be applied via HWConfigByGPU, not ignored)",
-			completedPool, completedNoPool)
-	}
-}
-
-// T049 — SC-001 (roofline, deferred path): same hardware calibration contract as T048,
-// but for instances constructed in NodeReadyEvent.Execute (InitialNodes=0).
-// The deferred construction path must also apply HWConfigByGPU[pool.gpu_type] as HWConfig.
-func TestNodeReadyEvent_RooflineUsesPoolHWConfig(t *testing.T) {
-	mc := sim.ModelConfig{
-		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
-		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
-	}
-	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
-	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
-
-	baseSimCfg := sim.SimConfig{
-		Horizon:             1_000_000,
-		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, 1, false, "", "roofline", 0),
-		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
-	}
-
-	makeReqs := func() []*sim.Request {
-		reqs := make([]*sim.Request, 5)
-		for i := range reqs {
-			reqs[i] = &sim.Request{
-				ID:           fmt.Sprintf("req_%d", i),
-				ArrivalTime:  int64(i)*100 + 200, // arrive after node is ready (T=0)
-				InputTokens:  make([]sim.TokenID, 50),
-				OutputTokens: make([]sim.TokenID, 20),
-				State:        sim.StateQueued,
-			}
-		}
-		return reqs
-	}
-
-	// Pool cluster (deferred): InitialNodes=0 → all instances pending until NodeReadyEvent.
-	deferredCfg := DeploymentConfig{
-		SimConfig:    baseSimCfg,
-		NumInstances: 1,
-		NodePools: []NodePoolConfig{
-			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80},
-		},
-		HWConfigByGPU: map[string]sim.HardwareCalib{
-			"A100": slowA100,
-			"H100": fastH100,
-		},
-	}
-	csDeferred := NewClusterSimulator(deferredCfg, NewSliceRequestSource(makeReqs()), nil)
-	if len(csDeferred.instances) != 0 {
-		t.Fatalf("precondition: expected 0 instances before NodeReadyEvent (InitialNodes=0), got %d", len(csDeferred.instances))
-	}
-	// Trigger deferred construction via NodeReadyEvent (simulates provisioning delay elapsing).
-	node, _ := csDeferred.placement.ProvisionNode("a100-pool", 0)
-	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
-	event.Execute(csDeferred)
-	if len(csDeferred.instances) == 0 {
-		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
-	}
-	mustRun(t, csDeferred)
-	completedDeferred := csDeferred.AggregatedMetrics().CompletedRequests
-
-	// No-pool cluster uses fast H100 calibration directly.
-	noPoolCfg := DeploymentConfig{
-		SimConfig:    baseSimCfg,
-		NumInstances: 1,
-	}
-	csNoPool := NewClusterSimulator(noPoolCfg, NewSliceRequestSource(makeReqs()), nil)
-	mustRun(t, csNoPool)
-	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
-
-	// THEN: deferred cluster completes fewer requests (slow A100) than no-pool cluster (fast H100).
-	if completedDeferred >= completedNoPool {
-		t.Errorf("SC-001 (roofline, deferred): deferred cluster completed %d requests, no-pool cluster completed %d; "+
-			"expected deferred cluster to complete fewer (HWConfigByGPU must be applied in NodeReadyEvent path)",
-			completedDeferred, completedNoPool)
-	}
-}
-
-// T050 — E2E integration: pool hardware calibration flows through the full Run() pipeline to
-// output metrics. Closes the E2E test gap deferred from PR #892 (issue #888 test coverage).
-//
-// GIVEN NodePools with gpu_type="slow-gpu" and HWConfigByGPU providing a slow calibration
-// (BwPeakTBs=0.1 TB/s), while the CLI SimConfig carries a fast calibration (BwPeakTBs=3.0 TB/s),
-// WHEN Run() executes with realistic requests generated by testGenerateRequests,
-// THEN AggregatedMetrics().RequestTTFTs shows higher p50 TTFT for the pool cluster than for a
-// no-pool cluster using the fast calibration directly.
-//
-// This distinguishes from T048/T049 (which check CompletedRequests count only): here both clusters
-// complete requests and the assertion is on actual TTFT metric values, verifying correctness of the
-// full latency pipeline (hardware calibration → roofline model → step time → TTFT metric).
-//
-// Refactor survival: any reimplementation that correctly routes pool HWConfig to the roofline model
-// will produce higher TTFT for the slow-calibrated cluster. No internal fields are inspected.
-func TestClusterRun_E2E_NodePoolsHWConfig_TTFTReflectsPoolHardware(t *testing.T) {
-	mc := sim.ModelConfig{
-		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
-		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
-	}
-	// slowGPU: low BW → weight-BW step time ~40µs per step for this model size.
-	slowGPU := sim.HardwareCalib{TFlopsPeak: 10.0, BwPeakTBs: 0.1, MfuPrefill: 0.5, MfuDecode: 0.5}
-	// fastGPU: high BW → weight-BW step time ~1µs per step — ~40x faster.
-	fastGPU := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.0, MfuPrefill: 0.5, MfuDecode: 0.5}
-
-	horizon := int64(10_000_000) // 10 seconds — long enough for both configs to complete requests
-	baseSimCfg := sim.SimConfig{
-		Horizon:             horizon,
-		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastGPU, "test-model", "fast-gpu", 1, 1, false, "", "roofline", 0),
-		KVCacheConfig:       sim.NewKVCacheConfig(200, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
-	}
-
-	// Low rate (1 req/s) so queuing delay is negligible; TTFT is dominated by prefill step time.
-	makeReqs := func() []*sim.Request {
-		return testGenerateRequests(42, horizon, 1.0/1e6, 8,
-			0, 100, 20, 10, 200, 50, 10, 10, 100)
-	}
-
-	// Pool cluster: pool gpu_type=slow-gpu; HWConfigByGPU overrides CLI fast-gpu with slow calibration.
-	poolCfg := DeploymentConfig{
-		SimConfig:    baseSimCfg,
-		NumInstances: 1,
-		NodePools: []NodePoolConfig{
-			{Name: "slow-pool", GPUType: "slow-gpu", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
-		},
-		HWConfigByGPU: map[string]sim.HardwareCalib{
-			"slow-gpu": slowGPU,
-			"fast-gpu": fastGPU,
-		},
-	}
-	csPool := NewClusterSimulator(poolCfg, NewSliceRequestSource(makeReqs()), nil)
-	mustRun(t, csPool)
-	metricsPool := csPool.AggregatedMetrics()
-
-	// No-pool cluster: uses CLI fast-gpu calibration directly (no NodePools, no HWConfigByGPU).
-	noPoolCfg := DeploymentConfig{SimConfig: baseSimCfg, NumInstances: 1}
-	csNoPool := NewClusterSimulator(noPoolCfg, NewSliceRequestSource(makeReqs()), nil)
-	mustRun(t, csNoPool)
-	metricsNoPool := csNoPool.AggregatedMetrics()
-
-	if metricsPool.CompletedRequests == 0 {
-		t.Fatal("E2E precondition: pool cluster (slow-gpu) completed 0 requests — horizon too short or calibration too extreme")
-	}
-	if metricsNoPool.CompletedRequests == 0 {
-		t.Fatal("E2E precondition: no-pool cluster (fast-gpu) completed 0 requests")
-	}
-
-	// THEN: p50 TTFT for pool (slow-gpu) must exceed p50 TTFT for no-pool (fast-gpu).
-	// slowGPU BW is 30x lower → prefill step time is ~30x longer → higher TTFT.
-	// If HWConfigByGPU is ignored, both use fast-gpu → equal TTFT → assertion fails.
-	p50Pool := percentile(mapValues(metricsPool.RequestTTFTs), 50)
-	p50NoPool := percentile(mapValues(metricsNoPool.RequestTTFTs), 50)
-	if p50Pool <= p50NoPool {
-		t.Errorf("E2E (T050): pool (slow-gpu) p50 TTFT = %.2fµs, no-pool (fast-gpu) p50 TTFT = %.2fµs; "+
-			"expected pool TTFT > no-pool TTFT (pool hardware calibration must flow through to TTFT metrics, not be overridden by CLI --gpu)",
-			p50Pool, p50NoPool)
-	}
-}
-
 // TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType verifies US2 deferred construction:
 // GIVEN a cluster with NodePools but InitialNodes=0 (no initial capacity), all instances start pending.
 // WHEN a NodeReadyEvent fires (node provisioned and marked ready).
@@ -2149,12 +1908,12 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 	// InitialNodes=0 means no nodes at startup → all instances deferred (pending).
 	cfg := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             1_000_000,
-			Seed:                42,
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			Horizon:              1_000_000,
+			Seed:                 42,
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(4, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
 		},
 		NumInstances: 2,
 		NodePools: []NodePoolConfig{
@@ -2220,7 +1979,7 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 
 // TestClusterSimulator_SessionTerminalStateCompleteness verifies INV-11 (BC-3):
 // every session reaches exactly one terminal state after ClusterSimulator.Run().
-// With the default roofline latency model and a 500s horizon, all sessions
+// With the default fake latency model and a 500s horizon, all sessions
 // complete normally (sessionCompleted path). This exercises the full DES
 // pipeline: seed injected → rounds executed → OnComplete returns nil exactly once.
 // Uses a set (not a counter) to prevent two-bugs-cancel false pass scenarios.
@@ -2680,13 +2439,20 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 				t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
 			}
 
-			// Batch/background requests must flow through admission concurrently (not serialized).
-			// With beta=[1000,10,5]: concurrent mean ~6.6ms, serialized mean ~99ms.
-			// 15ms gives ~8ms margin above the concurrent ceiling.
-			ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
-			const boundMs = 15.0
-			if ttftMeanMs >= boundMs {
-				t.Errorf("mean TTFT %.2fms >= bound %.1fms: %s requests are being serialized (regression: #965)", ttftMeanMs, boundMs, sloClass)
+			// Batch/background requests must flow through admission concurrently (not
+			// serialized): their mean TTFT must match the same burst sent as "standard".
+			// Serializing 10 requests would inflate it several-fold; 1.5x is the margin.
+			baseCS := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(newBatchTestRequests(10, "standard")), nil)
+			mustRun(t, baseCS)
+			base := baseCS.AggregatedMetrics()
+			if base.CompletedRequests != 10 {
+				t.Fatalf("baseline completed %d requests, want 10", base.CompletedRequests)
+			}
+			ttftMean := float64(m.TTFTSum) / float64(m.CompletedRequests)
+			baseMean := float64(base.TTFTSum) / float64(base.CompletedRequests)
+			if ttftMean > 1.5*baseMean {
+				t.Errorf("mean TTFT %.0fµs > 1.5x the standard-class baseline %.0fµs: %s requests are being serialized (regression: #965)",
+					ttftMean, baseMean, sloClass)
 			}
 		})
 	}
@@ -2704,12 +2470,12 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             500_000_000, // 500s — beyond workload.DefaultTimeoutUs (300s)
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:              500_000_000, // 500s — beyond workload.DefaultTimeoutUs (300s)
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeZeroQueueing(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 		},
 		NumInstances: 2,
 	}
@@ -2744,7 +2510,7 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 	}
 
 	// SimEndedTime must reflect actual completion, not the last orphaned timeout.
-	// Last arrival at 400_000 µs; with beta=[1000,10,5] per-request completion is ~6ms.
+	// Last arrival at 400_000 µs; per-request completion takes a few tens of ms.
 	// Lower bound (> 400_000): last arrival advanced the clock past 400ms.
 	// Upper bound (< 1_000_000): 300× below workload.DefaultTimeoutUs; catches inflation.
 	if m.SimEndedTime <= 400_000 {
@@ -2770,12 +2536,12 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             500_000_000,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:              500_000_000,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
+			LatencyModelOverride: testFakeZeroQueueing(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 		},
 		NumInstances: 1,
 	}

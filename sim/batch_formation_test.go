@@ -13,8 +13,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	if bf == nil {
@@ -49,8 +48,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 50, 0), // tight token budget
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -103,8 +101,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(2, 10000, 0), // tight batch size limit
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -159,8 +156,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -226,8 +222,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // very tight
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -282,8 +277,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0), // very small
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -328,8 +322,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // limited KV blocks
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -438,8 +431,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -539,7 +531,6 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 	}
 
 	// GIVEN parameters matching tmp/run.sh reproducer
-	// Note: NewLatencyCoeffs takes (betaCoeffs, alphaCoeffs)
 	cfg := SimConfig{
 		Horizon: 120000000,
 		Seed:    7,
@@ -553,11 +544,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			2048, // max scheduled tokens
 			0,    // long prefill threshold (disabled)
 		),
-		LatencyCoeffs: NewLatencyCoeffs(
-			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta
-			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
-		),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 		PolicyConfig:        NewPolicyConfig("fcfs", ""),
 	}
 

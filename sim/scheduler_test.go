@@ -244,8 +244,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 		PolicyConfig:        NewPolicyConfig("priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)
@@ -294,8 +293,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // force sequential: only 1 at a time
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 		// Scheduler left empty (defaults to fcfs)
 	}
 	s := mustNewSimulator(t, cfg)
@@ -355,18 +353,18 @@ func TestScheduler_EmptyQueue_NoOp(t *testing.T) {
 
 func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 	// BC-4 + BC-5: SJF should schedule shorter input request first.
-	// Uses zero alpha delay so both requests queue simultaneously at tick 0,
+	// Uses a zero-queueing fake so both requests queue simultaneously at tick 0,
 	// and MaxNumSeqs=256 so both enter the batch in the same step.
 	// SJF sorts short before long; short request gets lower E2E latency
 	// because it has fewer prefill tokens to process.
 	cfg := SimConfig{
-		Horizon:             10000000,
-		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 100}), // zero queueing delay so both queue at arrival time
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("sjf", ""),
+		Horizon:              10000000,
+		Seed:                 42,
+		KVCacheConfig:        NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:          NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: fakeZeroQueueing(),
+		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		PolicyConfig:         NewPolicyConfig("sjf", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -417,8 +415,7 @@ func TestSimulator_PriorityFCFS_ArrivalTimeTiebreak_OlderFirst(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // only 1 slot: forces sequential scheduling
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
 		PolicyConfig:        NewPolicyConfig("priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)

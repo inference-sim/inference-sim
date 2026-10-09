@@ -151,12 +151,12 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	// 5 blocks total. Reservation A consumes all 5. Reservation B requires
 	// >=1 block and therefore must fail until A is released.
 	cfg := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:              1000000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -202,12 +202,12 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 // blocks return to the free pool and are available for another request.
 func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 	cfg := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(10, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:              1000000,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(10, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // Issue #1513: the PD-disaggregated parent (client-visible) E2E under-counted
@@ -244,25 +246,23 @@ func TestPDParentE2E_CompletionTimeMetricConsistency(t *testing.T) {
 	}
 }
 
-// newTestColocatedTrainedPhysicsConfig builds a single-instance (non-PD)
+// newTestColocatedConfig builds a single-instance (non-PD)
 // deployment whose latency parameters MATCH newTestDisaggDeploymentConfig
-// (same betas/alphas/model/hardware). It is the parity baseline: a PD request
+// (same fake latency model, model and hardware). It is the parity baseline: a PD request
 // must not report a SMALLER client-visible E2E than the identical request served
 // co-located, because PD adds a real KV-transfer cost on top of the same
 // prefill+decode work.
-func newTestColocatedTrainedPhysicsConfig() DeploymentConfig {
+func newTestColocatedConfig() DeploymentConfig {
 	modelCfg := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
-	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphas := []float64{100, 1, 100}
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+			Horizon:              math.MaxInt64,
+			Seed:                 42,
+			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyModelOverride: testFakeLatency(),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
 		},
 		NumInstances:  1,
 		RoutingPolicy: "round-robin",
@@ -287,21 +287,39 @@ func newTestColocatedTrainedPhysicsConfig() DeploymentConfig {
 func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 	// Guard the parity premise: the PD and co-located configs must use identical
 	// latency parameters, otherwise a PD-vs-non-PD E2E comparison is meaningless.
-	// This enforces the "same betas/alphas/model/hardware" claim in
-	// newTestColocatedTrainedPhysicsConfig's doc comment rather than trusting it,
+	// This enforces the "same latency model/model/hardware" claim in
+	// newTestColocatedConfig's doc comment rather than trusting it,
 	// so the two helpers cannot silently drift apart.
+	//
+	// Both configs price every step at the same constant cost, whatever its
+	// prefill/decode mix (the shape of the trained-physics fixture this test was written
+	// against). Under a composition-dependent model the law below does not hold today:
+	// detectPrefillCompletions observes a prefill sub-request's completion at the START
+	// of its prefill step, so the PD path's critical path carries the decode step
+	// instead of the prefill step, and PD wins whenever prefill costs more than decode.
+	stepModel := fakelatency.WithCoeffs(testutil.FakeLatency{
+		BaseTicks: 200, QueueingTicks: 100, OutputTokenProcessingTicks: 100, PostDecodeOverheadTicks: 1,
+	})
 	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	coloCfg := newTestColocatedTrainedPhysicsConfig()
-	if !reflect.DeepEqual(pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs) {
-		t.Fatalf("PD and co-located configs have diverging latency coefficients (%+v vs %+v) — parity comparison invalid",
-			pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs)
+	pdCfg.LatencyModelOverride = stepModel
+	coloCfg := newTestColocatedConfig()
+	coloCfg.LatencyModelOverride = stepModel
+	if !reflect.DeepEqual(pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride) {
+		t.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
+			pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride)
 	}
 	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
 		t.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
 	}
 
 	// PD run (single request so there is no queueing skew vs the baseline).
-	mPD, csPD := runShortOutputPD(t, 1, 1)
+	pdReq := &sim.Request{
+		ID: "request_0", InputTokens: make([]sim.TokenID, 20),
+		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
+	}
+	csPD := NewClusterSimulator(pdCfg, NewSliceRequestSource([]*sim.Request{pdReq}), nil)
+	mustRun(t, csPD)
+	mPD := csPD.AggregatedMetrics()
 	var pdE2E, transferCost float64
 	var found bool
 	for _, parent := range csPD.ParentRequests() {
@@ -321,7 +339,7 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 		ID: "request_0", InputTokens: make([]sim.TokenID, 20),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
-	ncs := NewClusterSimulator(newTestColocatedTrainedPhysicsConfig(), NewSliceRequestSource([]*sim.Request{nreq}), nil)
+	ncs := NewClusterSimulator(coloCfg, NewSliceRequestSource([]*sim.Request{nreq}), nil)
 	mustRun(t, ncs)
 	nonPDE2E, ok := ncs.AggregatedMetrics().RequestE2Es["request_0"]
 	if !ok {
@@ -369,14 +387,14 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
 
 	tests := []struct {
-		name          string
-		parent        *ParentRequest
-		setDecodeE2E  bool    // set RequestE2Es[dec] (decode sub-request's own E2E)
-		decodeOwnE2E  float64 // value for RequestE2Es[dec]
-		setDelay      bool    // set RequestSchedulingDelays[dec]
-		decodeDelay   int64   // value for the decode scheduling delay
-		wantEntry     bool    // whether a parent-keyed E2E entry is expected
-		wantE2E       float64 // expected projected E2E (when wantEntry)
+		name           string
+		parent         *ParentRequest
+		setDecodeE2E   bool    // set RequestE2Es[dec] (decode sub-request's own E2E)
+		decodeOwnE2E   float64 // value for RequestE2Es[dec]
+		setDelay       bool    // set RequestSchedulingDelays[dec]
+		decodeDelay    int64   // value for the decode scheduling delay
+		wantEntry      bool    // whether a parent-keyed E2E entry is expected
+		wantE2E        float64 // expected projected E2E (when wantEntry)
 		wantCompletion float64 // expected RequestCompletionTimes[pid] (== ArrivalTime + E2E)
 	}{
 		{
@@ -446,7 +464,7 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 			},
 			setDecodeE2E: true, decodeOwnE2E: 301,
-			setDelay: false,
+			setDelay:  false,
 			wantEntry: true, wantE2E: 5000, wantCompletion: 5000,
 		},
 		{
@@ -551,7 +569,7 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 				ID: "s0", PrefillSubReqID: "s0_prefill", DecodeSubReqID: "s0_decode",
 				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
 				TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
-				DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+				DecodeSubReq: &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 			},
 			setDecodeMaps: true, wantEntries: true,
 		},
@@ -680,7 +698,7 @@ func TestPDParentMetrics_TTFTSumConsistentAcrossDrop(t *testing.T) {
 		ID: "served", PrefillSubReqID: "served_prefill", DecodeSubReqID: "served_decode",
 		OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
 		TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
-		DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+		DecodeSubReq: &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 	}
 	dropped := &ParentRequest{
 		ID: "dropped", PrefillSubReqID: "dropped_prefill", DecodeSubReqID: "dropped_decode",
