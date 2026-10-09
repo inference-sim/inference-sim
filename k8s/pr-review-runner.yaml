@@ -1,0 +1,449 @@
+# Self-hosted runner for the EXTERNAL/fork PR reviewer (`/pr-review`, issue #1879).
+#
+# This is a SEPARATE pod from the delivery-loop runners (k8s/deployment.yaml) on
+# purpose. It runs untrusted PR content, so it must never share a runner with the
+# trusted delivery loop. Three things isolate it:
+#
+#   1. A DISTINCT RUNNER LABEL — `pr-review-untrusted`, not `self-hosted`. Only
+#      .github/workflows/pr-review.yml targets this label, and the delivery loop
+#      (which targets `self-hosted`) never lands here. Getting this wrong is the
+#      whole risk, so the label is the one value you must not copy from the
+#      delivery runner.
+#
+#   2. A LiteLLM PROXY in its OWN pod that holds the key. The real LiteLLM
+#      credential is a GitHub Actions secret in the delivery loop, injected into
+#      the step env — readable by a prompt-injected reviewer. Here the key lives
+#      ONLY in the `litellm-proxy` pod (from `nous-wiki-llm`); the runner pod gets
+#      no key and the workflow points the LLM clients at the proxy Service. The
+#      runner pod cannot read the proxy's env (different pod), and — unlike a
+#      same-pod sidecar — it also cannot EGRESS anywhere the proxy can (see #3).
+#      The key being fixed/non-rotatable is exactly why it must never enter the
+#      session.
+#
+#      WHY A SEPARATE POD, NOT A SIDECAR: a sidecar shares the runner's network
+#      namespace, so a NetworkPolicy (which is per-pod) cannot give the runner
+#      tighter egress than the sidecar needs — the untrusted runner would inherit
+#      the sidecar's :443. Splitting the proxy into its own pod lets the runner be
+#      denied :443 to the internal VPC entirely while still reaching LiteLLM
+#      THROUGH the proxy. Residual trade vs. the old loopback-only bind: the proxy
+#      now listens on a routable pod IP, and the namespace-wide
+#      `allow-same-namespace` policy means ANY blis pod can currently reach :4000
+#      — so TODAY the proxy is a namespace-local LiteLLM relay, NOT caller-
+#      restricted. (The `litellm-proxy-ingress` policy records the runner-only
+#      target state but does not reduce reachability while that blanket policy
+#      stands — NetworkPolicies are additive.) Why acceptable, two distinct
+#      threats: (a) the untrusted RUNNER can USE the proxy but cannot EXTRACT the
+#      key — it is injected outbound and never echoed back, and the runner has no
+#      SA token to read `nous-wiki-llm` directly either; (b) any OTHER blis pod
+#      reaching :4000 is a relay that grants nothing new — any blis workload with
+#      API access could already read `nous-wiki-llm` itself.
+#
+#   3. A DEFAULT-DENY EGRESS NetworkPolicy on each pod (vanilla k8s, no Calico /
+#      cluster-admin needed — see #1881). The runner may egress ONLY to DNS, the
+#      proxy pod (by label), and public :443 (for GitHub) with ALL internal/VPC
+#      and metadata CIDRs excluded — so it cannot reach LiteLLM, the metadata
+#      endpoint, or any in-cluster service directly. LiteLLM is reachable solely
+#      via the proxy, which pins the hostname in nginx; VPC-LB IP rotation never
+#      touches the runner's policy. This is the full lockdown #1881 tracked, with
+#      no admin dependency.
+#
+# Ephemerality, per-pod names, and the ephemeral-storage limit are inherited from
+# the delivery runner's hard-won settings — see k8s/deployment.yaml's header.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-proxy-nginx
+  namespace: blis
+data:
+  # Main config. `worker_processes 1` is load-bearing: `auto` spawns one worker
+  # per core, and on this cluster's large nodes that was ~130 workers — which
+  # OOMKilled the 128Mi proxy (exit 137) in a restart loop. A proxy needs exactly
+  # one. pid under /tmp because the image runs unprivileged.
+  nginx.conf: |
+    worker_processes 1;
+    error_log /var/log/nginx/error.log notice;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log /var/log/nginx/access.log;
+      include /etc/nginx/conf.d/*.conf;
+    }
+  # A minimal auth-injecting reverse proxy. The runner talks plain http to the
+  # proxy Service with a dummy key; this adds the real Bearer token (from the
+  # proxy's env, sourced from nous-wiki-llm) and forwards to the real LiteLLM
+  # endpoint over the VPC. `${VAR}` are substituted at container start by the
+  # official nginx image's envsubst (NGINX_ENVSUBST_FILTER limits it to our
+  # LITELLM_ names so nginx's own `$host` etc. survive).
+  default.conf.template: |
+    server {
+      # Bind 0.0.0.0: unlike the old same-pod sidecar (loopback-only), the runner
+      # is now a DIFFERENT pod and reaches this via the litellm-proxy Service.
+      # NOTE: this does NOT by itself restrict callers — the namespace-wide
+      # allow-same-namespace policy lets any blis pod reach :4000 today (the
+      # litellm-proxy-ingress policy only records the runner-only target state).
+      # The credential is safe anyway: it is injected outbound and never readable
+      # back, so a caller can USE the proxy but cannot EXTRACT the key (the
+      # untrusted runner has no SA token to read nous-wiki-llm directly either).
+      # See the header's point #2 for the full rationale.
+      server_tokens off;
+      listen 0.0.0.0:4000;
+      # Re-resolve the LiteLLM hostname every 30s. A literal `proxy_pass host`
+      # resolves ONCE at worker start and caches the IP for the worker's life, so
+      # a VPC-LB IP rotation would silently break the proxy until a reload. Using
+      # a resolver + a variable upstream forces per-request re-resolution, so the
+      # hostname — not a frozen IP — is what egress is pinned to. resolver_timeout
+      # 5s (not nginx's 30s default) so a DNS blip fails fast instead of hanging
+      # the review request for 30s per call.
+      resolver ${LITELLM_RESOLVER} valid=30s ipv6=off;
+      resolver_timeout 5s;
+      # Local liveness endpoint — NOT proxied. The workflow preflights this before
+      # the review steps (which are continue-on-error) so a proxy-down condition
+      # fails loud instead of silently posting an empty review.
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+      location / {
+        # Variable proxy_pass: nginx does NOT append the matched location URI when
+        # the target is a variable, so $request_uri (full path + query, leading
+        # slash) is added explicitly. REQUIRES: nous-wiki-llm/base-url is a bare
+        # `https://host` with NO trailing slash and NO path — else this concatenates
+        # to `//...` or a doubled path and the upstream silently 404s. (The old
+        # literal `proxy_pass ${LITELLM_UPSTREAM};` relied on the same bare-host
+        # shape; the failure mode just moved from config-parse to runtime 404.)
+        set $litellm_upstream ${LITELLM_UPSTREAM};
+        proxy_pass $litellm_upstream$request_uri;
+        # Inject auth in BOTH shapes: qa-review uses the OpenAI format
+        # (Authorization: Bearer), blis via claude-code-action uses the Anthropic
+        # format (x-api-key). The real key goes out in both; whatever dummy the
+        # client sent is overwritten, never forwarded.
+        proxy_set_header Authorization "Bearer ${LITELLM_KEY}";
+        proxy_set_header x-api-key "${LITELLM_KEY}";
+        # Leave Host as the upstream host: the VPC ingress routes by Host, so
+        # blanking it 503s. SNI matches via proxy_ssl_server_name.
+        proxy_set_header Host ete-litellm.ai-models.vpc-int.res.ibm.com;
+        proxy_ssl_server_name on;
+      }
+    }
+---
+# The auth-holding proxy, in its OWN pod — the ONLY workload that holds the
+# LiteLLM key and the ONLY one allowed :443 egress into the VPC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: blis
+  labels:
+    app: litellm-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app: litellm-proxy
+    spec:
+      # No SA token: the proxy reads no k8s API and should not carry a mountable
+      # token near the credential it holds.
+      automountServiceAccountToken: false
+      serviceAccountName: anyuid-sa
+      imagePullSecrets:
+      - name: dockerhub-secret
+      containers:
+      - name: litellm-proxy
+        image: nginxinc/nginx-unprivileged:stable
+        imagePullPolicy: IfNotPresent
+        env:
+        # Reuses the existing in-namespace LiteLLM credential (`nous-wiki-llm`),
+        # the only k8s secret that holds a LiteLLM key + endpoint
+        # (https://ete-litellm.ai-models.vpc-int.res.ibm.com, internal VPC).
+        - name: LITELLM_UPSTREAM
+          valueFrom:
+            secretKeyRef:
+              name: nous-wiki-llm
+              key: base-url
+        - name: LITELLM_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nous-wiki-llm
+              key: api-key
+        # Cluster DNS ClusterIP, for the nginx resolver. Calico evaluates egress
+        # post-DNAT (real CoreDNS pod IP), which the DNS egress rule below matches
+        # via namespaceSelector — so this ClusterIP works despite not being a pod.
+        - name: LITELLM_RESOLVER
+          value: "172.21.0.10"
+        # envsubst only our names; leave nginx runtime vars ($request_uri etc.).
+        - name: NGINX_ENVSUBST_FILTER
+          value: "LITELLM_"
+        ports:
+        - containerPort: 4000
+        volumeMounts:
+        - name: litellm-nginx
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: litellm-nginx
+          mountPath: /etc/nginx/templates/default.conf.template
+          subPath: default.conf.template
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "250m"
+            memory: "128Mi"
+      volumes:
+      - name: litellm-nginx
+        configMap:
+          name: litellm-proxy-nginx
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: blis
+spec:
+  selector:
+    app: litellm-proxy
+  ports:
+  - port: 4000
+    targetPort: 4000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner-pr-review
+  namespace: blis
+  labels:
+    app: github-runner-pr-review
+spec:
+  # One is enough for external-PR volume; reviews run serially. Raise only if a
+  # backlog is observed. Each is ephemeral (one job per container, fresh layer).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner-pr-review
+  strategy:
+    # Recreate, not surge: the namespace CPU quota has no room for a second
+    # (surge) replica during a rollout, so a RollingUpdate wedges. One replica,
+    # brief gap on update — fine for an on-demand reviewer.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: github-runner-pr-review
+    spec:
+      # TODO(hardening): a dedicated non-root SA would be ideal for the untrusted
+      # box. Reusing anyuid-sa to match the proven delivery-runner config so the
+      # first bring-up is not also debugging SCC/permissions. Container-root here
+      # is constrained by the SCC and the NetworkPolicy; the load-bearing controls
+      # are the key-in-proxy isolation and egress-lock, not the uid.
+      serviceAccountName: anyuid-sa
+      # The runner authenticates to GitHub with its own PAT (ACCESS_TOKEN), never
+      # the Kubernetes SA token — and this pod reads untrusted PR content, so a
+      # projected SA token would be an exfiltration target for nothing. Refuse the
+      # automount: there is then no SA token in the pod for an injected reviewer
+      # to find (addresses the review on the "nothing to exfiltrate" claim).
+      automountServiceAccountToken: false
+      imagePullSecrets:
+      - name: dockerhub-secret
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: ibm-cloud.kubernetes.io/worker-pool-name
+                operator: NotIn
+                values:
+                - trusted-image-repo
+      containers:
+      - name: runner
+        image: myoung34/github-runner:ubuntu-jammy
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REPO_URL
+          value: "https://github.com/inference-sim/inference-sim"
+        - name: RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        # THE isolation label. Only pr-review.yml targets it.
+        - name: LABELS
+          value: "pr-review-untrusted"
+        - name: RUNNER_SCOPE
+          value: "repo"
+        - name: EPHEMERAL
+          value: "true"
+        - name: DISABLE_AUTO_UPDATE
+          value: "true"
+        - name: RUN_AS_ROOT
+          value: "true"
+        - name: RUNNER_WORKDIR
+          value: "/tmp/runner/_work"
+        # Reuses the delivery pool's registration PAT — same repo scope; only the
+        # LABEL differs, so no new token is needed. (If you later want this
+        # runner's registration isolated too, point this at its own secret.)
+        - name: ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-runner-secret
+              key: github_token
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            # 500m, not 1 core: the namespace CPU quota (requests.cpu) is the
+            # binding constraint, and a review is I/O-bound — it mostly waits on
+            # the remote LLM. The limit still allows a burst to 2 cores for the
+            # brief archon-go build. (Raising this back to 1 needs quota headroom.)
+            cpu: "500m"
+            memory: "2Gi"
+            ephemeral-storage: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+            ephemeral-storage: "12Gi"
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 6Gi
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+---
+# Default-deny egress for the UNTRUSTED runner. Allows only: DNS, the proxy pod
+# (by label), and public :443 for GitHub — with every internal/VPC and metadata
+# CIDR excluded. Net effect: the runner cannot reach LiteLLM, the metadata
+# endpoint, or any in-cluster service directly; LiteLLM is reachable ONLY through
+# litellm-proxy. Vanilla NetworkPolicy — no Calico, no cluster-admin.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pr-review-runner-egress
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      app: github-runner-pr-review
+  policyTypes:
+  - Egress
+  egress:
+  # DNS. 53 and 5353 because OpenShift CoreDNS pods listen on 5353 behind the :53
+  # service; both udp and tcp. Scoped to the openshift-dns namespace by its
+  # guaranteed `kubernetes.io/metadata.name` label (NOT namespaceSelector {}), so
+  # the untrusted runner can speak :53 ONLY to cluster DNS, not to every
+  # namespace's services. Verified: external + in-cluster names still resolve.
+  # (This does not stop DNS tunnelling through the legit resolver — see the
+  # accepted residual in docs/contributing/external-pr-review.md.)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+    - { protocol: UDP, port: 5353 }
+    - { protocol: TCP, port: 5353 }
+  # The ONLY path to LiteLLM: the proxy pod, selected by label (no IP, so VPC-LB
+  # rotation is irrelevant here). namespaceSelector is explicit (not relying on
+  # the same-namespace default) so the peer is unambiguously blis/app=litellm-proxy.
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: blis
+      podSelector:
+        matchLabels:
+          app: litellm-proxy
+    ports:
+    - { protocol: TCP, port: 4000 }
+  # Public :443 for GitHub (runner registration, git fetch, API). Every private /
+  # metadata / IBM-VPC range is excluded, so this grants NO internal reach — in
+  # particular not LiteLLM (9.x VPC) and not the metadata endpoint. Public
+  # github.com is the ONLY intended :443 target; all IBM-internal 9.x is
+  # intentionally unreachable (excepting the whole 9.0.0.0/8 is a deliberate
+  # blanket — if a future internal :443 dependency lands in 9.x it will be
+  # blocked here by design, not by accident).
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 169.254.0.0/16
+        - 9.0.0.0/8
+    ports:
+    - { protocol: TCP, port: 443 }
+---
+# Default-deny egress for the TRUSTED proxy. Allows DNS + public/VPC :443 so it
+# can reach the LiteLLM VPC endpoint (and only that — nginx pins the hostname).
+# Broad :443 is acceptable here because this pod runs a fixed config and cannot be
+# redirected by PR content; the IBM-VPC range is NOT excluded so LiteLLM resolves.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-proxy-egress
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm-proxy
+  policyTypes:
+  - Egress
+  egress:
+  # DNS, scoped to cluster DNS (see the runner policy above for the rationale).
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
+    ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+    - { protocol: UDP, port: 5353 }
+    - { protocol: TCP, port: 5353 }
+  # NOTE: these except lists are IPv4-only, so the lockdown assumes an IPv4-only
+  # egress path (the LiteLLM VPC endpoint is v4; nginx resolver is ipv6=off). On a
+  # dual-stack cluster an AAAA result would be unconstrained by these CIDRs.
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 169.254.0.0/16
+    ports:
+    - { protocol: TCP, port: 443 }
+---
+# Ingress to the proxy, scoped to the runner. NOTE: the namespace-wide
+# `allow-same-namespace` policy already admits any blis pod to :4000, so this
+# does not currently reduce reachability — it records intent and takes effect if
+# that blanket policy is ever tightened. The credential cannot be read through
+# the proxy (it is injected outbound only); the exposure is use as a
+# namespace-local LiteLLM relay, which any blis pod could already obtain from the
+# nous-wiki-llm secret directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-proxy-ingress
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm-proxy
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: github-runner-pr-review
+    ports:
+    - { protocol: TCP, port: 4000 }

@@ -55,16 +55,10 @@ type BatchContext struct {
 	// PrefixCachingDisabled suppresses cross-request prefix reuse, mirroring vLLM's
 	// --no-enable-prefix-caching (#1867).
 	//
-	// This changes the WORK a prefill does, not only the memory it occupies. With reuse
-	// on, a matched prefix arrives as already-computed tokens and only the remainder is
-	// charged; with it off, the request is billed for its whole prompt. A deployment
-	// launched with the flag therefore schedules a different number of tokens for the
-	// same prompt, which no amount of recalibration can absorb.
-	//
-	// False ⇒ reuse as before, byte-identical to a pre-feature build (INV-6), and the
-	// right default because vLLM's own default is to cache. A request's OWN progress is
-	// unaffected either way: a chunked-prefill tail resumes from where it stopped
-	// regardless, because that is not another request's block.
+	// False preserves the existing behavior and vLLM's default (prefix caching on),
+	// which keeps existing scenarios byte-identical (INV-6). This switch applies only
+	// to GPU prefix reuse at admission; a RUNNING request resumes chunked prefill from
+	// its own ProgressIndex, and offload-tier reloads remain a separate mechanism.
 	PrefixCachingDisabled bool
 }
 
@@ -350,15 +344,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			continue
 		}
 
-		// Cross-request prefix reuse. Skipped entirely when the deployment disables
-		// prefix caching (#1867): GetCachedBlocks matches on block hashes and knows
-		// nothing about which request placed them, so leaving it in place would credit
-		// this request for another's work on an engine that does no such thing.
-		//
-		// This is the admission path, which only ever sees requests from the wait queue --
-		// a request mid-prefill is already RUNNING and is re-chunked in Phase 1 from its own
-		// ProgressIndex (line 163), a path this gate does not touch. So disabling reuse
-		// cannot make a chunked prefill restart.
+		// GetCachedBlocks is cross-request prefix reuse: it matches token-block hashes
+		// without tracking which request produced them. When prefix caching is disabled,
+		// skip that lookup entirely so a new admission is billed from the start of its
+		// prompt instead of receiving credit for another request's cached blocks.
 		var cachedBlocks []int64
 		if !ctx.PrefixCachingDisabled {
 			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())

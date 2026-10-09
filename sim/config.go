@@ -88,20 +88,16 @@ type BatchConfig struct {
 	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
 	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
 	// PrefixCachingDisabled suppresses cross-request prefix reuse (vLLM:
-	// --no-enable-prefix-caching). False ⇒ reuse as before, which is both the engine's
-	// own default and byte-identical to a pre-feature build (INV-6).
+	// --no-enable-prefix-caching). False preserves the existing/default behavior.
 	PrefixCachingDisabled bool
 }
 
-// BatchOption is a functional option applied inside NewBatchConfig. It lets the
-// constructor take a new field without a 4th positional parameter, which would touch
-// every one of the existing call sites while changing none of their behaviour, and keeps
-// the single struct-literal construction site intact (R4).
+// BatchOption is a functional option applied by NewBatchConfig so new batch settings can
+// remain zero-value compatible without adding positional constructor arguments (R4).
 type BatchOption func(*BatchConfig)
 
-// WithPrefixCachingDisabled suppresses cross-request prefix reuse, mirroring a
-// deployment launched with --no-enable-prefix-caching (#1867). Absent ⇒ reuse is on, which
-// is vLLM's default.
+// WithPrefixCachingDisabled mirrors a deployment launched with
+// --no-enable-prefix-caching. Absent means prefix caching stays enabled.
 func WithPrefixCachingDisabled(disabled bool) BatchOption {
 	return func(c *BatchConfig) { c.PrefixCachingDisabled = disabled }
 }
@@ -126,8 +122,8 @@ func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold i
 		MaxNumBatchedTokens:       maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold,
 	}
-	for _, o := range opts {
-		o(&cfg)
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 	return cfg
 }

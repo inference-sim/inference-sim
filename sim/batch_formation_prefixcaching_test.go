@@ -2,32 +2,35 @@ package sim
 
 import "testing"
 
-// prefixSharingPair builds two requests with an identical leading prefix and distinct
-// tails, which is the shape prefix caching exists to exploit.
+// prefixSharingPair builds two prompts with an identical block-aligned prefix and
+// different tails, so only cross-request prefix caching can reduce the second prefill.
 func prefixSharingPair(blockSize, sharedBlocks, tailBlocks int64) (*Request, *Request) {
 	shared := make([]TokenID, 0, sharedBlocks*blockSize)
 	for i := int64(0); i < sharedBlocks*blockSize; i++ {
 		shared = append(shared, TokenID(1000+i))
 	}
 	build := func(id string, tailSeed TokenID) *Request {
-		toks := append([]TokenID(nil), shared...)
+		tokens := append([]TokenID(nil), shared...)
 		for i := int64(0); i < tailBlocks*blockSize; i++ {
-			toks = append(toks, tailSeed+TokenID(i))
+			tokens = append(tokens, tailSeed+TokenID(i))
 		}
-		return &Request{ID: id, InputTokens: toks, State: StateQueued}
+		return &Request{ID: id, InputTokens: tokens, State: StateQueued}
 	}
-	return build("first", 500000), build("second", 900000)
+	return build("first", 20000), build("second", 40000)
 }
 
-// formOneStep admits whatever it can from the wait queue and reports how many NEW tokens
-// the named request was charged.
-func formOneStep(t *testing.T, kv KVStore, blockSize int64, disabled bool,
-	reqs ...*Request) map[string]int {
+func cachePrefixFixture(t *testing.T, kv KVStore, req *Request) {
+	t.Helper()
+	if ok := kv.AllocateKVBlocks(req, 0, req.InputLen(), nil); !ok {
+		t.Fatal("fixture: failed to allocate prefix request")
+	}
+	kv.ReleaseKVBlocks(req)
+}
+
+func chargedPrefill(t *testing.T, kv KVStore, disabled bool, req *Request) int {
 	t.Helper()
 	wq := &WaitQueue{}
-	for _, r := range reqs {
-		wq.Enqueue(r)
-	}
+	wq.Enqueue(req)
 	ctx := BatchContext{
 		RunningBatch:          &Batch{},
 		WaitQ:                 wq,
@@ -39,98 +42,83 @@ func formOneStep(t *testing.T, kv KVStore, blockSize int64, disabled bool,
 		ComputedTokens:        make(map[string]int64),
 		PrefixCachingDisabled: disabled,
 	}
-	res := NewBatchFormation("").FormBatch(ctx)
-	charged := map[string]int{}
-	for _, r := range res.RunningBatch.Requests {
-		charged[r.ID] = r.NumNewTokens
+	result := NewBatchFormation("").FormBatch(ctx)
+	if len(result.RunningBatch.Requests) != 1 {
+		t.Fatalf("expected one admitted request, got %d", len(result.RunningBatch.Requests))
 	}
-	return charged
+	return result.RunningBatch.Requests[0].NumNewTokens
 }
 
-// cacheThePrefixOf puts a request's blocks into the cache, the way the simulator does: one
-// allocation cycle followed by a release, which retains the block hashes for a later match.
-func cacheThePrefixOf(kv KVStore, req *Request) {
-	kv.AllocateKVBlocks(req, 0, req.InputLen(), nil)
-	kv.ReleaseKVBlocks(req)
-}
+// The engine-level switch must change actual scheduled work, not merely configuration.
+// Removing the GetCachedBlocks gate makes the disabled arm incorrectly receive the same
+// cross-request prefix credit as the enabled arm, so this test fails behaviorally.
+func TestDisablingPrefixCachingChargesWholePrompt(t *testing.T) {
+	const blockSize, sharedBlocks, tailBlocks int64 = 16, 4, 2
+	wantWholePrompt := int((sharedBlocks + tailBlocks) * blockSize)
 
-// With prefix caching ON, a request whose leading blocks another request already placed in
-// the cache is charged only for the remainder. With it OFF, it is charged for the whole
-// prompt. This is the behaviour --no-enable-prefix-caching selects, and it changes the work
-// a step does rather than only the memory it holds (#1867).
-func TestDisablingPrefixCachingChargesTheWholePrompt(t *testing.T) {
-	const blockSize, sharedBlocks, tailBlocks = 16, 4, 2
-	total := int((sharedBlocks + tailBlocks) * blockSize)
-
-	// Caching ON: admit the first request, let its blocks become cached, then admit the
-	// second and see what it is charged.
 	kvOn := MustNewKVCacheState(4096, blockSize)
 	first, second := prefixSharingPair(blockSize, sharedBlocks, tailBlocks)
-	cacheThePrefixOf(kvOn, first)
-	onCharged := formOneStep(t, kvOn, blockSize, false, second)["second"]
+	cachePrefixFixture(t, kvOn, first)
+	withCaching := chargedPrefill(t, kvOn, false, second)
 
-	// Caching OFF: same sequence, same cache state.
 	kvOff := MustNewKVCacheState(4096, blockSize)
-	first2, second2 := prefixSharingPair(blockSize, sharedBlocks, tailBlocks)
-	cacheThePrefixOf(kvOff, first2)
-	offCharged := formOneStep(t, kvOff, blockSize, true, second2)["second"]
+	firstOff, secondOff := prefixSharingPair(blockSize, sharedBlocks, tailBlocks)
+	cachePrefixFixture(t, kvOff, firstOff)
+	withoutCaching := chargedPrefill(t, kvOff, true, secondOff)
 
-	if offCharged != total {
-		t.Errorf("with caching DISABLED the second request should be charged its whole "+
-			"%d-token prompt, got %d", total, offCharged)
+	if withoutCaching != wantWholePrompt {
+		t.Fatalf("prefix caching disabled: charged %d tokens, want whole %d-token prompt",
+			withoutCaching, wantWholePrompt)
 	}
-	if onCharged >= offCharged {
-		t.Errorf("with caching ENABLED the second request should be charged LESS than the "+
-			"whole prompt: on=%d off=%d. If these are equal the gate is not reachable, or "+
-			"the fixture shares no prefix", onCharged, offCharged)
+	wantCachedWork := int(tailBlocks * blockSize)
+	if withCaching != wantCachedWork {
+		t.Fatalf("default/enabled prefix caching should credit the %d-token shared prefix and charge %d tail tokens, got %d",
+			sharedBlocks*blockSize, wantCachedWork, withCaching)
 	}
-	t.Logf("charged: caching on %d tokens, caching off %d tokens (prompt %d)",
-		onCharged, offCharged, total)
+	if withCaching >= withoutCaching {
+		t.Fatalf("prefix caching enabled should reduce scheduled prefill work: enabled=%d disabled=%d",
+			withCaching, withoutCaching)
+	}
 }
 
-// Disabling reuse must not disturb a request that shares nothing. This is the INV-6 half:
-// a workload with no shared prefix has nothing to credit, so the two settings must charge
-// identically and the gate must be invisible.
-func TestDisablingPrefixCachingIsInertWithoutASharedPrefix(t *testing.T) {
+// The zero value is the compatibility path: when no prefix matches, enabling/disabling
+// caching cannot alter scheduled work.
+func TestDisablingPrefixCachingIsInertWithoutSharedPrefix(t *testing.T) {
 	const blockSize int64 = 16
 	build := func(id string, seed TokenID) *Request {
-		toks := make([]TokenID, 0, 96)
-		for i := 0; i < 96; i++ {
-			toks = append(toks, seed+TokenID(i))
+		tokens := make([]TokenID, 96)
+		for i := range tokens {
+			tokens[i] = seed + TokenID(i)
 		}
-		return &Request{ID: id, InputTokens: toks, State: StateQueued}
+		return &Request{ID: id, InputTokens: tokens, State: StateQueued}
 	}
 
 	kvOn := MustNewKVCacheState(4096, blockSize)
-	cacheThePrefixOf(kvOn, build("other", 111000))
-	on := formOneStep(t, kvOn, blockSize, false, build("solo", 777000))["solo"]
+	cachePrefixFixture(t, kvOn, build("other", 10000))
+	withCaching := chargedPrefill(t, kvOn, false, build("target", 50000))
 
 	kvOff := MustNewKVCacheState(4096, blockSize)
-	cacheThePrefixOf(kvOff, build("other", 111000))
-	off := formOneStep(t, kvOff, blockSize, true, build("solo", 777000))["solo"]
+	cachePrefixFixture(t, kvOff, build("other", 10000))
+	withoutCaching := chargedPrefill(t, kvOff, true, build("target", 50000))
 
-	if on != off {
-		t.Errorf("with no shared prefix the setting must not change what is charged: "+
-			"on=%d off=%d", on, off)
-	}
-	if on != 96 {
-		t.Errorf("a request sharing nothing should be charged its whole 96-token prompt, "+
-			"got %d", on)
+	if withCaching != withoutCaching || withCaching != 96 {
+		t.Fatalf("non-sharing prompt should be charged identically: enabled=%d disabled=%d want=96",
+			withCaching, withoutCaching)
 	}
 }
 
-// Phase 1 re-chunks a RUNNING request from its own ProgressIndex and is not reached by the
-// gate, so a partially-prefilled request must advance identically either way. Without this,
-// a plausible-looking gate placed one call earlier would silently restart every chunked
-// prefill.
-func TestDisablingPrefixCachingDoesNotRestartAChunkedPrefill(t *testing.T) {
+// A RUNNING request resumes from its own ProgressIndex in Phase 1. The engine switch only
+// controls cross-request reuse for new admissions and must not restart chunked prefill.
+func TestDisablingPrefixCachingDoesNotRestartChunkedPrefill(t *testing.T) {
 	const blockSize int64 = 16
 	run := func(disabled bool) int {
 		kv := MustNewKVCacheState(4096, blockSize)
 		req, _ := prefixSharingPair(blockSize, 4, 2)
 		req.State = StateRunning
 		req.ProgressIndex = 32
-		kv.AllocateKVBlocks(req, 0, 32, nil)
+		if ok := kv.AllocateKVBlocks(req, 0, 32, nil); !ok {
+			t.Fatal("fixture: failed to allocate running request")
+		}
 		ctx := BatchContext{
 			RunningBatch:          &Batch{Requests: []*Request{req}},
 			WaitQ:                 &WaitQueue{},
@@ -141,21 +129,43 @@ func TestDisablingPrefixCachingDoesNotRestartAChunkedPrefill(t *testing.T) {
 			ComputedTokens:        make(map[string]int64),
 			PrefixCachingDisabled: disabled,
 		}
-		res := NewBatchFormation("").FormBatch(ctx)
-		for _, r := range res.RunningBatch.Requests {
-			if r.ID == req.ID {
-				return r.NumNewTokens
-			}
+		result := NewBatchFormation("").FormBatch(ctx)
+		if len(result.RunningBatch.Requests) != 1 {
+			t.Fatalf("running request vanished from the batch (disabled=%v)", disabled)
 		}
-		t.Fatalf("the running request vanished from the batch (disabled=%v)", disabled)
-		return 0
+		return result.RunningBatch.Requests[0].NumNewTokens
 	}
-	on, off := run(false), run(true)
-	if on != off {
-		t.Errorf("a chunked prefill must resume identically: on=%d off=%d", on, off)
+
+	withCaching, withoutCaching := run(false), run(true)
+	if withCaching != withoutCaching {
+		t.Fatalf("chunked prefill must resume identically: enabled=%d disabled=%d",
+			withCaching, withoutCaching)
 	}
-	if want := 96 - 32; on != want {
-		t.Errorf("a request with 32 of 96 tokens computed should be charged %d more, got %d",
-			want, on)
+	if want := 96 - 32; withCaching != want {
+		t.Fatalf("request with 32/96 tokens computed should schedule %d more, got %d",
+			want, withCaching)
+	}
+}
+
+// GPU prefix reuse and offload-tier reload are separate mechanisms. Disabling the former
+// must not silently disable a same-step CPU->GPU reload reported by ReloadablePrefixEnd.
+func TestDisablingPrefixCachingDoesNotDisableOffloadReload(t *testing.T) {
+	kv := newFakeReloadKV(16)
+	kv.reloadEnd["A"] = 48
+
+	wq := &WaitQueue{}
+	wq.Enqueue(reloadReq("A", 64))
+	ctx := reloadCtx(wq, kv)
+	ctx.PrefixCachingDisabled = true
+
+	result := NewBatchFormation("").FormBatch(ctx)
+	if len(result.RunningBatch.Requests) != 1 {
+		t.Fatalf("reloadable request must be admitted, got %d", len(result.RunningBatch.Requests))
+	}
+	if got := result.RunningBatch.Requests[0].NumNewTokens; got != 16 {
+		t.Fatalf("offload reload should still credit 48 tokens and bill the 16-token tail, got %d", got)
+	}
+	if got := ctx.ComputedTokens["A"]; got != 64 {
+		t.Fatalf("offload reload should advance computed progress to 64, got %d", got)
 	}
 }

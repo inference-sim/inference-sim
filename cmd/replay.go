@@ -725,7 +725,7 @@ Example:
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
 					sim.WithKVOffload(kvOffloadCfg)),
-				BatchConfig:   sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold),
+				BatchConfig:   batchConfigFromCLI(),
 				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
