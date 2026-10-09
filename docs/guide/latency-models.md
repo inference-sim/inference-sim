@@ -205,20 +205,24 @@ cannot be traced to anything.
 ### The published accuracy figures
 
 `cmd/metricscore` is the scorer behind the evaluation tables. It constructs the kernel
-directly, so its figures do not depend on this CLI path. Against `blis-latency-kernel` at
-`bd743a6` and `blis-registry` at `640a27e`:
+directly, so its figures do not depend on this CLI path. At the tagged releases above, with
+the vendored catalog and registry and the measurement corpora in `BLIS_MEASUREMENTS`
+(see [Reproducing](../kernel-exclusive/REPRODUCE.md#the-measurement-data)):
 
 ```bash
-go run ./cmd/metricscore -framework vllm -length-range-ratio 1.0 -config-tier measured \
-  -registry /path/to/blis-registry
+go run ./cmd/metricscore -framework vllm -config-tier measured
+go run ./cmd/metricscore -framework vllm -config-tier measured -length-range-ratio 1.0
 ```
 
-| metric | mean absolute error |
-|---|---|
-| TPOT shape | 11.58% |
-| TPOT mape | 11.94% |
-| TTFT shape | 25.39% |
-| TTFT mape | 31.47% |
+Mean absolute error over the vLLM points whose engine configuration was measured from the
+run's own command line (292 TPOT-shape, 360 TPOT-mape, 288 TTFT-shape, 356 TTFT-mape points):
+
+| metric | kernel, AISimulate lengths | kernel, constant lengths (`1.0`) | AISimulate | AIC |
+|---|---|---|---|---|
+| TPOT shape | 11.27% | 11.87% | 11.91% | 12.00% |
+| TPOT mape | 13.04% | 13.51% | 19.72% | 19.88% |
+| TTFT shape | 24.98% | 22.89% | 31.54% | 31.28% |
+| TTFT mape | 28.93% | 26.39% | 45.07% | 39.03% |
 
 A figure quoted without its three flags cannot be checked: `-config-tier`, `-framework`
 and `-length-range-ratio` each change every number. `blis-registry`'s
