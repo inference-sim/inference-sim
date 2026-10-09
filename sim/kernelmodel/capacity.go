@@ -47,9 +47,12 @@ import (
 // decompose is not auditable: a run that admits fewer requests than expected is diagnosed
 // from these fields.
 type KVBudget struct {
-	// TotalBlocks is what BLIS's KVCacheConfig wants: usable blocks, per DP rank, scaled
-	// by DP for an MoE model.
+	// TotalBlocks is the aggregate budget a single instance modelling every DP rank wants:
+	// PerRankBlocks scaled by DP for an MoE model.
 	TotalBlocks int64
+	// PerRankBlocks is one EngineCore's budget, which is what a simulator that runs each DP
+	// rank as its own replica sizes each replica with.
+	PerRankBlocks int64
 
 	// BlockSize is tokens per block, from the scenario's engine settings.
 	BlockSize int
@@ -137,6 +140,7 @@ func (m *Model) KVBudget() (KVBudget, error) {
 	// DP scaling, matching latency.CalculateKVBlocks: dp independent EngineCores each hold
 	// a full budget and requests split disjointly across them. Gated on MoE for the same
 	// reason it is there -- a dense model is never scaled.
+	perRank := blocks
 	dp := m.k.Resolved().DataParallel()
 	scaled := false
 	if m.id.experts > 0 && dp > 1 {
@@ -146,6 +150,7 @@ func (m *Model) KVBudget() (KVBudget, error) {
 
 	return KVBudget{
 		TotalBlocks:      blocks,
+		PerRankBlocks:    perRank,
 		BlockSize:        blockSize,
 		DeviceBytes:      deviceBytes,
 		BudgetBytes:      budget,
