@@ -248,13 +248,16 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
-	// lora-residency models aggregated serving: under disaggregation the routed
-	// request's lifecycle runs on sub-requests with other IDs and no adapter, so
-	// its estimate would hold every decode route pending forever.
-	if (config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 ||
-		config.EncodeInstances > 0) && namesScorer("lora-residency",
-		config.RoutingScorerConfigs, config.PrefillScorerConfigs, config.DecodeScorerConfigs) {
-		panic("ClusterSimulator: the lora-residency scorer models aggregated serving only and cannot be used with PD/EPD disaggregation")
+	// lora-residency and lora-residency-truth model aggregated serving: under
+	// disaggregation the routed request's lifecycle runs on sub-requests with other
+	// IDs and no adapter, so their pending requests would never settle.
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 ||
+		config.EncodeInstances > 0 {
+		for _, name := range []string{"lora-residency", "lora-residency-truth"} {
+			if namesScorer(name, config.RoutingScorerConfigs, config.PrefillScorerConfigs, config.DecodeScorerConfigs) {
+				panic("ClusterSimulator: the " + name + " scorer models aggregated serving only and cannot be used with PD/EPD disaggregation")
+			}
+		}
 	}
 
 	// Validate cluster-scoped LoRA adapter placement early (B-5, #1493, INV-PS2):
@@ -534,6 +537,12 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		// D7 (#1490): route-to-holder needs live holder truth at routing time, so
 		// pin ResidentAdapters to Immediate regardless of the global refresh interval.
 		// Narrow, single-field override — all other signals keep their global mode.
+		obsConfig.PinResidentAdaptersImmediate()
+	}
+	if namesScorer("lora-residency-truth", config.RoutingScorerConfigs, config.PrefillScorerConfigs,
+		config.DecodeScorerConfigs) {
+		// The ground-truth reference must read live truth, or it would conflate
+		// estimation loss with scrape staleness.
 		obsConfig.PinResidentAdaptersImmediate()
 	}
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, obsConfig)

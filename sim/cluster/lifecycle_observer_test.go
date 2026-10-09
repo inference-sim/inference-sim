@@ -93,24 +93,28 @@ func TestCompletionObserver_GatewayEvictionNotifies(t *testing.T) {
 	assert.ElementsMatch(t, []string{"running@" + id, "queued@" + id}, rec.events)
 }
 
-// Review of PR #59, finding 3: lora-residency models aggregated serving only.
+// Review of PR #59, finding 3 (and of PR #60, finding 3, for the truth variant):
+// lora-residency and lora-residency-truth model aggregated serving only.
 func TestLoRAResidency_RejectedUnderDisaggregation(t *testing.T) {
-	residency := []sim.ScorerConfig{{Name: "lora-residency", Weight: 1}}
-	for name, set := range map[string]func(*DeploymentConfig){
-		"main pool":    func(dc *DeploymentConfig) { dc.RoutingScorerConfigs = residency },
-		"prefill pool": func(dc *DeploymentConfig) { dc.PrefillScorerConfigs = residency },
-		"decode pool":  func(dc *DeploymentConfig) { dc.DecodeScorerConfigs = residency },
-	} {
-		dc := newTestDeploymentConfig(4)
-		dc.PrefillInstances, dc.DecodeInstances = 2, 2
-		set(&dc)
-		assert.Panics(t, func() { NewClusterSimulator(dc, NewSliceRequestSource(nil), nil) }, name)
+	for _, scorer := range []string{"lora-residency", "lora-residency-truth"} {
+		residency := []sim.ScorerConfig{{Name: scorer, Weight: 1}}
+		for name, set := range map[string]func(*DeploymentConfig){
+			"main pool":    func(dc *DeploymentConfig) { dc.RoutingScorerConfigs = residency },
+			"prefill pool": func(dc *DeploymentConfig) { dc.PrefillScorerConfigs = residency },
+			"decode pool":  func(dc *DeploymentConfig) { dc.DecodeScorerConfigs = residency },
+		} {
+			dc := newTestDeploymentConfig(4)
+			dc.PrefillInstances, dc.DecodeInstances = 2, 2
+			set(&dc)
+			assert.PanicsWithValue(t, "ClusterSimulator: the "+scorer+" scorer models aggregated serving only and cannot be used with PD/EPD disaggregation",
+				func() { NewClusterSimulator(dc, NewSliceRequestSource(nil), nil) }, scorer+" "+name)
+		}
+		// Aggregated serving with the scorer is fine, and so is disaggregation without it.
+		dc := newTestDeploymentConfig(2)
+		dc.RoutingPolicy = "weighted"
+		dc.RoutingScorerConfigs = residency
+		assert.NotPanics(t, func() { NewClusterSimulator(dc, NewSliceRequestSource(nil), nil) }, scorer)
 	}
-	// Aggregated serving with lora-residency is fine, and so is disaggregation without it.
-	dc := newTestDeploymentConfig(2)
-	dc.RoutingPolicy = "weighted"
-	dc.RoutingScorerConfigs = residency
-	assert.NotPanics(t, func() { NewClusterSimulator(dc, NewSliceRequestSource(nil), nil) })
 	assert.False(t, namesScorer("lora-residency", []sim.ScorerConfig{{Name: "queue-depth"}}, nil))
 }
 

@@ -12,12 +12,12 @@ type completionEvent struct {
 	tick            int64
 }
 
-// Every built-in scorer except lora-residency leaves the completion hook
+// Every built-in scorer except lora-residency and lora-residency-truth leaves the completion hook
 // unsubscribed, so the cluster's OnRequestDone guard is unchanged for every
 // configuration that does not name it.
 func TestRequestCompletionObserver_BuiltInsDoNotSubscribe(t *testing.T) {
 	for _, name := range ValidScorerNames() {
-		if name == "lora-residency" {
+		if name == "lora-residency" || name == "lora-residency-truth" {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {

@@ -67,9 +67,11 @@ func newObservabilityConfig(refreshInterval int64, cacheDelay int64) Observabili
 	return config
 }
 
-// PinResidentAdaptersImmediate forces the ResidentAdapters field to Immediate
-// freshness, overriding whatever mode newObservabilityConfig selected from the
-// global --snapshot-refresh-interval. The route-to-holder routing policy (B-2,
+// PinResidentAdaptersImmediate forces the ResidentAdapters field (and the truth
+// fields refreshed with it) to Immediate freshness, overriding whatever mode
+// newObservabilityConfig selected from the global --snapshot-refresh-interval. The
+// lora-residency-truth scorer needs it so that it measures estimation loss, not
+// scrape staleness. The route-to-holder routing policy (B-2,
 // #1490, D7) requires holder truth to be live at routing time: a stale (Periodic)
 // ResidentAdapters set could hide a just-loaded adapter and let the strict-affinity
 // restriction pick the wrong instance or spuriously fall back, violating INV-PS1.
@@ -188,7 +190,7 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 		lr.KVUtilization = clock
 	}
 	if p.shouldRefresh(p.config.ResidentAdapters, lr.ResidentAdapters, clock) {
-		snap.ResidentAdapters = residentAdapterSet(inst)
+		fillResidency(&snap, inst)
 		lr.ResidentAdapters = clock
 	}
 	if p.shouldRefresh(p.config.ActiveAdapters, lr.ActiveAdapters, clock) {
@@ -218,6 +220,34 @@ func residentAdapterSet(inst *InstanceSimulator) map[string]bool {
 	return set
 }
 
+// fillResidency sets the ground-truth residency fields of snap from inst: the
+// membership set, the LRU→MRU order, the pinned subset, the adapter being loaded
+// and the slot count. Both refresh paths call it, so these stay consistent.
+func fillResidency(snap *sim.RoutingSnapshot, inst *InstanceSimulator) {
+	ids := inst.ResidentAdapterIDs()
+	snap.ResidentAdapters = residentAdapterSet(inst)
+	snap.LoadingAdapter = inst.LoadingAdapter()
+	snap.ResidentCapacity = max(inst.AdapterCapacity(), 0)
+	if len(ids) == 0 {
+		snap.ResidentOrder, snap.ResidentPinned = nil, nil
+		return
+	}
+	snap.ResidentOrder = ids // ResidentIDs builds a fresh slice per call
+	unpinned := make(map[string]bool)
+	for _, id := range inst.UnpinnedResidentAdapterIDs() {
+		unpinned[id] = true
+	}
+	snap.ResidentPinned = nil
+	for _, id := range ids {
+		if !unpinned[id] {
+			if snap.ResidentPinned == nil {
+				snap.ResidentPinned = make(map[string]bool)
+			}
+			snap.ResidentPinned[id] = true
+		}
+	}
+}
+
 // activeAdapterSignal returns the router-observable LoRA signal for
 // RoutingSnapshot.ActiveAdapters and .MaxLoras: the instance's running/queued
 // adapter counts and its GPU adapter capacity. Both are zero (nil, 0) when the
@@ -245,7 +275,7 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 		snap.CacheHitRate = inst.CacheHitRate()
 		snap.TotalKvCapacityTokens = inst.TotalKvCapacityTokens()
 		snap.KvTokensInUse = inst.KvTokensInUse()
-		snap.ResidentAdapters = residentAdapterSet(inst)
+		fillResidency(&snap, inst)
 		snap.ActiveAdapters, snap.MaxLoras = activeAdapterSignal(inst)
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{
