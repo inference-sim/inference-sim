@@ -570,3 +570,35 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		}
 	}
 }
+
+// A LoRA adapter reservation re-sizes a kernel run's KV pool to the kernel's budget with the
+// reservation set aside -- strictly smaller than without it -- and no reservation leaves the
+// pool the kernel's plain answer.
+func TestApplyKernelLoRAReservation_ShrinksThePoolByTheKernelsAnswer(t *testing.T) {
+	scenarios, catalog, registry := kernelRepos(t)
+	saved := []any{kernelOpened, totalKVBlocks, loraReservedBytesForKV, kernelScenario}
+	defer func() {
+		kernelOpened, _ = saved[0].(*kernelmodel.Model)
+		totalKVBlocks, loraReservedBytesForKV, kernelScenario = saved[1].(int64), saved[2].(int64), saved[3].(string)
+	}()
+	kernelScenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
+	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := m.Settings()
+	kernelOpened = m
+
+	totalKVBlocks, loraReservedBytesForKV = plain.KVBlocks, 0
+	applyKernelLoRAReservation()
+	if totalKVBlocks != plain.KVBlocks {
+		t.Errorf("no reservation moved the pool from %d to %d blocks", plain.KVBlocks, totalKVBlocks)
+	}
+	loraReservedBytesForKV = 8 << 30
+	applyKernelLoRAReservation()
+	want, _ := m.SettingsReserving(8 << 30)
+	if totalKVBlocks != want.KVBlocks || totalKVBlocks >= plain.KVBlocks {
+		t.Errorf("an 8 GiB reservation sized the pool at %d blocks; the kernel says %d (plain %d)",
+			totalKVBlocks, want.KVBlocks, plain.KVBlocks)
+	}
+}

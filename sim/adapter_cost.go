@@ -1,5 +1,7 @@
 package sim
 
+import "math"
+
 // AdapterCost is the read-only query bridge over the LoRA adapter cost model. It
 // is owned by sim/ so the cold-load pre-admission gate can charge load latency
 // without importing sim/lora (Principle I: no reverse import); the concrete
@@ -53,4 +55,37 @@ func BuildAdapterCost(cfg SimConfig) (AdapterCost, error) {
 		return nil, nil
 	}
 	return NewAdapterCostFunc(cfg.LoRAConfig)
+}
+
+// WithAdapterOverhead wraps a latency model so every step it prices is multiplied by the
+// batch's LoRA compute-overhead factor. It is how the per-step adapter cost applies to a
+// latency model built outside the simulator -- blis-latency-kernel, whose pricing knows no
+// adapters -- exactly as the coefficient backends apply it internally. A nil accessor returns
+// the model unchanged, so a run without adapters is byte-identical (INV-6).
+func WithAdapterOverhead(m LatencyModel, ac AdapterCost) LatencyModel {
+	if ac == nil {
+		return m
+	}
+	return adapterOverheadModel{LatencyModel: m, ac: ac}
+}
+
+type adapterOverheadModel struct {
+	LatencyModel
+	ac AdapterCost
+}
+
+// StepTime is the wrapped model's price times the batch's overhead factor. A factor that is
+// not finite or not above 1 leaves the price unchanged: the AdapterCost contract guarantees
+// one >= 1, and a NaN reaching the clock would stall it (INV-3).
+func (m adapterOverheadModel) StepTime(batch []*Request) int64 {
+	base := m.LatencyModel.StepTime(batch)
+	factor := m.ac.StepOverheadFactor(batch)
+	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 1.0 {
+		return base
+	}
+	scaled := float64(base) * factor
+	if scaled >= float64(math.MaxInt64/2) {
+		return math.MaxInt64 / 2
+	}
+	return max(1, int64(scaled))
 }

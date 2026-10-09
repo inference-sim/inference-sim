@@ -315,6 +315,7 @@ Example:
 		// resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+		applyKernelLoRAReservation()
 
 		// KV-cache offload config (#1587, BC-G6): the trace header is authoritative on
 		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded

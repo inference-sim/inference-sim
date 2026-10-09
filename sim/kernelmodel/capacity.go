@@ -76,7 +76,17 @@ type KVBudget struct {
 // It returns an error rather than a zero budget when the deployment does not fit: a
 // simulation that silently ran with no KV would produce a number, and that number would be
 // meaningless.
-func (m *Model) KVBudget() (KVBudget, error) {
+func (m *Model) KVBudget() (KVBudget, error) { return m.KVBudgetReserving(0) }
+
+// KVBudgetReserving is KVBudget with reservedBytes of the rank's HBM set aside before KV is
+// sized -- the static LoRA adapter reservation, which vLLM takes beside the weights before it
+// profiles the KV pool. The reservation is a total across the rank's tensor-parallel GPUs,
+// sharded like weights, so each GPU gives up reservedBytes / tp of the budget the kernel's
+// per-GPU occupancy figures are measured against.
+func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
+	if reservedBytes < 0 {
+		return KVBudget{}, fmt.Errorf("kernelmodel: reserved bytes must be >= 0, got %d", reservedBytes)
+	}
 	// From the kernel, which resolved this pool. Reading the Deployment document instead
 	// would mean holding it alongside and indexing back in -- a second answer to "which
 	// pool is this", which can disagree with the one the pricing used.
@@ -113,7 +123,7 @@ func (m *Model) KVBudget() (KVBudget, error) {
 			m.k.Resolved().ExpertParallel())
 	}
 
-	allocatable := budget - fixed
+	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
 	if allocatable <= 0 {
 		return KVBudget{}, fmt.Errorf(
 			"kernelmodel: no room for KV: a %.1f GiB device at utilization %.2f gives a "+

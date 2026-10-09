@@ -2311,6 +2311,7 @@ var runCmd = &cobra.Command{
 		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+		applyKernelLoRAReservation()
 
 		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
 		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).

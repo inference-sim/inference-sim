@@ -36,12 +36,16 @@ type Settings struct {
 }
 
 // Settings answers the simulator's sizing questions for this model's pool.
-func (m *Model) Settings() (Settings, error) {
+func (m *Model) Settings() (Settings, error) { return m.SettingsReserving(0) }
+
+// SettingsReserving is Settings with reservedBytes of each rank's HBM set aside before the KV
+// budget is sized (see KVBudgetReserving).
+func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 	e, err := m.Engine()
 	if err != nil {
 		return Settings{}, err
 	}
-	b, err := m.KVBudget()
+	b, err := m.KVBudgetReserving(reservedBytes)
 	if err != nil {
 		return Settings{}, err
 	}

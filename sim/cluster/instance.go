@@ -69,6 +69,11 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// scenario plus a catalog and registry). Absent one -- every pre-feature run --
 	// the model is built here exactly as before (INV-6).
 	latencyModel := cfg.LatencyModelOverride
+	if latencyModel != nil {
+		// The coefficient backends apply the adapter cost internally (WithAdapterCost
+		// below); a model built outside the simulator gets it from the shared wrapper.
+		latencyModel = sim.WithAdapterOverhead(latencyModel, adapterCost)
+	}
 	if latencyModel == nil {
 		built, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
 			latency.WithAdapterCost(adapterCost),

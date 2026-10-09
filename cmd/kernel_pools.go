@@ -78,7 +78,7 @@ func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
 }
 
 func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
-	s, err := m.Settings()
+	s, err := m.SettingsReserving(loraReservedBytesForKV)
 	if err != nil {
 		logrus.Fatalf("--latency-model %s: %s pool: %v", latencyModelBackendKernel(), m.Role(), err)
 	}
@@ -208,4 +208,20 @@ func refuseExplicitTierPhysics(block *kvOffloadBlock) {
 				sim.LatencyBackendKernel, i)
 		}
 	}
+}
+
+// applyKernelLoRAReservation re-sizes a kernel run's KV pool with the static LoRA adapter
+// reservation set aside, once the LoRA config is known (it is resolved after the deployment
+// is adopted). vLLM takes the reservation beside the weights before profiling the KV pool, so
+// the kernel's budget shrinks by it. No-op off the kernel or with no reservation.
+func applyKernelLoRAReservation() {
+	if kernelOpened == nil || loraReservedBytesForKV <= 0 {
+		return
+	}
+	s, err := kernelOpened.SettingsReserving(loraReservedBytesForKV)
+	if err != nil {
+		logrus.Fatalf("--latency-model %s: scenario %q with a %d-byte LoRA adapter reservation: %v",
+			sim.LatencyBackendKernel, kernelScenario, loraReservedBytesForKV, err)
+	}
+	totalKVBlocks = s.KVBlocks
 }
