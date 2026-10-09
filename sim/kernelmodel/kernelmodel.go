@@ -79,6 +79,9 @@ type Model struct {
 
 	decodeThreshold int
 	smBudget        int
+	// specTokens is the pool's draft length (engine.speculative.num_spec_tokens), 0 when it
+	// does not speculate. See batchOf.
+	specTokens int
 
 	// Host costs are invariant per kernel, so they are converted to ticks once. StepTime
 	// is called once per simulated step; a Duration-to-ticks division per call is wasted.
@@ -178,6 +181,7 @@ func newModel(k kernel.Kernel, id identity) *Model {
 		id:               id,
 		decodeThreshold:  DecodeThreshold,
 		smBudget:         id.smCount,
+		specTokens:       specTokensOf(k),
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
 	}
@@ -202,14 +206,7 @@ func (m *Model) Kernel() kernel.Kernel { return m.k }
 // FPM is used only to choose between the kernel's own two edges. It is not fitted
 // against, and the InferenceX corpus BLIS is scored on is never used for either.
 func (m *Model) StepTime(batch []*sim.Request) int64 {
-	b := kernel.Batch{
-		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
-		DecodeThreshold: m.decodeThreshold,
-		SMBudget:        m.smBudget,
-	}
-	for _, req := range batch {
-		b.Reqs = append(b.Reqs, shapeOf(req))
-	}
+	b := m.batchOf(batch)
 	// max(1) upholds BLIS's postcondition without depending on a registry value staying
 	// non-zero. See the package comment.
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
@@ -228,6 +225,39 @@ func (m *Model) OutputTokenProcessingTime() int64 { return m.outputTokenTicks }
 
 // PostDecodeFixedOverhead is fixed per-request work at completion.
 func (m *Model) PostDecodeFixedOverhead() int64 { return m.completionTicks }
+
+// batchOf translates a BLIS batch into the kernel's.
+//
+// Under speculative decoding a decode verifies its whole draft every step: the engine runs
+// 1 + num_spec_tokens positions per decoding request whatever was later accepted, and the
+// blis-schemas contract states Scheduled that way ("the draft length plus one"). BLIS's
+// NumNewTokens is the ADVANCE -- 1 + the accepted drafts, set by batch formation from the
+// acceptance rate -- which decides how far the request moves, not what the forward pass
+// cost. So a decode's Scheduled is the verify width here, and NumNewTokens keeps its
+// meaning for the simulator.
+func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
+	b := kernel.Batch{
+		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
+		DecodeThreshold: m.decodeThreshold,
+		SMBudget:        m.smBudget,
+	}
+	for _, req := range batch {
+		r := shapeOf(req)
+		if m.specTokens > 0 && req.ProgressIndex >= req.InputLen() {
+			r.Scheduled = 1 + m.specTokens
+		}
+		b.Reqs = append(b.Reqs, r)
+	}
+	return b
+}
+
+// specTokensOf is the draft length of the pool a kernel prices.
+func specTokensOf(k kernel.Kernel) int {
+	if sp := k.Deployment().Engine.Speculative; sp != nil && sp.NumSpecTokens > 0 {
+		return sp.NumSpecTokens
+	}
+	return 0
+}
 
 // shapeOf translates one BLIS request into the kernel's request shape.
 //
@@ -313,14 +343,7 @@ func (m *Model) DataParallelWidth() int {
 // caller diagnosing WHY a step costs what it does needs the rest, and asking the kernel again
 // through this method is cheaper and less error-prone than rebuilding the batch translation.
 func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
-	b := kernel.Batch{
-		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
-		DecodeThreshold: m.decodeThreshold,
-		SMBudget:        m.smBudget,
-	}
-	for _, req := range batch {
-		b.Reqs = append(b.Reqs, shapeOf(req))
-	}
+	b := m.batchOf(batch)
 	return m.k.StepTime(b)
 }
 

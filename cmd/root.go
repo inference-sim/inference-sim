@@ -89,6 +89,7 @@ var (
 	kernelRegistry            string    // CLI --registry: blis-registry clone root, kernel backend only
 	kernelDeploymentExperts   int       // routed expert count from the model graph; 0 off the kernel backend
 	kernelDeploymentTopK      int       // routed experts per token from the model graph; 0 off the kernel backend
+	kernelOpened              *kernelmodel.Model // the kernel adoptKernelDeployment opened; nil off the kernel backend
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP
 	model                string // LLM name
@@ -878,6 +879,21 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		{"tp", "the pool's parallel.tp"},
 		{"dp", "the pool's parallel.dp"},
 		{"enable-expert-parallel", "the pool's parallel.enable_expert_parallel"},
+		// The engine knobs that size admission and the KV pool. The kernel answers each for
+		// the pool it prices (kernelmodel.Settings); a flag restating one would run a
+		// scheduler sized differently from the engine the kernel priced.
+		{"total-kv-blocks", "the kernel's KV budget for the pool (its memory methods over the chip)"},
+		{"block-size-in-tokens", "the pool's engine.block_size"},
+		{"max-num-seqs", "the pool's engine.max_num_seqs"},
+		{"max-num-running-reqs", "the pool's engine.max_num_seqs"},
+		{"max-num-batched-tokens", "the pool's engine.max_num_batched_tokens"},
+		{"max-num-scheduled-tokens", "the pool's engine.max_num_batched_tokens"},
+		{"max-model-len", "the pool's engine.max_model_len"},
+		{"no-enable-prefix-caching", "the pool's engine.enable_prefix_caching"},
+		{"gpu-memory-utilization", "the pool's engine.gpu_memory_utilization"},
+		{"kv-cache-dtype", "the pool's engine.kv_cache_dtype"},
+		{"num-speculative-tokens", "the pool's engine.speculative.num_spec_tokens"},
+		{"speculative-method", "the pool's engine.speculative.method"},
 	} {
 		if cmd.Flags().Changed(dup.flag) {
 			logrus.Fatalf("--latency-model %s reads the deployment from the scenario, so --%s "+
@@ -898,6 +914,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		logrus.Fatalf("--latency-model %s: scenario %q: %v",
 			sim.LatencyBackendKernel, kernelScenario, err)
 	}
+	settings, err := m.Settings()
+	if err != nil {
+		logrus.Fatalf("--latency-model %s: scenario %q: %v", sim.LatencyBackendKernel, kernelScenario, err)
+	}
+	kernelOpened = m
 	dep := m.Deployment()
 	model = strings.ToLower(dep.Model)
 	gpu = dep.Hardware
@@ -912,10 +933,36 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// numbers instead of waiving it for this backend.
 	kernelDeploymentExperts = dep.Experts
 	kernelDeploymentTopK = dep.ExpertsPerTok
+	// The engine the kernel priced, so the simulated scheduler admits against the same caps,
+	// pages and pool. Per data-parallel RANK: a dp>1 MoE deployment runs one replica per rank
+	// (DP-as-placement), each sized as one EngineCore, and an explicit block count is per
+	// replica and never divided (applyDPPlacement).
+	totalKVBlocks = settings.KVBlocks
+	blockSizeTokens = int64(settings.BlockSize)
+	maxNumSeqs = int64(settings.MaxNumSeqs)
+	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
+	maxModelLen = int64(settings.MaxModelLen)
+	noEnablePrefixCaching = settings.PrefixCachingDisabled
+	numSpeculativeTokens = settings.SpeculativeTokens
+	speculativeMethod = settings.SpeculativeMethod
+	// vLLM refuses to start an engine whose window one request could not fit in, rather
+	// than truncating it; a scheduler that admitted such a request would simulate an engine
+	// that does not exist.
+	if maxModelLen > 0 && maxModelLen > totalKVBlocks*blockSizeTokens {
+		logrus.Fatalf("--latency-model %s: scenario %q states max_model_len %d, but the kernel's KV "+
+			"budget for one rank holds %d tokens (%d blocks of %d); vLLM refuses to start such an "+
+			"engine. Lower max_model_len in the scenario",
+			sim.LatencyBackendKernel, kernelScenario, maxModelLen, totalKVBlocks*blockSizeTokens,
+			totalKVBlocks, blockSizeTokens)
+	}
 	logrus.Infof("--latency-model %s: deployment from scenario %s -- model %s, hardware %s, "+
-		"tp %d, dp %d, expert-parallel %t",
+		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
+		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d, prefix caching %t, "+
+		"speculative tokens %d",
 		sim.LatencyBackendKernel, kernelScenario, model, gpu,
-		tensorParallelism, dataParallelism, enableExpertParallel)
+		tensorParallelism, dataParallelism, enableExpertParallel,
+		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen,
+		!noEnablePrefixCaching, numSpeculativeTokens)
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -1062,16 +1109,22 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		// results file attributes the result to a catalog revision exactly as the
 		// HF-config backends do through resolveModelConfig (#1732, #1900).
 		resolvedCatalogRoot = catalogRoot
-		m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
-			Scenarios: kernelScenarioDir,
-			Catalog:   catalogRoot,
-			Registry:  kernelRegistry,
-		})
-		if err != nil {
-			// Named rather than fallen back on: a backend that silently served this run
-			// from coefficients would report numbers the operator did not ask for.
-			logrus.Fatalf("--latency-model %s: scenario %q: %v",
-				sim.LatencyBackendKernel, kernelScenario, err)
+		// The model adoptKernelDeployment opened and sized the run from, so pricing and
+		// sizing describe one kernel. A caller that skipped adoption (replay) opens it here.
+		m := kernelOpened
+		if m == nil {
+			var err error
+			m, err = kernelmodel.Open(kernelScenario, kernelmodel.Repos{
+				Scenarios: kernelScenarioDir,
+				Catalog:   catalogRoot,
+				Registry:  kernelRegistry,
+			})
+			if err != nil {
+				// Named rather than fallen back on: a backend that silently served this run
+				// from coefficients would report numbers the operator did not ask for.
+				logrus.Fatalf("--latency-model %s: scenario %q: %v",
+					sim.LatencyBackendKernel, kernelScenario, err)
+			}
 		}
 		kernelModel = m
 		// The expert geometry the graph stated, so the ModelHardwareConfig boundary and
