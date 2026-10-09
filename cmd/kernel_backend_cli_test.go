@@ -771,3 +771,56 @@ func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
 		t.Errorf("the disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }
+
+// A disaggregated scenario whose pools both draft tokens: the decode sub-request carries the
+// run's speculative configuration. Its exported trace replays byte-identically (INV-13), the
+// output-token total is the workload's at every acceptance rate (speculation changes how many
+// steps a request takes, never how many tokens it emits), and accepting more of each draft
+// never lengthens mean E2E.
+func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
+	const draft = "      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 3\n"
+	dir := writeScenarioVariant(t,
+		"      gpu_memory_utilization: 0.9\n  - role: decode", draft+"  - role: decode",
+		"      gpu_memory_utilization: 0.9\n\npd_transfer", draft+"\npd_transfer")
+	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--pd-decider", "always",
+		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "4",
+		"--horizon", "600000000"}
+	var prevE2E, firstE2E float64
+	var tokens int
+	for i, acc := range []string{"0.0", "0.5", "1.0"} {
+		prefix := filepath.Join(t.TempDir(), "trace")
+		args := append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix,
+			"--speculative-acceptance-rate", acc}, common...)
+		runOut, stderr, err := runKernelCLI(t, args...)
+		if err != nil || !strings.Contains(runOut, `"completed_requests": 16`) {
+			t.Fatalf("acceptance %s: %v\n%s", acc, err, lastLines(stderr, 3))
+		}
+		repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
+			"--trace-data", prefix + ".csv", "--speculative-acceptance-rate", acc}, common...)...)
+		if err != nil {
+			t.Fatalf("acceptance %s replay: %v\n%s", acc, err, lastLines(stderr, 3))
+		}
+		if repOut != runOut {
+			t.Errorf("acceptance %s: the replay differs from the run\n--- run\n%s\n--- replay\n%s", acc, runOut, repOut)
+		}
+		got := clusterMetricInt(t, runOut, "total_output_tokens")
+		e2e := e2eMean(t, runOut)
+		if i > 0 {
+			if got != tokens {
+				t.Errorf("acceptance %s emitted %d output tokens, acceptance 0.0 emitted %d", acc, got, tokens)
+			}
+			if e2e > prevE2E {
+				t.Errorf("raising acceptance to %s lengthened mean E2E from %.3f to %.3f ms", acc, prevE2E, e2e)
+			}
+		}
+		if i == 0 {
+			firstE2E = e2e
+		}
+		tokens, prevE2E = got, e2e
+	}
+	// Non-vacuity: a decode pool that ignored the draft would price every acceptance alike.
+	if prevE2E >= firstE2E {
+		t.Errorf("accepting every draft left mean E2E at %.3f ms against %.3f with none; the "+
+			"decode pool is not speculating", prevE2E, firstE2E)
+	}
+}
