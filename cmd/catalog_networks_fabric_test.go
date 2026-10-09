@@ -16,7 +16,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,8 +26,8 @@ import (
 // rejects the key outright as an unknown field.
 //
 // Nothing is broken today: no code path reads PDTransferBaseLatencyMs from a catalog file. It is
-// a cluster.DeploymentConfig field fed solely by --pd-transfer-base-latency (default 0.05 ms,
-// consumed in sim/cluster/pd_events.go), and the `networks/` fabric reader has not landed here —
+// a cluster.DeploymentConfig field no flag feeds any more (a kernel run prices the P/D handoff
+// itself, from the scenario's fabric), and the `networks/` fabric reader has not landed here —
 // cmd/catalog_load.go's namespace list still says so. The point of #1838, and of this file, is
 // that the reader MUST be authored against a field-free fabric class *when* it lands, because
 // the catalog↔loader compatibility is pinned by CATALOG_REVISION: the moment that pin advances
@@ -40,19 +39,16 @@ import (
 //	1. read the fabric's InterNodeBwGBps (nominal) as the PD-transfer bandwidth — there is no
 //	   separate PD bandwidth figure (R2H2, blis-catalog#10);
 //	2. do NOT read or require PDTransferBaseLatencyMs from the fabric class;
-//	3. keep the PD-transfer base latency sourced from --pd-transfer-base-latency, whose eventual
-//	   owner is blis-registry (blis-registry#10, `method: assumed`). Effective base latency = that
-//	   value ALONE — there is no catalog 0 to compose with.
+//	3. (retired) the PD-transfer base latency was a --pd-transfer-base-latency input; the flag is
+//	   gone and the kernel prices the handoff.
 //
-// Four contracts encode them:
+// Three contracts encode them (BC-3, which kept the base latency a CLI input, retired with
+// --pd-transfer-base-latency: the kernel prices the P/D handoff from the scenario's fabric):
 //
 //	BC-1 no production Go source lets a config file supply the field (static guard);
 //	BC-2 no committed catalog file DECLARES it — established by parsing every catalog file and
 //	     walking its keys, not by pattern-matching lines — and a `networks/` fixture states its
 //	     bandwidth as InterNodeBwGBps with a usable positive number (rule 1);
-//	BC-3 the number stays a CLI/registry input, identically on run and replay: both register the
-//	     flag with the same default, the flag writes the variable, and that variable is what feeds
-//	     DeploymentConfig.PDTransferBaseLatencyMs on both paths (rule 3, INV-13);
 //	BC-4 a tripwire on the loader's namespace report, so no new catalog namespace reader can land
 //	     without this file's rules being read (rule 2).
 //
@@ -72,11 +68,6 @@ const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 // cluster.DeploymentConfig's CLI-sourced field. Relative to the repository root, so the guard
 // fails if the declaration moves to (or is copied into) a fabric-class struct.
 const pdTransferBaseLatencyOwner = "sim/cluster/deployment.go"
-
-// pdTransferBaseLatencyFlagVar is the package variable --pd-transfer-base-latency writes
-// (cmd/root.go), and therefore the ONLY expression DeploymentConfig.PDTransferBaseLatencyMs may
-// be fed from on either command. BC-3 checks both halves of that path.
-const pdTransferBaseLatencyFlagVar = "pdTransferBaseLatency"
 
 // fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
 // bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).
@@ -474,133 +465,6 @@ func fabricBandwidthUsable(scalar string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// BC-3: the number stays a CLI/registry input
-// ---------------------------------------------------------------------------
-
-// TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput is BC-3 and rule 3: the effective
-// PD-transfer base latency is the --pd-transfer-base-latency value ALONE. Its 0.05 ms default is
-// a modeling estimate owned by blis-registry (blis-registry#10, `method: assumed`), not a
-// datasheet fact a fabric class could state — so there is no catalog 0 to compose with.
-//
-// "Stays a CLI input" is the whole path, not just a registered flag, so all three links are
-// checked on BOTH commands (INV-13: a run that cannot be replayed with identical flags is not
-// reproducible): the flag exists with the same default, setting it writes
-// pdTransferBaseLatencyFlagVar, and that variable is what the DeploymentConfig the command builds
-// takes the field from. Checking only registration would pass while the assignment was deleted or
-// fed from something else, which is exactly how the number would stop being a CLI input.
-func TestNetworksFabric_PDTransferBaseLatencyStaysACLIInput(t *testing.T) {
-	const flagName = "pd-transfer-base-latency"
-	const wantDefault = "0.05"
-
-	runFlag := runCmd.Flags().Lookup(flagName)
-	if runFlag == nil {
-		t.Fatalf("run must register --%s: it is the sole source of the PD-transfer base latency "+
-			"(no catalog fabric class states one, #1838)", flagName)
-	}
-	replayFlag := replayCmd.Flags().Lookup(flagName)
-	if replayFlag == nil {
-		t.Fatalf("replay must register --%s, or a run using it cannot be replayed (INV-13)", flagName)
-	}
-	if runFlag.DefValue != wantDefault {
-		t.Errorf("--%s default on run = %q, want %q (the blis-registry#10 placeholder, #1838)",
-			flagName, runFlag.DefValue, wantDefault)
-	}
-	if replayFlag.DefValue != runFlag.DefValue {
-		t.Errorf("--%s default differs between run (%q) and replay (%q): INV-13 requires identical "+
-			"flags to reproduce a run", flagName, runFlag.DefValue, replayFlag.DefValue)
-	}
-
-	// Link 2: the operator's value lands in the variable. Restored afterwards so the shared
-	// package state this suite reads elsewhere is left as found.
-	restore := pdTransferBaseLatency
-	t.Cleanup(func() { pdTransferBaseLatency = restore })
-	for _, tc := range []struct {
-		command *cobra.Command
-		label   string
-		set     string
-		want    float64
-	}{
-		{runCmd, "run", "0.17", 0.17},
-		{replayCmd, "replay", "0.31", 0.31},
-	} {
-		flag := tc.command.Flags().Lookup(flagName)
-		if err := flag.Value.Set(tc.set); err != nil {
-			t.Fatalf("%s --%s=%s: %v", tc.label, flagName, tc.set, err)
-		}
-		if pdTransferBaseLatency != tc.want {
-			t.Errorf("%s --%s=%s left %s = %v, want %v: the flag must write the variable the "+
-				"DeploymentConfig is built from, or the CLI is not the source of the number (#1838)",
-				tc.label, flagName, tc.set, pdTransferBaseLatencyFlagVar, pdTransferBaseLatency, tc.want)
-		}
-	}
-
-	// Link 3: that variable, and nothing else, feeds the deployment field on both paths.
-	for _, rel := range []string{"cmd/root.go", "cmd/replay.go"} {
-		sites := deploymentFieldSources(t, rel, pdTransferBaseLatencyField)
-		if len(sites) == 0 {
-			t.Errorf("%s no longer assigns %s: the PD-transfer base latency must reach the "+
-				"DeploymentConfig from --%s on this path, or a run/replay silently uses the zero "+
-				"value instead of the operator's (rule 3 of #1838, INV-13)",
-				rel, pdTransferBaseLatencyField, flagName)
-			continue
-		}
-		for _, site := range sites {
-			if site.source != pdTransferBaseLatencyFlagVar {
-				t.Errorf("%s:%d feeds %s from %s, want %s: the number is a CLI/registry input "+
-					"(blis-registry#10), and a fabric class carries none to source it from (#1838)",
-					rel, site.line, pdTransferBaseLatencyField, site.source, pdTransferBaseLatencyFlagVar)
-			}
-		}
-	}
-}
-
-// fieldSource is one site where a DeploymentConfig field is given a value, and the expression it
-// is given: the identifier's name, or a placeholder when the value is not a bare identifier
-// (which is itself a finding for a field that must come straight from a flag variable).
-type fieldSource struct {
-	line   int
-	source string
-}
-
-// deploymentFieldSources returns every site in one repository file that sets the named struct
-// field, whether as a composite-literal key (`Field: x`) or an assignment (`cfg.Field = x`).
-// Both forms are recognized so the guard survives a refactor of how the config is built.
-func deploymentFieldSources(t *testing.T, rel, field string) []fieldSource {
-	t.Helper()
-	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filepath.Join("..", rel), nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse %s: %v", rel, err)
-	}
-	var sites []fieldSource
-	record := func(pos token.Pos, value ast.Expr) {
-		source := "an expression that is not a bare identifier"
-		if ident, ok := value.(*ast.Ident); ok {
-			source = ident.Name
-		}
-		sites = append(sites, fieldSource{line: fset.Position(pos).Line, source: source})
-	}
-	ast.Inspect(parsed, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.KeyValueExpr:
-			if key, ok := node.Key.(*ast.Ident); ok && key.Name == field {
-				record(node.Pos(), node.Value)
-			}
-		case *ast.AssignStmt:
-			for i, lhs := range node.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != field || i >= len(node.Rhs) {
-					continue
-				}
-				record(lhs.Pos(), node.Rhs[i])
-			}
-		}
-		return true
-	})
-	return sites
-}
-
-// ---------------------------------------------------------------------------
 // BC-4: the reader cannot land without rule 2 being read
 // ---------------------------------------------------------------------------
 
@@ -631,7 +495,7 @@ var catalogLoadReportKnownFields = []struct {
 //
 // It fails exactly once, when catalogLoadReport grows past the shape above — that is, when a new
 // namespace reader lands. If that reader is the `networks/` one, the response is to obey the
-// three rules in the failure message, keep BC-1/BC-2/BC-3 (which then guard real code), and drop
+// three rules in the failure message, keep BC-1/BC-2 (which then guard real code), and drop
 // this function in the reader's own PR. If it is an unrelated namespace (R2 adds `clusters` too,
 // #1817), the response is to add its field to catalogLoadReportKnownFields, having read the rules
 // on the way past — which is the cost of the tripwire and the reason it is one test, not a habit.

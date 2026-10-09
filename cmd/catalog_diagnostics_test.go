@@ -1,137 +1,21 @@
 package cmd
 
 import (
-	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 // #1776 (R1 cleanup of tracker #1767): three CLI diagnostics in the catalog /
 // deployment-flag path told the operator the wrong thing. This file holds their contracts.
 //
-//	BC-1  an explicitly-supplied unusable --tp/--hardware is refused as an INVALID VALUE,
-//	      not as a missing flag (and vice versa for an omitted one)
-//	BC-2  which deployments are REFUSED is unchanged — only the wording differs (INV-6)
 //	BC-3  a catalog read failure that is not absence is not reported as "not in the catalog"
 //	BC-4  resolveCatalogRoot's dispositions match what it actually checks (exists + is a
 //	      directory), and it does NOT reject a catalog root it can traverse but not list
-//
-// The end-to-end half of BC-1 (the message reaching the operator through cobra's
-// Flags().Changed on both `blis run` and `blis replay`) is the subprocess test at the
-// bottom; the pure-function tests here cover the branch matrix.
-
-// ---------------------------------------------------------------------------
-// BC-1: omitted vs explicitly-invalid deployment flags
-// ---------------------------------------------------------------------------
-
-// TestDeploymentFlagRefusal_OmittedVsExplicitlyInvalid is BC-1. Before #1776 the guard
-// tested `resolvedTP <= 0` with no knowledge of whether the flag had been supplied, so
-// `--tp 0` — a value the operator can type, and also --tp's unset sentinel — was reported
-// as a MISSING flag. The two need different fixes: a missing flag has to be added, an
-// invalid one corrected, and sending an operator to look for a flag that is already on
-// their command line is the diagnostic defect this closes.
-func TestDeploymentFlagRefusal_OmittedVsExplicitlyInvalid(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      deploymentFlagValues
-		wantAll []string
-		wantNot []string
-	}{
-		{
-			name:    "tp omitted is reported as missing",
-			in:      deploymentFlagValues{GPU: "H100", GPUSupplied: true},
-			wantAll: []string{"missing required flag", "--tp"},
-			wantNot: []string{"invalid", "--hardware"},
-		},
-		{
-			name:    "tp zero is reported as invalid, naming the value",
-			in:      deploymentFlagValues{GPU: "H100", GPUSupplied: true, TP: 0, TPSupplied: true},
-			wantAll: []string{"invalid", "--tp 0", "must be > 0"},
-			wantNot: []string{"missing required flag"},
-		},
-		{
-			name:    "tp negative is reported as invalid, naming the value",
-			in:      deploymentFlagValues{GPU: "H100", GPUSupplied: true, TP: -1, TPSupplied: true},
-			wantAll: []string{"invalid", "--tp -1", "must be > 0"},
-			wantNot: []string{"missing required flag"},
-		},
-		{
-			name:    "hardware omitted is reported as missing",
-			in:      deploymentFlagValues{TP: 1, TPSupplied: true},
-			wantAll: []string{"missing required flag", "--hardware"},
-			wantNot: []string{"invalid", "--tp"},
-		},
-		{
-			name:    "explicitly empty hardware is reported as invalid",
-			in:      deploymentFlagValues{GPU: "", GPUSupplied: true, TP: 1, TPSupplied: true},
-			wantAll: []string{"invalid", "--hardware"},
-			wantNot: []string{"missing required flag"},
-		},
-		{
-			// A mixed refusal must not collapse into one disposition: the operator has to
-			// add one flag AND correct the other, so both clauses are needed.
-			name:    "one omitted and one invalid reports both dispositions",
-			in:      deploymentFlagValues{TP: 0, TPSupplied: true},
-			wantAll: []string{"missing required flag", "--hardware", "invalid", "--tp 0"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := deploymentFlagRefusal(tt.in)
-			if got == "" {
-				t.Fatalf("deploymentFlagRefusal(%+v) accepted an unusable deployment", tt.in)
-			}
-			for _, want := range tt.wantAll {
-				if !strings.Contains(got, want) {
-					t.Errorf("refusal must mention %q, got: %s", want, got)
-				}
-			}
-			for _, notWant := range tt.wantNot {
-				if strings.Contains(got, notWant) {
-					t.Errorf("refusal must NOT mention %q (that flag is fine), got: %s", notWant, got)
-				}
-			}
-			// Every refusal keeps the operator-actionable tail: BLIS never infers the
-			// deployment, on either command.
-			if !strings.Contains(got, "does not infer the deployment") {
-				t.Errorf("refusal must state that the deployment is never inferred, got: %s", got)
-			}
-		})
-	}
-}
-
-// TestDeploymentFlagRefusal_AcceptConditionUnchanged is BC-2, the INV-6 guard on #1776: the
-// change is diagnostic-only, so the set of deployments BLIS RUNS must be exactly what it was
-// — accepted iff the GPU is non-empty and TP is positive, regardless of whether the value
-// arrived from the flag or (for TP) a positive default. The "supplied" bits may only change
-// the wording of a refusal, never turn a refusal into an acceptance or back.
-func TestDeploymentFlagRefusal_AcceptConditionUnchanged(t *testing.T) {
-	for _, gpu := range []string{"", "H100"} {
-		for _, tp := range []int{-1, 0, 1, 8} {
-			for _, gpuSupplied := range []bool{false, true} {
-				for _, tpSupplied := range []bool{false, true} {
-					in := deploymentFlagValues{GPU: gpu, GPUSupplied: gpuSupplied, TP: tp, TPSupplied: tpSupplied}
-					accepted := deploymentFlagRefusal(in) == ""
-					wantAccepted := gpu != "" && tp > 0
-					if accepted != wantAccepted {
-						t.Errorf("deploymentFlagRefusal(%+v): accepted=%v, want %v — #1776 may only "+
-							"change refusal WORDING, never which deployments run (INV-6)",
-							in, accepted, wantAccepted)
-					}
-				}
-			}
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // BC-3: a read failure is not "the model is not catalogued"
@@ -424,109 +308,4 @@ func findFuncDecl(t *testing.T, file, name string) *ast.FuncDecl {
 	}
 	t.Fatalf("%s declares no top-level func %s", file, name)
 	return nil
-}
-
-// ---------------------------------------------------------------------------
-// BC-1, end to end on both commands (INV-13)
-// ---------------------------------------------------------------------------
-
-// invalidDeploymentFatalSubprocess drives resolveLatencyConfig in a subprocess with one
-// deployment flag EXPLICITLY set to an unusable value. Everything else is fully specified,
-// so the only reason it can fail is the flag under test. Going through cobra's ParseFlags
-// is the point: the omitted/supplied distinction is Flags().Changed, which a direct call to
-// the pure refusal function cannot exercise.
-func invalidDeploymentFatalSubprocess(t *testing.T) {
-	t.Helper()
-	if os.Getenv("BLIS_TEST_SUBPROCESS") != "1" {
-		return
-	}
-	dir := t.TempDir()
-	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
-	if err != nil {
-		os.Exit(2)
-	}
-
-	args := []string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
-		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
-	}
-	switch os.Getenv("BLIS_1776_SCENARIO") {
-	case "tp-zero":
-		args = append(args, "--hardware", "H100", "--tp", "0")
-	case "tp-negative":
-		args = append(args, "--hardware", "H100", "--tp", "-1")
-	case "hardware-empty":
-		args = append(args, "--hardware", "", "--tp", "1")
-	default:
-		os.Exit(2)
-	}
-
-	defaultsFilePath = "../defaults.yaml"
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	if err := testCmd.ParseFlags(args); err != nil {
-		os.Exit(2)
-	}
-	resolveLatencyConfig(testCmd) // must Fatalf before returning
-	os.Exit(0)
-}
-
-// TestInvalidDeploymentFlagIsRefusedAsInvalid is BC-1 at the CLI boundary. Both `blis run`
-// and `blis replay` resolve through the same resolveLatencyConfig, so one subprocess
-// exercise covers both (INV-13) — the same argument TestNS6_DeploymentFlagsRequiredOnRunAndReplay
-// makes structurally for the required-flag rule.
-func TestInvalidDeploymentFlagIsRefusedAsInvalid(t *testing.T) {
-	invalidDeploymentFatalSubprocess(t)
-	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
-		return
-	}
-
-	tests := []struct {
-		scenario string
-		wantAll  []string
-		wantNot  []string
-	}{
-		{
-			scenario: "tp-zero",
-			wantAll:  []string{"invalid", "--tp 0", "must be > 0"},
-			wantNot:  []string{"missing required flag"},
-		},
-		{
-			scenario: "tp-negative",
-			wantAll:  []string{"invalid", "--tp -1"},
-			wantNot:  []string{"missing required flag"},
-		},
-		{
-			scenario: "hardware-empty",
-			wantAll:  []string{"invalid", "--hardware"},
-			wantNot:  []string{"missing required flag"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.scenario, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestInvalidDeploymentFlagIsRefusedAsInvalid", "-test.v")
-			cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1", "BLIS_1776_SCENARIO="+tt.scenario)
-			out, err := cmd.CombinedOutput()
-
-			var exitErr *exec.ExitError
-			if !errors.As(err, &exitErr) {
-				t.Fatalf("expected logrus.Fatalf (exit 1), got err=%v; output:\n%s", err, out)
-			}
-			if exitErr.ExitCode() != 1 {
-				t.Fatalf("expected exit 1, got %d; output:\n%s", exitErr.ExitCode(), out)
-			}
-			for _, want := range tt.wantAll {
-				if !strings.Contains(string(out), want) {
-					t.Errorf("refusal must mention %q; output:\n%s", want, out)
-				}
-			}
-			for _, notWant := range tt.wantNot {
-				if strings.Contains(string(out), notWant) {
-					t.Errorf("an explicitly-supplied unusable value must not be reported as %q; output:\n%s", notWant, out)
-				}
-			}
-		})
-	}
 }

@@ -6,31 +6,8 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
-	"github.com/spf13/cobra"
 )
-
-// TestPrefixCachingFlag_RegisteredOnRunAndReplay pins the CLI surface required by
-// INV-13: the deployment setting must be re-suppliable on both legs.
-func TestPrefixCachingFlag_RegisteredOnRunAndReplay(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		cmd  *cobra.Command
-	}{
-		{"run", runCmd},
-		{"replay", replayCmd},
-	} {
-		f := c.cmd.Flags().Lookup("no-enable-prefix-caching")
-		if f == nil {
-			t.Errorf("%s missing --no-enable-prefix-caching", c.name)
-			continue
-		}
-		if f.DefValue != "false" {
-			t.Errorf("%s --no-enable-prefix-caching default=%q, want false (INV-6)", c.name, f.DefValue)
-		}
-	}
-}
 
 // TestBatchConfigFromCLI_PrefixCachingDisabled proves the user-facing knob reaches
 // the exact BatchConfig constructor shared by run and replay. If either the option body
@@ -58,33 +35,11 @@ func TestBatchConfigFromCLI_PrefixCachingDisabled(t *testing.T) {
 
 func prefixCachingTestDeployment(t *testing.T, batch sim.BatchConfig) cluster.DeploymentConfig {
 	t.Helper()
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
-	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
-	if err != nil {
-		t.Fatalf("ParseHFConfig: %v", err)
-	}
-	mc, err := latency.GetModelConfigFromHF(hfConfig)
-	if err != nil {
-		t.Fatalf("GetModelConfigFromHF: %v", err)
-	}
-	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
-	if err != nil {
-		t.Fatalf("GetHWConfig: %v", err)
-	}
-	return cluster.DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             10_000_000,
-			Seed:                99,
-			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
-			BatchConfig:         batch,
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 0, 0, 0, 100, 0, 0, 0, 0, 0}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
-			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
-		},
-		NumInstances:    1,
-		AdmissionPolicy: "always-admit",
-		RoutingPolicy:   "round-robin",
-	}
+	d := newKernelDeployment(t, 99, nil)
+	cfg := d.Config
+	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0)
+	cfg.BatchConfig = batch
+	return cfg
 }
 
 func runPrefixCachingConfig(t *testing.T, cfg cluster.DeploymentConfig, reqs []*sim.Request) (*cluster.ClusterSimulator, map[string]float64, map[string]float64) {

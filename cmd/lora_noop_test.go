@@ -1,34 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 )
-
-// baselineNoopGolden is the pre-feature no-op stdout golden captured in T002
-// (./blis run --model qwen/qwen3-14b --seed 42). Path is relative to the cmd/ test cwd.
-//
-// #1733 (NS-6) gave this golden a SECOND load-bearing role. It was captured when
-// --hardware/--tp were absent and inferred per-model from defaults.yaml's per-model
-// GPU/tensor_parallelism keys; the run below now passes them explicitly as
-// --hardware H100 --tp 1 — the pair those keys recorded for qwen/qwen3-14b. That it still
-// matches is the INV-6 evidence for #1733's acceptance criterion 4: making an input REQUIRED
-// changed no number.
-//
-// #1768 then deleted those keys (the whole defaults: block was dead once the deployment became
-// a required operator input), together with the anchor test that machine-verified the
-// equality. So the explicit pair above is now a HISTORICAL fact about how the golden was
-// captured, no longer cross-checkable against defaults.yaml; see the tombstone comment in
-// cmd/ns6_catalog_test.go. The INV-6 evidence is undiminished — it is this test matching a
-// golden captured from a run that supplied neither flag.
-const baselineNoopGolden = "../specs/007-lora-control-plane/testdata/baseline_noop.json"
 
 // noopFloatTolerance is the relative tolerance applied when comparing numeric
 // metric fields against the golden. The golden was captured on one architecture
@@ -43,72 +21,28 @@ const baselineNoopGolden = "../specs/007-lora-control-plane/testdata/baseline_no
 const noopFloatTolerance = 1e-9
 
 // TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline is the load-bearing INV-6 / SC-001
-// regression: an adapter-blind run (no --lora-config, no --lora-* flags) MUST produce
-// stdout that matches the pre-feature baseline. This proves the LoRA subsystem is
-// inert when unconfigured.
-//
-// The comparison is structural + numeric-tolerant rather than raw byte-identity: the
-// non-JSON preamble and every non-numeric JSON field must match exactly, while numeric
-// fields must match within noopFloatTolerance. This tolerates cross-architecture float64
-// last-ULP drift (the golden is captured on one arch, CI runs on another) without
-// weakening the inertness guarantee — any real behavioral change from the LoRA code
-// path shifts a value far beyond the tolerance or changes a field's shape/name.
-//
-// The run is driven in a re-exec subprocess so the real cobra command tree executes
-// (and os.Exit(0) suppresses the test framework's own stdout, leaving only the metrics
-// JSON for a clean comparison). The qwen3-14b model config and hardware config are
-// git-tracked under the test catalog testdata/catalog/ (passed as --catalog) and
-// hardware_config.json, so the run is offline-safe.
+// law: with no adapters registered the LoRA subsystem is inert, so a run that sets every LoRA
+// cost knob to an arbitrary value is byte-identical to a run that sets none -- the knobs price
+// adapter loads, and there is nothing to load. Metamorphic rather than a golden: it holds for
+// whatever the kernel prices a step at.
 func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
-	if os.Getenv("BLIS_NOOP_SUBPROCESS") == "1" {
-		rootCmd.SetArgs([]string{
-			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
-			"--defaults-filepath", "../defaults.yaml",
-			// #1731 AC-5: the catalog is located explicitly. The committed test catalog
-			// testdata/catalog/ holds the entry, so this run must still reproduce the
-			// pre-feature golden (INV-6: the config bytes are unchanged by #1771).
-			"--catalog", "../testdata/catalog",
-		})
-		_ = rootCmd.Execute()
-		os.Exit(0)
-	}
-
-	golden, err := os.ReadFile(baselineNoopGolden)
+	base := []string{"run", "--scenario", kernelTestScenario, "--seed", "42", "--num-requests", "20", "--rate", "5"}
+	blind, stderr, err := runKernelCLI(t, base...)
 	if err != nil {
-		t.Fatalf("read golden baseline: %v", err)
+		t.Fatalf("adapter-blind run: %v\n%s", err, lastLines(stderr, 3))
 	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline")
-	cmd.Env = append(os.Environ(), "BLIS_NOOP_SUBPROCESS=1")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = io.Discard // logrus diagnostics go to stderr (INV-6: not part of deterministic output)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("subprocess run failed: %v\nstdout:\n%s", err, stdout.String())
+	if _, body, err := splitMetricsOutput(blind); err != nil || !strings.Contains(body, "completed_requests") {
+		t.Fatalf("non-vacuity: the adapter-blind run printed no metrics (%v):\n%s", err, blind)
 	}
-
-	gotPreamble, gotJSON, err := splitMetricsOutput(stdout.String())
+	knobs, stderr, err := runKernelCLI(t, append(base,
+		"--lora-load-base-latency-us", "12345", "--lora-load-bandwidth-bytes-us", "7",
+		"--lora-footprint-bytes-per-rank", "99")...)
 	if err != nil {
-		t.Fatalf("parse adapter-blind stdout: %v\nstdout:\n%s", err, stdout.String())
+		t.Fatalf("run with LoRA knobs and no adapters: %v\n%s", err, lastLines(stderr, 3))
 	}
-	wantPreamble, wantJSON, err := splitMetricsOutput(string(golden))
-	if err != nil {
-		t.Fatalf("parse golden baseline: %v", err)
-	}
-
-	// The preamble (everything before the JSON object) must match exactly — it
-	// carries no floating-point content, so any difference is a real regression.
-	if gotPreamble != wantPreamble {
-		t.Errorf("INV-6 VIOLATION: adapter-blind run preamble differs from baseline.\n"+
-			"--- got ---\n%q\n--- want ---\n%q", gotPreamble, wantPreamble)
-	}
-
-	// The metrics object must match structurally, with numeric fields compared
-	// within tolerance to absorb cross-architecture float64 last-ULP drift.
-	if diff := compareMetricsJSON(gotJSON, wantJSON, noopFloatTolerance); diff != "" {
-		t.Errorf("INV-6 VIOLATION: adapter-blind run metrics differ from pre-feature baseline "+
-			"beyond float tolerance (%g).\n%s\n--- got ---\n%s\n--- want (golden) ---\n%s",
-			noopFloatTolerance, diff, gotJSON, wantJSON)
+	if knobs != blind {
+		t.Errorf("INV-6 VIOLATION: LoRA cost knobs changed an adapter-blind run\n--- blind ---\n%s\n--- knobs ---\n%s",
+			blind, knobs)
 	}
 }
 

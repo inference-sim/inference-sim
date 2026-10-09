@@ -47,34 +47,6 @@ func TestNetworkTopology_HasNoCLIFlag(t *testing.T) {
 	}
 }
 
-// TestInterconnectCalibration_IsHardwareConfigOnly documents where the fabric SPEEDS come
-// from, as distinct from the topology: they are per-GPU-type entries in the file
-// --hardware-config already points at, so an IB-vs-RoCE comparison is an edit to that
-// file. There is deliberately no separate bandwidth flag to drift from it.
-//
-// Note the per-GPU keying is not yet per-PLACED-GPU: a node-pool instance uses whichever
-// entry --hardware resolved, because DeploymentConfig.HWConfigByGPU has no policy-bundle
-// key today (issue #893). Fabric values therefore inherit that pre-existing limitation.
-func TestInterconnectCalibration_IsHardwareConfigOnly(t *testing.T) {
-	for _, cmd := range []struct {
-		name string
-		c    *cobra.Command
-	}{
-		{"run", runCmd},
-		{"replay", replayCmd},
-	} {
-		if f := cmd.c.Flags().Lookup("hardware-config"); f == nil {
-			t.Errorf("%s must expose --hardware-config: it is the only source of interconnect calibration (#1530)", cmd.name)
-		}
-		for _, bad := range []string{"inter-node-bandwidth", "intra-node-bandwidth", "interconnect-bandwidth"} {
-			if f := cmd.c.Flags().Lookup(bad); f != nil {
-				t.Errorf("%s registers --%s: interconnect bandwidths belong in the hardware config, "+
-					"which is resolved per placed GPU type; a global flag cannot describe a mixed fleet", cmd.name, bad)
-			}
-		}
-	}
-}
-
 // TestCrossNodeSpanForTrace verifies the normalization that keeps the trace header
 // byte-identical for every run without multi-node placement: only a real span (>1) is
 // recorded, and the omitempty zero covers both "no node pools" (0) and "every instance on

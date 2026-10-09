@@ -73,9 +73,8 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 		replayTraceOutput = origTraceOut
 	}()
 
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir, _ := setupKernelTestFixtures(t)
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 100000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -99,7 +98,6 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	traceHeaderPath = headerPath
 	traceDataPath = dataPath
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
 	defaultsFilePath = "../defaults.yaml"
@@ -113,10 +111,7 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
 	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
-		"--max-model-len", "1000000",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
 		"--session-mode", "fixed-accumulate",
@@ -223,9 +218,8 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		headerPath, dataPath := writeAccumulateCorpus(t)
 		restore := captureCmdLevelVars()
 		defer restore.restore()
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir, _ := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 100000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -240,7 +234,6 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -254,10 +247,7 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
 		testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
-			"--max-model-len", "1000000",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate", "--concurrent-sessions", "4",
@@ -299,9 +289,8 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 		restore := captureCmdLevelVars()
 		defer restore.restore()
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir, _ := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -316,7 +305,6 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -329,9 +317,7 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
 		testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate",
@@ -369,9 +355,8 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		restore := captureCmdLevelVars()
 		origThink := replayThinkTimeMs
 		defer func() { restore.restore(); replayThinkTimeMs = origThink }()
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir, _ := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 100000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -386,7 +371,6 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -401,10 +385,7 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 		testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "100000", "--hardware", "H100", "--tp", "1",
-			"--max-model-len", "1000000",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", "../defaults.yaml",
 			"--session-mode", "fixed-accumulate", "--think-time-ms", "500",

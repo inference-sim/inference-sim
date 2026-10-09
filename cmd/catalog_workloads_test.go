@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/spf13/cobra"
 )
 
@@ -662,29 +663,12 @@ const (
 	presetRunCatalogEnv = "BLIS_PRESET_RUN_CATALOG"
 )
 
-// presetRunModel is a model catalogued in the committed test catalog
-// (testdata/catalog/models/), copied into a temporary catalog by newPresetRunCatalog.
-const presetRunModel = "qwen/qwen3-14b"
-
-// newPresetRunCatalog builds a catalog holding both namespaces a preset-driven `blis run`
-// needs: models/<name>/config.json (a copy of the bundled entry) and
-// workloads/chatbot.yaml with the given prompt/output means.
+// newPresetRunCatalog builds a catalog holding everything a preset-driven kernel `blis run`
+// needs -- a copy of the vendored catalog, so the scenario's model graph, hardware and fabric
+// resolve -- with workloads/chatbot.yaml carrying the given prompt/output means.
 func newPresetRunCatalog(t *testing.T, promptMean, outputMean int) string {
 	t.Helper()
-	root := t.TempDir()
-
-	shortName := presetRunModel[strings.Index(presetRunModel, "/")+1:]
-	content, err := os.ReadFile(filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile))
-	if err != nil {
-		t.Fatalf("read test catalog entry: %v", err)
-	}
-	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
-	if err := os.MkdirAll(entryDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entryDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, hfConfigFile), content, 0o644); err != nil {
-		t.Fatalf("write catalog entry: %v", err)
-	}
+	root := copyKernelCatalog(t)
 
 	preset := retiredDefaultsPresets["chatbot"]
 	preset.PromptTokensMean = promptMean
@@ -733,9 +717,9 @@ func runPresetLeg(t *testing.T, catalog string) string {
 // if the preset were ignored entirely.
 func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if os.Getenv(presetRunLegEnv) == "1" {
+		repos := kernelmodel.DefaultRepos()
 		rootCmd.SetArgs([]string{
-			"run", "--model", presetRunModel,
-			"--hardware", "H100", "--tp", "1",
+			"run", "--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
 			"--workload", "chatbot", "--rate", "5", "--num-requests", "20",
 			"--seed", "42", "--horizon", "600000000",
 			"--defaults-filepath", "../defaults.yaml",

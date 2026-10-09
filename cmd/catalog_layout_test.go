@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.
@@ -43,7 +45,7 @@ func requireCompletedRequests(t *testing.T, label, stdout string) {
 //
 //	INV-6  — the clone-root layout resolves and runs deterministically (byte-identical
 //	         stdout across repeated runs of the same catalog).
-//	INV-13 — run and replay share resolveModelConfig, so both resolve the clone-root layout.
+//	INV-13 — run and replay share resolveLatencyConfig, so both resolve the clone-root layout.
 //	NS-6   — a model absent from the (sole) layout is refused, naming the canonical path.
 //
 // The unit-level layout laws (candidate derivation, malformed-entry boundary, relative vs
@@ -58,32 +60,13 @@ const (
 	catalogLayoutTraceEnv   = "BLIS_CATALOG_LAYOUT_TRACE"
 )
 
-// catalogLayoutModel is a model catalogued in the committed test catalog
-// testdata/catalog/models/, so newCloneRootCatalog can copy its entry.
-const catalogLayoutModel = "qwen/qwen3-14b"
-
-// newCloneRootCatalog builds a catalog CLONE ROOT whose models/ namespace holds a
-// byte-for-byte copy of the test-catalog entry for catalogLayoutModel, and returns its
-// root. The copy (rather than a symlink) makes the "same config.json bytes" premise of the
-// determinism comparison explicit and independent of symlink support.
+// newCloneRootCatalog builds a catalog CLONE ROOT -- a byte-for-byte copy of the vendored
+// catalog, so the kernel scenario's model graph, hardware and fabric all resolve from it -- and
+// returns its root. The copy makes the "same catalog bytes" premise of the determinism
+// comparison explicit.
 func newCloneRootCatalog(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	shortName := catalogLayoutModel[strings.Index(catalogLayoutModel, "/")+1:]
-
-	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
-	content, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read test catalog entry %s: %v", src, err)
-	}
-	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
-	if err := os.MkdirAll(entryDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entryDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, hfConfigFile), content, 0o644); err != nil {
-		t.Fatalf("write clone-root catalog entry: %v", err)
-	}
-	return root
+	return copyKernelCatalog(t)
 }
 
 // runCatalogLayoutLeg re-execs this test binary as the named leg with the given catalog
@@ -121,12 +104,13 @@ func catalogLayoutSubprocess() bool {
 	catalog := os.Getenv(catalogLayoutCatalogEnv)
 	tracePrefix := os.Getenv(catalogLayoutTraceEnv)
 
+	repos := kernelmodel.DefaultRepos()
+	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry}
 	var args []string
 	switch leg {
 	case "run", "run-export":
 		args = []string{
-			"run", "--model", catalogLayoutModel,
-			"--hardware", "H100", "--tp", "1",
+			"run",
 			"--seed", "42", "--num-requests", "20",
 			"--defaults-filepath", "../defaults.yaml",
 			"--catalog", catalog,
@@ -139,8 +123,6 @@ func catalogLayoutSubprocess() bool {
 			"replay",
 			"--trace-header", tracePrefix + ".yaml",
 			"--trace-data", tracePrefix + ".csv",
-			"--model", catalogLayoutModel,
-			"--hardware", "H100", "--tp", "1",
 			"--seed", "42",
 			"--defaults-filepath", "../defaults.yaml",
 			"--catalog", catalog,
@@ -148,6 +130,7 @@ func catalogLayoutSubprocess() bool {
 	default:
 		os.Exit(2)
 	}
+	args = append(args, scenario...)
 
 	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {

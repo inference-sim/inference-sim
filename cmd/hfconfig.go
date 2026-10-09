@@ -12,7 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
@@ -117,33 +116,6 @@ func resolveCatalogRoot() (string, error) {
 // safe: one command runs per process.
 func registerCatalogFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Path to the catalog CLONE ROOT (#1774; clone https://github.com/inference-sim/blis-catalog). A model's HuggingFace config.json is read from <catalog>/"+catalogModelsSubdir+"/<short-name>/config.json; a named workload preset is read from <catalog>/"+catalogWorkloadsSubdir+"/<name>"+presetFileExt+" (#1769). Path semantics: a RELATIVE value is resolved against the current working directory, an ABSOLUTE value is used as given. No default and no search path — supply this flag or the "+catalogEnvVar+" environment variable (the flag wins when both are set), or the run is refused naming both. BLIS never fetches or writes a config at run time: an uncatalogued model is refused naming the path its entry belongs at (NS-6, #1733)")
-}
-
-// resolveModelConfig finds a HuggingFace config.json for the given model inside the
-// catalog located by --catalog / BLIS_CATALOG. Returns the path to the catalog entry
-// directory containing config.json.
-//
-// NS-6 (#1733): a model runs if and only if it is in the catalog. This function READS the
-// catalog and never writes to it — a model whose config.json is absent is refused, naming
-// the path the entry belongs at. It used to download config.json from HuggingFace and write
-// it into model_configs/, which made "run an unknown model" silently ADD a catalog entry;
-// that fetch (and every path that could create or modify a catalog file) is gone.
-//
-// S4 (#1731): the catalog's LOCATION is now an explicit input (--catalog / BLIS_CATALOG)
-// rather than a working-directory-relative default, and the retired per-model folder flag
-// is subsumed by it — pointing --catalog at a scratch directory covers the same
-// "use my own config" need, so there is exactly one way to supply a model config.
-func resolveModelConfig(model string) (string, error) {
-	catalog, err := resolveCatalogRoot()
-	if err != nil {
-		return "", err
-	}
-	// Record the catalog root that produced this run's model config, so the results
-	// file can attribute the result to it (#1732, R1/S5). A side effect in the same
-	// spirit as modelConfigDir: the root is not otherwise recoverable at the emit site,
-	// and re-resolving there would re-emit the precedence announcement.
-	resolvedCatalogRoot = catalog
-	return resolveModelConfigInCatalog(model, catalog)
 }
 
 // resolveModelConfigInCatalog is resolveModelConfig with the catalog root supplied
@@ -262,27 +234,6 @@ func readCatalogEntry(model string, candidates []string) (entryDir, entryPath st
 	)
 }
 
-// resolveHardwareConfig finds the hardware config JSON file.
-// Returns the explicit path if provided, or the bundled default.
-func resolveHardwareConfig(explicitPath, defaultsFile string) (string, error) {
-	if explicitPath != "" {
-		return explicitPath, nil
-	}
-
-	// Derive bundled path from defaults.yaml location
-	defaultsDir := filepath.Dir(defaultsFile)
-	bundledPath := filepath.Join(defaultsDir, "hardware_config.json")
-	if _, err := os.Stat(bundledPath); err == nil {
-		logrus.Infof("--latency-model: using bundled hardware config at %s", bundledPath)
-		return bundledPath, nil
-	}
-
-	return "", fmt.Errorf(
-		"--latency-model: bundled hardware config not found at %q. Provide --hardware-config explicitly",
-		bundledPath,
-	)
-}
-
 // isHFConfig checks whether JSON bytes represent a HuggingFace transformer
 // config.json. It looks for num_hidden_layers, hidden_size, or a non-empty
 // layers_block_type list at the top level (text-only models) or nested inside
@@ -324,59 +275,6 @@ func isHFConfig(data []byte) bool {
 	}
 
 	return false
-}
-
-// applyWeightPrecisionFallback applies model-name-based weight precision detection
-// when quantization_config parsing didn't yield a result, and logs diagnostic messages.
-// mc is modified in place. hfRaw is the parsed HFConfig.Raw map used for the
-// quantization_config presence check.
-func applyWeightPrecisionFallback(mc *sim.ModelConfig, model string, hfRaw map[string]any) {
-	// Model name fallback: if quantization_config parsing didn't yield weight
-	// precision, try to infer from naming conventions (e.g. w4a16, FP8).
-	if mc.WeightBytesPerParam == 0 {
-		mc.WeightBytesPerParam = latency.InferWeightBytesFromModelName(model)
-	}
-
-	// Log quantization info when weight precision differs from compute precision
-	if mc.WeightBytesPerParam > 0 && mc.WeightBytesPerParam != mc.BytesPerParam {
-		logrus.Infof("quantized model detected — weight precision: %.2f bytes/param, compute/activation precision: %.1f bytes/param",
-			mc.WeightBytesPerParam, mc.BytesPerParam)
-	} else if mc.WeightBytesPerParam == 0 {
-		// Warn if quantization_config detected but neither parser nor name yielded precision
-		if _, hasQC := hfRaw["quantization_config"]; hasQC {
-			logrus.Warnf("HuggingFace config has quantization_config but weight precision could not be determined")
-		} else if mc.BytesPerParam > 0 && mc.BytesPerParam <= 1 {
-			logrus.Warnf("model reports %.0f byte(s)/param (possible quantization); "+
-				"step time estimates may be inaccurate for quantized models",
-				mc.BytesPerParam)
-		}
-	}
-}
-
-// applyKVCacheDtype resolves the --kv-cache-dtype flag to a KV-cache storage
-// precision (bytes/param) and records it on mc.KVBytesPerParam (#1565). It mirrors
-// applyWeightPrecisionFallback on the KV axis and is called at the same sites, so KV
-// precision rides alongside weight precision wherever a ModelConfig is resolved.
-//
-// "auto" (the default) maps to 0, leaving KVBytesPerParam unset so
-// EffectiveKVBytesPerParam falls back to the compute/activation dtype (BytesPerParam)
-// — byte-identical to a build without the flag (INV-6). An explicit fp8 KV dtype under
-// bf16 compute sets 1.0, halving per-token KV bytes (~2x KV block capacity), matching
-// vLLM's --kv-cache-dtype fp8. KV precision is independent of weight quantization. mc
-// is modified in place; an unrecognized value is a hard error (R1, CLI boundary).
-func applyKVCacheDtype(mc *sim.ModelConfig, kvCacheDtype string) {
-	bytes, ok := latency.KVCacheDtypeToBytes(kvCacheDtype)
-	if !ok {
-		logrus.Fatalf("--kv-cache-dtype %q is not recognized; valid values: auto, fp8, fp8_e4m3, fp8_e5m2, fp8_inc, bf16, bfloat16, fp16, fp32", kvCacheDtype)
-	}
-	if bytes <= 0 {
-		return // "auto": follow the compute dtype (KVBytesPerParam stays 0), INV-6.
-	}
-	mc.KVBytesPerParam = bytes
-	if mc.BytesPerParam > 0 && bytes != mc.BytesPerParam {
-		logrus.Infof("--kv-cache-dtype %q: KV cache stored at %.2f byte(s)/param vs compute/activation %.1f byte(s)/param (independent of weight precision)",
-			kvCacheDtype, bytes, mc.BytesPerParam)
-	}
 }
 
 // catalogModelDirs returns the candidate catalog entry directories for a model, in

@@ -475,40 +475,6 @@ func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
 	}
 }
 
-func TestResolveHardwareConfig_ExplicitOverride(t *testing.T) {
-	path, err := resolveHardwareConfig("/explicit/hw.json", "defaults.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if path != "/explicit/hw.json" {
-		t.Errorf("expected /explicit/hw.json, got %s", path)
-	}
-}
-
-func TestResolveHardwareConfig_BundledDefault(t *testing.T) {
-	tmpDir := t.TempDir()
-	hwPath := filepath.Join(tmpDir, "hardware_config.json")
-	if err := os.WriteFile(hwPath, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
-	path, err := resolveHardwareConfig("", defaultsFile)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if path != hwPath {
-		t.Errorf("expected %s, got %s", hwPath, path)
-	}
-}
-
-func TestResolveHardwareConfig_Missing_ReturnsError(t *testing.T) {
-	_, err := resolveHardwareConfig("", "/nonexistent/dir/defaults.yaml")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-}
-
 // TestCatalogModelDir maps a model name onto its candidate catalog entry directories.
 // Since #1731 the catalog ROOT is a required input (there is no working-directory
 // default), so an empty root is an error rather than a relative path. Since #1771 there is

@@ -233,7 +233,7 @@ func TestKVOffloadDevicesBlockRemoved_BundledDefaultsHasNoBlock(t *testing.T) {
 		}
 	}
 	// Non-vacuity: the file must still be the real one (a truncated read would pass above).
-	if !strings.Contains(string(data), "trained_physics_coefficients:") {
+	if !strings.Contains(string(data), "\nlora:") {
 		t.Fatal("non-vacuity: defaults.yaml does not look like the committed file")
 	}
 }

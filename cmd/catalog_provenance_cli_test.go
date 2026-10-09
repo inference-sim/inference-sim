@@ -23,10 +23,6 @@ import (
 // NOTE: these tests mutate package-level CLI vars and os.Stdout — do NOT use
 // t.Parallel(). Every mutated var is restored.
 
-// provenanceTestModel is the model the runs below simulate. Its catalog entry short name
-// is the last path segment, which writeTestCatalog creates.
-const provenanceTestModel = "qwen/qwen3-14b"
-
 // Workload sizing for the runs below. These are constants rather than reads of the
 // package-level CLI vars because registerSimConfigFlags RESETS every bound var to its
 // flag default at registration time — a value read after registration would be the
@@ -37,76 +33,38 @@ const (
 	provenanceSeed        = int64(4242)
 )
 
-// setupGitCatalogFixtures builds the fixture set the CLI provenance tests need: a model
-// catalog that is its OWN git repository (so the dirty flag is scoped to the catalog and
-// nothing else), plus the hardware config and defaults.yaml the trained-physics backend
-// needs — deliberately placed OUTSIDE the catalog so they cannot make it dirty.
+// setupGitCatalogFixtures builds the fixture set the CLI provenance tests need: a copy of the
+// vendored catalog that is its OWN git repository (so the dirty flag is scoped to the catalog
+// and nothing else), plus the repository's defaults.yaml -- deliberately OUTSIDE the catalog so
+// it cannot make it dirty. hwPath is empty: the kernel reads the chip from the catalog.
 func setupGitCatalogFixtures(t *testing.T) (catalogRoot, hwPath, defaultsPath, headRevision string) {
 	t.Helper()
 	requireGit(t)
-	tmp := t.TempDir()
-
-	catalogRoot = filepath.Join(tmp, "catalog")
-	if err := os.MkdirAll(catalogRoot, 0o755); err != nil {
-		t.Fatalf("mkdir catalog root: %v", err)
+	catalogRoot = copyKernelCatalog(t)
+	defaultsPath, err := filepath.Abs("../defaults.yaml")
+	if err != nil {
+		t.Fatal(err)
 	}
-	// 2-layer Llama-like config, matching setupTrainedPhysicsTestFixtures, so the
-	// simulation is fast.
-	configJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 4,
-  "num_hidden_layers": 2,
-  "hidden_size": 64,
-  "intermediate_size": 128,
-  "num_key_value_heads": 4,
-  "torch_dtype": "float16",
-  "max_position_embeddings": 4096
-}`
-	if _, err := writeTestCatalog(catalogRoot, configJSON); err != nil {
-		t.Fatalf("write test catalog: %v", err)
-	}
-
-	hwPath = filepath.Join(tmp, "hw.json")
-	hwJSON := `{
-  "H100": {
-    "MemoryGiB": 80.0,
-    "TFlopsPeak": 1.0,
-    "BwPeakTBs": 0.001
-  }
-}`
-	if err := os.WriteFile(hwPath, []byte(hwJSON), 0o644); err != nil {
-		t.Fatalf("write hw config: %v", err)
-	}
-	defaultsPath = filepath.Join(tmp, "defaults.yaml")
-	defaultsYAML := `trained_physics_coefficients:
-  alpha_coeffs: [100.0, 1.0, 100.0]
-  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-`
-	if err := os.WriteFile(defaultsPath, []byte(defaultsYAML), 0o644); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
-
 	gitInRepo(t, catalogRoot, "init", "--quiet")
 	gitInRepo(t, catalogRoot, "add", ".")
 	gitInRepo(t, catalogRoot, "commit", "--quiet", "-m", "catalog: initial entries")
 	headRevision = strings.TrimSpace(gitInRepo(t, catalogRoot, "rev-parse", "HEAD"))
-	return catalogRoot, hwPath, defaultsPath, headRevision
+	return catalogRoot, "", defaultsPath, headRevision
 }
 
-// dirtyCatalogEntry makes the catalog entry for provenanceTestModel differ from its
-// committed state WITHOUT changing the model config it parses to: it appends a newline,
-// which JSON ignores. This is what makes the INV-6 assertion non-vacuous — the catalog is
-// genuinely dirty while the simulation's inputs, and therefore its stdout, are unchanged.
+// dirtyCatalogEntry makes the model graph the kernel scenario reads differ from its committed
+// state WITHOUT changing what it parses to: it appends a newline, which YAML ignores. This is
+// what makes the INV-6 assertion non-vacuous -- the catalog is genuinely dirty while the
+// simulation's inputs, and therefore its stdout, are unchanged.
 func dirtyCatalogEntry(t *testing.T, catalogRoot string) {
 	t.Helper()
-	shortName := provenanceTestModel[strings.LastIndexByte(provenanceTestModel, '/')+1:]
-	cfg := testCatalogConfigPath(catalogRoot, shortName)
-	data, err := os.ReadFile(cfg)
+	graph := filepath.Join(catalogRoot, catalogModelsSubdir, "gpt-oss-120b", "graph.yaml")
+	data, err := os.ReadFile(graph)
 	if err != nil {
-		t.Fatalf("read catalog entry %s: %v", cfg, err)
+		t.Fatalf("read catalog entry %s: %v", graph, err)
 	}
-	if err := os.WriteFile(cfg, append(data, '\n'), 0o644); err != nil {
-		t.Fatalf("dirty catalog entry %s: %v", cfg, err)
+	if err := os.WriteFile(graph, append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("dirty catalog entry %s: %v", graph, err)
 	}
 	if out := gitInRepo(t, catalogRoot, "status", "--porcelain", "--", "."); strings.TrimSpace(out) == "" {
 		t.Fatalf("fixture failed to dirty the catalog: git reports a clean subtree")
@@ -152,10 +110,7 @@ func captureRunStdout(t *testing.T, fn func()) []byte {
 // setProvenanceRunVars sets the package-level CLI vars shared by the run and replay
 // drivers below to a small deterministic single-instance configuration.
 func setProvenanceRunVars(catalogDir, hwPath, defaultsPath string) {
-	model = provenanceTestModel
-	latencyModelBackend = "trained-physics"
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	defaultsFilePath = defaultsPath
 	gpu = "H100"
 	tensorParallelism = 1
@@ -217,14 +172,8 @@ func runWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, tracePref
 	testCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--model", provenanceTestModel,
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-requests", strconv.Itoa(provenanceNumRequests),
 		"--seed", strconv.FormatInt(provenanceSeed, 10),
 		"--rate", "1.0",
@@ -284,14 +233,8 @@ func replayWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, traceP
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", provenanceTestModel,
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-instances", "1",
 		"--horizon", strconv.FormatInt(provenanceHorizonUs, 10),
 		"--trace-header", headerFile,
@@ -425,14 +368,8 @@ func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
 	testCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", provenanceTestModel,
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogRoot,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogRoot, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-requests", strconv.Itoa(provenanceNumRequests),
 		"--seed", strconv.FormatInt(provenanceSeed, 10),
 		"--rate", "1.0",

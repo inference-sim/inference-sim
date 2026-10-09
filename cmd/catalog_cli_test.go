@@ -53,14 +53,14 @@ func runCatalogLeg(t *testing.T, leg, env string) (stdout, stderr string, err er
 // logrus.Fatalf surfaces as exit status 1.
 func TestRunCmd_CatalogLocation(t *testing.T) {
 	if leg := os.Getenv(catalogLegEnv); leg != "" {
+		scenarios, catalog, registry := kernelRepos(t)
 		args := []string{
-			"run", "--model", "qwen/qwen3-14b",
-			"--hardware", "H100", "--tp", "1",
+			"run", "--scenario", kernelTestScenario, "--scenarios", scenarios, "--registry", registry,
 			"--seed", "42", "--num-requests", "5",
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if leg == "flag" {
-			args = append(args, "--catalog", "../testdata/catalog")
+			args = append(args, "--catalog", catalog)
 		}
 		rootCmd.SetArgs(args)
 		if execErr := rootCmd.Execute(); execErr != nil {
@@ -69,6 +69,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		os.Exit(0)
 	}
 
+	_, catalog, _ := kernelRepos(t)
 	tests := []struct {
 		name      string
 		leg       string
@@ -76,7 +77,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		wantFatal bool
 	}{
 		{name: "--catalog locates the catalog", leg: "flag", wantFatal: false},
-		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: "../testdata/catalog", wantFatal: false},
+		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: catalog, wantFatal: false},
 		{name: "neither is refused", leg: "none", wantFatal: true},
 	}
 
@@ -131,7 +132,8 @@ func TestRunCmd_CatalogLocation_ByteIdenticalAcrossForms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--catalog leg failed: %v\nstderr:\n%s", err, stderrFlag)
 	}
-	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", "../testdata/catalog")
+	_, catalog, _ := kernelRepos(t)
+	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", catalog)
 	if err != nil {
 		t.Fatalf("%s leg failed: %v\nstderr:\n%s", catalogEnvVar, err, stderrEnv)
 	}

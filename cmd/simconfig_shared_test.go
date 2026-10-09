@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -46,40 +47,11 @@ func TestNoR23CommentSyncMarkersInReplay(t *testing.T) {
 	}
 }
 
-// TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum verifies the shared function
-// uses len < 7 for trained-physics (BC-4), matching the 7-coefficient model.
-// The guard prevents insufficient coefficients for the trained-physics backend.
-func TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum(t *testing.T) {
-	// GIVEN the source of cmd/root.go (where the shared guard lives after Task 1)
-	data, err := os.ReadFile("root.go")
-	assert.NoError(t, err)
-
-	content := string(data)
-
-	// THEN: the guard uses < 7 (not < 10) for trained-physics (BC-4)
-	// The local variable in resolveLatencyConfig is named "beta" (not "betaCoeffs")
-	assert.Contains(t, content, `len(beta) < 7`,
-		"trained-physics guard must use < 7 (model uses indices 0-6); local var is 'beta' in resolveLatencyConfig")
-
-	// THEN: the wrong value < 10 must not appear in root.go
-	assert.NotContains(t, content, `len(beta) < 10`,
-		"< 10 was the replay.go drift bug and must not appear in the shared function")
-}
-
 // TestRunCmd_SimConfigFlagsParity verifies that both commands register the same
-// latency-related flags with the same defaults (BC-1).
+// deployment-source flags with the same defaults (BC-1): the scenario, scenario directory,
+// registry and catalog are the whole deployment input on both run and replay.
 func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
-	// GIVEN both commands' flag sets
-	// WHEN we check for latency-model related flags
-	// THEN both commands must have the exact same set (registered via registerSimConfigFlags)
-	latencyFlags := []string{
-		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
-		"alpha-coeffs", "beta-coeffs",
-		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "catalog", "hardware-config",
-		"comm-serialization-factor", "enforce-eager", // #1694 Part B
-	}
-	for _, name := range latencyFlags {
+	for _, name := range []string{"scenario", "scenarios", "registry", "catalog"} {
 		runFlag := runCmd.Flags().Lookup(name)
 		replayFlag := replayCmd.Flags().Lookup(name)
 		assert.NotNilf(t, runFlag, "runCmd must have --%s", name)
@@ -87,6 +59,36 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 		if runFlag != nil && replayFlag != nil {
 			assert.Equalf(t, runFlag.DefValue, replayFlag.DefValue,
 				"--%s default must match between run and replay", name)
+		}
+	}
+}
+
+// TestBothCommands_EngineAndDeploymentKnobsAreNotFlags: the kernel scenario is the single
+// source of the deployment (model, hardware, parallelism) and the engine the kernel prices
+// (KV pool, batch caps, block size, max-model-len, prefix caching, speculation, transfer
+// costs). A flag restating any of them would let the simulated scheduler run an engine the
+// kernel did not price, so none is registered on either command.
+func TestBothCommands_EngineAndDeploymentKnobsAreNotFlags(t *testing.T) {
+	removed := []string{
+		"latency-model", "alpha-coeffs", "beta-coeffs", "hardware-config",
+		"model", "hardware", "tp", "dp", "enable-expert-parallel", "moe-comm-backend",
+		"prefill-tp", "decode-tp", "prefill-hardware", "decode-hardware",
+		"prefill-latency-model", "decode-latency-model", "prefill-max-model-len", "decode-max-model-len",
+		"prefill-moe-comm-backend", "decode-moe-comm-backend",
+		"total-kv-blocks", "max-num-seqs", "max-num-running-reqs", "max-num-batched-tokens",
+		"max-num-scheduled-tokens", "block-size-in-tokens", "gpu-memory-utilization", "max-model-len",
+		"kv-cache-dtype", "no-enable-prefix-caching", "num-speculative-tokens", "speculative-method",
+		"kv-transfer-bandwidth", "kv-transfer-base-latency",
+		"pd-transfer-bandwidth", "pd-transfer-base-latency", "pd-transfer-contention",
+		"comm-serialization-factor", "enforce-eager",
+	}
+	for _, c := range []struct {
+		name string
+		cmd  *cobra.Command
+	}{{"run", runCmd}, {"replay", replayCmd}} {
+		for _, name := range removed {
+			assert.Nilf(t, c.cmd.Flags().Lookup(name),
+				"%s must not register --%s: the kernel scenario states it", c.name, name)
 		}
 	}
 }
@@ -107,8 +109,7 @@ func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
-		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
-		"kv-transfer-base-latency", "snapshot-refresh-interval",
+		"kv-cpu-blocks", "kv-offload-threshold", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"cache-signal-delay",
@@ -153,20 +154,13 @@ func TestReplayCmd_SourceContainsNoPolicyInlineBlocks(t *testing.T) {
 // and resolvePolicies have identical default values in runCmd and replayCmd.
 func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 	sharedFlags := []string{
-		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
-		"alpha-coeffs", "beta-coeffs",
-		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
-		"gpu-memory-utilization", "catalog", "hardware-config",
-		"comm-serialization-factor", "enforce-eager", // #1694 Part B
+		"scenario", "scenarios", "registry", "catalog",
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
-		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
-		"kv-transfer-base-latency", "snapshot-refresh-interval",
+		"kv-cpu-blocks", "kv-offload-threshold", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"num-instances", "max-num-seqs", "max-num-batched-tokens",
-		// Deprecated aliases (issue #1570) — registered on both commands.
-		"max-num-running-reqs", "max-num-scheduled-tokens",
+		"num-instances",
 		"long-prefill-token-threshold", "cache-signal-delay",
 		"flow-control", "saturation-detector", "dispatch-order",
 		"max-gateway-queue-depth", "queue-depth-threshold",

@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +16,6 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -355,13 +353,9 @@ Example:
 		// through the SAME helper runCmd uses. The flags are registered in the shared
 		// registerSimConfigFlags, so run and replay derive and override identically
 		// (INV-13). No-op unless --kv-cpu-blocks > 0.
-		// On the kernel backend the kernel prices every offload transfer; the legacy
-		// derivation below reads the catalog device itself and is skipped there.
+		// The kernel prices every offload transfer: the secondary tiers through TierTime and
+		// the legacy CPU tier as one whole per-block reload charge.
 		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
-		if kernelCPUTierTicks == 0 {
-			legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
-			kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
-		}
 
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
@@ -440,14 +434,6 @@ Example:
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
-		if prefillInstances > 0 {
-			if pdTransferBandwidth <= 0 || math.IsInf(pdTransferBandwidth, 0) || math.IsNaN(pdTransferBandwidth) {
-				logrus.Fatalf("--pd-transfer-bandwidth must be a finite positive number, got %f", pdTransferBandwidth)
-			}
-			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
-				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
-			}
-		}
 		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
 		}
@@ -456,33 +442,6 @@ Example:
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
 			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
-		}
-
-		// ModelConfig resolution for PD KV transfer sizing (same as runCmd).
-		// When PD is active and an analytical backend is in use, the ModelConfig may need to
-		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
-		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
-		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 && lr.KernelModel == nil {
-			resolved, err := resolveModelConfig(model)
-			if err != nil {
-				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
-			}
-			hfPath := filepath.Join(resolved, "config.json")
-			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
-			if parseErr != nil {
-				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
-			}
-			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
-			if mcErr != nil {
-				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
-			}
-			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
-			applyKVCacheDtype(mc, kvCacheDtype)
-			if mc.BytesPerParam <= 0 {
-				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
-			}
-			lr.ModelConfig = *mc
-			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
 		// DP-as-placement plan DECISION (#1531/#1556, #1553) — decided here, early, so the
@@ -498,176 +457,9 @@ Example:
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
-		// perPoolKVDP: per-rank DP (=1) under an active plan, else global --dp. Same rationale
-		// as runCmd — a pool override is written directly, so it must be per-rank at calc time.
-		perPoolKVDP := dataParallelism
-		if dpPlan.Active {
-			perPoolKVDP = dpPlan.PerRankDP
-		}
-
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
-		// Per-pool KV auto-calculation (same as runCmd).
-		// When PD disaggregation is active and a pool uses different TP or GPU hardware,
-		// compute per-pool KV blocks from model + hardware for analytical backends.
-		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
-			if prefillInstances > 0 {
-				hfPath := filepath.Join(modelConfigDir, "config.json")
-				hfConfig, err := latency.ParseHFConfig(hfPath)
-				if err != nil {
-					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
-				}
-				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
-				if kvErrPool != nil {
-					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
-				} else {
-					// Prefill pool auto-calc
-					poolPrefillTP := tensorParallelism
-					if cmd.Flags().Changed("prefill-tp") {
-						poolPrefillTP = prefillTP
-					}
-					poolPrefillGPU := gpu
-					if cmd.Flags().Changed("prefill-hardware") {
-						poolPrefillGPU = prefillHardware
-					}
-					if poolPrefillTP != tensorParallelism || poolPrefillGPU != gpu {
-						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolPrefillGPU)
-						if hcErr != nil {
-							logrus.Warnf("--prefill-hardware: failed to load hardware config for GPU %q: %v; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, hcErr, totalKVBlocks)
-						} else if poolHC.MemoryGiB <= 0 {
-							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
-						} else {
-							// Per-pool TP but GLOBAL dp: per-pool DP is out of scope (#1420);
-							// --dp applies uniformly to all pools. Mirrors run (cmd/root.go).
-							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
-								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolPrefillTP)))
-							if calcErr != nil {
-								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
-							} else {
-								prefillOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, perPoolKVDP)
-								if !cmd.Flags().Changed("prefill-max-model-len") {
-									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
-									if kvFeasibleMax < maxModelLen {
-										prefillOverrides.MaxModelLen = &kvFeasibleMax
-										logrus.Infof("--prefill-tp/--prefill-hardware: auto-capped prefill pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
-									}
-								}
-							}
-						}
-					}
-
-					// Decode pool auto-calc
-					poolDecodeTP := tensorParallelism
-					if cmd.Flags().Changed("decode-tp") {
-						poolDecodeTP = decodeTP
-					}
-					poolDecodeGPU := gpu
-					if cmd.Flags().Changed("decode-hardware") {
-						poolDecodeGPU = decodeHardware
-					}
-					if poolDecodeTP != tensorParallelism || poolDecodeGPU != gpu {
-						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolDecodeGPU)
-						if hcErr != nil {
-							logrus.Warnf("--decode-hardware: failed to load hardware config for GPU %q: %v; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, hcErr, totalKVBlocks)
-						} else if poolHC.MemoryGiB <= 0 {
-							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
-						} else {
-							// Per-pool TP, global dp (see prefill-pool note above; #1420).
-							// perPoolKVDP is per-rank (=1) under an active DP plan (#1553).
-							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, perPoolKVDP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool,
-								latency.WithAdapterReservedBytes(loraReservedBytesForKV),
-								latency.WithExpertParallelSize(epSizeForKVCapacity(lr.ModelConfig.IsMoE(), poolDecodeTP)))
-							if calcErr != nil {
-								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
-							} else {
-								decodeOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, perPoolKVDP)
-								if !cmd.Flags().Changed("decode-max-model-len") {
-									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
-									if kvFeasibleMax < maxModelLen {
-										decodeOverrides.MaxModelLen = &kvFeasibleMax
-										logrus.Infof("--decode-tp/--decode-hardware: auto-capped decode pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		perPoolFlagsChanged := anyPerPoolHardwareFlagChanged(cmd.Flags().Changed)
-		if perPoolFlagsChanged && prefillInstances == 0 {
-			logrus.Fatalf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled); either set --prefill-instances > 0 or remove the per-pool flags")
-		}
-		if prefillInstances > 0 {
-			if cmd.Flags().Changed("prefill-tp") {
-				if prefillTP <= 0 {
-					logrus.Fatalf("--prefill-tp must be > 0, got %d", prefillTP)
-				}
-				tp := prefillTP
-				prefillOverrides.TP = &tp
-			}
-			if cmd.Flags().Changed("prefill-hardware") {
-				prefillOverrides.GPU = prefillHardware
-			}
-			if cmd.Flags().Changed("prefill-latency-model") {
-				if !sim.IsValidLatencyBackend(prefillLatencyModel) {
-					logrus.Fatalf("--prefill-latency-model %q is not a recognized backend; valid: %s",
-						prefillLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
-				}
-				prefillOverrides.LatencyBackend = prefillLatencyModel
-			}
-			if cmd.Flags().Changed("prefill-max-model-len") {
-				if prefillMaxModelLen <= 0 {
-					logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", prefillMaxModelLen)
-				}
-				ml := prefillMaxModelLen
-				prefillOverrides.MaxModelLen = &ml
-			}
-			if cmd.Flags().Changed("decode-tp") {
-				if decodeTP <= 0 {
-					logrus.Fatalf("--decode-tp must be > 0, got %d", decodeTP)
-				}
-				tp := decodeTP
-				decodeOverrides.TP = &tp
-			}
-			if cmd.Flags().Changed("decode-hardware") {
-				decodeOverrides.GPU = decodeHardware
-			}
-			if cmd.Flags().Changed("decode-latency-model") {
-				if !sim.IsValidLatencyBackend(decodeLatencyModel) {
-					logrus.Fatalf("--decode-latency-model %q is not a recognized backend; valid: %s",
-						decodeLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
-				}
-				decodeOverrides.LatencyBackend = decodeLatencyModel
-			}
-			if cmd.Flags().Changed("decode-max-model-len") {
-				if decodeMaxModelLen <= 0 {
-					logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", decodeMaxModelLen)
-				}
-				ml := decodeMaxModelLen
-				decodeOverrides.MaxModelLen = &ml
-			}
-			// A per-pool latency-model override must not silently opt a pool out of the
-			// DP/EP step-time physics the rest of the cluster is using (#1548).
-			if err := validatePerPoolLatencyBackends(dataParallelism > 1 || enableExpertParallel,
-				prefillOverrides, decodeOverrides); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			// Per-ROLE MoE all-to-all backend (#1548), the same shared resolver blis run
-			// calls, so the two commands cannot validate it differently (R23, INV-13).
-			if err := applyPerRoleMoECommBackends(cmd.Flags().Changed, lr.ModelConfig.IsMoE(),
-				dataParallelism > 1 || enableExpertParallel, &prefillOverrides, &decodeOverrides); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-		}
 		// Same as runCmd: on the kernel backend each role's engine is its own pool's.
 		kernelPD := openKernelPools(resolvedCatalogRoot)
 		if kernelPD != nil {
@@ -710,8 +502,7 @@ Example:
 			logrus.Fatalf("%v", dpErr)
 		}
 
-		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
-			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
+		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)
 
 		startTime := time.Now()
 
@@ -737,13 +528,12 @@ Example:
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
 					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
-				BatchConfig:   batchConfigFromCLI(),
-				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				BatchConfig: batchConfigFromCLI(),
 				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
 				// per-replica DP — 1 when the plan is active (each replica is one rank),
 				// else the CLI dataParallelism unchanged. Identical to the run wiring
 				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, sim.HardwareCalib{}, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),

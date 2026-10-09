@@ -32,9 +32,9 @@ func openKernelPools(catalogRoot string) *kernelPools {
 		return nil
 	}
 	if prefillDecodeInstances > 0 || encodeInstances > 0 {
-		logrus.Fatalf("--latency-model %s: --prefill-decode-instances and --encode-instances are not "+
-			"supported: a blis-schemas deployment's roles are colocated, prefill and decode, so no "+
-			"scenario describes the engine a shared or encode instance would run", latencyModelBackendKernel())
+		logrus.Fatalf("--prefill-decode-instances and --encode-instances are not " +
+			"supported: a blis-schemas deployment's roles are colocated, prefill and decode, so no " +
+			"scenario describes the engine a shared or encode instance would run")
 	}
 	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry}
 	p := &kernelPools{}
@@ -44,46 +44,46 @@ func openKernelPools(catalogRoot string) *kernelPools {
 	}{{deployment.RolePrefill, &p.prefill}, {deployment.RoleDecode, &p.decode}} {
 		m, err := kernelmodel.OpenRole(kernelScenario, repos, c.role)
 		if err != nil {
-			logrus.Fatalf("--latency-model %s: --prefill-instances/--decode-instances describe a "+
-				"disaggregated run, but %v", latencyModelBackendKernel(), err)
+			logrus.Fatalf("--prefill-instances/--decode-instances describe a "+
+				"disaggregated run, but %v", err)
 		}
 		*c.dst = m
 	}
 	ps, pe := p.prefill.Settings()
 	ds, de := p.decode.Settings()
 	if pe != nil || de != nil {
-		logrus.Fatalf("--latency-model %s: scenario %q: prefill pool: %v; decode pool: %v",
-			latencyModelBackendKernel(), kernelScenario, pe, de)
+		logrus.Fatalf("scenario %q: prefill pool: %v; decode pool: %v",
+			kernelScenario, pe, de)
 	}
 	// A request's KV moves block for block: the decode side reserves the blocks the prefill
 	// side filled, so the two engines must page identically.
 	if ps.BlockSize != ds.BlockSize {
-		logrus.Fatalf("--latency-model %s: scenario %q pages the prefill pool in %d-token blocks and "+
+		logrus.Fatalf("scenario %q pages the prefill pool in %d-token blocks and "+
 			"the decode pool in %d; a P/D handoff moves whole blocks, so the pools must agree",
-			latencyModelBackendKernel(), kernelScenario, ps.BlockSize, ds.BlockSize)
+			kernelScenario, ps.BlockSize, ds.BlockSize)
 	}
 	// DP-as-placement expands every pool by one replica factor (--dp), so per-pool widths that
 	// differ cannot be expressed as a placement.
 	if ps.DataParallel != ds.DataParallel {
-		logrus.Fatalf("--latency-model %s: scenario %q runs the prefill pool at dp %d and the decode "+
+		logrus.Fatalf("scenario %q runs the prefill pool at dp %d and the decode "+
 			"pool at dp %d; one replica factor applies to both pools, so their dp must match",
-			latencyModelBackendKernel(), kernelScenario, ps.DataParallel, ds.DataParallel)
+			kernelScenario, ps.DataParallel, ds.DataParallel)
 	}
 	// The simulator's speculative config (draft length, acceptance) is one per run, while each
 	// pool's kernel prices its own draft width. Pools that disagree would advance requests by
 	// one draft length and charge for another.
 	if ps.SpeculativeTokens != ds.SpeculativeTokens || ps.SpeculativeMethod != ds.SpeculativeMethod {
-		logrus.Fatalf("--latency-model %s: scenario %q drafts %d %q tokens in the prefill pool and %d "+
+		logrus.Fatalf("scenario %q drafts %d %q tokens in the prefill pool and %d "+
 			"%q in the decode pool; one speculative configuration applies to the run, so the pools "+
-			"must agree", latencyModelBackendKernel(), kernelScenario, ps.SpeculativeTokens,
+			"must agree", kernelScenario, ps.SpeculativeTokens,
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
 	}
 	// A handoff the fabric cannot price is refused now rather than mid-run.
 	if d := p.prefill.Kernel().PDTransferTime(ps.BlockSize, p.prefill.PlacementOf(0),
 		p.decode.PlacementOf(0)); d < 0 || d >= time.Duration(math.MaxInt64/2) {
-		logrus.Fatalf("--latency-model %s: scenario %q: the kernel cannot price a KV handoff between "+
+		logrus.Fatalf("scenario %q: the kernel cannot price a KV handoff between "+
 			"its prefill and decode pools (it reports %v); the fabric between them states no "+
-			"bandwidth -- check cluster.fabric", latencyModelBackendKernel(), kernelScenario, d)
+			"bandwidth -- check cluster.fabric", kernelScenario, d)
 	}
 	return p
 }
@@ -96,7 +96,7 @@ func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
 func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	s, err := m.SettingsReserving(loraReservedBytesForKV)
 	if err != nil {
-		logrus.Fatalf("--latency-model %s: %s pool: %v", latencyModelBackendKernel(), m.Role(), err)
+		logrus.Fatalf("%s pool: %v", m.Role(), err)
 	}
 	requireWindowFits(string(m.Role())+" pool", s)
 	d := m.Deployment()
@@ -116,13 +116,13 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 // from the model's max_position_embeddings, which no document the kernel reads carries.
 func requireWindowFits(what string, s kernelmodel.Settings) {
 	if s.MaxModelLen <= 0 {
-		logrus.Fatalf("--latency-model %s: scenario %q's %s states no engine.max_model_len; state the "+
-			"window the engine serves", sim.LatencyBackendKernel, kernelScenario, what)
+		logrus.Fatalf("scenario %q's %s states no engine.max_model_len; state the "+
+			"window the engine serves", kernelScenario, what)
 	}
 	if capacity := s.KVBlocks * int64(s.BlockSize); int64(s.MaxModelLen) > capacity {
-		logrus.Fatalf("--latency-model %s: scenario %q's %s states max_model_len %d, but one rank's KV "+
+		logrus.Fatalf("scenario %q's %s states max_model_len %d, but one rank's KV "+
 			"budget holds %d tokens (%d blocks of %d); vLLM refuses to start such an engine. Lower "+
-			"max_model_len in the scenario", sim.LatencyBackendKernel, kernelScenario, what,
+			"max_model_len in the scenario", kernelScenario, what,
 			s.MaxModelLen, capacity, s.KVBlocks, s.BlockSize)
 	}
 }
@@ -162,9 +162,9 @@ func requireKernelCapacity(p *kernelPools) {
 	}
 	check := func(role string, n int, m *kernelmodel.Model) {
 		if c := m.RankCapacity(); n > c {
-			logrus.Fatalf("--latency-model %s: %d %s instance(s) requested, but scenario %q's %s pool "+
+			logrus.Fatalf("%d %s instance(s) requested, but scenario %q's %s pool "+
 				"holds %d rank(s) at its layout; raise the pool's nodes in the scenario or run fewer",
-				latencyModelBackendKernel(), n, role, kernelScenario, m.Role(), c)
+				n, role, kernelScenario, m.Role(), c)
 		}
 	}
 	if p == nil {
@@ -175,11 +175,9 @@ func requireKernelCapacity(p *kernelPools) {
 	check("decode", decodeInstances, p.decode)
 }
 
-func latencyModelBackendKernel() string { return sim.LatencyBackendKernel }
-
 // kernelCPUTier is the catalog storage device the legacy --kv-cpu-blocks tier's
-// CPU↔GPU reloads cross.
-const kernelCPUTier = legacyKVTransferDeviceClass
+// CPU↔GPU reloads cross: host DRAM across the PCIe/NVLink boundary.
+const kernelCPUTier = "cpu_dram"
 
 // kernelTierTicks is the kernel's price for one transfer, in whole ticks rounded up: a
 // transfer is not done until its last byte lands. An unknown tier is refused rather than
@@ -191,9 +189,9 @@ func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64
 	}
 	d := kernelOpened.Kernel().TierTime(tier, dir, bytes, inService)
 	if d >= time.Duration(math.MaxInt64/2) {
-		logrus.Fatalf("--latency-model %s: the kernel cannot price a %d-byte transfer %s storage tier %q: "+
+		logrus.Fatalf("the kernel cannot price a %d-byte transfer %s storage tier %q: "+
 			"either the catalog's %s defines no such device, or it states no bandwidth in that "+
-			"direction", sim.LatencyBackendKernel, bytes, map[bool]string{true: "to", false: "from"}[toTier],
+			"direction", bytes, map[bool]string{true: "to", false: "from"}[toTier],
 			tier, catalogStorageDevicesRelPath)
 	}
 	return max(1, (d.Nanoseconds()+999)/1000)
@@ -215,22 +213,21 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if (cfg.IsEnabled() || kvCPUBlocks > 0) && (prefillInstances > 0 || decodeInstances > 0) {
 		// One KV-cache config serves every instance, so offload would be sized and priced
 		// from one pool's layout for both: per-pool offload is not expressible yet.
-		logrus.Fatalf("--latency-model %s: KV offload is not supported with a P/D topology: the offload "+
-			"tiers would be sized and priced from one pool's layout for both pools",
-			sim.LatencyBackendKernel)
+		logrus.Fatalf("KV offload is not supported with a P/D topology: the offload " +
+			"tiers would be sized and priced from one pool's layout for both pools")
 	}
 	perBlock := kernelOpened.Kernel().SequenceVariableBytes(int(blockSizeTokens))
 	if (cfg.IsEnabled() || kvCPUBlocks > 0) && perBlock <= 0 {
-		logrus.Fatalf("--latency-model %s: the kernel prices a %d-token block at %d bytes; offload "+
-			"needs a block to occupy memory", sim.LatencyBackendKernel, blockSizeTokens, perBlock)
+		logrus.Fatalf("the kernel prices a %d-token block at %d bytes; offload "+
+			"needs a block to occupy memory", blockSizeTokens, perBlock)
 	}
 	if cfg.IsEnabled() {
 		for i := range cfg.Tiers {
 			class := cfg.Tiers[i].DeviceClass
 			if class == "" {
-				logrus.Fatalf("--latency-model %s: kv_offload secondary_tiers[%d] names no device_class; "+
+				logrus.Fatalf("kv_offload secondary_tiers[%d] names no device_class; "+
 					"the kernel prices a tier by its catalog device, so every tier must name one",
-					sim.LatencyBackendKernel, i)
+					i)
 			}
 			// Price one real block each way up front, so an unknown device or one with no
 			// bandwidth in a direction is refused now rather than at its first transfer.
@@ -256,10 +253,10 @@ func refuseExplicitTierPhysics(block *kvOffloadBlock) {
 	}
 	for i, t := range block.SecondaryTiers {
 		if t.ReadBandwidth != nil || t.WriteBandwidth != nil || t.BaseLatency != nil {
-			logrus.Fatalf("--latency-model %s: kv_offload secondary_tiers[%d] states read_bandwidth, "+
+			logrus.Fatalf("kv_offload secondary_tiers[%d] states read_bandwidth, "+
 				"write_bandwidth or base_latency, but the kernel prices a tier from its catalog "+
 				"device_class; name the device and drop the explicit physics",
-				sim.LatencyBackendKernel, i)
+				i)
 		}
 	}
 }
@@ -274,8 +271,8 @@ func applyKernelLoRAReservation() {
 	}
 	s, err := kernelOpened.SettingsReserving(loraReservedBytesForKV)
 	if err != nil {
-		logrus.Fatalf("--latency-model %s: scenario %q with a %d-byte LoRA adapter reservation: %v",
-			sim.LatencyBackendKernel, kernelScenario, loraReservedBytesForKV, err)
+		logrus.Fatalf("scenario %q with a %d-byte LoRA adapter reservation: %v",
+			kernelScenario, loraReservedBytesForKV, err)
 	}
 	requireWindowFits("pool with the LoRA adapter reservation set aside", s)
 	totalKVBlocks = s.KVBlocks

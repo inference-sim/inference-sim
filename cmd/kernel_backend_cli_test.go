@@ -20,22 +20,19 @@ import (
 	"pgregory.net/rapid"
 )
 
-// Behavioral contract for `--latency-model blis-latency-kernel` on `blis run` and
-// `blis replay`.
+// Behavioral contract for the blis-latency-kernel backend -- the only latency backend --
+// on `blis run` and `blis replay`.
 //
-// The kernel already satisfied sim.LatencyModel and was reachable only from the
-// standalone scoring binaries (cmd/metricscore and friends), which construct it
-// directly. `blis run` accepted roofline and trained-physics alone, so the CLI with
-// every serving knob on it -- P/D roles, --dp, speculative tokens, workload specs --
-// could not be driven against the kernel at all. These tests pin the behaviour that
-// closes that gap, at the CLI boundary rather than on the wiring.
+// The kernel prices every step of `blis run` and `blis replay`, with every serving knob
+// on the CLI -- P/D roles, dp placement, speculative tokens, workload specs -- driven
+// against it. These tests pin that behaviour at the CLI boundary rather than on the wiring.
 //
 // Each leg re-execs this test binary as a real `blis` invocation so the cobra tree
 // executes and a logrus.Fatalf surfaces as a non-zero exit, following
 // cmd/catalog_cli_test.go.
 //
 //	C1 — a kernel run completes and reports metrics.
-//	C3 — --dp > 1 and --enable-expert-parallel are ACCEPTED on the kernel backend.
+//	C3 — a scenario stating dp > 1 and expert parallelism runs.
 //	C5 — a missing scenario is refused naming what could not be resolved, never
 //	     silently served by another backend.
 
@@ -72,7 +69,7 @@ func runKernelLeg(t *testing.T, leg string, extra ...string) (stdout, stderr str
 func TestRunCmd_KernelBackend(t *testing.T) {
 	if leg := os.Getenv(kernelLegEnv); leg != "" {
 		args := []string{
-			"run", "--latency-model", "blis-latency-kernel",
+			"run",
 			"--scenario", os.Getenv("BLIS_KERNEL_SCENARIO"),
 			"--scenarios", os.Getenv("BLIS_KERNEL_SCENARIOS"),
 			"--catalog", os.Getenv("BLIS_KERNEL_CATALOG"),
@@ -114,7 +111,7 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 			scenario:  "gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
 			extra:     []string{"--tp", "2"},
 			wantFatal: true,
-			wantMsg:   "--tp is not accepted",
+			wantMsg:   "unknown flag: --tp",
 		},
 		{
 			// The engine knobs that size admission and the KV pool are the kernel's answers
@@ -124,12 +121,11 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 			scenario:  "gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
 			extra:     []string{"--total-kv-blocks", "100"},
 			wantFatal: true,
-			wantMsg:   "--total-kv-blocks is not accepted",
+			wantMsg:   "unknown flag: --total-kv-blocks",
 		},
 		{
 			// C3: the kernel models DP/EP step time, so a scenario that states expert
-			// parallelism runs -- the gate that names trained-physics as the only
-			// option must admit this backend.
+			// parallelism runs.
 			name:     "a scenario with expert parallelism runs",
 			scenario: "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml",
 		},
@@ -201,21 +197,20 @@ func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
 // aggregate differ -- the case a mix-up between them would get wrong.
 func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
-	saved := []any{latencyModelBackend, kernelScenario, kernelScenarioDir, kernelRegistry,
+	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry,
 		catalogPath, totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen,
 		noEnablePrefixCaching, numSpeculativeTokens, speculativeMethod, model, gpu,
 		tensorParallelism, dataParallelism, enableExpertParallel, kernelOpened,
 		kernelDeploymentExperts, kernelDeploymentTopK}
 	defer func() {
-		latencyModelBackend, kernelScenario, kernelScenarioDir, kernelRegistry =
-			saved[0].(string), saved[1].(string), saved[2].(string), saved[3].(string)
-		catalogPath, totalKVBlocks, blockSizeTokens = saved[4].(string), saved[5].(int64), saved[6].(int64)
-		maxNumSeqs, maxNumBatchedTokens, maxModelLen = saved[7].(int64), saved[8].(int64), saved[9].(int64)
-		noEnablePrefixCaching, numSpeculativeTokens = saved[10].(bool), saved[11].(int)
-		speculativeMethod, model, gpu = saved[12].(string), saved[13].(string), saved[14].(string)
-		tensorParallelism, dataParallelism, enableExpertParallel = saved[15].(int), saved[16].(int), saved[17].(bool)
-		kernelOpened, _ = saved[18].(*kernelmodel.Model)
-		kernelDeploymentExperts, kernelDeploymentTopK = saved[19].(int), saved[20].(int)
+		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		catalogPath, totalKVBlocks, blockSizeTokens = saved[3].(string), saved[4].(int64), saved[5].(int64)
+		maxNumSeqs, maxNumBatchedTokens, maxModelLen = saved[6].(int64), saved[7].(int64), saved[8].(int64)
+		noEnablePrefixCaching, numSpeculativeTokens = saved[9].(bool), saved[10].(int)
+		speculativeMethod, model, gpu = saved[11].(string), saved[12].(string), saved[13].(string)
+		tensorParallelism, dataParallelism, enableExpertParallel = saved[14].(int), saved[15].(int), saved[16].(bool)
+		kernelOpened, _ = saved[17].(*kernelmodel.Model)
+		kernelDeploymentExperts, kernelDeploymentTopK = saved[18].(int), saved[19].(int)
 	}()
 
 	for _, scenario := range []string{
@@ -226,7 +221,7 @@ func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 			cmd := &cobra.Command{}
 			registerSimConfigFlags(cmd)
 			if err := cmd.ParseFlags([]string{
-				"--latency-model", "blis-latency-kernel", "--scenario", scenario,
+				"--scenario", scenario,
 				"--scenarios", scenarios, "--registry", registry, "--catalog", catalog,
 			}); err != nil {
 				t.Fatal(err)
@@ -293,7 +288,7 @@ func TestKernelCLILeg(t *testing.T) {
 func runKernelCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	full := append(args, "--latency-model", "blis-latency-kernel",
+	full := append(args,
 		"--catalog", catalog, "--registry", registry, "--defaults-filepath", "../defaults.yaml")
 	if !slices.Contains(args, "--scenarios") {
 		full = append(full, "--scenarios", scenarios)
@@ -395,7 +390,7 @@ func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 			wantErr: "prefill pool holds 3 rank(s)"},
 		{name: "a per-role flag restating the scenario",
 			args:    append([]string{"run", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--prefill-tp", "4"}, pd...),
-			wantErr: "--prefill-tp is not accepted"},
+			wantErr: "unknown flag: --prefill-tp"},
 		{name: "a P/D topology over a colocated scenario",
 			args: []string{"run", "--scenario", "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "--num-instances", "2",
 				"--prefill-instances", "1", "--decode-instances", "1", "--num-requests", "4", "--rate", "2"},
@@ -503,7 +498,7 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	}{
 		{"a tier stating its own bandwidth", "states read_bandwidth",
 			[]string{"run", "--kv-offload-config", writeKernelOffloadConfig(t, "      read_bandwidth: 7000.0\n")}},
-		{"a legacy-tier bandwidth flag", "--kv-transfer-bandwidth is not accepted",
+		{"a legacy-tier bandwidth flag", "unknown flag: --kv-transfer-bandwidth",
 			[]string{"run", "--kv-cpu-blocks", "2000", "--kv-transfer-bandwidth", "5"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -729,7 +724,7 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 				"      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 2\n\npd_transfer"), topology...)},
 		{"pools with no fabric between them", "cluster.fabric",
 			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
-		{"a per-role MoE comm flag", "--decode-moe-comm-backend is not accepted",
+		{"a per-role MoE comm flag", "unknown flag: --decode-moe-comm-backend",
 			pd(plain, append(topology, "--decode-moe-comm-backend", "naive")...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},

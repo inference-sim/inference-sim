@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // This file guards the documentation claims corrected by #1775. Each of them described
@@ -140,42 +142,6 @@ func TestDefaultsSchemaDocMatchesConfigStruct(t *testing.T) {
 	}
 }
 
-// TestCoefficientResolutionDocDescribesGlobalBlock pins the corrected coefficient-resolution
-// claim. The retired one said BLIS "automatically loads pre-trained coefficients from
-// defaults.yaml based on the model, GPU, and TP configuration" — describing a keyed selection
-// that has no implementation. resolveLatencyConfig reads one global
-// trained_physics_coefficients block, and only on the trained-physics branch.
-func TestCoefficientResolutionDocDescribesGlobalBlock(t *testing.T) {
-	src, err := os.ReadFile(configurationDoc)
-	if err != nil {
-		t.Fatalf("read %s: %v", configurationDoc, err)
-	}
-	text := string(src)
-
-	if !strings.Contains(text, "trained_physics_coefficients") {
-		t.Errorf("%s must name `trained_physics_coefficients` — the actual defaults.yaml key the "+
-			"coefficients are read from — when describing coefficient resolution", configurationDoc)
-	}
-
-	// The falsehood's assertion form: coefficients SELECTED BY the deployment. Matched as a
-	// claim, so the correction's own "not keyed by model, GPU or TP" does not trip it.
-	keyedClaims := []*regexp.Regexp{
-		// "...coefficients ... based on the model, GPU, and TP configuration". Kept on one
-		// line and within 120 characters so it reads as a claim about coefficient selection,
-		// but otherwise permissive: the retired sentence had a backticked `defaults.yaml`
-		// between the two halves, so a class excluding `.` never matched it.
-		regexp.MustCompile(`(?i)coefficients[^\n]{0,120}based on the model`),
-		regexp.MustCompile(`(?i)coefficients\s*\(keyed\s+by`),
-	}
-	for _, re := range keyedClaims {
-		if loc := re.FindStringIndex(text); loc != nil {
-			t.Errorf("%s claims coefficients are selected per model/GPU/TP (%q). No such keyed lookup "+
-				"exists: resolveLatencyConfig reads the single global trained_physics_coefficients block",
-				configurationDoc, text[loc[0]:loc[1]])
-		}
-	}
-}
-
 // TestMetricsPathDocumentedOnRunAndReplay pairs a behavioral anchor with a doc check, so the
 // doc claim cannot be "corrected" into a second falsehood if the flag registration changes.
 //
@@ -220,54 +186,6 @@ func TestMetricsPathDocumentedOnRunAndReplay(t *testing.T) {
 	}
 }
 
-// TestResolveLatencyConfigSideEffectsDocComment: resolveLatencyConfig's doc comment
-// enumerates the package-level vars it mutates, and a caller relies on that list to know what
-// is available afterwards. resolvedCatalogRoot has been one since #1732 — set transitively by
-// resolveModelConfig, and read back at the EmitOutput sites as catalog provenance — but the
-// list did not mention it, so the one thing the list exists to tell you was missing.
-func TestResolveLatencyConfigSideEffectsDocComment(t *testing.T) {
-	src, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatalf("read root.go: %v", err)
-	}
-	text := string(src)
-
-	const marker = "// Side effects (package-level vars mutated):"
-	idx := strings.Index(text, marker)
-	if idx < 0 {
-		t.Fatalf("root.go no longer carries %q above resolveLatencyConfig (comment restructured? "+
-			"update this test)", marker)
-	}
-	end := strings.Index(text[idx:], "func resolveLatencyConfig(")
-	if end < 0 {
-		t.Fatal("could not find resolveLatencyConfig after its side-effect comment")
-	}
-
-	// Collect ONLY the godoc indented-block lines (`//\t...`) that form the enumeration —
-	// not the whole comment down to the signature. The prose after the list explains WHY
-	// resolvedCatalogRoot is a side effect, so scanning the whole block would let the name be
-	// deleted from the list itself and still pass: the test would assert the explanation
-	// exists rather than that the enumeration is complete.
-	var list strings.Builder
-	for _, line := range strings.Split(text[idx:idx+end], "\n") {
-		if strings.HasPrefix(line, "//\t") {
-			list.WriteString(line)
-			list.WriteString("\n")
-		}
-	}
-	if list.Len() == 0 {
-		t.Fatal("non-vacuity: resolveLatencyConfig's side-effect comment has no indented `//\\t` list")
-	}
-
-	for _, v := range []string{"modelConfigDir", "resolvedCatalogRoot", "hwConfigPath", "totalKVBlocks"} {
-		if !strings.Contains(list.String(), v) {
-			t.Errorf("resolveLatencyConfig's documented side-effect list omits %q, which it does mutate "+
-				"(directly or via resolveModelConfig). A caller reading the list would not know the value "+
-				"is available.", v)
-		}
-	}
-}
-
 // TestModelsDocScopeClaimIsBounded pins the corrected compatibility framing on
 // docs/reference/models.md. "any other model runs" / "Any other model ... will work"
 // overstated it: a config with no derivable layer count is refused, a non-SwiGLU activation
@@ -297,5 +215,46 @@ func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 	// BLIS-side code — deleting the sentence entirely would trivially satisfy the above.
 	if !strings.Contains(text, "HuggingFace `config.json`") {
 		t.Errorf("%s must still explain that a model is onboarded from its HuggingFace `config.json`", path)
+	}
+}
+
+// TestResolveLatencyConfigSideEffects: resolveLatencyConfig's doc comment names the
+// package-level vars it mutates, and a caller relies on them afterwards -- resolvedCatalogRoot
+// is read back at the EmitOutput sites as catalog provenance (#1732). Checked as behavior (the
+// var really is set to the catalog the run read) and as documentation (the comment names it).
+func TestResolveLatencyConfigSideEffects(t *testing.T) {
+	catalogDir, _ := setupKernelTestFixtures(t)
+	orig := captureCmdLevelVars()
+	savedResolved := resolvedCatalogRoot
+	t.Cleanup(func() { orig.restore(); resolvedCatalogRoot = savedResolved })
+	catalogPath, resolvedCatalogRoot = catalogDir, ""
+
+	cmd := &cobra.Command{}
+	adoptKernelDeployment(cmd)
+	lr := resolveLatencyConfig(cmd)
+	if lr.KernelModel == nil {
+		t.Fatal("non-vacuity: resolveLatencyConfig returned no kernel latency model")
+	}
+	if resolvedCatalogRoot != catalogDir {
+		t.Errorf("resolvedCatalogRoot = %q after resolveLatencyConfig, want the catalog it read, %q",
+			resolvedCatalogRoot, catalogDir)
+	}
+	if model == "" || model != strings.ToLower(model) {
+		t.Errorf("model %q must be the scenario's model, normalized to lower case", model)
+	}
+
+	src, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatalf("read root.go: %v", err)
+	}
+	text := string(src)
+	end := strings.Index(text, "\nfunc resolveLatencyConfig(")
+	if end < 0 {
+		t.Fatal("root.go declares no resolveLatencyConfig")
+	}
+	doc := text[strings.LastIndex(text[:end], "\n\n"):end]
+	if !strings.Contains(doc, "Side effects:") || !strings.Contains(doc, "resolvedCatalogRoot") {
+		t.Errorf("resolveLatencyConfig's doc comment must name its side effects, resolvedCatalogRoot "+
+			"among them:\n%s", doc)
 	}
 }

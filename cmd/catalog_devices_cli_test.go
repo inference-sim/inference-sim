@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // CLI-level contracts for #1770: a real `blis run` / `blis replay` resolves a
@@ -39,9 +41,6 @@ const (
 	devicesCLITraceEnv   = "BLIS_KVDEV_CLI_TRACE"
 )
 
-// devicesCLIModel is catalogued in the committed test catalog testdata/catalog/models/.
-const devicesCLIModel = "qwen/qwen3-14b"
-
 // writeOffloadConfigWithClass writes a --kv-offload-config file whose single fs tier
 // resolves its physics from the named device_class, and returns the path.
 func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
@@ -60,24 +59,14 @@ func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
 	return path
 }
 
-// newDeviceCatalog builds a catalog CLONE ROOT with (a) a models/ entry copied verbatim
-// from the test catalog so the model resolves, and (b) a devices/storage.yaml holding the
-// given table. Returns the root.
+// newDeviceCatalog builds a catalog CLONE ROOT that is the vendored catalog -- so the kernel
+// scenario's model graph, hardware and fabric resolve -- with devices/storage.yaml replaced by
+// the given table. Returns the root.
 func newDeviceCatalog(t *testing.T, table string) string {
 	t.Helper()
-	root := writeCatalogStorageDevices(t, table)
-	shortName := devicesCLIModel[strings.Index(devicesCLIModel, "/")+1:]
-	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
-	content, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read test catalog entry %s: %v", src, err)
-	}
-	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
-	if err := os.MkdirAll(entryDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entryDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, hfConfigFile), content, 0o644); err != nil {
-		t.Fatalf("write catalog entry: %v", err)
+	root := copyKernelCatalog(t)
+	if err := os.WriteFile(catalogStorageDevicesPath(root), []byte(table), 0o644); err != nil {
+		t.Fatalf("write storage.yaml: %v", err)
 	}
 	return root
 }
@@ -116,9 +105,9 @@ func devicesCLISubprocess() bool {
 	offload := os.Getenv(devicesCLIOffloadEnv)
 	tracePrefix := os.Getenv(devicesCLITraceEnv)
 
+	repos := kernelmodel.DefaultRepos()
 	base := []string{
-		"--model", devicesCLIModel,
-		"--hardware", "H100", "--tp", "1",
+		"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 		"--catalog", catalog,
@@ -167,7 +156,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 	const name = "TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "testdata", "catalog")
+	_, bundled, _ := kernelRepos(t)
 
 	// The temp catalog's table is a verbatim copy of the historical nvme_gen4 numbers.
 	sameTable := newDeviceCatalog(t,
@@ -252,7 +241,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 	}
 	const name = "TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "testdata", "catalog")
+	_, bundled, _ := kernelRepos(t)
 
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
