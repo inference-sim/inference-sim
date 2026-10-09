@@ -44,8 +44,10 @@ var (
 const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
-	Use:   "replay",
-	Short: "Replay a TraceV2 file through the discrete-event simulator",
+	// Printed to stderr by cobra, so stdout stays deterministic (INV-6).
+	Deprecated: "it is scheduled for removal once trace replay -- including agentic Weka, Exgentic and OpenTelemetry traces -- is folded into `blis run` (#1901). It keeps working, on blis-latency-kernel, until then.",
+	Use:        "replay",
+	Short:      "Replay a TraceV2 file through the discrete-event simulator",
 	Long: `Replay takes a TraceV2 file (header YAML + data CSV) and runs the DES against the
 exact request sequence captured in the trace. Unlike 'blis run', it does not generate
 requests from distributions — the request sequence is fully determined by the trace.
@@ -84,6 +86,9 @@ Example:
 		if _, statErr := os.Stat(traceDataPath); os.IsNotExist(statErr) {
 			logrus.Fatalf("--trace-data file not found: %s", traceDataPath)
 		}
+		// Same as runCmd: on the kernel backend the deployment and the engine knobs come
+		// from the scenario and the kernel, resolved before any gate reads them.
+		adoptKernelDeployment(cmd)
 		if model == "" {
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
@@ -344,14 +349,7 @@ Example:
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
 		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
-			perTokenKVBytes, pbErr := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
-			if pbErr != nil {
-				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", pbErr)
-			}
-			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(kvOffloadCfg.BlockSize))
-			if kvOffloadCfg.PerBlockBytes <= 0 {
-				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, kvOffloadCfg.BlockSize)
-			}
+			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, kvOffloadCfg.BlockSize)
 		}
 
 		// #1819/#1841: both legacy single-CPU-tier transfer components are resolved
@@ -736,6 +734,8 @@ Example:
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
 				SLOPriorityOverrides: sloPriorityOverrides,
+				// The kernel, when that is the backend; nil builds the coefficient model.
+				LatencyModelOverride: lr.KernelModel,
 			},
 			NumInstances:                    numInstances,
 			AdmissionPolicy:                 admissionPolicy,

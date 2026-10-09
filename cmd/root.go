@@ -53,44 +53,44 @@ const (
 
 var (
 	// CLI flags for vllm server configs
-	seed                      int64     // Seed for random token generation
-	simulationHorizon         int64     // Total simulation time (in ticks)
-	logLevel                  string    // Log verbosity level
-	totalKVBlocks             int64     // Total number of KV blocks available on GPU
-	maxNumSeqs                int64     // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
-	maxNumBatchedTokens       int64     // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
-	noEnablePrefixCaching     bool      // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
-	blockSizeTokens           int64     // Number of tokens per KV block
-	betaCoeffs                []float64 // List of beta coeffs corresponding to step features
-	alphaCoeffs               []float64 // List of alpha coeffs corresponding to pre, postprocessing delays
-	defaultsFilePath          string    // Path to default constants - trained-physics coefficients and LoRA cost coefficients (the only sections defaults.yaml still carries)
-	catalogPath               string    // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
-	modelConfigDir            string    // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
-	resolvedCatalogRoot       string    // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
-	hwConfigPath              string    // Path to constants specific to hardware type (GPU)
-	workloadType              string    // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
-	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
-	rate                      float64   // Requests arrival per second
-	numRequests               int       // Number of requests
-	concurrency               int       // Number of concurrent virtual users (closed-loop)
-	thinkTimeMs               int       // Think time between response and next request (ms)
-	prefixTokens              int       // Prefix Token Count
-	promptTokensMean          int       // Average Prompt Token Count
-	promptTokensStdev         int       // Stdev Prompt Token Count
-	promptTokensMin           int       // Min Prompt Token Count
-	promptTokensMax           int       // Max Prompt Token Count
-	outputTokensMean          int       // Average Output Token Count
-	outputTokensStdev         int       // Stdev Output Token Count
-	outputTokensMin           int       // Min Output Token Count
-	outputTokensMax           int       // Max Output Token Count
-	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
-	kernelScenario            string    // CLI --scenario: scenario file name, kernel backend only
-	kernelScenarioDir         string    // CLI --scenarios: directory of scenario files, kernel backend only
-	kernelRegistry            string    // CLI --registry: blis-registry clone root, kernel backend only
-	kernelDeploymentExperts   int       // routed expert count from the model graph; 0 off the kernel backend
-	kernelDeploymentTopK      int       // routed experts per token from the model graph; 0 off the kernel backend
+	seed                      int64              // Seed for random token generation
+	simulationHorizon         int64              // Total simulation time (in ticks)
+	logLevel                  string             // Log verbosity level
+	totalKVBlocks             int64              // Total number of KV blocks available on GPU
+	maxNumSeqs                int64              // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
+	maxNumBatchedTokens       int64              // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
+	noEnablePrefixCaching     bool               // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
+	blockSizeTokens           int64              // Number of tokens per KV block
+	betaCoeffs                []float64          // List of beta coeffs corresponding to step features
+	alphaCoeffs               []float64          // List of alpha coeffs corresponding to pre, postprocessing delays
+	defaultsFilePath          string             // Path to default constants - trained-physics coefficients and LoRA cost coefficients (the only sections defaults.yaml still carries)
+	catalogPath               string             // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
+	modelConfigDir            string             // Resolved catalog entry directory containing config.json (side effect of resolveLatencyConfig)
+	resolvedCatalogRoot       string             // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
+	hwConfigPath              string             // Path to constants specific to hardware type (GPU)
+	workloadType              string             // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
+	longPrefillTokenThreshold int64              // Max length of prefill beyond which chunked prefill is triggered
+	rate                      float64            // Requests arrival per second
+	numRequests               int                // Number of requests
+	concurrency               int                // Number of concurrent virtual users (closed-loop)
+	thinkTimeMs               int                // Think time between response and next request (ms)
+	prefixTokens              int                // Prefix Token Count
+	promptTokensMean          int                // Average Prompt Token Count
+	promptTokensStdev         int                // Stdev Prompt Token Count
+	promptTokensMin           int                // Min Prompt Token Count
+	promptTokensMax           int                // Max Prompt Token Count
+	outputTokensMean          int                // Average Output Token Count
+	outputTokensStdev         int                // Stdev Output Token Count
+	outputTokensMin           int                // Min Output Token Count
+	outputTokensMax           int                // Max Output Token Count
+	latencyModelBackend       string             // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
+	kernelScenario            string             // CLI --scenario: scenario file name, kernel backend only
+	kernelScenarioDir         string             // CLI --scenarios: directory of scenario files, kernel backend only
+	kernelRegistry            string             // CLI --registry: blis-registry clone root, kernel backend only
+	kernelDeploymentExperts   int                // routed expert count from the model graph; 0 off the kernel backend
+	kernelDeploymentTopK      int                // routed experts per token from the model graph; 0 off the kernel backend
 	kernelOpened              *kernelmodel.Model // the kernel adoptKernelDeployment opened; nil off the kernel backend
-	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	maxModelLen               int64              // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP
 	model                string // LLM name
 	kvCacheDtype         string // CLI --kv-cache-dtype: KV-cache storage precision (auto|fp8|fp8_e4m3|fp8_e5m2|bf16|fp16|fp32); "auto" follows compute dtype (vLLM CacheConfig.cache_dtype parity, #1565)
@@ -839,6 +839,31 @@ func requireDeploymentFlags(f deploymentFlagValues) {
 	if msg := deploymentFlagRefusal(f); msg != "" {
 		logrus.Fatalf("%s", msg)
 	}
+}
+
+// offloadPerBlockBytes is the per-rank KV bytes of one block of blockSize tokens, which sizes
+// the offload tiers and their transfer jobs. On the kernel backend it is the kernel's own
+// answer (SequenceVariableBytes: page-quantized, sharded by the layout and the cache dtype);
+// the HF-config backends derive it from the model config. Fatal when it cannot be derived:
+// a zero-byte block would make every offload transfer free.
+func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
+	if kernelOpened != nil && lr.KernelModel != nil {
+		b := kernelOpened.Kernel().SequenceVariableBytes(int(blockSize))
+		if b <= 0 {
+			logrus.Fatalf("kv_offload: the kernel prices a %d-token block at %d bytes; per_block_bytes must be > 0",
+				blockSize, b)
+		}
+		return b
+	}
+	perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
+	if err != nil {
+		logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
+	}
+	b := int64(perTokenKVBytes * float64(blockSize))
+	if b <= 0 {
+		logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSize)
+	}
+	return b
 }
 
 // adoptKernelDeployment resolves the deployment from a kernel scenario, on the kernel
@@ -2928,14 +2953,7 @@ var runCmd = &cobra.Command{
 		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
 		// through the trace header (INV-13). Only when offload is enabled.
 		if kvOffloadCfg.IsEnabled() {
-			perTokenKVBytes, err := latency.KVBytesPerToken(lr.ModelConfig, tensorParallelism)
-			if err != nil {
-				logrus.Fatalf("kv_offload: cannot derive per_block_bytes from the model: %v", err)
-			}
-			kvOffloadCfg.PerBlockBytes = int64(perTokenKVBytes * float64(blockSizeTokens))
-			if kvOffloadCfg.PerBlockBytes <= 0 {
-				logrus.Fatalf("kv_offload: derived per_block_bytes must be > 0 (KVBytesPerToken=%v × block_size=%d)", perTokenKVBytes, blockSizeTokens)
-			}
+			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
 		}
 
 		// #1819/#1841: resolve both components of the LEGACY single-CPU-tier transfer

@@ -54,8 +54,10 @@ var (
 )
 
 var calibrateCmd = &cobra.Command{
-	Use:   "calibrate",
-	Short: "Compare real observed latencies against simulator predictions",
+	// Printed to stderr by cobra, so stdout stays deterministic (INV-6).
+	Deprecated: "it is scheduled for removal (#1901): coefficients are fitted in blis-registry, not calibrated here.",
+	Use:        "calibrate",
+	Short:      "Compare real observed latencies against simulator predictions",
 	Long: `Calibrate takes a TraceV2 file (from blis observe) and a SimResult JSON file
 (from blis replay --results-path) and computes a calibration report comparing
 real vs simulated TTFT and E2E latencies.

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/spf13/cobra"
 )
 
@@ -253,5 +255,103 @@ func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 					"distinguish them", st.DataParallel, st.AggregateKVBlocks, st.KVBlocks)
 			}
 		})
+	}
+}
+
+// kernelCLIArgsEnv carries a full blis command line, \x1f-separated, to the re-exec'd leg.
+const kernelCLIArgsEnv = "BLIS_KERNEL_CLI_ARGS"
+
+// TestKernelCLILeg is the re-exec target for runKernelCLI: it executes the command line it is
+// handed as a real `blis` invocation, so a logrus.Fatalf surfaces as a non-zero exit.
+func TestKernelCLILeg(t *testing.T) {
+	raw := os.Getenv(kernelCLIArgsEnv)
+	if raw == "" {
+		t.Skip("re-exec target only; driven by runKernelCLI")
+	}
+	rootCmd.SetArgs(strings.Split(raw, "\x1f"))
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+// runKernelCLI runs `blis <args...>` on the kernel backend against the pinned scenario
+// fixtures and the vendored catalog and registry.
+func runKernelCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	scenarios, catalog, registry := kernelRepos(t)
+	full := append(args, "--latency-model", "blis-latency-kernel", "--scenarios", scenarios,
+		"--catalog", catalog, "--registry", registry, "--defaults-filepath", "../defaults.yaml")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
+	cmd.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(full, "\x1f"))
+	var out, errBuf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errBuf
+	err = cmd.Run()
+	return out.String(), errBuf.String(), err
+}
+
+// A run's exported trace, replayed on the same scenario and horizon, reproduces the run
+// (INV-13 is stated for identical flags including --horizon, since replay otherwise derives
+// its horizon from the trace): the
+// replay prices with the same kernel and sizes itself from the same Settings, so its stdout
+// is byte-identical. Replay could not run the kernel at all before this; it is deprecated in
+// favour of `blis run` (#1901), and this pins the parity that removal will be checked against.
+func TestReplayCmd_KernelBackend_ReproducesTheRun(t *testing.T) {
+	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
+	prefix := filepath.Join(t.TempDir(), "trace")
+	common := []string{"--scenario", scenario, "--seed", "7", "--horizon", "600000000"}
+	runOut, runErr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "40", "--rate", "15",
+		"--trace-output", prefix}, common...)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, runErr)
+	}
+	repOut, repErr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
+		"--trace-data", prefix + ".csv"}, common...)...)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, repErr)
+	}
+	if !strings.Contains(runOut, `"completed_requests": 40`) {
+		t.Fatalf("the run did not complete its 40 requests; the comparison would be vacuous:\n%s", runOut)
+	}
+	if repOut != runOut {
+		t.Errorf("replay stdout differs from the run it replays\n--- run\n%s\n--- replay\n%s", runOut, repOut)
+	}
+}
+
+// An agentic trace -- the path the Weka, Exgentic and OpenTelemetry corpora take today --
+// replays on the kernel as closed-loop sessions: every round of every session completes, and
+// a second replay at the same seed is byte-identical (INV-6).
+func TestReplayCmd_KernelBackend_ReplaysAnAgenticTrace(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "weka.jsonl")
+	var sessions []string
+	for s := 0; s < 6; s++ {
+		sessions = append(sessions, fmt.Sprintf(`{"id":"sess-%d","models":["m"],"requests":[`+
+			`{"type":"n","t":0.0,"in":%d,"out":40,"api_time":1.0},`+
+			`{"type":"n","t":4.0,"in":%d,"out":30,"api_time":1.0},`+
+			`{"type":"n","t":9.0,"in":%d,"out":20,"api_time":1.0}]}`, s, 900+s*50, 1400+s*50, 2000+s*50))
+	}
+	if err := os.WriteFile(in, []byte(strings.Join(sessions, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "agentic")
+	if err := runConvertWeka(in, prefix, workload.WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1}); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv",
+		"--scenario", "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "--session-mode", "closed-loop", "--seed", "3"}
+	first, stderr, err := runKernelCLI(t, args...)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(first, `"completed_requests": 18`) {
+		t.Errorf("6 sessions x 3 rounds should complete 18 requests:\n%s", first)
+	}
+	second, _, err := runKernelCLI(t, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Error("two replays at one seed differ")
 	}
 }
