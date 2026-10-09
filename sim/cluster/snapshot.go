@@ -67,9 +67,11 @@ func newObservabilityConfig(refreshInterval int64, cacheDelay int64) Observabili
 	return config
 }
 
-// PinResidentAdaptersImmediate forces the ResidentAdapters field to Immediate
-// freshness, overriding whatever mode newObservabilityConfig selected from the
-// global --snapshot-refresh-interval. The route-to-holder routing policy (B-2,
+// PinResidentAdaptersImmediate forces the ResidentAdapters field (and the truth
+// fields refreshed with it) to Immediate freshness, overriding whatever mode
+// newObservabilityConfig selected from the global --snapshot-refresh-interval. The
+// lora-residency-truth scorer needs it so that it measures estimation loss, not
+// scrape staleness. The route-to-holder routing policy (B-2,
 // #1490, D7) requires holder truth to be live at routing time: a stale (Periodic)
 // ResidentAdapters set could hide a just-loaded adapter and let the strict-affinity
 // restriction pick the wrong instance or spuriously fall back, violating INV-PS1.
@@ -219,12 +221,13 @@ func residentAdapterSet(inst *InstanceSimulator) map[string]bool {
 }
 
 // fillResidency sets the ground-truth residency fields of snap from inst: the
-// membership set, the LRU→MRU order, the pinned subset and the adapter being
-// loaded. Both refresh paths call it, so these stay consistent with each other.
+// membership set, the LRU→MRU order, the pinned subset, the adapter being loaded
+// and the slot count. Both refresh paths call it, so these stay consistent.
 func fillResidency(snap *sim.RoutingSnapshot, inst *InstanceSimulator) {
 	ids := inst.ResidentAdapterIDs()
 	snap.ResidentAdapters = residentAdapterSet(inst)
 	snap.LoadingAdapter = inst.LoadingAdapter()
+	snap.ResidentCapacity = max(inst.AdapterCapacity(), 0)
 	if len(ids) == 0 {
 		snap.ResidentOrder, snap.ResidentPinned = nil, nil
 		return

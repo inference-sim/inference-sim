@@ -14,6 +14,9 @@ func newTruthRig(t *testing.T, maxLoras int, ids ...string) *residencyRig {
 	r := newResidencyRig(t, maxLoras, ids...)
 	r.p = NewRoutingPolicyWithCache("weighted",
 		[]ScorerConfig{{Name: "lora-residency-truth", Weight: 1}}, 16, nil, nil)
+	for i := range r.snaps {
+		r.snaps[i].ResidentCapacity = maxLoras
+	}
 	return r
 }
 
@@ -111,6 +114,54 @@ func TestLoRAResidencyTruth_LoadingHoldsSlot(t *testing.T) {
 	assert.Greater(t, s["i1"], s["i0"], "i0's only slot is being filled by a: %v", s)
 	s = r.score("a", 100)
 	assert.Greater(t, s["i0"], s["i1"], "a is already loading on i0: %v", s)
+}
+
+// Review of PR #60, finding 2: a loading adapter is not resident yet. A request for
+// it is pending on the loading instance, which is cheaper than a fresh load but
+// dearer than an instance where it is genuinely resident.
+func TestLoRAResidencyTruth_LoadingIsPendingNotResident(t *testing.T) {
+	r := newTruthRig(t, 2, "loading", "resident", "idle")
+	r.snaps[0].LoadingAdapter = "a"
+	r.setResidency("resident", []string{"a"})
+	s := r.score("a", 100)
+	assert.Greater(t, s["resident"], s["loading"], "%v", s)
+	assert.Greater(t, s["loading"], s["idle"], "%v", s)
+}
+
+// The capacity is ResidentCapacity, refreshed with the truth, not MaxLoras, which
+// rides ActiveAdapters' cadence and can be stale or zero.
+func TestLoRAResidencyTruth_CapacityFromResidentCapacity(t *testing.T) {
+	r := newTruthRig(t, 2, "i0", "i1", "i2")
+	r.start(r.route("x1", "x", "i2", 50), "i2", 60) // demand for x, so evicting it costs
+	for i := range r.snaps {
+		r.snaps[i].MaxLoras = 0 // not yet refreshed
+	}
+	r.setResidency("i0", []string{"x"})
+	r.setResidency("i1", []string{"x"})
+	r.snaps[1].ResidentCapacity = 1
+	s := r.score("y", 100)
+	assert.Greater(t, s["i0"], s["i1"], "i0 has a free slot, i1 must evict x: %v", s)
+}
+
+// Review of PR #60, finding 4: pending is kept per (instance, adapter) pair; the pair
+// stays pending until its last request settles, and a re-routed ID moves.
+func TestLoRAResidencyTruth_PendingPairCounts(t *testing.T) {
+	r := newTruthRig(t, 1, "i0", "i1")
+	r1 := r.route("r1", "a", "i0", 100)
+	r2 := r.route("r2", "a", "i0", 110)
+	r.start(r1, "i0", 120)
+	s := r.score("a", 130)
+	assert.Greater(t, s["i0"], s["i1"], "r2 still pending on i0: %v", s)
+	r.complete(r2, "i0", 140)
+	s = r.score("a", 150)
+	assert.Equal(t, s["i0"], s["i1"], "both settled: %v", s)
+
+	r3 := r.route("r3", "a", "i0", 160)
+	r3again := r.route("r3", "a", "i1", 170) // same ID, routed again elsewhere
+	r.start(r3again, "i1", 180)
+	_ = r3
+	s = r.score("a", 190)
+	assert.Equal(t, s["i0"], s["i1"], "the re-route moved r3, and its start settled it: %v", s)
 }
 
 func TestLoRAResidencyTruth_BaseModelNeutral(t *testing.T) {

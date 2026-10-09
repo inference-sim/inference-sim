@@ -51,6 +51,10 @@ type RoutingSnapshot struct {
 	// ResidentAdapters only when the load completes. Refreshed with them; read only
 	// by lora-residency-truth.
 	LoadingAdapter string
+	// ResidentCapacity is the instance's adapter slots, refreshed with the residency
+	// fields so the truth scorer never sees a capacity older than its residency (0
+	// when LoRA is inert). MaxLoras carries the same value on ActiveAdapters' cadence.
+	ResidentCapacity int
 	// ActiveAdapters is the ROUTER-OBSERVABLE adapter signal: adapter id → number of
 	// this instance's requests that are queued or running with that adapter (only
 	// adapters with ≥1 such request appear). It mirrors vLLM's

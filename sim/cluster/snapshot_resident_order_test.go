@@ -3,6 +3,7 @@ package cluster
 import (
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,6 +15,12 @@ func residentOrderFixture(t *testing.T, interval int64) (*ClusterSimulator, *Ins
 	t.Helper()
 	cs := newLoRAInstanceUnrun(t, 1, 4, interval)
 	inst := cs.Instances()[0]
+	driveToBResidentAPinned(t, inst)
+	return cs, inst
+}
+
+func driveToBResidentAPinned(t *testing.T, inst *InstanceSimulator) {
+	t.Helper()
 	reqs := newTestRequests(2)
 	short, long := reqs[0], reqs[1]
 	short.Adapter, short.ArrivalTime = "b", 0
@@ -33,7 +40,6 @@ func residentOrderFixture(t *testing.T, interval int64) (*ClusterSimulator, *Ins
 	}
 	require.Equal(t, []string{"b", "a"}, inst.ResidentAdapterIDs(), "premise: a loaded after b")
 	require.Equal(t, []string{"b"}, inst.UnpinnedResidentAdapterIDs(), "premise: a pinned, b not")
-	return cs, inst
 }
 
 func assertResidentOrder(t *testing.T, cs *ClusterSimulator, inst *InstanceSimulator, clock int64) {
@@ -89,6 +95,37 @@ func TestSnapshot_LoadingAdapter(t *testing.T) {
 	snap = cs.snapshotProvider.Snapshot(inst.ID(), inst.Clock())
 	assert.Equal(t, "", snap.LoadingAdapter)
 	assert.Equal(t, []string{"c"}, snap.ResidentOrder)
+}
+
+// Review of PR #60, finding 1: at the CLI's default 50 ms refresh interval, a cluster
+// configured with lora-residency-truth reads live truth (order, pins, capacity) from
+// clock 0; the same cluster without it keeps the Periodic cadence.
+func TestSnapshot_TruthScorerPinsResidencyLive(t *testing.T) {
+	for _, truth := range []bool{true, false} {
+		cs := newLoRAInstanceUnrun(t, 1, 4, 50_000)
+		if truth {
+			cfg := cs.config
+			cfg.RoutingPolicy = "weighted"
+			cfg.RoutingScorerConfigs = []sim.ScorerConfig{{Name: "queue-depth", Weight: 1},
+				{Name: "lora-residency-truth", Weight: 1}}
+			cs = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		}
+		inst := cs.Instances()[0]
+		snap := cs.snapshotProvider.Snapshot(inst.ID(), 0)
+		if truth {
+			assert.Equal(t, 4, snap.ResidentCapacity, "capacity live at clock 0")
+		} else {
+			assert.Equal(t, 0, snap.ResidentCapacity, "control: Periodic, not yet refreshed")
+		}
+		driveToBResidentAPinned(t, inst)
+		snap = cs.snapshotProvider.Snapshot(inst.ID(), 1) // inside the first 50 ms interval
+		if truth {
+			assert.Equal(t, []string{"b", "a"}, snap.ResidentOrder)
+			assert.Equal(t, map[string]bool{"a": true}, snap.ResidentPinned)
+		} else {
+			assert.Nil(t, snap.ResidentOrder, "control: still the clock-0 view")
+		}
+	}
 }
 
 // Nothing resident or loading ⇒ the order, pinned set and loading adapter are empty.
