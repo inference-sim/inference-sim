@@ -1361,14 +1361,17 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	for _, subReqID := range completedIDs {
 		parentID := c.pendingPrefillCompletions[subReqID]
 		parent := c.parentRequests[parentID]
-		parent.PrefillCompleteTime = c.clock
+		// The prefill completes at the END of the step that computed its KV, not at the
+		// cluster clock, which reads that step's START when this detector runs right after
+		// the step event (#1903): the handoff cannot begin before the KV it moves exists.
+		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
 		c.pdPrefillCompletedCount++
 
 		// Schedule KV transfer
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &KVTransferStartedEvent{
-				time:      c.clock,
+				time:      parent.PrefillCompleteTime,
 				parentReq: parent,
 			},
 			seqID: c.nextSeqID(),
@@ -1401,14 +1404,15 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// Phase 2: process completions in deterministic order
 	for _, subReqID := range completedIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
-		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
-		// client-visible completion time, matching non-PD E2E semantics (issue #846).
-		// For roofline (overhead=0), value is byte-identical to before.
-		// No zero-output guard needed: decode sub-requests always carry the full
-		// output token list from the original request (set in KVTransferCompletedEvent.Execute).
+		// The end of the decode sub-request's final step -- not the cluster clock, which
+		// reads that step's START when this detector runs (#1903) -- plus
+		// PostDecodeFixedOverhead, so parent.CompletionTime is the client-visible completion,
+		// matching non-PD E2E semantics (issue #846). No zero-output guard needed: decode
+		// sub-requests always carry the full output token list (set in
+		// KVTransferCompletedEvent.Execute).
 		//
 		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
-		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
+		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
 
@@ -1992,10 +1996,11 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// TTFT/E2E entries; the residual TTFT>E2E micro-edge is a separate concern.)
 		//
 		// The previous formula (parent.CompletionTime − ArrivalTime) under-counted:
-		// parent.CompletionTime is stamped on the CLUSTER clock at the
-		// completion-DETECTION tick (detectDecodeCompletions) and omits the decode
-		// step's own advance, so for short outputs the reported E2E fell below a
-		// single decode step (ITL[0]) — and below the parent TTFT — violating INV-5.
+		// parent.CompletionTime was then stamped on the CLUSTER clock at the
+		// completion-DETECTION tick and omitted the decode step's own advance, so for
+		// short outputs the reported E2E fell below a single decode step (ITL[0]) — and
+		// below the parent TTFT — violating INV-5. (Since #1903 it is stamped at the
+		// final step's end.)
 		//
 		// parentE2E / haveParentE2E are captured for reuse by the completion-time
 		// block below (metric consistency: completion == arrival + E2E).
@@ -2440,6 +2445,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
 	}
+	parent.PrefillSubReq = prefillSubReq
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &PrefillRoutingEvent{

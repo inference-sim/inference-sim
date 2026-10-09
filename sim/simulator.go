@@ -1197,8 +1197,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// preserved and Release frees all blocks from prior successful allocations.
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
+			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
-				time:    now + currStepAdvance,
+				time:    req.DepartureTime,
 				Request: req,
 			})
 
@@ -1258,8 +1259,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
+			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
-				time:    now + currStepAdvance,
+				time:    req.DepartureTime,
 				Request: req,
 			})
 			sim.recordRequestCompletion(req)

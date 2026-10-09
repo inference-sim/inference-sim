@@ -35,7 +35,11 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 }
 
 // mustRun is a test helper that calls Run and fails the test on error.
-func mustRun(t *testing.T, cs *ClusterSimulator) {
+// mustRun takes the slice of testing.TB that *rapid.T also provides, so properties use it too.
+func mustRun(t interface {
+	Helper()
+	Fatalf(string, ...any)
+}, cs *ClusterSimulator) {
 	t.Helper()
 	if err := cs.Run(); err != nil {
 		t.Fatalf("ClusterSimulator.Run: %v", err)

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
@@ -285,40 +287,50 @@ func newTestColocatedConfig() DeploymentConfig {
 // would confound the two. The out=1 case has no such confound (0 extra decode
 // steps either way), giving a clean, exact decomposition.
 func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
+	// The laws must hold whatever a step costs and however that cost depends on the
+	// step's prefill/decode mix: a constant-cost model hid #1903, where the handoff began
+	// at the START of the prefill step, so PD won whenever prefill cost more than decode.
+	rapid.Check(t, func(rt *rapid.T) {
+		stepModel := fakelatency.WithCoeffs(testutil.FakeLatency{
+			BaseTicks:                  rapid.Int64Range(1, 5000).Draw(rt, "base"),
+			PerScheduledTokenTicks:     rapid.Int64Range(0, 200).Draw(rt, "perToken"),
+			PerDecodeRequestTicks:      rapid.Int64Range(0, 200).Draw(rt, "perDecode"),
+			PerContextTokenMilliTicks:  rapid.Int64Range(0, 1000).Draw(rt, "perContext"),
+			QueueingTicks:              rapid.Int64Range(0, 500).Draw(rt, "queueing"),
+			OutputTokenProcessingTicks: rapid.Int64Range(0, 200).Draw(rt, "otpt"),
+			PostDecodeOverheadTicks:    rapid.Int64Range(0, 500).Draw(rt, "postDecode"),
+		})
+		pdE2EGeqColocated(rt, stepModel, rapid.IntRange(1, 512).Draw(rt, "inputLen"))
+	})
+}
+
+// pdE2EGeqColocated runs one 1-output request through a P/D cluster and a colocated one,
+// both priced by stepModel, and checks PD never under-reports and pays at least its handoff.
+func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
 	// Guard the parity premise: the PD and co-located configs must use identical
 	// latency parameters, otherwise a PD-vs-non-PD E2E comparison is meaningless.
 	// This enforces the "same latency model/model/hardware" claim in
 	// newTestColocatedConfig's doc comment rather than trusting it,
 	// so the two helpers cannot silently drift apart.
-	//
-	// Both configs price every step at the same constant cost, whatever its
-	// prefill/decode mix (the shape of the trained-physics fixture this test was written
-	// against). Under a composition-dependent model the law below does not hold today:
-	// detectPrefillCompletions observes a prefill sub-request's completion at the START
-	// of its prefill step, so the PD path's critical path carries the decode step
-	// instead of the prefill step, and PD wins whenever prefill costs more than decode.
-	stepModel := fakelatency.WithCoeffs(testutil.FakeLatency{
-		BaseTicks: 200, QueueingTicks: 100, OutputTokenProcessingTicks: 100, PostDecodeOverheadTicks: 1,
-	})
 	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	pdCfg.LatencyModelOverride = stepModel
 	coloCfg := newTestColocatedConfig()
 	coloCfg.LatencyModelOverride = stepModel
 	if !reflect.DeepEqual(pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride) {
-		t.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
+		rt.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
 			pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride)
 	}
 	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
-		t.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
+		rt.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
 	}
 
 	// PD run (single request so there is no queueing skew vs the baseline).
 	pdReq := &sim.Request{
-		ID: "request_0", InputTokens: make([]sim.TokenID, 20),
+		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
 	csPD := NewClusterSimulator(pdCfg, NewSliceRequestSource([]*sim.Request{pdReq}), nil)
-	mustRun(t, csPD)
+	mustRun(rt, csPD)
 	mPD := csPD.AggregatedMetrics()
 	var pdE2E, transferCost float64
 	var found bool
@@ -331,24 +343,24 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 		found = true
 	}
 	if !found {
-		t.Fatal("PD run produced no completed parent")
+		rt.Fatal("PD run produced no completed parent")
 	}
 
 	// Non-PD baseline: identical single request, co-located instance.
 	nreq := &sim.Request{
-		ID: "request_0", InputTokens: make([]sim.TokenID, 20),
+		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
 	ncs := NewClusterSimulator(coloCfg, NewSliceRequestSource([]*sim.Request{nreq}), nil)
-	mustRun(t, ncs)
+	mustRun(rt, ncs)
 	nonPDE2E, ok := ncs.AggregatedMetrics().RequestE2Es["request_0"]
 	if !ok {
-		t.Fatal("non-PD baseline produced no E2E")
+		rt.Fatal("non-PD baseline produced no E2E")
 	}
 
 	// Law 1: PD must not under-report vs co-located.
 	if pdE2E < nonPDE2E {
-		t.Errorf("PD E2E (%.1f) < non-PD baseline E2E (%.1f) — PD must not under-report vs co-located (it adds KV-transfer cost)",
+		rt.Errorf("PD E2E (%.1f) < non-PD baseline E2E (%.1f) — PD must not under-report vs co-located (it adds KV-transfer cost)",
 			pdE2E, nonPDE2E)
 	}
 	// Law 2: the PD surplus over co-located is at least the KV-transfer cost — the
@@ -358,10 +370,10 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 	// not break a physically-correct E2E (the surplus can only grow, never shrink
 	// below the transfer cost).
 	if transferCost <= 0 {
-		t.Fatalf("expected a positive KV-transfer cost, got %.1f", transferCost)
+		rt.Fatalf("expected a positive KV-transfer cost, got %.1f", transferCost)
 	}
 	if diff := pdE2E - nonPDE2E; diff < transferCost-1e-9 {
-		t.Errorf("PD − non-PD E2E surplus = %.1f, want >= %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
+		rt.Errorf("PD − non-PD E2E surplus = %.1f, want >= %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
 			diff, transferCost, pdE2E, nonPDE2E)
 	}
 }
