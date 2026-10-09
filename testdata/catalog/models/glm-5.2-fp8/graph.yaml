@@ -1,0 +1,391 @@
+kind: ModelGraph
+name: glm-5.2-fp8
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 22e49334abf8562fecf70ca3292ba3f5b33f5602fb2bf10b52dd64a66cfe65ff
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 154880
+  tie_word_embeddings: false
+  weight_dtype: fp8
+layer_kinds:
+- id: attn_dense_indexed
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2624
+    k: 6144
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 10752
+  - op: GEMM
+    role: q_b_proj
+    n: 16384
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 28672
+    k: 512
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 2048
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    weight_dtype: bf16
+  - op: Attention
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 24576
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 12288
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+- id: attn_moe_indexed
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2624
+    k: 6144
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 10752
+  - op: GEMM
+    role: q_b_proj
+    n: 16384
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 28672
+    k: 512
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 2048
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    weight_dtype: bf16
+  - op: Attention
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 2048
+    k: 6144
+    experts: 256
+    top_k: 8
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+- id: attn_moe_noindex
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2624
+    k: 6144
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 10240
+  - op: GEMM
+    role: q_b_proj
+    n: 16384
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 28672
+    k: 512
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 2048
+    k: 6144
+    experts: 256
+    top_k: 8
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: mtp_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2624
+    k: 6144
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 10752
+  - op: GEMM
+    role: q_b_proj
+    n: 16384
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 28672
+    k: 512
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 2048
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    weight_dtype: bf16
+  - op: Attention
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 2048
+    k: 6144
+    experts: 256
+    top_k: 8
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+stack:
+  prologue:
+  - attn_dense_indexed
+  - attn_dense_indexed
+  - attn_dense_indexed
+  pattern:
+  - attn_moe_noindex
+  - attn_moe_noindex
+  - attn_moe_noindex
+  - attn_moe_indexed
+  repeat: 18
+  epilogue:
+  - attn_moe_noindex
+  - attn_moe_noindex
+  - attn_moe_noindex
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 154880
+  k: 6144
+speculator:
+  method: deepseek_mtp
+  num_spec_tokens: 1
+  stack:
+    pattern:
+    - mtp_moe
+    repeat: 1

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // Behavioral contract for `--latency-model blis-latency-kernel` on `blis run` and
@@ -30,24 +32,16 @@ import (
 
 const kernelLegEnv = "BLIS_KERNEL_LEG"
 
-// kernelRepos locates the three repositories a kernel scenario resolves against. They
-// are siblings of this one in a developer checkout; a leg skips rather than fails where
-// any is absent, so the suite stays green on a machine that has only this repo.
+// kernelRepos is the three artifact roots a kernel scenario resolves against: the pinned
+// kernel module's scenario fixtures and the vendored catalog and registry. A missing root
+// fails, naming the command that provides it -- never a skip, which would read as a pass.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
-	root := filepath.Join("..", "..", "..", "Documents", "Projects")
-	if env := os.Getenv("BLIS_PROJECTS"); env != "" {
-		root = env
+	r := kernelmodel.DefaultRepos()
+	if err := kernelmodel.RequireRepos(r); err != nil {
+		t.Fatal(err)
 	}
-	scenarios = filepath.Join(root, "blis-latency-kernel", "testdata", "aisimulate")
-	catalog = filepath.Join(root, "blis-catalog")
-	registry = filepath.Join(root, "blis-registry")
-	for _, p := range []string{scenarios, catalog, registry} {
-		if _, err := os.Stat(p); err != nil {
-			t.Skipf("kernel scenario repositories not present (%s): %v", p, err)
-		}
-	}
-	return scenarios, catalog, registry
+	return r.Scenarios, r.Catalog, r.Registry
 }
 
 func runKernelLeg(t *testing.T, leg string, extra ...string) (stdout, stderr string, err error) {
@@ -152,5 +146,32 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 				t.Errorf("expected simulation metrics on stdout, got:\n%s", stdout)
 			}
 		})
+	}
+}
+
+// A kernel run's results file must attribute the result to the catalog it read, as every
+// other backend's does (#1900): the catalog supplies the model graph, the chip and the
+// fabric, so a result without a catalog revision cannot be reproduced. Before the fix the
+// kernel path resolved the catalog without recording it, and the block was simply absent.
+func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
+	scenarios, catalog, registry := kernelRepos(t)
+	t.Setenv("BLIS_KERNEL_SCENARIOS", scenarios)
+	t.Setenv("BLIS_KERNEL_CATALOG", catalog)
+	t.Setenv("BLIS_KERNEL_REGISTRY", registry)
+	t.Setenv("BLIS_KERNEL_SCENARIO", "gpt-oss-120b-h200-fp4-vllm-tp4.yaml")
+	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
+
+	if _, stderr, err := runKernelLeg(t, "go", "--metrics-path", metricsFile); err != nil {
+		t.Fatalf("kernel run failed: %v\nstderr:\n%s", err, stderr)
+	}
+	got := readMetricsFile(t, metricsFile).Catalog
+	if got == nil {
+		t.Fatal("the kernel run's results file carries no catalog provenance block")
+	}
+	if got.Path != catalog {
+		t.Errorf("catalog provenance path is %q, want the catalog the run read, %q", got.Path, catalog)
+	}
+	if got.Revision == "" {
+		t.Error("catalog provenance carries no revision field")
 	}
 }

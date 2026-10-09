@@ -20,7 +20,7 @@ func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	}
 	m, err := kernelmodel.Open(scenario, committed)
 	if err != nil {
-		t.Skipf("scenario unavailable: %v", err)
+		t.Fatalf("Open(%s): %v", scenario, err)
 	}
 	// The committed files state nothing, so the engine default applies: caching is ON.
 	if m.Deployment().PrefixCachingDisabled {

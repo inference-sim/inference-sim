@@ -97,3 +97,14 @@ go test ./sim/cluster/ -run TestRoofline_GoldenDataset -update-golden
 **Invariants checked:** INV-1 (request conservation), token conservation, INV-5 (causality)
 
 **Regression protection:** Guards against unintended changes to roofline FLOPs/bandwidth calculations, Scout MoE interleaved architecture handling (issue #877), weight bandwidth calculations, and TP all-reduce modeling.
+
+---
+
+## Vendored upstream releases (`catalog/`, `registry/`)
+
+`testdata/catalog/` is a verbatim subset of a tagged blis-catalog release and
+`testdata/registry/` holds a tagged blis-registry release's coefficient sets. Both are pinned to
+the releases blis-latency-kernel's `testdata/upstream.lock` names, and a test fails if they
+drift. See `catalog/README.md` for what is included and how to update it. The kernel's scenario
+fixtures are not copied: they are read from the blis-latency-kernel module `go.mod` pins.
+

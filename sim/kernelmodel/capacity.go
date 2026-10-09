@@ -77,7 +77,7 @@ func (m *Model) KVBudget() (KVBudget, error) {
 	// From the kernel, which resolved this pool. Reading the Deployment document instead
 	// would mean holding it alongside and indexing back in -- a second answer to "which
 	// pool is this", which can disagree with the one the pricing used.
-	e := m.k.Engine()
+	e := m.k.Deployment().Engine
 	util := e.GPUMemoryUtilization
 	if util <= 0 || util > 1 {
 		return KVBudget{}, fmt.Errorf(
@@ -89,7 +89,7 @@ func (m *Model) KVBudget() (KVBudget, error) {
 			"kernelmodel: block_size must be > 0, got %d", blockSize)
 	}
 
-	deviceBytes := int64(m.k.Chip().MemoryGiB * float64(gibToBytes))
+	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
 	budget := int64(float64(deviceBytes) * util)
 	fixed := m.k.FixedBytes().Total()
 
@@ -106,8 +106,8 @@ func (m *Model) KVBudget() (KVBudget, error) {
 				"occupancy would look plausible and set the wrong resident batch",
 			float64(fixed)/float64(gibToBytes),
 			float64(deviceBytes)/float64(gibToBytes),
-			m.k.ModelName(), m.k.TensorParallelWidth(),
-			m.k.Resolved().ExpertParallelWidth)
+			m.id.model, m.k.Resolved().TensorParallel(),
+			m.k.Resolved().ExpertParallel())
 	}
 
 	allocatable := budget - fixed
@@ -137,9 +137,9 @@ func (m *Model) KVBudget() (KVBudget, error) {
 	// DP scaling, matching latency.CalculateKVBlocks: dp independent EngineCores each hold
 	// a full budget and requests split disjointly across them. Gated on MoE for the same
 	// reason it is there -- a dense model is never scaled.
-	dp := m.k.DataParallelWidth()
+	dp := m.k.Resolved().DataParallel()
 	scaled := false
-	if m.k.Experts() > 0 && dp > 1 {
+	if m.id.experts > 0 && dp > 1 {
 		blocks *= int64(dp)
 		scaled = true
 	}

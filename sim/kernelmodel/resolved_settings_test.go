@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/latency"
-
 )
 
 // A scenario must not carry a batch setting that the deployment did not have.
@@ -22,13 +21,10 @@ import (
 // it must match what the engine would resolve for that chip, unless the file records that the
 // deployment stated it explicitly. A value that matches neither is a guess.
 func TestScenariosDoNotCarryGuessedBatchDefaults(t *testing.T) {
-	dir := os.Getenv("BLIS_SCENARIOS")
-	if dir == "" {
-		dir = DefaultScenarios()
-	}
+	dir := DefaultScenarios()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Skipf("scenario directory unavailable: %v", err)
+		t.Fatalf("scenario directory: %v", err)
 	}
 
 	// Total device memory per chip, from blis-catalog. Stated here rather than loaded so the

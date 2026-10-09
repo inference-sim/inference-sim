@@ -97,9 +97,9 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 	t.Cleanup(func() { catalogPath = origFlag })
 
 	flagCatalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth: 1.0, write_bandwidth: 2.0, base_latency: 3.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 2.0, base_latency_us: 3.0}\n")
 	envCatalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth: 9.0, write_bandwidth: 8.0, base_latency: 7.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 9.0, write_bandwidth_mb_s: 8.0, base_latency_us: 7.0}\n")
 
 	// Env only.
 	catalogPath = ""
@@ -336,19 +336,19 @@ func TestLoadCatalogStorageDevices_UnusableTableIsRefused(t *testing.T) {
 		{"no devices namespace", func(t *testing.T) string { return t.TempDir() }, "is not readable"},
 		{"empty file", func(t *testing.T) string { return writeCatalogStorageDevices(t, "") }, "defines no device classes"},
 		{"comments only", func(t *testing.T) string { return writeCatalogStorageDevices(t, "# no classes here\n") }, "defines no device classes"},
-		{"no classes", func(t *testing.T) string { return writeCatalogStorageDevices(t, "{}\n") }, "defines no device classes"},
+		{"no classes", func(t *testing.T) string { return writeCatalogStorageDevices(t, "{}\n") }, "declares no storage tier"},
 		{"malformed yaml", func(t *testing.T) string {
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: [unclosed\n")
+			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: [unclosed\n")
 		}, "is malformed"},
 		{"unknown physics key", func(t *testing.T) string {
 			// R10: a misspelled key must be refused, never decoded to zero bandwidth.
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwith: 5.0e3, base_latency: 80.0}\n")
+			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwith_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 		}, "write_bandwith"},
 		{"missing required field", func(t *testing.T) string {
 			// R9/R10: an OMITTED required physics field must be refused, not silently decoded
 			// to 0. base_latency is the sharp case — read/write=0 is caught by Validate, but a
 			// missing base_latency would otherwise resolve to zero-latency physics.
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3}\n")
+			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3}\n")
 		}, "base_latency"},
 		{"table is a directory", func(t *testing.T) string {
 			root := t.TempDir()

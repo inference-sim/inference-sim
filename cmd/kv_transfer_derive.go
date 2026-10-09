@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"math"
-	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -232,8 +231,8 @@ func deriveLegacyKVTransferRate(dev kvOffloadDevice, perTokenKVBytes float64, bl
 // Every failure names the path and the two overrides that together bypass it (R1).
 func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 	path := catalogStorageDevicesPath(catalog)
-	data, err := os.ReadFile(path)
-	if err != nil {
+	devices, err := parseCatalogStorageDevices(path)
+	if err != nil && isNotReadable(err) {
 		return kvOffloadDevice{}, fmt.Errorf(
 			"--kv-cpu-blocks > 0 prices CPU↔GPU KV transfers from the catalog storage-device "+
 				"table, but %s is not readable: %w.\n"+
@@ -242,12 +241,11 @@ func loadLegacyKVTransferDevice(catalog string) (kvOffloadDevice, error) {
 				"both --kv-transfer-bandwidth and --kv-transfer-base-latency to override it",
 			path, err, catalogEnvVar, catalogStorageDevicesRelPath, catalogEnvVar)
 	}
-	devices, parseErr := parseCatalogStorageDevices(data)
-	if parseErr != nil {
+	if err != nil {
 		return kvOffloadDevice{}, fmt.Errorf(
 			"--kv-cpu-blocks > 0: catalog storage-device table %s is malformed: %w.\n"+
 				"  Fix that catalog file, or supply both --kv-transfer-bandwidth and "+
-				"--kv-transfer-base-latency to override it", path, parseErr)
+				"--kv-transfer-base-latency to override it", path, err)
 	}
 	dev, ok := devices[legacyKVTransferDeviceClass]
 	if !ok {

@@ -2,27 +2,26 @@ package harness
 
 import (
 	"math"
-	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
-var absolutesPath = filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_absolutes.json")
+func absolutesPath(t testing.TB) string { return artifacts.Measurement(t, "inferencex_absolutes.json") }
 
 // The measured absolute curves must reproduce the artifact's own measured RELATIVES. This is the
 // check that the InferenceX rows loaded here are the same rows NVIDIA scored AISimulate against.
 // Without it, a mape computed from these absolutes would be against a different measurement, and
 // the comparison with AISimulate would silently stop being apples to apples.
 func TestAbsolutesReproduceTheArtifactsOwnRelatives(t *testing.T) {
-	set, err := LoadAbsolutes(absolutesPath)
+	set, err := LoadAbsolutes(absolutesPath(t))
 	if err != nil {
-		t.Skipf("measured absolutes unavailable: %v", err)
+		t.Fatalf("measured absolutes: %v", err)
 	}
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	checked, missing := 0, 0
 	for i := range c.Sweeps {
@@ -74,9 +73,9 @@ func TestAbsolutesReproduceTheArtifactsOwnRelatives(t *testing.T) {
 // The dump stores seconds; a missed conversion would make every mape wrong by 1e6 while leaving
 // every ratio-based figure untouched, so no shape test would catch it.
 func TestAbsolutesAreMicrosecondsNotSeconds(t *testing.T) {
-	set, err := LoadAbsolutes(absolutesPath)
+	set, err := LoadAbsolutes(absolutesPath(t))
 	if err != nil {
-		t.Skipf("measured absolutes unavailable: %v", err)
+		t.Fatalf("measured absolutes: %v", err)
 	}
 	for i := range set.Anchors {
 		a := &set.Anchors[i]
@@ -100,9 +99,9 @@ func TestAbsolutesAreMicrosecondsNotSeconds(t *testing.T) {
 
 // Every loaded sweep must record which InferenceX run it came from, so a figure traces to a row.
 func TestAbsolutesCarryTheirProvenance(t *testing.T) {
-	set, err := LoadAbsolutes(absolutesPath)
+	set, err := LoadAbsolutes(absolutesPath(t))
 	if err != nil {
-		t.Skipf("measured absolutes unavailable: %v", err)
+		t.Fatalf("measured absolutes: %v", err)
 	}
 	if set.SourceURL == "" || set.ReleaseTag == "" {
 		t.Errorf("the set names no source URL or release tag: %q / %q",

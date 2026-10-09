@@ -146,45 +146,26 @@ func newCatalogFixtureRepo(t *testing.T, stateDeploymentFact bool) (string, stri
 	t.Helper()
 	repo := t.TempDir()
 
-	// A real vendor config.json from the committed fixture catalog: the gate parses it through
-	// the production model-config path, so a hand-written stub would not survive.
-	config, err := os.ReadFile(filepath.Join("..", "testdata", "catalog", "models", "qwen3-14b", "config.json"))
-	if err != nil {
-		t.Fatalf("read fixture config.json: %v", err)
+	// Every file is copied from the committed fixture catalog -- a verbatim subset of a tagged
+	// blis-catalog release -- because the gate parses each through the production readers,
+	// and a hand-written copy of a file's shape would drift from the format the release
+	// publishes.
+	for _, rel := range []string{
+		filepath.Join("models", "qwen3-14b", "config.json"),
+		filepath.Join("models", "qwen3-14b", "model.yaml"),
+		filepath.Join("workloads", "chatbot.yaml"),
+		filepath.Join("devices", "storage.yaml"),
+		filepath.Join("hardware", "h100.yaml"),
+	} {
+		body, err := os.ReadFile(filepath.Join("..", "testdata", "catalog", rel))
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", rel, err)
+		}
+		if stateDeploymentFact && strings.HasSuffix(rel, "model.yaml") {
+			body = append(body, "gpu: H100\n"...)
+		}
+		writeFixtureFile(t, filepath.Join(repo, rel), string(body))
 	}
-	modelEntry := `name: qwen3-14b
-source:
-  provider: huggingface
-  repo: Qwen/Qwen3-14B
-  revision: 0000000000000000000000000000000000000000
-  retrieved: 2026-09-16
-`
-	if stateDeploymentFact {
-		modelEntry += "gpu: H100\n"
-	}
-	writeFixtureFile(t, filepath.Join(repo, "models", "qwen3-14b", "config.json"), string(config))
-	writeFixtureFile(t, filepath.Join(repo, "models", "qwen3-14b", "model.yaml"), modelEntry)
-	writeFixtureFile(t, filepath.Join(repo, "workloads", "chatbot.yaml"), `prefix_tokens: 0
-prompt_tokens: 256
-prompt_tokens_stdev: 100
-prompt_tokens_min: 2
-prompt_tokens_max: 800
-output_tokens: 256
-output_tokens_stdev: 100
-output_tokens_min: 1
-output_tokens_max: 1024
-`)
-	writeFixtureFile(t, filepath.Join(repo, "devices", "storage.yaml"),
-		"cpu_dram: {read_bandwidth: 2.0e4, write_bandwidth: 2.0e4, base_latency: 1.0}\n")
-	writeFixtureFile(t, filepath.Join(repo, "hardware", "h100.yaml"), `TFlopsPeak: 989.5
-TFlopsFP8: 1979.0
-BwPeakTBs: 3.35
-mfuPrefill: 0.45
-mfuDecode: 0.30
-MemoryGiB: 80.0
-IntraNodeBwGBps: 450
-InterNodeBwGBps: 50
-`)
 
 	for _, args := range [][]string{
 		{"init", "--quiet"},

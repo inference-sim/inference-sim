@@ -466,7 +466,7 @@ func TestLoadLegacyKVTransferDevice_Diagnostics(t *testing.T) {
 		{
 			name: "malformed_table",
 			setup: func(t *testing.T) string {
-				return writeCatalogStorageDevices(t, "cpu_dram: {read_bandwidth: 1.0}\n")
+				return writeCatalogStorageDevices(t, "cpu_dram: {read_bandwidth_mb_s: 1.0}\n")
 			},
 			// The escape hatch too: the function contract promises EVERY failure names it,
 			// and this branch used to be the one that did not (#1840 review F5).
@@ -476,7 +476,7 @@ func TestLoadLegacyKVTransferDevice_Diagnostics(t *testing.T) {
 			name: "class_absent",
 			setup: func(t *testing.T) string {
 				return writeCatalogStorageDevices(t,
-					"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+					"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 			},
 			frags: []string{legacyKVTransferDeviceClass, "nvme_gen4", "--kv-transfer-bandwidth", "--kv-transfer-base-latency"},
 		},
@@ -948,7 +948,7 @@ func TestLegacyKVTransfer_CatalogBaseLatencyValidation(t *testing.T) {
 		{"int64_overflow", "9.223372036854776e18"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			catalog := newLegacyKVTransferCatalog(t, "{read_bandwidth: 2.0e4, write_bandwidth: 2.0e4, base_latency: "+tc.baseLatency+"}")
+			catalog := newLegacyKVTransferCatalog(t, "{read_bandwidth_mb_s: 2.0e4, write_bandwidth_mb_s: 2.0e4, base_latency_us: "+tc.baseLatency+"}")
 			out, errOut, err := runKVTransferCLILeg(t, name, "run", catalog, "100", "", "300", "")
 			if err == nil {
 				t.Fatalf("catalog base_latency=%s must be refused; stdout:\n%s", tc.baseLatency, out)

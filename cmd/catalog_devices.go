@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"syscall"
 
-	"gopkg.in/yaml.v3"
+	blisschemas "github.com/inference-sim/blis-schemas"
 )
 
 const (
@@ -32,11 +32,14 @@ const (
 // defaults.yaml kv_offload_devices: block (and its Config.KVOffloadDevices field) are
 // deleted.
 //
-// UNITS. read_bandwidth/write_bandwidth are bytes per microsecond; base_latency is
+// The FILE format is blis-schemas' hardware.StorageDevice, decoded by its own strict
+// LoadStorageDevices, so BLIS holds no second parser for it. Its keys carry their units
+// (read_bandwidth_mb_s, write_bandwidth_mb_s, base_latency_us).
+//
+// UNITS. ReadBandwidth/WriteBandwidth are bytes per microsecond; BaseLatency is
 // microseconds. Bytes/µs and MB/s (MB = 10^6 bytes, not MiB) are the SAME number —
-// 1 MB/s = 10^6 bytes / 10^6 µs = 1 byte/µs — so the catalog file's "MB/s" header and
-// this "bytes/µs" documentation describe identical values. Neither is a conversion of
-// the other; they are two spellings of one unit.
+// 1 MB/s = 10^6 bytes / 10^6 µs = 1 byte/µs — so the catalog's _mb_s figure is read
+// unchanged. Neither is a conversion of the other; they are two spellings of one unit.
 //
 // #1581 adds an optional non-linear device model, all opt-in (a device that omits
 // these fields resolves byte-identically to pre-#1581, INV-6):
@@ -48,23 +51,29 @@ const (
 //     absent buffered field falls back to the O_DIRECT value.
 //
 // Optional fields are pointers so "absent" is distinct from an explicit zero (R9).
+//
+// The #1581 device-model fields have no catalog source: blis-schemas' StorageDevice does
+// not define them, and its strict loader refuses a key it does not define, so a catalog
+// that passes its own validation cannot state them. A device read from the catalog
+// therefore always resolves with the ramp and jitter off. Carrying them in the catalog
+// needs those fields added to blis-schemas first.
 type kvOffloadDevice struct {
-	ReadBandwidth  float64 `yaml:"read_bandwidth"`
-	WriteBandwidth float64 `yaml:"write_bandwidth"`
-	BaseLatency    float64 `yaml:"base_latency"`
+	ReadBandwidth  float64
+	WriteBandwidth float64
+	BaseLatency    float64
 
 	// O_DIRECT regime device model (optional; absent => no ramp / no jitter).
-	SaturationQueueDepth   *int64   `yaml:"saturation_queue_depth,omitempty"`
-	SingleTransferFraction *float64 `yaml:"single_transfer_fraction,omitempty"`
-	LatencyJitterStddev    *float64 `yaml:"latency_jitter_stddev,omitempty"`
+	SaturationQueueDepth   *int64
+	SingleTransferFraction *float64
+	LatencyJitterStddev    *float64
 
 	// Buffered-I/O regime (optional; each absent field falls back to O_DIRECT).
-	BufferedReadBandwidth          *float64 `yaml:"buffered_read_bandwidth,omitempty"`
-	BufferedWriteBandwidth         *float64 `yaml:"buffered_write_bandwidth,omitempty"`
-	BufferedBaseLatency            *float64 `yaml:"buffered_base_latency,omitempty"`
-	BufferedSaturationQueueDepth   *int64   `yaml:"buffered_saturation_queue_depth,omitempty"`
-	BufferedSingleTransferFraction *float64 `yaml:"buffered_single_transfer_fraction,omitempty"`
-	BufferedLatencyJitterStddev    *float64 `yaml:"buffered_latency_jitter_stddev,omitempty"`
+	BufferedReadBandwidth          *float64
+	BufferedWriteBandwidth         *float64
+	BufferedBaseLatency            *float64
+	BufferedSaturationQueueDepth   *int64
+	BufferedSingleTransferFraction *float64
+	BufferedLatencyJitterStddev    *float64
 }
 
 // catalogStorageDevicesRelPath is the canonical location of the storage-device table
@@ -79,49 +88,36 @@ func catalogStorageDevicesPath(catalog string) string {
 	return filepath.Join(catalog, catalogDevicesSubdir, catalogStorageDevicesFile)
 }
 
-// parseCatalogStorageDevices strictly decodes a storage.yaml body: a top-level map of
-// device_class name -> physics, with NO wrapping key (that is the shape the
-// authoritative blis-catalog repository stores, and the shape this reader contracts
-// to). Strict field checking (R10) so a misspelled physics key is refused rather than
-// silently decoded to zero bandwidth. Split out so it is directly testable without
-// touching disk.
-func parseCatalogStorageDevices(data []byte) (map[string]kvOffloadDevice, error) {
-	var devices map[string]kvOffloadDevice
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&devices); err != nil {
-		// A file with no YAML document at all (empty, or comments only) decodes as io.EOF.
-		// That is not a malformed document — it is a table with no classes, which the
-		// caller reports with the actionable "defines no device classes" message rather
-		// than a bare "EOF".
-		if errors.Is(err, io.EOF) {
-			return nil, nil
+// parseCatalogStorageDevices loads and validates the storage-device table at path through
+// blis-schemas, and converts each device to BLIS's physics record. It is the one reader of
+// the file: loadCatalogStorageDevices and the legacy transfer path both call it and differ
+// only in their diagnostics. A filesystem failure is distinguishable with isNotReadable.
+func parseCatalogStorageDevices(path string) (map[string]kvOffloadDevice, error) {
+	// A directory where the file belongs opens fine and fails mid-decode inside the YAML
+	// reader, which does not wrap the *fs.PathError; stat first so it reads as unreadable.
+	if info, err := os.Stat(path); err != nil {
+		return nil, err
+	} else if info.IsDir() {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: syscall.EISDIR}
+	}
+	loaded, err := blisschemas.LoadStorageDevices(path)
+	if errors.Is(err, io.EOF) {
+		// A file with no YAML document at all (empty, or comments only) is a table with no
+		// classes, which the callers report with an actionable message rather than "EOF".
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	devices := make(map[string]kvOffloadDevice, len(loaded))
+	for _, d := range loaded {
+		if problems := d.Validate(); !problems.OK() {
+			return nil, fmt.Errorf("device %q: %s", d.Name, problems.Error())
 		}
-		return nil, err
-	}
-	// KnownFields(true) refuses UNKNOWN keys but does NOT require the physics triple to be
-	// PRESENT: read_bandwidth/write_bandwidth/base_latency are non-pointer floats, so an
-	// omitted key is indistinguishable from an explicit 0. A missing base_latency would
-	// resolve to zero-latency physics (read/write=0 is caught later by Validate, but 0
-	// latency is "valid") — exactly the silent-zero defect this reader's strict parsing
-	// exists to prevent (R9/R10). Re-scan the raw YAML for required-key presence and refuse
-	// an incomplete entry, naming the field. Sorted so the diagnostic is deterministic (INV-6).
-	var raw map[string]map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(raw))
-	for name := range raw {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		for _, req := range []string{"read_bandwidth", "write_bandwidth", "base_latency"} {
-			if _, ok := raw[name][req]; !ok {
-				return nil, fmt.Errorf("storage device %q is missing required field %q "+
-					"(read_bandwidth, write_bandwidth and base_latency are all required; an omitted "+
-					"field would silently resolve to 0)", name, req)
-			}
+		devices[d.Name] = kvOffloadDevice{
+			ReadBandwidth:  d.ReadBandwidthMBs,
+			WriteBandwidth: d.WriteBandwidthMBs,
+			BaseLatency:    d.BaseLatencyUs,
 		}
 	}
 	return devices, nil
@@ -141,20 +137,19 @@ func parseCatalogStorageDevices(data []byte) (map[string]kvOffloadDevice, error)
 // exists to prevent.
 func loadCatalogStorageDevices(catalog string) (map[string]kvOffloadDevice, error) {
 	path := catalogStorageDevicesPath(catalog)
-	data, err := os.ReadFile(path)
+	devices, err := parseCatalogStorageDevices(path)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"kv_offload: a secondary tier names a device_class, but the catalog storage-device "+
-				"table at %s is not readable: %w.\n"+
-				"  Add it to the catalog (--catalog / %s names the catalog CLONE ROOT; the table "+
-				"lives at its %s), point --catalog / %s at a catalog that has it, or give each "+
-				"secondary tier an explicit read_bandwidth + write_bandwidth + base_latency triple "+
-				"instead of a device_class",
-			path, err, catalogEnvVar, catalogStorageDevicesRelPath, catalogEnvVar)
-	}
-	devices, parseErr := parseCatalogStorageDevices(data)
-	if parseErr != nil {
-		return nil, fmt.Errorf("kv_offload: catalog storage-device table %s is malformed: %w", path, parseErr)
+		if isNotReadable(err) {
+			return nil, fmt.Errorf(
+				"kv_offload: a secondary tier names a device_class, but the catalog storage-device "+
+					"table at %s is not readable: %w.\n"+
+					"  Add it to the catalog (--catalog / %s names the catalog CLONE ROOT; the table "+
+					"lives at its %s), point --catalog / %s at a catalog that has it, or give each "+
+					"secondary tier an explicit read_bandwidth + write_bandwidth + base_latency triple "+
+					"instead of a device_class",
+				path, err, catalogEnvVar, catalogStorageDevicesRelPath, catalogEnvVar)
+		}
+		return nil, fmt.Errorf("kv_offload: catalog storage-device table %s is malformed: %w", path, err)
 	}
 	if len(devices) == 0 {
 		return nil, fmt.Errorf(
@@ -200,4 +195,12 @@ func resolveKVOffloadDevices(block *kvOffloadBlock) (map[string]kvOffloadDevice,
 			"resolved from the catalog's %s: %w", catalogStorageDevicesRelPath, err)
 	}
 	return loadCatalogStorageDevices(catalog)
+}
+
+// isNotReadable reports whether a catalog-loader error is a filesystem failure (absent,
+// unreadable, a directory where a file belongs) rather than a malformed document. The
+// blis-schemas loaders wrap the *fs.PathError, so the distinction survives them.
+func isNotReadable(err error) bool {
+	var pathErr *fs.PathError
+	return errors.As(err, &pathErr)
 }

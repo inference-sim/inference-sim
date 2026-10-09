@@ -26,11 +26,16 @@
 //
 // # What this package does NOT do
 //
-// It no longer loads artifacts or reads deployment documents. blis-latency-kernel exports
-// Open, OpenPool and the accessors for everything a consumer needs from a resolved
-// deployment, so this package holds only what is genuinely its own: adapting a kernel to
-// sim.LatencyModel, translating a BLIS batch into the kernel's ReqShape, and turning the
-// kernel's byte answers into a KV block count.
+// It does not load artifacts. blis-latency-kernel's OpenInputs loads a scenario's
+// documents and its New builds the kernel from them, so this package holds only what is
+// genuinely its own: adapting a kernel to sim.LatencyModel, translating a BLIS batch into
+// the kernel's ReqShape, and turning the kernel's byte answers into a KV block count.
+//
+// It holds the kernel as the blis-schemas kernel.Kernel INTERFACE, not the concrete type.
+// Everything the adapter reads about configuration comes through that interface: engine
+// settings from Deployment(), widths from Resolved(). The one thing it does not -- the
+// deployment's identity (model name, chip, expert geometry) -- is retained from the
+// Inputs the kernel was built from, see identity.
 //
 // That was not always true. The kernel kept its loading in internal/harness, which Go
 // forbids importing across modules, so this package carried a copy of the sequence and its
@@ -51,6 +56,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-schemas/spec/model"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -68,7 +74,8 @@ type Repos = latencykernel.Repos
 // hardware configuration rather than per-step state, and re-deriving them inside the hot
 // StepTime path would cost more than storing them.
 type Model struct {
-	k *latencykernel.Kernel
+	k  kernel.Kernel
+	id identity
 
 	decodeThreshold int
 	smBudget        int
@@ -78,14 +85,54 @@ type Model struct {
 	outputTokenTicks int64
 	completionTicks  int64
 
-	// No documents are retained. Everything this adapter needs about the deployment --
-	// engine settings, the two parallel widths, the chip, the model name, the expert
-	// geometry -- is read from the kernel, which resolved it.
-	//
-	// It used to hold the Scenario, the Deployment and the pool index so it could index
-	// back into Pools[poolIndex]. That is a second source of truth for "which pool is
-	// this": the kernel's answer and this bookkeeping could disagree, and a disagreement
-	// prices a decode pool at a prefill pool's parallelism with nothing reporting it.
+	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
+	// read from the kernel, which resolved this pool: holding the documents to index back
+	// into Pools[poolIndex] would be a second answer to "which pool is this", and a
+	// disagreement prices a decode pool at a prefill pool's parallelism with nothing
+	// reporting it. Do not reintroduce that while extending identity below.
+}
+
+// identity is the deployment identity an alternative backend is configured from: the
+// model's name, the chip, and the routed expert geometry.
+//
+// It is NOT configuration the kernel resolved, so it is not read from the kernel: the
+// kernel deliberately does not re-export identity (blis-schemas#36 draws that line --
+// identity for comparison is the harness's concern, not the cost model's). It is taken
+// from the same Inputs the kernel was built from, so it describes the chip and graph the
+// kernel priced rather than a second load of files that could resolve differently.
+type identity struct {
+	model         string
+	hardware      string
+	memoryGiB     float64
+	smCount       int
+	experts       int
+	expertsPerTok int
+}
+
+func identityOf(in latencykernel.Inputs) identity {
+	experts, topK := expertCounts(in.Model)
+	return identity{
+		model:         in.Scenario.Model,
+		hardware:      in.Chip.Name,
+		memoryGiB:     in.Chip.MemoryGiB,
+		smCount:       in.Chip.SMCount,
+		experts:       experts,
+		expertsPerTok: topK,
+	}
+}
+
+// expertCounts returns the routed expert count and top-k of the first routed layer kind,
+// or zeros for a dense model. A layer kind carrying a GroupedGEMM node is what makes a
+// model routed; the graph is the only model document this backend parses.
+func expertCounts(g *model.Graph) (experts, topK int) {
+	for _, kind := range g.LayerKinds {
+		for _, n := range kind.Nodes {
+			if n.Op == model.OpGroupedGEMM {
+				return n.Experts, n.TopK
+			}
+		}
+	}
+	return 0, 0
 }
 
 var _ sim.LatencyModel = (*Model)(nil)
@@ -108,31 +155,29 @@ func Open(scenario string, r Repos) (*Model, error) {
 // pool's parallelism, so a caller serving roles separately opens one model per pool. Open is
 // this function at pool 0, which is what a colocated scenario has.
 //
-// The loading is blis-latency-kernel's own OpenPool. This used to reproduce that sequence --
-// scenario, deployment, model graph, chip, fabric, coefficient sets, storage devices, rules
-// pack -- because the kernel kept it in internal/ and Go forbids importing another module's
-// internal packages. The kernel now exports it, so the copy is gone: one answer to "which
-// files does this scenario imply", in the repository that owns the question.
-//
-// Delegating also gains the validation the kernel's New now runs. The copy here did not
-// validate, so a deployment whose pools do not fill its cluster, or whose local
-// data-parallel width does not divide a node, built a model and simulated.
+// The loading is blis-latency-kernel's own: OpenInputs is the loading half of its OpenPool,
+// and New is the same constructor OpenPool ends in, so this builds exactly the kernel
+// OpenPool would -- validation included -- while keeping the Inputs the identity is read
+// from. One answer to "which files does this scenario imply", in the repository that owns
+// the question.
 func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
-	k, err := latencykernel.OpenPool(scenario, r, poolIndex)
+	in, err := latencykernel.OpenInputs(scenario, r, poolIndex)
 	if err != nil {
 		return nil, err
 	}
-	return New(k, k.Chip().SMCount), nil
+	k, err := latencykernel.New(in)
+	if err != nil {
+		return nil, err
+	}
+	return newModel(k, identityOf(in)), nil
 }
 
-// New adapts an already-built kernel. Exported so a caller that constructed a kernel
-// some other way -- a test with a hand-built coefficient set, say -- can adapt it without
-// going through the filesystem.
-func New(k *latencykernel.Kernel, smBudget int) *Model {
+func newModel(k kernel.Kernel, id identity) *Model {
 	return &Model{
 		k:                k,
+		id:               id,
 		decodeThreshold:  DecodeThreshold,
-		smBudget:         smBudget,
+		smBudget:         id.smCount,
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
 	}
@@ -140,31 +185,19 @@ func New(k *latencykernel.Kernel, smBudget int) *Model {
 
 // Kernel exposes the adapted kernel. A caller that needs a memory or provenance answer
 // asks the kernel directly rather than having this adapter grow a passthrough per method.
-func (m *Model) Kernel() *latencykernel.Kernel { return m.k }
+func (m *Model) Kernel() kernel.Kernel { return m.k }
 
 // StepTime prices one forward pass over the scheduled batch.
 //
-// StepEstimate.Expected is read rather than either band edge. The kernel reports a band
-// -- Overlap sums the max over resources within each layer, NoOverlap sums every resource
-// -- and Expected is the edge its own measured evidence selects, so this consumer does not
-// re-decide. An earlier version of this comment claimed Overlap "is what a real engine
-// achieves"; NVIDIA's FPM dataset, which measures one synchronized whole-forward iteration
-// at a known batch and KV-token count, contradicts that. Over 219 points spanning two
-// models, two parts and five parallelism topologies:
-//
-//	edge       mean|err|   signed
-//	Overlap      14.70%   -10.80%
-//	NoOverlap    10.16%    -0.73%
-//
-// NoOverlap is closer on four of the five cells and is nearly unbiased, where Overlap
-// carries a one-sided deficit of the same magnitude BLIS shows end to end. The physical
-// reason is PIECEWISE cudagraph mode: attention runs eagerly between captured segments,
-// so per-layer overlap is structurally limited.
-//
-// The one dissenting cell is pure-tp2 -- the whole model on two GPUs, where the expert
-// weight read dominates a single resource and per-stage max is the right composition.
-// Even there NoOverlap wins at batch >= 128. That is a regime boundary worth revisiting
-// with a resource-aware blend, not a reason to keep the optimistic edge everywhere.
+// The kernel reports a band -- Overlap sums the max over resources within each stage,
+// NoOverlap sums every resource -- and this returns the NoOverlap edge. That is a measured
+// choice: over 219 points of NVIDIA's FPM dataset (one synchronized whole-forward
+// iteration at a known batch and KV-token count, two models, two parts, five parallelism
+// topologies), Overlap carries a one-sided deficit and NoOverlap is nearly unbiased and
+// closer on most points. blis-registry's docs/band-selection.md records the figures. The
+// physical reason is PIECEWISE cudagraph mode: attention runs eagerly between captured
+// segments, so per-layer overlap is structurally limited. The kernel's own StepTime comment
+// states the conclusion: a caller that wants one figure should read NoOverlap.
 //
 // FPM is used only to choose between the kernel's own two edges. It is not fitted
 // against, and the InferenceX corpus BLIS is scored on is never used for either.
@@ -177,20 +210,6 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 	for _, req := range batch {
 		b.Reqs = append(b.Reqs, shapeOf(req))
 	}
-	// NoOverlap rather than Overlap, and this is a measured choice rather than a
-	// migration detail. schemas v0.2.0 removed StepEstimate.Expected, which the kernel
-	// had set from evidence so a caller wanting one number did not have to re-decide.
-	// The evidence it was set from, recorded in blis-registry's docs/band-selection.md
-	// and in the kernel's own StepTime comment: over 219 points of NVIDIA's FPM dataset
-	// spanning two models, two parts and five parallelism topologies, Overlap's signed
-	// error is -13.45% and NoOverlap's is -3.44%, and NoOverlap is closer on 158 of
-	// them. The physical reason is PIECEWISE cudagraph mode -- attention runs eagerly
-	// between captured segments, so per-layer overlap is structurally limited.
-	//
-	// The kernel's StepTime comment states the conclusion directly: "A caller that wants
-	// one figure should read NoOverlap." Reading Overlap here would silently under-price
-	// every simulated step by about ten points.
-	//
 	// max(1) upholds BLIS's postcondition without depending on a registry value staying
 	// non-zero. See the package comment.
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
@@ -265,7 +284,7 @@ func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() 
 // The error text says "deployment" for the same reason -- a reader told the scenario lacks
 // a block_size would look in the wrong document.
 func (m *Model) Engine() (deployment.Engine, error) {
-	e := m.k.Engine()
+	e := m.k.Deployment().Engine
 	if e.BlockSize <= 0 {
 		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
 	}
@@ -284,13 +303,13 @@ func (m *Model) Engine() (deployment.Engine, error) {
 // and KV budget, and splits requests disjointly across them. A single-instance simulator
 // modelling the aggregate must scale all three.
 func (m *Model) DataParallelWidth() int {
-	return m.k.DataParallelWidth()
+	return m.k.Resolved().DataParallel()
 }
 
 // StepEstimate exposes the kernel's full band for one batch: the overlap edge, the serialized
 // edge, the binding resource and the per-resource breakdown.
 //
-// StepTime returns only the overlap edge, because sim.LatencyModel is a single int64. A
+// StepTime returns only the NoOverlap edge, because sim.LatencyModel is a single int64. A
 // caller diagnosing WHY a step costs what it does needs the rest, and asking the kernel again
 // through this method is cheaper and less error-prone than rebuilding the batch translation.
 func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
@@ -321,22 +340,23 @@ func (m *Model) Deployment() Deployment {
 	// exactly the v0.2.0 split: what traffic runs on which hardware is the problem, how
 	// it is laid out is the choice. Both are the pair this model was opened from, so the
 	// arms cannot describe different deployments.
-	e := m.k.Engine()
+	e := m.k.Deployment().Engine
+	r := m.k.Resolved()
 	return Deployment{
-		Model:    m.k.ModelName(),
-		Hardware: m.k.Chip().Name,
-		TP:       m.k.TensorParallelWidth(),
-		DP:       m.k.DataParallelWidth(),
+		Model:    m.id.model,
+		Hardware: m.id.hardware,
+		TP:       r.TensorParallel(),
+		DP:       r.DataParallel(),
 		// The RESOLVED width, not the request: expert parallelism is on when the group is
 		// wider than one rank, which is what the kernel settled.
-		ExpertParallel: m.k.Resolved().ExpertParallelWidth > 1,
-		MoE:            m.k.Experts() > 0,
-		Experts:        m.k.Experts(),
-		ExpertsPerTok:  m.k.ExpertsPerToken(),
+		ExpertParallel: r.ExpertParallel() > 1,
+		MoE:            m.id.experts > 0,
+		Experts:        m.id.experts,
+		ExpertsPerTok:  m.id.expertsPerTok,
 		Quantization:   e.Quantization,
 		CacheDType:     e.CacheDType,
 		// The chip's total memory, which is what vLLM resolves its batch defaults from.
-		DeviceMemoryGiB: m.k.Chip().MemoryGiB,
+		DeviceMemoryGiB: m.id.memoryGiB,
 		// Tri-state in the scenario, resolved here to the engine's default. vLLM caches
 		// unless told not to, so nil means ON and only an explicit false disables it.
 		PrefixCachingDisabled: e.EnablePrefixCaching != nil &&

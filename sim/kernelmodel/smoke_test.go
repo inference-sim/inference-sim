@@ -10,9 +10,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// Resolved at run time from the vendored artifacts under testdata/blis, or from the
-// BLIS_* environment overrides. Not consts: the resolvers are functions, and the point of
-// routing through them is that no path in this file names one developer's checkout.
+// The artifact roots, which TestMain has already checked resolve.
 func repos() Repos { return DefaultRepos() }
 
 func open(t *testing.T, scenario string) *Model {
@@ -151,8 +149,13 @@ func TestPrefillAndDecodeArePricedByDifferentLaws(t *testing.T) {
 // should not. (Before schemas v0.2.0 the adapter read StepEstimate.Expected, which the
 // kernel set to NoOverlap from measured evidence; the field is gone and the adapter names
 // the edge directly, so this paragraph describes the same two regimes it always did.)
+//
+// The deployment is a DENSE-attention model on purpose. On a DSA sparse-attention model such
+// as glm-5, each query attends a bounded top-k set rather than its whole context, so a
+// decode at a 4,096-token context and a 4,096-token prefill chunk read nearly the same KV --
+// the kernel prices that correctly, and the separation this test asserts would not exist.
 func TestTheMixerChoiceMovesTheStepOnlyWhereComputeBinds(t *testing.T) {
-	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
+	m := open(t, "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml")
 	const prompt = 4096
 
 	// hostBoundTolerance is how much of the host-bound price the mixer difference may

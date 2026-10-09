@@ -6,51 +6,57 @@ prints, the command is right.
 
 ## What you need
 
-Five checkouts, as siblings. Four are public in the `inference-sim` org; the fifth is this
-simulator.
+This repository, Go 1.24 or later, and the measurement corpora. Every other input is pinned to a
+tagged release and reaches you without a separate checkout:
+
+| input | release | how it arrives |
+|---|---|---|
+| blis-latency-kernel | `v0.1.0` | `go.mod`; its scenario fixtures (`testdata/aisimulate`) are read from the module cache |
+| blis-schemas | `v0.2.2` | `go.mod` |
+| blis-catalog | `0.2.1` | vendored subset at `testdata/catalog` |
+| blis-registry | `v0.1.1` | vendored coefficient sets at `testdata/registry` |
+
+The catalog and registry releases are the ones blis-latency-kernel `v0.1.0` pins in its own
+`testdata/upstream.lock`; `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` fails if the
+vendored copies drift from that lock. To score against live upstream checkouts instead, clone the
+tags and point the variables at them:
 
 ```
-git clone https://github.com/inference-sim/blis-schemas.git
-git clone https://github.com/inference-sim/blis-latency-kernel.git
-git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone -b modeling https://github.com/inference-sim/blis-registry.git
-git clone https://github.com/inference-sim/inference-sim.git     # this repository
+git clone --branch 0.2.1  --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+export BLIS_CATALOG=$PWD/blis-catalog BLIS_REGISTRY=$PWD/blis-registry
 ```
 
-Go 1.24 or later. Python 3.11 or later with `pyarrow` and `pyyaml` for the registry scripts.
-
-The catalog and registry are read at RUN TIME by path, not imported, so the scoring commands take
-their locations as flags. The defaults in each command assume `~/Documents/Projects/<repo>`; pass
-`-catalog` and `-registry` if yours are elsewhere.
+or pass `-catalog`, `-registry` and `-scenarios` to the scoring commands.
 
 ### The measurement data
 
-Two sources, with different access:
-
-**NVIDIA's published accuracy snapshot** is committed, at
-`blis-latency-kernel/testdata/measurements/aisimulate_summary.json` (584 KB, the full nested
-summary) and `aisimulate_e2e.json` (the extracted 447-point corpus). Nothing further is needed to
-reproduce the scores. To refresh them from NVIDIA:
+The scoring commands read measured latencies from `BLIS_MEASUREMENTS`, a directory holding
+`aisimulate_e2e.json`, `aisimulate_summary.json`, `inferencex_absolutes.json` and
+`inferencex_engine_settings.json`. They are extracted from third-party publications -- NVIDIA
+AISimulate's end-to-end accuracy artifact and SemiAnalysis InferenceX's database dump -- which
+neither this repository nor blis-latency-kernel redistributes. blis-latency-kernel's
+`testdata/README.md` names each source, and its `scripts/extract_*` tools produce the files. A
+command run without them refuses, naming the flags it needs.
 
 ```bash
-gh api repos/ai-dynamo/aisimulate/actions/workflows/360006241/runs?status=success \
-  --jq '.workflow_runs[0].id'
-# then, for that run id:
-gh api repos/ai-dynamo/aisimulate/actions/runs/<id>/artifacts \
-  --jq '.artifacts[] | select(.name|startswith("e2e-accuracy-web")) | .id'
-gh api repos/ai-dynamo/aisimulate/actions/artifacts/<artifact-id>/zip > web.zip
-unzip web.zip                      # yields summary.json
-python blis-latency-kernel/scripts/extract_aisimulate_e2e.py summary.json \
-    -o blis-latency-kernel/testdata/measurements/aisimulate_e2e.json
-python blis-latency-kernel/scripts/gen_aisimulate_scenarios.py \
-    blis-latency-kernel/testdata/measurements/aisimulate_e2e.json \
-    -o blis-latency-kernel/testdata/aisimulate
+export BLIS_MEASUREMENTS=/path/to/corpora
+go test -tags scoring ./sim/kernelmodel/...   # the tests that read the corpora
 ```
 
-**NVIDIA's operator measurement tables** are NOT committed: they are large parquet collections in
-the `ai-dynamo/aisimulate` repository. The registry's fitting and validation scripts read them
-from a checkout, and default to `/tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data`.
-Pass `--data <path>/systems/data` for your own. Figures that need them are marked below.
+**NVIDIA's operator measurement tables** are large parquet collections in the
+`ai-dynamo/aisimulate` repository. The registry's fitting and validation scripts read them from a
+checkout of that repository; with `AISIMULATE` naming your checkout, pass
+`--data "$AISIMULATE"/python/aisimulate/src/aisimulate_core/systems/data`.
+Figures that need them are marked below.
+
+### Which revision each figure was scored at
+
+The tables below record what each command printed when the figure was published. Those
+figures were scored against pre-release revisions of the kernel and registry (the kernel at
+`bd743a6`, the registry at `640a27e`); the commands are unchanged, and re-running them at the
+tagged releases above gives the current figures. `docs/guide/latency-models.md` carries the
+headline re-scored at the tags.
 
 ## The headline comparison
 
@@ -216,9 +222,9 @@ collections.
 ```bash
 cd blis-registry
 python scripts/probe_attention_prefill_axis.py --parts h200_sxm \
-    --data /tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data
+    --data "$AISIMULATE"/python/aisimulate/src/aisimulate_core/systems/data
 python scripts/probe_attention_prefill_axis.py --residuals h200_sxm \
-    --data /tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data
+    --data "$AISIMULATE"/python/aisimulate/src/aisimulate_core/systems/data
 ```
 
 The first prints the held-out A/B over four efficiency keys and the guard line, which must read

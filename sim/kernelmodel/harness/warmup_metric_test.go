@@ -2,10 +2,9 @@ package harness
 
 import (
 	"math"
-	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
 // The warm-up cut must apply to TPOT and NOT to TTFT.
@@ -16,9 +15,9 @@ import (
 // mean untouched. If both move, the cut has leaked into TTFT and the TTFT curve will flatten.
 func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	sw := testSweep(t)
 	// Concurrency 64: deep enough that the start-up transient is several prefill waves.
@@ -75,9 +74,9 @@ func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
 // broken queueing path rather than on a modelling trade that is documented elsewhere.
 func TestTTFTRisesWithConcurrency(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	_ = c
 	sw := testSweep(t)
@@ -109,9 +108,9 @@ func TestTTFTRisesWithConcurrency(t *testing.T) {
 // its answer with the constant would be a tuning knob rather than a measurement.
 func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	count := func(factor float64) int {
 		n := 0
@@ -144,9 +143,9 @@ func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 // it would renormalise the sweep rather than remove a bad point.
 func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	for i := range c.Sweeps {
 		for _, idx := range c.Sweeps[i].TTFTSpikeIndices(DefaultTTFTSpikeFactor) {
@@ -166,9 +165,9 @@ func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 // four bad ones.
 func TestPointExclusionKeepsTheRestOfAnAffectedSweep(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	affectedSweeps, spikePoints, pointsInAffected := 0, 0, 0
 	for i := range c.Sweeps {

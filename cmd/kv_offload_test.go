@@ -51,7 +51,7 @@ func validBlock() *kvOffloadBlock {
 // devices/storage.yaml parses through the real reader and a device resolves to a triple.
 func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
 	catalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 	devices, err := loadCatalogStorageDevices(catalog)
 	if err != nil {
 		t.Fatalf("catalog storage device table must load: %v", err)

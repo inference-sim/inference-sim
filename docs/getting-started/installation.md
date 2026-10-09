@@ -37,7 +37,7 @@ repository **at the pinned release tag** (see [Catalog compatibility](#catalog-c
 below) and point BLIS at the clone root:
 
 ```bash
-git clone --branch 0.2.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
 
@@ -51,7 +51,7 @@ compatible version is stated; every other page's clone command pins the same tag
      line below and requires every documented blis-catalog clone to pin exactly it, so keep
      the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
 
-**Compatible blis-catalog release: `0.2.0`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.2.0).
+**Compatible blis-catalog release: `0.2.1`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.2.1).
 
 Why pin at all: BLIS parses every catalog file strictly (`KnownFields(true)`), and strict
 parsing is one-way — an added or renamed key in a future catalog schema is a **hard load
@@ -61,6 +61,16 @@ itself. Pinning also makes results attributable: two people running the document
 months apart read the same catalog. (`blis run --metrics-path` records the catalog's git
 revision and whether it was dirty — see [Results](../guide/results.md); a `--depth 1`
 tag clone still carries the revision, so that provenance is unaffected.)
+
+The `blis-latency-kernel` backend additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
+clone for its fitted coefficients (`--registry`). **Compatible blis-registry release:
+`v0.1.1`**, the release blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested
+against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
+repository's test suite holds its vendored catalog and registry to it.
+
+```bash
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+```
 
 **Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
 your workload against it, and if it works, bump the tag on the line above — the guard test

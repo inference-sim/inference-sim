@@ -36,7 +36,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -46,7 +45,7 @@ import (
 
 func main() {
 	corpusPath := flag.String("corpus",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
+		kernelmodel.MeasurementPath("aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
 		kernelmodel.DefaultScenarios(), "scenario directory")
@@ -58,6 +57,10 @@ func main() {
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
 	verbose := flag.Bool("verbose", false, "print every point")
 	flag.Parse()
+	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	c, err := harness.LoadCorpus(*corpusPath)
 	if err != nil {

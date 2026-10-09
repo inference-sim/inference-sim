@@ -1,0 +1,6 @@
+name: mixtral-8x7b-v0.1
+source:
+  provider: huggingface
+  repo: mistralai/Mixtral-8x7B-v0.1
+  revision: fc7ac94680e38d7348cfa806e51218e6273104b0
+  retrieved: 2026-09-16

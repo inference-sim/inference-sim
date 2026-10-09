@@ -106,8 +106,9 @@ inference-sim/
 │                               # (The model catalog is NOT in this repo: it is the external blis-catalog
 │                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
 │                               #  It holds models/<name>/config.json, workloads/<name>.yaml (#1769) and the
-│                               #  devices/storage.yaml KV-offload device table (#1770). A small
-│                               #  clone-root-shaped fixture lives at testdata/catalog/ for tests.)
+│                               #  devices/storage.yaml KV-offload device table (#1770). A verbatim
+│                               #  subset of a tagged release is vendored at testdata/catalog/ for tests,
+│                               #  and blis-registry's coefficient sets at testdata/registry/.)
 ├── defaults.yaml              # Pre-trained coefficients only: trained-physics + LoRA cost coefficients
 │                               # (what it no longer carries, and where that moved: see the
 │                               #  cmd/default_config.go entry above)

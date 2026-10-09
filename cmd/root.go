@@ -1058,6 +1058,10 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		if err != nil {
 			logrus.Fatalf("--latency-model %s: %v", sim.LatencyBackendKernel, err)
 		}
+		// Record the catalog this run's model graph, chip and fabric came from, so the
+		// results file attributes the result to a catalog revision exactly as the
+		// HF-config backends do through resolveModelConfig (#1732, #1900).
+		resolvedCatalogRoot = catalogRoot
 		m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
 			Scenarios: kernelScenarioDir,
 			Catalog:   catalogRoot,
@@ -1761,8 +1765,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type, e.g. H100 (REQUIRED on run and replay). Must name a key in the hardware config. Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism degree, e.g. 1 (REQUIRED on run and replay; must be > 0). Never inferred from defaults.yaml — a run missing it is refused naming the flag (NS-6, #1733)")
-	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only). --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
-	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only). With --latency-model trained-physics it is set here; with --latency-model blis-latency-kernel the deployment comes from the scenario's parallel.dp and passing this flag is refused; roofline does not support it. --dp N spawns N real single-node engine replicas per --num-instances, each sized per-rank, on both `blis run` and `blis replay` (#1531, #1556). Supported with --enable-expert-parallel since #1548 (the EP group is those replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs) since #1553. Not supported with the model autoscaler (#1553: dp-group co-scaling is undefined)")
+	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel). With --latency-model trained-physics it is set here; with --latency-model blis-latency-kernel the deployment comes from the scenario's parallel.enable_expert_parallel and passing this flag is refused; roofline does not support it")
 	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + either --dp > 1 or --enable-expert-parallel)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline, blis-latency-kernel. The kernel backend prices a step from a committed scenario plus the catalog and registry it names, so it takes --scenario/--scenarios/--registry instead of coefficient flags, and it is the only backend that models expert parallelism and per-pool prefill/decode roles.")
 	cmd.Flags().StringVar(&kernelScenario, "scenario", "", "Scenario FILE NAME within --scenarios, e.g. gpt-oss-120b-h200-fp4-vllm-tp4.yaml (--latency-model blis-latency-kernel only; required there). The scenario states the model, hardware, fabric, coefficient sets, engine version and per-pool parallelism, so those are read from it rather than from flags.")

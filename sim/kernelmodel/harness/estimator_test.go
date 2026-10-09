@@ -1,10 +1,10 @@
 package harness
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
 func hopperRepos() kernelmodel.Repos {
@@ -28,16 +28,16 @@ func hopperBackends() BackendPaths {
 func testSweep(t *testing.T) Sweep {
 	t.Helper()
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skipf("corpus unavailable: %v", err)
+		t.Fatalf("corpus: %v", err)
 	}
 	for _, sw := range c.Sweeps {
 		if sw.Scenario == "gpt-oss-120b-h200-fp4-vllm-tp4.yaml" && sw.Framework == "vllm" {
 			return sw
 		}
 	}
-	t.Skip("gpt-oss-120b-h200-fp4-vllm-tp4 not in the corpus")
+	t.Fatal("gpt-oss-120b-h200-fp4-vllm-tp4 not in the corpus")
 	return Sweep{}
 }
 

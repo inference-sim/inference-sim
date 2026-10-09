@@ -57,7 +57,8 @@
 set -euo pipefail
 
 CATALOG_REPO="${CATALOG_REPO:-https://github.com/inference-sim/blis-catalog.git}"
-CATALOG_REVISION="${CATALOG_REVISION:-6fe4664576bc43d601bba6619aca4fbb42c5087b}"
+# blis-catalog release 0.2.1. testdata/catalog is a verbatim subset of the same release.
+CATALOG_REVISION="${CATALOG_REVISION:-28e82d4c249893ee25b1412a63d2347c5165b004}"
 GATE_TIMEOUT="${GATE_TIMEOUT:-5m}"
 
 # Run from the repository root whatever the caller's working directory is, so `./cmd` resolves.

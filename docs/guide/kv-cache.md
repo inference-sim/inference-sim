@@ -216,6 +216,17 @@ not MiB) are the *same number* — 1 MB/s = 10⁶ bytes / 10⁶ µs = 1 byte/µs
 file's "MB/s" header and BLIS's "bytes/µs" documentation describe identical values with no
 conversion between them.
 
+The table's format belongs to [`blis-schemas`](https://github.com/inference-sim/blis-schemas)
+(`hardware.StorageDevice`), and BLIS reads it with that package's own strict loader: each class
+states `read_bandwidth_mb_s`, `write_bandwidth_mb_s` and `base_latency_us`, all positive. The
+`--kv-offload-config` tier fields keep their own spelling (`read_bandwidth`, `write_bandwidth`,
+`base_latency`) — that file is BLIS configuration, not catalog data. The optional
+non-linear device model (#1581: `saturation_queue_depth`, `single_transfer_fraction`,
+`latency_jitter_stddev`, `buffered_*`) has **no catalog source**: the schema does not define
+those fields, so a catalog table stating them is refused naming the key, and every class read
+from the catalog resolves with the ramp and jitter off. Carrying them in the catalog needs the
+fields added to blis-schemas first.
+
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
 the binary cannot reproduce fails loudly rather than silently degrading to single-tier.

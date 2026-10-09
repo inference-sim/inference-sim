@@ -46,6 +46,12 @@ jobs:
           - name: "latency models"
             packages: "./sim/latency"
             timeout: "10m"
+          # The blis-latency-kernel adapter and its scoring harness. Hermetic: scenarios come
+          # from the kernel module go.mod pins, the catalog and registry are vendored under
+          # testdata/. The measurement-corpus tests are behind -tags scoring and do not run here.
+          - name: "kernel backend"
+            packages: "./sim/kernelmodel/..."
+            timeout: "10m"
           - name: "workload & cmd"
             packages: "./sim/workload ./cmd"
             timeout: "10m"

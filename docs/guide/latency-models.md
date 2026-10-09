@@ -149,7 +149,11 @@ Three paths, all required:
 | `--scenarios` | the directory holding scenario YAML files |
 | `--registry` | a `blis-registry` clone root, holding the coefficient sets a scenario names |
 
-The catalog is located as it is for every command, by `--catalog` or `BLIS_CATALOG`.
+The catalog is located as it is for every command, by `--catalog` or `BLIS_CATALOG`. The
+releases this backend is tested against are blis-latency-kernel `v0.1.0` (pinned in
+`go.mod`), blis-catalog `0.2.1` and blis-registry `v0.1.1`; the scenario fixtures it was scored
+on ship in the kernel module, under `testdata/aisimulate`
+([installation](../getting-started/installation.md#catalog-compatibility)).
 
 A scenario states the model, the hardware, the fabric, which coefficient sets to load, the
 engine version, and each pool's parallelism and engine settings. Because it states them,
@@ -180,6 +184,16 @@ admission, P/D instance counts, KV offload -- stays on the command line.
   that differ in the quantities setting step time. `kernelmodel.OpenPool` prices one named
   pool; `kernelmodel.Open` is that function at pool 0, which is what a colocated scenario
   has.
+
+### What it does not yet price
+
+- **P/D KV transfers.** The kernel prices moving a request's KV between pools from the
+  scenario's fabric (`PDTransferTime`: the fabric's `InterNodeBwGBps`, NVLink for same-node
+  pairs), but the cluster's PD path does not call it yet. A disaggregated run on this backend
+  still charges transfers from `--pd-transfer-bandwidth` (default 25 GB/s) and
+  `--pd-transfer-base-latency`, so a scenario naming `cluster.fabric: ib-400g` transfers at
+  the flag's rate unless the flag is set to match. Routing the PD path through the kernel is
+  follow-on work (#1900).
 
 ### Failure is named, never silent
 

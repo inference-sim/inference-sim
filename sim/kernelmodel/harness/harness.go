@@ -232,11 +232,6 @@ type Config struct {
 	// scores best would be fitting to the evaluation set.
 	LengthRangeRatio float64
 
-	// CyclesPerPoint is how many full pool cycles of completions each point must gather, on
-	// top of the SessionsPerPoint floor. A "cycle" is `concurrency` completions: one pass of
-	// every user in the pool. Zero means defaultCyclesPerPoint.
-	CyclesPerPoint int
-
 	// Estimator selects which latency model supplies step time. The zero value is
 	// EstimatorKernel, so a caller that does not set it gets blis-latency-kernel and is
 	// byte-identical to a build without this field (INV-6).
@@ -690,11 +685,6 @@ func (s Sweep) TTFTSpikeIndices(spikeFactor float64) []int {
 // an artefact. Ten sits inside the 1.74x-to-10.71x gap documented on TTFTSpikeIndices, so every
 // value from 2 to 10 selects the same four points. Reported with the figures it affects.
 const DefaultTTFTSpikeFactor = 10.0
-
-// defaultCyclesPerPoint is how many full pool cycles a point gathers when the caller states
-// no preference: four, of which the first half is discarded as warm-up, leaving two settled
-// cycles. Chosen from the observed convergence of the per-point mean rather than from a score.
-const defaultCyclesPerPoint = 4
 
 // SignedStats summarises a slice of SIGNED per-point percentage errors, where a positive
 // value means the model predicted a LARGER relative rise than was measured.

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +13,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	blisschemas "github.com/inference-sim/blis-schemas"
+	"github.com/inference-sim/blis-schemas/spec/hardware"
 	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
@@ -30,9 +30,9 @@ import (
 //     resolveModelConfigInCatalog + latency.GetModelConfig, workload presets through
 //     readCatalogPresetWorkload, storage devices through loadCatalogStorageDevices. Only the
 //     two namespaces no run reads yet — models/<name>/model.yaml (identity/provenance) and
-//     hardware/<gpu>.yaml (calibration still ships in the in-repo hardware_config.json) —
-//     get a reader here, and the hardware one delegates its strict key policy to
-//     latency.ParseHardwareCalibEntries rather than re-deriving it.
+//     hardware/<gpu>.yaml (a blis-schemas chip descriptor; BLIS's calibration still ships in
+//     the in-repo hardware_config.json) — get a reader here, and the hardware one is
+//     blis-schemas' own LoadChip rather than a re-derivation of its format.
 //
 //  2. The GATE is a test, not a subcommand: cmd/catalog_load_test.go drives loadCatalog
 //     against the committed fixture catalog (testdata/catalog) unconditionally, and
@@ -322,123 +322,30 @@ func loadCatalogHardwareEntries(root string) (int, []string) {
 	return loaded, problems
 }
 
-// hardwareCalibRequiredKeys are the calibration keys a catalog hardware file must STATE. An
-// omitted key decodes to 0, which for peak FLOPs, bandwidth, MFU or memory capacity is
-// plausible-but-wrong physics with no diagnostic — the defect strict parsing exists to
-// prevent (R9/R10), and one KnownFields(true) cannot catch because absent and zero are the
-// same thing for a non-pointer float.
-//
-// TFlopsFP8 is required to be PRESENT but may legitimately be 0 (an A100 has no FP8 path),
-// so it is listed here and excluded from the positivity check below.
-//
-// This list plus hardwareCalibOptionalKeys must CLASSIFY every field of sim.HardwareCalib:
-// TestCatalogHardwareKeys_ClassifyEveryCalibField reflects over the struct and fails when a
-// field appears in neither. That is what keeps a field added to the struct from becoming a key
-// this gate silently ignores — the accepted-key set is derived reflectively one package over
-// (latency.ParseHardwareCalibEntries), but whether a new field is REQUIRED is a judgement no
-// reflection can make, so the guard forces the judgement instead of defaulting to "optional".
-var hardwareCalibRequiredKeys = []string{
-	"TFlopsPeak", "TFlopsFP8", "BwPeakTBs", "mfuPrefill", "mfuDecode", "MemoryGiB",
-}
-
-// hardwareCalibOptionalKeys are the calibration keys a catalog hardware file may omit, each
-// because "not stated" is a SUPPORTED state with defined behaviour rather than a silent zero:
-// an omitted interconnect pair means "interconnect uncalibrated", which prices cross-node
-// traffic exactly like intra-node traffic (#1530), and an omitted InterNodeHopLatencyUs means
-// the per-hop latency term is not charged at all (#1694 ships it uncalibrated deliberately).
-// Requiring either would reject every hardware entry that has no measured fabric number, which
-// is most of them.
-var hardwareCalibOptionalKeys = []string{
-	"IntraNodeBwGBps", "InterNodeBwGBps", "InterNodeHopLatencyUs",
-}
-
-// hardwareCalibPositiveKeys are the required keys whose value must additionally be > 0.
-var hardwareCalibPositiveKeys = []string{
-	"TFlopsPeak", "BwPeakTBs", "mfuPrefill", "mfuDecode", "MemoryGiB",
-}
-
-// readCatalogHardwareEntry reads and strictly validates one <catalog>/hardware/<gpu>.yaml:
-// a flat mapping of sim.HardwareCalib fields (no wrapping GPU key — the filename is the GPU).
-//
-// The strict KEY policy is NOT re-implemented here. The file's mapping is converted to the
-// hardware-config payload shape and decoded by latency.ParseHardwareCalibEntries, the same
-// function parseHWConfig uses for the in-repo hardware_config.json (R23) — so the catalog and
-// the bundled file accept exactly the same keys, reject the same typos with the same
-// case-mismatch diagnostic, and reject the retired per-collective InterNodeLatencyUs key
-// identically. A second key list would be free to drift from the one the decoder honours.
-//
-// The VALUE policy is shared the same way: latency.ValidateHardwareCalibEntry is the single home
-// for the load-boundary rules GetHWConfig applies to the GPU a run selects, so a rule added
-// there fails a catalog entry here too rather than only the run path (R23).
-func readCatalogHardwareEntry(path string) (sim.HardwareCalib, error) {
-	gpu := strings.TrimSuffix(filepath.Base(path), catalogYAMLExt)
+// readCatalogHardwareEntry reads and validates one <catalog>/hardware/<gpu>.yaml through
+// blis-schemas, which owns that format: it is a chip descriptor (peak rates, memory, link
+// bandwidth), decoded strictly by LoadChip and checked by the chip's own field validation.
+// No run reads it yet -- BLIS's analytical calibration still ships in the in-repo
+// hardware_config.json, a different document -- so this reader exists so the gate checks
+// the namespace in the format the catalog actually publishes, with the parser the catalog's
+// own CI uses.
+func readCatalogHardwareEntry(path string) (*hardware.Chip, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry is not readable: %w", path, err)
+		return nil, fmt.Errorf("%s: hardware entry is not readable: %w", path, err)
 	}
 	if err := checkCatalogAuthoredYAML(path, data); err != nil {
-		return sim.HardwareCalib{}, err
+		return nil, err
 	}
-
-	var fields map[string]any
-	if err := yaml.Unmarshal(data, &fields); err != nil {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry is not a valid YAML mapping: %w", path, err)
-	}
-	if len(fields) == 0 {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry declares no calibration fields", path)
-	}
-	for _, req := range hardwareCalibRequiredKeys {
-		if _, ok := fields[req]; !ok {
-			return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry is missing required field %q "+
-				"(an omitted calibration field would silently read 0)", path, req)
-		}
-	}
-
-	// Hand the mapping to the shared strict decoder in the payload shape it contracts to:
-	// {"<gpu>": {<fields>}}.
-	payload, err := json.Marshal(map[string]any{gpu: fields})
+	chip, err := blisschemas.LoadChip(path)
 	if err != nil {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry holds a value that is not representable "+
-			"as hardware calibration: %w", path, err)
+		return nil, fmt.Errorf("%s: hardware entry is not a valid chip descriptor: %w", path, err)
 	}
-	calibs, err := latency.ParseHardwareCalibEntries(payload)
-	if err != nil {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: %w", path, err)
+	if problems := chip.Validate(); !problems.OK() {
+		return nil, fmt.Errorf("%s: hardware entry is not a valid chip descriptor: %s",
+			path, problems.Error())
 	}
-	calib, ok := calibs[gpu]
-	if !ok {
-		// Defensive: the payload was built with exactly this key.
-		return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry for %q did not decode", path, gpu)
-	}
-	for _, key := range hardwareCalibPositiveKeys {
-		if v, numeric := yamlFloat(fields[key]); !numeric || v <= 0 {
-			return sim.HardwareCalib{}, fmt.Errorf("%s: hardware entry field %q must be a number > 0, got %v",
-				path, key, fields[key])
-		}
-	}
-	if err := latency.ValidateHardwareCalibEntry(gpu, calib); err != nil {
-		return sim.HardwareCalib{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return calib, nil
-}
-
-// yamlFloat reports a YAML scalar's numeric value. yaml.v3 decodes an integer literal to int
-// and a float literal to float64, so a single type assertion would reject half the valid
-// files (MemoryGiB: 80.0 vs IntraNodeBwGBps: 450).
-func yamlFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		// yaml.v3 falls back to uint64 for an integer too large for int64.
-		return float64(n), true
-	case float64:
-		return n, true
-	default:
-		return 0, false
-	}
+	return chip, nil
 }
 
 // loadCatalogWorkloadEntries loads every workloads/<name>.yaml preset through

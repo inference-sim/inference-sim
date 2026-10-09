@@ -1,16 +1,16 @@
 package harness
 
 import (
-	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
-// A var rather than a const: the path is resolved at run time from the vendored default or
-// an environment override, and a const cannot call a function.
-var settingsPath = filepath.Join(
-	kernelmodel.DefaultMeasurements(), "inferencex_engine_settings.json")
+// settingsPath is the engine settings extracted from InferenceX's launch logs, under
+// BLIS_MEASUREMENTS.
+func settingsPath(t testing.TB) string {
+	return artifacts.Measurement(t, "inferencex_engine_settings.json")
+}
 
 // No scored vLLM point may be configured from a value this project invented. Each must be
 // either MEASURED from the run's own command line or RESOLVED as vLLM itself resolves it; the
@@ -24,14 +24,14 @@ var settingsPath = filepath.Join(
 // measured command line on every point, and llama-3.1-70B carries none -- no row for it in
 // the InferenceX dump has a server_log_id, under either framework -- so it resolves.
 func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
+	set, err := LoadEngineSettings(settingsPath(t))
 	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
+		t.Fatalf("engine settings: %v", err)
 	}
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
 		EngineSettings: set}
@@ -76,13 +76,13 @@ func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 // drift apart the comparison silently stops being apples to apples: a point would be
 // configured from one run and scored against another.
 func TestSettingsAndAbsolutesShareOneRun(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
+	set, err := LoadEngineSettings(settingsPath(t))
 	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
+		t.Fatalf("engine settings: %v", err)
 	}
-	abs, err := LoadAbsolutes(absolutesPath)
+	abs, err := LoadAbsolutes(absolutesPath(t))
 	if err != nil {
-		t.Skipf("absolutes unavailable: %v", err)
+		t.Fatalf("absolutes: %v", err)
 	}
 	byKey := map[string]*Absolutes{}
 	for i := range abs.Anchors {
@@ -112,9 +112,9 @@ func TestSettingsAndAbsolutesShareOneRun(t *testing.T) {
 // filling it in would make a resolved default indistinguishable from a measurement, and the
 // provenance a report prints would be a lie.
 func TestUnpassedSettingsStayAbsent(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
+	set, err := LoadEngineSettings(settingsPath(t))
 	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
+		t.Fatalf("engine settings: %v", err)
 	}
 	unpassedSeqs, passedSeqs := 0, 0
 	for i := range set.Settings {
@@ -143,14 +143,14 @@ func TestUnpassedSettingsStayAbsent(t *testing.T) {
 // A run that passed max_num_seqs must be simulated with THAT number, whatever vLLM would
 // have resolved.
 func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
-	set, err := LoadEngineSettings(settingsPath)
+	set, err := LoadEngineSettings(settingsPath(t))
 	if err != nil {
-		t.Skipf("engine settings unavailable: %v", err)
+		t.Fatalf("engine settings: %v", err)
 	}
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
 		EngineSettings: set}
@@ -215,9 +215,9 @@ func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 // defaults, and substituting one engine's for another's would be a different deployment.
 func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	c, err := LoadCorpus(
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"))
+		artifacts.Measurement(t, "aisimulate_e2e.json"))
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	var sw Sweep
 	for i := range c.Sweeps {
@@ -232,7 +232,7 @@ func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
 	obs, err := Run(sw, sw.Points[0].Concurrency, cfg)
 	if err != nil {
-		t.Skipf("%s: %v", sw.Scenario, err)
+		t.Fatalf("%s: %v", sw.Scenario, err)
 	}
 	if obs.Settings.SeqsFrom != SourceScenario {
 		t.Errorf("an sglang sweep should report %q, got %q -- vLLM's device-memory "+

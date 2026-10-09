@@ -30,7 +30,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,7 +42,7 @@ var hopperChips = map[string]bool{"h100": true, "h200": true}
 
 func main() {
 	corpusPath := flag.String("corpus",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
+		kernelmodel.MeasurementPath("aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
 		kernelmodel.DefaultScenarios(), "scenario directory")
@@ -58,6 +57,10 @@ func main() {
 		"instead of scoring, print each arm's predicted curve and admission facts for one "+
 			"scenario (e.g. gpt-oss-120b-h200-fp4-vllm-tp4.yaml)")
 	flag.Parse()
+	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	c, err := harness.LoadCorpus(*corpusPath)
 	if err != nil {

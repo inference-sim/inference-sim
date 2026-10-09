@@ -75,17 +75,19 @@ var retiredDefaultsPresets = map[string]presetWorkload{
 	},
 }
 
-// presetYAML renders a preset back to the catalog's YAML shape.
+// presetYAML renders a preset back to the catalog's YAML shape (blis-schemas workload.Shape).
 func presetYAML(w presetWorkload) string {
 	return fmt.Sprintf(`prefix_tokens: %d
-prompt_tokens: %d
-prompt_tokens_stdev: %d
-prompt_tokens_min: %d
-prompt_tokens_max: %d
-output_tokens: %d
-output_tokens_stdev: %d
-output_tokens_min: %d
-output_tokens_max: %d
+prompt:
+  tokens: %d
+  tokens_stdev: %d
+  tokens_min: %d
+  tokens_max: %d
+output:
+  tokens: %d
+  tokens_stdev: %d
+  tokens_min: %d
+  tokens_max: %d
 `, w.PrefixTokens, w.PromptTokensMean, w.PromptTokensStdev, w.PromptTokensMin, w.PromptTokensMax,
 		w.OutputTokensMean, w.OutputTokensStdev, w.OutputTokensMin, w.OutputTokensMax)
 }
@@ -306,12 +308,12 @@ func TestCatalogPresets_StrictParsing(t *testing.T) {
 		},
 		{
 			name: "misspelled key that would have dropped to zero",
-			body: "prompt_tokens: 256\noutput_tokens: 256\noutput_tokens_stdevv: 100\n",
-			want: "output_tokens_stdevv",
+			body: "prompt: {tokens: 256}\noutput: {tokens: 256, tokens_stdevv: 100}\n",
+			want: "tokens_stdevv",
 		},
 		{name: "empty file", body: "", want: "no token distribution"},
-		{name: "zero prompt tokens", body: "prompt_tokens: 0\noutput_tokens: 256\n", want: "no token distribution"},
-		{name: "negative output tokens", body: "prompt_tokens: 256\noutput_tokens: -1\n", want: "no token distribution"},
+		{name: "zero prompt tokens", body: "prompt: {tokens: 0}\noutput: {tokens: 256}\n", want: "no token distribution"},
+		{name: "negative output tokens", body: "prompt: {tokens: 256}\noutput: {tokens: -1}\n", want: "no token distribution"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -2,17 +2,14 @@ package harness
 
 import (
 	"math"
-	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
-// Resolved at run time from the vendored artifacts under testdata/blis, or from the
-// BLIS_* environment overrides. A var rather than a const because the resolvers are
-// functions; the point of routing through them is that no path here names one developer's
-// checkout.
-var corpusPath = filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json")
+// corpusPath is the AISimulate end-to-end corpus, under BLIS_MEASUREMENTS.
+func corpusPath(t testing.TB) string { return artifacts.Measurement(t, "aisimulate_e2e.json") }
 
 func cfg() Config {
 	return Config{
@@ -25,7 +22,7 @@ func cfg() Config {
 
 func corpus(t *testing.T) *Corpus {
 	t.Helper()
-	c, err := LoadCorpus(corpusPath)
+	c, err := LoadCorpus(corpusPath(t))
 	if err != nil {
 		t.Fatalf("LoadCorpus: %v", err)
 	}

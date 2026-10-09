@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
 // This file is the apples-to-apples guarantee, expressed as checks that fail when the
@@ -38,9 +37,9 @@ func TestAISimulatesPublishedShapeErrorIsReproducible(t *testing.T) {
 	// exactly that and "passed" the wrong definition, because on the 447-point subset the
 	// anchor-INCLUSIVE value (9.41%) happens to sit nearer 10.05% than the correct
 	// anchor-exclusive one (11.55%). A coincidence of subsetting, not evidence.
-	snap, published, err := loadSnapshot(snapshotPath)
+	snap, published, err := loadSnapshot(snapshotPath(t))
 	if err != nil {
-		t.Skipf("full snapshot unavailable: %v", err)
+		t.Fatalf("full snapshot: %v", err)
 	}
 	excl := snapshotShapeError(snap, true)
 	incl := snapshotShapeError(snap, false)
@@ -68,10 +67,7 @@ type errStat struct {
 }
 
 // snapshotPath is the full published snapshot, beside the extracted corpus.
-// A var rather than a const: resolved at run time from the vendored artifacts under
-// testdata/blis, or from BLIS_MEASUREMENTS.
-var snapshotPath = filepath.Join(
-	kernelmodel.DefaultMeasurements(), "aisimulate_summary.json")
+func snapshotPath(t testing.TB) string { return artifacts.Measurement(t, "aisimulate_summary.json") }
 
 // loadSnapshot reads the nested published summary and its whole-snapshot shape error.
 func loadSnapshot(path string) (*snapshot, float64, error) {

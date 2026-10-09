@@ -38,7 +38,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -57,7 +56,7 @@ type arm struct {
 
 func main() {
 	corpusPath := flag.String("corpus",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"),
+		kernelmodel.MeasurementPath("aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
 		kernelmodel.DefaultScenarios(), "scenario directory")
@@ -66,10 +65,10 @@ func main() {
 	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
 	defaults := flag.String("defaults", "defaults.yaml", "")
 	settings := flag.String("engine-settings",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_engine_settings.json"),
+		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; configures each point as the run was")
 	absolutes := flag.String("absolutes",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "inferencex_absolutes.json"),
+		kernelmodel.MeasurementPath("inferencex_absolutes.json"),
 		"InferenceX absolute measured latencies; enables the mape column for simulated arms")
 	framework := flag.String("framework", "vllm",
 		"restrict to one framework; empty scores every framework, which only the published "+
@@ -104,6 +103,10 @@ func main() {
 			"control, not a tuning knob.")
 	seed := flag.Int64("seed", 42, "")
 	flag.Parse()
+	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings, "absolutes": *absolutes}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	c, err := harness.LoadCorpus(*corpusPath)
 	if err != nil {
@@ -322,7 +325,7 @@ func main() {
 					}
 					// mape at EVERY point including the anchor: pred/measured is a real ratio
 					// there too, since both carry the same measured denominator.
-					if !(m == harness.MetricTTFT && spike[j]) {
+					if m != harness.MetricTTFT || !spike[j] {
 						perMape[m] = append(perMape[m], (pred/measured-1)*100)
 					}
 					if j == 0 {

@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel/harness"
@@ -40,7 +39,7 @@ import (
 
 func main() {
 	corpusPath := flag.String("corpus",
-		filepath.Join(kernelmodel.DefaultMeasurements(), "aisimulate_e2e.json"), "")
+		kernelmodel.MeasurementPath("aisimulate_e2e.json"), "")
 	scenarios := flag.String("scenarios",
 		kernelmodel.DefaultScenarios(), "")
 	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
@@ -49,6 +48,10 @@ func main() {
 	sessions := flag.Int("sessions", 40, "")
 	monotoneOnly := flag.Bool("monotone", true, "score only sweeps with a monotone measurement")
 	flag.Parse()
+	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	c, err := harness.LoadCorpus(*corpusPath)
 	if err != nil {
