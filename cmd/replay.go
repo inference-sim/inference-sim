@@ -44,10 +44,8 @@ var (
 const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
-	// Printed to stderr by cobra, so stdout stays deterministic (INV-6).
-	Deprecated: "it is scheduled for removal once trace replay -- including agentic Weka, Exgentic and OpenTelemetry traces -- is folded into `blis run` (#1901). It keeps working, on blis-latency-kernel, until then.",
-	Use:        "replay",
-	Short:      "Replay a TraceV2 file through the discrete-event simulator",
+	Use:   "replay",
+	Short: "Replay a TraceV2 file through the discrete-event simulator",
 	Long: `Replay takes a TraceV2 file (header YAML + data CSV) and runs the DES against the
 exact request sequence captured in the trace. Unlike 'blis run', it does not generate
 requests from distributions — the request sequence is fully determined by the trace.
