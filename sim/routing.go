@@ -39,6 +39,39 @@ type RoutingSnapshot struct {
 	// when the interval is 0. Zero value (nil) ⇒ no adapter resident ⇒ scorer neutral,
 	// preserving byte-identical routing when the LoRA subsystem is inert (INV-6).
 	ResidentAdapters map[string]bool
+	// ResidentOrder is ResidentAdapters in the resident set's LRU→MRU order, and
+	// ResidentPinned the subset pinned by in-flight requests (never evictable).
+	// Ground truth, like ResidentAdapters and refreshed with it; read only by the
+	// lora-residency-truth scorer, the perfect-information reference for
+	// lora-residency. Nil when no adapter is resident or none is pinned.
+	ResidentOrder  []string
+	ResidentPinned map[string]bool
+	// LoadingAdapter is the adapter whose load is in progress ("" when none): its
+	// slot is already reserved (the victim was evicted at load start) but it joins
+	// ResidentAdapters only when the load completes. Refreshed with them; read only
+	// by lora-residency-truth.
+	LoadingAdapter string
+	// ResidentCapacity is the instance's adapter slots, refreshed with the residency
+	// fields so the truth scorer never sees a capacity older than its residency (0
+	// when LoRA is inert). MaxLoras carries the same value on ActiveAdapters' cadence.
+	ResidentCapacity int
+	// ActiveAdapters is the ROUTER-OBSERVABLE adapter signal: adapter id → number of
+	// this instance's requests that are queued or running with that adapter (only
+	// adapters with ≥1 such request appear). It mirrors vLLM's
+	// vllm:lora_requests_info running/waiting labels as llm-d reads them into
+	// ActiveModels/WaitingModels (whose values llm-d always sets to 0 — consumers
+	// that port llm-d must read membership only). Unlike ResidentAdapters it is
+	// not ground truth about GPU residency: an adapter can be resident and idle
+	// (absent here) or queued behind a cold load (present here, not yet resident).
+	// Freshness (R17, INV-7): Periodic at --snapshot-refresh-interval when > 0, else
+	// Immediate — like a metrics scrape; NOT pinned by route-to-holder. Nil when the
+	// instance has no adapter capacity (LoRA off — vLLM then publishes no LoRA
+	// metric) or no adapter request is queued/running.
+	ActiveAdapters map[string]int
+	// MaxLoras is the instance's GPU adapter capacity (vLLM max_loras, published as
+	// the max_lora label of vllm:lora_requests_info; llm-d's MaxActiveModels). 0 when
+	// the LoRA subsystem is inert. Refreshed with ActiveAdapters (same scrape).
+	MaxLoras int
 }
 
 // EffectiveLoad returns the total effective load on this instance:
@@ -156,6 +189,46 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 // Used by scorers like prefix-affinity that track routing history.
 type observerFunc func(req *Request, targetInstance string)
 
+// completionObserverFunc is called when a request reaches a terminal state on an
+// instance (see RequestCompletionObserver). Lets a stateful scorer learn when work
+// it routed has left an instance. req.Adapter names the adapter; req.State tells a
+// normal completion from a timeout.
+type completionObserverFunc func(req *Request, instanceID string, tick int64)
+
+// startObserverFunc is called when a request routed to an instance produces its
+// first output token there (see RequestStartObserver).
+type startObserverFunc func(req *Request, instanceID string, tick int64)
+
+// RequestStartObserver is an optional interface a RoutingPolicy implements to be
+// told when a request produces its first output token on an instance — the event
+// that fires the instance's Simulator.OnFirstToken, i.e. the end of its prefill.
+// A router learns of it from the first streamed chunk. It fires again when a
+// preemption re-prefills the request, so a subscriber must tolerate repeats. The
+// cluster invokes it at both instance wiring sites, only when ObservesRequestStart
+// reports true at cluster construction.
+type RequestStartObserver interface {
+	ObservesRequestStart() bool
+	OnRequestStart(req *Request, instanceID string, tick int64)
+}
+
+// RequestCompletionObserver is an optional interface a RoutingPolicy implements to be
+// told when a request reaches a terminal state on an instance — the same event that
+// fires the instance's Simulator.OnRequestDone (completed, length-capped, or timed
+// out; NOT requests dropped before reaching an instance). The cluster invokes it at
+// both OnRequestDone wiring sites (startup and live-added instances), once per
+// terminal request per instance, and only when ObservesRequestCompletion reports
+// true at cluster construction — so a policy with no subscribing scorer leaves the
+// per-instance callback exactly as it was.
+//
+// The event is delivered for every terminal request on the instance, including ones
+// routed by another policy (e.g. PD prefill/decode pools); a subscriber that cares
+// only about requests it routed must filter by req.ID. Observers must not mutate req
+// or cluster state: they run inside the instance's completion event.
+type RequestCompletionObserver interface {
+	ObservesRequestCompletion() bool
+	OnRequestCompletion(req *Request, instanceID string, tick int64)
+}
+
 // WeightedScoring routes requests using a composable scorer pipeline.
 //
 // Each scorer evaluates all instances on a [0,1] scale. Scores are combined
@@ -170,6 +243,8 @@ type observerFunc func(req *Request, targetInstance string)
 //
 // Stateful scorers (prefix-affinity, no-hit-lru) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
+// Scorers may also register completion observers (RequestCompletionObserver), called
+// when a request reaches a terminal state on an instance.
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
 // by first occurrence (lowest index) when rng is nil.
@@ -177,7 +252,40 @@ type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
-	rng       *rand.Rand
+	// completionObservers are fanned out by OnRequestCompletion, startObservers by
+	// OnRequestStart, in scorer-config order.
+	completionObservers []completionObserverFunc
+	startObservers      []startObserverFunc
+	clockSetters        []func(int64)
+	rng                 *rand.Rand
+}
+
+// ObservesRequestCompletion reports whether any configured scorer subscribed to
+// request-completion events (RequestCompletionObserver).
+func (ws *WeightedScoring) ObservesRequestCompletion() bool {
+	return len(ws.completionObservers) > 0
+}
+
+// ObservesRequestStart reports whether any configured scorer subscribed to
+// first-token events (RequestStartObserver).
+func (ws *WeightedScoring) ObservesRequestStart() bool {
+	return len(ws.startObservers) > 0
+}
+
+// OnRequestStart forwards a first-token event to every subscribed scorer
+// (RequestStartObserver).
+func (ws *WeightedScoring) OnRequestStart(req *Request, instanceID string, tick int64) {
+	for _, obs := range ws.startObservers {
+		obs(req, instanceID, tick)
+	}
+}
+
+// OnRequestCompletion forwards a terminal-request event to every subscribed scorer
+// (RequestCompletionObserver).
+func (ws *WeightedScoring) OnRequestCompletion(req *Request, instanceID string, tick int64) {
+	for _, obs := range ws.completionObservers {
+		obs(req, instanceID, tick)
+	}
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -185,6 +293,10 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("WeightedScoring.Route: empty snapshots")
+	}
+
+	for _, set := range ws.clockSetters {
+		set(state.Clock)
 	}
 
 	// Compute composite scores from all scorers
@@ -240,6 +352,91 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 		fmt.Sprintf("weighted-scoring (score=%.3f)", bestScore),
 		scores,
 	)
+}
+
+// RouteToHolder is a strict LoRA-affinity routing policy. It restricts the routing
+// candidate set to instances that already hold the request's adapter
+// (ResidentAdapters[req.Adapter]) and then delegates selection to an inner
+// weighted-scoring policy over that restricted set. When no instance holds the
+// adapter — or the request targets the base model (empty Adapter) — it falls back to
+// unconstrained routing over all instances (D1). INV-PS1: whenever ≥1 holder exists,
+// the selected instance is a holder. Correct holder truth at routing time requires
+// Immediate ResidentAdapters freshness (D7), pinned at cluster construction.
+//
+// Nil-safety: a snapshot's ResidentAdapters is nil when no adapter is resident
+// (see RoutingSnapshot doc); a read from a nil Go map returns the zero value
+// (false) and never panics, so a nil holder-set simply contributes no holder and
+// the request takes the unconstrained fallback — no explicit nil guard needed.
+type RouteToHolder struct {
+	inner RoutingPolicy
+}
+
+// Route implements RoutingPolicy for RouteToHolder.
+func (r *RouteToHolder) Route(req *Request, state *RouterState) RoutingDecision {
+	if len(state.Snapshots) == 0 {
+		panic("RouteToHolder.Route: empty snapshots")
+	}
+	adapter := ""
+	if req != nil {
+		adapter = req.Adapter
+	}
+	if adapter != "" {
+		// Ranges the Snapshots SLICE (not a map), so holders preserves the original
+		// snapshot order — the inner weighted argmax/tie-break sees a deterministic
+		// order, upholding INV-6 (BC-4). The only map access is the single-key lookup
+		// snap.ResidentAdapters[adapter] (never a map RANGE), so map-iteration
+		// nondeterminism cannot arise here.
+		holders := make([]RoutingSnapshot, 0, len(state.Snapshots))
+		for _, snap := range state.Snapshots {
+			if snap.ResidentAdapters[adapter] { // nil map ⇒ false ⇒ not a holder (no panic)
+				holders = append(holders, snap)
+			}
+		}
+		if len(holders) > 0 {
+			// Restrict only the routable candidate set (Snapshots). Clock,
+			// SelectedInstance, and LoadingSnapshots are forwarded verbatim: the
+			// inner WeightedScoring reads none of them for candidate selection
+			// (it scores state.Snapshots only), and Loading instances never carry
+			// ResidentAdapters (RouterState doc), so they can never be holders.
+			// All fields are treated read-only within the single DES event.
+			restricted := &RouterState{
+				Snapshots:        holders,
+				LoadingSnapshots: state.LoadingSnapshots,
+				Clock:            state.Clock,
+				SelectedInstance: state.SelectedInstance,
+			}
+			return r.inner.Route(req, restricted)
+		}
+	}
+	// No holder (or base-model request) → unconstrained fallback (D1).
+	return r.inner.Route(req, state)
+}
+
+// ObservesRequestCompletion delegates to the inner policy (RequestCompletionObserver),
+// so route-to-holder carries its weighted scorers' completion subscriptions.
+func (r *RouteToHolder) ObservesRequestCompletion() bool {
+	o, ok := r.inner.(RequestCompletionObserver)
+	return ok && o.ObservesRequestCompletion()
+}
+
+// ObservesRequestStart delegates to the inner policy (RequestStartObserver).
+func (r *RouteToHolder) ObservesRequestStart() bool {
+	o, ok := r.inner.(RequestStartObserver)
+	return ok && o.ObservesRequestStart()
+}
+
+// OnRequestStart delegates to the inner policy (RequestStartObserver).
+func (r *RouteToHolder) OnRequestStart(req *Request, instanceID string, tick int64) {
+	if o, ok := r.inner.(RequestStartObserver); ok {
+		o.OnRequestStart(req, instanceID, tick)
+	}
+}
+
+// OnRequestCompletion delegates to the inner policy (RequestCompletionObserver).
+func (r *RouteToHolder) OnRequestCompletion(req *Request, instanceID string, tick int64) {
+	if o, ok := r.inner.(RequestCompletionObserver); ok {
+		o.OnRequestCompletion(req, instanceID, tick)
+	}
 }
 
 // AlwaysBusiest routes requests to the instance with maximum (QueueDepth + BatchSize + InFlightRequests).
@@ -305,15 +502,37 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		}
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
+		var completionObservers []completionObserverFunc
+		var startObservers []startObserverFunc
+		var clockSetters []func(int64)
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
-			scorers[i] = scorer
-			if obs != nil {
-				observers = append(observers, obs)
+			parts := newScorerParts(cfg.Name, int(blockSize), cacheFn)
+			scorers[i] = parts.score
+			if parts.observe != nil {
+				observers = append(observers, parts.observe)
+			}
+			if parts.onComplete != nil {
+				completionObservers = append(completionObservers, parts.onComplete)
+			}
+			if parts.onStart != nil {
+				startObservers = append(startObservers, parts.onStart)
+			}
+			if parts.setClock != nil {
+				clockSetters = append(clockSetters, parts.setClock)
 			}
 		}
 		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, rng: rng}
+		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers,
+			completionObservers: completionObservers, startObservers: startObservers,
+			clockSetters: clockSetters, rng: rng}
+	case "route-to-holder":
+		// D1 (#1490): strict LoRA-affinity routing. Delegates to an inner "weighted"
+		// policy built via the SAME canonical construction path (R4) — same
+		// scorerConfigs, blockSize, rng, and cacheFn — so the restricted-set scoring is
+		// byte-identical to unconstrained weighted scoring over the holder subset. The
+		// RouteToHolder wrapper only narrows the candidate set; it adds no scoring of
+		// its own.
+		return &RouteToHolder{inner: newRoutingPolicyInternal("weighted", scorerConfigs, blockSize, rng, cacheFn)}
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:

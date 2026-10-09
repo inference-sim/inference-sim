@@ -113,6 +113,9 @@ var (
 	routingPolicy    string  // Routing policy name
 	routingScorers   string  // Comma-separated name:weight pairs for weighted routing
 	loraScorerWeight float64 // Weight of the lora-affinity scorer; 0 (default) ⇒ off (#1469)
+	// --routing-deterministic-tiebreak (Spec 3, backlog #3): default false ⇒ byte-identical
+	// to previous releases (INV-6). Not lora-prefixed on purpose — governs LeastLoaded too.
+	routingDeterministicTiebreak bool
 
 	// Scheduler and preemption config
 	scheduler        string // Scheduler name
@@ -127,6 +130,14 @@ var (
 	loraLoadBaseLatencyUs     float64 // --lora-load-base-latency-us
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
+	loraEvictionPolicy        string  // --eviction-policy (applied only when Changed; empty => lru default, B-4)
+	loraCreationPolicy        string  // --creation-policy (applied only when Changed; empty => on-demand default, B-6)
+	loraAdapterPlacement      string  // --lora-adapter-placement (idx=id[,id...];... construction-index→adapter ids, B-6)
+	loraPlacementSchedule     string  // --lora-placement-schedule (timed placement file for the scheduled creation policy, Spec 4 Slice B)
+	loraBundle                string  // --lora-bundle (named strategy bundle => {routing,eviction,creation} triple; empty => none, B-7)
+	loraInstanceMaxRank       string  // --lora-instance-max-rank (comma list, one vLLM max_lora_rank per instance in construction order)
+	loraInstanceCapacity      string  // --lora-instance-capacity (comma list, one max_loras per instance in construction order)
+	loraPeriodicInterval      int64   // --lora-periodic-interval-us (periodic creation tick interval, µs; 0 => off; inert for a gate-only creation policy, INV-PS3')
 
 	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
 	// => feature inert, output byte-identical (INV-6). --speculative-acceptance-rate
@@ -1361,6 +1372,26 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
+	// LoRA strategy bundle (B-7, #1495, FR-015): expand --lora-bundle to its
+	// {routing, eviction, creation} triple and resolve the ROUTING knob here.
+	// The name is validated independently in both resolvePolicies and
+	// resolveLoRAConfig because neither resolver is reliably called first
+	// (DD-B7-2a: resolveLoRAConfig actually runs before resolvePolicies in both
+	// commands) — the fail-fast is idempotent and order-insensitive. Precedence
+	// (FR-015): explicit --routing-policy flag > bundle value > baseline default,
+	// so the bundle fills routingPolicy only when the user did not set the flag.
+	// The eviction/creation knobs resolve from the same LoRABundleTriple source in
+	// resolveLoRAConfig.
+	if loraBundle != "" {
+		triple, ok := sim.LoRABundleTriple(loraBundle)
+		if !ok {
+			logrus.Fatalf("Unknown LoRA strategy bundle %q. Valid: %s", loraBundle, strings.Join(sim.ValidLoRABundleNames(), ", "))
+		}
+		if !cmd.Flags().Changed("routing-policy") {
+			routingPolicy = triple.Routing
+		}
+	}
+
 	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
 	if gaieQDThreshold == 0 {
 		gaieQDThreshold = 5
@@ -1620,9 +1651,13 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
 
 	// Routing policy config
-	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
+	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest, route-to-holder")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
+	cmd.Flags().BoolVar(&routingDeterministicTiebreak, "routing-deterministic-tiebreak", false,
+		"Replace the router's RANDOM equal-score tie-break with the positional one, for paired comparisons. "+
+			"EXPERIMENT CONTROL, not fidelity: production llm-d randomises ties deliberately, so a run that "+
+			"sets this must say so when reporting. Default false: byte-identical to previous releases.")
 
 	// Scheduler and preemption config
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
@@ -1704,6 +1739,14 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&loraLoadBaseLatencyUs, "lora-load-base-latency-us", 0, "Cold adapter-load fixed latency in µs. Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraLoadBandwidthBytesUs, "lora-load-bandwidth-bytes-us", 0, "Cold adapter-load bandwidth in bytes/µs (>0). Applied only when set; else --lora-config / defaults.yaml.")
 	cmd.Flags().Float64Var(&loraFootprintBytesPerRank, "lora-footprint-bytes-per-rank", 0, "Adapter HBM footprint per rank unit in bytes (>0). Applied only when set; else --lora-config / defaults.yaml.")
+	cmd.Flags().StringVar(&loraEvictionPolicy, "eviction-policy", "", fmt.Sprintf("Resident-adapter eviction policy at the cold-load gate. Valid: %s. Applied only when set; empty/default => lru (byte-identical to no LoRA).", strings.Join(sim.ValidEvictionPolicyNames(), ", ")))
+	cmd.Flags().StringVar(&loraCreationPolicy, "creation-policy", "", fmt.Sprintf("Adapter-creation policy (t=0 seeding + cold-load-gate admit). Valid: %s. Applied only when set; empty/default => on-demand (byte-identical to no LoRA).", strings.Join(sim.ValidCreationPolicyNames(), ", ")))
+	cmd.Flags().StringVar(&loraAdapterPlacement, "lora-adapter-placement", "", "Static per-instance adapter placement for the pre-placement creation policy, as \"idx=id[,id...];idx=id...\" (construction-index => adapter ids), e.g. \"0=A,B;1=C\". Adapters are seeded resident at t=0. Empty => no placement.")
+	cmd.Flags().StringVar(&loraPlacementSchedule, "lora-placement-schedule", "", "Path to a timed placement schedule for the scheduled creation policy, one entry per line as \"<t_us> <idx=id[,id...];idx=id...>\" (blank lines and #-comments ignored). Timestamps must strictly increase. Required by --creation-policy=scheduled and rejected under any other policy. Empty => none.")
+	cmd.Flags().StringVar(&loraBundle, "lora-bundle", "", fmt.Sprintf("Named LoRA strategy bundle expanding to a {routing, eviction, creation} policy triple. Valid: %s. Per-knob flags (--routing-policy/--eviction-policy/--creation-policy) override their knob; empty => no bundle (byte-identical to no LoRA).", strings.Join(sim.ValidLoRABundleNames(), ", ")))
+	cmd.Flags().StringVar(&loraInstanceMaxRank, "lora-instance-max-rank", "", fmt.Sprintf("Per-instance vLLM max_lora_rank, one comma-separated value per instance in construction order, e.g. \"8,8,32\". Each instance's slots are sized at its own cap, and an adapter above it can never be resident there. Each value must be one of %v. Requires --lora-instance-capacity and auto-calculated KV capacity; run only (replay rejects it). Empty => every instance uses the largest declared rank.", cluster.VLLMAllowedMaxLoRARanks()))
+	cmd.Flags().StringVar(&loraInstanceCapacity, "lora-instance-capacity", "", "Per-instance vLLM max_loras (resident adapter slots), one comma-separated value per instance in construction order, e.g. \"4,5,3\". Overrides --lora-adapter-capacity per instance; each instance's KV blocks are recomputed net of capacity × footprint_bytes_per_rank × its max rank. Requires --lora-instance-max-rank; run only. Empty => --lora-adapter-capacity everywhere.")
+	cmd.Flags().Int64Var(&loraPeriodicInterval, "lora-periodic-interval-us", 0, "Simulation-time interval (µs) between periodic LoRA creation ticks. 0 = off. Takes effect only when --creation-policy names a tick-capable policy (keep-warm); with a gate-only policy (on-demand, pre-placement) any value is inert and byte-identical to 0. Must be >= 0.")
 
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
@@ -1811,11 +1854,237 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 		v := loraFootprintBytesPerRank
 		cfg.FootprintBytesPerRank = &v
 	}
+	// --eviction-policy override (R18: only when explicitly set); empty (unset flag,
+	// no file value) => lru. A file-supplied eviction_policy survives an unset flag.
+	if cmd.Flags().Changed("eviction-policy") {
+		cfg.EvictionPolicy = loraEvictionPolicy
+	}
+	// --creation-policy override (R18: only when explicitly set); empty (unset flag,
+	// no file value) => on-demand. A file-supplied creation_policy survives an unset flag.
+	if cmd.Flags().Changed("creation-policy") {
+		cfg.CreationPolicy = loraCreationPolicy
+	}
+
+	// LoRA strategy bundle (B-7, #1495, FR-015): resolve the EVICTION and CREATION
+	// knobs from --lora-bundle. Validated here independently of resolvePolicies
+	// (DD-B7-2a: neither resolver is reliably first; the fail-fast is idempotent and
+	// order-insensitive). Precedence (FR-015): explicit flag > file (LoRAConfig) >
+	// bundle > baseline default — so the bundle fills a knob only when NEITHER the
+	// flag (Changed, applied above) NOR the file (cfg.<knob> already non-empty) set
+	// it. The routing knob resolves from the same LoRABundleTriple source in
+	// resolvePolicies.
+	if loraBundle != "" {
+		triple, ok := sim.LoRABundleTriple(loraBundle)
+		if !ok {
+			logrus.Fatalf("Unknown LoRA strategy bundle %q. Valid: %s", loraBundle, strings.Join(sim.ValidLoRABundleNames(), ", "))
+		}
+		if !cmd.Flags().Changed("eviction-policy") && cfg.EvictionPolicy == "" {
+			cfg.EvictionPolicy = triple.Eviction
+		}
+		if !cmd.Flags().Changed("creation-policy") && cfg.CreationPolicy == "" {
+			cfg.CreationPolicy = triple.Creation
+		}
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logrus.Fatalf("Invalid LoRA configuration: %v", err)
 	}
+	// Fail fast on an unknown eviction-policy name (B-4). sim.LoRAConfig.Validate
+	// deliberately omits this check — the valid-names registry lives in
+	// sim/lora/eviction, which package sim must not import — so the CLI boundary
+	// enforces it (Principle V), giving the same rejection NewEvictionPolicyFunc would
+	// return, but at startup with a listed set. Empty => lru, so it is exempt.
+	if cfg.EvictionPolicy != "" {
+		valid := sim.ValidEvictionPolicyNames()
+		known := false
+		for _, name := range valid {
+			if name == cfg.EvictionPolicy {
+				known = true
+				break
+			}
+		}
+		if !known {
+			logrus.Fatalf("Invalid --eviction-policy %q; valid options: %s", cfg.EvictionPolicy, strings.Join(valid, ", "))
+		}
+	}
+	// Fail fast on an unknown creation-policy name (B-6), mirroring the eviction check
+	// above: sim.LoRAConfig.Validate deliberately omits it (the valid-names registry
+	// lives in sim/lora/creation, which package sim must not import), so the CLI
+	// boundary enforces it (Principle V). Empty => on-demand, so it is exempt.
+	if cfg.CreationPolicy != "" {
+		valid := sim.ValidCreationPolicyNames()
+		known := false
+		for _, name := range valid {
+			if name == cfg.CreationPolicy {
+				known = true
+				break
+			}
+		}
+		if !known {
+			logrus.Fatalf("Invalid --creation-policy %q; valid options: %s", cfg.CreationPolicy, strings.Join(valid, ", "))
+		}
+	}
+	// --lora-placement-schedule (Spec 4 Slice B): resolved here, the single site LoRAConfig
+	// is assembled, so DeploymentConfig.LoRAConfig carries it via embedding with no further
+	// change at the call site.
+	cfg.PlacementSchedule = resolveLoRAPlacementSchedule()
 	return cfg
+}
+
+// parseLoRAAdapterPlacement parses the --lora-adapter-placement grammar
+// "idx=id[,id...];idx=id..." into a construction-index → adapter-id-list map (the
+// cluster-scoped DeploymentConfig.LoRAAdapterPlacement shape). An empty spec yields
+// a nil map (no placement). It validates shape only — index range, adapter-id
+// registration, and per-instance capacity are enforced later by the cluster's
+// ValidateLoRAPlacement at NewClusterSimulator (B-5). Errors on: a chunk missing
+// '=', a non-integer or empty index, an empty adapter id, or a duplicate index.
+func parseLoRAAdapterPlacement(spec string) (map[int][]string, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	out := map[int][]string{}
+	for _, chunk := range strings.Split(spec, ";") {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		key, rest, found := strings.Cut(chunk, "=")
+		if !found {
+			return nil, fmt.Errorf("malformed placement chunk %q: expected \"idx=id[,id...]\"", chunk)
+		}
+		idx, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil {
+			return nil, fmt.Errorf("malformed placement index %q: %w", strings.TrimSpace(key), err)
+		}
+		if _, dup := out[idx]; dup {
+			return nil, fmt.Errorf("duplicate placement index %d", idx)
+		}
+		var ids []string
+		for _, id := range strings.Split(rest, ",") {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				return nil, fmt.Errorf("empty adapter id in placement chunk %q", chunk)
+			}
+			ids = append(ids, id)
+		}
+		out[idx] = ids
+	}
+	return out, nil
+}
+
+// resolveLoRAAdapterPlacement parses --lora-adapter-placement into the
+// cluster-scoped placement map, aborting at the CLI boundary (logrus.Fatalf,
+// Principle V) on a malformed spec. Shared by runCmd and replayCmd so both set the
+// same DeploymentConfig field (INV-13 parity).
+func resolveLoRAAdapterPlacement() map[int][]string {
+	placement, err := parseLoRAAdapterPlacement(loraAdapterPlacement)
+	if err != nil {
+		logrus.Fatalf("Invalid --lora-adapter-placement: %v", err)
+	}
+	return placement
+}
+
+// parseLoRAInstanceList parses a per-instance LoRA list flag ("8,8,32") into ints. An
+// empty spec yields nil (flag unset). It validates shape only: every element must be a
+// base-10 integer, and empty elements ("8,,32" or a trailing comma) are rejected rather
+// than skipped, since a skipped element would shift every later instance's value. Range,
+// length and cross-field checks are cluster.ValidateLoRAInstanceConfig's.
+func parseLoRAInstanceList(spec string) ([]int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	parts := strings.Split(spec, ",")
+	out := make([]int, 0, len(parts))
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, fmt.Errorf("element %d is empty", i)
+		}
+		v, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("element %d %q is not an integer", i, p)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// resolveLoRAInstanceLists parses --lora-instance-max-rank and --lora-instance-capacity,
+// aborting at the CLI boundary (Principle V) on a malformed list. run only: replay
+// rejects both flags before reaching here.
+func resolveLoRAInstanceLists() (maxRanks, capacities []int) {
+	var err error
+	if maxRanks, err = parseLoRAInstanceList(loraInstanceMaxRank); err != nil {
+		logrus.Fatalf("Invalid --lora-instance-max-rank: %v", err)
+	}
+	if capacities, err = parseLoRAInstanceList(loraInstanceCapacity); err != nil {
+		logrus.Fatalf("Invalid --lora-instance-capacity: %v", err)
+	}
+	return maxRanks, capacities
+}
+
+// resolveLoRAPeriodicInterval validates and returns the periodic creation tick
+// interval (µs) for DeploymentConfig.LoRAPeriodicIntervalUs (B-7's D5 scaffold,
+// activated by Spec 3). It fail-fasts at the CLI boundary (logrus.Fatalf, Principle V,
+// R3) on a negative value. Shared by runCmd and replayCmd so both set the same field
+// (INV-13 parity). Whether the interval has any effect is decided downstream, by
+// NewClusterSimulator: it schedules a tick only for a creation policy implementing
+// sim.PeriodicCreationPolicy, so with a gate-only policy any value is byte-identical
+// to 0 (INV-PS3').
+func resolveLoRAPeriodicInterval() int64 {
+	if loraPeriodicInterval < 0 {
+		logrus.Fatalf("--lora-periodic-interval-us must be >= 0, got %d", loraPeriodicInterval)
+	}
+	return loraPeriodicInterval
+}
+
+// computeLoRAProvenance returns the run-level effective LoRA-seam policy triple to
+// record in MetricsOutput.PolicyProvenance (B-7, #1495, FR-016/D6/D8), or nil when
+// every seam is at baseline and no bundle was selected. It is the SINGLE
+// construction site for the provenance value (R4), called once after policy
+// resolution (before the event loop) and attached to the aggregated cluster output
+// at emit in both runCmd and replayCmd (INV-13 value parity).
+//
+// Emission rule (DD-B7-4, INV-6, contracts/metrics.md): provenance is present iff
+// the LoRA subsystem is ACTIVE (cfg.HasAdapters()) AND a non-baseline seam or bundle
+// is selected. The adapter gate is load-bearing: it upholds INV-L1 (the B-3/B-4/B-5
+// inertness law) and the contract's explicit "adapter-blind run ⇒ absent" clause — a
+// LoRA seam policy (rank-aware eviction, pre-placement creation, route-to-holder
+// routing) is inert without adapters, so recording it would break the byte-identity a
+// LoRA policy selection must preserve on an adapter-blind run
+// (TestNoOpByteIdentity_MultiInstanceEvictionPolicyInert). Given adapters, the
+// non-baseline test is: routingPolicy=="route-to-holder" (the LoRA-specific routing
+// policy; a weighted/round-robin profile is NOT a LoRA seam selection), OR eviction ∉
+// {"", "lru"}, OR creation ∉ {"", "on-demand"}, OR loraBundle != "". When present,
+// all three knobs record their effective CANONICAL names (empty normalized:
+// eviction→lru, creation→on-demand, routing kept as-is) so the run is reproducible
+// from the record alone (SC-006). An adapter-blind or all-baseline run returns nil ⇒
+// the key is omitted ⇒ byte-identical stdout (INV-6).
+func computeLoRAProvenance(cfg sim.LoRAConfig) *sim.PolicyTriple {
+	// Adapter gate (INV-L1): without an active LoRA subsystem every seam is inert,
+	// so provenance is absent — a LoRA policy/bundle selection on an adapter-blind
+	// run stays byte-identical to no-LoRA.
+	if !cfg.HasAdapters() {
+		return nil
+	}
+	eviction := cfg.EvictionPolicy
+	if eviction == "" {
+		eviction = "lru"
+	}
+	creation := cfg.CreationPolicy
+	if creation == "" {
+		creation = "on-demand"
+	}
+	nonBaseline := routingPolicy == "route-to-holder" ||
+		eviction != "lru" ||
+		creation != "on-demand" ||
+		loraBundle != ""
+	if !nonBaseline {
+		return nil
+	}
+	return &sim.PolicyTriple{Routing: routingPolicy, Eviction: eviction, Creation: creation}
 }
 
 // resolveSpeculativeConfig builds the speculative-decoding / MTP config from CLI
@@ -2035,7 +2304,30 @@ var runCmd = &cobra.Command{
 		// literal further down share one resolution. The reservation is 0 (KV
 		// unaffected) when the subsystem is inert (INV-6). Set before resolveLatencyConfig.
 		loraCfg := resolveLoRAConfig(cmd)
-		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+		// Pass the EFFECTIVE creation policy (loraCfg.CreationPolicy), not the raw
+		// --creation-policy flag var: resolveLoRAConfig also resolves creation_policy
+		// from --lora-config YAML and --lora-bundle (R18 precedence), so a run whose
+		// "scheduled" comes from the config file, not the flag, must still be checked
+		// against its true effective policy (Fix round 1, Important 1).
+		if err := validateLoRAScheduleFlags(loraCfg.CreationPolicy, loraPlacementSchedule,
+			loraCfg.PlacementSchedule, resolveLoRAAdapterPlacement()); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		// Per-instance LoRA slots, resolved BEFORE the cluster-wide reservation: with the lists
+		// set, each instance subtracts its own capacity × footprint × max rank at
+		// construction, so the cluster-wide figure (adapter_capacity × the catalog's largest
+		// rank) describes no instance. It is then not built at all. Building it runs the cost
+		// model's overflow guard on that figure, and charging it in the global KV pre-pass
+		// (resolveLatencyConfig) could refuse a run whose actual reservations all fit, and
+		// would log a reservation nothing makes. The per-instance sizing in
+		// cluster.ValidateLoRADeployment owns the fit, and each instance's own cost model
+		// runs the same guards on its own figure.
+		loraInstanceMaxRanks, loraInstanceCapacities := resolveLoRAInstanceLists()
+		if len(loraInstanceMaxRanks) > 0 || len(loraInstanceCapacities) > 0 {
+			loraReservedBytesForKV = 0
+		} else {
+			loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
+		}
 
 		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
 		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
@@ -2735,6 +3027,10 @@ var runCmd = &cobra.Command{
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
+			LoRAAdapterPlacement:            resolveLoRAAdapterPlacement(),
+			LoRAInstanceMaxRank:             loraInstanceMaxRanks,
+			LoRAInstanceCapacity:            loraInstanceCapacities,
+			LoRAPeriodicIntervalUs:          resolveLoRAPeriodicInterval(),
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,
@@ -2742,6 +3038,7 @@ var runCmd = &cobra.Command{
 			TokenBucketRefillRate:           tokenBucketRefillRate,
 			RoutingPolicy:                   routingPolicy,
 			RoutingScorerConfigs:            parsedScorerConfigs,
+			RoutingDeterministicTiebreak:    routingDeterministicTiebreak,
 			TraceLevel:                      traceLevel,
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,
@@ -2823,6 +3120,14 @@ var runCmd = &cobra.Command{
 			clusterRequestSource = lazyRequestSource
 		} else {
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
+		}
+		// Per-instance LoRA configuration: validate here so a bad list, or a placement that
+		// breaks a per-instance cap, exits with a message instead of NewClusterSimulator's
+		// panic. Gated on the flags so every other run keeps its existing path (INV-6).
+		if len(loraInstanceMaxRanks) > 0 || len(loraInstanceCapacities) > 0 {
+			if err := cluster.ValidateLoRADeployment(config); err != nil {
+				logrus.Fatalf("Invalid per-instance LoRA configuration: %v", err)
+			}
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
 
@@ -2963,6 +3268,12 @@ var runCmd = &cobra.Command{
 				clusterOutput.Saturation = final
 			}
 		}
+
+		// Attach run-level LoRA-seam provenance (B-7, FR-016; nil ⇒ key omitted for
+		// an all-baseline run, INV-6). Value parity with replay (INV-13).
+		clusterOutput.PolicyProvenance = computeLoRAProvenance(loraCfg)
+		// Per-instance LoRA configuration as it ran (nil ⇒ key omitted, INV-6). run only.
+		clusterOutput.LoRAInstances = cs.LoRAInstanceEchoes()
 
 		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
 		// rather than mutated onto clusterOutput above — stdout must stay byte-identical

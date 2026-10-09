@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation, 10=lifecycle observers
 	Execute(*ClusterSimulator)
 }
 
@@ -131,6 +131,14 @@ func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
 	cs.injectedByClass[e.request.SLOClass]++
+	// Spec 3: stamp per-adapter demand recency for the periodic creation tick. The
+	// arrival is the earliest cluster-visible evidence of demand, before admission or
+	// routing, so the window sees requests that are later shed too — a prefetch policy
+	// should react to demand, not only to demand that survived admission. Guarded so a
+	// nil pipeline (LoRA inert, or a gate-only creation policy) costs nothing (INV-PS3').
+	if cs.loraPeriodic != nil {
+		cs.loraPeriodic.demand.record(e.request.Adapter, e.time)
+	}
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	// Fire the arrival hook (issue #1440): trace exporters see each fresh
 	// arrival exactly once, in clock-monotonic order (INV-3). REDIRECT
@@ -311,6 +319,11 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnComplete(e.request.TenantID)
 	}
+	// An evicted request leaves its instance as surely as a completed one, but
+	// EvictRequest does not fire OnRequestDone, so observers are told here.
+	if len(cs.completionObservers) > 0 {
+		cs.notifyCompletion(e.request, e.targetInstance, e.time)
+	}
 
 	cs.gatewayEvicted++
 	tier := e.request.SLOClass
@@ -320,6 +333,20 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	cs.shedByTier[tier]++
 
 }
+
+// lifecycleObserverEvent delivers a first-token or completion notification to
+// routing observers at the time it happened (ClusterSimulator.scheduleLifecycle).
+// Priority 10: after every other cluster event at the same tick, routing
+// included.
+type lifecycleObserverEvent struct {
+	time int64
+	fire func()
+}
+
+func (e *lifecycleObserverEvent) Timestamp() int64 { return e.time }
+func (e *lifecycleObserverEvent) Priority() int     { return 10 }
+
+func (e *lifecycleObserverEvent) Execute(*ClusterSimulator) { e.fire() }
 
 // GatewayQueueTTLEvent fires when a request's TTL expires while queued.
 // If the request is still in the gateway queue, it is removed and counted as expired.
@@ -565,3 +592,45 @@ func (e *ScaleActuationEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.autoscaler.actuate(cs, e.Decisions)
 }
+
+// ---------------------------------------------------------------------------
+// Spec 3: the live periodic LoRA creation tick (activates B-7's D5 scaffold)
+// ---------------------------------------------------------------------------
+
+// LoRAPeriodicTriggerEvent fires the periodic LoRA creation tick (Spec 3), activating
+// what B-7 reserved. It mirrors ScalingTickEvent: a declared simulation-time interval,
+// a self-scheduling tick, and priority 8 — after the request-path events (0–7) at the
+// same timestamp, so the tick observes a stable snapshot of that instant rather than a
+// half-applied one.
+//
+// INV-PS3' (the replacement inertness law): a set DeploymentConfig.LoRAPeriodicIntervalUs
+// is byte-identical to unset WHEN the effective creation policy does not implement
+// sim.PeriodicCreationPolicy. This REPLACES the old unconditional INV-PS3, and it is
+// structural rather than a runtime check: newLoRAPeriodicPipeline returns nil for a
+// gate-only policy, so Run() enqueues no first tick and no tick ever self-schedules.
+// Pinned by TestPeriodicInterval_ByteIdenticalToUnset (the on-demand case) and, in the
+// other direction — that a TICK policy does change the run — by
+// TestPeriodicTick_NotInertUnderKeepWarm. Both are required: the first alone cannot
+// distinguish "correctly inert" from "never wired".
+type LoRAPeriodicTriggerEvent struct {
+	At int64 // simulation timestamp in microseconds
+}
+
+func (e *LoRAPeriodicTriggerEvent) Timestamp() int64 { return e.At }
+func (e *LoRAPeriodicTriggerEvent) Priority() int    { return 8 }
+
+// Execute runs the periodic creation tick and self-schedules the next one. A nil
+// cluster or a nil pipeline is warned-and-dropped rather than fatal: neither is
+// reachable through Run() (the first tick is only pushed when the pipeline exists, and
+// only the pipeline self-schedules), so reaching either means a wiring defect that
+// should be diagnosable rather than a panic (R1).
+func (e *LoRAPeriodicTriggerEvent) Execute(cs *ClusterSimulator) {
+	if cs == nil || cs.loraPeriodic == nil {
+		logrus.Warnf("[lora-periodic] LoRAPeriodicTriggerEvent at t=%d fired but the pipeline is nil — event dropped", e.At)
+		return
+	}
+	cs.loraPeriodic.tick(cs, e.At)
+}
+
+// Compile-time assertion that the trigger satisfies ClusterEvent.
+var _ ClusterEvent = (*LoRAPeriodicTriggerEvent)(nil)

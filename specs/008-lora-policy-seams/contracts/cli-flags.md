@@ -1,0 +1,33 @@
+# Contract — CLI Flags
+
+New flags on `blis run` (and `blis replay`, for INV-13 parity). Names are indicative; finalized
+at micro-plan time. All default to baseline so the no-op golden is byte-identical (INV-6).
+
+| Flag | Purpose | Default | Notes |
+|---|---|---|---|
+| `--routing-policy` / existing `--routing-scorers` | select routing policy (incl. `route-to-holder`) | existing profile | route-to-holder pins `ResidentAdapters` Immediate freshness (D7) |
+| `--eviction-policy` | select eviction policy (`lru` \| `rank-aware`) | `lru` | ✅ delivered B-3 (seam+lru) / B-4 (`rank-aware`) |
+| `--creation-policy` | select creation policy (`on-demand` \| `pre-placement` \| `keep-warm`) | `on-demand` | B-5/B-6; `keep-warm` added Spec 3 |
+| `--lora-adapter-placement` (or in `--lora-config`/deployment YAML) | adapter→instance assignment | none | cluster-scoped (D3); startup-validated (INV-PS2) |
+| `--lora-bundle` | select a named strategy bundle (expands to a triple) | none | per-knob flags override (FR-015) |
+| `--lora-periodic-interval` | declare the (inert) periodic trigger interval | unset | scaffold only, no effect this round (INV-PS3) |
+| `--routing-deterministic-tiebreak` | replace the router's RANDOM equal-score tie-break with the positional (RNG-free) one | `false` | EXPERIMENT CONTROL, not a fidelity fix — production llm-d randomises equal-score ties deliberately, so BLIS's default (`false`) is faithful; enabling this is a deliberate departure from production fidelity, used to isolate a treatment in a paired comparison (Spec 3, backlog #3) |
+
+**SUPERSEDED by Spec 3 (2026-08-15)** — the last row above. The flag shipped as
+`--lora-periodic-interval-us` (this table's spelling never existed), and it is no longer
+inert: it now sets the periodic LoRA creation tick interval, which fires whenever the
+effective `--creation-policy` implements `sim.PeriodicCreationPolicy` (INV-PS3′ replaces
+INV-PS3). The row is kept as a record of the B-7 round; `blis run --help` is authoritative.
+
+## Rules
+- Unknown policy/bundle name ⇒ `logrus.Fatalf` listing valid names for that seam (FR-004, Principle V).
+- Every numeric flag validated for zero/negative/NaN/Inf at the CLI (R3).
+- `cmd.Flags().Changed(...)` checked before applying `defaults.yaml` (R18).
+- `run` and `replay` resolve policies through the same shared path (R23); the new selections join the **INV-13 sync-point** field set, with a `logrus.Fatalf` fail-fast for any selection replay cannot honor (B-7).
+- No CLI knob yet exposes RNG-free (positional) router tie-breaking; strict CRN validity for paired experiments is a tracked §14 follow-up, not enabled by these flags.
+
+**SUPERSEDED by Spec 3 (2026-08-15)** — the rule above. Commit 86eb3bed added exactly
+this knob, as `--routing-deterministic-tiebreak` (see the flag table above): an opt-in
+positional (RNG-free) router tie-break, default `false` so byte-identical behavior is
+preserved. The rule is kept as a record of the pre-Spec-3 state; `blis run --help` is
+authoritative.

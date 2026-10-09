@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -72,26 +73,27 @@ func scoreVLLMDP(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	return scores
 }
 
-// validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
-var validScorerNames = map[string]bool{
-	"prefix-affinity":      true,
-	"precise-prefix-cache": true,
-	"no-hit-lru":           true,
-	"queue-depth":          true,
-	"kv-utilization":       true,
-	"load-balance":         true,
-	"active-requests":      true,
-	"running-requests":     true,
-	"load-aware":           true,
-	"vllm-dp":              true,
-	"lora-affinity":        true,
+// IsValidScorer returns true if name is a registered scorer. Validity is
+// derived from the registry keys (single source of truth) — there is no
+// separate hand-maintained name list that can drift.
+func IsValidScorer(name string) bool {
+	_, ok := scorerRegistry[name]
+	return ok
 }
 
-// IsValidScorer returns true if name is a recognized scorer.
-func IsValidScorer(name string) bool { return validScorerNames[name] }
+// ValidScorerNames returns the registered scorer names, sorted.
+func ValidScorerNames() []string { return sortedScorerNames() }
 
-// ValidScorerNames returns sorted valid scorer names.
-func ValidScorerNames() []string { return validNamesList(validScorerNames) }
+// sortedScorerNames collects the registry keys and sorts them explicitly (R2 —
+// deterministic output, INV-6; never a bare range over the map feeds output).
+func sortedScorerNames() []string {
+	names := make([]string, 0, len(scorerRegistry))
+	for n := range scorerRegistry {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // DefaultScorerConfigs returns the default scorer configuration for weighted routing.
 // Default profile: precise-prefix-cache:2, queue-depth:1, kv-utilization:1 (llm-d parity).
@@ -155,37 +157,102 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 	return weights
 }
 
+// scorerConstructor builds a (scorer, observer) pair for a named scorer.
+// blockSize is used by block-hash-backed scorers (prefix-affinity); cacheFn by
+// cache-backed scorers (precise-prefix-cache, no-hit-lru); stateless scorers
+// ignore both. The registry maps names to these constructors (B-1, #1489).
+type scorerConstructor func(blockSize int, cacheFn cacheQueryFn) scorerParts
+
+// scorerParts is what a scorer constructor returns: the scoring function plus its
+// optional routing-decision observer and optional request-completion observer
+// (RequestCompletionObserver). The observers share the scorer's closure state.
+type scorerParts struct {
+	score      scorerFunc
+	observe    observerFunc           // nil for stateless scorers
+	onComplete completionObserverFunc // nil unless the scorer tracks completions
+	onStart    startObserverFunc      // nil unless the scorer tracks first tokens
+	// setClock, if non-nil, is called with RouterState.Clock before each routing
+	// decision, so a time-dependent scorer evaluates at the decision time.
+	setClock func(clock int64)
+}
+
+// scorerRegistry maps scorer names to their constructors. Unexported (R8) — all
+// access is via IsValidScorer / ValidScorerNames / newScorerWithObserver.
+// Populated by init() in this file (the single registration site, R4).
+var scorerRegistry = map[string]scorerConstructor{}
+
+// registerScorer adds a scorer constructor under name. Panics on empty or
+// duplicate name (R4 — guards double-registration; empty name would make
+// IsValidScorer("") true, breaking parity).
+func registerScorer(name string, c scorerConstructor) {
+	if name == "" {
+		panic("registerScorer: empty scorer name")
+	}
+	if _, dup := scorerRegistry[name]; dup {
+		panic(fmt.Sprintf("registerScorer: duplicate scorer %q", name))
+	}
+	scorerRegistry[name] = c
+}
+
+// stateless wraps a scorer func that ignores blockSize and cacheFn (returns a
+// nil observer), matching the pre-registry switch arms that returned (fn, nil).
+func stateless(fn scorerFunc) scorerConstructor {
+	return func(_ int, _ cacheQueryFn) scorerParts { return scorerParts{score: fn} }
+}
+
+// init registers all built-in scorers. This is the single registration site
+// (R4); the same file defines IsValidScorer/ValidScorerNames, so validity is
+// derived from these keys (single source of truth). No other init() in sim/
+// reads the registry, so registration-vs-consumption ordering is a non-issue.
+func init() {
+	// Stateful / param-backed scorers (preserve the exact (scorer, observer) pairing).
+	registerScorer("prefix-affinity", func(blockSize int, _ cacheQueryFn) scorerParts {
+		score, observe := newPrefixAffinityScorer(blockSize)
+		return scorerParts{score: score, observe: observe}
+	})
+	registerScorer("precise-prefix-cache", func(_ int, cacheFn cacheQueryFn) scorerParts {
+		score, observe := newPrecisePrefixCacheScorer(cacheFn) // stateless ground-truth: (scorer, nil)
+		return scorerParts{score: score, observe: observe}
+	})
+	registerScorer("no-hit-lru", func(_ int, cacheFn cacheQueryFn) scorerParts {
+		score, observe := newNoHitLRUScorer(cacheFn)
+		return scorerParts{score: score, observe: observe}
+	})
+	registerScorer("lora-residency", func(_ int, _ cacheQueryFn) scorerParts {
+		return newLoRAResidencyScorer()
+	})
+	registerScorer("lora-residency-truth", func(_ int, _ cacheQueryFn) scorerParts {
+		return newLoRAResidencyTruthScorer()
+	})
+	// Stateless scorers.
+	registerScorer("queue-depth", stateless(scoreQueueDepth))
+	registerScorer("kv-utilization", stateless(scoreKVUtilization))
+	registerScorer("load-balance", stateless(scoreLoadBalance))
+	registerScorer("active-requests", stateless(scoreActiveRequests))
+	registerScorer("running-requests", stateless(scoreRunningRequests))
+	registerScorer("load-aware", stateless(scoreLoadAware))
+	registerScorer("vllm-dp", stateless(scoreVLLMDP))
+	registerScorer("lora-affinity", stateless(scoreLoRAAffinity))
+	registerScorer("llmd-lora-affinity", stateless(scoreLLMDLoRAAffinity))
+}
+
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.
 // Returns (scorer, observer) where observer is nil for stateless scorers.
 // blockSize is used by stateful scorers (e.g., prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
 func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
-	switch name {
-	case "prefix-affinity":
-		return newPrefixAffinityScorer(blockSize)
-	case "precise-prefix-cache":
-		return newPrecisePrefixCacheScorer(cacheFn)
-	case "no-hit-lru":
-		return newNoHitLRUScorer(cacheFn)
-	case "queue-depth":
-		return scoreQueueDepth, nil
-	case "kv-utilization":
-		return scoreKVUtilization, nil
-	case "load-balance":
-		return scoreLoadBalance, nil
-	case "active-requests":
-		return scoreActiveRequests, nil
-	case "running-requests":
-		return scoreRunningRequests, nil
-	case "load-aware":
-		return scoreLoadAware, nil
-	case "vllm-dp":
-		return scoreVLLMDP, nil
-	case "lora-affinity":
-		return scoreLoRAAffinity, nil
-	default:
+	parts := newScorerParts(name, blockSize, cacheFn)
+	return parts.score, parts.observe
+}
+
+// newScorerParts is newScorerWithObserver plus the scorer's optional
+// request-completion observer. Panics on unknown name.
+func newScorerParts(name string, blockSize int, cacheFn cacheQueryFn) scorerParts {
+	ctor, ok := scorerRegistry[name]
+	if !ok {
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
+	return ctor(blockSize, cacheFn)
 }
 
 // scoreQueueDepth computes per-instance queue depth scores using min-max normalization.

@@ -606,6 +606,37 @@ type LoRAConfig struct {
 
 	// Adapters is the pre-declared registry (id -> rank[, base model]). Empty => inert.
 	Adapters []AdapterSpec `yaml:"adapters,omitempty"`
+
+	// EvictionPolicy names the resident-adapter eviction policy at the cold-load gate
+	// (B-4). Empty => lru (the no-op default, byte-identical to B-3). Resolution and
+	// name validation live in sim/lora/eviction.New (cross-package registry); Validate
+	// deliberately does NOT check the name here, to keep sim free of the eviction
+	// import — the CLI fails fast against sim.ValidEvictionPolicyNames.
+	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
+
+	// CreationPolicy names the adapter-creation policy (B-6): the t=0 seeding and
+	// cold-load-gate admit decisions behind the CreationPolicy seam. Empty =>
+	// on-demand (the no-op default, byte-identical to pre-B-5: seeds nothing, always
+	// admits). Resolution and name validation live in sim/lora/creation.New
+	// (cross-package registry); as with EvictionPolicy, Validate deliberately does
+	// NOT check the name here — that keeps sim free of the creation import, and the
+	// CLI fails fast against sim.ValidCreationPolicyNames.
+	CreationPolicy string `yaml:"creation_policy,omitempty"`
+
+	// PlacementSchedule is the timed placement sequence for creation_policy="scheduled"
+	// (Spec 4 Slice B). Set programmatically by the CLI from --lora-placement-schedule and
+	// deliberately NOT a YAML field: it is a run-scoped experiment input of up to a few
+	// hundred entries, published as its own artifact rather than inlined into a config.
+	// Empty => `scheduled` never proposes anything, which cmd rejects before it can happen.
+	PlacementSchedule []PlacementScheduleEntry `yaml:"-"`
+
+	// InstanceMaxRank is this instance's max_lora_rank: the rank every adapter slot is
+	// sized for, as vLLM sizes its slots (max_loras × max_lora_rank, allocated before the
+	// KV cache). nil => the largest declared rank, the cluster-wide default. Set only by
+	// the cluster, per instance, from DeploymentConfig.LoRAInstanceMaxRank; deliberately
+	// NOT a YAML field, since one config file describes every instance. An adapter whose
+	// rank exceeds it can never become resident on the instance (vLLM refuses the load).
+	InstanceMaxRank *int `yaml:"-"`
 }
 
 // HasAdapters reports whether any adapter is declared. When false the subsystem is
@@ -628,6 +659,10 @@ func (c LoRAConfig) Validate() error {
 	// actually declared (adapters present but zero/negative slots is unservable).
 	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity <= 0 {
 		return fmt.Errorf("LoRAConfig: adapter_capacity must be > 0 when adapters are declared, got %d", *c.AdapterCapacity)
+	}
+
+	if c.InstanceMaxRank != nil && *c.InstanceMaxRank <= 0 {
+		return fmt.Errorf("LoRAConfig: instance max_lora_rank must be > 0, got %d", *c.InstanceMaxRank)
 	}
 
 	// Adapter registry entries: unique non-empty ids, positive rank (R3).

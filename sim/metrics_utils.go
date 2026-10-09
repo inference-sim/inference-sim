@@ -11,19 +11,19 @@ type IntOrFloat64 interface {
 
 // Individual request metrics for the JSON log
 type RequestMetrics struct {
-	ArrivedAt        float64 `json:"arrived_at"`
-	ID               string  `json:"requestID"`
-	NumPrefillTokens int     `json:"num_prefill_tokens"`
-	NumDecodeTokens  int     `json:"num_decode_tokens"`
-	TTFT             float64 `json:"ttft_ms"`
-	ITL              float64 `json:"itl_ms"`
-	E2E              float64 `json:"e2e_ms"`
-	SchedulingDelay  float64 `json:"scheduling_delay_ms"`
-	SLOClass         string  `json:"slo_class,omitempty"`   // PR10: for per-SLO-class metrics
-	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
-	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
-	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
-	Adapter          string  `json:"adapter,omitempty"`    // #1464: LoRA adapter id serving this request ("" = base model)
+	ArrivedAt         float64 `json:"arrived_at"`
+	ID                string  `json:"requestID"`
+	NumPrefillTokens  int     `json:"num_prefill_tokens"`
+	NumDecodeTokens   int     `json:"num_decode_tokens"`
+	TTFT              float64 `json:"ttft_ms"`
+	ITL               float64 `json:"itl_ms"`
+	E2E               float64 `json:"e2e_ms"`
+	SchedulingDelay   float64 `json:"scheduling_delay_ms"`
+	SLOClass          string  `json:"slo_class,omitempty"`              // PR10: for per-SLO-class metrics
+	TenantID          string  `json:"tenant_id,omitempty"`              // PR10: for per-tenant fairness
+	HandledBy         string  `json:"handled_by,omitempty"`             // #181: instance that processed this request
+	Model             string  `json:"model,omitempty"`                  // W0-1: model tag for per-model metrics
+	Adapter           string  `json:"adapter,omitempty"`                // #1464: LoRA adapter id serving this request ("" = base model)
 	LengthCapped      bool    `json:"length_capped,omitempty"`          // #588: per-request indicator for BC-5 force-completion
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
@@ -111,6 +111,16 @@ type MetricsOutput struct {
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
 
+	// PolicyProvenance records the resolved effective {routing, eviction, creation}
+	// LoRA-seam policy triple actually used (B-7, FR-016/D6/D8), so any result is
+	// reproducible from its record alone (SC-006). Run-level: set once by the CLI at
+	// policy resolution (before the event loop) on the aggregated cluster output —
+	// never in a per-event path (state/statistics separation). Pointer + omitempty:
+	// nil ⇒ the key is absent whenever every seam is at baseline and no bundle was
+	// selected, mirroring the adapter-metrics omit-when-inert pattern above so an
+	// all-baseline / adapter-blind run is byte-identical (INV-6).
+	PolicyProvenance *PolicyTriple `json:"policy_provenance,omitempty"`
+
 	// Catalog records WHICH model catalog produced this result (#1732, R1/S5).
 	// Populated ONLY into the --metrics-path file, via EmitOutput's
 	// WithCatalogProvenance option — never onto stdout, exactly like CacheHitRate
@@ -120,6 +130,28 @@ type MetricsOutput struct {
 	// omitempty, so a results file written without the option is byte-identical to
 	// a pre-feature build.
 	Catalog *CatalogProvenance `json:"catalog,omitempty"`
+
+	// LoRAInstances echoes each instance's LoRA slot configuration as it actually ran,
+	// in construction order, so a manifest records the configuration that ran rather
+	// than the one requested. Set by the CLI only when --lora-instance-max-rank and
+	// --lora-instance-capacity are given; nil otherwise, and omitempty drops the key, so
+	// a run without those flags is byte-identical to a pre-feature build (INV-6).
+	LoRAInstances []LoRAInstanceEcho `json:"lora_instances,omitempty"`
+}
+
+// LoRAInstanceEcho is one instance's per-instance LoRA configuration and the two
+// quantities it determines. AdapterReservedBytes is capacity × footprint_bytes_per_rank
+// × max_lora_rank; TotalKVBlocks is the KV budget left after it, and MaxModelLen the
+// longest sequence that budget admits (0 = unlimited). PreemptionCount is the
+// instance's own count, read after the run, since whether KV binds is per instance.
+type LoRAInstanceEcho struct {
+	InstanceID           string `json:"instance_id"`
+	MaxLoRARank          int    `json:"max_lora_rank"`
+	AdapterCapacity      int    `json:"adapter_capacity"`
+	AdapterReservedBytes int64  `json:"adapter_reserved_bytes"`
+	TotalKVBlocks        int64  `json:"total_kv_blocks"`
+	MaxModelLen          int64  `json:"max_model_len"`
+	PreemptionCount      int64  `json:"preemption_count"`
 }
 
 // CatalogProvenance attributes a results file to the model catalog that produced it
@@ -156,6 +188,7 @@ const UnknownCatalogRevision = "unknown"
 type AdapterMetrics struct {
 	LoadCount         int64   `json:"load_count"`
 	EvictionCount     int64   `json:"eviction_count"`
+	PrefetchCount     int64   `json:"prefetch_count,omitempty"` // subset of LoadCount; omitted when 0 so pre-Spec-3 output is byte-identical
 	TTFTP50Us         float64 `json:"ttft_p50_us"`
 	TTFTP99Us         float64 `json:"ttft_p99_us"`
 	ThroughputTokPerS float64 `json:"throughput_tok_per_s"`
@@ -199,4 +232,3 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 
 	return (sum / float64(len(numbers))) / 1000
 }
-

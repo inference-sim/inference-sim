@@ -17,6 +17,7 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 | **Least-loaded** | `least-loaded` | Send to the instance with lowest `EffectiveLoad` |
 | **Weighted** | `weighted` | Composable multi-scorer pipeline (default: llm-d parity) |
 | **Always-busiest** | `always-busiest` | Pathological template — sends to the most loaded instance (for testing) |
+| **Route-to-holder** | `route-to-holder` | Strict LoRA affinity — restricts candidates to instances already holding the request's adapter, then scores that subset with the weighted pipeline; falls back to unconstrained weighted routing when no instance holds the adapter or the request targets the base model |
 
 ## Weighted Scoring (Composable Pipeline)
 
@@ -40,6 +41,12 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
 | `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
 | `vllm-dp` | vLLM data-parallel routing: `waiting × 4 + running` (inverted min-max) | DPLBAsyncMPClient.get_core_engine_for_request |
+| `llmd-lora-affinity` | Router-observable LoRA tiers from `ActiveAdapters` (queued ∪ running) and `MaxLoras`: 1.0 adapter active, 0.8 free adapter slot, 0.6 adapter only waiting (unreachable, as in current vLLM), else 0 — raw, not normalized; never reads ground-truth residency | lora-affinity-scorer (llm-d-router `loraaffinity`) |
+| `lora-residency` | Cost of serving the request's adapter on each instance, from a router-side residency estimate (two LRU tiers, GPU = `MaxLoras`, CPU cache taken equal): load, copy or pending cost, plus blocking when every slot is pinned, plus the decayed demand share of any adapter it would evict. Fed only by what a router observes (its routing decisions, first tokens, completions, `MaxLoras`, `ActiveAdapters`); never reads ground-truth residency. Min-max normalized, cheapest = 1.0, all-equal → 1.0; base-model requests score 1.0 everywhere. Aggregated serving only | lora-residency-scorer (out-of-tree EPP plugin; no llm-d-router equivalent) |
+| `lora-residency-truth` | **Simulation-only oracle.** `lora-residency`'s cost model fed BLIS's ground-truth residency instead of its estimate (true LRU order, pinned adapters, an in-progress load), so the gap to `lora-residency` measures what estimation costs. Aggregated serving only | none — no router can observe this state |
+
+!!! note "lora-residency-truth reads live truth regardless of the refresh interval"
+    Configuring `lora-residency-truth` in `--routing-scorers` pins the residency snapshot fields it reads to Immediate freshness, overriding `--snapshot-refresh-interval` (default 50 ms) for those fields only, as `route-to-holder` does. Otherwise the reference would conflate estimation loss with scrape staleness. Its capacity comes from `ResidentCapacity`, refreshed with them, not from `MaxLoras`. Both `lora-residency` and `lora-residency-truth` assume aggregated serving: a cluster with PD/EPD disaggregation rejects either one at construction, because the routed request's lifecycle runs on sub-requests with other IDs.
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
@@ -98,6 +105,9 @@ BLIS models three signal freshness tiers:
 | **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | Default (`--snapshot-refresh-interval 50000`): Periodic at 50ms (llm-d parity). When `--snapshot-refresh-interval 0`: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single `/metrics` endpoint. |
 | **Periodic (precise prefix-cache query)** | `precise-prefix-cache` / `no-hit-lru` cache-block hit counts | Actual instance KV cache state (via `CachedSnapshotProvider`) | Governed by `--cache-signal-delay` (default 50ms; set to 0 for synchronous ground-truth queries). Distinct from the router-local `prefix-affinity` index above. |
 
+!!! note "`route-to-holder` pins `ResidentAdapters` to Immediate"
+    When `--routing-policy route-to-holder` is active, the `ResidentAdapters` signal is forced to Immediate freshness regardless of `--snapshot-refresh-interval`. Strict affinity is a correctness gate — a stale holder set could hide a just-loaded adapter and misroute or spuriously fall back — so holder membership must be read live at routing time. This is a narrow, single-field override; every other signal keeps the mode the global interval assigned.
+
 !!! info "DES semantics of 'Immediate' mode"
     "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.
 
@@ -116,6 +126,7 @@ At high request rates, many routing decisions occur between KV utilization updat
 | RAG with shared system prompts | `weighted` default or `precise-prefix-cache:3,queue-depth:1` | Prefix-aware scoring maximizes KV cache reuse |
 | Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
 | Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
+| LoRA workloads needing strict adapter locality | `route-to-holder` | Keeps each request on an instance already holding its adapter, maximizing adapter-cache reuse and avoiding redundant loads; base-model requests and adapters no instance holds fall back to unconstrained weighted routing |
 
 ## Example: Comparing Policies
 

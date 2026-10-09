@@ -140,15 +140,44 @@ type Simulator struct {
 	// (#1466). Non-nil exactly when residentAdapters is (both wired together from
 	// the same sim/lora registration); nil ⇒ no gating.
 	adapterCost AdapterCost
+	// adapterRegistry is the read-only rank source for the eviction context (D2,
+	// #1491). Non-nil together with residentAdapters/adapterCost; nil when LoRA is
+	// inactive. lru ignores rank, but the context builder reads it every eviction so
+	// B-4's rank-aware policy has a live source.
+	adapterRegistry AdapterRegistry
+	// instanceMaxRank is this instance's max_lora_rank (LoRAConfig.InstanceMaxRank),
+	// or 0 when uncapped. Every Store into residentAdapters is checked against it,
+	// because vLLM refuses to load an adapter whose rank exceeds the cap.
+	instanceMaxRank int
+	// evictionPolicy selects the victim when the cold-load gate must free a slot
+	// (#1491). Hardwired to "lru" in B-3 (byte-identical to the former EvictLRU);
+	// non-nil together with residentAdapters, nil when LoRA is inactive.
+	evictionPolicy EvictionPolicy
+	// creationPolicy decides adapter residency creation at the two entry points
+	// (#1493): Initial (t=0 seeding via ApplyInitialCreation) and OnResidentMiss
+	// (admit at the cold-load gate). Hardwired to "on-demand" in B-5 (byte-identical
+	// to pre-seam behavior: seeds nothing, always admits); non-nil together with
+	// residentAdapters, nil when LoRA is inactive.
+	creationPolicy CreationPolicy
 	// loadingAdapter is the id of the adapter whose load is currently in flight on
 	// this instance, or "" when none. Loads serialize per instance: the gate starts
 	// a new load only when this is "" (§7 serialization).
 	loadingAdapter string
+	// loadIsPrefetch classifies the in-flight load named by loadingAdapter: true when a
+	// periodic creation tick initiated it (Spec 3), false for a gate-driven demand load.
+	// Read once at completion to pick the counter. Classification is by INITIATION, so a
+	// prefetch consumed mid-flight by an arriving request stays a prefetch.
+	loadIsPrefetch bool
 	seqCounter     int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+	// OnFirstToken is an optional callback invoked when a request's prefill
+	// completes and its first output token is produced, at that token's time. It
+	// fires again after a preemption re-prefills the request. Set by
+	// ClusterSimulator. Nil = no callback.
+	OnFirstToken func(req *Request, tick int64)
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -229,13 +258,14 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// active — adapters declared with a positive capacity — and sim/lora is linked
 	// (NewResidentAdapterSetFunc registered). Otherwise it stays nil and adapter
 	// handling is a no-op (INV-6).
-	// Wire the resident set AND the cost model together (both from sim/lora's single
-	// init, so both registration funcs are non-nil or both nil). Requiring both here
-	// guarantees the invariant the gate relies on: whenever residentAdapters != nil,
-	// adapterCost != nil too. If only the resident set were wired, FormBatch would
-	// gate cold requests (AdapterResident predicate set) but maybeStartAdapterLoad
-	// could never start a load (adapterCost nil) — stranding them. A malformed cost
-	// config is a library-boundary error (R6), not a panic.
+	// Wire the resident set, cost model, adapter registry, AND eviction policy
+	// together — all four registration funcs come from sim/lora's single init(), so
+	// they are non-nil or nil as a set. Requiring the cost model here guarantees the
+	// invariant the gate relies on: whenever residentAdapters != nil, adapterCost !=
+	// nil too. If only the resident set were wired, FormBatch would gate cold
+	// requests (AdapterResident predicate set) but maybeStartAdapterLoad could never
+	// start a load (adapterCost nil) — stranding them. A malformed cost config is a
+	// library-boundary error (R6), not a panic.
 	// BuildAdapterCost centralizes the activation condition (R4) so NewSimulator and
 	// the sim/cluster latency backend agree on exactly when adapter costs apply; it
 	// returns (nil, nil) when the LoRA subsystem is inert (no adapters, no capacity,
@@ -256,6 +286,52 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		}
 		s.residentAdapters = rs
 		s.adapterCost = ac
+		reg, err := BuildAdapterRegistry(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: adapter registry: %w", err)
+		}
+		s.adapterRegistry = reg
+		if cfg.InstanceMaxRank != nil {
+			s.instanceMaxRank = *cfg.InstanceMaxRank
+		}
+		// NewEvictionPolicyFunc is wired in the same sim/lora init() as the funcs
+		// gating this block, so reaching here implies it is non-nil. Guard it
+		// explicitly anyway, matching BuildAdapterCost / BuildAdapterRegistry, so a
+		// future registration change surfaces as a library-boundary error (R6)
+		// rather than a nil-deref panic.
+		if NewEvictionPolicyFunc == nil {
+			return nil, fmt.Errorf("NewSimulator: eviction policy func not registered (import sim/lora)")
+		}
+		// B-4: the config selects the policy; empty resolves to lru (New also maps
+		// ""→lru, but naming it here keeps the default explicit at the call site and
+		// byte-identical to B-3).
+		policyName := cfg.EvictionPolicy
+		if policyName == "" {
+			policyName = "lru"
+		}
+		pol, err := NewEvictionPolicyFunc(policyName)
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: eviction policy: %w", err)
+		}
+		s.evictionPolicy = pol
+		// B-6: the config selects the creation policy; empty resolves to on-demand
+		// (New also maps ""→on-demand, but naming it here keeps the default explicit
+		// at the call site and byte-identical to B-5). Guard the hook like the
+		// eviction one (R6).
+		if NewCreationPolicyFunc == nil {
+			return nil, fmt.Errorf("NewSimulator: creation policy func not registered (import sim/lora)")
+		}
+		creationName := cfg.CreationPolicy
+		if creationName == "" {
+			creationName = "on-demand"
+		}
+		cp, err := NewCreationPolicyFunc(creationName, CreationPolicyConfig{
+			PlacementSchedule: cfg.PlacementSchedule,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("NewSimulator: creation policy: %w", err)
+		}
+		s.creationPolicy = cp
 	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
 		// Adapters declared but no capacity: the resident set stays inert and every
 		// adapter metric reports zero. Warn rather than fail silently (R1) — a run
@@ -273,6 +349,52 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	}
 
 	return s, nil
+}
+
+// ApplyInitialCreation seeds the instance's resident adapter set at t=0 from the
+// creation policy's Initial decision (D3/D4). It is the state-mutating boundary
+// for initial-topology seeding: the cluster resolves this instance's assigned
+// subset and passes it in; ApplyInitialCreation runs creationPolicy.Initial and
+// Stores each returned id WITHOUT a load-count increment and WITHOUT cold-load
+// latency (INV-L3 — t=0 seeding is not a charged load). It is a no-op when the
+// LoRA subsystem is inert (residentAdapters or creationPolicy nil). For on-demand,
+// Initial returns nothing, so this is a verified no-op even when the subsystem is
+// active (C-4).
+func (s *Simulator) ApplyInitialCreation(assigned []string) {
+	if s.residentAdapters == nil || s.creationPolicy == nil {
+		return
+	}
+	seed := s.creationPolicy.Initial(CreationContext{
+		Assigned: assigned,
+		Registry: s.adapterRegistry,
+	})
+	for _, id := range seed {
+		// Store bypasses the cold-load metric/latency path (that lives at the
+		// cold-load completion in maybeStartAdapterLoad), so seeding is uncharged.
+		s.requireRankFits(id)
+		s.residentAdapters.Store(id)
+	}
+}
+
+// requireRankFits panics when adapter id's declared rank exceeds this instance's
+// max_lora_rank. It guards the t=0 seed (ApplyInitialCreation) and the only two sites
+// that start a run-time load (maybeStartAdapterLoad and StartPrefetch), which schedule
+// every AdapterLoadCompletionEvent. Checking at the start rather than at completion means
+// a refused load neither evicts a victim nor escapes by completing past the horizon.
+// vLLM refuses such a load outright (peft_helper.py), so continuing would simulate a
+// server that cannot exist. The
+// cluster rejects a violating seed or schedule before construction; reaching this
+// panic means a run-time load (a no-holder routing fallback, or a prefetch) asked
+// for an adapter the instance was configured never to hold. No-op when uncapped.
+func (s *Simulator) requireRankFits(id string) {
+	if s.instanceMaxRank == 0 || s.adapterRegistry == nil {
+		return
+	}
+	if rank, ok := s.adapterRegistry.RankOf(id); ok && rank > s.instanceMaxRank {
+		panic(fmt.Sprintf("adapter %q has rank %d, above this instance's max_lora_rank %d: "+
+			"vLLM refuses the load. Route its requests only to instances configured for it",
+			id, rank, s.instanceMaxRank))
+	}
 }
 
 // WorkloadRNG returns the RNG for workload generation.
@@ -450,6 +572,67 @@ func (sim *Simulator) ResidentAdapterIDs() []string {
 		return nil
 	}
 	return sim.residentAdapters.ResidentIDs()
+}
+
+// UnpinnedResidentAdapterIDs returns the resident adapter ids not pinned by an
+// in-flight request, in LRU→MRU order; nil when none (or no LoRA subsystem).
+func (sim *Simulator) UnpinnedResidentAdapterIDs() []string {
+	if sim.residentAdapters == nil {
+		return nil
+	}
+	return sim.residentAdapters.UnpinnedCandidates()
+}
+
+// ActiveAdapterCounts returns, per LoRA adapter id, the number of this instance's
+// requests that are queued (WaitQ, including gate-blocked cold misses and preempted
+// requests) or running (RunningBatch). Base-model requests (empty Adapter) are not
+// counted. Returns nil when no such request exists. This is the router-observable
+// analogue of vLLM's vllm:lora_requests_info running/waiting adapter labels — what
+// a real router can scrape — as opposed to ResidentAdapterIDs, which is the LRU's
+// ground truth. Each call builds a fresh map (the caller may retain it).
+func (sim *Simulator) ActiveAdapterCounts() map[string]int {
+	var counts map[string]int
+	add := func(r *Request) {
+		if r == nil || r.Adapter == "" {
+			return
+		}
+		if counts == nil {
+			counts = make(map[string]int)
+		}
+		counts[r.Adapter]++
+	}
+	if sim.WaitQ != nil {
+		for _, r := range sim.WaitQ.Items() {
+			add(r)
+		}
+	}
+	if sim.RunningBatch != nil {
+		for _, r := range sim.RunningBatch.Requests {
+			add(r)
+		}
+	}
+	return counts
+}
+
+// UnpinnedAdapterIDs returns the resident, unpinned adapter ids — the eviction seam's
+// candidate set — in LRU→MRU (eviction-priority) order, or nil when none are evictable
+// or the LoRA subsystem is inert. Read by the cluster's periodic creation tick (Spec 3)
+// so a policy can tell a full-but-evictable instance from a full-and-fully-pinned one
+// without being handed the eviction decision itself. The returned slice is freshly
+// built, so the caller may sort it in place.
+func (sim *Simulator) UnpinnedAdapterIDs() []string {
+	if sim.residentAdapters == nil {
+		return nil
+	}
+	return sim.residentAdapters.UnpinnedCandidates()
+}
+
+// LoadingAdapter returns the adapter id occupying this instance's single serialized
+// load channel, or "" when the channel is free (which includes an inert subsystem).
+// Read by the cluster's periodic creation tick (Spec 3) both to inform the policy and
+// to drop a decision naming a busy instance at actuation.
+func (sim *Simulator) LoadingAdapter() string {
+	return sim.loadingAdapter
 }
 
 // DrainWaitQueue removes and returns all requests currently in the wait queue.
@@ -943,40 +1126,187 @@ func (sim *Simulator) releaseAdapterPin(req *Request) {
 	req.adapterPinned = false
 }
 
+// buildEvictionContext snapshots the unpinned candidates (LRU→MRU) and a rank
+// accessor over the registry (D2). Called at each eviction decision. The rank
+// accessor is nil-safe: with no registry it reports every id as unregistered, so
+// lru (which ignores rank) is unaffected and B-4's rank-aware policy sees a
+// well-defined empty-rank world when the registry is absent. The closure captures
+// the registry value (not the receiver) so it reads a stable, per-instance rank
+// source (INV-6 / INV-13).
+func (sim *Simulator) buildEvictionContext() EvictionContext {
+	registry := sim.adapterRegistry
+	return EvictionContext{
+		Candidates: sim.residentAdapters.UnpinnedCandidates(),
+		RankOf: func(id string) (int, bool) {
+			if registry == nil {
+				return 0, false
+			}
+			return registry.RankOf(id)
+		},
+	}
+}
+
+// waitQueueHeadIsColdMiss reports whether the wait-queue head is a new prefill
+// request whose adapter is not resident — the cold-miss condition the load gate acts
+// on (§7), and the "gate-blocked" state the cluster's periodic creation tick must
+// defer to (Spec 3).
+//
+// It exists as ONE definition with TWO callers on purpose: maybeStartAdapterLoad
+// below, and HasGateBlockedRequest, which the cluster reads to decide whether a
+// prefetch may take this instance's load channel. Inlining the condition in both
+// places would let the gate and the deferral rule drift apart silently — the
+// deferral would then protect a state the gate no longer recognises.
+//
+// False when the LoRA subsystem is inert (INV-6): with no resident set there is no
+// residency to miss.
+func (sim *Simulator) waitQueueHeadIsColdMiss() bool {
+	if sim.residentAdapters == nil {
+		return false
+	}
+	head := sim.WaitQ.Peek()
+	return head != nil && !head.IsDecodeSubRequest && head.Adapter != "" &&
+		!sim.residentAdapters.IsResident(head.Adapter)
+}
+
+// HasGateBlockedRequest reports whether a cold-miss request is waiting at this
+// instance's cold-load gate. Read by the cluster's periodic creation tick (Spec 3),
+// which drops any prefetch decision naming such an instance so a prefetch cannot take
+// the single serialized load channel away from that already-waiting demand miss.
+//
+// Mind the SCOPE, which is the wait-queue HEAD only (see waitQueueHeadIsColdMiss): this
+// is NOT "is there visible work on this instance". A request that is merely QUEUED and
+// whose adapter IS resident does not make this true, and is not protected by it — its
+// adapter stays unpinned until batch admission takes the pin (recordAdapterResidency),
+// so a prefetch's eviction seam may evict precisely that adapter and turn a warm hit
+// into a cold miss. Sharper still: the victim need not be queued behind the head at
+// all — if the head itself targets a resident adapter, this method is false, and the
+// head's own warm adapter can be evicted out from under it.
+func (sim *Simulator) HasGateBlockedRequest() bool {
+	return sim.waitQueueHeadIsColdMiss()
+}
+
 // maybeStartAdapterLoad begins a serialized cold-adapter load when the wait-queue
 // head is a new prefill request whose adapter is not yet resident (§7). It runs
 // before batch formation each step. Loads serialize per instance: it starts at
 // most one at a time (guarded by loadingAdapter). At load-start it commits the
-// eviction victim and reserves a slot (EvictLRU when at capacity), then schedules
-// an AdapterLoadCompletionEvent at now + LoadLatency; residency is committed at
-// completion, so the gate keeps holding the request until then. No-op when the
-// subsystem is inert (INV-6).
+// eviction victim and reserves a slot (via the eviction seam when at capacity),
+// then schedules an AdapterLoadCompletionEvent at now + LoadLatency; residency is
+// committed at completion, so the gate keeps holding the request until then. No-op
+// when the subsystem is inert (INV-6).
 func (sim *Simulator) maybeStartAdapterLoad(now int64) {
-	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.loadingAdapter != "" {
+	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.evictionPolicy == nil || sim.loadingAdapter != "" {
+		return
+	}
+	if !sim.waitQueueHeadIsColdMiss() {
 		return
 	}
 	head := sim.WaitQ.Peek()
-	if head == nil || head.IsDecodeSubRequest || head.Adapter == "" || sim.residentAdapters.IsResident(head.Adapter) {
+	// Cold miss: route the admit decision through the creation seam (B-5, #1493).
+	// on-demand always admits (pre-B-5 behavior, no change). A policy returning
+	// false holds the request at the gate this step without starting a load — not a
+	// stall (INV-8): the request is a deliberately not-yet-runnable gate-blocked
+	// request, re-evaluated on the next maybeStartAdapterLoad call, and the gate does
+	// not reschedule an immediate retry (no busy-loop). creationPolicy is wired
+	// together with the fields guarded above, so it is non-nil here; the guard is
+	// defensive and, if ever nil, defaults to admit (on-demand).
+	if sim.creationPolicy != nil && !sim.creationPolicy.OnResidentMiss(CreationContext{
+		MissedAdapter: head.Adapter,
+		Registry:      sim.adapterRegistry,
+	}) {
 		return
 	}
-	// Cold head: reserve a slot by committing the LRU non-pinned victim now (§7).
+	// Cold head: reserve a slot by committing the seam-selected non-pinned victim now (§7).
 	// The capacity bound itself (INV-L2, |resident| <= capacity) is structural in
 	// residentSet.Store; committing here rather than at completion is what makes the
 	// Store in completeAdapterLoad unable to fail, and §12's no-deadlock argument sound.
+	// The rank guard runs first, before any victim is evicted: a load vLLM would refuse
+	// must not leave an eviction behind, even if its completion falls past the horizon.
+	sim.requireRankFits(head.Adapter)
 	if sim.residentAdapters.AtCapacity() {
-		evicted, ok := sim.residentAdapters.EvictLRU()
+		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
 		if !ok {
-			// Every slot is pinned by an in-flight request; cannot start a load this
-			// step. A running request will complete and unpin, and the INV-8 guard
-			// will re-form a step to retry. (Guaranteed reachable: pins come from
-			// running requests, which make progress.)
+			// Every resident adapter is pinned by an in-flight request: start no load
+			// this tick. This is not a stall — the work-conserving guard in
+			// scheduleNextStep (WaitQ.Len() > 0 && loadingAdapter == "") re-forms a
+			// step, and once any in-flight request completes it unpins a slot and the
+			// retry evicts + loads (INV-8). Pins are released by requests that
+			// themselves make progress, so the retry is guaranteed reachable.
 			return
 		}
-		sim.Metrics.AdapterEvictionCounts[evicted]++
+		if !sim.residentAdapters.Evict(victim) {
+			// Defensive (INV-L5): the seam only ever hands back an id drawn from
+			// UnpinnedCandidates, and nothing runs between enumeration and Evict on the
+			// single simulation goroutine, so a well-behaved policy makes this branch
+			// unreachable. Log rather than swallow (R1) so a future policy bug that
+			// returns a pinned/absent victim is diagnosable; start no load.
+			logrus.Errorf("maybeStartAdapterLoad: eviction policy selected non-removable victim %q (pinned or absent); skipping load this tick", victim)
+			return
+		}
+		sim.Metrics.AdapterEvictionCounts[victim]++
 	}
 	sim.loadingAdapter = head.Adapter
+	sim.loadIsPrefetch = false
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
 	sim.Schedule(&AdapterLoadCompletionEvent{time: now + loadTicks, Adapter: head.Adapter})
+}
+
+// StartPrefetch begins a charged, non-blocking cold load of adapter at the request of a
+// periodic creation tick (Spec 3). It is the t>0 sibling of maybeStartAdapterLoad: same
+// slot reservation, same eviction seam, same completion event and charging — the only
+// differences are that the trigger is a tick rather than the wait-queue head, and that
+// the load is classified as a prefetch.
+//
+// Non-blocking means the instance keeps forming steps and serving decode while the load
+// runs. It does NOT mean free, in two ways. The load occupies this instance's single
+// serialized load channel for LoadLatency, so a demand miss arriving during it waits; and
+// when the resident set is at capacity this method calls the eviction seam, so a prefetch
+// can evict a warm adapter that no in-flight request has pinned — including the adapter of
+// a request sitting in the wait queue, whose pin is not taken until batch admission
+// (recordAdapterResidency). That request's warm hit becomes a cold miss. Sharper still:
+// the victim need not be a separate queued request at all — if the wait-queue HEAD
+// itself targets a resident adapter, HasGateBlockedRequest is false, and the head's own
+// warm adapter can be evicted out from under it.
+//
+// The cluster defers rather than asking, on an instance whose load channel is busy or
+// whose wait-queue HEAD is a cold miss (demand-priority deferral, design §5). That rule is
+// deliberately narrower than "any visible pending demand" — a merely-queued request is not
+// covered by it — so the case above is a known, accepted latency cost, not an oversight.
+// Liveness is unaffected either way (the gate re-runs and reloads, INV-8). This method
+// enforces only the invariants it owns.
+//
+// Returns false, having changed nothing, when: the subsystem is inert; the channel is
+// busy; the adapter is already resident; or no slot could be reserved because every
+// resident adapter is pinned.
+func (sim *Simulator) StartPrefetch(now int64, adapter string) bool {
+	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.evictionPolicy == nil {
+		return false // inert subsystem (INV-6)
+	}
+	if sim.loadingAdapter != "" {
+		return false // loads serialize per instance
+	}
+	if adapter == "" || sim.residentAdapters.IsResident(adapter) {
+		return false // nothing to do; never charge a load for a resident adapter
+	}
+	sim.requireRankFits(adapter) // before any eviction; see maybeStartAdapterLoad
+	if sim.residentAdapters.AtCapacity() {
+		victim, ok := sim.evictionPolicy.SelectVictim(sim.buildEvictionContext())
+		if !ok {
+			// Every resident adapter is pinned by an in-flight request. Start no prefetch;
+			// unlike the demand path there is no request waiting on this, so there is
+			// nothing to retry and no liveness obligation (INV-8 is unaffected).
+			return false
+		}
+		if !sim.residentAdapters.Evict(victim) {
+			logrus.Errorf("StartPrefetch: eviction policy selected non-removable victim %q (pinned or absent); starting no prefetch", victim)
+			return false
+		}
+		sim.Metrics.AdapterEvictionCounts[victim]++
+	}
+	sim.loadingAdapter = adapter
+	sim.loadIsPrefetch = true
+	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(adapter))))
+	sim.Schedule(&AdapterLoadCompletionEvent{time: now + loadTicks, Adapter: adapter})
+	return true
 }
 
 // completeAdapterLoad finishes a cold-adapter load: it makes the adapter resident
@@ -989,7 +1319,7 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	if sim.residentAdapters == nil {
 		return
 	}
-	// A slot was reserved at load-start (EvictLRU when at capacity), so Store adds
+	// A slot was reserved at load-start (via the eviction seam when at capacity), so Store adds
 	// the adapter without further eviction and must succeed. A false result would
 	// mean the set filled and fully pinned during the load — impossible under the
 	// blocking model (no admissions occur mid-load) — so surface it loudly (R1)
@@ -999,6 +1329,10 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
 		sim.Metrics.AdapterLoadCounts[adapter]++ // charged once per cold transition (INV-L3)
+		if sim.loadIsPrefetch {
+			// Strict subset of the line above: total load work stays in AdapterLoadCounts.
+			sim.Metrics.AdapterPrefetchCounts[adapter]++
+		}
 	} else {
 		logrus.Errorf("[tick %07d] adapter %q load completed but could not be made resident (set full and fully pinned) — resident-set accounting bug", now, adapter)
 	}
@@ -1006,6 +1340,7 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 	// outcome, so the gated request is retried and the simulator never wedges with
 	// queued work and no pending step (INV-8) — even on the unreachable error path.
 	sim.loadingAdapter = ""
+	sim.loadIsPrefetch = false
 	sim.ScheduleStepIfIdle(now)
 }
 
@@ -1114,6 +1449,9 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 

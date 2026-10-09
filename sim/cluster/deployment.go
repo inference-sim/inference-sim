@@ -156,6 +156,67 @@ type DeploymentConfig struct {
 	// coefficients (SC-004). Zero value (Enabled=false) is inert and backward-compatible
 	// (INV-6). See KVAutoCalcConfig and applyPerInstanceKVCapacity.
 	KVAutoCalc KVAutoCalcConfig `yaml:"-"`
+
+	// LoRAAdapterPlacement is the cluster-scoped LoRA adapter pre-placement (B-5,
+	// #1493, D3): construction-index → adapter ids seeded resident on that instance
+	// at t=0. The key is the initial-topology construction-loop counter idx ∈ [0,
+	// NumInstances) (DD-B5-g), never a slice position. Cluster-scoped because
+	// LoRAConfig is instance-agnostic; the cluster resolves each instance's own
+	// subset and hands only that []string to the instance (Principle I). Validated
+	// at construction (ValidateLoRAPlacement, INV-PS2). The shipped on-demand policy
+	// ignores the seed (seeds nothing); B-6's pre-placement consumes it.
+	// omitempty ⇒ an absent field is byte-identical to pre-B-5 (INV-6). Map value
+	// semantics: instance config, validated then read-only (R8).
+	LoRAAdapterPlacement map[int][]string `yaml:"lora_adapter_placement,omitempty"`
+
+	// LoRAInstanceMaxRank and LoRAInstanceCapacity configure each instance's LoRA slots
+	// as vLLM configures a deployment: max_lora_rank and max_loras, one value per
+	// instance in construction order (index i is instance_i). An instance reserves
+	// capacity × footprint_bytes_per_rank × max_rank of HBM before its KV cache is sized,
+	// so each instance's KV blocks are recomputed from its own reservation. Set together
+	// or not at all; absent => every instance uses the cluster-wide AdapterCapacity and
+	// the largest declared rank, byte-identical to before (INV-6). Validated by
+	// ValidateLoRAInstanceConfig; supported only without node pools and PD pools.
+	LoRAInstanceMaxRank  []int `yaml:"lora_instance_max_rank,omitempty"`
+	LoRAInstanceCapacity []int `yaml:"lora_instance_capacity,omitempty"`
+
+	// LoRAPeriodicIntervalUs declares the simulation-time interval (microseconds)
+	// between periodic LoRA creation ticks (Spec 3; the scaffold was B-7, #1495, D5).
+	// 0 = off/unset (the default).
+	//
+	// A positive value schedules a LoRAPeriodicTriggerEvent only when a tick can
+	// actually fire: the LoRA subsystem must be active AND the effective
+	// LoRAConfig.CreationPolicy must implement sim.PeriodicCreationPolicy. Otherwise
+	// NewClusterSimulator builds no pipeline and a set interval is byte-identical to
+	// unset (INV-PS3', proven by TestPeriodicInterval_ByteIdenticalToUnset over both of
+	// those branches). The shipped gate-only policies (on-demand, pre-placement) are
+	// therefore unaffected by this field; keep-warm consumes it as its demand window.
+	// int64 (not *int64) because 0 is the natural "off" sentinel,
+	// matching the ModelAutoscalerIntervalUs idiom (R9). omitempty ⇒ absent when unset
+	// (INV-6). CLI validates it is >= 0 (R3).
+	LoRAPeriodicIntervalUs int64 `yaml:"lora_periodic_interval_us,omitempty"`
+
+	// RoutingDeterministicTiebreak replaces the routing policy's RANDOM equal-score
+	// tie-break with the positional (first-in-snapshot-order) one already implemented at
+	// routing.go's "Random tie-breaking when rng is non-nil; positional (first) when nil."
+	// branches in LeastLoaded.Route and WeightedScoring.Route, by passing a nil RNG to the
+	// routing policy. That branch is unreachable from the cluster path today because
+	// NewClusterSimulator always passes rng.ForSubsystem(SubsystemRouter).
+	//
+	// EXPERIMENT CONTROL, not a fidelity fix (backlog entry #3). Production llm-d
+	// randomises equal-score ties deliberately — MaxScorePicker shuffles before selecting
+	// (lora-control docs/target-system.md §1.4) — so BLIS's default (knob off) is FAITHFUL
+	// to that behaviour, and turning this on is a deliberate departure adopted to isolate a
+	// treatment in a paired comparison. Any run that sets it must say so when reporting.
+	//
+	// Why it matters: the tie-break draw sequence depends on which instances hold which
+	// adapters, which is exactly what an eviction or creation policy changes, so two arms
+	// of a paired comparison consume the routing RNG differently and diverge in routing
+	// decisions that are not the treatment. Scoped to the routing partition only — no
+	// other subsystem's RNG changes when this is set.
+	//
+	// Default false; omitempty ⇒ an absent field is byte-identical to pre-Spec-3 (INV-6).
+	RoutingDeterministicTiebreak bool `yaml:"routing_deterministic_tiebreak,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
