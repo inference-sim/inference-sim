@@ -52,7 +52,9 @@ package kernelmodel
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
+	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
@@ -113,8 +115,8 @@ type identity struct {
 	expertsPerTok int
 
 	// The pool's extent in the cluster, which places its instances. A deployment's pools fill
-	// the cluster's nodes exactly and in order (blis-schemas' placement contract), so pool i
-	// occupies the nodes after pools 0..i-1.
+	// the cluster's nodes exactly (blis-schemas' placement contract); BLIS places them in
+	// declaration order, so pool i occupies the nodes after pools 0..i-1.
 	role        deployment.Role
 	firstNode   int
 	poolNodes   int
@@ -264,8 +266,17 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 // PDTransferTicks prices moving tokens tokens of one request's KV between two placements, as
 // the kernel prices it, rounded UP to a whole tick: a transfer is not complete until its last
 // byte lands, and a zero-tick transfer would let decode start in the same instant.
+//
+// It panics when the kernel cannot price the handoff -- it reports an unbounded duration when
+// the link it would cross has no bandwidth (a fabric or chip stating none) -- since charging
+// any finite time for it would invent a number the kernel refused to give.
 func (m *Model) PDTransferTicks(tokens int64, from, to kernel.Placement) int64 {
 	d := m.k.PDTransferTime(int(tokens), from, to)
+	if d < 0 || d >= time.Duration(math.MaxInt64/2) {
+		panic(fmt.Sprintf("kernelmodel: the kernel cannot price a %d-token KV handoff from %+v to %+v "+
+			"(it reports %v): the link between them states no bandwidth -- check the scenario's "+
+			"cluster.fabric and the chip's IntraNodeBwGBps", tokens, from, to, d))
+	}
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
@@ -345,8 +356,9 @@ func specTokensOf(k kernel.Kernel) int {
 //
 // The mapping, and why each field is what it is:
 //
-//	Scheduled    <- NumNewTokens. Tokens this step, set by FormBatch. Under speculation
-//	                it is 1+accepted, which is why a value of 1 does not imply a decode.
+//	Scheduled    <- NumNewTokens. Tokens this step, set by FormBatch -- the ADVANCE.
+//	                Under speculation batchOf replaces it, for a decode, with the verify
+//	                width 1 + num_spec_tokens, which is what the forward pass runs.
 //	Computed     <- ProgressIndex. Tokens already computed. BLIS advances it after the
 //	                step, so at batch formation it is the pre-step value the kernel wants.
 //	PromptLen    <- InputLen(). Computed against PromptLen is what separates a
@@ -503,4 +515,17 @@ type Deployment struct {
 	DeviceMemoryGiB float64
 	BlockSize       int64
 	GPUMemUtil      float64
+}
+
+// Roles lists the roles of a scenario's pools, in declaration order, without building a kernel.
+func Roles(scenario string, r Repos) ([]deployment.Role, error) {
+	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	if err != nil {
+		return nil, err
+	}
+	roles := make([]deployment.Role, len(dep.Pools))
+	for i, p := range dep.Pools {
+		roles[i] = p.Role
+	}
+	return roles, nil
 }

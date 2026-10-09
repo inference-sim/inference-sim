@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/spf13/cobra"
+	"pgregory.net/rapid"
 )
 
 // Behavioral contract for `--latency-model blis-latency-kernel` on `blis run` and
@@ -231,7 +233,14 @@ func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 			}
 			adoptKernelDeployment(cmd)
 
-			st, err := kernelOpened.Settings()
+			// The oracle is the scenario opened independently, not the model adoption kept:
+			// were adoption to open the wrong pool, the two would disagree.
+			independent, err := kernelmodel.Open(scenario,
+				kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+			if err != nil {
+				t.Fatal(err)
+			}
+			st, err := independent.Settings()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -301,8 +310,8 @@ func runKernelCLI(t *testing.T, args ...string) (stdout, stderr string, err erro
 // (INV-13 is stated for identical flags including --horizon, since replay otherwise derives
 // its horizon from the trace): the
 // replay prices with the same kernel and sizes itself from the same Settings, so its stdout
-// is byte-identical. Replay could not run the kernel at all before this; it is deprecated in
-// favour of `blis run` (#1901), and this pins the parity that removal will be checked against.
+// is byte-identical. Replay could not run the kernel at all before this; this pins run/replay
+// parity (INV-13).
 func TestReplayCmd_KernelBackend_ReproducesTheRun(t *testing.T) {
 	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
 	prefix := filepath.Join(t.TempDir(), "trace")
@@ -414,45 +423,29 @@ func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 	}
 }
 
-// The handoff is priced by the prefill pool's kernel between the two instances' placements in
-// their pools, and moving more KV never costs less.
-func TestKernelPools_TheHandoffIsTheKernelsPrice(t *testing.T) {
-	_, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
-		prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances}
-	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
-		kernelOpened, _ = saved[3].(*kernelmodel.Model)
-		prefillInstances, decodeInstances = saved[4].(int), saved[5].(int)
-		prefillDecodeInstances, encodeInstances = saved[6].(int), saved[7].(int)
-	}()
-	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
-	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
-	m, err := kernelmodel.Open(kernelScenario, repos)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kernelOpened = m
-	prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances = 3, 1, 0, 0
-
-	p := openKernelPools(catalog)
-	price := p.transferTime()
-	var prev int64
-	for _, tokens := range []int64{64, 1024, 8192, 65536} {
-		for from := 0; from < 3; from++ {
-			got := price(tokens, cluster.InstanceID(fmt.Sprintf("instance_%d", from)), "instance_3")
-			want := p.prefill.PDTransferTicks(tokens, p.prefill.PlacementOf(from), p.decode.PlacementOf(0))
-			if got != want {
-				t.Errorf("%d tokens from prefill rank %d: priced %d, the prefill kernel says %d", tokens, from, got, want)
+// An instance's rank in its pool is a bijection onto each pool's ranks: under the cluster's own
+// numbering, the prefill instances are prefill ranks 0..P-1 and the decode instances decode
+// ranks 0..D-1, each once.
+func TestRankInPool_IsABijectionOntoEachPoolsRanks(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		p := rapid.IntRange(1, 64).Draw(rt, "prefill")
+		d := rapid.IntRange(1, 64).Draw(rt, "decode")
+		seen := map[cluster.PoolRole]map[int]bool{cluster.PoolRolePrefill: {}, cluster.PoolRoleDecode: {}}
+		for id, role := range cluster.BuildPoolMembershipFromIndices(p+d, p, d, 0, 0) {
+			r := rankInPool(cluster.InstanceID(id), p)
+			if seen[role][r] {
+				rt.Fatalf("%s: rank %d of the %v pool assigned twice", id, r, role)
 			}
-			if from == 0 {
-				if got < prev {
-					t.Errorf("%d tokens priced %d, below a smaller transfer's %d", tokens, got, prev)
+			seen[role][r] = true
+		}
+		for role, want := range map[cluster.PoolRole]int{cluster.PoolRolePrefill: p, cluster.PoolRoleDecode: d} {
+			for r := 0; r < want; r++ {
+				if !seen[role][r] {
+					rt.Fatalf("no instance is rank %d of the %v pool (%d ranks)", r, role, want)
 				}
-				prev = got
 			}
 		}
-	}
+	})
 }
 
 // writeKernelOffloadConfig writes a --kv-offload-config whose one secondary tier is the named
@@ -569,6 +562,50 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 			prev = got
 		}
 	}
+	// Laws over the whole domain, both directions: more bytes or a deeper queue never makes a
+	// transfer cheaper.
+	rapid.Check(t, func(rt *rapid.T) {
+		write := rapid.Bool().Draw(rt, "write")
+		a := rapid.Int64Range(0, 1<<32).Draw(rt, "bytes")
+		b := rapid.Int64Range(a, 1<<32).Draw(rt, "more")
+		q := rapid.IntRange(1, 64).Draw(rt, "q")
+		r := rapid.IntRange(q, 64).Draw(rt, "deeper")
+		if price(write, b, q) < price(write, a, q) {
+			rt.Fatalf("write=%t: %d bytes cheaper than %d at depth %d", write, b, a, q)
+		}
+		if price(write, a, r) < price(write, a, q) {
+			rt.Fatalf("write=%t: %d bytes cheaper at depth %d than %d", write, a, r, q)
+		}
+	})
+}
+
+// A LoRA adapter reservation shrinks each P/D pool's KV budget, as it does a colocated one's:
+// both pools' overrides hold strictly fewer blocks with the reservation than without.
+func TestPoolOverrides_TheLoRAReservationShrinksBothPools(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+		prefillInstances, decodeInstances, loraReservedBytesForKV}
+	defer func() {
+		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelOpened, _ = saved[3].(*kernelmodel.Model)
+		prefillInstances, decodeInstances, loraReservedBytesForKV = saved[4].(int), saved[5].(int), saved[6].(int64)
+	}()
+	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
+	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernelOpened, prefillInstances, decodeInstances = m, 3, 1
+	pools := openKernelPools(catalog)
+
+	loraReservedBytesForKV = 0
+	p0, d0 := pools.overrides()
+	loraReservedBytesForKV = 4 << 30
+	p1, d1 := pools.overrides()
+	if *p1.TotalKVBlocks >= *p0.TotalKVBlocks || *d1.TotalKVBlocks >= *d0.TotalKVBlocks {
+		t.Errorf("a 4 GiB reservation left prefill %d -> %d and decode %d -> %d blocks; both must shrink",
+			*p0.TotalKVBlocks, *p1.TotalKVBlocks, *d0.TotalKVBlocks, *d1.TotalKVBlocks)
+	}
 }
 
 // A LoRA adapter reservation re-sizes a kernel run's KV pool to the kernel's budget with the
@@ -600,5 +637,142 @@ func TestApplyKernelLoRAReservation_ShrinksThePoolByTheKernelsAnswer(t *testing.
 	if totalKVBlocks != want.KVBlocks || totalKVBlocks >= plain.KVBlocks {
 		t.Errorf("an 8 GiB reservation sized the pool at %d blocks; the kernel says %d (plain %d)",
 			totalKVBlocks, want.KVBlocks, plain.KVBlocks)
+	}
+}
+
+// e2eMean reads the cluster's mean end-to-end latency from a run's stdout.
+func e2eMean(t *testing.T, stdout string) float64 {
+	t.Helper()
+	i := strings.Index(stdout, `"instance_id": "cluster"`)
+	if i < 0 {
+		i = 0
+	}
+	const key = `"e2e_mean_ms": `
+	j := strings.Index(stdout[i:], key)
+	if j < 0 {
+		t.Fatalf("no e2e_mean_ms in:\n%s", stdout)
+	}
+	rest := stdout[i+j+len(key):]
+	v, err := strconv.ParseFloat(strings.TrimRight(rest[:strings.IndexAny(rest, ",\n")], " "), 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// Speculation comes from the scenario: a scenario that drafts tokens requires the acceptance
+// rate (a property of the workload, not the deployment) and is refused naming the scenario
+// without it; with it, accepting more of each draft never makes requests slower -- every step
+// pays the same verify width and advances further.
+func TestRunCmd_KernelBackend_SpeculationFromTheScenario(t *testing.T) {
+	base := []string{"run", "--scenarios", pdScenarios, "--scenario", "glm-5-h200-tp8-mtp3.yaml",
+		"--num-requests", "24", "--rate", "6", "--seed", "2"}
+	if _, stderr, err := runKernelCLI(t, base...); err == nil || !strings.Contains(stderr, "drafts 3 tokens") {
+		t.Fatalf("a drafting scenario without an acceptance rate was not refused naming it: %v\n%s", err, stderr)
+	}
+	var prev float64
+	for i, acc := range []string{"0.0", "0.4", "0.8", "1.0"} {
+		out, stderr, err := runKernelCLI(t, append(base, "--speculative-acceptance-rate", acc)...)
+		if err != nil {
+			t.Fatalf("acceptance %s: %v\n%s", acc, err, stderr)
+		}
+		e2e := e2eMean(t, out)
+		if i > 0 && e2e > prev {
+			t.Errorf("raising acceptance to %s lengthened mean E2E from %.3f to %.3f ms", acc, prev, e2e)
+		}
+		prev = e2e
+	}
+}
+
+// writeScenarioVariant writes the committed 3P1D fixture, edited by each old->new pair, into a
+// fresh scenario directory, so each refusal below is driven by one stated difference.
+func writeScenarioVariant(t *testing.T, edits ...string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(pdScenarios, "glm-5-h200-3p1d-ib.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for i := 0; i+1 < len(edits); i += 2 {
+		if !strings.Contains(body, edits[i]) {
+			t.Fatalf("fixture has no %q to edit", edits[i])
+		}
+		body = strings.Replace(body, edits[i], edits[i+1], 1)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// What a disaggregated kernel run refuses, each named, rather than simulating an engine the
+// scenario did not describe; and what it accepts at the boundary.
+func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
+	pd := func(dir string, extra ...string) []string {
+		return append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--pd-decider", "always",
+			"--num-requests", "6", "--rate", "3"}, extra...)
+	}
+	topology := []string{"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}
+	plain := writeScenarioVariant(t)
+	for _, tt := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"a disaggregated scenario run without a P/D topology", "needs a P/D topology",
+			pd(plain)},
+		{"a pool stating no max_model_len", "states no engine.max_model_len",
+			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n  - role: decode",
+				"      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n  - role: decode"), topology...)},
+		{"pools drafting differently", "one speculative configuration applies to the run",
+			pd(writeScenarioVariant(t, "      gpu_memory_utilization: 0.9\n\npd_transfer",
+				"      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 2\n\npd_transfer"), topology...)},
+		{"pools with no fabric between them", "cluster.fabric",
+			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
+		{"a per-role MoE comm flag", "--decode-moe-comm-backend is not accepted",
+			pd(plain, append(topology, "--decode-moe-comm-backend", "naive")...)},
+		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
+			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
+		{"KV offload with a P/D topology", "KV offload is not supported with a P/D topology",
+			pd(plain, append(topology, "--kv-cpu-blocks", "100")...)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, stderr, err := runKernelCLI(t, tt.args...)
+			if err == nil || !strings.Contains(stderr, tt.want) {
+				t.Errorf("want a refusal naming %q, got err=%v\n%s", tt.want, err, lastLines(stderr, 3))
+			}
+		})
+	}
+	// The pools hold exactly 3 prefill and 1 decode rank: that topology runs.
+	if out, stderr, err := runKernelCLI(t, pd(plain, topology...)...); err != nil ||
+		!strings.Contains(out, `"completed_requests": 6`) {
+		t.Errorf("a topology exactly filling the pools was not served: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	return strings.Join(lines[max(0, len(lines)-n):], "\n")
+}
+
+// A disaggregated run's exported trace, replayed on the same scenario, reproduces the run
+// (INV-13): replay opens the same pools, prices the same handoffs, and places the same ranks.
+func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--pd-decider", "always",
+		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "9",
+		"--horizon", "600000000"}
+	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "24", "--rate", "6",
+		"--trace-output", prefix}, common...)...)
+	if err != nil || !strings.Contains(runOut, `"completed_requests": 24`) {
+		t.Fatalf("run: %v\n%s\n%s", err, runOut, lastLines(stderr, 3))
+	}
+	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
+		"--trace-data", prefix + ".csv"}, common...)...)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if repOut != runOut {
+		t.Errorf("the disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }

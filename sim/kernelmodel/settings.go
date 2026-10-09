@@ -12,7 +12,8 @@ import "fmt"
 // instance multiplies the caps by DataParallel and takes AggregateKVBlocks.
 type Settings struct {
 	// KVBlocks is one rank's usable KV blocks; AggregateKVBlocks is the budget of all ranks
-	// together, as KVBudget.TotalBlocks reports it.
+	// together for an MoE model, and equal to KVBlocks for a dense one, as KVBudget.TotalBlocks
+	// reports it (see KVBudget.DPScaled).
 	KVBlocks          int64
 	AggregateKVBlocks int64
 	// KVBytesPerBlock is the kernel's per-sequence KV cost of one block, already

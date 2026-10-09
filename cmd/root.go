@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -916,20 +918,10 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		{"max-model-len", "the pool's engine.max_model_len"},
 		{"no-enable-prefix-caching", "the pool's engine.enable_prefix_caching"},
 		{"gpu-memory-utilization", "the pool's engine.gpu_memory_utilization"},
-		{"kv-cache-dtype", "the pool's engine.kv_cache_dtype"},
+		{"kv-cache-dtype", "the pool's engine.cache_dtype"},
 		{"num-speculative-tokens", "the pool's engine.speculative.num_spec_tokens"},
 		{"speculative-method", "the pool's engine.speculative.method"},
 		{"moe-comm-backend", "the pool's engine.all2all_backend"},
-		// Per-role engines: a disaggregated scenario states a prefill and a decode pool,
-		// each with its own layout and engine, priced by its own kernel.
-		{"prefill-tp", "the prefill pool's parallel.tp"},
-		{"decode-tp", "the decode pool's parallel.tp"},
-		{"prefill-hardware", "scenario.cluster.hardware"},
-		{"decode-hardware", "scenario.cluster.hardware"},
-		{"prefill-latency-model", "the prefill pool's kernel"},
-		{"decode-latency-model", "the decode pool's kernel"},
-		{"prefill-max-model-len", "the prefill pool's engine.max_model_len"},
-		{"decode-max-model-len", "the decode pool's engine.max_model_len"},
 		// The P/D handoff is priced by the kernel from the scenario's fabric and the KV
 		// geometry; it has no contention model to scale.
 		{"pd-transfer-bandwidth", "scenario.cluster.fabric (the kernel's PDTransferTime)"},
@@ -943,6 +935,28 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 				"is not accepted: %s states it as %s. Edit the scenario rather than passing both.",
 				sim.LatencyBackendKernel, dup.flag, kernelScenario, dup.where)
 		}
+	}
+	// Per-role engines: a disaggregated scenario states a prefill and a decode pool, each with
+	// its own layout and engine, priced by its own kernel. Every per-pool flag is refused,
+	// from the one list both commands read, so a new per-pool flag cannot slip past.
+	for _, f := range perPoolHardwareFlags {
+		if cmd.Flags().Changed(f) {
+			logrus.Fatalf("--latency-model %s reads each pool's engine from the scenario, so --%s is "+
+				"not accepted: %s states it in its prefill and decode pools. Edit the scenario rather "+
+				"than passing both.", sim.LatencyBackendKernel, f, kernelScenario)
+		}
+	}
+	// The scenario's roles and the CLI topology describe one deployment. A disaggregated
+	// scenario run without a P/D topology would serve every request on its first pool's
+	// engine, as though colocated; the opposite mismatch is refused when the pools open.
+	roles, err := kernelmodel.Roles(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
+	if err != nil {
+		logrus.Fatalf("--latency-model %s: scenario %q: %v", sim.LatencyBackendKernel, kernelScenario, err)
+	}
+	if slices.Contains(roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
+		logrus.Fatalf("--latency-model %s: scenario %q is disaggregated (it states prefill and decode "+
+			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
+			sim.LatencyBackendKernel, kernelScenario)
 	}
 	catalogRoot, err := resolveCatalogRoot()
 	if err != nil {
@@ -985,19 +999,10 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	maxNumSeqs = int64(settings.MaxNumSeqs)
 	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
 	maxModelLen = int64(settings.MaxModelLen)
+	requireWindowFits("first pool", settings)
 	noEnablePrefixCaching = settings.PrefixCachingDisabled
 	numSpeculativeTokens = settings.SpeculativeTokens
 	speculativeMethod = settings.SpeculativeMethod
-	// vLLM refuses to start an engine whose window one request could not fit in, rather
-	// than truncating it; a scheduler that admitted such a request would simulate an engine
-	// that does not exist.
-	if maxModelLen > 0 && maxModelLen > totalKVBlocks*blockSizeTokens {
-		logrus.Fatalf("--latency-model %s: scenario %q states max_model_len %d, but the kernel's KV "+
-			"budget for one rank holds %d tokens (%d blocks of %d); vLLM refuses to start such an "+
-			"engine. Lower max_model_len in the scenario",
-			sim.LatencyBackendKernel, kernelScenario, maxModelLen, totalKVBlocks*blockSizeTokens,
-			totalKVBlocks, blockSizeTokens)
-	}
 	logrus.Infof("--latency-model %s: deployment from scenario %s -- model %s, hardware %s, "+
 		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
 		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d, prefix caching %t, "+
@@ -2098,8 +2103,12 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 	// explicitly when k>0 (α=0 stays legal, but must be a deliberate choice). Mirrors
 	// the codebase's Changed()-gated required-flag idiom.
 	if numSpeculativeTokens > 0 && !cmd.Flags().Changed("speculative-acceptance-rate") {
-		logrus.Fatalf("--speculative-acceptance-rate is required when --num-speculative-tokens > 0 " +
-			"(set it explicitly, e.g. --speculative-acceptance-rate 0.7; use 0 only to deliberately model 0%% acceptance)")
+		source := "--num-speculative-tokens > 0"
+		if kernelOpened != nil {
+			source = fmt.Sprintf("scenario %q drafts %d tokens (engine.speculative)", kernelScenario, numSpeculativeTokens)
+		}
+		logrus.Fatalf("--speculative-acceptance-rate is required when %s (set it explicitly, e.g. "+
+			"--speculative-acceptance-rate 0.7; use 0 only to deliberately model 0%% acceptance)", source)
 	}
 	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, speculativeAcceptance, speculativeMethod)
 	if err != nil {

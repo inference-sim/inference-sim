@@ -81,7 +81,7 @@ type TierConfig struct {
 	WriteBytesPerTick float64
 
 	// ServiceTime, when set, is the whole service time of one transfer at in-service depth
-	// q, replacing the base/bandwidth/ramp physics above (which are then unread). It is how
+	// q, replacing the base/bandwidth/ramp physics above for pricing. It is how
 	// a latency backend that prices tier transfers itself (blis-latency-kernel's TierTime)
 	// supplies them; the station still owns the servers, the queues and when each transfer
 	// starts and finishes.
@@ -263,7 +263,12 @@ func (c TierConfig) serviceTicks(dir Direction, bytes int64, q int) int64 {
 		if bytes < 0 {
 			panic(fmt.Sprintf("kvtransfer: negative bytes %d", bytes))
 		}
-		return max(1, c.ServiceTime(dir, bytes, max(1, q)))
+		t := c.ServiceTime(dir, bytes, max(1, q))
+		if t < 1 {
+			panic(fmt.Sprintf("kvtransfer: injected service time for %d bytes at depth %d is %d ticks; "+
+				"a transfer takes at least one", bytes, q, t))
+		}
+		return t
 	}
 	var base int64
 	var bw float64

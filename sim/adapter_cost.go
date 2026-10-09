@@ -1,6 +1,9 @@
 package sim
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // AdapterCost is the read-only query bridge over the LoRA adapter cost model. It
 // is owned by sim/ so the cold-load pre-admission gate can charge load latency
@@ -60,7 +63,7 @@ func BuildAdapterCost(cfg SimConfig) (AdapterCost, error) {
 // WithAdapterOverhead wraps a latency model so every step it prices is multiplied by the
 // batch's LoRA compute-overhead factor. It is how the per-step adapter cost applies to a
 // latency model built outside the simulator -- blis-latency-kernel, whose pricing knows no
-// adapters -- exactly as the coefficient backends apply it internally. A nil accessor returns
+// adapters -- as the coefficient backends apply it internally, with the same guards. A nil accessor returns
 // the model unchanged, so a run without adapters is byte-identical (INV-6).
 func WithAdapterOverhead(m LatencyModel, ac AdapterCost) LatencyModel {
 	if ac == nil {
@@ -74,13 +77,17 @@ type adapterOverheadModel struct {
 	ac AdapterCost
 }
 
-// StepTime is the wrapped model's price times the batch's overhead factor. A factor that is
-// not finite or not above 1 leaves the price unchanged: the AdapterCost contract guarantees
-// one >= 1, and a NaN reaching the clock would stall it (INV-3).
+// StepTime is the wrapped model's price times the batch's overhead factor. A factor of exactly
+// 1 (a batch with no adapters) leaves the price untouched. The AdapterCost contract is a
+// finite factor >= 1, and an accessor breaking it is a bug: it panics rather than being read
+// as "no overhead", which would hide it (R1), or reaching the clock as a NaN (INV-3).
 func (m adapterOverheadModel) StepTime(batch []*Request) int64 {
 	base := m.LatencyModel.StepTime(batch)
 	factor := m.ac.StepOverheadFactor(batch)
-	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor <= 1.0 {
+	if math.IsNaN(factor) || math.IsInf(factor, 0) || factor < 1.0 {
+		panic(fmt.Sprintf("AdapterCost.StepOverheadFactor = %v; the contract is a finite factor >= 1", factor))
+	}
+	if factor == 1.0 {
 		return base
 	}
 	scaled := float64(base) * factor

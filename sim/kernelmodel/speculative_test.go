@@ -27,40 +27,49 @@ func openSpeculative(t *testing.T, scenario string, k int) *Model {
 	return newModel(kn, identityOf(in))
 }
 
-// Under speculation a decode costs its verify width -- 1 + the draft length -- whatever it
-// later advanced by: the engine runs every draft position, and the blis-schemas contract
-// states Scheduled that way. BLIS's NumNewTokens is the advance (1 + accepted), so passing
-// it through would price an accepted-zero step as a plain decode.
+// Under speculation a decode costs its verify width -- 1 + the draft length -- whatever it later
+// advanced by: the engine runs every draft position (the blis-schemas contract states
+// Scheduled that way), while BLIS's NumNewTokens is the advance (1 + accepted).
 //
-// Two laws: the adapter's price for a decode batch equals the kernel's own price at
-// Scheduled = 1 + K regardless of the advance, and a prefill chunk is untouched.
+// Relations, none of which reads the price off the code under test:
+//
+//   - the price of a decode does not depend on how many drafts were accepted;
+//   - a speculative decode never costs less than a plain one, and a longer draft never less
+//     than a shorter one;
+//   - a request that has just finished its prompt (ProgressIndex == InputLen) is a decode;
+//   - a prefill chunk costs the same with and without a draft configuration.
 func TestASpeculativeDecodeIsPricedAtItsVerifyWidth(t *testing.T) {
 	const scenario = "glm-5-h200-fp8-sglang-tp8.yaml"
-	for _, k := range []int{1, 3} {
+	decodeAt := func(progress int64, advance int) []*sim.Request {
+		return []*sim.Request{{InputTokens: make([]sim.TokenID, 2048), ProgressIndex: progress, NumNewTokens: advance}}
+	}
+	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 2048), NumNewTokens: 512}}
+	plain := openSpeculative(t, scenario, 0)
+	prev := plain.StepTime(decodeAt(2100, 1))
+	for _, k := range []int{1, 2, 3} {
 		m := openSpeculative(t, scenario, k)
-		for _, advance := range []int{1, k + 1} {
-			decode := &sim.Request{InputTokens: make([]sim.TokenID, 2048), ProgressIndex: 2100,
-				NumNewTokens: advance}
-			got := m.StepTime([]*sim.Request{decode})
-			b := m.batchOf([]*sim.Request{decode})
-			want := max(1, m.Kernel().StepTime(b).NoOverlap.Microseconds())
-			if b.Reqs[0].Scheduled != 1+k {
-				t.Errorf("k=%d advance=%d: decode scheduled %d, want verify width %d", k, advance,
-					b.Reqs[0].Scheduled, 1+k)
-			}
-			if got != want {
-				t.Errorf("k=%d advance=%d: adapter priced %d, kernel at the verify width %d", k, advance, got, want)
+		price := m.StepTime(decodeAt(2100, 1))
+		for advance := 2; advance <= k+1; advance++ {
+			if got := m.StepTime(decodeAt(2100, advance)); got != price {
+				t.Errorf("k=%d: a decode advancing %d priced %d, advancing 1 priced %d; acceptance must not move the price",
+					k, advance, got, price)
 			}
 		}
-		prefill := &sim.Request{InputTokens: make([]sim.TokenID, 2048), NumNewTokens: 512}
-		if s := m.batchOf([]*sim.Request{prefill}).Reqs[0].Scheduled; s != 512 {
-			t.Errorf("k=%d: a prefill chunk scheduled %d, want its own 512", k, s)
+		if price < prev {
+			t.Errorf("k=%d: a decode priced %d, below the shorter draft's %d", k, price, prev)
+		}
+		prev = price
+		// The first decode step after the prompt is a decode too.
+		if atBoundary := m.StepTime(decodeAt(2048, 1)); atBoundary < plain.StepTime(decodeAt(2048, 1)) {
+			t.Errorf("k=%d: the first decode after the prompt priced %d, below a plain decode's %d", k,
+				atBoundary, plain.StepTime(decodeAt(2048, 1)))
+		}
+		if got, want := m.StepTime(prefill), plain.StepTime(prefill); got != want {
+			t.Errorf("k=%d: a prefill chunk priced %d with a draft configuration, %d without", k, got, want)
 		}
 	}
-	// Without a draft the decode is priced as one token, as before.
-	plain := openSpeculative(t, scenario, 0)
-	decode := &sim.Request{InputTokens: make([]sim.TokenID, 2048), ProgressIndex: 2100, NumNewTokens: 1}
-	if s := plain.batchOf([]*sim.Request{decode}).Reqs[0].Scheduled; s != 1 {
-		t.Errorf("no draft: decode scheduled %d, want 1", s)
+	if last := openSpeculative(t, scenario, 3).StepTime(decodeAt(2100, 1)); last <= plain.StepTime(decodeAt(2100, 1)) {
+		t.Errorf("a 3-token draft's decode priced %d, no more than a plain decode's %d; the verify width did not reach the kernel",
+			last, plain.StepTime(decodeAt(2100, 1)))
 	}
 }

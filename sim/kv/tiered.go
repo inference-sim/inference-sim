@@ -173,19 +173,6 @@ var (
 // does not fit int64.
 // The threshold parameter is deprecated in the vLLM v1 mirror model and is ignored.
 // A deprecation warning is logged if threshold != 0.
-// NewTieredKVCacheWithBlockTicks is NewTieredKVCache with the per-block reload charge given
-// whole, by a latency backend that prices the transfer itself, rather than composed here from
-// a bandwidth and a base latency.
-func NewTieredKVCacheWithBlockTicks(gpu *KVCacheState, cpuBlocks int64, threshold float64, ticksPerBlock int64) *TieredKVCache {
-	if ticksPerBlock < 1 {
-		panic(fmt.Sprintf("NewTieredKVCacheWithBlockTicks: ticksPerBlock must be >= 1, got %d", ticksPerBlock))
-	}
-	// One token per tick per block-size makes the bandwidth term exactly one tick, so the
-	// base carries the rest; the constructor's validation then applies unchanged.
-	t := NewTieredKVCache(gpu, cpuBlocks, threshold, float64(gpu.BlockSize()), ticksPerBlock-1)
-	return t
-}
-
 func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth float64, baseLat int64) *TieredKVCache {
 	if gpu == nil {
 		panic("NewTieredKVCache: gpu must not be nil")
@@ -225,6 +212,18 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 		cpu:                     newCpuTier(cpuBlocks, gpu.BlockSizeTokens),
 		transferLatencyPerBlock: baseLat + transferTicks,
 	}
+}
+
+// NewTieredKVCacheWithBlockTicks is NewTieredKVCache with the per-block reload charge given
+// whole, by a latency backend that prices the transfer itself, rather than composed here from
+// a bandwidth and a base latency.
+func NewTieredKVCacheWithBlockTicks(gpu *KVCacheState, cpuBlocks int64, threshold float64, ticksPerBlock int64) *TieredKVCache {
+	if ticksPerBlock < 1 {
+		panic(fmt.Sprintf("NewTieredKVCacheWithBlockTicks: ticksPerBlock must be >= 1, got %d", ticksPerBlock))
+	}
+	// A bandwidth of BlockSize tokens per tick makes the bandwidth term exactly one tick, so
+	// the base carries the rest; NewTieredKVCache's validation then applies unchanged.
+	return NewTieredKVCache(gpu, cpuBlocks, threshold, float64(gpu.BlockSize()), ticksPerBlock-1)
 }
 
 // accumulateTransferLatency performs the shared, checked update for every legacy-tier

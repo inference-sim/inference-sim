@@ -19,8 +19,8 @@ func (m countingModel) OutputTokenProcessingTime() int64 { return 0 }
 func (m countingModel) PostDecodeFixedOverhead() int64   { return 0 }
 
 // An injected transfer price replaces the formula: every completed handoff takes exactly what
-// the pricer returned, for the blocks' token capacity, from the prefill instance the request
-// ran on to the decode instance it was handed to. The simulator owns when; the backend owns
+// the pricer returned, for the blocks' token capacity, priced from the prefill instance the
+// request ran on to the decode instance it was handed to. The simulator owns when; the backend owns
 // how long.
 func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -51,9 +51,20 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 		}
 		checked++
 	}
+	membership := BuildPoolMembershipFromIndices(4, 2, 2, 0, 0)
+	priced := map[call]bool{}
 	for _, c := range calls {
-		if c.tokens%cfg.BlockSizeTokens != 0 || c.from == c.to || c.from == "" || c.to == "" {
-			t.Errorf("priced %+v: tokens must be whole blocks between two distinct instances", c)
+		priced[c] = true
+		if c.tokens%cfg.BlockSizeTokens != 0 {
+			t.Errorf("priced %+v: tokens must be whole blocks", c)
+		}
+		if membership[string(c.from)] != PoolRolePrefill || membership[string(c.to)] != PoolRoleDecode {
+			t.Errorf("priced %+v: a handoff runs from a prefill instance to a decode instance", c)
+		}
+	}
+	for _, p := range cs.ParentRequests() {
+		if p.TransferCompleteTime > 0 && !priced[call{p.NumKVBlocks * cfg.BlockSizeTokens, p.PrefillInstanceID, p.DecodeInstanceID}] {
+			t.Errorf("%s's handoff %s -> %s was not priced between those instances", p.ID, p.PrefillInstanceID, p.DecodeInstanceID)
 		}
 	}
 	if checked == 0 {
@@ -61,14 +72,49 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 	}
 }
 
-// Each role is priced by its own pool's model: in a cluster whose every instance is prefill or
-// decode, the global model never prices a step, and both pool models do.
-func TestPoolOverrides_EachRoleIsPricedByItsOwnModel(t *testing.T) {
+// observingModel records what kind of work it was asked to price: whether any request in a
+// batch was a prefill (computed short of its prompt) or a decode, and the largest batch.
+type observingModel struct {
+	step                  int64
+	sawPrefill, sawDecode *bool
+	largestBatch          *int
+}
+
+func (m observingModel) StepTime(batch []*sim.Request) int64 {
+	for _, r := range batch {
+		if r.ProgressIndex < r.InputLen() {
+			*m.sawPrefill = true
+		} else {
+			*m.sawDecode = true
+		}
+	}
+	*m.largestBatch = max(*m.largestBatch, len(batch))
+	return m.step
+}
+func (m observingModel) QueueingTime(*sim.Request) int64  { return 1 }
+func (m observingModel) OutputTokenProcessingTime() int64 { return 0 }
+func (m observingModel) PostDecodeFixedOverhead() int64   { return 0 }
+
+func newObservingModel(step int64) (observingModel, *bool, *bool, *int) {
+	var p, d bool
+	var n int
+	return observingModel{step: step, sawPrefill: &p, sawDecode: &d, largestBatch: &n}, &p, &d, &n
+}
+
+// Each role runs its own pool's engine: the prefill pool's model only ever prices prefill
+// work and the decode pool's only decode work -- so wiring either to the other's model is
+// caught -- the global model prices nothing in a fully disaggregated cluster, and a pool's own
+// admission cap binds its instances (a decode pool capped at one sequence never batches two).
+func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	var global, prefill, decode int
+	var global int
 	cfg.LatencyModelOverride = countingModel{step: 50, calls: &global}
-	cfg.PrefillOverrides.LatencyModel = countingModel{step: 70, calls: &prefill}
-	cfg.DecodeOverrides.LatencyModel = countingModel{step: 30, calls: &decode}
+	prefill, pPrefill, pDecode, _ := newObservingModel(70)
+	decode, dPrefill, dDecode, dLargest := newObservingModel(30)
+	one := int64(1)
+	cfg.PrefillOverrides.LatencyModel = prefill
+	cfg.DecodeOverrides.LatencyModel = decode
+	cfg.DecodeOverrides.MaxNumSeqs = &one
 	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 10 }
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(newTestRequests(8)), nil)
 	if err := cs.Run(); err != nil {
@@ -77,8 +123,14 @@ func TestPoolOverrides_EachRoleIsPricedByItsOwnModel(t *testing.T) {
 	if global != 0 {
 		t.Errorf("the global model priced %d steps in a fully disaggregated cluster", global)
 	}
-	if prefill == 0 || decode == 0 {
-		t.Errorf("pool models priced prefill=%d decode=%d steps; both pools ran work", prefill, decode)
+	if !*pPrefill || *pDecode {
+		t.Errorf("prefill pool's model: saw prefill=%t decode=%t; want prefill work only", *pPrefill, *pDecode)
+	}
+	if !*dDecode || *dPrefill {
+		t.Errorf("decode pool's model: saw prefill=%t decode=%t; want decode work only", *dPrefill, *dDecode)
+	}
+	if *dLargest > 1 {
+		t.Errorf("a decode pool capped at max_num_seqs=1 batched %d requests", *dLargest)
 	}
 }
 

@@ -88,7 +88,7 @@ type DeploymentConfig struct {
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
 	// PDTransferTime prices moving one request's KV from a prefill instance to a decode
-	// instance, in ticks, for tokens tokens of prompt KV. When set it replaces the
+	// instance, in ticks, for the token capacity of the KV blocks being moved. When set it replaces the
 	// bandwidth/base-latency formula above: the latency backend owns the transfer price
 	// (blis-latency-kernel's PDTransferTime reads the fabric and the KV geometry), and the
 	// simulator owns only when it happens. Nil keeps the formula, which needs ModelConfig.

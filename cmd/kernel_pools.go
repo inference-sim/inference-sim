@@ -69,6 +69,22 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"pool at dp %d; one replica factor applies to both pools, so their dp must match",
 			latencyModelBackendKernel(), kernelScenario, ps.DataParallel, ds.DataParallel)
 	}
+	// The simulator's speculative config (draft length, acceptance) is one per run, while each
+	// pool's kernel prices its own draft width. Pools that disagree would advance requests by
+	// one draft length and charge for another.
+	if ps.SpeculativeTokens != ds.SpeculativeTokens || ps.SpeculativeMethod != ds.SpeculativeMethod {
+		logrus.Fatalf("--latency-model %s: scenario %q drafts %d %q tokens in the prefill pool and %d "+
+			"%q in the decode pool; one speculative configuration applies to the run, so the pools "+
+			"must agree", latencyModelBackendKernel(), kernelScenario, ps.SpeculativeTokens,
+			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
+	}
+	// A handoff the fabric cannot price is refused now rather than mid-run.
+	if d := p.prefill.Kernel().PDTransferTime(ps.BlockSize, p.prefill.PlacementOf(0),
+		p.decode.PlacementOf(0)); d < 0 || d >= time.Duration(math.MaxInt64/2) {
+		logrus.Fatalf("--latency-model %s: scenario %q: the kernel cannot price a KV handoff between "+
+			"its prefill and decode pools (it reports %v); the fabric between them states no "+
+			"bandwidth -- check cluster.fabric", latencyModelBackendKernel(), kernelScenario, d)
+	}
 	return p
 }
 
@@ -82,40 +98,59 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	if err != nil {
 		logrus.Fatalf("--latency-model %s: %s pool: %v", latencyModelBackendKernel(), m.Role(), err)
 	}
+	requireWindowFits(string(m.Role())+" pool", s)
 	d := m.Deployment()
 	tp := d.TP
 	blocks := s.KVBlocks
 	seqs, toks := int64(s.MaxNumSeqs), int64(s.MaxNumBatchedTokens)
 	noCache := s.PrefixCachingDisabled
-	o := cluster.PoolOverrides{
-		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks,
+	ml := int64(s.MaxModelLen)
+	return cluster.PoolOverrides{
+		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
 	}
-	if s.MaxModelLen > 0 {
-		ml := int64(s.MaxModelLen)
-		o.MaxModelLen = &ml
+}
+
+// requireWindowFits refuses an engine whose stated window one request could not fit in, as
+// vLLM does at startup, and an engine that states no window at all: unstated, vLLM derives it
+// from the model's max_position_embeddings, which no document the kernel reads carries.
+func requireWindowFits(what string, s kernelmodel.Settings) {
+	if s.MaxModelLen <= 0 {
+		logrus.Fatalf("--latency-model %s: scenario %q's %s states no engine.max_model_len; state the "+
+			"window the engine serves", sim.LatencyBackendKernel, kernelScenario, what)
 	}
-	return o
+	if capacity := s.KVBlocks * int64(s.BlockSize); int64(s.MaxModelLen) > capacity {
+		logrus.Fatalf("--latency-model %s: scenario %q's %s states max_model_len %d, but one rank's KV "+
+			"budget holds %d tokens (%d blocks of %d); vLLM refuses to start such an engine. Lower "+
+			"max_model_len in the scenario", sim.LatencyBackendKernel, kernelScenario, what,
+			s.MaxModelLen, capacity, s.KVBlocks, s.BlockSize)
+	}
 }
 
 // transferTime prices a handoff with the prefill pool's kernel, between the placements of the
-// two instances in their pools. Instances are numbered prefill first, then decode
-// (cluster.BuildPoolMembershipFromIndices), so an instance's rank in its pool is its offset
-// from the pool's first instance. It reads the instance counts after DP-as-placement, so call
-// it once they are final.
+// two instances in their pools. It reads the instance counts after DP-as-placement, so call it
+// once they are final.
 func (p *kernelPools) transferTime() func(int64, cluster.InstanceID, cluster.InstanceID) int64 {
 	firstDecode := prefillInstances
-	rankOf := func(id cluster.InstanceID) int {
-		n, err := strconv.Atoi(strings.TrimPrefix(string(id), "instance_"))
-		if err != nil {
-			panic(fmt.Sprintf("kernel P/D pricing: unexpected instance id %q", id))
-		}
-		return n
-	}
 	return func(tokens int64, from, to cluster.InstanceID) int64 {
 		return p.prefill.PDTransferTicks(tokens,
-			p.prefill.PlacementOf(rankOf(from)), p.decode.PlacementOf(rankOf(to)-firstDecode))
+			p.prefill.PlacementOf(rankInPool(from, firstDecode)),
+			p.decode.PlacementOf(rankInPool(to, firstDecode)))
 	}
+}
+
+// rankInPool is an instance's rank within its pool. Instances are numbered prefill first, then
+// decode (cluster.BuildPoolMembershipFromIndices), so a prefill instance's rank is its number
+// and a decode instance's is its offset from the first decode instance.
+func rankInPool(id cluster.InstanceID, firstDecode int) int {
+	n, err := strconv.Atoi(strings.TrimPrefix(string(id), "instance_"))
+	if err != nil || n < 0 {
+		panic(fmt.Sprintf("kernel P/D pricing: unexpected instance id %q", id))
+	}
+	if n >= firstDecode {
+		return n - firstDecode
+	}
+	return n
 }
 
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools: each
@@ -156,8 +191,10 @@ func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64
 	}
 	d := kernelOpened.Kernel().TierTime(tier, dir, bytes, inService)
 	if d >= time.Duration(math.MaxInt64/2) {
-		logrus.Fatalf("--latency-model %s: the kernel prices no storage tier %q; name a device class "+
-			"from the catalog's %s", sim.LatencyBackendKernel, tier, catalogStorageDevicesRelPath)
+		logrus.Fatalf("--latency-model %s: the kernel cannot price a %d-byte transfer %s storage tier %q: "+
+			"either the catalog's %s defines no such device, or it states no bandwidth in that "+
+			"direction", sim.LatencyBackendKernel, bytes, map[bool]string{true: "to", false: "from"}[toTier],
+			tier, catalogStorageDevicesRelPath)
 	}
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
@@ -165,12 +202,27 @@ func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer, on the kernel
 // backend: each secondary tier through TierTime for its catalog device class, at the depth the
 // transfer station is serving, and the legacy CPU tier as one whole per-block reload charge.
+// TierTime's contract is a GPU↔tier transfer, while the station's secondary-tier jobs run
+// CPU↔tier; the kernel's price is applied to them deliberately -- the device and the host
+// link it names are the ones those jobs cross -- rather than as an exact match.
 // The simulator keeps the servers, queues and timing; the kernel owns the price (blis-schemas
 // kernel.TierTime: the slower of the device and the host link binds). It returns the legacy
 // per-block charge, 0 off the kernel or with no legacy tier. Shared by run and replay.
 func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kernelOpened == nil {
 		return 0
+	}
+	if (cfg.IsEnabled() || kvCPUBlocks > 0) && (prefillInstances > 0 || decodeInstances > 0) {
+		// One KV-cache config serves every instance, so offload would be sized and priced
+		// from one pool's layout for both: per-pool offload is not expressible yet.
+		logrus.Fatalf("--latency-model %s: KV offload is not supported with a P/D topology: the offload "+
+			"tiers would be sized and priced from one pool's layout for both pools",
+			sim.LatencyBackendKernel)
+	}
+	perBlock := kernelOpened.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	if (cfg.IsEnabled() || kvCPUBlocks > 0) && perBlock <= 0 {
+		logrus.Fatalf("--latency-model %s: the kernel prices a %d-token block at %d bytes; offload "+
+			"needs a block to occupy memory", sim.LatencyBackendKernel, blockSizeTokens, perBlock)
 	}
 	if cfg.IsEnabled() {
 		for i := range cfg.Tiers {
@@ -180,7 +232,10 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 					"the kernel prices a tier by its catalog device, so every tier must name one",
 					sim.LatencyBackendKernel, i)
 			}
-			kernelTierTicks(class, false, 0, 1) // refuses an unknown device up front
+			// Price one real block each way up front, so an unknown device or one with no
+			// bandwidth in a direction is refused now rather than at its first transfer.
+			kernelTierTicks(class, true, perBlock, 1)
+			kernelTierTicks(class, false, perBlock, 1)
 			cfg.Tiers[i].ServiceTime = func(write bool, bytes int64, inService int) int64 {
 				return kernelTierTicks(class, write, bytes, inService)
 			}
@@ -189,7 +244,6 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kvCPUBlocks <= 0 {
 		return 0
 	}
-	perBlock := kernelOpened.Kernel().SequenceVariableBytes(int(blockSizeTokens))
 	return kernelTierTicks(kernelCPUTier, false, perBlock, 1)
 }
 
@@ -223,5 +277,6 @@ func applyKernelLoRAReservation() {
 		logrus.Fatalf("--latency-model %s: scenario %q with a %d-byte LoRA adapter reservation: %v",
 			sim.LatencyBackendKernel, kernelScenario, loraReservedBytesForKV, err)
 	}
+	requireWindowFits("pool with the LoRA adapter reservation set aside", s)
 	totalKVBlocks = s.KVBlocks
 }

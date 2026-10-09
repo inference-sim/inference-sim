@@ -18,9 +18,28 @@ import (
 // identical across both runs, the total completed-request E2E must be STRICTLY
 // larger with overhead than without. This isolates the step-overhead effect from
 // the (unchanged) cold-load charge and proves the accessor reaches production.
+//
+// It holds for both ways a latency model reaches an instance: the coefficient backend the
+// simulator builds, and a model injected through LatencyModelOverride (how
+// blis-latency-kernel arrives, which knows nothing of adapters and gets the factor from
+// sim.WithAdapterOverhead).
 func TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E(t *testing.T) {
+	for _, injected := range []bool{false, true} {
+		name := "built-in backend"
+		if injected {
+			name = "injected model"
+		}
+		t.Run(name, func(t *testing.T) { adapterStepOverheadInflatesLatency(t, injected) })
+	}
+}
+
+func adapterStepOverheadInflatesLatency(t *testing.T, injected bool) {
 	sumE2E := func(k6 float64) float64 {
 		config := newTestDeploymentConfig(2)
+		if injected {
+			var calls int
+			config.LatencyModelOverride = countingModel{step: 500, calls: &calls}
+		}
 		config.RoutingPolicy = "round-robin"
 		capVal := 8
 		base, bw, fp := 1000.0, 2.0e6, 2.0e6
