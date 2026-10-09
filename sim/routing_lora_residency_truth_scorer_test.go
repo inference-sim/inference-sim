@@ -164,6 +164,36 @@ func TestLoRAResidencyTruth_PendingPairCounts(t *testing.T) {
 	assert.Equal(t, s["i0"], s["i1"], "the re-route moved r3, and its start settled it: %v", s)
 }
 
+// Review of PR #60 (round 2), finding 1: adapter IDs are arbitrary strings, so the
+// reserved-slot placeholder must not alias a real adapter. An adapter literally
+// named like the placeholder's base must behave exactly as one named "z": i0 and i1
+// differ only in that name, so they must score equally, and both (full, so b
+// evicts) below the idle i2. Aliased, i0 would see a free slot and tie i2.
+func TestLoRAResidencyTruth_ReservedSlotNeverAliasesAnAdapter(t *testing.T) {
+	const clash = "\x00reserved"
+	r := newTruthRig(t, 2, "i0", "i1", "i2", "i3")
+	r.start(r.route("d1", clash, "i3", 50), "i3", 60) // equal demand for both names
+	r.start(r.route("d2", "z", "i3", 50), "i3", 60)
+	r.setResidency("i0", []string{clash})
+	r.setResidency("i1", []string{"z"})
+	r.snaps[0].LoadingAdapter = "a"
+	r.snaps[1].LoadingAdapter = "a"
+	s := r.score("b", 100)
+	assert.Equal(t, s["i0"], s["i1"], "%v", s)
+	assert.Greater(t, s["i2"], s["i0"], "%v", s)
+
+	// The scored adapter itself may carry the name; the placeholder must still differ.
+	s = r.score(clash, 100)
+	assert.Greater(t, s["i0"], s["i1"], "clash is resident on i0 only: %v", s)
+}
+
+// reservedSlot extends its base name past every taken one.
+func TestReservedSlot_SkipsTakenNames(t *testing.T) {
+	taken := map[string]bool{"\x00reserved": true, "\x00reserved'": true}
+	assert.Equal(t, "\x00reserved''", reservedSlot(func(n string) bool { return taken[n] }))
+	assert.Equal(t, "\x00reserved", reservedSlot(func(string) bool { return false }))
+}
+
 func TestLoRAResidencyTruth_BaseModelNeutral(t *testing.T) {
 	r := newTruthRig(t, 1, "i0", "i1")
 	r.setResidency("i0", []string{"a"}, "a")

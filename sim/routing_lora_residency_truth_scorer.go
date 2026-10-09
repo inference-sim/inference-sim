@@ -25,9 +25,18 @@ import (
 // produced a first token count as pending, and demand comes from its own routing
 // decisions, at the routing clock. Everything else (cost model, weights,
 // normalization, base-model handling) is lorascore.Score, unchanged.
-// reservedSlot stands for the slot an in-progress load has reserved. The NUL byte
-// keeps it from colliding with an adapter ID; it is never demanded, so never priced.
-const reservedSlot = "\x00reserved"
+// reservedSlot names a placeholder for the slot an in-progress load has reserved
+// on one instance. Adapter IDs are arbitrary non-empty strings, so no fixed name is
+// safe: it extends a base name until it differs from every adapter that instance's
+// model can hold (its resident adapters and pending pairs) and from the adapter
+// being scored. It is replayed running, so it is never a victim and never priced.
+func reservedSlot(taken func(string) bool) string {
+	name := "\x00reserved"
+	for taken(name) {
+		name += "'"
+	}
+	return name
+}
 
 func newLoRAResidencyTruthScorer() scorerParts {
 	demand, err := lorascore.NewDemand(loraResidencyDemandHalfLife)
@@ -67,8 +76,16 @@ func newLoRAResidencyTruthScorer() scorerParts {
 			case adapter:
 				model.Routed(snap.ID, adapter)
 			default:
+				id := snap.ID
+				// Every name this instance's model holds, plus the scored adapter. An
+				// alias of a pending pair is not observable through Score today (Admit
+				// reads only the scored adapter's pending count), but it would corrupt
+				// the model's state, so it is excluded too.
+				slot := reservedSlot(func(name string) bool {
+					return name == adapter || snap.ResidentAdapters[name] || pendingPairs[routed{id, name}] > 0
+				})
 				replay = replay.Add(time.Microsecond)
-				model.Started(snap.ID, reservedSlot, replay)
+				model.Started(id, slot, replay)
 			}
 		}
 		for p := range pendingPairs {
