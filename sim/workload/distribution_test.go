@@ -692,7 +692,7 @@ func TestParseThinkTimeDist_Lognormal_INV10_SessionCausality(t *testing.T) {
 	}})
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "inv10-test", RoundIndex: 0,
-		State: sim.StateCompleted, ProgressIndex: 15,
+		State: sim.StateCompleted, ProgressIndex: 14, // 10 input + 5 emitted output ⇒ InputLen+N-1
 		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 	completionTick := int64(100_000)

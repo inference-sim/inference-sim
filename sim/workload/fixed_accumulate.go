@@ -34,11 +34,13 @@ import (
 //
 // This mirrors SessionManager.OnComplete's buffer mechanics but feeds it the RECORDED
 // output (rec.OutputTokens), whereas OnComplete appends the ACTUAL sim output
-// (ProgressIndex − InputLen, which a length cap can truncate). The two are the same
-// absent capping; feeding the recorded output is the correct choice here because the
-// encoder's law is written over the recorded output, so this is its exact inverse (no
-// INV-13 claim spans the two modes, and token CONTENT also differs from closed-loop on
-// compaction rounds due to RNG draw order — harmless).
+// (sim.Request.EmittedOutputLen — ProgressIndex − InputLen plus the prefill-charged
+// output token #1, which a length cap can truncate). The two are the same absent
+// capping; since #1893 that equality is exact, where previously the closed-loop growth
+// was one token short on EVERY round. Feeding the recorded output is the correct choice
+// here because the encoder's law is written over the recorded output, so this is its
+// exact inverse (no INV-13 claim spans the two modes, and token CONTENT also differs from
+// closed-loop on compaction rounds due to RNG draw order — harmless).
 //
 // # Contract with the encoder (INV-13 with the accumulate closed-loop path)
 //

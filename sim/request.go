@@ -44,8 +44,16 @@ type Request struct {
 	OutputTokens []TokenID // Pre-specified output tokens (already known for the simulation)
 	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
-	State         RequestState // queued, running, completed
-	ProgressIndex int64        // Total number of input tokens processed so far + number of output tokens generated so far
+	State RequestState // queued, running, completed
+	// ProgressIndex counts the input tokens processed so far, plus every output token a
+	// DECODE step has committed (one per step normally; the accepted-token count under
+	// speculative decoding / MTP). It is NOT the emitted-output count: BLIS charges output
+	// token #1 to prefill completion rather than to a decode step, so a request sitting at
+	// ProgressIndex == InputLen has already emitted one token, and one that emitted N
+	// tokens ends at InputLen + N − 1. Read EmittedOutputLen for "how many output tokens
+	// did this request produce" (R23) — ProgressIndex − InputLen alone is the decode-step
+	// count. Reset to 0 on preemption, since the request re-prefills from scratch.
+	ProgressIndex int64
 
 	TTFTSet          bool    // Tracks whether TTFT has been set
 	FirstTokenTime   int64   // Timestamp when first token was generated
@@ -173,6 +181,43 @@ func (req *Request) InputLen() int64 {
 // keeps it out of reach of any out-of-package control-plane code (INV-9).
 func (req *Request) completionProgressIndex() int64 {
 	return req.InputLen() + max(int64(len(req.OutputTokens)), 1) - 1
+}
+
+// EmittedOutputLen returns the number of output tokens this request ACTUALLY emitted.
+// It is the single source of truth (R23) for that count: every site that needs "how many
+// tokens did this round produce" must read it rather than re-derive one.
+//
+// ProgressIndex − InputLen counts decode-STEP increments, which is one FEWER than the
+// emitted token count whenever the request stopped short of its oracle budget: BLIS
+// charges output token #1 to prefill completion and every later token to a decode step,
+// so a request that emitted N tokens ends at ProgressIndex == InputLen + N − 1. Adding
+// that token back is the #1097 adjustment, and the two guards mark its boundaries:
+//
+//   - A PD 1-output decode sub-request lands at ProgressIndex == InputLen+1, one step
+//     past the InputLen threshold, so its decode-step count ALREADY equals its output
+//     length. The `< len(OutputTokens)` guard stops the prefill token being added twice.
+//   - A speculative-decoding / MTP step could in principle carry ProgressIndex past the
+//     completion boundary (#1528). The upper clamp keeps a request from ever reporting
+//     MORE output than it was assigned (INV-1 conservation). Since #1657 FormBatch caps
+//     each decode grant at completionProgressIndex, so this is defence-in-depth.
+//
+// The lower clamp covers upstream accounting drift: a ProgressIndex below InputLen is
+// unreachable in normal flow (ProgressIndex >= InputLen once prefill completes) but must
+// never yield a negative token count.
+//
+// Exported because the workload package's accumulate context-growth law and its
+// re-export delta law must agree with the count recorded at completion — they drifted by
+// exactly this one token before #1893, so every round of a multi-turn `accumulate`
+// session carried forward a context one token short of what the round emitted. Reading
+// an oracle-derived count here is not an INV-9 concern: the value is only meaningful
+// once the request has reached a terminal state, and no control-plane decision
+// (admission, routing, scheduling, priority) consults it.
+func (req *Request) EmittedOutputLen() int {
+	n := int(req.ProgressIndex) - int(req.InputLen())
+	if n < len(req.OutputTokens) {
+		n++ // output token #1, charged to prefill completion (#1097)
+	}
+	return min(max(n, 0), len(req.OutputTokens))
 }
 
 // FullInputTokens returns the full input-token sequence as a flat slice. The slice
