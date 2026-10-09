@@ -87,6 +87,15 @@ type DeploymentConfig struct {
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
+	// PDTransferTime prices moving one request's KV from a prefill instance to a decode
+	// instance, in ticks, for tokens tokens of prompt KV. When set it replaces the
+	// bandwidth/base-latency formula above: the latency backend owns the transfer price
+	// (blis-latency-kernel's PDTransferTime reads the fabric and the KV geometry), and the
+	// simulator owns only when it happens. Nil keeps the formula, which needs ModelConfig.
+	// Not combinable with PDTransferContention: a fair-share divisor applied to a price the
+	// simulator did not compose would scale the parts the link does not share.
+	PDTransferTime func(tokens int64, from, to InstanceID) int64
+
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing

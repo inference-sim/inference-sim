@@ -52,6 +52,7 @@ package kernelmodel
 
 import (
 	"fmt"
+	"path/filepath"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
@@ -110,10 +111,27 @@ type identity struct {
 	smCount       int
 	experts       int
 	expertsPerTok int
+
+	// The pool's extent in the cluster, which places its instances. A deployment's pools fill
+	// the cluster's nodes exactly and in order (blis-schemas' placement contract), so pool i
+	// occupies the nodes after pools 0..i-1.
+	role        deployment.Role
+	firstNode   int
+	poolNodes   int
+	gpusPerNode int
+	gpusPerRack int
+	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
+	rankGPUs int
 }
 
 func identityOf(in latencykernel.Inputs) identity {
 	experts, topK := expertCounts(in.Model)
+	pool := in.Deployment.Pools[in.PoolIndex]
+	first := 0
+	for _, p := range in.Deployment.Pools[:in.PoolIndex] {
+		first += p.Nodes
+	}
+	pl := pool.Parallel
 	return identity{
 		model:         in.Scenario.Model,
 		hardware:      in.Chip.Name,
@@ -121,6 +139,12 @@ func identityOf(in latencykernel.Inputs) identity {
 		smCount:       in.Chip.SMCount,
 		experts:       experts,
 		expertsPerTok: topK,
+		role:          pool.Role,
+		firstNode:     first,
+		poolNodes:     pool.Nodes,
+		gpusPerNode:   in.Scenario.Cluster.GPUsPerNode,
+		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
+		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 	}
 }
 
@@ -185,6 +209,64 @@ func newModel(k kernel.Kernel, id identity) *Model {
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
 	}
+}
+
+// OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
+// a disaggregated deployment -- refusing a scenario that states no such pool or more than one.
+func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
+	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	if err != nil {
+		return nil, err
+	}
+	index := -1
+	for i, p := range dep.Pools {
+		if p.Role == role {
+			if index >= 0 {
+				return nil, fmt.Errorf("%s states more than one %s pool; one engine layout per role is "+
+					"what a simulated pool runs", scenario, role)
+			}
+			index = i
+		}
+	}
+	if index < 0 {
+		return nil, fmt.Errorf("%s states no %s pool", scenario, role)
+	}
+	return OpenPool(scenario, r, index)
+}
+
+// Role is the role of the pool this model prices.
+func (m *Model) Role() deployment.Role { return m.id.role }
+
+// RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
+// GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
+// at most this many in the pool.
+func (m *Model) RankCapacity() int {
+	return m.id.poolNodes * m.id.gpusPerNode / m.id.rankGPUs
+}
+
+// PlacementOf places the pool's rank-th replica, its ranks packed onto the pool's nodes in
+// order: rank r occupies GPUs [r*rankGPUs, (r+1)*rankGPUs) of the pool and sits on the node
+// holding its first GPU. The rack is the node's position in GPUsPerRack-sized domains; a
+// cluster stating none gives every node its own, so no two nodes are taken to share an NVLink
+// domain the scenario never described.
+func (m *Model) PlacementOf(rank int) kernel.Placement {
+	node := m.id.firstNode
+	if m.id.gpusPerNode > 0 {
+		node += rank * m.id.rankGPUs / m.id.gpusPerNode
+	}
+	rack := node
+	if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
+	}
+	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+}
+
+// PDTransferTicks prices moving tokens tokens of one request's KV between two placements, as
+// the kernel prices it, rounded UP to a whole tick: a transfer is not complete until its last
+// byte lands, and a zero-tick transfer would let decode start in the same instant.
+func (m *Model) PDTransferTicks(tokens int64, from, to kernel.Placement) int64 {
+	d := m.k.PDTransferTime(int(tokens), from, to)
+	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
 // Kernel exposes the adapted kernel. A caller that needs a memory or provenance answer

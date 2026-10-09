@@ -919,6 +919,22 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		{"kv-cache-dtype", "the pool's engine.kv_cache_dtype"},
 		{"num-speculative-tokens", "the pool's engine.speculative.num_spec_tokens"},
 		{"speculative-method", "the pool's engine.speculative.method"},
+		{"moe-comm-backend", "the pool's engine.all2all_backend"},
+		// Per-role engines: a disaggregated scenario states a prefill and a decode pool,
+		// each with its own layout and engine, priced by its own kernel.
+		{"prefill-tp", "the prefill pool's parallel.tp"},
+		{"decode-tp", "the decode pool's parallel.tp"},
+		{"prefill-hardware", "scenario.cluster.hardware"},
+		{"decode-hardware", "scenario.cluster.hardware"},
+		{"prefill-latency-model", "the prefill pool's kernel"},
+		{"decode-latency-model", "the decode pool's kernel"},
+		{"prefill-max-model-len", "the prefill pool's engine.max_model_len"},
+		{"decode-max-model-len", "the decode pool's engine.max_model_len"},
+		// The P/D handoff is priced by the kernel from the scenario's fabric and the KV
+		// geometry; it has no contention model to scale.
+		{"pd-transfer-bandwidth", "scenario.cluster.fabric (the kernel's PDTransferTime)"},
+		{"pd-transfer-base-latency", "scenario.cluster.fabric (the kernel's PDTransferTime)"},
+		{"pd-transfer-contention", "the kernel's PDTransferTime, which has no contention model"},
 	} {
 		if cmd.Flags().Changed(dup.flag) {
 			logrus.Fatalf("--latency-model %s reads the deployment from the scenario, so --%s "+
@@ -2311,7 +2327,7 @@ var runCmd = &cobra.Command{
 		// Analytical backends populate ModelConfig from HF config.json.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
 		// same resolution as analytical backends (the catalog entry located by --catalog / BLIS_CATALOG).
-		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 && lr.KernelModel == nil {
 			resolved, err := resolveModelConfig(model)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
@@ -2874,6 +2890,11 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("%v", err)
 			}
 		}
+		// On the kernel backend each role's engine is its own pool's, from its own kernel.
+		kernelPD := openKernelPools(resolvedCatalogRoot)
+		if kernelPD != nil {
+			prefillOverrides, decodeOverrides = kernelPD.overrides()
+		}
 
 		// Parse per-pool scorer configs (PD disaggregation — not in resolvePolicies)
 		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
@@ -2970,6 +2991,13 @@ var runCmd = &cobra.Command{
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		// The instance counts are final (DP-as-placement applied): every instance must fit
+		// its pool, and the P/D handoff pricer places instances by these counts.
+		requireKernelCapacity(kernelPD)
+		var pdTransferTime func(int64, cluster.InstanceID, cluster.InstanceID) int64
+		if kernelPD != nil {
+			pdTransferTime = kernelPD.transferTime()
+		}
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -3017,6 +3045,7 @@ var runCmd = &cobra.Command{
 			PDTransferBandwidthGBps:         pdTransferBandwidth,
 			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
 			PDTransferContention:            pdTransferContention,
+			PDTransferTime:                  pdTransferTime,
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
 			PrefillOverrides:                prefillOverrides,

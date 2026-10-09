@@ -223,8 +223,13 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		if config.EffectivePrefillTP() <= 0 {
 			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
 		}
-		if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
+		if config.PDTransferTime == nil {
+			if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
+				panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
+			}
+		} else if config.PDTransferContention {
+			panic("ClusterSimulator: PDTransferContention cannot be combined with an injected PDTransferTime " +
+				"(the fair-share divisor would scale terms of a price the simulator did not compose)")
 		}
 	}
 

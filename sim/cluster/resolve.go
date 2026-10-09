@@ -36,6 +36,17 @@ type PoolOverrides struct {
 	// silently resolved (R1). The trained-physics constructor re-checks it as well, but only
 	// on that backend: a pool resolving to roofline would otherwise ignore a bad value.
 	MoECommBackend string
+
+	// LatencyModel prices this pool's steps (nil = use global). A disaggregated deployment
+	// runs a different engine per role -- its own parallelism, token budget and graph mode
+	// -- so each role is priced by the kernel for its own pool rather than by one copied to
+	// every pool.
+	LatencyModel sim.LatencyModel
+	// MaxNumSeqs, MaxNumBatchedTokens and PrefixCachingDisabled are the pool's own engine
+	// admission settings (nil = use global), for the same reason.
+	MaxNumSeqs            *int64
+	MaxNumBatchedTokens   *int64
+	PrefixCachingDisabled *bool
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -51,6 +62,12 @@ func (o PoolOverrides) Validate(name string) error {
 	}
 	if o.TotalKVBlocks != nil && *o.TotalKVBlocks <= 0 {
 		return fmt.Errorf("%s: PoolOverrides.TotalKVBlocks must be > 0 when set, got %d", name, *o.TotalKVBlocks)
+	}
+	if o.MaxNumSeqs != nil && *o.MaxNumSeqs <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.MaxNumSeqs must be > 0 when set, got %d", name, *o.MaxNumSeqs)
+	}
+	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
 	}
 	// #1548: the CLI validates the per-role backend name before building the overrides, but a
 	// library caller constructing PoolOverrides directly does not go through it. The
@@ -68,7 +85,9 @@ func (o PoolOverrides) Validate(name string) error {
 // IsEmpty returns true when no overrides are set.
 func (o PoolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" && o.LatencyBackend == "" &&
-		o.MaxModelLen == nil && o.TotalKVBlocks == nil && o.MoECommBackend == ""
+		o.MaxModelLen == nil && o.TotalKVBlocks == nil && o.MoECommBackend == "" &&
+		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
+		o.PrefixCachingDisabled == nil
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -107,6 +126,18 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	}
 	if overrides.TotalKVBlocks != nil {
 		resolved.TotalKVBlocks = *overrides.TotalKVBlocks
+	}
+	if overrides.LatencyModel != nil {
+		resolved.LatencyModelOverride = overrides.LatencyModel
+	}
+	if overrides.MaxNumSeqs != nil {
+		resolved.MaxNumSeqs = *overrides.MaxNumSeqs
+	}
+	if overrides.MaxNumBatchedTokens != nil {
+		resolved.MaxNumBatchedTokens = *overrides.MaxNumBatchedTokens
+	}
+	if overrides.PrefixCachingDisabled != nil {
+		resolved.PrefixCachingDisabled = *overrides.PrefixCachingDisabled
 	}
 
 	return resolved

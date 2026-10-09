@@ -234,6 +234,21 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 		cs.transferStartCount++
 	}
 
+	numBlocks := parentReq.NumKVBlocks
+	// An injected price (the latency backend's) replaces the formula below. The KV moves in
+	// whole blocks, so the token count priced is the blocks' capacity.
+	if cs.config.PDTransferTime != nil {
+		duration := max(1, cs.config.PDTransferTime(numBlocks*cs.config.BlockSizeTokens,
+			parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
+		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
+			parentReq.ID, numBlocks, duration)
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
+			seqID: cs.nextSeqID(),
+		})
+		return
+	}
+
 	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * kvBytesPerToken) / effectiveBandwidthBytesPerUs
 	// Derive per-GPU KV bytes per token from model config using the prefill pool's TP.
 	kvBytesPerTokenF, err := latency.KVBytesPerToken(cs.config.ModelConfig, cs.config.EffectivePrefillTP())
@@ -244,7 +259,6 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 		panic(fmt.Sprintf("unreachable: scheduleTransferCompletion: failed to derive KV bytes per token: %v", err))
 	}
 
-	numBlocks := parentReq.NumKVBlocks
 	// Defer truncation: multiply float64 kvBytesPerToken by blockSize before converting,
 	// matching the CalculateKVBlocks pattern to avoid precision loss for fractional
 	// BytesPerParam (e.g., INT4=0.5 at high TP).

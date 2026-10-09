@@ -458,7 +458,7 @@ Example:
 		// When PD is active and an analytical backend is in use, the ModelConfig may need to
 		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
 		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
-		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 && lr.KernelModel == nil {
 			resolved, err := resolveModelConfig(model)
 			if err != nil {
 				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
@@ -664,6 +664,11 @@ Example:
 				logrus.Fatalf("%v", err)
 			}
 		}
+		// Same as runCmd: on the kernel backend each role's engine is its own pool's.
+		kernelPD := openKernelPools(resolvedCatalogRoot)
+		if kernelPD != nil {
+			prefillOverrides, decodeOverrides = kernelPD.overrides()
+		}
 
 		// Parse per-pool scorer configs (same as runCmd).
 		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
@@ -716,6 +721,11 @@ Example:
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		requireKernelCapacity(kernelPD)
+		var pdTransferTime func(int64, cluster.InstanceID, cluster.InstanceID) int64
+		if kernelPD != nil {
+			pdTransferTime = kernelPD.transferTime()
+		}
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
@@ -759,6 +769,7 @@ Example:
 			PDTransferBandwidthGBps:         pdTransferBandwidth,
 			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
 			PDTransferContention:            pdTransferContention,
+			PDTransferTime:                  pdTransferTime,
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
 			PrefillOverrides:                prefillOverrides,

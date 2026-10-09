@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/spf13/cobra"
@@ -280,8 +282,11 @@ func TestKernelCLILeg(t *testing.T) {
 func runKernelCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	full := append(args, "--latency-model", "blis-latency-kernel", "--scenarios", scenarios,
+	full := append(args, "--latency-model", "blis-latency-kernel",
 		"--catalog", catalog, "--registry", registry, "--defaults-filepath", "../defaults.yaml")
+	if !slices.Contains(args, "--scenarios") {
+		full = append(full, "--scenarios", scenarios)
+	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
 	cmd.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(full, "\x1f"))
 	var out, errBuf bytes.Buffer
@@ -353,5 +358,97 @@ func TestReplayCmd_KernelBackend_ReplaysAnAgenticTrace(t *testing.T) {
 	}
 	if second != first {
 		t.Error("two replays at one seed differ")
+	}
+}
+
+// pdScenarios is this repository's disaggregated scenario fixtures: every vendored kernel
+// scenario is colocated.
+const pdScenarios = "../testdata/scenarios"
+
+// A disaggregated scenario runs as its pools: three prefill and one decode instance complete
+// every request, and the topology is checked against what the pools hold and what a scenario
+// states -- a P/D topology over a colocated scenario, more instances than a pool's nodes hold,
+// and a per-role flag restating the scenario are each refused.
+func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
+	pd := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
+		"--pd-decider", "always", "--num-requests", "30", "--rate", "6", "--seed", "1"}
+	for _, tt := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "3P1D completes every request",
+			args: append([]string{"run", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}, pd...)},
+		{name: "more prefill instances than the pool holds",
+			args:    append([]string{"run", "--num-instances", "5", "--prefill-instances", "4", "--decode-instances", "1"}, pd...),
+			wantErr: "prefill pool holds 3 rank(s)"},
+		{name: "a per-role flag restating the scenario",
+			args:    append([]string{"run", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--prefill-tp", "4"}, pd...),
+			wantErr: "--prefill-tp is not accepted"},
+		{name: "a P/D topology over a colocated scenario",
+			args: []string{"run", "--scenario", "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "--num-instances", "2",
+				"--prefill-instances", "1", "--decode-instances", "1", "--num-requests", "4", "--rate", "2"},
+			wantErr: "states no prefill pool"},
+		{name: "more colocated instances than the pool holds",
+			args: []string{"run", "--scenario", "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "--num-instances", "3",
+				"--num-requests", "4", "--rate", "2"},
+			wantErr: "colocated pool holds 2 rank(s)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, err := runKernelCLI(t, tt.args...)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(stderr, tt.wantErr) {
+					t.Fatalf("want a refusal naming %q, got err=%v\nstderr:\n%s", tt.wantErr, err, stderr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%v\n%s", err, stderr)
+			}
+			if !strings.Contains(stdout, `"completed_requests": 30`) {
+				t.Errorf("the cluster did not complete its 30 requests:\n%s", stdout)
+			}
+		})
+	}
+}
+
+// The handoff is priced by the prefill pool's kernel between the two instances' placements in
+// their pools, and moving more KV never costs less.
+func TestKernelPools_TheHandoffIsTheKernelsPrice(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+		prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances}
+	defer func() {
+		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelOpened, _ = saved[3].(*kernelmodel.Model)
+		prefillInstances, decodeInstances = saved[4].(int), saved[5].(int)
+		prefillDecodeInstances, encodeInstances = saved[6].(int), saved[7].(int)
+	}()
+	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
+	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
+	m, err := kernelmodel.Open(kernelScenario, repos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernelOpened = m
+	prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances = 3, 1, 0, 0
+
+	p := openKernelPools(catalog)
+	price := p.transferTime()
+	var prev int64
+	for _, tokens := range []int64{64, 1024, 8192, 65536} {
+		for from := 0; from < 3; from++ {
+			got := price(tokens, cluster.InstanceID(fmt.Sprintf("instance_%d", from)), "instance_3")
+			want := p.prefill.PDTransferTicks(tokens, p.prefill.PlacementOf(from), p.decode.PlacementOf(0))
+			if got != want {
+				t.Errorf("%d tokens from prefill rank %d: priced %d, the prefill kernel says %d", tokens, from, got, want)
+			}
+			if from == 0 {
+				if got < prev {
+					t.Errorf("%d tokens priced %d, below a smaller transfer's %d", tokens, got, prev)
+				}
+				prev = got
+			}
+		}
 	}
 }
