@@ -11,8 +11,9 @@ name: PR Review (external)
 #   - qa-review + blis read a SAFE READ-ONLY checkout (hooks disabled,
 #     persist-credentials off, submodules off, escaping symlinks scrubbed);
 #     qa runs --no-exec, blis has no Bash tool.
-#   - The LiteLLM key lives only in the runner pod's sidecar (k8s/pr-review-runner.yaml);
-#     this workflow talks to http://localhost:4000 with a DUMMY key.
+#   - The LiteLLM key lives only in the litellm-proxy pod (k8s/pr-review-runner.yaml);
+#     this workflow talks to the proxy Service with a DUMMY key, and the runner's
+#     egress NetworkPolicy blocks every path to LiteLLM except through that proxy.
 #
 # Three jobs, so the box that reads untrusted code cannot act:
 #   gate    (ubuntu-latest)         who-asked + what-PR; touches no PR content
@@ -28,10 +29,10 @@ on:
     types: [created]
 
 env:
-  # The reviewer talks to the in-pod sidecar, which injects the real key. A dummy
-  # is all this workflow ever holds — see k8s/pr-review-runner.yaml.
-  LLM_PROXY_URL: "http://localhost:4000"
-  LLM_DUMMY_KEY: "sidecar-injects-the-real-key"
+  # The reviewer talks to the litellm-proxy Service, which injects the real key. A
+  # dummy is all this workflow ever holds — see k8s/pr-review-runner.yaml.
+  LLM_PROXY_URL: "http://litellm-proxy.blis.svc.cluster.local:4000"
+  LLM_DUMMY_KEY: "proxy-injects-the-real-key"
 
 jobs:
   gate:
@@ -99,7 +100,7 @@ jobs:
   review:
     needs: gate
     if: needs.gate.outputs.allowed == 'true'
-    # Dedicated untrusted pool with the LiteLLM sidecar — NOT the delivery loop's
+    # Dedicated untrusted pool behind the litellm-proxy — NOT the delivery loop's
     # `self-hosted` runners. See k8s/pr-review-runner.yaml.
     runs-on: [pr-review-untrusted]
     timeout-minutes: 30
@@ -130,13 +131,13 @@ jobs:
           go-version: '1.26'
 
       # Assert the key really is absent from this job's environment (BC-3). The
-      # sidecar holds it; the workflow holds only the dummy. Fails loud if a real
-      # LiteLLM credential ever leaks into the env.
+      # litellm-proxy holds it; the workflow holds only the dummy. Fails loud if a
+      # real LiteLLM credential ever leaks into the env.
       - name: Assert no LiteLLM key in the session
         run: |
           set -uo pipefail
           if env | grep -iqE 'litellm_(api_)?key|LITELLM_API_KEY'; then
-            echo "::error::a LiteLLM key is present in the review job environment; it must live only in the sidecar"
+            echo "::error::a LiteLLM key is present in the review job environment; it must live only in the litellm-proxy"
             exit 1
           fi
           echo "no real LiteLLM key in the session (good)"
@@ -191,10 +192,35 @@ jobs:
           scripts/pr_review/scrub_symlinks.sh "$WORKTREE"
           echo "path=$WORKTREE" >> "$GITHUB_OUTPUT"
 
+      # Preflight: the FULL LLM path must work before the reviewers run. Both
+      # review steps are continue-on-error (one reviewer's failure must not sink
+      # the others), so without this a broken LLM path would silently produce an
+      # empty review posted as if fine. This step is NOT continue-on-error — a
+      # failure here fails the job loud. Two checks:
+      #   1. /healthz — served locally by nginx (not forwarded), proves the proxy
+      #      process + Service are up.
+      #   2. /v1/models — forwarded to LiteLLM with the real injected key, so it
+      #      proves the WHOLE path the reviewers depend on (egress to the VPC,
+      #      hostname resolution, TLS/SNI, Host routing, and key injection). This
+      #      is what catches a proxy that is up but cannot reach the upstream.
+      - name: Preflight litellm-proxy
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            --retry-connrefused --max-time 10 "${LLM_PROXY_URL}/healthz"
+          echo "litellm-proxy process up"
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --retry 3 --retry-delay 2 --max-time 20 "${LLM_PROXY_URL}/v1/models")
+          if [ "$code" != "200" ]; then
+            echo "::error::litellm-proxy cannot reach the LiteLLM upstream (/v1/models -> HTTP $code)"
+            exit 1
+          fi
+          echo "litellm-proxy -> LiteLLM upstream reachable (/v1/models 200)"
+
       # QA-REVIEW — the committed scripts, run as workflow steps (not the agent
       # skill). answerer.py --no-exec: its code-executing `go` tool is dropped;
       # read_file/grep/list_dir stay sandboxed to the worktree. Talks to the
-      # sidecar with a dummy key.
+      # litellm-proxy with a dummy key.
       - name: Run qa-review
         id: qa
         continue-on-error: true
@@ -233,8 +259,8 @@ jobs:
 
       # BLIS — tool-restricted single session: read-only tools scoped to the
       # worktree + trusted docs, NO Bash/Edit/WebFetch/WebSearch, write confined
-      # to the verdict file by a PreToolUse hook. Talks to the sidecar with a
-      # dummy key.
+      # to the verdict file by a PreToolUse hook. Talks to the litellm-proxy with
+      # a dummy key.
       - name: Run blis-pr-review
         id: blis
         continue-on-error: true
