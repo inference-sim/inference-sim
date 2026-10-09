@@ -18,6 +18,12 @@ type KVCacheConfig struct {
 	// it is set only via the WithKVOffload option. Kept as a nested sub-config value
 	// rather than more positional constructor args (R16, R4).
 	Offload KVOffloadConfig
+	// KVTransferTicksPerBlock, when > 0, is the whole per-block CPU→GPU reload charge of the
+	// legacy CPU tier, replacing the KVTransferBandwidth/KVTransferBaseLatency formula. It is
+	// how a latency backend that prices tier transfers itself (blis-latency-kernel's
+	// TierTime) supplies the charge rather than a bandwidth to compose one from. Set via
+	// WithKVTransferTicksPerBlock.
+	KVTransferTicksPerBlock int64
 }
 
 // KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
@@ -31,6 +37,11 @@ type KVCacheOption func(*KVCacheConfig)
 // feature (BC-G5).
 func WithKVOffload(o KVOffloadConfig) KVCacheOption {
 	return func(c *KVCacheConfig) { c.Offload = o }
+}
+
+// WithKVTransferTicksPerBlock sets the legacy CPU tier's whole per-block reload charge.
+func WithKVTransferTicksPerBlock(ticks int64) KVCacheOption {
+	return func(c *KVCacheConfig) { c.KVTransferTicksPerBlock = ticks }
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
@@ -50,17 +61,6 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	if kvCPUBlocks < 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: KVCPUBlocks must be >= 0, got %d", kvCPUBlocks))
 	}
-	if kvCPUBlocks > 0 {
-		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
-		// ignored in the vLLM v1 mirror model. NewKVStore validates it for legacy
-		// reasons, but the constructor should not tighten a deprecated contract.
-		if kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0) {
-			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", kvTransferBandwidth))
-		}
-		if kvTransferBaseLatency < 0 {
-			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
-		}
-	}
 	cfg := KVCacheConfig{
 		TotalKVBlocks:         totalKVBlocks,
 		BlockSizeTokens:       blockSizeTokens,
@@ -71,6 +71,22 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+	if cfg.KVTransferTicksPerBlock < 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: KVTransferTicksPerBlock must be >= 0, got %d", cfg.KVTransferTicksPerBlock))
+	}
+	// A given per-block charge replaces the bandwidth/base-latency formula, so those two are
+	// validated only when they are what prices the legacy tier.
+	if kvCPUBlocks > 0 && cfg.KVTransferTicksPerBlock == 0 {
+		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
+		// ignored in the vLLM v1 mirror model. NewKVStore validates it for legacy
+		// reasons, but the constructor should not tighten a deprecated contract.
+		if kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0) {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", kvTransferBandwidth))
+		}
+		if kvTransferBaseLatency < 0 {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
+		}
 	}
 	// Factory validation (R3): an enabled offload sub-config must be self-consistent.
 	// The CLI resolver validates and logrus.Fatalf's before reaching here, so this is

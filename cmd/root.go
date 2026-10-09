@@ -935,6 +935,8 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		{"pd-transfer-bandwidth", "scenario.cluster.fabric (the kernel's PDTransferTime)"},
 		{"pd-transfer-base-latency", "scenario.cluster.fabric (the kernel's PDTransferTime)"},
 		{"pd-transfer-contention", "the kernel's PDTransferTime, which has no contention model"},
+		{"kv-transfer-bandwidth", "the kernel's TierTime for the catalog cpu_dram device"},
+		{"kv-transfer-base-latency", "the kernel's TierTime for the catalog cpu_dram device"},
 	} {
 		if cmd.Flags().Changed(dup.flag) {
 			logrus.Fatalf("--latency-model %s reads the deployment from the scenario, so --%s "+
@@ -2981,8 +2983,13 @@ var runCmd = &cobra.Command{
 		// from the catalog cpu_dram device now that the model config and TP are known.
 		// Shared with replayCmd through one helper (R23, INV-13); a no-op unless
 		// --kv-cpu-blocks > 0, and each operator override wins independently.
-		legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
-		kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
+		// On the kernel backend the kernel prices every offload transfer; the legacy
+		// derivation below reads the catalog device itself and is skipped there.
+		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
+		if kernelCPUTierTicks == 0 {
+			legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
+			kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
+		}
 
 		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
 		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
@@ -3004,7 +3011,7 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg)),
+					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
 				BatchConfig:   batchConfigFromCLI(),
 				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when

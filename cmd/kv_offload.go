@@ -354,6 +354,7 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	refuseExplicitTierPhysics(f.KVOffload)
 	// #1770: device_class physics come from the CATALOG (<catalog>/devices/storage.yaml),
 	// the single source of truth, not from defaults.yaml. Read LAZILY — a config whose
 	// tiers all carry explicit bandwidth/latency triples never touches the catalog

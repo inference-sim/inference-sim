@@ -354,8 +354,13 @@ Example:
 		// through the SAME helper runCmd uses. The flags are registered in the shared
 		// registerSimConfigFlags, so run and replay derive and override identically
 		// (INV-13). No-op unless --kv-cpu-blocks > 0.
-		legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
-		kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
+		// On the kernel backend the kernel prices every offload transfer; the legacy
+		// derivation below reads the catalog device itself and is skipped there.
+		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
+		if kernelCPUTierTicks == 0 {
+			legacyTransfer := resolveLegacyKVTransferCost(cmd, lr.ModelConfig, tensorParallelism)
+			kvTransferBandwidth, kvTransferBaseLatency = legacyTransfer.bandwidth, legacyTransfer.baseLatency
+		}
 
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
@@ -730,7 +735,7 @@ Example:
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg)),
+					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
 				BatchConfig:   batchConfigFromCLI(),
 				LatencyCoeffs: sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the

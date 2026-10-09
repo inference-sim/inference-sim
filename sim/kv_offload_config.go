@@ -132,6 +132,12 @@ type KVOffloadTier struct {
 	// a per-transfer factor from the seeded kv-offload RNG partition; the station
 	// itself stays deterministic.
 	LatencyJitterStddev float64
+
+	// ServiceTime, when set, prices one transfer on this tier -- write reports the direction
+	// (to the tier), inService the depth -- replacing the bandwidth/latency/ramp physics
+	// above. Supplied by the latency backend (blis-latency-kernel's TierTime) at run time
+	// and never serialized: a trace header records the tier, not the pricer.
+	ServiceTime func(write bool, bytes int64, inService int) int64 `yaml:"-" json:"-"`
 }
 
 // Valid enumerations for the offload config surface.

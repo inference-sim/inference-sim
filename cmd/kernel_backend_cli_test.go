@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -449,6 +451,122 @@ func TestKernelPools_TheHandoffIsTheKernelsPrice(t *testing.T) {
 				}
 				prev = got
 			}
+		}
+	}
+}
+
+// writeKernelOffloadConfig writes a --kv-offload-config whose one secondary tier is the named
+// catalog device, with a CPU tier small enough that the secondary tier is exercised.
+func writeKernelOffloadConfig(t *testing.T, tierExtra string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "offload.yaml")
+	body := "kv_offload:\n" +
+		"  cpu_bytes_to_use: 4294967296\n" +
+		"  secondary_tiers:\n" +
+		"    - type: fs\n" +
+		"      root_dir: /mnt/kv\n" +
+		"      direct_io: true\n" +
+		"      device_class: nvme_gen4\n" + tierExtra
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// KV offload on the kernel: a tier named by its catalog device is priced by the kernel, a run
+// with it completes and its trace replays byte-identically, and a tier stating its own physics
+// -- or a legacy-tier flag restating the kernel's price -- is refused.
+func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
+	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
+	common := []string{"--scenario", scenario, "--seed", "4", "--horizon", "600000000"}
+	base := append([]string{"--num-requests", "30", "--rate", "10"}, common...)
+
+	prefix := filepath.Join(t.TempDir(), "trace")
+	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--kv-offload-config",
+		writeKernelOffloadConfig(t, ""), "--trace-output", prefix}, base...)...)
+	if err != nil {
+		t.Fatalf("offload run: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(runOut, `"completed_requests": 30`) {
+		t.Fatalf("the offload run did not complete its 30 requests:\n%s", runOut)
+	}
+	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
+		"--trace-data", prefix + ".csv"}, common...)...)
+	if err != nil {
+		t.Fatalf("offload replay: %v\n%s", err, stderr)
+	}
+	if repOut != runOut {
+		t.Errorf("the offload run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
+	}
+
+	legacy, stderr, err := runKernelCLI(t, append([]string{"run", "--kv-cpu-blocks", "2000"}, base...)...)
+	if err != nil || !strings.Contains(legacy, `"completed_requests": 30`) {
+		t.Errorf("legacy CPU tier run: %v\n%s\n%s", err, legacy, stderr)
+	}
+
+	for _, tt := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"a tier stating its own bandwidth", "states read_bandwidth",
+			[]string{"run", "--kv-offload-config", writeKernelOffloadConfig(t, "      read_bandwidth: 7000.0\n")}},
+		{"a legacy-tier bandwidth flag", "--kv-transfer-bandwidth is not accepted",
+			[]string{"run", "--kv-cpu-blocks", "2000", "--kv-transfer-bandwidth", "5"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, stderr, err := runKernelCLI(t, append(tt.args, base...)...)
+			if err == nil || !strings.Contains(stderr, tt.want) {
+				t.Errorf("want a refusal naming %q, got err=%v\n%s", tt.want, err, stderr)
+			}
+		})
+	}
+}
+
+// The offload prices are the kernel's: the attached tier pricer and the legacy per-block
+// charge equal TierTime in whole ticks rounded up, and moving more bytes never costs less.
+func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
+	scenarios, catalog, registry := kernelRepos(t)
+	saved := []any{kernelOpened, kvCPUBlocks, blockSizeTokens}
+	defer func() {
+		kernelOpened, _ = saved[0].(*kernelmodel.Model)
+		kvCPUBlocks, blockSizeTokens = saved[1].(int64), saved[2].(int64)
+	}()
+	m, err := kernelmodel.Open("gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
+		kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernelOpened, kvCPUBlocks, blockSizeTokens = m, 100, 16
+	cfg := sim.KVOffloadConfig{Enabled: true, Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4"}}}
+	legacy := applyKernelOffloadPricing(&cfg)
+
+	ticks := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
+		return max(1, (m.Kernel().TierTime(tier, dir, bytes, q).Nanoseconds()+999)/1000)
+	}
+	if want := ticks("cpu_dram", kernel.DirectionFromTier, m.Kernel().SequenceVariableBytes(16), 1); legacy != want {
+		t.Errorf("legacy per-block charge %d, the kernel prices one block's reload at %d", legacy, want)
+	}
+	price := cfg.Tiers[0].ServiceTime
+	if price == nil {
+		t.Fatal("no pricer attached to the tier")
+	}
+	var prev int64
+	for _, bytes := range []int64{1 << 10, 1 << 20, 1 << 26, 1 << 30} {
+		for _, q := range []int{1, 4} {
+			for _, write := range []bool{false, true} {
+				dir := kernel.DirectionFromTier
+				if write {
+					dir = kernel.DirectionToTier
+				}
+				if got, want := price(write, bytes, q), ticks("nvme_gen4", dir, bytes, q); got != want {
+					t.Errorf("%d bytes q=%d write=%t: priced %d, kernel %d", bytes, q, write, got, want)
+				}
+			}
+		}
+		if got := price(false, bytes, 1); got < prev {
+			t.Errorf("%d bytes priced %d, below a smaller transfer's %d", bytes, got, prev)
+		} else {
+			prev = got
 		}
 	}
 }

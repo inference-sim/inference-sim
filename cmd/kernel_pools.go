@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/sirupsen/logrus"
 
@@ -138,3 +141,71 @@ func requireKernelCapacity(p *kernelPools) {
 }
 
 func latencyModelBackendKernel() string { return sim.LatencyBackendKernel }
+
+// kernelCPUTier is the catalog storage device the legacy --kv-cpu-blocks tier's
+// CPU↔GPU reloads cross.
+const kernelCPUTier = legacyKVTransferDeviceClass
+
+// kernelTierTicks is the kernel's price for one transfer, in whole ticks rounded up: a
+// transfer is not done until its last byte lands. An unknown tier is refused rather than
+// charged the kernel's unbounded sentinel, which would stall the clock.
+func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64 {
+	dir := kernel.DirectionFromTier
+	if toTier {
+		dir = kernel.DirectionToTier
+	}
+	d := kernelOpened.Kernel().TierTime(tier, dir, bytes, inService)
+	if d >= time.Duration(math.MaxInt64/2) {
+		logrus.Fatalf("--latency-model %s: the kernel prices no storage tier %q; name a device class "+
+			"from the catalog's %s", sim.LatencyBackendKernel, tier, catalogStorageDevicesRelPath)
+	}
+	return max(1, (d.Nanoseconds()+999)/1000)
+}
+
+// applyKernelOffloadPricing has the kernel price every KV-offload transfer, on the kernel
+// backend: each secondary tier through TierTime for its catalog device class, at the depth the
+// transfer station is serving, and the legacy CPU tier as one whole per-block reload charge.
+// The simulator keeps the servers, queues and timing; the kernel owns the price (blis-schemas
+// kernel.TierTime: the slower of the device and the host link binds). It returns the legacy
+// per-block charge, 0 off the kernel or with no legacy tier. Shared by run and replay.
+func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
+	if kernelOpened == nil {
+		return 0
+	}
+	if cfg.IsEnabled() {
+		for i := range cfg.Tiers {
+			class := cfg.Tiers[i].DeviceClass
+			if class == "" {
+				logrus.Fatalf("--latency-model %s: kv_offload secondary_tiers[%d] names no device_class; "+
+					"the kernel prices a tier by its catalog device, so every tier must name one",
+					sim.LatencyBackendKernel, i)
+			}
+			kernelTierTicks(class, false, 0, 1) // refuses an unknown device up front
+			cfg.Tiers[i].ServiceTime = func(write bool, bytes int64, inService int) int64 {
+				return kernelTierTicks(class, write, bytes, inService)
+			}
+		}
+	}
+	if kvCPUBlocks <= 0 {
+		return 0
+	}
+	perBlock := kernelOpened.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	return kernelTierTicks(kernelCPUTier, false, perBlock, 1)
+}
+
+// refuseExplicitTierPhysics refuses, on the kernel backend, a kv_offload tier that states its
+// own bandwidth or latency: the kernel prices the tier from its catalog device, and a second
+// source for the same physics would need precedence rules to reconcile.
+func refuseExplicitTierPhysics(block *kvOffloadBlock) {
+	if kernelOpened == nil || block == nil {
+		return
+	}
+	for i, t := range block.SecondaryTiers {
+		if t.ReadBandwidth != nil || t.WriteBandwidth != nil || t.BaseLatency != nil {
+			logrus.Fatalf("--latency-model %s: kv_offload secondary_tiers[%d] states read_bandwidth, "+
+				"write_bandwidth or base_latency, but the kernel prices a tier from its catalog "+
+				"device_class; name the device and drop the explicit physics",
+				sim.LatencyBackendKernel, i)
+		}
+	}
+}
