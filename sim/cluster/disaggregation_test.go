@@ -1822,7 +1822,9 @@ func newTestRequestsWithSession(n int, sessionID string) []*sim.Request {
 // WHEN: simulation runs to completion
 // THEN: callback is invoked with a request where SessionID is preserved,
 //
-//	State == StateCompleted, and ProgressIndex == len(Input) + len(Output)
+//	State == StateCompleted, and ProgressIndex == len(Input) + len(Output) - 1
+//	(a fully-generated round's terminal index — output token #1 is charged to
+//	prefill completion, not to a decode step)
 func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	reqs := newTestRequestsWithSession(3, "sess_0")

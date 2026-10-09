@@ -8,11 +8,13 @@ import (
 )
 
 // mkReq builds a minimal COMPLETED replayed request for re-export reconstruction tests.
-// ProgressIndex = inputLen + outputLen models a fully-generated round (actualOutput ==
-// oracle MaxOutputLen), the common non-length-capped case. mkReqAO models a round whose
-// actual accumulated output differs from the oracle budget.
+// It models a fully-generated round (emitted output == oracle MaxOutputLen), the common
+// non-length-capped case: such a round takes outputLen-1 decode steps and so terminates at
+// ProgressIndex == inputLen + outputLen - 1, because BLIS charges output token #1 to
+// prefill completion rather than to a decode step (sim.Request.EmittedOutputLen, #1893).
+// mkReqAO models a round whose emitted output differs from the oracle budget.
 func mkReq(id, sessionID string, round, inputLen, outputLen int, arrival int64, state sim.RequestState) *sim.Request {
-	return mkReqAO(id, sessionID, round, inputLen, outputLen, outputLen, arrival, state)
+	return mkReqAO(id, sessionID, round, inputLen, outputLen, max(outputLen-1, 0), arrival, state)
 }
 
 // mkReqAO is mkReq with an explicit DECODE-STEP count (sets ProgressIndex = inputLen +
