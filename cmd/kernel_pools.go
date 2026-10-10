@@ -254,6 +254,11 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 					"the kernel prices a tier by its catalog device, so every tier must name one",
 					i)
 			}
+			if !cfg.Tiers[i].DirectIO {
+				logrus.Warnf("kv_offload secondary_tiers[%d] (%s) uses buffered I/O (direct_io: "+
+					"false); the kernel prices the tier at its catalog device's rates, so page-cache "+
+					"effects of buffered I/O are not modelled", i, class)
+			}
 			// Price one real block each way up front, so an unknown device or one with no
 			// bandwidth in a direction is refused now rather than at its first transfer.
 			kernelTierTicks(m, class, true, perBlock, 1)

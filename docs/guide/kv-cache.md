@@ -114,7 +114,7 @@ kv_offload:
   block_size: 16                    # optional; default = GPU block size (mutually
                                     #   exclusive with blocks_per_chunk)
   # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
-  eviction_policy: lru              # lru | arc  (default lru)
+  eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
   offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
                                     #   full decode blocks are offloaded and reused too (see below)
   # self_describing_kv_events: false
@@ -138,8 +138,10 @@ Every tier must name a `device_class` from the catalog's storage-device table
 (`<catalog>/devices/storage.yaml`, located by `--catalog` / `BLIS_CATALOG`); the kernel prices
 each tier transfer from that device (its `TierTime`). An explicit `read_bandwidth`,
 `write_bandwidth` or `base_latency` on a tier is refused. A class the catalog does not define, or
-a missing/malformed table, is a hard error naming the path. KV offload combined with P/D
-disaggregation is refused.
+a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
+sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario that
+states its own `offload` block is refused for now: that block and `--kv-offload-config` describe
+the same tiers in two formats, and #1910 makes them one.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config

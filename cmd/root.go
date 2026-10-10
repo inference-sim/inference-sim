@@ -1205,7 +1205,7 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 
 	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
 	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
-	if defs := loadRunDefaults().LoRADefaults; defs != nil {
+	if defs := loadRunDefaults(cmd.Flags().Changed("defaults-filepath")).LoRADefaults; defs != nil {
 		if cfg.LoadBaseLatencyUs == nil {
 			v := defs.LoadBaseLatencyUs
 			cfg.LoadBaseLatencyUs = &v
@@ -1697,6 +1697,14 @@ var runCmd = &cobra.Command{
 					logrus.Fatalf("policy bundle node pool %q is %q GPUs, but scenario %q runs on %q; every "+
 						"instance is priced for the scenario's hardware, so node pools must match it",
 						np.Name, np.GPUType, kernelScenario, gpu)
+				}
+				// The kernel sizes every instance's KV from the catalog chip's memory; a pool
+				// stating other memory would describe a device the run does not simulate.
+				if chip := kernelOpened.Deployment().DeviceMemoryGiB; np.GPUMemoryGiB > 0 &&
+					math.Abs(np.GPUMemoryGiB-chip) > 1e-9 {
+					logrus.Fatalf("policy bundle node pool %q states gpu_memory_gib %g, but the catalog "+
+						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g or "+
+						"omit it", np.Name, np.GPUMemoryGiB, gpu, chip, chip)
 				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,

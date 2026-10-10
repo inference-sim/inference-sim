@@ -144,9 +144,7 @@ func loadCatalogStorageDevices(catalog string) (map[string]kvOffloadDevice, erro
 				"kv_offload: a secondary tier names a device_class, but the catalog storage-device "+
 					"table at %s is not readable: %w.\n"+
 					"  Add it to the catalog (--catalog / %s names the catalog CLONE ROOT; the table "+
-					"lives at its %s), point --catalog / %s at a catalog that has it, or give each "+
-					"secondary tier an explicit read_bandwidth + write_bandwidth + base_latency triple "+
-					"instead of a device_class",
+					"lives at its %s), or point --catalog / %s at a catalog that has it",
 				path, err, catalogEnvVar, catalogStorageDevicesRelPath, catalogEnvVar)
 		}
 		return nil, fmt.Errorf("kv_offload: catalog storage-device table %s is malformed: %w", path, err)
@@ -154,9 +152,7 @@ func loadCatalogStorageDevices(catalog string) (map[string]kvOffloadDevice, erro
 	if len(devices) == 0 {
 		return nil, fmt.Errorf(
 			"kv_offload: catalog storage-device table %s defines no device classes, so the "+
-				"device_class named by a secondary tier cannot be resolved (fix that catalog file, "+
-				"or give each secondary tier an explicit read_bandwidth + write_bandwidth + "+
-				"base_latency triple instead)", path)
+				"device_class named by a secondary tier cannot be resolved; fix that catalog file", path)
 	}
 	return devices, nil
 }

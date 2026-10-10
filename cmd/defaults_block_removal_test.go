@@ -251,7 +251,7 @@ func TestLoadRunDefaults_WorkingDirectoryFileWinsOverTheBundledCopy(t *testing.T
 		t.Fatal(err)
 	}
 	want := loadDefaultsConfig(filepath.Join(wd, "../defaults.yaml"))
-	if got := loadRunDefaults(); got.LoRADefaults == nil || !loraDefaultsEqual(got.LoRADefaults, want.LoRADefaults) {
+	if got := loadRunDefaults(false); got.LoRADefaults == nil || !loraDefaultsEqual(got.LoRADefaults, want.LoRADefaults) {
 		t.Fatalf("with no defaults.yaml in the working directory the bundled copy must be used")
 	}
 
@@ -259,7 +259,7 @@ func TestLoadRunDefaults_WorkingDirectoryFileWinsOverTheBundledCopy(t *testing.T
 	if err := os.WriteFile(filepath.Join(dir, "defaults.yaml"), []byte(local), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadRunDefaults(); got.LoRADefaults == nil || got.LoRADefaults.LoadBaseLatencyUs != 7.0 {
+	if got := loadRunDefaults(false); got.LoRADefaults == nil || got.LoRADefaults.LoadBaseLatencyUs != 7.0 {
 		t.Errorf("a defaults.yaml in the working directory must win over the bundled copy, got %+v", got.LoRADefaults)
 	}
 }

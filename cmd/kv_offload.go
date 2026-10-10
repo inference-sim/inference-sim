@@ -173,6 +173,12 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 	if block.EvictionPolicy != nil {
 		cfg.EvictionPolicy = *block.EvictionPolicy
 	}
+	// The offload cache simulates LRU only; vLLM's other in-tree policy (arc) is refused here,
+	// at config time, rather than reaching the cache's constructor as a panic.
+	if cfg.EvictionPolicy != "lru" {
+		return cfg, fmt.Errorf("kv_offload: eviction_policy %q is not simulated; the offload cache "+
+			"is LRU (vLLM's arc is not yet modelled)", cfg.EvictionPolicy)
+	}
 
 	// offload_prompt_only: vLLM DEFAULT TRUE (trap 1).
 	cfg.OffloadPromptOnly = true
@@ -240,10 +246,11 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]k
 	}
 
 	// direct_io: REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe an explicit
-	// config axis (direct vs buffered I/O are different physics regimes; a simulator
-	// cannot probe the operator's disk). No silent default.
+	// config axis (a simulator cannot probe the operator's disk). No silent default. It is
+	// recorded with the tier; the kernel prices a tier from its catalog device's rates, so on
+	// the kernel path buffered I/O is not priced differently (priceOffload warns).
 	if tb.DirectIO == nil {
-		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].direct_io must be set explicitly (BLIS makes vLLM's runtime O_DIRECT probe an explicit config axis; direct vs buffered I/O are materially different storage physics)", index)
+		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].direct_io must be set explicitly (BLIS makes vLLM's runtime O_DIRECT probe an explicit config axis rather than guess the operator's disk)", index)
 	}
 	tier.DirectIO = *tb.DirectIO
 

@@ -67,15 +67,17 @@ var bundledDefaults []byte
 // SetBundledDefaults installs the compiled-in defaults.yaml. Called once by main.
 func SetBundledDefaults(b []byte) { bundledDefaults = b }
 
-// loadRunDefaults is the defaults a run uses. An explicit --defaults-filepath, or a
-// defaults.yaml in the working directory, is read as before; with neither, the bundled copy
-// is used rather than refusing a run that sets no LoRA knob at all.
-func loadRunDefaults() Config {
-	if defaultsFilePath == defaultDefaultsPath && bundledDefaults != nil {
+// loadRunDefaults is the defaults a run uses. An explicit --defaults-filepath (explicit says
+// whether the flag was set) is read as given, so a wrong path is refused rather than masked;
+// with the flag unset, a defaults.yaml in the working directory is read, and with none the
+// bundled copy is used rather than refusing a run that sets no LoRA knob at all.
+func loadRunDefaults(explicit bool) Config {
+	if !explicit && bundledDefaults != nil {
 		if _, err := os.Stat(defaultsFilePath); errors.Is(err, fs.ErrNotExist) {
-			logrus.Debugf("no %s in the working directory; using the bundled defaults", defaultDefaultsPath)
+			logrus.Infof("no %s in the working directory; using the defaults compiled into blis", defaultDefaultsPath)
 			return parseDefaultsConfig(bundledDefaults, "bundled defaults.yaml")
 		}
+		logrus.Infof("using %s from the working directory", defaultsFilePath)
 	}
 	return loadDefaultsConfig(defaultsFilePath)
 }
