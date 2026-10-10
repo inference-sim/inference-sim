@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -54,6 +56,30 @@ type LoRAStepOverheadDefaults struct {
 	K7 float64 `yaml:"k7"`
 }
 
+// defaultDefaultsPath is --defaults-filepath's default: a defaults.yaml in the working
+// directory, which is the repository root for a run from a checkout.
+const defaultDefaultsPath = "defaults.yaml"
+
+// bundledDefaults is the repository's defaults.yaml compiled into the binary (main.go embeds
+// it), so a run outside a checkout still has the shipped LoRA defaults.
+var bundledDefaults []byte
+
+// SetBundledDefaults installs the compiled-in defaults.yaml. Called once by main.
+func SetBundledDefaults(b []byte) { bundledDefaults = b }
+
+// loadRunDefaults is the defaults a run uses. An explicit --defaults-filepath, or a
+// defaults.yaml in the working directory, is read as before; with neither, the bundled copy
+// is used rather than refusing a run that sets no LoRA knob at all.
+func loadRunDefaults() Config {
+	if defaultsFilePath == defaultDefaultsPath && bundledDefaults != nil {
+		if _, err := os.Stat(defaultsFilePath); errors.Is(err, fs.ErrNotExist) {
+			logrus.Debugf("no %s in the working directory; using the bundled defaults", defaultDefaultsPath)
+			return parseDefaultsConfig(bundledDefaults, "bundled defaults.yaml")
+		}
+	}
+	return loadDefaultsConfig(defaultsFilePath)
+}
+
 // loadDefaultsConfig parses defaults.yaml into a Config struct.
 // Uses strict field checking (R10).
 func loadDefaultsConfig(path string) Config {
@@ -61,11 +87,16 @@ func loadDefaultsConfig(path string) Config {
 	if err != nil {
 		logrus.Fatalf("Failed to read defaults file: %v", err)
 	}
+	return parseDefaultsConfig(data, path)
+}
+
+// parseDefaultsConfig strictly parses a defaults document (R10); source names it in errors.
+func parseDefaultsConfig(data []byte, source string) Config {
 	var cfg Config
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
+		logrus.Fatalf("Failed to parse defaults YAML (%s): %v", source, err)
 	}
 	return cfg
 }

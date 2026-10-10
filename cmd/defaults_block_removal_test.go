@@ -228,3 +228,51 @@ func TestDefaultsBlockRemoved_StaticGuard(t *testing.T) {
 		}
 	}
 }
+
+// With --defaults-filepath unset, a run uses a defaults.yaml in its working directory when
+// there is one and the copy compiled into the binary when there is not, so a run outside a
+// checkout gets the shipped LoRA defaults instead of refusing. An explicit path is unaffected.
+func TestLoadRunDefaults_WorkingDirectoryFileWinsOverTheBundledCopy(t *testing.T) {
+	shipped, err := os.ReadFile("../defaults.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedBundle, savedPath := bundledDefaults, defaultsFilePath
+	wd, _ := os.Getwd()
+	defer func() {
+		bundledDefaults, defaultsFilePath = savedBundle, savedPath
+		_ = os.Chdir(wd)
+	}()
+	SetBundledDefaults(shipped)
+	defaultsFilePath = defaultDefaultsPath
+
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	want := loadDefaultsConfig(filepath.Join(wd, "../defaults.yaml"))
+	if got := loadRunDefaults(); got.LoRADefaults == nil || !loraDefaultsEqual(got.LoRADefaults, want.LoRADefaults) {
+		t.Fatalf("with no defaults.yaml in the working directory the bundled copy must be used")
+	}
+
+	local := "lora:\n  load_base_latency_us: 7.0\n  load_bandwidth_bytes_us: 1.0\n  footprint_bytes_per_rank: 1.0\nversion: \"0.0.1\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "defaults.yaml"), []byte(local), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadRunDefaults(); got.LoRADefaults == nil || got.LoRADefaults.LoadBaseLatencyUs != 7.0 {
+		t.Errorf("a defaults.yaml in the working directory must win over the bundled copy, got %+v", got.LoRADefaults)
+	}
+}
+
+func loraDefaultsEqual(a, b *LoRADefaults) bool {
+	if a.LoadBaseLatencyUs != b.LoadBaseLatencyUs || a.LoadBandwidthBytesUs != b.LoadBandwidthBytesUs ||
+		a.FootprintBytesPerRank != b.FootprintBytesPerRank || len(a.StepOverheadTiers) != len(b.StepOverheadTiers) {
+		return false
+	}
+	for k, v := range a.StepOverheadTiers {
+		if b.StepOverheadTiers[k] != v {
+			return false
+		}
+	}
+	return true
+}

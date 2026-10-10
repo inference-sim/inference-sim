@@ -1020,7 +1020,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&seed, "seed", 42, "Seed for random request generation")
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
-	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to default constants: the LoRA cost coefficients")
+	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", defaultDefaultsPath, "Path to default constants: the LoRA cost coefficients (the copy compiled into the binary is used when this is unset and no defaults.yaml is in the working directory)")
 	registerCatalogFlag(cmd)
 
 	// Engine scheduling knobs the deployment schema does not state. Every other engine
@@ -1173,7 +1173,7 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 
 	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
 	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
-	if defs := loadDefaultsConfig(defaultsFilePath).LoRADefaults; defs != nil {
+	if defs := loadRunDefaults().LoRADefaults; defs != nil {
 		if cfg.LoadBaseLatencyUs == nil {
 			v := defs.LoadBaseLatencyUs
 			cfg.LoadBaseLatencyUs = &v
