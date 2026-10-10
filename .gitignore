@@ -147,7 +147,6 @@ docs/plans/
 
 # compiled scoring and probe binaries (built with `go build ./cmd/...`; never artefacts in git)
 /blisbaseline
-/estimatorscore
 /kernelscore
 /metricscore
 /sensitivity

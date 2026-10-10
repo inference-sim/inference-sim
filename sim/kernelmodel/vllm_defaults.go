@@ -24,7 +24,12 @@
 //   - the A100 exclusion is by device NAME, not by memory. An 80 GiB A100 clears the 70 GiB
 //     threshold and is still sent to the small defaults, because large batched-token counts
 //     measured worse on it.
-package latency
+//
+// It lives here, beside the adapter, because its only consumers are the measurement harness
+// and the scenario checks. blis-latency-kernel resolves the same defaults for itself when a
+// deployment leaves them unstated (unexported in v0.1.0); when it exports that resolution,
+// this copy should be replaced by a call to it.
+package kernelmodel
 
 import "strings"
 

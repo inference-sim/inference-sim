@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // A scenario must not carry a batch setting that the deployment did not have.
@@ -55,7 +53,7 @@ func TestScenariosDoNotCarryGuessedBatchDefaults(t *testing.T) {
 			continue // nothing stated is nothing to check
 		}
 		checked++
-		want := latency.ResolveVLLMBatchDefaults(mem, chip)
+		want := ResolveVLLMBatchDefaults(mem, chip)
 		// A file may legitimately state a measured value from the deployment's own launch.
 		// It must say so, so a reader can tell a measurement from a default.
 		if strings.Contains(text, "measured launch setting") {

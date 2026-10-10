@@ -15,14 +15,6 @@ func hopperRepos() kernelmodel.Repos {
 	}
 }
 
-func hopperBackends() BackendPaths {
-	return BackendPaths{
-		Catalog:  kernelmodel.DefaultCatalog(),
-		HWConfig: "../../../hardware_config.json",
-		Defaults: "../../../defaults.yaml",
-	}
-}
-
 // testSweep returns a real sweep from the corpus rather than a hand-built one, so the test
 // exercises the same inputs the score does.
 func testSweep(t *testing.T) Sweep {
@@ -61,32 +53,13 @@ func TestUnsetEstimatorIsTheKernel(t *testing.T) {
 	}
 }
 
-// Swapping the step-time model must change the step time and NOTHING else. The KV budget and
-// the number of completions are decided by the kernel for every arm, so if an analytic arm
-// moved them the comparison would be mixing admission behaviour into a step-time result.
-func TestAnalyticArmsChangeStepTimeNotAdmission(t *testing.T) {
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
-		Backends: hopperBackends()}
-	base, err := Run(testSweep(t), 8, cfg)
-	if err != nil {
-		t.Fatalf("kernel: %v", err)
-	}
+// An analytic arm cannot be built any more; asking for one must fail loudly rather than
+// quietly score the kernel under another name.
+func TestRetiredEstimatorsAreRefused(t *testing.T) {
 	for _, e := range []Estimator{EstimatorRoofline, EstimatorTrainedPhysics} {
-		cfg.Estimator = e
-		got, err := Run(testSweep(t), 8, cfg)
-		if err != nil {
-			t.Fatalf("%s: %v", e, err)
-		}
-		if got.KVBlocks != base.KVBlocks {
-			t.Errorf("%s: KV budget moved, %d vs %d -- the arms no longer share admission",
-				e, got.KVBlocks, base.KVBlocks)
-		}
-		if got.MeanITLUs == base.MeanITLUs {
-			t.Errorf("%s: step time is identical to the kernel's (%.4f); the arm is not "+
-				"actually being used", e, got.MeanITLUs)
-		}
-		if got.MeanITLUs <= 0 {
-			t.Errorf("%s: produced no measurement (%.4f)", e, got.MeanITLUs)
+		cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42, Estimator: e}
+		if _, err := Run(testSweep(t), 8, cfg); err == nil {
+			t.Errorf("%s: Run succeeded; a retired estimator must be refused", e)
 		}
 	}
 }

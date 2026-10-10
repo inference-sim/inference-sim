@@ -14,7 +14,7 @@
 //
 // A setting the run did not pass is ABSENT here rather than filled in, which is the whole
 // point of the distinction: the caller applies the engine's own resolution
-// (latency.ResolveVLLMBatchDefaults) and can report which of the two it used.
+// (kernelmodel.ResolveVLLMBatchDefaults) and can report which of the two it used.
 package harness
 
 import (
@@ -25,7 +25,6 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // PassedSettings is what a run's command line carried. A nil field was not passed.
@@ -181,7 +180,7 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 	// framework: resolving an sglang or trtllm deployment with vLLM's device-memory defaults
 	// would substitute one engine's behaviour for another's.
 	vllm := sw.Framework == "vllm"
-	fallback := latency.ResolveVLLMBatchDefaults(dep.DeviceMemoryGiB, dep.Hardware)
+	fallback := kernelmodel.ResolveVLLMBatchDefaults(dep.DeviceMemoryGiB, dep.Hardware)
 
 	// What a setting falls back to when the run did not pass it. Factored out because it
 	// applies in two places that are easy to let drift: a point with a log that omits one
