@@ -16,8 +16,8 @@ import (
 // #1768: the per-model `defaults:` block (GPU / tensor_parallelism / hf_repo) and the Go
 // surface that declared it (Config.Defaults, the DefaultConfig struct, GetHFRepo) are gone.
 //
-// NS-6 (#1733) already made that policy unreachable — the deployment is a required operator
-// input (--hardware/--tp) and the model config is read from the catalog (#1731) — so this is
+// NS-6 (#1733) already made that policy unreachable — the deployment is the kernel scenario's
+// (--scenario) and the model config is read from the catalog (#1731) — so this is
 // the retirement of inert policy, not a data migration. Nothing consumed it, so nothing is
 // lost, and no number moves (INV-6).
 //

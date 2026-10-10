@@ -176,8 +176,8 @@ var docCatalogEntryPoints = []string{
 // TestDocExamplesDocumentTheCatalogEnvVar is the #1731 counterpart of
 // TestDocExamplesPassDeploymentFlags, and deliberately a DIFFERENT shape.
 //
-// --hardware/--tp have no environment-variable form, so #1733 had to add them to every one
-// of the ~108 documented examples. --catalog does have one — BLIS_CATALOG exists precisely
+// The deployment flag (--scenario) has no environment-variable form, so every documented
+// example has to state it. --catalog does have one — BLIS_CATALOG exists precisely
 // so the catalog location is stated ONCE rather than repeated in every command. So the
 // documented examples keep omitting the flag, and what has to hold instead is that each
 // entry point a reader starts from names both forms and shows the one-time export. This

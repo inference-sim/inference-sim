@@ -244,7 +244,7 @@ func TestMetrics_ChunkedPrefill_PreservesConservation(t *testing.T) {
 }
 
 func TestMetrics_ChunkedPrefill_TTFT_HigherThanNonChunked(t *testing.T) {
-	// Behavioral: chunked prefill incurs overhead (more steps, each with beta0).
+	// Behavioral: chunked prefill incurs overhead (more steps, each paying the per-step base cost).
 	// TTFT(chunked) >= TTFT(non-chunked) for the same request.
 	sNC := msInjectAndRun(t, msConfig(math.MaxInt64), "nc", 64, 3, 0)
 

@@ -19,15 +19,14 @@ import (
 // larger with overhead than without. This isolates the step-overhead effect from
 // the (unchanged) cold-load charge and proves the accessor reaches production.
 //
-// It holds for both ways a latency model reaches an instance: the coefficient backend the
-// simulator builds, and a model injected through LatencyModel (how
-// blis-latency-kernel arrives, which knows nothing of adapters and gets the factor from
-// sim.WithAdapterOverhead).
+// It holds whatever model prices the steps: the test fake latency model, and a model that
+// knows nothing of adapters (as blis-latency-kernel does), which gets the factor from
+// sim.WithAdapterOverhead.
 func TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E(t *testing.T) {
 	for _, injected := range []bool{false, true} {
-		name := "built-in backend"
+		name := "fake latency model"
 		if injected {
-			name = "injected model"
+			name = "adapter-unaware model"
 		}
 		t.Run(name, func(t *testing.T) { adapterStepOverheadInflatesLatency(t, injected) })
 	}

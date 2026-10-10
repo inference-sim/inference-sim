@@ -101,8 +101,8 @@ func configYAMLTags() map[string]bool {
 // The retired claim it kills: the schema block showed a `models:` list mapping a
 // model+GPU+TP triple to its own alpha/beta coefficients. cmd.Config has no Models field, so
 // strict parsing would have rejected such a file outright — the documented example could not
-// be loaded by the binary it documented. Coefficients are one global block
-// (trained_physics_coefficients), never keyed by deployment.
+// be loaded by the binary it documented. defaults.yaml now carries no latency coefficients at
+// all: the kernel reads them from blis-registry, and the file holds only LoRA cost defaults.
 //
 // Written as an agreement check rather than a fixed list on purpose: #1769/#1770 are expected
 // to remove blocks from this schema, and this test should then fail on the DOC being stale
@@ -188,9 +188,9 @@ func TestMetricsPathDocumentedOnRunAndReplay(t *testing.T) {
 
 // TestModelsDocScopeClaimIsBounded pins the corrected compatibility framing on
 // docs/reference/models.md. "any other model runs" / "Any other model ... will work"
-// overstated it: a config with no derivable layer count is refused, a non-SwiGLU activation
-// makes KV auto-sizing fatal (the run aborts unless `--total-kv-blocks` is set), and several
-// modern shapes run only under documented approximations.
+// overstated it: a model runs only when the kernel can price it -- its graph in the catalog
+// and its coefficients in the registry -- and several modern shapes run only under documented
+// approximations.
 func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 	const path = "../docs/reference/models.md"
 	src, err := os.ReadFile(path)

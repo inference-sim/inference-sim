@@ -122,18 +122,23 @@ func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_SourceContainsNoInlineBackendBlocks verifies replay.go delegates
-// to the shared function (no inline backend resolution after Task 3, BC-1).
-func TestReplayCmd_SourceContainsNoInlineBackendBlocks(t *testing.T) {
-	// GIVEN the source of cmd/replay.go
+// TestReplayCmd_BuildsItsLatencyModelOnlyThroughResolveLatencyConfig: replay's steps are priced
+// by the model resolveLatencyConfig returns, the one function run uses too (R23, INV-13), and
+// replay opens no kernel of its own -- a second construction site could resolve a different
+// scenario or pool than the one the run priced.
+func TestReplayCmd_BuildsItsLatencyModelOnlyThroughResolveLatencyConfig(t *testing.T) {
 	data, err := os.ReadFile("replay.go")
 	assert.NoError(t, err)
 	content := string(data)
 
-	// WHEN we check for the inline backend-resolution patterns
-	// THEN they must not be present (indicates delegation to resolveLatencyConfig)
-	assert.NotContains(t, content, `if backend == "roofline" {`,
-		"replay.go must not contain inline roofline resolution block; use resolveLatencyConfig(cmd)")
+	assert.Contains(t, content, "resolveLatencyConfig(cmd)",
+		"replay.go must resolve its latency model through resolveLatencyConfig(cmd)")
+	assert.Regexp(t, `LatencyModel:\s+lr\.KernelModel`, content,
+		"replay.go must price its steps with the model resolveLatencyConfig returned")
+	for _, open := range []string{"kernelmodel.Open(", "kernelmodel.OpenPool(", "latencykernel.New("} {
+		assert.NotContainsf(t, content, open,
+			"replay.go must not build a latency model of its own (%s); use resolveLatencyConfig(cmd)", open)
+	}
 }
 
 // TestReplayCmd_SourceContainsNoPolicyInlineBlocks verifies replay.go delegates

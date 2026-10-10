@@ -48,14 +48,9 @@ func (m slowDecode) StepTime(batch []*sim.Request) int64 {
 	return t + m.extra
 }
 
-// pdSingleRequest runs one request through a 1P1D cluster priced by model and returns its
-// parent and client-visible TTFT.
-func pdSingleRequest(rt *rapid.T, model sim.LatencyModel, inputLen, outputLen int) (*ParentRequest, float64) {
-	return pdSingleRequestCapped(rt, model, inputLen, outputLen, 0)
-}
-
-// pdSingleRequestCapped is pdSingleRequest on engines whose window is maxModelLen tokens
-// (0 = unlimited); a request whose input and output exceed it is length-capped at decode.
+// pdSingleRequestCapped runs one request through a 1P1D cluster priced by model, on engines
+// whose window is maxModelLen tokens (0 = unlimited; a request whose input and output exceed
+// it is length-capped at decode), and returns its parent and client-visible TTFT.
 func pdSingleRequestCapped(rt *rapid.T, model sim.LatencyModel, inputLen, outputLen int, maxModelLen int64) (*ParentRequest, float64) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 	cfg.LatencyModel = model

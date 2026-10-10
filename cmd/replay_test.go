@@ -535,7 +535,7 @@ warm_up_requests: 0
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 	if err := testCmd.ParseFlags([]string{
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
@@ -778,7 +778,7 @@ warm_up_requests: 0
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
@@ -964,7 +964,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
 		"--catalog", catalogDir3, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
@@ -1127,7 +1127,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 		if err := testCmd.ParseFlags([]string{
-			// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+			// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
 			"--catalog", catalogDir4, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath,
 			"--trace-data", dataPath, "--trace-output", prefix,
