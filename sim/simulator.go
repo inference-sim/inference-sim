@@ -245,7 +245,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// could never start a load (adapterCost nil) — stranding them. A malformed cost
 	// config is a library-boundary error (R6), not a panic.
 	// BuildAdapterCost centralizes the activation condition (R4) so NewSimulator and
-	// the sim/cluster latency backend agree on exactly when adapter costs apply; it
+	// the sim/cluster latency-model wrapper (WithAdapterOverhead) agree on exactly when adapter costs apply; it
 	// returns (nil, nil) when the LoRA subsystem is inert (no adapters, no capacity,
 	// or sim/lora unlinked). A non-nil ac therefore stands in for the full
 	// HasAdapters && capacity != nil && factories-registered condition.
@@ -1073,8 +1073,8 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// in RunningBatch for the next step, but do not contribute to this step's
 	// compute time. See vllm/v1/core/sched/scheduler.py scheduled_running_reqs.
 	// Note: scheduled may be empty when all requests are idle (e.g., after
-	// Phase 1 preemption cascade). All StepTime backends handle empty batches
-	// correctly (return >= 1), and the max(1, ...) floor below guarantees INV-3.
+	// Phase 1 preemption cascade). The LatencyModel contract requires StepTime to
+	// handle an empty batch (return >= 1), and the max(1, ...) floor below guarantees INV-3.
 	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
 	for _, req := range sim.RunningBatch.Requests {
 		if req.NumNewTokens > 0 {
@@ -1086,7 +1086,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
-	// INV-3 defense-in-depth: guarantee clock advancement regardless of backend.
+	// INV-3 defense-in-depth: guarantee clock advancement regardless of the latency model.
 	// All LatencyModel implementations must return >= 1 per interface contract;
 	// this floor catches violations that would cause infinite livelock.
 	currStepAdvance = max(1, currStepAdvance)

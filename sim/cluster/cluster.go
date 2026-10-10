@@ -87,7 +87,9 @@ type ClusterSimulator struct {
 	encodeDecider           sim.EncodeDecider
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
-	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
+	// Transfer contention state (DeploymentConfig.PDTransferContention, INV-P2-2). Dormant
+	// while the kernel prices the handoff: no CLI flag sets it and NewClusterSimulator refuses
+	// it with a PDTransferTime pricer, so these stay zero.
 	activeTransfers                int
 	peakConcurrentTransfers        int
 	transferDepthSum               int64
@@ -219,9 +221,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		}
 	}
 
-	// PDTransferContention is valid for any PD-enabled deployment, including pure-shared
-	// (shared pod → shared pod KV transfer is possible when prefill and decode land on
-	// different shared pods). Only reject when PD is entirely disabled. (#1276)
+	// PDTransferContention without PD disaggregation has nothing to contend. With prefill or
+	// shared instances it was already refused above (the handoff is priced by PDTransferTime),
+	// so the contention model is dormant (INV-P2-2) and this guard covers the remainder.
 	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
 		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
@@ -322,7 +324,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if len(config.NodePools) > 0 {
 		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
 		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
-		// override (--prefill-tp/--decode-tp) would make the simulated TP diverge
+		// override (PoolOverrides.TP, from a P/D scenario's per-pool parallelism) would make the simulated TP diverge
 		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
 		// capacity. Per-role placement does not exist yet, so reject the combination
 		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
@@ -335,7 +337,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if ov.po.TP != nil && *ov.po.TP != config.TP {
 				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
 					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
-					"TP would be simulated at one degree but placed/billed at another. Use a uniform --tp, or drop node_pools.",
+					"TP would be simulated at one degree but placed/billed at another. Use a uniform TP across pools, or drop node_pools.",
 					ov.name, *ov.po.TP, config.TP))
 			}
 		}
@@ -598,7 +600,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if config.TenantBudgets != nil {
 		totalCapacity := config.NumInstances * int(config.MaxNumSeqs)
 		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
-			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — set --max-num-seqs > 0",
+			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — MaxNumSeqs must be > 0",
 				config.NumInstances, config.MaxNumSeqs)
 		}
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
@@ -1722,7 +1724,8 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 }
 
 // PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
-// Returns 0 when --pd-transfer-contention is disabled (backward-compat).
+// Returns 0 when PDTransferContention is off, which it always is while the kernel prices
+// the handoff (INV-P2-2 dormant).
 func (c *ClusterSimulator) PeakConcurrentTransfers() int {
 	return c.peakConcurrentTransfers
 }
@@ -1737,7 +1740,8 @@ func (c *ClusterSimulator) PeakConcurrentTransfers() int {
 //
 // This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
 // how many transfers were in flight at the moment each new transfer began, including the new one.
-// Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
+// Returns 0 when PDTransferContention is off (always, while the kernel prices the handoff;
+// INV-P2-2 dormant) or no transfers occurred.
 func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
 	if c.transferStartCount == 0 {
 		return 0

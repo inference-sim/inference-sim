@@ -44,7 +44,7 @@ type wekaRequest struct {
 	API  float64 `json:"api_time"` // real end-to-end server time (sec); used to recompute pure think
 	// The recorded model name (`model`) is intentionally NOT parsed: it is
 	// routing-significant at replay (buildRouterState filters instances by it),
-	// and Weka records claude-* which would never match --model → every request
+	// and Weka records claude-* which would never match the run's model → every request
 	// silently dropped. encoding/json simply ignores the key; the shared encoder
 	// leaves TraceRecord.Model empty. hash_ids / think_time / ttft are likewise
 	// not consumed (think is recomputed; hash_ids is future work).

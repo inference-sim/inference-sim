@@ -9,8 +9,8 @@ import (
 // PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.
 // Nil pointer / empty string means "use global config" for that field.
 // Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
-// global) from an explicit value. CLI validates TP > 0 and MaxModelLen > 0 when set;
-// TotalKVBlocks may be set by auto-calculation.
+// global) from an explicit value. The CLI fills them from each P/D pool's kernel
+// (TotalKVBlocks is the kernel's per-rank budget).
 //
 // Contract for library callers constructing PoolOverrides directly (bypassing CLI):
 // - *TP must be > 0 when non-nil

@@ -11,8 +11,8 @@ type KVCacheConfig struct {
 	BlockSizeTokens       int64   // tokens per block (must be > 0)
 	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
 	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
-	KVTransferBandwidth   float64 // transfer rate in TOKENS per tick (TieredKVCache charges ceil(BlockSizeTokens/rate) per block); no CLI default since #1819 — cmd/ derives it from the catalog cpu_dram device (cmd/kv_transfer_derive.go)
-	KVTransferBaseLatency int64   // fixed cost per reloaded block (ticks); cmd/ derives omitted CLI values from catalog cpu_dram.base_latency
+	KVTransferBandwidth   float64 // transfer rate in TOKENS per tick (TieredKVCache charges ceil(BlockSizeTokens/rate) per block); unused when KVTransferTicksPerBlock > 0
+	KVTransferBaseLatency int64   // fixed cost per reloaded block (ticks); unused when KVTransferTicksPerBlock > 0
 	// Offload captures vLLM's multi-tier KV-offload config surface (H5, #1587). Its
 	// zero value is inert (Enabled=false) and unread by sim/kv in this PR (INV-6);
 	// it is set only via the WithKVOffload option. Kept as a nested sub-config value
@@ -151,8 +151,8 @@ func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold i
 // GLM-5.2 MTP is 5) while leaving a wide safety margin.
 const MaxSpeculativeTokens = 1024
 
-// isValidSpeculativeMethod reports whether label is an accepted --speculative-method
-// value. The label does not change the step-time math in the current model
+// isValidSpeculativeMethod reports whether label is an accepted speculative method
+// (the scenario's engine.speculative method). The label does not change the step-time math in the current model
 // (throughput and verify-width cost are driven by K and α); it is informational
 // provenance and the extension point for future per-method behavior. Implemented as
 // a function over a switch (not a package-level map) so there is no shared mutable
@@ -203,10 +203,10 @@ func NewSpeculativeConfig(k int, acceptance float64, method string) (Speculative
 // Validate enforces the SpeculativeConfig constraints (R1, R3, R20).
 func (c SpeculativeConfig) Validate() error {
 	if c.K < 0 {
-		return fmt.Errorf("speculative: num-speculative-tokens must be >= 0, got %d", c.K)
+		return fmt.Errorf("speculative: num_speculative_tokens must be >= 0, got %d", c.K)
 	}
 	if c.K > MaxSpeculativeTokens {
-		return fmt.Errorf("speculative: num-speculative-tokens must be <= %d, got %d", MaxSpeculativeTokens, c.K)
+		return fmt.Errorf("speculative: num_speculative_tokens must be <= %d, got %d", MaxSpeculativeTokens, c.K)
 	}
 	if math.IsNaN(c.Acceptance) || math.IsInf(c.Acceptance, 0) {
 		return fmt.Errorf("speculative: acceptance-rate must be finite, got %v", c.Acceptance)
@@ -217,10 +217,10 @@ func (c SpeculativeConfig) Validate() error {
 	if c.K == 0 {
 		// Feature off: reject dangling knobs rather than silently ignore them (R1).
 		if c.Acceptance != 0 {
-			return fmt.Errorf("speculative: acceptance-rate set (%v) but num-speculative-tokens is 0", c.Acceptance)
+			return fmt.Errorf("speculative: acceptance-rate set (%v) but the engine drafts no tokens (num_speculative_tokens 0)", c.Acceptance)
 		}
 		if c.Method != "" {
-			return fmt.Errorf("speculative: method %q set but num-speculative-tokens is 0", c.Method)
+			return fmt.Errorf("speculative: method %q set but the engine drafts no tokens (num_speculative_tokens 0)", c.Method)
 		}
 		return nil
 	}

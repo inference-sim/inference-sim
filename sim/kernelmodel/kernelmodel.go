@@ -98,8 +98,8 @@ type Model struct {
 	// reporting it. Do not reintroduce that while extending identity below.
 }
 
-// identity is the deployment identity an alternative backend is configured from: the
-// model's name, the chip, and the routed expert geometry.
+// identity is the deployment identity the simulator is configured from beside the kernel:
+// the model's name, the chip, and the routed expert geometry.
 //
 // It is NOT configuration the kernel resolved, so it is not read from the kernel: the
 // kernel deliberately does not re-export identity (blis-schemas#36 draws that line --
@@ -387,8 +387,8 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 
 // ticks converts a kernel Duration to BLIS's int64 microsecond tick.
 //
-// Truncation rather than rounding, to match BLIS's existing backends: both call
-// clampToInt64 on a float microsecond value. The largest error is 1 tick, which on the
+// Truncation rather than rounding, as the coefficient backends this kernel replaced did
+// (they truncated a float microsecond value). The largest error is 1 tick, which on the
 // smallest step in the evaluation corpus (553 us for an empty batch) is under 0.2%.
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
 
@@ -477,7 +477,7 @@ func (m *Model) Deployment() Deployment {
 	}
 }
 
-// Deployment is the scenario identity an alternative backend is built from.
+// Deployment is the scenario identity the simulator's deployment is built from.
 type Deployment struct {
 	Model    string
 	Hardware string

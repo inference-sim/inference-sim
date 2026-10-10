@@ -221,8 +221,8 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	cs.transfersInitiated++
 	parentReq.TransferStartTime = startTime
 
-	// Contention tracking (INV-P2-2): increment before duration calculation so the
-	// divisor reflects the active count including this transfer.
+	// Contention bookkeeping (INV-P2-2, dormant: NewClusterSimulator refuses
+	// PDTransferContention alongside the PDTransferTime pricer). Counts include this transfer.
 	if cs.config.PDTransferContention {
 		cs.activeTransfers++
 		if cs.activeTransfers > cs.peakConcurrentTransfers {
