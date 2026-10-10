@@ -511,15 +511,22 @@ type Deployment struct {
 	GPUMemUtil      float64
 }
 
-// Roles lists the roles of a scenario's pools, in declaration order, without building a kernel.
-func Roles(scenario string, r Repos) ([]deployment.Role, error) {
+// Shape is what a scenario's deployment states beyond any one pool, read without building a
+// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy.
+type Shape struct {
+	Roles         []deployment.Role
+	StatesOffload bool
+}
+
+// ShapeOf reads a scenario's Shape.
+func ShapeOf(scenario string, r Repos) (Shape, error) {
 	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
-		return nil, err
+		return Shape{}, err
 	}
-	roles := make([]deployment.Role, len(dep.Pools))
+	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
 	for i, p := range dep.Pools {
-		roles[i] = p.Role
+		sh.Roles[i] = p.Role
 	}
-	return roles, nil
+	return sh, nil
 }

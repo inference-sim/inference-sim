@@ -560,11 +560,19 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// The scenario's roles and the CLI topology describe one deployment. A disaggregated
 	// scenario run without a P/D topology would serve every request on its first pool's
 	// engine, as though colocated; the opposite mismatch is refused when the pools open.
-	roles, err := kernelmodel.Roles(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
+	shape, err := kernelmodel.ShapeOf(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
 	if err != nil {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
 	}
-	if slices.Contains(roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
+	// The scenario's offload block and --kv-offload-config describe the same tiers in two
+	// formats that are not yet one (#1910). Simulating without a hierarchy the scenario states
+	// would drop it silently (R1), so it is refused until the scenario is the one source.
+	if shape.StatesOffload {
+		logrus.Fatalf("scenario %q states a deployment offload block, which BLIS does not "+
+			"read yet (#1910); describe the tiers with --kv-offload-config and remove the block "+
+			"from the scenario", kernelScenario)
+	}
+	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
 			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
 			kernelScenario)

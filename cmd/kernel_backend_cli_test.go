@@ -727,6 +727,8 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
 		{"a per-role MoE comm flag", "unknown flag: --decode-moe-comm-backend",
 			pd(plain, append(topology, "--decode-moe-comm-backend", "naive")...)},
+		{"a scenario stating an offload hierarchy", "states a deployment offload block",
+			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 	} {
