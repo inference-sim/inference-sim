@@ -121,7 +121,10 @@ func TestSummarizeCutsTheWarmupByCompletionIndex(t *testing.T) {
 		{ID: "first", CompletionIndex: 1, ITL: 1, TTFT: 10},
 		{ID: "mid", CompletionIndex: 2, ITL: 2, TTFT: 20},
 	}
-	obs := summarize(reqs, 1, 0)
+	obs, err := summarize(reqs, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if obs.Completed != 3 || obs.WarmupDiscarded != 1 || obs.Measured != 2 {
 		t.Fatalf("completed %d, discarded %d, measured %d; want 3, 1, 2",
 			obs.Completed, obs.WarmupDiscarded, obs.Measured)

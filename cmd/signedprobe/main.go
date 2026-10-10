@@ -61,12 +61,17 @@ func main() {
 	}
 
 	w := csv.NewWriter(os.Stdout)
-	defer w.Flush()
-	_ = w.Write([]string{
+	write := func(row []string) {
+		if err := w.Write(row); err != nil {
+			fmt.Fprintf(os.Stderr, "signedprobe: writing stdout: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	write([]string{
 		"scenario", "model", "gpu", "label", "concurrency",
 		"meas_tpot_us", "pred_tpot_us", "meas_ttft_us", "pred_ttft_us",
 	})
-	var total, noAbs, noTPOT, runErr, emitted int
+	var total, noAbs, noTPOT, noTTFT, runErr, emitted int
 	for _, sw := range c.Sweeps {
 		if *tier != "" {
 			// The same membership test cmd/metricscore uses, so a slice here and a score
@@ -89,7 +94,13 @@ func main() {
 				noTPOT++
 				continue
 			}
-			mf, _ := a.At(harness.MetricTTFT, p.Concurrency)
+			// A missing TTFT absolute is skipped, not written as 0: a zero measured TTFT is a
+			// value, and a consumer would score it.
+			mf, ok := a.At(harness.MetricTTFT, p.Concurrency)
+			if !ok {
+				noTTFT++
+				continue
+			}
 			o, err := harness.Run(sw, p.Concurrency, cfg)
 			if err != nil {
 				runErr++
@@ -99,8 +110,13 @@ func main() {
 				}
 				continue
 			}
+			if o.MeanITLUs <= 0 || o.MeanTTFTUs <= 0 {
+				runErr++
+				fmt.Fprintf(os.Stderr, "no latency observed (%s c=%d)\n", sw.Scenario, p.Concurrency)
+				continue
+			}
 			emitted++
-			_ = w.Write([]string{
+			write([]string{
 				sw.Scenario, sw.Model, sw.GPU, sw.Label,
 				strconv.Itoa(p.Concurrency),
 				strconv.FormatFloat(mt, 'f', 3, 64),
@@ -111,11 +127,20 @@ func main() {
 		}
 	}
 	w.Flush()
+	if err := w.Error(); err != nil {
+		fmt.Fprintf(os.Stderr, "signedprobe: writing stdout: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Fprintf(os.Stderr,
-		"points=%d emitted=%d skipped: no_absolutes=%d no_tpot=%d run_error=%d\n",
-		total, emitted, noAbs, noTPOT, runErr)
+		"points=%d emitted=%d skipped: no_absolutes=%d no_tpot=%d no_ttft=%d run_error=%d\n",
+		total, emitted, noAbs, noTPOT, noTTFT, runErr)
 	if err := harness.AssessCoverage(c, cfg).WriteGaps(*gaps); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// A probe that emitted nothing printed only its header: that is a failure, not a result.
+	if emitted == 0 {
+		fmt.Fprintln(os.Stderr, "signedprobe: no point could be emitted")
 		os.Exit(1)
 	}
 }

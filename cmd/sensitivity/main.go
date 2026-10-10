@@ -85,7 +85,13 @@ func main() {
 			var local []float64
 			for i, p := range sw.Points {
 				obs, err := harness.Run(sw, p.Concurrency, cfg)
-				if err != nil || obs.MeanITLUs <= 0 {
+				if err == nil && obs.MeanITLUs <= 0 {
+					err = fmt.Errorf("no inter-token latency observed")
+				}
+				if err != nil {
+					// Reported, not swallowed: a sweep dropped from one configuration but not
+					// another changes the population a delta is taken over.
+					fmt.Fprintf(os.Stderr, "sensitivity: %s %s c=%d: %v\n", sw.Scenario, sw.Label, p.Concurrency, err)
 					ok = false
 					break
 				}
@@ -119,11 +125,17 @@ func main() {
 		{"token budget x2", func(c *harness.Config) { c.TokenBudgetScale = 2 }},
 		{"token budget /2", func(c *harness.Config) { c.TokenBudgetScale = 0.5 }},
 	}
+	populationsDiffer := false
 	for _, v := range variants {
 		cfg := base
 		v.apply(&cfg)
 		m, vn := score(cfg)
 		fmt.Printf("%-34s %6d %7.2f%% %+7.2f\n", v.label, vn, m, m-baseMAPE)
+		if vn != n {
+			fmt.Fprintf(os.Stderr, "sensitivity: %q scored %d points against the baseline's %d, so "+
+				"its delta compares different sweeps\n", v.label, vn, n)
+			populationsDiffer = true
+		}
 	}
 
 	// The former "admission: seqs only (no KV)" row set a KV budget large enough never to
@@ -139,6 +151,9 @@ func main() {
 	fmt.Printf("fitting to the evaluation set.\n")
 	if err := harness.AssessCoverage(c, base).WriteGaps(*gaps); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if populationsDiffer {
 		os.Exit(1)
 	}
 }

@@ -101,6 +101,10 @@ func blisArgs(cfg Config, scenarioName, scenarioDir, specPath, metricsPath strin
 		"--workload-spec", specPath,
 		"--seed", strconv.FormatInt(cfg.Seed, 10),
 		"--metrics-path", metricsPath,
+		// No client deadline: the measured benchmark's client waits for every response, so a
+		// request cut off by blis run's default 300 s deadline would score a point the
+		// benchmark never saw.
+		"--timeout", "-1",
 		"--log", "error",
 	}
 }
@@ -147,11 +151,15 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, spec *workload.Wor
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, fmt.Errorf("blis run metrics file: %w", err)
 	}
-	// An infinite horizon runs every request to a terminal state, so anything still queued or
-	// running means the run ended early and the means would describe a truncated point.
-	if out.StillQueued > 0 || out.StillRunning > 0 {
-		return nil, fmt.Errorf("blis run ended with %d request(s) queued and %d running",
-			out.StillQueued, out.StillRunning)
+	// The measured point completed every request it sent, so the simulated one must too: an
+	// average over the survivors of a run that timed out, dropped or never finished requests
+	// describes a different, easier point (the slowest requests are the ones lost).
+	if out.CompletedRequests != out.InjectedRequests || out.TimedOutRequests > 0 ||
+		out.DroppedUnservable > 0 || out.LengthCappedRequests > 0 {
+		return nil, fmt.Errorf("blis run completed %d of %d request(s) (%d timed out, %d dropped "+
+			"as unservable, %d length-capped, %d queued, %d running at the end)",
+			out.CompletedRequests, out.InjectedRequests, out.TimedOutRequests, out.DroppedUnservable,
+			out.LengthCappedRequests, out.StillQueued, out.StillRunning)
 	}
 	return &out, nil
 }

@@ -244,7 +244,6 @@ func main() {
 					ok = false
 					break
 				}
-				coverage.Observed(sw, p.Concurrency, obs)
 				if obs.MeanITLUs <= 0 || obs.MeanTTFTUs <= 0 {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: no measurement",
 						sw.Scenario, sw.Label, a.est, p.Concurrency))
@@ -269,6 +268,10 @@ func main() {
 				mt, _, _ := p.MetricOf(harness.MetricTPOT)
 				tt, _, _ := p.MetricOf(harness.MetricTTFT)
 				if mt <= 0 || tt <= 0 {
+					detail := fmt.Sprintf("measured TPOT relative %v, TTFT relative %v", mt, tt)
+					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: %s",
+						sw.Scenario, sw.Label, a.name, p.Concurrency, detail))
+					coverage.BadMeasurement(sw, p.Concurrency, detail)
 					ok = false
 					break
 				}

@@ -162,12 +162,6 @@ type Observation struct {
 	Completed    int
 	// Preemptions is the run's preemption_count, as `blis run` reports it.
 	Preemptions int64
-	// TimedOut and Dropped are the requests `blis run` ended as timed out (its client timeout)
-	// or dropped as unservable. Neither contributes to a mean -- only completions do -- so a
-	// non-zero value means the point's means omit its slowest or largest requests; the
-	// coverage report names every such point (Coverage.Observed).
-	TimedOut int
-	Dropped  int
 
 	// WarmupDiscarded is how many leading completions were dropped, and Measured how many
 	// contributed to MeanITLUs. Reported so a reader can see the mean was not taken over a
@@ -340,10 +334,11 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
-	obs := summarize(out.Requests, warmup, cfg.WarmupFraction)
+	obs, err := summarize(out.Requests, warmup, cfg.WarmupFraction)
+	if err != nil {
+		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
+	}
 	obs.Preemptions = out.PreemptionCount
-	obs.TimedOut = out.TimedOutRequests
-	obs.Dropped = out.DroppedUnservable
 	obs.Settings = admit
 	return obs, nil
 }
@@ -406,7 +401,7 @@ func pointWorkload(w Workload, concurrency, total int, cfg Config) *workload.Wor
 // `blis run` reports per-request latencies in milliseconds; they are converted back to
 // microseconds (the simulator's tick) here. The round trip µs -> ms -> µs is exact to within
 // one float64 ulp, far below anything the score prints.
-func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float64) Observation {
+func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float64) (Observation, error) {
 	var order []sim.RequestMetrics
 	for _, r := range reqs {
 		if r.CompletionIndex > 0 {
@@ -421,10 +416,11 @@ func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float6
 	if warmupFraction > 0 && warmupFraction < 1 {
 		cut = int(float64(len(order)) * warmupFraction)
 	}
-	// Never discard everything: a run that completed few requests still has to report
-	// something, and silently returning zero would read as a perfect score.
+	// A run that completed no more requests than its warm-up has no steady state to measure;
+	// averaging the transient instead would score a different quantity, so it is refused.
 	if cut >= len(order) {
-		cut = 0
+		return Observation{}, fmt.Errorf("completed %d request(s), not more than the %d-request "+
+			"warm-up, so there is no post-warm-up completion to measure", len(order), cut)
 	}
 	const usPerMs = 1e3
 	var sum float64
@@ -476,7 +472,7 @@ func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float6
 	obs.MeasuredTTFT = ttftN
 	obs.WarmupDiscarded = cut
 	obs.Measured = n
-	return obs
+	return obs, nil
 }
 
 // MAPE is the mean absolute percentage error of predicted against measured.

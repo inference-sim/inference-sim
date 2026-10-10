@@ -194,10 +194,13 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		MaxNumSeqs:          eng.MaxNumSeqs,
 		MaxNumBatchedTokens: eng.MaxNumBatchedTokens,
 		BlockSize:           eng.BlockSize,
-		SeqsFrom:            SourceScenario,
-		TokensFrom:          SourceScenario,
-		BlockFrom:           SourceScenario,
-		PrefixFrom:          SourceScenario,
+		// The scenario's own setting, so a sweep with no measurement and no vLLM resolution
+		// (a non-vLLM engine) runs what its scenario states rather than caching by default.
+		PrefixCachingDisabled: dep.PrefixCachingDisabled,
+		SeqsFrom:              SourceScenario,
+		TokensFrom:            SourceScenario,
+		BlockFrom:             SourceScenario,
+		PrefixFrom:            SourceScenario,
 	}
 	// vLLM's resolution, which applies to any setting the run did not pass -- whether the
 	// run passed SOME settings and not others, or carries no log at all. It is gated on the

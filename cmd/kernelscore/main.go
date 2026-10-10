@@ -146,7 +146,6 @@ func main() {
 				bad = true
 				break
 			}
-			coverage.Observed(sw, p.Concurrency, obs)
 			if obs.MeanITLUs <= 0 {
 				failures = append(failures, fmt.Sprintf(
 					"%s %s c=%d: no inter-token latency observed from %d completions",
@@ -161,6 +160,8 @@ func main() {
 				if theirAnchor <= 0 {
 					failures = append(failures, fmt.Sprintf(
 						"%s %s: AISimulate anchor is %v", sw.Scenario, sw.Label, theirAnchor))
+					coverage.BadMeasurement(sw, p.Concurrency,
+						fmt.Sprintf("AISimulate anchor %v", theirAnchor))
 					bad = true
 					break
 				}

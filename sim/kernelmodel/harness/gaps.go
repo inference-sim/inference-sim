@@ -84,7 +84,8 @@ func (cv *Coverage) pointGap(sw Sweep, conc int, cause, owner, detail string) {
 }
 
 // Dropped records a sweep the scorer could not score because one of its points failed --
-// `blis run` refused or errored, or the run observed nothing. A scorer takes a sweep whole or
+// `blis run` refused or errored, the run did not complete every request it was sent (a
+// timeout, a drop, a length cap), or it observed nothing. A scorer takes a sweep whole or
 // not at all, so the gap covers every point of the sweep; the failing point and its reason
 // are the detail.
 func (cv *Coverage) Dropped(sw Sweep, conc int, reason string) {
@@ -95,18 +96,12 @@ func (cv *Coverage) Dropped(sw Sweep, conc int, reason string) {
 		fmt.Sprintf("c=%d: %s", conc, reason))
 }
 
-// Observed records what a successful run reveals about its own point: requests that ended
-// without completing, which the point's means therefore omit. A timeout is `blis run`'s
-// per-request client timeout, which the measured benchmark's client does not apply.
-func (cv *Coverage) Observed(sw Sweep, conc int, obs Observation) {
-	if obs.TimedOut > 0 {
-		cv.pointGap(sw, conc, "requests timed out under blis run's default client timeout", OwnerSim,
-			fmt.Sprintf("%d of %d requests", obs.TimedOut, obs.TimedOut+obs.Dropped+obs.Completed))
-	}
-	if obs.Dropped > 0 {
-		cv.pointGap(sw, conc, "requests dropped as unservable by blis run", OwnerSim,
-			fmt.Sprintf("%d of %d requests", obs.Dropped, obs.TimedOut+obs.Dropped+obs.Completed))
-	}
+// BadMeasurement records a sweep the scorer could not score because the measurement itself
+// is unusable at a point -- a non-positive relative or anchor -- so no error against it can be
+// computed. The gap is the measurement extraction's, not the simulator's.
+func (cv *Coverage) BadMeasurement(sw Sweep, conc int, detail string) {
+	cv.sweepGap(sw, "sweep dropped: a measured value is not usable", OwnerMeasurements,
+		fmt.Sprintf("c=%d: %s", conc, detail))
 }
 
 func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
