@@ -15,20 +15,28 @@ import (
 // OnRequestDone seam, and returns that order with the --metrics-path file's requests and the
 // stdout EmitOutput printed.
 func completionIndexRun(t *testing.T) (done []string, file []RequestMetrics, stdout string) {
+	done, _, file, stdout = completionIndexRunTicks(t)
+	return done, file, stdout
+}
+
+// completionIndexRunTicks is completionIndexRun also returning the tick each completion's
+// callback fired at.
+func completionIndexRunTicks(t *testing.T) (done []string, ticks []int64, file []RequestMetrics, stdout string) {
 	t.Helper()
 	cfg := newTestSimConfig()
 	cfg.BatchConfig = NewBatchConfig(4, 2048, 0) // a cap of 4 makes requests queue and retire in waves
 	s := mustNewSimulator(t, cfg)
-	s.OnRequestDone = func(req *Request, _ int64) []*Request {
+	s.OnRequestDone = func(req *Request, tick int64) []*Request {
 		if req.State == StateCompleted {
 			done = append(done, req.ID)
+			ticks = append(ticks, tick)
 		}
 		return nil
 	}
 	// Equal output lengths in pairs, so pairs finish in the same step: a completion-time sort
 	// alone cannot order them.
 	for i, out := range []int{3, 3, 5, 5, 2, 2, 7, 7, 4, 4, 6, 6} {
-		s.InjectArrival(newTestRequest(string(rune('a'+i)), int64(i%3), 16, out))
+		s.InjectArrival(newTestRequest(string(rune('l'-i)), int64(i%3), 16, out)) // IDs run opposite to injection order
 	}
 	s.Run()
 
@@ -59,14 +67,25 @@ func completionIndexRun(t *testing.T) (done []string, file []RequestMetrics, std
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)
 	}
-	return done, out.Requests, buf.String()
+	return done, ticks, out.Requests, buf.String()
 }
 
 // completion_index reproduces the order the simulator completed requests in -- the order a
 // warm-up cut by completion needs (#1902) -- including among requests that finished in the
 // same step.
 func TestCompletionIndexIsTheSimulatorsCompletionOrder(t *testing.T) {
-	done, reqs, _ := completionIndexRun(t)
+	done, ticks, reqs, _ := completionIndexRunTicks(t)
+	// Non-vacuity: some requests that completed at one clock completed against ID order, so an
+	// ID tie-break (or a sort by completion time, then ID) cannot reproduce the order.
+	against := false
+	for i := 1; i < len(done); i++ {
+		if ticks[i] == ticks[i-1] && done[i] < done[i-1] {
+			against = true
+		}
+	}
+	if !against {
+		t.Fatalf("no same-clock completions ran against ID order (%v at %v); the case cannot tell the orders apart", done, ticks)
+	}
 	if len(done) != 12 {
 		t.Fatalf("%d of 12 requests completed", len(done))
 	}
