@@ -821,6 +821,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	}
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
+	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
