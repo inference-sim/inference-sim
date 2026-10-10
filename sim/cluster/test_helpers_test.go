@@ -107,6 +107,12 @@ func testFakeZeroQueueing() sim.LatencyModel {
 	return fakelatency.WithCoeffs(c)
 }
 
+// testPDTransferTime is the KV-handoff price every PD behavior test injects as
+// DeploymentConfig.PDTransferTime: a fixed setup cost plus a per-token term, so a larger
+// handoff takes longer and every handoff takes at least one tick. The simulator only decides
+// when a transfer happens; how long it takes is the pricer's, so tests supply one.
+func testPDTransferTime(tokens int64, _, _ InstanceID) int64 { return 50 + tokens/50 }
+
 // newTestRequests creates test requests matching the old newTestWorkload(n) behavior:
 // rate=10/1e6, seed=42, horizon=MaxInt64, no prefix, prompt mean=100 std=20 [10,200],
 // output mean=50 std=10 [10,100].

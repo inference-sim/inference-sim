@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -65,17 +66,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 }
 
 func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
-	// ModelConfig produces 512 KV bytes/token/GPU at TP=1:
-	// 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512
-	// It sizes PD KV transfers only; step times come from the fake latency model.
-	modelCfg := sim.ModelConfig{
-		NumLayers:       2,
-		NumHeads:        4,
-		HiddenDim:       64,
-		IntermediateDim: 128,
-		BytesPerParam:   2.0,
-	}
-	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
+	// Step times come from the fake latency model and KV handoffs from the fake pricer.
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:              math.MaxInt64,
@@ -83,26 +74,29 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
 			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), sim.HardwareCalib{}, "test-model", "H100", 1, 1, false, "", "", 0),
 		},
-		NumInstances:            numInstances,
-		PrefillInstances:        prefill,
-		DecodeInstances:         decode,
-		PDDecider:               "always",
-		RoutingPolicy:           "round-robin",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
+		NumInstances:     numInstances,
+		PrefillInstances: prefill,
+		DecodeInstances:  decode,
+		PDDecider:        "always",
+		RoutingPolicy:    "round-robin",
+		PDTransferTime:   testPDTransferTime,
 	}
 }
 
-func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
+// A PD deployment without a transfer pricer is refused at construction: the simulator has no
+// formula of its own to fall back to, so a missing one must not surface mid-run (R1).
+func TestNewClusterSimulator_PDWithoutTransferPricer_Panics(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	// Replace the valid ModelConfig with a zero-value one to trigger the PD guard.
-	// PD mode requires valid ModelConfig for KV transfer size calculation.
-	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(sim.ModelConfig{}, testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0)
+	cfg.PDTransferTime = nil
 	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for PD with zero ModelConfig, got none")
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for a PD deployment with no PDTransferTime, got none")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "PDTransferTime") {
+			t.Errorf("panic must name the missing PDTransferTime; got %v", r)
 		}
 	}()
 	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
@@ -1096,7 +1090,7 @@ func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 	// sub-requests transferred while an earlier decode is still running must queue.
 	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
 	otpt := float64(config.LatencyModelOverride.OutputTokenProcessingTime()) // OTPT; the differential threshold below
-	requests := newShortRequests(6)        // ~2000µs decode each, arriving 100µs apart → overlap
+	requests := newShortRequests(6)                                          // ~2000µs decode each, arriving 100µs apart → overlap
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)

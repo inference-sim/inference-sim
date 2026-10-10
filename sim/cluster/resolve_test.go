@@ -61,12 +61,10 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	maxLen := int64(4096)
 	kvBlocks := int64(3000)
 	overrides := PoolOverrides{
-		TP:             &tp,
-		GPU:            "A100",
-		LatencyBackend: "trained-physics",
-		MaxModelLen:    &maxLen,
-		TotalKVBlocks:  &kvBlocks,
-		MoECommBackend: "deepep_low_latency",
+		TP:            &tp,
+		GPU:           "A100",
+		MaxModelLen:   &maxLen,
+		TotalKVBlocks: &kvBlocks,
 	}
 
 	resolved := ResolvePoolConfig(global, overrides)
@@ -77,17 +75,11 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	if resolved.GPU != "A100" {
 		t.Errorf("GPU = %q, want %q", resolved.GPU, "A100")
 	}
-	if resolved.Backend != "trained-physics" {
-		t.Errorf("Backend = %q, want %q", resolved.Backend, "trained-physics")
-	}
 	if resolved.MaxModelLen != 4096 {
 		t.Errorf("MaxModelLen = %d, want 4096", resolved.MaxModelLen)
 	}
 	if resolved.TotalKVBlocks != 3000 {
 		t.Errorf("TotalKVBlocks = %d, want 3000", resolved.TotalKVBlocks)
-	}
-	if resolved.MoECommBackend != "deepep_low_latency" {
-		t.Errorf("MoECommBackend = %q, want %q", resolved.MoECommBackend, "deepep_low_latency")
 	}
 	// Non-overridden fields stay global
 	if resolved.Horizon != global.Horizon {
@@ -231,7 +223,6 @@ func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 	prefillTP := 8
 	decodeTP := 2
-	// ModelConfig must be valid for KVBytesPerToken (validated at construction when PD is enabled).
 	// NumHeads=8 → MHA fallback NumKVHeads=8, divisible by prefillTP=8.
 	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 8, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
@@ -243,15 +234,14 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 			LatencyModelOverride: testFakeLatency(),
 			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
-		NumInstances:            4,
-		PrefillInstances:        2,
-		DecodeInstances:         2,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-		RoutingPolicy:           "round-robin",
-		PrefillOverrides:        PoolOverrides{TP: &prefillTP},
-		DecodeOverrides:         PoolOverrides{TP: &decodeTP},
+		NumInstances:     4,
+		PrefillInstances: 2,
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		PDTransferTime:   testPDTransferTime,
+		RoutingPolicy:    "round-robin",
+		PrefillOverrides: PoolOverrides{TP: &prefillTP},
+		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
 	}
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
@@ -283,7 +273,6 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 // TestNewClusterSimulator_NoOverrides_BackwardCompat verifies BC-P2-1:
 // without overrides, behavior is identical to Phase 1.
 func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
-	// ModelConfig must be valid for KVBytesPerToken (validated at construction when PD is enabled).
 	// NumKVHeads=0 → MHA fallback uses NumHeads=4, divisible by global TP=4.
 	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
@@ -295,13 +284,12 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 			LatencyModelOverride: testFakeLatency(),
 			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
-		NumInstances:            4,
-		PrefillInstances:        2,
-		DecodeInstances:         2,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-		RoutingPolicy:           "round-robin",
+		NumInstances:     4,
+		PrefillInstances: 2,
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		PDTransferTime:   testPDTransferTime,
+		RoutingPolicy:    "round-robin",
 		// No PrefillOverrides or DecodeOverrides — zero valued
 	}
 
@@ -337,15 +325,14 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 			LatencyModelOverride: testFakeLatency(),
 			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
-		NumInstances:            4,
-		PrefillInstances:        2,
-		DecodeInstances:         2,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-		RoutingPolicy:           "round-robin",
-		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
-		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
+		NumInstances:     4,
+		PrefillInstances: 2,
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		PDTransferTime:   testPDTransferTime,
+		RoutingPolicy:    "round-robin",
+		PrefillOverrides: PoolOverrides{TotalKVBlocks: &prefillKV},
+		DecodeOverrides:  PoolOverrides{TotalKVBlocks: &decodeKV},
 	}
 
 	requests := newTestRequests(5)
@@ -401,11 +388,10 @@ func TestResolvePoolConfig_Idempotent(t *testing.T) {
 	maxLen := int64(4096)
 	kvBlocks := int64(3000)
 	overrides := PoolOverrides{
-		TP:             &tp,
-		GPU:            "A100",
-		LatencyBackend: "trained-physics",
-		MaxModelLen:    &maxLen,
-		TotalKVBlocks:  &kvBlocks,
+		TP:            &tp,
+		GPU:           "A100",
+		MaxModelLen:   &maxLen,
+		TotalKVBlocks: &kvBlocks,
 	}
 
 	once := ResolvePoolConfig(global, overrides)
@@ -524,11 +510,10 @@ func TestPoolOverrides_Validate_ValidValues(t *testing.T) {
 		{
 			name: "all fields valid",
 			overrides: PoolOverrides{
-				TP:             &tp,
-				GPU:            "H100",
-				LatencyBackend: "roofline",
-				MaxModelLen:    &maxLen,
-				TotalKVBlocks:  &kvBlocks,
+				TP:            &tp,
+				GPU:           "H100",
+				MaxModelLen:   &maxLen,
+				TotalKVBlocks: &kvBlocks,
 			},
 		},
 	}
@@ -563,15 +548,14 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 			LatencyModelOverride: testFakeLatency(),
 			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
-		NumInstances:            numInstances,
-		PrefillInstances:        prefill,
-		DecodeInstances:         decode,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-		RoutingPolicy:           "round-robin",
-		PrefillOverrides:        prefillOverrides,
-		DecodeOverrides:         decodeOverrides,
+		NumInstances:     numInstances,
+		PrefillInstances: prefill,
+		DecodeInstances:  decode,
+		PDDecider:        "always",
+		PDTransferTime:   testPDTransferTime,
+		RoutingPolicy:    "round-robin",
+		PrefillOverrides: prefillOverrides,
+		DecodeOverrides:  decodeOverrides,
 	}
 }
 
@@ -658,17 +642,15 @@ func TestPoolOverrides_IsEmpty(t *testing.T) {
 		{name: "all nil/zero", overrides: PoolOverrides{}, want: true},
 		{name: "TP set", overrides: PoolOverrides{TP: &tp}, want: false},
 		{name: "GPU set", overrides: PoolOverrides{GPU: "A100"}, want: false},
-		{name: "LatencyBackend set", overrides: PoolOverrides{LatencyBackend: "roofline"}, want: false},
 		{name: "MaxModelLen set", overrides: PoolOverrides{MaxModelLen: &maxLen}, want: false},
 		{name: "TotalKVBlocks set", overrides: PoolOverrides{TotalKVBlocks: &kvBlocks}, want: false},
 		{
 			name: "all fields set",
 			overrides: PoolOverrides{
-				TP:             &tp,
-				GPU:            "A100",
-				LatencyBackend: "roofline",
-				MaxModelLen:    &maxLen,
-				TotalKVBlocks:  &kvBlocks,
+				TP:            &tp,
+				GPU:           "A100",
+				MaxModelLen:   &maxLen,
+				TotalKVBlocks: &kvBlocks,
 			},
 			want: false,
 		},
@@ -790,8 +772,8 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 
 // TestNewClusterSimulator_PureSharedCluster verifies issue #1276: a pure-shared
 // cluster (only --prefill-decode-instances set, no dedicated prefill/decode) can
-// be constructed successfully. The KV-transfer-sizing validation guard at
-// NewClusterSimulator must cover SharedInstances>0 in addition to PrefillInstances>0.
+// be constructed successfully. The transfer-pricer guard at NewClusterSimulator covers
+// SharedInstances>0 in addition to PrefillInstances>0.
 func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -806,6 +788,7 @@ func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 		SharedInstances: 3, // all instances are prefill-decode shared-role
 		PDDecider:       "always",
 		RoutingPolicy:   "round-robin",
+		PDTransferTime:  testPDTransferTime,
 	}
 
 	// Must construct without panicking — the extended guard accepts pure-shared.
@@ -821,33 +804,6 @@ func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 		if !role.Has(PoolRolePrefill) || !role.Has(PoolRoleDecode) {
 			t.Errorf("instance %s: role %v missing prefill and/or decode bit", id, role)
 		}
-	}
-}
-
-// TestNewClusterSimulator_PureSharedWithTransferContention verifies issue #1276:
-// PDTransferContention is permitted for pure-shared clusters (shared pod →
-// shared pod KV transfers are legitimate when a request's prefill and decode
-// land on different shared pods).
-func TestNewClusterSimulator_PureSharedWithTransferContention(t *testing.T) {
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
-		},
-		NumInstances:         2,
-		SharedInstances:      2,
-		PDDecider:            "always",
-		PDTransferContention: true,
-		RoutingPolicy:        "round-robin",
-	}
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
-	if cs == nil {
-		t.Fatal("NewClusterSimulator returned nil for pure-shared + PDTransferContention")
 	}
 }
 
@@ -912,15 +868,14 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 			LatencyModelOverride: testFakeLatency(),
 			ModelHardwareConfig:  sim.NewModelHardwareConfig(mc, testHWCalib(), "test-model", "H100", 4, 1, false, "", "roofline", 0),
 		},
-		NumInstances:            4,
-		PrefillInstances:        2,
-		DecodeInstances:         2,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-		RoutingPolicy:           "round-robin",
-		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
-		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
+		NumInstances:     4,
+		PrefillInstances: 2,
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		PDTransferTime:   testPDTransferTime,
+		RoutingPolicy:    "round-robin",
+		PrefillOverrides: PoolOverrides{TotalKVBlocks: &prefillKV},
+		DecodeOverrides:  PoolOverrides{TotalKVBlocks: &decodeKV},
 	}
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
@@ -929,74 +884,4 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 	}
 
 	assertClusterINV1Conservation(t, cs, len(requests), noRejections, "heterogeneous node pools")
-}
-
-// TestResolvePoolConfig_MoECommBackend_PerRole is #1548 AC-5: the MoE all-to-all backend
-// is selectable INDEPENDENTLY per pool, mirroring vLLM's VLLM_ALL2ALL_BACKEND being a
-// per-process environment variable. The production recipe needs exactly this — DeepEP
-// high-throughput on the prefill engines, low-latency on the decode engines — which a
-// single global mode cannot express.
-func TestResolvePoolConfig_MoECommBackend_PerRole(t *testing.T) {
-	global := sim.SimConfig{
-		KVCacheConfig: sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
-		BatchConfig:   sim.NewBatchConfig(256, 2048, 0),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(),
-			"test-model", "H100", 4, 1, false, "allgather_reducescatter", "trained-physics", 8192),
-	}
-
-	prefill := ResolvePoolConfig(global, PoolOverrides{MoECommBackend: "deepep_high_throughput"})
-	decode := ResolvePoolConfig(global, PoolOverrides{MoECommBackend: "deepep_low_latency"})
-
-	if prefill.MoECommBackend != "deepep_high_throughput" {
-		t.Errorf("prefill pool backend = %q, want deepep_high_throughput", prefill.MoECommBackend)
-	}
-	if decode.MoECommBackend != "deepep_low_latency" {
-		t.Errorf("decode pool backend = %q, want deepep_low_latency", decode.MoECommBackend)
-	}
-	if prefill.MoECommBackend == decode.MoECommBackend {
-		t.Error("AC-5: prefill and decode must be able to select DIFFERENT all-to-all backends")
-	}
-	// An empty override inherits the global one (the documented "" = use global contract),
-	// and the global config itself is never mutated.
-	if inherited := ResolvePoolConfig(global, PoolOverrides{}); inherited.MoECommBackend != "allgather_reducescatter" {
-		t.Errorf("empty override must inherit the global backend, got %q", inherited.MoECommBackend)
-	}
-	if global.MoECommBackend != "allgather_reducescatter" {
-		t.Errorf("ResolvePoolConfig must not mutate the global config, got %q", global.MoECommBackend)
-	}
-}
-
-// TestPoolOverrides_IsEmpty_CountsMoECommBackend guards the field against being forgotten
-// by IsEmpty — a per-pool override that reports "empty" would let a caller skip resolution
-// and silently drop the selected backend.
-func TestPoolOverrides_IsEmpty_CountsMoECommBackend(t *testing.T) {
-	if (PoolOverrides{}).IsEmpty() != true {
-		t.Error("a zero PoolOverrides must be empty")
-	}
-	if (PoolOverrides{MoECommBackend: "pplx"}).IsEmpty() {
-		t.Error("a PoolOverrides carrying only MoECommBackend must NOT report empty")
-	}
-}
-
-// TestPoolOverrides_Validate_RejectsUnknownMoECommBackend is R1 for the per-role backend
-// (#1548): the CLI validates the name, but a library caller building PoolOverrides directly
-// bypasses that. Relying on the trained-physics constructor is not enough — it only fires on
-// that backend, so a pool resolving to roofline would silently ignore a bad value.
-func TestPoolOverrides_Validate_RejectsUnknownMoECommBackend(t *testing.T) {
-	err := PoolOverrides{MoECommBackend: "deepep_medium_throughput"}.Validate("prefill pool")
-	if err == nil {
-		t.Fatal("an unrecognized MoE comm backend must be rejected by Validate")
-	}
-	for _, want := range []string{"prefill pool", "deepep_medium_throughput"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should name %q, got: %v", want, err)
-		}
-	}
-	// A recognized name, and the empty "use global" value, must both pass.
-	if err := (PoolOverrides{MoECommBackend: "deepep_low_latency"}).Validate("decode pool"); err != nil {
-		t.Errorf("a recognized backend must validate, got: %v", err)
-	}
-	if err := (PoolOverrides{}).Validate("decode pool"); err != nil {
-		t.Errorf("an empty backend (use global) must validate, got: %v", err)
-	}
 }

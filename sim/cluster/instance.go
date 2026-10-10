@@ -10,7 +10,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -55,8 +54,8 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
-	// supply it to the latency model at construction so the per-step compute
-	// overhead applies to both backends (#1467, R23). BuildAdapterCost is pure and
+	// wrap the latency model with it so the per-step compute overhead applies
+	// (#1467, R23). BuildAdapterCost is pure and
 	// stateless; sim.NewSimulator (called below) builds its own instance for the
 	// cold-load gate from the same config — two behaviorally identical accessors,
 	// no shared state. A nil accessor leaves StepTime byte-identical to pre-feature (INV-6).
@@ -64,25 +63,14 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
 	}
-	// An override is a latency model the caller already built, for a backend the
-	// coefficient factory cannot express (blis-latency-kernel, whose inputs are a
-	// scenario plus a catalog and registry). Absent one -- every pre-feature run --
-	// the model is built here exactly as before (INV-6).
-	latencyModel := cfg.LatencyModelOverride
-	if latencyModel != nil {
-		// The coefficient backends apply the adapter cost internally (WithAdapterCost
-		// below); a model built outside the simulator gets it from the shared wrapper.
-		latencyModel = sim.WithAdapterOverhead(latencyModel, adapterCost)
+	// The latency model is built by the caller (blis-latency-kernel's adapter in production);
+	// the simulator only times steps with it. There is no model to fall back to, so an absent
+	// one is a construction error rather than a silent default (R1).
+	if cfg.LatencyModelOverride == nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): SimConfig.LatencyModelOverride is nil; "+
+			"the caller must supply the latency model", id))
 	}
-	if latencyModel == nil {
-		built, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig,
-			latency.WithAdapterCost(adapterCost),
-			latency.WithSpeculativeDecode(cfg.K))
-		if err != nil {
-			panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
-		}
-		latencyModel = built
-	}
+	latencyModel := sim.WithAdapterOverhead(cfg.LatencyModelOverride, adapterCost)
 	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))

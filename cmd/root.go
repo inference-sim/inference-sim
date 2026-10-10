@@ -167,16 +167,14 @@ var (
 	cacheSignalDelay        int64
 
 	// PD disaggregation config
-	prefillInstances       int     // Number of instances dedicated to prefill
-	decodeInstances        int     // Number of instances dedicated to decode
-	prefillDecodeInstances int     // Number of shared-role instances (both prefill and decode), issue #1276
-	pdDecider              string  // Disaggregation decider name
-	pdTransferBandwidth    float64 // Inter-instance KV transfer bandwidth in GB/s
-	pdTransferBaseLatency  float64 // Inter-instance KV transfer base latency in ms
-	pdTransferContention   bool    // Enable fair-share bandwidth contention model
-	pdPrefixThreshold      int     // Non-cached token threshold for prefix-threshold decider
-	prefillRoutingScorers  string  // Scorer weights for prefill pool routing
-	decodeRoutingScorers   string  // Scorer weights for decode pool routing
+	prefillInstances       int    // Number of instances dedicated to prefill
+	decodeInstances        int    // Number of instances dedicated to decode
+	prefillDecodeInstances int    // Number of shared-role instances (both prefill and decode), issue #1276
+	pdDecider              string // Disaggregation decider name
+	pdTransferContention   bool   // Enable fair-share bandwidth contention model
+	pdPrefixThreshold      int    // Non-cached token threshold for prefix-threshold decider
+	prefillRoutingScorers  string // Scorer weights for prefill pool routing
+	decodeRoutingScorers   string // Scorer weights for decode pool routing
 
 	// E/P/D disaggregation config (GAP-4, issue #1264)
 	encodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
@@ -1953,8 +1951,6 @@ var runCmd = &cobra.Command{
 			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
-			PDTransferBandwidthGBps:         pdTransferBandwidth,
-			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
 			PDTransferContention:            pdTransferContention,
 			PDTransferTime:                  pdTransferTime,
 			PrefillScorerConfigs:            prefillScorerCfgs,

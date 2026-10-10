@@ -255,8 +255,6 @@ func TestPDParentE2E_CompletionTimeMetricConsistency(t *testing.T) {
 // co-located, because PD adds a real KV-transfer cost on top of the same
 // prefill+decode work.
 func newTestColocatedConfig() DeploymentConfig {
-	modelCfg := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
-	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:              math.MaxInt64,
@@ -264,7 +262,7 @@ func newTestColocatedConfig() DeploymentConfig {
 			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
 			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), sim.HardwareCalib{}, "test-model", "H100", 1, 1, false, "", "", 0),
 		},
 		NumInstances:  1,
 		RoutingPolicy: "round-robin",

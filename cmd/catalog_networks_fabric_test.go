@@ -25,9 +25,9 @@ import (
 // carried a placeholder), and because the fabric schema is CLOSED the catalog CI gate now
 // rejects the key outright as an unknown field.
 //
-// Nothing is broken today: no code path reads PDTransferBaseLatencyMs from a catalog file. It is
-// a cluster.DeploymentConfig field no flag feeds any more (a kernel run prices the P/D handoff
-// itself, from the scenario's fabric), and the `networks/` fabric reader has not landed here —
+// Nothing is broken today: no code path reads PDTransferBaseLatencyMs from a catalog file, and no
+// Go struct declares it any more (a kernel run prices the P/D handoff itself, from the
+// scenario's fabric). The `networks/` fabric reader has not landed here —
 // cmd/catalog_load.go's namespace list still says so. The point of #1838, and of this file, is
 // that the reader MUST be authored against a field-free fabric class *when* it lands, because
 // the catalog↔loader compatibility is pinned by CATALOG_REVISION: the moment that pin advances
@@ -52,22 +52,14 @@ import (
 //	BC-4 a tripwire on the loader's namespace report, so no new catalog namespace reader can land
 //	     without this file's rules being read (rule 2).
 //
-// Rule 1 is deliberately NOT implemented here: PD-transfer bandwidth comes from
-// --pd-transfer-bandwidth (default 25 GB/s) today, and sourcing it from a fabric class would
-// change values, which R2 forbids (#1817 is value-preserving). It is recorded as a rule, and
-// BC-2 asserts it the moment a `networks/` fixture exists. What no guard in this file can do is
-// prove that the future reader *assigns* the fabric's bandwidth to
-// DeploymentConfig.PDTransferBandwidthGBps — that behavior has no code to observe until the
-// reader exists, which is why BC-4 puts the rule in front of its author instead.
+// Rule 1 is not implemented in BLIS: blis-latency-kernel reads the fabric's bandwidth when it
+// prices a P/D handoff, and BLIS has no PD-transfer bandwidth of its own. It is recorded as a
+// rule, and BC-2 asserts it the moment a `networks/` fixture exists.
 
 // pdTransferBaseLatencyField is the Go field / config key at issue. Compared ASCII-folded
 // throughout, so a case variant cannot slip past the guards.
 const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 
-// pdTransferBaseLatencyOwner is the ONE file allowed to declare a struct field with that name:
-// cluster.DeploymentConfig's CLI-sourced field. Relative to the repository root, so the guard
-// fails if the declaration moves to (or is copied into) a fabric-class struct.
-const pdTransferBaseLatencyOwner = "sim/cluster/deployment.go"
 
 // fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
 // bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).
@@ -84,12 +76,9 @@ const fabricBandwidthKey = "InterNodeBwGBps"
 //
 //   - no struct field anywhere binds a YAML or JSON key whose folded name is the field (a fabric
 //     struct could name its Go field anything and still decode the retired key via a tag), and
-//   - no struct field is DECLARED with that name outside pdTransferBaseLatencyOwner, which is
-//     where a fabric class would most naturally grow one.
-//
-// The CLI wiring (cmd/root.go, cmd/replay.go) and the consumer (sim/cluster/pd_events.go) are
-// untouched by both checks: they reference the field, they do not declare it, and
-// DeploymentConfig gives it no yaml/json tag.
+//   - no struct field is DECLARED with that name anywhere, which is where a fabric class would
+//     most naturally grow one. (cluster.DeploymentConfig once carried a CLI-sourced one; it was
+//     deleted when the kernel took over pricing the handoff.)
 func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 	folded := strings.ToLower(pdTransferBaseLatencyField)
 	scanned, sawKnownTag := 0, false
@@ -118,21 +107,15 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 						t.Errorf("%s:%d: a config key %q is bound to a struct field — the catalog's "+
 							"networks/ fabric classes carry no %s (blis-catalog#12 removed it, and the "+
 							"closed fabric schema now rejects it), so no file may supply it; the "+
-							"PD-transfer base latency comes from --pd-transfer-base-latency and is owned "+
-							"by blis-registry#10 (#1838)",
+							"kernel prices the P/D handoff (#1838)",
 							rel, line, key, pdTransferBaseLatencyField)
 					}
 				}
-				if rel == pdTransferBaseLatencyOwner {
-					continue
-				}
 				for _, name := range field.Names {
 					if name.Name == pdTransferBaseLatencyField {
-						t.Errorf("%s:%d: %s is declared outside %s — the only %s is "+
-							"cluster.DeploymentConfig's CLI-sourced field; a fabric class must not "+
-							"carry one (blis-catalog#12 removed it from networks/*.yaml, #1838)",
-							rel, line, pdTransferBaseLatencyField, pdTransferBaseLatencyOwner,
-							pdTransferBaseLatencyField)
+						t.Errorf("%s:%d: %s is declared — no struct may carry one: a fabric class "+
+							"has none (blis-catalog#12 removed it from networks/*.yaml, #1838), and the "+
+							"kernel prices the P/D handoff", rel, line, pdTransferBaseLatencyField)
 					}
 				}
 			}

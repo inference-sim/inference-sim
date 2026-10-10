@@ -1535,8 +1535,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origDecodeInstances := decodeInstances
 	origSharedInstances := prefillDecodeInstances
 	origPDDecider := pdDecider
-	origPDTransferBandwidth := pdTransferBandwidth
-	origPDTransferBaseLatency := pdTransferBaseLatency
 	origPDTransferContention := pdTransferContention
 	origPDPrefixThreshold := pdPrefixThreshold
 	origPrefillScorers := prefillRoutingScorers
@@ -1546,8 +1544,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		decodeInstances = origDecodeInstances
 		prefillDecodeInstances = origSharedInstances
 		pdDecider = origPDDecider
-		pdTransferBandwidth = origPDTransferBandwidth
-		pdTransferBaseLatency = origPDTransferBaseLatency
 		pdTransferContention = origPDTransferContention
 		pdPrefixThreshold = origPDPrefixThreshold
 		prefillRoutingScorers = origPrefillScorers
@@ -1687,8 +1683,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	decodeInstances = 1
 	prefillDecodeInstances = 0
 	pdDecider = "always"
-	pdTransferBandwidth = 25.0
-	pdTransferBaseLatency = 0.05
 	pdTransferContention = false
 	pdPrefixThreshold = 0
 	prefillRoutingScorers = ""
@@ -1839,8 +1833,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		decodeInstances = 0
 		prefillDecodeInstances = 0
 		pdDecider = "always"
-		pdTransferBandwidth = 25.0
-		pdTransferBaseLatency = 0.05
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)

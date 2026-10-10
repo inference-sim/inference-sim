@@ -3,12 +3,10 @@ package cluster
 import (
 	"container/heap"
 	"fmt"
-	"math"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -234,68 +232,16 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 		cs.transferStartCount++
 	}
 
+	// The latency backend prices the handoff (NewClusterSimulator refuses a PD deployment
+	// without one). The KV moves in whole blocks, so the token count priced is the blocks'
+	// capacity.
 	numBlocks := parentReq.NumKVBlocks
-	// An injected price (the latency backend's) replaces the formula below. The KV moves in
-	// whole blocks, so the token count priced is the blocks' capacity.
-	if cs.config.PDTransferTime != nil {
-		duration := max(1, cs.config.PDTransferTime(numBlocks*cs.config.BlockSizeTokens,
-			parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
-		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
-			parentReq.ID, numBlocks, duration)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
-			seqID: cs.nextSeqID(),
-		})
-		return
-	}
-
-	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * kvBytesPerToken) / effectiveBandwidthBytesPerUs
-	// Derive per-GPU KV bytes per token from model config using the prefill pool's TP.
-	kvBytesPerTokenF, err := latency.KVBytesPerToken(cs.config.ModelConfig, cs.config.EffectivePrefillTP())
-	if err != nil {
-		// Unreachable: NewClusterSimulator validates KVBytesPerToken at construction time
-		// when PD disaggregation is enabled. If this fires, it indicates a missing
-		// validation in the construction path.
-		panic(fmt.Sprintf("unreachable: scheduleTransferCompletion: failed to derive KV bytes per token: %v", err))
-	}
-
-	// Defer truncation: multiply float64 kvBytesPerToken by blockSize before converting,
-	// matching the CalculateKVBlocks pattern to avoid precision loss for fractional
-	// BytesPerParam (e.g., INT4=0.5 at high TP).
-	blockSizeBytesF := float64(cs.config.BlockSizeTokens) * kvBytesPerTokenF
-	transferBytes := float64(numBlocks) * blockSizeBytesF
-
-	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
-	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0           // ms → μs
-
-	// Fair-share: divide effective bandwidth by number of concurrent transfers (INV-P2-2)
-	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
-		bandwidthBytesPerUs = bandwidthBytesPerUs / float64(cs.activeTransfers)
-	}
-
-	var duration int64
-	if bandwidthBytesPerUs > 0 {
-		duration = int64(math.Ceil(baseLatUs + transferBytes/bandwidthBytesPerUs))
-	} else {
-		duration = int64(math.Ceil(baseLatUs))
-	}
-	if duration < 1 {
-		duration = 1 // Minimum 1 μs transfer
-	}
-
-	if cs.config.PDTransferContention {
-		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs, activeTransfers=%d",
-			parentReq.ID, numBlocks, duration, cs.activeTransfers)
-	} else {
-		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
-			parentReq.ID, numBlocks, duration)
-	}
-
+	duration := max(1, cs.config.PDTransferTime(numBlocks*cs.config.BlockSizeTokens,
+		parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
+	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
+		parentReq.ID, numBlocks, duration)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &KVTransferCompletedEvent{
-			time:      startTime + duration,
-			parentReq: parentReq,
-		},
+		event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
 		seqID: cs.nextSeqID(),
 	})
 }

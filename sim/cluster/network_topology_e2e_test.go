@@ -1,9 +1,7 @@
-// network_topology_e2e_test.go — end-to-end tests for the inter-node network topology
-// (#1530): a placement that spans a node boundary must be stamped onto the instance at
-// every placement site, must agree with cost accounting, and must warn when the
-// configured backend or calibration cannot price it. Instances price steps with the
-// fake latency model; how a backend prices the cross-node term is tested with that
-// backend, not here.
+// network_topology_e2e_test.go — end-to-end tests for node-span accounting (#1530): every
+// placement site must record how many nodes an instance occupies, so `blis run` can write the
+// fleet's widest span into the trace header for replay to refuse. Instances price steps with
+// the fake latency model; the span is a placement fact, independent of pricing.
 package cluster
 
 import (
@@ -32,190 +30,46 @@ func netTestModelConfig() sim.ModelConfig {
 	}
 }
 
-// netTestCalib returns an H100-like calibration. When ratio > 1 it declares an
-// interconnect that is `ratio` times slower off-node than on-node; at ratio == 0 it
-// declares none at all (the uncalibrated case).
-func netTestCalib(ratio float64) sim.HardwareCalib {
-	hc := sim.HardwareCalib{TFlopsPeak: 989.5, TFlopsFP8: 1979.0, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80}
-	if ratio > 0 {
-		hc.IntraNodeBwGBps = 450
-		hc.InterNodeBwGBps = 450 / ratio
+// netTestSimConfig is a fake-priced instance config at the given TP.
+func netTestSimConfig(tp int) sim.SimConfig {
+	return sim.SimConfig{
+		Horizon:              math.MaxInt64,
+		Seed:                 42,
+		KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
+		LatencyModelOverride: testFakeLatency(),
+		ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), sim.HardwareCalib{}, "m", "H100", tp, 1, false, "", "", 0),
 	}
-	return hc
-}
-
-// stampPlacementTopology places a tpDegree instance in a pool of gpusPerNode-sized
-// nodes and runs the real placement + topology-stamping path (PlaceInstance,
-// PlacedGPUsPerNode, applyPlacementTopology), which is where the cross-node
-// diagnostics are emitted. Step pricing is not observed here: the instances price with
-// the fake latency model, and how a backend prices a spanning collective is that
-// backend's own test concern.
-func stampPlacementTopology(t *testing.T, gpusPerNode, nodes, tpDegree int, calib sim.HardwareCalib, backend string) {
-	t.Helper()
-	cfg := DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), calib, "m", "H100", tpDegree, 1, false, "", backend, 0),
-		},
-		// NumInstances must be >= 1, and the cluster's own startup instance takes the
-		// first `nodes` nodes through the real startup placement site (exercising
-		// applyPlacementTopology there); the pool is sized for two identical instances
-		// so the explicit placement below gets the same shape on the remaining nodes.
-		NumInstances: 1,
-		NodePools:    []NodePoolConfig{newTestPool("p", "H100", gpusPerNode, 2*nodes)},
-	}
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-	require.NotNil(t, cs.placement, "precondition: node pools must produce a PlacementManager")
-
-	_, gpuIDs, _, err := cs.placement.PlaceInstance("inst-net", "m", "H100", tpDegree)
-	require.NoError(t, err)
-
-	simCfg := cfg.SimConfig
-	cs.applyPlacementTopology(&simCfg, gpuIDs)
-}
-
-// TestPlacementTopology_SpanMatchesCostAccounting verifies BC-5 as an observable law
-// between two independently-derived quantities: the node span the LATENCY model
-// prices (derived from the hosting node size) must equal the node span the COST
-// model bills (derived from the distinct node IDs). If they ever diverge, one of the
-// two is describing a placement that did not happen.
-func TestPlacementTopology_SpanMatchesCostAccounting(t *testing.T) {
-	for _, shape := range []struct {
-		name                   string
-		gpusPerNode, nodes, tp int
-	}{
-		{"fits on one node", 8, 2, 4},
-		{"exactly one node", 8, 2, 8},
-		{"spans two nodes", 8, 2, 16},
-		{"spans three nodes", 4, 3, 12},
-		{"spans eight small nodes", 2, 8, 16},
-	} {
-		t.Run(shape.name, func(t *testing.T) {
-			pm := newTestPM([]NodePoolConfig{newTestPool("p", "H100", shape.gpusPerNode, shape.nodes)})
-			_, gpuIDs, _, err := pm.PlaceInstance("inst-0", "m", "H100", shape.tp)
-			require.NoError(t, err)
-
-			// Cost accounting bills one unit per distinct node occupied.
-			billedNodes := pm.InstanceCostPerHour(gpuIDs, 1.0)
-			// Latency pricing scores the collective over the hosting node size.
-			topo := sim.NewNetworkTopology(pm.placedGPUsPerNode(gpuIDs))
-			pricedNodes := float64(topo.NodesSpanned(shape.tp))
-
-			assert.Equal(t, billedNodes, pricedNodes,
-				"the node span used for latency pricing must equal the span used for cost accounting")
-		})
-	}
-}
-
-// ─── Diagnostics (R1: a cross-node cost that silently fails to apply is the ───
-// ─── invisible optimism this feature exists to remove) ────────────────────────
-
-// spanningWarnings places a spanning instance through the given site and returns the
-// warnings emitted while the topology was stamped.
-func placeSpanningAndCaptureWarnings(t *testing.T, calib sim.HardwareCalib, backend string) string {
-	t.Helper()
-	return captureLogWarn(t, func() {
-		stampPlacementTopology(t, 8, 2, 16, calib, backend)
-	})
-}
-
-// TestPlacementTopology_WarnsWhenUncalibrated verifies the operator gets told when a
-// spanning placement will NOT be charged because the placed GPU declares no
-// interconnect bandwidths — the case a policy bundle's hw_config_by_gpu override
-// makes easy to hit, since it replaces the whole calibration.
-func TestPlacementTopology_WarnsWhenUncalibrated(t *testing.T) {
-	out := placeSpanningAndCaptureWarnings(t, netTestCalib(0), "trained-physics")
-	assert.Contains(t, out, "declares no usable interconnect bandwidths")
-	assert.Contains(t, out, "IntraNodeBwGBps")
-}
-
-// TestPlacementTopology_WarnsWhenBackendHasNoCommTerm verifies the warning is
-// backend-aware: under roofline, which models no communication at all, a spanning
-// placement is unpriced no matter how well the fabric is calibrated.
-func TestPlacementTopology_WarnsWhenBackendHasNoCommTerm(t *testing.T) {
-	out := placeSpanningAndCaptureWarnings(t, netTestCalib(9), "roofline")
-	assert.Contains(t, out, "models no communication term")
-	assert.Contains(t, out, "trained-physics")
-}
-
-// TestPlacementTopology_WarnsOnImplausibleFabric verifies a unit mistake surfaces:
-// an inter-node fabric three orders of magnitude slower than the on-node link is a
-// typo, and would otherwise silently dominate step time.
-func TestPlacementTopology_WarnsOnImplausibleFabric(t *testing.T) {
-	out := placeSpanningAndCaptureWarnings(t, netTestCalib(5000), "trained-physics")
-	assert.Contains(t, out, "looks like a unit error")
-	assert.Contains(t, out, "per-GPU GB/s")
-}
-
-// TestPlacementTopology_NoWarningWhenPriced verifies the quiet path: a properly
-// calibrated spanning placement on the trained-physics backend raises no complaint
-// about pricing (the #1529 span notice is separate and expected).
-func TestPlacementTopology_NoWarningWhenPriced(t *testing.T) {
-	out := placeSpanningAndCaptureWarnings(t, netTestCalib(9), "trained-physics")
-	assert.NotContains(t, out, "declares no usable interconnect bandwidths")
-	assert.NotContains(t, out, "models no communication term")
-	assert.NotContains(t, out, "looks like a unit error")
-	assert.NotContains(t, out, "could not be resolved from placement")
-}
-
-// TestPlacementTopology_NoWarningWhenContained verifies a single-node placement never
-// triggers a cross-node diagnostic, even on uncalibrated hardware — there is nothing
-// to price.
-func TestPlacementTopology_NoWarningWhenContained(t *testing.T) {
-	out := captureLogWarn(t, func() {
-		stampPlacementTopology(t, 16, 1, 16, netTestCalib(0), "trained-physics")
-	})
-	assert.NotContains(t, out, "declares no usable interconnect bandwidths")
 }
 
 // ─── All three placement sites (R23) ────────────────────────────────────────
 
-// TestPlacementTopology_AppliedAtAllThreePlacementSites verifies BC-6: an instance
-// created at startup, through the deferred NodeReadyEvent path, or by autoscaler
-// scale-up all get the placement-derived topology. The observable is the cross-node
-// diagnostic, which only the topology-stamping step emits — so its presence proves
-// that step ran at that site, and its absence would prove the site was missed.
-func TestPlacementTopology_AppliedAtAllThreePlacementSites(t *testing.T) {
-	// Uncalibrated fabric, so a spanning placement emits the "will not be priced"
-	// warning at whichever site stamps the topology.
-	baseSimCfg := func() sim.SimConfig {
-		return sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), netTestCalib(0), "m", "H100", 16, 1, false, "", "trained-physics", 0),
-		}
-	}
-	const wantWarning = "declares no usable interconnect bandwidths"
-
+// TestNodeSpan_RecordedAtAllThreePlacementSites verifies BC-6: an instance created at
+// startup, through the deferred NodeReadyEvent path, or by autoscaler scale-up all have
+// their node span recorded. The observable is MaxNodesSpanned, which only the recording
+// step moves — so its change proves that step ran at that site.
+func TestNodeSpan_RecordedAtAllThreePlacementSites(t *testing.T) {
 	t.Run("startup", func(t *testing.T) {
 		cfg := DeploymentConfig{
-			SimConfig:    baseSimCfg(),
+			SimConfig:    netTestSimConfig(16),
 			NumInstances: 1,
 			NodePools:    []NodePoolConfig{newTestPool("p", "H100", 8, 2)}, // tp=16 must span
 		}
-		out := captureLogWarn(t, func() {
-			cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-			require.Len(t, cs.instances, 1, "startup must place the instance")
-		})
-		assert.Contains(t, out, wantWarning, "the startup placement site must stamp the topology")
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		require.Len(t, cs.instances, 1, "startup must place the instance")
+		assert.Equal(t, 2, cs.MaxNodesSpanned(), "the startup placement site must record the span")
 	})
 
 	t.Run("deferred_node_ready", func(t *testing.T) {
 		cfg := DeploymentConfig{
-			SimConfig:    baseSimCfg(),
+			SimConfig:    netTestSimConfig(16),
 			NumInstances: 1,
 			// InitialNodes=0 → the instance is pending until a node becomes Ready.
 			NodePools: []NodePoolConfig{{Name: "p", GPUType: "H100", GPUsPerNode: 8, GPUMemoryGiB: 80, InitialNodes: 0, MaxNodes: 4}},
 		}
 		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		require.Empty(t, cs.instances, "precondition: no instance before a node is Ready")
+		require.Equal(t, 0, cs.MaxNodesSpanned(), "precondition: nothing placed, nothing recorded")
 
 		// Two nodes must be Ready before a tp=16 whole-node span can be satisfied.
 		nodeA, _ := cs.placement.ProvisionNode("p", 0)
@@ -223,50 +77,37 @@ func TestPlacementTopology_AppliedAtAllThreePlacementSites(t *testing.T) {
 		require.NotNil(t, nodeA)
 		require.NotNil(t, nodeB)
 		(&NodeReadyEvent{timestamp: 0, nodeID: nodeA.ID}).Execute(cs)
-
-		out := captureLogWarn(t, func() {
-			(&NodeReadyEvent{timestamp: 0, nodeID: nodeB.ID}).Execute(cs)
-		})
+		(&NodeReadyEvent{timestamp: 0, nodeID: nodeB.ID}).Execute(cs)
 		require.Len(t, cs.instances, 1, "precondition: the deferred instance must be placed once both nodes are Ready")
-		assert.Contains(t, out, wantWarning, "the deferred NodeReadyEvent placement site must stamp the topology")
+		assert.Equal(t, 2, cs.MaxNodesSpanned(), "the deferred NodeReadyEvent placement site must record the span")
 	})
 
 	t.Run("autoscaler_scale_up", func(t *testing.T) {
 		cfg := DeploymentConfig{
-			SimConfig:    baseSimCfg(),
+			SimConfig:    netTestSimConfig(8),
 			NumInstances: 1,
-			// 4 nodes: the startup instance spans two, the scaled-up one spans the rest.
-			NodePools: []NodePoolConfig{newTestPool("p", "H100", 8, 4)},
+			// 3 nodes: the startup instance fits on one, the scaled-up tp=16 one spans two.
+			NodePools: []NodePoolConfig{newTestPool("p", "H100", 8, 3)},
 		}
 		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		require.Len(t, cs.instances, 1)
-		// The startup site has already latched its warning; clear the latches so this
-		// subtest observes the scale-up site's own diagnostic.
-		cs.crossNodeBackendWarned = false
-		cs.crossNodeUnresolvedWarned = false
-		cs.crossNodeUncalibratedWarned = false
-		cs.implausibleFabricWarned = false
+		require.Equal(t, 1, cs.MaxNodesSpanned(), "precondition: the startup instance is single-node")
 
-		out := captureLogWarn(t, func() {
-			err := NewDirectActuator(cs).Apply([]ScaleDecision{
-				{ModelID: "m", Variant: NewVariantSpec("H100", 16), Delta: 1},
-			})
-			require.NoError(t, err)
+		err := NewDirectActuator(cs).Apply([]ScaleDecision{
+			{ModelID: "m", Variant: NewVariantSpec("H100", 16), Delta: 1},
 		})
+		require.NoError(t, err)
 		require.Len(t, cs.instances, 2, "precondition: scale-up must add an instance")
-		assert.Contains(t, out, wantWarning, "the autoscaler scale-up placement site must stamp the topology")
+		assert.Equal(t, 2, cs.MaxNodesSpanned(), "the autoscaler scale-up placement site must record the span")
 	})
 }
 
 // ─── INV-6 and the trace-header signal ──────────────────────────────────────
 
-// TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns verifies INV-6 for the case
-// this feature actually changes: two identical SPANNING runs at the same seed must
-// produce byte-identical output. The three inertness tests prove the feature does not
-// perturb configs it should not touch; this proves the configs it DOES touch stay
-// deterministic. The comparison is on the marshalled metrics payload — the same struct
-// stdout is rendered from — so it is a genuine byte-level check rather than a
-// field-by-field one.
+// TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns verifies INV-6 for a fleet that
+// spans nodes: two identical SPANNING runs at the same seed must produce byte-identical
+// output. The comparison is on the marshalled metrics payload — the same struct stdout is
+// rendered from — so it is a genuine byte-level check rather than a field-by-field one.
 func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
 	makeReqs := func() []*sim.Request {
 		reqs := make([]*sim.Request, 30)
@@ -284,14 +125,7 @@ func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
 	}
 	runOnce := func() string {
 		cfg := DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon:              math.MaxInt64,
-				Seed:                 42,
-				KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-				BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
-				LatencyModelOverride: testFakeLatency(),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), netTestCalib(9), "m", "H100", 16, 1, false, "", "trained-physics", 0),
-			},
+			SimConfig:    netTestSimConfig(16),
 			NumInstances: 1,
 			NodePools:    []NodePoolConfig{newTestPool("p", "H100", 8, 2)}, // tp=16 must span
 		}
@@ -315,14 +149,7 @@ func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
 func TestPlacementTopology_MaxNodesSpannedReportsWidestSpan(t *testing.T) {
 	newCluster := func(pools []NodePoolConfig, tp, instances int) *ClusterSimulator {
 		cfg := DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon:              math.MaxInt64,
-				Seed:                 42,
-				KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-				BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
-				LatencyModelOverride: testFakeLatency(),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), netTestCalib(9), "m", "H100", tp, 1, false, "", "trained-physics", 0),
-			},
+			SimConfig:    netTestSimConfig(tp),
 			NumInstances: instances,
 			NodePools:    pools,
 		}

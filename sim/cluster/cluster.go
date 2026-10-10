@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -23,17 +22,6 @@ type ClusterSimulator struct {
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
-
-	// Cross-node network-cost diagnostics (#1530), latched PER CAUSE so a mixed fleet
-	// reports each distinct reason once rather than only whichever happened first. The
-	// three crossNode* latches each cover a way a genuinely spanning placement ends up
-	// unpriced (no comm term in the backend / unresolvable node size / uncalibrated
-	// interconnect); implausibleFabricWarned covers a calibration whose intra-to-inter
-	// ratio looks like a unit mistake. Never reset. See warnIfCrossNodeUnpriced.
-	crossNodeBackendWarned      bool
-	crossNodeUnresolvedWarned   bool
-	crossNodeUncalibratedWarned bool
-	implausibleFabricWarned     bool
 
 	// maxNodesSpanned is the largest number of physical nodes any single instance has
 	// occupied (#1530). 0/1 = every instance is single-node. Exported via
@@ -215,19 +203,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		}
 	}
 
-	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
-	// encounters a configuration error at runtime (the panic there is now unreachable).
-	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform
-	// prefill and therefore source a KV transfer.
+	// A KV handoff is priced by the latency backend (DeploymentConfig.PDTransferTime); the
+	// simulator owns only when it happens and has no transfer formula of its own. Refuse a
+	// PD-enabled deployment without a pricer here, so KVTransferStartedEvent never meets one
+	// at runtime (R1). Covers pure-shared clusters too (issue #1276): a shared-role pod can
+	// perform prefill and therefore source a KV transfer.
 	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
-		if config.EffectivePrefillTP() <= 0 {
-			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
-		}
 		if config.PDTransferTime == nil {
-			if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
-				panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
-			}
-		} else if config.PDTransferContention {
+			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.PDTransferTime: " +
+				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
+		}
+		if config.PDTransferContention {
 			panic("ClusterSimulator: PDTransferContention cannot be combined with an injected PDTransferTime " +
 				"(the fair-share divisor would scale terms of a price the simulator did not compose)")
 		}
@@ -400,37 +386,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
-			// Set GPU label and, when HWConfigByGPU is provided, override HWConfig so that
-			// roofline and trained-physics backends use the pool's hardware coefficients (issue #893).
 			simCfg.GPU = matchedGPUType
-			if hc, ok := config.HWConfigByGPU[matchedGPUType]; ok {
-				if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
-					panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
-						matchedGPUType, hc.TFlopsPeak, hc.BwPeakTBs))
-				}
-				simCfg.HWConfig = hc
-			}
 			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
-			// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 			var poolCostPerHour float64
-			var poolGPUMemoryGiB float64
 			for i := range config.NodePools {
 				if config.NodePools[i].GPUType == matchedGPUType {
 					poolCostPerHour = config.NodePools[i].CostPerHour
-					poolGPUMemoryGiB = config.NodePools[i].GPUMemoryGiB
 					break
 				}
 			}
-			// Issue #1522: recompute KV-block capacity from the ACTUAL placed GPU
-			// memory so a mixed-GPU pool no longer forces every instance onto the
-			// global capacity. Runs after the HWConfigByGPU execution-calibration
-			// override above, giving the placed GPU authority over KV capacity too.
-			// No-op when KVAutoCalc.Enabled is false (INV-6).
-			applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, config.KVAutoCalc, matchedGPUType)
-			// Issue #1530: stamp the placement-derived interconnect topology (the size
-			// of the node(s) this instance actually landed on) so the latency model can
-			// price cross-node collective traffic. Inert when unresolvable.
-			cs.applyPlacementTopology(&simCfg, gpuIDs)
+			// Record how many nodes this instance spans, for the trace header (#1530).
+			cs.recordNodeSpan(gpuIDs)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
