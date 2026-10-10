@@ -67,8 +67,9 @@ example:
 
 Refused: a P/D topology over a colocated scenario; a disaggregated scenario without
 `--prefill-instances`/`--decode-instances`; prefill and decode pools that differ in block size,
-`dp` or draft configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`)
-or encode instances.
+`dp` or draft configuration; shared (`--prefill-decode-instances`) or encode instances.
+KV offload works with P/D: each pool sizes the same tiers by its own bytes per block and prices
+them with its own kernel.
 
 ### Node pools and multi-node placement
 

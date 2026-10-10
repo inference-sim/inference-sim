@@ -102,9 +102,9 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
   --num-requests 10
 ```
 
-Run `blis` from the repository root: `--defaults-filepath` defaults to the relative path
-`defaults.yaml` (the LoRA cost constants), and a run from another directory is refused with
-`Failed to read defaults file` unless you pass `--defaults-filepath <repo>/defaults.yaml`.
+`blis` carries the repository's `defaults.yaml` (the LoRA cost constants) compiled in, so it runs
+from any directory. A `defaults.yaml` in the working directory, or `--defaults-filepath <file>`,
+takes precedence over the compiled-in copy.
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.
 

@@ -60,9 +60,13 @@ headline re-scored at the tags.
 
 ## The headline comparison
 
+Every scorer runs the `blis` binary for each point (`blis run`, exactly as a user would), so
+build it once and pass it with `-blis`:
+
 ```bash
 cd inference-sim
-go run ./cmd/kernelscore -framework vllm
+go build -o blis main.go
+go run ./cmd/kernelscore -blis ./blis -framework vllm
 ```
 
 Prints the table in `RESULTS.md`: 192 vLLM points, the monotone subset, the per-framework and
@@ -328,11 +332,12 @@ fails the build. `SKIP_GO=1` skips those and says so rather than passing silentl
 
 ```bash
 cd inference-sim
-go run ./cmd/sensitivity -framework vllm
+go run ./cmd/sensitivity -blis ./blis -framework vllm
 ```
 
 Varies each engine setting the snapshot does NOT publish and reports the effect. Against a gap of
 about 1.5 points, every one is worth under half a point: `max_num_seqs` x4 moves the score -0.17,
 halved +0.36, the token budget under 0.05 either way, and removing the KV bound on admission
-0.00. That is the evidence for the claim that the residual is a modelling gap rather than a
+0.00. (That last row is no longer computed: `blis run` sizes the KV pool from the kernel with no
+override, so the scorer prints it as `n/a` rather than simulate a deployment no one could run.) That is the evidence for the claim that the residual is a modelling gap rather than a
 consequence of unstated configuration.

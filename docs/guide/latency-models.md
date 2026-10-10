@@ -181,35 +181,45 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 
 - Predict speculative acceptance (it is an input).
 - Account the speculative KV/token-budget footprint (#1627, above).
-- Combine KV offload with P/D, or price shared prefill-decode or encode instances.
+- Price shared prefill-decode or encode instances.
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
   registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
 
 ## The published accuracy figures
 
-`cmd/metricscore` is the scorer behind the evaluation tables. It constructs the kernel
-directly, so its figures do not depend on the CLI path. At the tagged releases above, with
-the vendored catalog and registry and the measurement corpora in `BLIS_MEASUREMENTS`
+`cmd/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself:
+for every measured point it writes a scenario (the sweep's, with the engine settings the run
+used) and a workload spec, and runs `blis run` on them, exactly as a user would. Its figures
+are therefore the CLI's. At the tagged releases above, with the vendored catalog and registry
+and the measurement corpora in `BLIS_MEASUREMENTS`
 (see [Reproducing](../kernel-exclusive/REPRODUCE.md#the-measurement-data)):
 
 ```bash
-go run ./cmd/metricscore -framework vllm -config-tier measured
-go run ./cmd/metricscore -framework vllm -config-tier measured -length-range-ratio 1.0
+go build -o blis main.go
+go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured
+go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured -length-range-ratio 1.0
 ```
 
-Its flags are `-corpus`, `-scenarios`, `-catalog`, `-registry`, `-engine-settings`,
-`-absolutes`, `-framework`, `-config-tier`, `-simulated-only`, `-length-range-ratio` and
-`-seed`.
+Its flags are `-blis`, `-gaps`, `-corpus`, `-scenarios`, `-catalog`, `-registry`,
+`-engine-settings`, `-absolutes`, `-framework`, `-config-tier`, `-simulated-only`,
+`-length-range-ratio` and `-seed`.
+
+`-gaps <file>` (default: stderr) lists every point that cannot be scored apples-to-apples with
+the measurement, and the repository whose change would close the gap: a model, chip or fabric
+missing from blis-catalog, coefficients missing from blis-registry, an engine setting
+blis-schemas cannot express, a setting the measured run did not record, an engine BLIS does not
+model (sglang, TensorRT-LLM), or a setting the scorer does not yet carry into the scenario. It
+ends with a count of points per cause.
 
 Mean absolute error over the vLLM points whose engine configuration was measured from the
 run's own command line (292 TPOT-shape, 360 TPOT-mape, 288 TTFT-shape, 356 TTFT-mape points):
 
 | metric | kernel, AISimulate lengths | kernel, constant lengths (`1.0`) | AISimulate | AIC |
 |---|---|---|---|---|
-| TPOT shape | 11.27% | 11.87% | 11.91% | 12.00% |
-| TPOT mape | 13.04% | 13.51% | 19.72% | 19.88% |
-| TTFT shape | 24.98% | 22.89% | 31.54% | 31.28% |
-| TTFT mape | 28.93% | 26.39% | 45.07% | 39.03% |
+| TPOT shape | 10.85% | 11.45% | 11.91% | 12.00% |
+| TPOT mape | 13.55% | 13.96% | 19.72% | 19.88% |
+| TTFT shape | 25.08% | 23.03% | 31.54% | 31.28% |
+| TTFT mape | 29.35% | 26.93% | 45.07% | 39.03% |
 
 A figure quoted without its three flags cannot be checked: `-config-tier`, `-framework`
 and `-length-range-ratio` each change every number. `blis-registry`'s
