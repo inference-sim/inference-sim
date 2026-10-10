@@ -540,6 +540,32 @@ func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
 //
 // It runs before the deployment gates rather than inside resolveLatencyConfig because
 // those gates refuse a run whose deployment nobody chose (NS-6), and here the scenario is
+// adoptSchedulingPolicy takes the instance scheduler from the scenario's
+// engine.scheduling_policy, vLLM's own setting: fcfs, or priority (served lowest priority value
+// first, then by arrival -- BLIS's priority-fcfs). Precedence is an explicit --scheduler, then a
+// --policy-config bundle (applied later, when --scheduler is unset), then the scenario, then
+// the default. An explicit --scheduler that differs is a deliberate policy experiment and is
+// kept, with a warning that the simulated engine no longer matches the scenario.
+func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
+	eng, err := m.Engine()
+	if err != nil || eng.SchedulingPolicy == "" {
+		return
+	}
+	stated, ok := map[string]string{"fcfs": "fcfs", "priority": "priority-fcfs"}[eng.SchedulingPolicy]
+	if !ok {
+		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
+			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
+	}
+	if !cmd.Flags().Changed("scheduler") {
+		scheduler = stated
+		return
+	}
+	if scheduler != stated {
+		logrus.Warnf("--scheduler %s overrides scenario %q's engine.scheduling_policy %s (BLIS %s)",
+			scheduler, kernelScenario, eng.SchedulingPolicy, stated)
+	}
+}
+
 // who chose it. The gates still execute, on these values.
 func adoptKernelDeployment(cmd *cobra.Command) {
 	missing := []string{}
@@ -564,6 +590,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	shape, err := kernelmodel.ShapeOf(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
 	if err != nil {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
+	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
+		logrus.Fatalf("scenario %q states %d colocated pools; a run simulates one colocated "+
+			"engine, so state one pool and scale it with --num-instances", kernelScenario, len(shape.Roles))
 	}
 	// The scenario's offload block and --kv-offload-config describe the same tiers in two
 	// formats that are not yet one (#1910). Simulating without a hierarchy the scenario states
@@ -596,6 +627,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
 	}
 	kernelOpened = m
+	adoptSchedulingPolicy(cmd, m)
 	dep := m.Deployment()
 	model = strings.ToLower(dep.Model)
 	gpu = dep.Hardware

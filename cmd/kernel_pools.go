@@ -49,6 +49,22 @@ func openKernelPools(catalogRoot string) *kernelPools {
 		}
 		*c.dst = m
 	}
+	// For the same reason every instance must belong to a pool: one with no role would run the
+	// first pool's engine with the global sizing, an engine the scenario did not describe.
+	if prefillInstances+decodeInstances != numInstances {
+		logrus.Fatalf("--num-instances %d, but --prefill-instances %d + --decode-instances %d "+
+			"= %d: in a disaggregated run every instance is a prefill or a decode instance, so the "+
+			"counts must add up", numInstances, prefillInstances, decodeInstances,
+			prefillInstances+decodeInstances)
+	}
+	// A handoff crosses nodes: prefill and decode pools never share one. With no fabric named,
+	// the kernel would price that crossing at the on-node rate rather than refuse it.
+	if shape, err := kernelmodel.ShapeOf(kernelScenario, repos); err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	} else if shape.Fabric == "" {
+		logrus.Fatalf("scenario %q is disaggregated but names no cluster.fabric; a P/D KV "+
+			"handoff crosses nodes, so the run needs the inter-node fabric it crosses", kernelScenario)
+	}
 	ps, pe := p.prefill.Settings()
 	ds, de := p.decode.Settings()
 	if pe != nil || de != nil {
@@ -77,13 +93,6 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"%q in the decode pool; one speculative configuration applies to the run, so the pools "+
 			"must agree", kernelScenario, ps.SpeculativeTokens,
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
-	}
-	// A handoff the fabric cannot price is refused now rather than mid-run.
-	if d := p.prefill.Kernel().PDTransferTime(ps.BlockSize, p.prefill.PlacementOf(0),
-		p.decode.PlacementOf(0)); d < 0 || d >= time.Duration(math.MaxInt64/2) {
-		logrus.Fatalf("scenario %q: the kernel cannot price a KV handoff between "+
-			"its prefill and decode pools (it reports %v); the fabric between them states no "+
-			"bandwidth -- check cluster.fabric", kernelScenario, d)
 	}
 	return p
 }
@@ -129,9 +138,22 @@ func requireWindowFits(what string, s kernelmodel.Settings) {
 
 // transferTime prices a handoff with the prefill pool's kernel, between the placements of the
 // two instances in their pools. It reads the instance counts after DP-as-placement, so call it
-// once they are final.
+// once they are final. Every prefill-decode rank pair is priced once up front, so a pair the
+// fabric cannot price (a rack boundary with no bandwidth, say) is refused now rather than
+// panicking mid-run.
 func (p *kernelPools) transferTime() func(int64, cluster.InstanceID, cluster.InstanceID) int64 {
 	firstDecode := prefillInstances
+	block := int(blockSizeTokens)
+	for i := 0; i < prefillInstances; i++ {
+		for j := 0; j < decodeInstances; j++ {
+			from, to := p.prefill.PlacementOf(i), p.decode.PlacementOf(j)
+			if d := p.prefill.Kernel().PDTransferTime(block, from, to); d < 0 || d >= time.Duration(math.MaxInt64/2) {
+				logrus.Fatalf("scenario %q: the kernel cannot price a KV handoff from prefill "+
+					"rank %d (%+v) to decode rank %d (%+v) -- it reports %v; the link between them "+
+					"states no bandwidth -- check cluster.fabric", kernelScenario, i, from, j, to, d)
+			}
+		}
+	}
 	return func(tokens int64, from, to cluster.InstanceID) int64 {
 		return p.prefill.PDTransferTicks(tokens,
 			p.prefill.PlacementOf(rankInPool(from, firstDecode)),

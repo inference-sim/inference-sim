@@ -580,18 +580,19 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 func TestPoolOverrides_TheLoRAReservationShrinksBothPools(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
-		prefillInstances, decodeInstances, loraReservedBytesForKV}
+		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {
 		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, loraReservedBytesForKV = saved[4].(int), saved[5].(int), saved[6].(int64)
+		numInstances = saved[7].(int)
 	}()
 	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
 	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernelOpened, prefillInstances, decodeInstances = m, 3, 1
+	kernelOpened, prefillInstances, decodeInstances, numInstances = m, 3, 1, 4
 	pools := openKernelPools(catalog)
 
 	loraReservedBytesForKV = 0

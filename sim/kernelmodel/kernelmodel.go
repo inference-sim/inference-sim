@@ -511,20 +511,23 @@ type Deployment struct {
 	GPUMemUtil      float64
 }
 
-// Shape is what a scenario's deployment states beyond any one pool, read without building a
-// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy.
+// Shape is what a scenario states beyond any one pool, read without building a kernel: its
+// pools' roles, in declaration order, whether it states an offload hierarchy, and the
+// inter-node fabric it names ("" when it names none).
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+	Fabric        string
 }
 
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	sc, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return Shape{}, err
 	}
-	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
+		Fabric: sc.Cluster.Fabric}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
 	}
