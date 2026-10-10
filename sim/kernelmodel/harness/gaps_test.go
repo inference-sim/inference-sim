@@ -3,12 +3,15 @@ package harness
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"pgregory.net/rapid"
 )
 
 // gapsFor assesses a one-sweep corpus and returns its gaps.
@@ -127,5 +130,111 @@ func TestTheReportSummarisesPointsPerCause(t *testing.T) {
 	}
 	if !strings.Contains(summary, "      2  "+OwnerSim) {
 		t.Errorf("summary does not sum points per cause:\n%s", summary)
+	}
+}
+
+// Gap conservation: every corpus point is either scored or covered by a gap. A scorer takes a
+// sweep whole or not at all, so a sweep it could not score is covered by one sweep-level gap
+// counting all its points, whichever point failed and however (a failed run or an unusable
+// measurement); a point-level gap counts exactly one point of its own sweep.
+func TestEveryPointIsScoredOrCoveredByAGap(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		cv := &Coverage{}
+		var corpus []Sweep
+		scored := map[int]bool{}
+		for s := 0; s < rapid.IntRange(1, 6).Draw(rt, "sweeps"); s++ {
+			sw := Sweep{Scenario: fmt.Sprintf("s%d.yaml", s), Label: "1k1k"}
+			for c := 0; c < rapid.IntRange(1, 8).Draw(rt, "points"); c++ {
+				sw.Points = append(sw.Points, Point{Concurrency: 1 << c})
+			}
+			corpus = append(corpus, sw)
+			fail := rapid.IntRange(-1, len(sw.Points)-1).Draw(rt, "failingPoint")
+			switch {
+			case fail < 0:
+				scored[s] = true
+			case rapid.Bool().Draw(rt, "badMeasurement"):
+				cv.BadMeasurement(sw, sw.Points[fail].Concurrency, "relative <= 0")
+			default:
+				cv.Dropped(sw, sw.Points[fail].Concurrency, "blis run: exit status 1\nlast line")
+			}
+		}
+		covered := map[string]int{}
+		for _, g := range cv.Gaps {
+			covered[g.Scenario] += g.Points
+		}
+		total, accounted := 0, 0
+		for s, sw := range corpus {
+			total += len(sw.Points)
+			switch {
+			case scored[s] && covered[sw.Scenario] > 0:
+				rt.Fatalf("%s was scored and also covered by %d gap points", sw.Scenario, covered[sw.Scenario])
+			case scored[s]:
+				accounted += len(sw.Points)
+			case covered[sw.Scenario] != len(sw.Points):
+				rt.Fatalf("%s: a sweep that could not be scored is covered for %d of its %d points",
+					sw.Scenario, covered[sw.Scenario], len(sw.Points))
+			default:
+				accounted += covered[sw.Scenario]
+			}
+		}
+		if accounted != total {
+			rt.Fatalf("%d of %d points scored or covered", accounted, total)
+		}
+	})
+	// The same law on the gaps AssessCoverage finds itself: a sweep-level gap counts the
+	// sweep's points and a point-level gap one point of that sweep.
+	sw := committedSweep("sglang")
+	gaps := gapsFor(t, sw, Config{Repos: testRepos()})
+	if len(gaps) == 0 {
+		t.Fatal("a non-vLLM sweep produced no gap; the check below would be vacuous")
+	}
+	for _, g := range gaps {
+		if g.Concurrency == 0 && g.Points != len(sw.Points) {
+			t.Errorf("sweep-level gap %+v counts %d points, the sweep has %d", g, g.Points, len(sw.Points))
+		}
+		if g.Concurrency > 0 && (g.Points != 1 || !slices.ContainsFunc(sw.Points, func(p Point) bool { return p.Concurrency == g.Concurrency })) {
+			t.Errorf("point-level gap %+v is not one point of its sweep", g)
+		}
+	}
+}
+
+// The gap report never reaches stdout, which carries the score tables: with no path it goes to
+// stderr, with one to the file.
+func TestWriteGapsNeverWritesStdout(t *testing.T) {
+	cv := &Coverage{Gaps: []Gap{{Scenario: "a.yaml", Points: 2, Cause: "a cause", Owner: OwnerSim}}}
+	capture := func(f **os.File, write func()) string {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		orig := *f
+		*f = w
+		write()
+		*f = orig
+		_ = w.Close()
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(r)
+		return b.String()
+	}
+	path := filepath.Join(t.TempDir(), "gaps.txt")
+	var stderr string
+	stdout := capture(&os.Stdout, func() {
+		stderr = capture(&os.Stderr, func() {
+			if err := cv.WriteGaps(""); err != nil {
+				t.Error(err)
+			}
+			if err := cv.WriteGaps(path); err != nil {
+				t.Error(err)
+			}
+		})
+	})
+	if stdout != "" {
+		t.Errorf("the gap report reached stdout:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "a cause") {
+		t.Errorf("with no path the report did not go to stderr: %q", stderr)
+	}
+	if raw, err := os.ReadFile(path); err != nil || !strings.Contains(string(raw), "a cause") {
+		t.Errorf("with a path the report was not written there: %v %q", err, raw)
 	}
 }
