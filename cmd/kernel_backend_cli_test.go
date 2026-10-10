@@ -543,8 +543,17 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	}
 }
 
+// isWholeTicksRoundedUp states the rounding rule for a kernel duration of ns nanoseconds
+// charged as ticks microsecond ticks: at least one tick, enough ticks to cover the duration,
+// and one fewer would not -- a transfer is not done until its last byte lands, and a zero-tick
+// transfer would complete in the instant it starts.
+func isWholeTicksRoundedUp(ticks, ns int64) bool {
+	return ticks >= 1 && ticks*1000 >= ns && (ticks == 1 || (ticks-1)*1000 < ns)
+}
+
 // The offload prices are the kernel's: the attached tier pricer and the legacy per-block
-// charge equal TierTime in whole ticks rounded up, and moving more bytes never costs less.
+// charge are TierTime in whole ticks rounded up (isWholeTicksRoundedUp), and moving more bytes
+// never costs less.
 func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
 	saved := []any{kernelOpened, kvCPUBlocks, blockSizeTokens}
@@ -561,11 +570,11 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 	cfg := sim.KVOffloadConfig{Enabled: true, Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4"}}}
 	legacy := applyKernelOffloadPricing(&cfg)
 
-	ticks := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
-		return max(1, (m.Kernel().TierTime(tier, dir, bytes, q).Nanoseconds()+999)/1000)
+	ns := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
+		return m.Kernel().TierTime(tier, dir, bytes, q).Nanoseconds()
 	}
-	if want := ticks("cpu_dram", kernel.DirectionFromTier, m.Kernel().SequenceVariableBytes(16), 1); legacy != want {
-		t.Errorf("legacy per-block charge %d, the kernel prices one block's reload at %d", legacy, want)
+	if d := ns("cpu_dram", kernel.DirectionFromTier, m.Kernel().SequenceVariableBytes(16), 1); !isWholeTicksRoundedUp(legacy, d) {
+		t.Errorf("legacy per-block charge %d ticks is not the kernel's %d ns reload in whole ticks rounded up", legacy, d)
 	}
 	price := cfg.Tiers[0].ServiceTime
 	if price == nil {
@@ -579,8 +588,8 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 				if write {
 					dir = kernel.DirectionToTier
 				}
-				if got, want := price(write, bytes, q), ticks("nvme_gen4", dir, bytes, q); got != want {
-					t.Errorf("%d bytes q=%d write=%t: priced %d, kernel %d", bytes, q, write, got, want)
+				if got, d := price(write, bytes, q), ns("nvme_gen4", dir, bytes, q); !isWholeTicksRoundedUp(got, d) {
+					t.Errorf("%d bytes q=%d write=%t: priced %d ticks, not the kernel's %d ns rounded up", bytes, q, write, got, d)
 				}
 			}
 		}
@@ -953,8 +962,8 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	if run.Tiers[0].ServiceTime != nil || run.PerBlockBytes != 1 {
 		t.Error("applyOffload mutated the run's offload description")
 	}
-	ticks := func(m *kernelmodel.Model, tier string, dir kernel.Direction, bytes int64) int64 {
-		return max(1, (m.Kernel().TierTime(tier, dir, bytes, 1).Nanoseconds()+999)/1000)
+	ns := func(m *kernelmodel.Model, tier string, dir kernel.Direction, bytes int64) int64 {
+		return m.Kernel().TierTime(tier, dir, bytes, 1).Nanoseconds()
 	}
 	bytesOf := map[string]int64{}
 	for _, c := range []struct {
@@ -970,12 +979,12 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 		if got := c.o.KVOffload.PerBlockBytes; got != want {
 			t.Errorf("%s pool: %d bytes per block, its kernel says %d", c.name, got, want)
 		}
-		if got, w := *c.o.KVTransferTicksPerBlock, ticks(c.m, "cpu_dram", kernel.DirectionFromTier, want); got != w {
-			t.Errorf("%s pool: legacy reload %d ticks, its kernel prices %d", c.name, got, w)
+		if got, d := *c.o.KVTransferTicksPerBlock, ns(c.m, "cpu_dram", kernel.DirectionFromTier, want); !isWholeTicksRoundedUp(got, d) {
+			t.Errorf("%s pool: legacy reload %d ticks, not its kernel's %d ns rounded up", c.name, got, d)
 		}
 		for _, b := range []int64{want, 1 << 20, 1 << 28} {
-			if got, w := c.o.KVOffload.Tiers[0].ServiceTime(false, b, 1), ticks(c.m, "nvme_gen4", kernel.DirectionFromTier, b); got != w {
-				t.Errorf("%s pool: %d-byte read priced %d, its kernel %d", c.name, b, got, w)
+			if got, d := c.o.KVOffload.Tiers[0].ServiceTime(false, b, 1), ns(c.m, "nvme_gen4", kernel.DirectionFromTier, b); !isWholeTicksRoundedUp(got, d) {
+				t.Errorf("%s pool: %d-byte read priced %d ticks, not its kernel's %d ns rounded up", c.name, b, got, d)
 			}
 		}
 		if err := c.o.Validate(c.name); err != nil {
