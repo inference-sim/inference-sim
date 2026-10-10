@@ -1,5 +1,9 @@
 # Refactoring BLIS onto blis-latency-kernel exclusively
 
+> **Historical plan.** Written before the change landed. The roofline and trained-physics
+> backends it describes as "left on disk untouched" were later removed; blis-latency-kernel is
+> now the only backend. See [Latency Models](../guide/latency-models.md) for current behavior.
+
 Scope: this worktree only (`kernel-exclusive` branch). No change to `inference-sim/modeling`,
 `blis-catalog`, `blis-registry`, `blis-latency-kernel`, `blis-schemas`, or any document
 outside this directory.

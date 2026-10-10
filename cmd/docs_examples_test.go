@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/inference-sim/inference-sim/sim"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,8 +13,9 @@ import (
 // must stay runnable. Paths are relative to the cmd/ test working directory.
 //
 // Deliberately excluded, because they are historical records rather than instructions:
-// docs/plans/ (archived implementation plans, "PR history" per CLAUDE.md) and specs/
-// (frozen per-feature spec artifacts). Editing a shipped plan's example would rewrite the
+// docs/plans/ (archived implementation plans, "PR history" per CLAUDE.md), docs/blog/ (dated
+// posts, which carry an editor's note instead of a rewrite) and specs/ (frozen per-feature
+// spec artifacts). Editing a shipped plan's example would rewrite the
 // record of what that PR did.
 var docExampleRoots = []string{
 	"../CLAUDE.md",
@@ -26,21 +26,38 @@ var docExampleRoots = []string{
 }
 
 // docExampleSkipDirs are subtrees under docExampleRoots that hold historical records.
-var docExampleSkipDirs = []string{"../docs/plans"}
+var docExampleSkipDirs = []string{"../docs/plans", "../docs/blog"}
 
 // docCommandStart matches the beginning of a `blis run` / `blis replay` shell invocation
 // in prose or in a YAML comment: optional indentation, an optional `# ` comment marker,
 // an optional `$ ` prompt and `./` prefix, then the binary and subcommand.
 var docCommandStart = regexp.MustCompile(`^\s*(?:#\s+)?(?:\$ )?(?:\./)?blis\s+(?:run|replay)\b`)
 
-// TestDocExamplesPassDeploymentFlags is BC-6 for #1733: --hardware and --tp are REQUIRED,
-// so every documented `blis run` / `blis replay` example must pass both — otherwise the
-// docs hand the reader a command that now aborts.
+// removedRunFlags are the flags `blis run` / `blis replay` no longer register: the kernel
+// scenario states the deployment and the engine the kernel prices, so a documented example
+// passing one aborts with "unknown flag".
+var removedRunFlags = []string{
+	"--latency-model", "--alpha-coeffs", "--beta-coeffs", "--hardware-config",
+	"--model", "--hardware", "--tp", "--dp", "--enable-expert-parallel", "--moe-comm-backend",
+	"--prefill-tp", "--decode-tp", "--prefill-hardware", "--decode-hardware",
+	"--prefill-latency-model", "--decode-latency-model", "--prefill-max-model-len", "--decode-max-model-len",
+	"--prefill-moe-comm-backend", "--decode-moe-comm-backend",
+	"--total-kv-blocks", "--max-num-seqs", "--max-num-running-reqs", "--max-num-batched-tokens",
+	"--max-num-scheduled-tokens", "--block-size-in-tokens", "--gpu-memory-utilization", "--max-model-len",
+	"--kv-cache-dtype", "--no-enable-prefix-caching", "--num-speculative-tokens", "--speculative-method",
+	"--kv-transfer-bandwidth", "--kv-transfer-base-latency",
+	"--pd-transfer-bandwidth", "--pd-transfer-base-latency", "--pd-transfer-contention",
+	"--comm-serialization-factor", "--enforce-eager",
+}
+
+// TestDocExamplesPassDeploymentFlags: the deployment comes from a kernel scenario, so every
+// documented `blis run` / `blis replay` example must name one (--scenario) and must pass none
+// of the removed deployment/engine flags -- otherwise the docs hand the reader a command that
+// aborts as written.
 //
 // It is a behavioral test of the docs, not a style check: it reconstructs each example
-// command (joining `\` line continuations, exactly as a shell would) and asserts the
-// resulting command line carries both flags. A placeholder value (`--tp <N>`) satisfies it;
-// an omitted flag does not.
+// command (joining `\` line continuations, exactly as a shell would) and asserts on the
+// resulting command line. A placeholder value (`--scenario <file>`) satisfies it.
 func TestDocExamplesPassDeploymentFlags(t *testing.T) {
 	files := collectDocFiles(t)
 	if len(files) == 0 {
@@ -66,33 +83,17 @@ func TestDocExamplesPassDeploymentFlags(t *testing.T) {
 			}
 			examples++
 
-			// The kernel backend reads the deployment from its scenario and REFUSES
-			// --hardware/--tp, so an example that passed them would abort. The
-			// requirement is unchanged for every other backend; this is the one
-			// documented command line where supplying them is the error.
-			if hasFlag(command, "--latency-model") &&
-				strings.Contains(command, sim.LatencyBackendKernel) {
-				for _, refused := range []string{"--model", "--hardware", "--tp", "--dp"} {
-					if hasFlag(command, refused) {
-						t.Errorf("%s:%d: documented example passes %s to --latency-model %s, "+
-							"which refuses it and reads the deployment from the scenario:\n  %s",
-							file, start+1, refused, sim.LatencyBackendKernel, collapse(command))
-					}
+			if !hasFlag(command, "--scenario") {
+				t.Errorf("%s:%d: documented example names no --scenario, which every run and "+
+					"replay requires, so this command aborts as written:\n  %s",
+					file, start+1, collapse(command))
+			}
+			for _, removed := range removedRunFlags {
+				if hasFlag(command, removed) {
+					t.Errorf("%s:%d: documented example passes %s, which is no longer a flag (the "+
+						"kernel scenario states it), so this command aborts as written:\n  %s",
+						file, start+1, removed, collapse(command))
 				}
-				continue
-			}
-
-			var missing []string
-			if !hasFlag(command, "--hardware") {
-				missing = append(missing, "--hardware")
-			}
-			if !hasFlag(command, "--tp") {
-				missing = append(missing, "--tp")
-			}
-			if len(missing) > 0 {
-				t.Errorf("%s:%d: documented example omits %s — both are required flags since "+
-					"#1733 (NS-6), so this command aborts as written:\n  %s",
-					file, start+1, strings.Join(missing, " and "), collapse(command))
 			}
 		}
 	}

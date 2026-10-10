@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.21+** — [Download Go](https://go.dev/dl/)
+- **Go 1.24+** — [Download Go](https://go.dev/dl/)
 - **Git** — for cloning the repository
 
 ## Build from Source
@@ -62,8 +62,8 @@ months apart read the same catalog. (`blis run --metrics-path` records the catal
 revision and whether it was dirty — see [Results](../guide/results.md); a `--depth 1`
 tag clone still carries the revision, so that provenance is unaffected.)
 
-The `blis-latency-kernel` backend additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
-clone for its fitted coefficients (`--registry`). **Compatible blis-registry release:
+BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
+clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
 `v0.1.1`**, the release blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested
 against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
 repository's test suite holds its vendored catalog and registry to it.
@@ -78,11 +78,33 @@ then requires every documented clone command to match, so no page is left behind
 stops you pointing `--catalog` at a `main` checkout or a scratch clone of your own; the pin
 is what the *documentation* promises, not a restriction the binary enforces.
 
+## Scenarios
+
+Every `blis run` and `blis replay` names a **scenario**: a
+[`blis-schemas`](https://github.com/inference-sim/blis-schemas) Scenario + Deployment YAML
+(two documents) that states the model, the cluster's hardware, fabric, nodes and GPUs per
+node, the coefficient sets that price it, the engine version, and each pool's role,
+parallelism and engine settings. `--scenarios <dir>` is any directory of scenario YAMLs and
+`--scenario <file name>` picks one in it. Two directories are ready to use:
+
+- the kernel module's own fixtures, downloaded by `go build`, at
+  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`;
+- `testdata/scenarios/` in this repository: `glm-5-h200-3p1d-ib.yaml` (P/D) and
+  `glm-5-h200-tp8-mtp3.yaml` (MTP speculative decoding; it drafts tokens, so a run must also
+  pass `--speculative-acceptance-rate`, e.g. `0.7`).
+
 ## Verify the Build
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --num-requests 10 --catalog blis-catalog
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate \
+  --registry $PWD/blis-registry --catalog blis-catalog \
+  --num-requests 10
 ```
+
+Run `blis` from the repository root: `--defaults-filepath` defaults to the relative path
+`defaults.yaml` (the LoRA cost constants), and a run from another directory is refused with
+`Failed to read defaults file` unless you pass `--defaults-filepath <repo>/defaults.yaml`.
 
 You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.
 

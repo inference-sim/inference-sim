@@ -1,9 +1,10 @@
 # Result: BLIS on blis-latency-kernel, against AISimulate
 
 Worktree-scoped experiment. In the headline comparison latency comes exclusively from
-`blis-latency-kernel`. BLIS's roofline and trained-physics backends are constructed only by
-`cmd/estimatorscore`, which scores them as additional columns on the subset they are
-calibrated for; they supply nothing to the figures below.
+`blis-latency-kernel`. BLIS's roofline and trained-physics backends were, when these runs were
+made, constructed only by `cmd/estimatorscore`, which scored them as additional columns on the
+subset they are calibrated for; they supply nothing to the figures below. Both backends and
+`cmd/estimatorscore` have since been removed, so those columns are historical.
 
 > **Reading order.** This document is chronological: it records what was measured when, including
 > figures that a later measurement superseded. The live numbers are under

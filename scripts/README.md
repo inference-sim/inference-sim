@@ -326,8 +326,9 @@ either one would quietly hand grading back to the PR.
 
 ## find-saturation.sh — Rate-sweep saturation finder
 
-Drives `blis run` across a configurable rate sweep against a chosen
-`(model, hardware, TP, workload)` configuration. For each rate it:
+Drives `blis run` across a configurable rate sweep against one scenario (a
+blis-schemas Scenario + Deployment file that fixes model, hardware, parallelism
+and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 
 1. Runs `blis run` once with the **detector bank** (`--detectors all`), which
    fans one deterministic replay out to every post-hoc detector (composite,
@@ -336,44 +337,39 @@ Drives `blis run` across a configurable rate sweep against a chosen
    (the `"final"` detector→label map, #1517).
 3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
 
-The output reproduces the validation table against the catalog's
-`models/llama-3.1-70b-instruct/`. Pointing it at any other configuration
-should produce a comparable table with the same column shape.
-
 ### Quick start
 
 ```bash
-# Default: Llama-3.1-70B / TP=8 / H100 / chatbot, sweeps 0.5..100 req/s
-./scripts/find-saturation.sh
+# One-time setup: catalog and registry at their pinned releases
+# (see docs/getting-started/installation.md#catalog-compatibility)
+git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+export BLIS_CATALOG=$PWD/blis-catalog
 
-# Llama-2-7B / TP=1, narrower sweep
-MODEL=meta-llama/Llama-2-7b-hf \
-  CATALOG=blis-catalog \
-  TP=1 RATES="2 4 6 8 10 12 16 20" \
+# Sweep 0.5..100 req/s on the chatbot preset
+SCENARIO=llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  SCENARIOS=<dir of scenario files> REGISTRY=$PWD/blis-registry \
   ./scripts/find-saturation.sh
 
-# Custom workload, slower coarse sweep
-WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
-  ./scripts/find-saturation.sh
-
-# Only one detector (skip the bank)
-DETECTORS=composite ./scripts/find-saturation.sh
-
-# A different catalogued model
-MODEL=qwen/qwen3-14b CATALOG=blis-catalog TP=1 \
+# Narrower sweep, different preset, one detector
+SCENARIO=... SCENARIOS=... REGISTRY=... \
+  WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" DETECTORS=composite \
   ./scripts/find-saturation.sh
 ```
+
+The kernel module's own scenarios are at
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`;
+any directory of scenario YAMLs works.
 
 ### Inputs (all environment variables)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MODEL` | `meta-llama/Llama-3.1-70B-Instruct` | HuggingFace-style model name |
-| `CATALOG` | `blis-catalog` | Model catalog clone root (holds `models/<short-name>/config.json` per model). Passed as `--catalog`; required since #1731 — there is no default and no search path. Point it at a checkout of the blis-catalog repository. A model with no entry is refused, never fetched. |
-| `HARDWARE` | `H100` | GPU type passed to `--hardware` |
-| `TP` | `8` | Tensor parallelism degree |
-| `WORKLOAD` | `chatbot` | Built-in preset (chatbot/summarization/contentgen/multidoc) |
-| `LATENCY_MODEL` | `trained-physics` | `--latency-model` backend |
+| `SCENARIO` | — (required) | Scenario file name, passed as `--scenario` |
+| `SCENARIOS` | — (required) | Directory holding the scenario, passed as `--scenarios` |
+| `REGISTRY` | — (required) | `blis-registry` clone root, passed as `--registry` |
+| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | `blis-catalog` clone root, passed as `--catalog`. The scenario's model must have an entry; a missing one is refused, never fetched. |
+| `WORKLOAD` | `chatbot` | Catalog workload preset (chatbot/summarization/contentgen/multidoc) |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
 | `DETECTORS` | `all` | `--detectors` selection (`all`, or a comma-list like `composite,threshold`) |
@@ -381,6 +377,8 @@ MODEL=qwen/qwen3-14b CATALOG=blis-catalog TP=1 \
 | `RATES` | `0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100` | Space-separated rate sweep |
 | `SEED` | `42` | RNG seed |
 | `OUT_DIR` | `results/saturation-<ts>-<pid>` | Output directory |
+
+The script exits with an error naming the variable if `SCENARIO`, `SCENARIOS` or `REGISTRY` is unset.
 
 ### Outputs
 
@@ -450,29 +448,7 @@ is growing before mean latency crosses the cutoff.
 
 ### Running on a custom configuration
 
-The script's defaults match the reference validation experiment so anyone can
-reproduce that exact table. To validate any other configuration, override the
-relevant variables:
-
-```bash
-# Example: probe Mixtral-8x7B FP8 on 4×H100 TP=4 with summarization workload
-MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1 \
-  CATALOG=blis-catalog \
-  TP=4 WORKLOAD=summarization \
-  RATES="2 4 8 16 24 32 40 48" \
-  ./scripts/find-saturation.sh
-```
-
-If your model isn't in the catalog, drop its `config.json` into
-`$CATALOG/models/<your-model-slug>/config.json` (`$CATALOG` is a checkout of the
-[`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository, or any scratch
-clone of that layout). BLIS does not fetch configs at run time — a model with no entry is
-refused, naming the path its entry belongs at.
-
-### Dependencies
-
-- `bash` 4+
-- `jq` (for JSON parsing)
-- `bc` (for ratio arithmetic)
-- `column` (for the final pretty-print; falls back gracefully if missing)
-- `go` (auto-builds `./blis` on first run)
+Point `SCENARIO`/`SCENARIOS` at any scenario file. To probe a new deployment, write a
+scenario for it (the blis-schemas Scenario + Deployment format); its model must be in the
+catalog and its coefficient sets in the registry. BLIS does not fetch model configs at run
+time.

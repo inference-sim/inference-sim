@@ -1,83 +1,60 @@
 # Model Compatibility
 
-BLIS **runs many transformer models straight from a HuggingFace `config.json`** on day zero: it reads the architecture out of the config, so onboarding a model needs no BLIS-side code and no per-model coefficient fit: trained-physics applies one global coefficient set that generalizes across architectures, and roofline is purely analytical (no learned coefficients at all).
+A model runs in BLIS when three things exist for it:
 
-**Fidelity, however, is architecture-dependent.** The latency models are validated against real vLLM measurements for the [architectures listed below](#validated-architectures); most other transformer models run too, but their numbers are unvalidated. **Most**, not any: a config from which no layer count can be derived is refused outright, and an activation outside the SwiGLU family is unsupported by KV auto-sizing — auto-calculation aborts the run with a fatal error unless you pass `--total-kv-blocks` to size KV manually. Beyond that, hardware MFU is a calibration input (see the *MFU Calibration* note below), several modern shapes — MLA, hybrid attention, block-wise FP8, MTP — carry the *Known approximations* documented on this page, and a run still needs the usual CLI configuration for its deployment topology (`--tp`/`--dp`, `--enable-expert-parallel`, KV capacity, `--kv-cache-dtype`). For an unvalidated architecture, treat absolute latencies as an estimate and calibrate against a real server (`blis observe` → `blis replay` → `blis calibrate`) before relying on them.
+1. **A catalog entry** in [`blis-catalog`](https://github.com/inference-sim/blis-catalog) at
+   `<catalog>/models/<name>/`: the vendor's HuggingFace `config.json` (committed verbatim),
+   `model.yaml` (identity and provenance), and `graph.yaml`, the model graph
+   blis-latency-kernel prices.
+2. **A scenario** naming the model, a catalog chip (`cluster.hardware`) and, when a handoff
+   crosses nodes, a catalog fabric, plus the coefficient sets it needs.
+3. **Those coefficient sets** in [`blis-registry`](https://github.com/inference-sim/blis-registry).
 
-BLIS has been tested and accuracy validated across a variety of model families and sizes, including both dense transformers and MoE (Mixture-of-Experts) architectures.
+Anything else is refused at startup, naming what is missing. BLIS never fetches a model at
+run time, and adding a model, chip or fabric is a commit to blis-catalog (and, when new
+coefficients are needed, to blis-registry), not a change to this repo. How the kernel prices
+a model is described in [Latency Models](../guide/latency-models.md).
 
-The simulator reads each model's `config.json` from the catalog located by `--catalog <path>` or the `BLIS_CATALOG` environment variable — there is **no default and no search path**, so a run with neither is refused naming both forms (#1731). The catalog is a checkout of the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (or any scratch clone of that layout); within it, the entry is `<catalog>/models/<model-short-name>/config.json`. BLIS never fetches at run time: a model with no catalog entry is refused, naming the path the entry belongs at. Adding a model means committing its `config.json` (set `HF_TOKEN` when downloading a gated model's config by hand).
+The catalog is located by `--catalog <path>` or the `BLIS_CATALOG` environment variable;
+there is no default and no search path, so a run with neither is refused naming both forms
+(#1731). See [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)
+for the pinned release.
 
-### Catalog validation — there is no `validate` command
+## Scored deployments
 
-BLIS validates whatever it reads and fails naming the file and the problem; there is deliberately no `blis validate` subcommand, because a separate validator would be free to accept a catalog a run rejects. What keeps the catalog loadable is a whole-catalog load that goes through the same code path a run uses (#1750), in two layers:
+blis-latency-kernel `v0.1.0` ships the scenarios it was scored on in
+`testdata/aisimulate` of its module, covering deepseek-v3, deepseek-v4-pro, glm-5,
+gpt-oss-120b, kimi-k2.5, llama-3.1-70b-instruct, minimax-m2.5, minimax-m3 and
+qwen3.5-397b-a17b on H100, H200, B200 and B300 under several TP degrees and precisions. The
+accuracy figures are in [Latency Models](../guide/latency-models.md#the-published-accuracy-figures).
+A model or chip outside that set runs if the catalog and registry cover it, but its numbers
+are unscored: treat absolute latencies as estimates.
 
-- **Unconditional** — `go test ./cmd/...` loads the committed fixture catalog (`testdata/catalog`) on every test run.
-- **Against the authoritative catalog** — `scripts/catalog-load-gate.sh` clones `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring that script into `.github/workflows/ci.yml` as a `catalog-load` job is **a pending human step, tracked by [#1823](https://github.com/inference-sim/inference-sim/issues/1823)** (the job body is quoted in the script's header; the automated delivery loop's token cannot push workflow files). So until that edit lands, the authoritative-catalog load runs **on demand only** — `scripts/catalog-load-gate.sh` — and is not enforced pre-merge; the unconditional fixture layer above is.
+## Catalog validation -- there is no `validate` command
+
+BLIS validates whatever it reads and fails naming the file and the problem; there is
+deliberately no `blis validate` subcommand, because a separate validator would be free to
+accept a catalog a run rejects. The catalog is kept loadable by a whole-catalog load through
+the same code path a run uses (#1750), in two layers:
+
+- **Unconditional** -- `go test ./cmd/...` loads the committed fixture catalog
+  (`testdata/catalog`, a vendored subset of blis-catalog `0.2.1`) on every test run.
+- **Against the authoritative catalog** -- `scripts/catalog-load-gate.sh` clones
+  `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring it into
+  CI as a `catalog-load` job is a pending human step, tracked by
+  [#1823](https://github.com/inference-sim/inference-sim/issues/1823); until then it runs on
+  demand only.
 
 What the load requires of a catalog:
 
 | Rule | Where it applies |
 |---|---|
-| Every `models/<name>/` entry has **both** halves — the vendor `config.json` **and** `model.yaml` (identity + `source.provider`/`repo`/`revision`), whose `name` matches the directory | `models/` |
-| Every `config.json` resolves and parses through the run path (`--model` resolution, then the model-config parser) | `models/` |
-| Strict parsing — an **unknown key is a hard error naming the file and the key**, never a silently dropped field | `models/*/model.yaml`, `hardware/*.yaml`, `workloads/*.yaml`, `devices/*.yaml` |
-| **One YAML document per file** — every reader decodes exactly one, so content after a `---` separator would be read by nothing (an empty trailing `---` is fine) | every catalog-authored YAML file |
-| No catalog-authored file states a **GPU** or a **tensor-parallel degree** at any nesting depth: those are deployment choices, stated on the command line and required there (`--hardware` / `--tp`, NS-6) | every catalog-authored YAML file |
-| Hardware entries state every calibration field they need (an omitted one would silently read 0) and keep the interconnect bandwidth pair complete | `hardware/*.yaml` |
+| Every `models/<name>/` entry has its vendor `config.json` **and** `model.yaml`, whose `name` matches the directory | `models/` |
+| Strict parsing: an **unknown key is a hard error naming the file and the key** | catalog-authored YAML |
+| **One YAML document per file** (an empty trailing `---` is fine) | catalog-authored YAML |
+| No catalog-authored file states a **GPU** or a **tensor-parallel degree**: those are deployment choices, stated in the scenario | catalog-authored YAML |
 
-Two scope notes worth knowing before editing a catalog:
-
-- The deployment-fact rule is scoped to the catalog's **own** YAML, never the vendor `config.json`, which is committed verbatim. Many vendor configs state `pretraining_tp` — the TP degree the checkpoint was *pretrained* with, an architectural fact of the model rather than a choice about how to serve it.
-- `blis run` itself is **not** tightened by this gate: it resolves one model and reads only that model's `config.json`, so a scratch clone carrying a `config.json` with no `model.yaml` still runs. The completeness rule is a property of a *published* catalog, checked in CI.
-
-## Validated Architectures
-
-The latency models have been validated against real vLLM measurements on:
-
-- Qwen 2.5 1.5B/3B, Qwen 3 14B
-- LLaMA 2 7B/70B
-- CodeLlama 34B
-- Mixtral 8x7B (MoE)
-
-**Trained-physics** achieves 7% MAPE GPU combined step time across these architectures. A model outside this list generally runs from its HuggingFace `config.json` alone — subject to the caveats in the opening section — it just hasn't been formally validated, so treat its absolute latencies as estimates.
-
-!!! note "Parallelism and quantization"
-    The analytical latency models (roofline, trained-physics) model tensor parallelism (TP). MoE data parallelism (`--dp`) is a trained-physics step-time term (#1419) and real placement — `--dp N` spawns N single-node engine replicas per `--num-instances`, each sized per-rank, on `blis run` (#1531) and `blis replay` (#1556). Expert parallelism (EP) affects both the **weight footprint used for KV-capacity sizing** (#1656, below) and, since #1548, **step time** (routed-expert weights shard across the `TP·DP` EP group; the MoE FFN dispatch/combines instead of all-reducing), and is supported alongside `--dp > 1` on both commands. Note the roofline backend is DP/EP-blind for step time and **rejects** `--dp > 1` / `--enable-expert-parallel` outright (they require `trained-physics`), so a roofline run can never silently mis-model such a deployment. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via `quantization_config`), plus model name conventions (e.g., `w4a16`, `FP8`).
-
-!!! info "MFU Calibration (Updated March 2026)"
-    Hardware MFU (Model FLOPs Utilization) values in `hardware_config.json` were recalibrated based on empirical measurements and roofline theory. The updated values (H100: prefill=0.45/decode=0.30, A100: prefill=0.38/decode=0.18, L40S: prefill=0.32/decode=0.08) reflect conservative estimates for capacity planning. For detailed justification including evidence from FlashAttention-3, NVIDIA MLPerf, and production deployments, see [Discussion #589](https://github.com/inference-sim/inference-sim/discussions/589). If you have existing capacity planning results, consider re-running simulations with the updated values for more accurate estimates.
-
-## Attention & KV-Cache Shape (MLA, head_dim, dense-prefix MoE)
-
-BLIS derives KV-cache block capacity and total model-weight bytes from the HuggingFace `config.json`. As of #1527 the shape model represents the modern MLA MoE family (DeepSeek-V2/V3, Kimi-K3, GLM-5.2 `glm_moe_dsa`):
-
-- **Explicit `head_dim`.** When a config declares `head_dim` (common in modern MLA/GQA designs where it differs from `hidden_size / num_attention_heads` — e.g. GLM-5.2: `head_dim=192` while `6144/64=96`), it is used for KV-cache and weight sizing. Absent the key, BLIS falls back to `hidden/heads` (unchanged behavior). *Note:* the step-time (latency) models still use `hidden/heads`; `head_dim` currently affects capacity only.
-- **MLA compressed-KV.** For Multi-head Latent Attention models (`kv_lora_rank` present), the KV cache stores a single compressed latent of `kv_lora_rank + qk_rope_head_dim` scalars per token per layer (e.g. DeepSeek `512 + 64 = 576`), **not** the standard MHA/GQA `2 × head_dim × num_kv_heads`. The latent is replicated across tensor-parallel ranks (not sharded), matching vLLM's MLA cache. This corrects both KV capacity and PD KV-transfer sizing for the whole MLA family.
-- **Dense-prefix MoE (`first_k_dense_replace`).** MoE models that run their first *K* layers as dense MLP (e.g. GLM-5.2: 3 of 78 dense; DeepSeek-V2-Lite: 1 of 27) have their weight estimate split into *K* dense layers + remaining MoE layers, instead of counting every layer as MoE. This is a prefix split, distinct from the every-Nth `interleave_moe_layer_step` pattern.
-- **Expert-parallel weight sharding (`--enable-expert-parallel`, #1656).** With expert parallelism enabled, vLLM shards the routed (FusedMoE) expert weights across the whole expert-parallel group — `ep_size = TP·DP`, each rank holding `num_experts/ep_size` whole experts — instead of replicating every expert per DP rank and tensor-sharding it across TP. BLIS charges the routed-expert term to that group and leaves every other weight (attention, shared experts, dense-prefix MLP, router/gate, embeddings, norms) on the TP-sharded path, so per-GPU weights are `non_expert/TP + routed/EP`. For a large MoE this is the difference between sizing on its real topology and failing outright: a Kimi-K3-class checkpoint carries ~99% of its bytes in routed experts, so a `TP=16 / DP=2 / EP=32` deployment that really runs on 32 GPUs previously failed auto-sizing with "Minimum GPUs required per instance: 21". Absent `--enable-expert-parallel` — and at `DP=1`, where the EP group *is* the TP group — sizing is unchanged. Note the KV cache itself is EP-independent (EP shards experts, never attention). **Reachability:** the correction bites only when the EP group exceeds TP, i.e. `DP > 1`, which [#1548](https://github.com/inference-sim/inference-sim/issues/1548) made reachable end-to-end from the CLI — a `TP=16 / DP=2 / EP=32` run now both sizes and simulates, and the same expert-shard group drives step time (#1548) and capacity (#1656). **Baseline caveat:** the EP-*off* comparison point is BLIS's own DP model (MoE `--dp N` = N independent engine replicas, #1531, each holding a full tensor-sharded copy of the experts). vLLM instead flattens TP across DP for MoE layers unconditionally, so its per-GPU routed footprint is `R/(TP·DP)` in *both* EP modes; BLIS's EP-off `DP>1` capacity is therefore conservative (it over-charges), a divergence in the DP model rather than in this term ([#1666](https://github.com/inference-sim/inference-sim/issues/1666)).
-- **Layer count from a block-type array (`layers_block_type`, #1729).** Some configs (Nemotron-3-Ultra-550B) omit the top-level `num_hidden_layers` scalar entirely and express the layer count only as a per-layer block-type list. BLIS derives the layer count from `len(layers_block_type)` when the scalar is absent (or zero) — previously such a model aborted before any simulation with `NumLayers must be > 0, got 0`, even though its 30B sibling with the same architecture declares the scalar and runs. A declared scalar always wins, so every model that has one is unchanged; a config with **neither** still fails loudly rather than running at zero layers. `blis run` reports the derived count on stderr. Since #1777 that failure names **both** keys and what is wrong with each — `"num_hidden_layers" is absent, and "layers_block_type" holds a string, not a list` — rather than the older `NumLayers must be > 0`, which named an internal field and could not distinguish an absent `layers_block_type` from one present with the wrong JSON type. A **negative** scalar is not covered by that refusal: it *is* an answer, just an invalid one, so it is passed through and reported with its actual value.
-- **Hybrid attention (`linear_attn_config`, #1635).** Models that interleave full-attention layers with linear-attention layers (e.g. Kimi-K3: 24 full Multi-head Latent Attention layers + 69 Kimi-Delta-Attention layers of 93 total) declare a `full_attn_layers` list under `linear_attn_config`. Only the full-attention layers store a growing per-token KV cache; the linear-attention layers keep a fixed-size recurrent / short-conv state. BLIS sizes the KV cache over the full-attention layer count (`len(full_attn_layers)`, clamped to `[0, num_layers]`) rather than all layers — for Kimi-K3 this corrects a ~3.9× (93/24) KV over-count. Absent `linear_attn_config` (every non-hybrid model), sizing is unchanged.
-
-!!! warning "Known approximations for MLA / FP8 / DSA models"
-    - **Step-time KV-read term is not MLA-aware (pessimistic).** The MLA compressed-KV shape above corrects **capacity** (KV block counts, PD transfer sizing), but the trained-physics/roofline **step-time** decode-bandwidth term still sizes KV reads as the standard `2 × num_kv_heads × head_dim` per token per layer — much larger than the MLA latent `kv_lora_rank + qk_rope_head_dim` (e.g. GLM-5.2: `12288` vs `576`, ~21×). So for MLA models BLIS reports **correct KV block counts but a pessimistic (over-estimated) decode step time / TTFT**. `blis run` emits a warning when an MLA model is detected. Making step time MLA-aware is a separate follow-up (its own calibration surface).
-    - **`first_k_dense_replace` affects weight accounting only, not step time.** The dense/MoE weight split is applied to the capacity estimate; the step-time MoE-layer count does not yet consume `first_k_dense_replace` (it uses the pre-existing `interleave_moe_layer_step` heuristic).
-    - **Block-wise FP8** (`weight_block_size`, e.g. GLM-5.2-FP8) is treated as a flat `1.0` byte/param. The per-block scale overhead and the `modules_to_not_convert` set (layernorms, gates, indexer, `lm_head`, embeddings, MTP modules kept at bf16) are **not** modeled, giving a slightly **optimistic** (low) weight estimate.
-    - The **DeepSeek sparse-attention (DSA) indexer** (`index_n_heads`, `index_topk`) contributes no weight or index-KV — a second-order optimistic gap.
-    - **MLA attention weight projections** (`q_lora_rank`/`kv_lora_rank` down/up matrices) keep the standard dense-attention weight approximation; only the KV *footprint* uses the compressed-latent shape.
-    - **Expert-parallel sizing is an average, and the residual per-GPU terms are optimistic (#1656).** The routed-expert charge is the continuous average `num_experts/ep_size` experts per GPU, while vLLM sizes KV from the *most-loaded* rank. vLLM's expert map is a contiguous block partition in which the trailing rank absorbs the whole remainder, so when `ep_size` does not divide `num_experts` the binding rank can hold considerably more than the average — 256 experts at `ep_size=48` gives 5 experts on 47 ranks and 21 on the last, not "one extra" — making the estimate optimistic by that margin. Every committed fixture and every even wide-EP layout divides exactly (and `--enable-eplb` itself requires even distribution), so this bites only on deliberately-ragged groups; a group *wider* than `num_experts` is clamped to `num_experts` (one whole expert per loaded rank) with a warning rather than charged the sub-one-expert average. `--num-redundant-experts` raises per-rank expert count above the average and is unmodeled. Two residual per-GPU terms become *dominant* once the routed term shrinks by `DP`: the MoE activation budget is a flat `8.0 GiB` per replica compared against a TP-GPU budget (so an implied `8/TP` per GPU, where vLLM profiles peak activation *per GPU*), and the `0.6 GiB/GPU` non-torch allowance was calibrated for non-EP NCCL — it does not cover DeepEP/pplx all-to-all workspaces or `VLLM_ALL2ALL_BACKEND` staging buffers. The router/gate is charged on the TP path though vLLM replicates it under EP (negligible: ~0.1 GiB for GLM-5.2). All of these point the same way (optimistic), so treat post-EP KV headroom as an upper bound.
-    - **MTP module weights are unmodeled.** `num_nextn_predict_layers` (GLM-5.2, Kimi-K3) ships a next-token-prediction module containing a full MoE FFN plus embed/head, which vLLM loads when `--num-speculative-tokens > 0`. It is not counted in the weight estimate — roughly one MoE layer's worth of routed bytes, ~1 GiB/GPU at EP=32.
-    - **Speculative decoding / MTP throughput** is modeled since [#1528](https://github.com/inference-sim/inference-sim/issues/1528) (verify width vs accepted tokens; see [Latency Models](../guide/latency-models.md#speculative-decoding-mtp-1528)), and since [#1657](https://github.com/inference-sim/inference-sim/issues/1657) a decode step's progress is clamped at the request's completion boundary so its output-token count matches a `K=0` run; the MTP module's *weights* are not (previous bullet). Speculative KV/token-budget *occupancy* under saturation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)) and the draft model's own cost are also unmodeled.
-    - **A derived block-type layer count is a total, not a per-type tally (#1729).** Each `layers_block_type` entry counts as one transformer layer whatever block type it names, so a hybrid attention/Mamba list (Nemotron) has its non-attention layers priced and KV-sized as full attention — **pessimistic**, in exactly the way #1635/#1636 corrected for `linear_attn_config` hybrids (a different key, unaffected here). `blis run` warns on stderr whenever the count is derived this way. Per-type layer groups are a later release.
-    - **Hybrid attention: KV capacity (#1635) and step time (#1636) are layer-type-aware; weights are not (#1638).** For hybrid models the KV cache is sized over the full-attention layers (#1635), and the step-time model splits the per-layer attention cost by type (#1636): full-attention layers keep the O(context)/O(N²) attention-score compute and the growing-KV read/write bandwidth, while the linear-attention (KDA) layers charge a linear-attention cost — O(N) in prefill, O(state) per token in decode — so step time is **no longer pessimistic** for the KDA layers. The KDA layers still charge full-attention **weights** (tracked in [#1638](https://github.com/inference-sim/inference-sim/issues/1638)) — the one remaining **pessimism** for those layers. `blis run` warns when a hybrid model is detected. A hybrid config whose `linear_attn_config` carries no usable `full_attn_layers` list warns and falls back to all-layers sizing.
-
-!!! info "Capacity numbers change for MLA / explicit-`head_dim` models (#1527)"
-    Models whose `config.json` carries the newly-parsed keys get **more accurate** auto-calculated KV capacity than before #1527 — so pre- vs post-#1527 capacity numbers will differ for them. Affected committed configs: `deepseek-v2-lite` (MLA + dense prefix — its correct compressed-KV footprint yields substantially more KV blocks at a given TP), `mistral-nemo-instruct-2407` and `qwen3-30b-a3b` (explicit `head_dim` ≠ `hidden/heads`). If you have saved capacity-planning results for these models, re-run to pick up the corrected sizing.
-
-## Removed Backends
-
-### Blackbox Backend (removed April 2026)
-
-The `blackbox` latency backend used simple alpha/beta regression coefficients without hardware awareness. It has been removed in favor of `trained-physics`, which provides physics-informed estimation with better generalization across models and configurations.
-
-**Migration:** Use `--latency-model trained-physics` (recommended) or `roofline`.
+The deployment-fact rule is scoped to the catalog's own YAML, never the vendor
+`config.json`: many vendor configs state `pretraining_tp`, an architectural fact of the
+checkpoint rather than a serving choice. The file formats themselves are defined by
+[`blis-schemas`](https://github.com/inference-sim/blis-schemas).

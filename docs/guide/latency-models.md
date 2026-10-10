@@ -1,211 +1,194 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- **trained-physics** (default, physics-informed roofline with MoE-aware corrections), **roofline** (pure analytical), and **blis-latency-kernel** (per-operator pricing from a committed scenario) -- and the pluggable architecture supports adding custom backends.
+BLIS takes its latency model from one source: **blis-latency-kernel**
+(Go module `github.com/inference-sim/blis-latency-kernel`, pinned at `v0.1.0`). The adapter
+in `sim/kernelmodel` translates a BLIS batch into the kernel's request shapes and converts
+the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
+backend and no `--latency-model` flag: the roofline and trained-physics backends, the
+alpha/beta coefficients, `hardware_config.json` calibration, and the
+`trained_physics_coefficients` block of `defaults.yaml` were removed.
 
-**Migration note:** Three legacy backends have been removed (`blackbox`, `crossmodel`, `trained-roofline`). Use `--latency-model trained-physics` instead, which supersedes all three with improved accuracy and MoE support.
+## Who does what
 
-```bash
-# Trained-physics mode (default) — roofline × architecture-aware basis functions × learned corrections
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
-  --num-instances 4 --rate 100 --num-requests 500
+inference-sim simulates the cluster: arrivals, admission, routing, scheduling, KV block
+accounting, placement and metrics. blis-latency-kernel prices: step time, KV and fixed
+memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs,
+chips, fabrics and storage devices from **blis-catalog** and fitted coefficients from
+**blis-registry**; every file format involved, the scenario included, is defined by
+**blis-schemas**. See [The BLIS repositories](../concepts/architecture.md#the-blis-repositories).
 
-# Roofline mode — pure analytical estimation from model architecture (explicit flag)
-./blis run --model qwen/qwen3-14b \
-  --latency-model roofline --hardware H100 --tp 1 \
-  --num-instances 4 --rate 100 --num-requests 500
-
-# blis-latency-kernel — per-operator pricing. The deployment comes from the scenario,
-# so --model/--hardware/--tp are not passed.
-./blis run --latency-model blis-latency-kernel \
-  --scenario gpt-oss-120b-h200-fp4-vllm-tp4.yaml \
-  --scenarios ../blis-latency-kernel/testdata/aisimulate \
-  --registry ../blis-registry \
-  --concurrency 32 --num-requests 320
-```
-
-## Trained-Physics Mode (Default)
-
-Trained-physics mode combines roofline basis functions with learned correction coefficients. It provides better out-of-box accuracy than pure roofline by capturing architecture-specific overheads (MoE routing, memory access patterns) that analytical models miss.
-
-**Benefits:**
-- Better generalization across model architectures and TP configurations
-- Lower MAPE in practice compared to pure roofline
-- No per-model calibration needed
-
-Use this for capacity planning and what-if analysis unless you specifically need pure analytical estimates.
-
-## Roofline Mode
-
-Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.
-
-### The `--latency-model roofline` Flag
-
-The simplest way to use roofline mode:
+## Running
 
 ```bash
-./blis run --model qwen/qwen3-14b --catalog blis-catalog \
-  --latency-model roofline --hardware H100 --tp 1
+git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+export BLIS_CATALOG=$PWD/blis-catalog
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --rate 10 --num-requests 100
 ```
 
-`--catalog` (or the `BLIS_CATALOG` environment variable) names the model catalog clone root, and
-there is **no default and no search path** (#1731) — a run with neither is refused naming
-both forms. Given it, the two required inputs resolve as:
+The pinned releases are explained in
+[Catalog compatibility](../getting-started/installation.md#catalog-compatibility).
 
-1. **Model config** -- reads the catalog entry at `<catalog>/models/<model-short-name>/config.json`; a model with no entry is refused, naming that path (nothing is fetched)
-2. **Hardware config** -- uses the bundled `hardware_config.json`
+## Inputs
 
-**Supported hardware:** The bundled `hardware_config.json` includes specs for **H100** (80 GB HBM3, 989.5 TFLOPS BF16, 3.35 TB/s), **H200** (141 GB HBM3e, 989.5 TFLOPS BF16, 4.8 TB/s — same Hopper compute die as H100, more/faster memory), **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s), **A100-80** (alias for A100-SXM), and **L40S** (48 GB GDDR6, 362 TFLOPS BF16, 0.864 TB/s). To use a different GPU, add an entry to `hardware_config.json` with the required fields (`TFlopsPeak`, `BwPeakTBs`, `mfuPrefill`, `mfuDecode`, `MemoryGiB`), plus `IntraNodeBwGBps`/`InterNodeBwGBps` if instances on that GPU may span nodes (see [Inter-Node Network Cost](#inter-node-network-cost-trained-physics-only)) and reference it via `--hardware <name>`. The file is parsed strictly (#1728): an unrecognized or non-canonically-cased key is a hard error naming the key and the GPU entry, so a typo cannot silently read as 0 — only `_comment` / `_comment_interconnect` / `Provenance` are accepted and ignored (`Provenance` is the structured provenance tag catalog `hardware/` entries carry, R2H2 / blis-catalog#10; its enum is validated by the catalog CI gate, not this loader).
+Four roots, all required on `blis run` and `blis replay`:
 
-**Validated models:** Any dense or MoE transformer with a HuggingFace `config.json` works. The following have been validated end-to-end:
-
-- [Llama-2-7B](https://huggingface.co/meta-llama/Llama-2-7b-hf) / [Llama-2-70B](https://huggingface.co/meta-llama/Llama-2-70b-hf)
-- [Qwen3-14B](https://huggingface.co/Qwen/Qwen3-14B)
-- [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1) (MoE)
-- [CodeLlama-34B](https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf)
-
-Each of these has a committed catalog entry. A model that does not is refused — commit its `config.json` at `<catalog>/models/<model>/config.json` first (`HF_TOKEN` is only needed to download a gated model's config by hand; BLIS itself makes no HuggingFace requests).
-
-```bash
-./blis run --model meta-llama/llama-3.1-8b-instruct \
-  --latency-model roofline --hardware H100 --tp 1
-```
-
-### Manual Configuration
-
-For full control, point `--catalog` at your own catalog and supply an explicit hardware
-config. `--catalog` names the catalog clone ROOT, so the model's `config.json` is read from
-`./my-catalog/models/my-custom-model/config.json`:
-
-```bash
-./blis run --model my-custom-model \
-  --catalog ./my-catalog/ \
-  --hardware-config ./my-hardware-config.json \
-  --hardware H100 --tp 4
-```
-
-### Adding Support for New Models
-
-Any model with a HuggingFace `config.json` can use roofline mode:
-
-1. Download `config.json` from HuggingFace
-2. Place it in `<catalog>/models/<model-name>/config.json`, where `<catalog>` is the directory
-   you pass to `--catalog` — this step is required. BLIS does not fetch configs at run time,
-   so a model with no catalog entry is refused rather than downloaded (NS-6). Commit the file
-   to the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository to add the
-   model to the shared catalog for everyone.
-3. Run with `--latency-model roofline --hardware <GPU> --tp <N>`
-
-### Tensor Parallelism and Roofline
-
-The `--tp` flag divides FLOPs and memory traffic across TP ranks:
-
-- Higher TP reduces per-GPU step time (more parallelism)
-- Higher TP usually *increases* `total_kv_blocks` — it adds whole GPUs of memory to the budget while the model weights stay a fixed total shared across them
-
-`total_kv_blocks` is a **global** count, not a per-GPU one: every TP rank stores its own shard of every block, so adding ranks does not divide the pool between them. (Whether TP sharding shrinks the *per-GPU* cost of a block depends on the attention architecture — it does for MHA/GQA, where KV heads are sharded, but not for MLA, where the compressed latent is replicated on every rank.) See [KV Cache Management](kv-cache.md#how-the-auto-calculated-pool-is-sized) for the formula.
-
-When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.
-
-!!! note "Automatic KV block calculation"
-    For both latency backends (roofline, trained-physics), `--total-kv-blocks` is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP on both sides of its division: the memory budget scales with GPU count, and the cost of one global block is its per-GPU cost on every one of the TP GPUs (#1846). Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations. It is an analytical estimate rather than a reproduction of vLLM's own per-rank memory profiling, and stays slightly optimistic at high TP — pin `--total-kv-blocks` when the pool must match a specific deployment.
-
-!!! note "Automatic MaxModelLen derivation"
-    When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len` <N>` when needed.
-
-### Prefix caching engine setting
-
-`blis run` and `blis replay` expose `--no-enable-prefix-caching` to mirror vLLM's
-engine-level negative flag. The default is unchanged: prefix caching is enabled. When the
-flag is present, a newly admitted request receives no cross-request GPU prefix credit, so its
-prefill is charged from the start of the prompt. A request already in progress still resumes
-from its own computed position.
-
-The switch deliberately does **not** disable CPU/offload-tier reloads. vLLM treats local
-prefix-cache lookup and external KV reload as independent mechanisms, and BLIS keeps the same
-boundary. The setting is also a deployment input rather than trace data: re-supply
-`--no-enable-prefix-caching` on replay to reproduce a run (INV-13), like
-`--kv-cache-dtype`.
-
-Scope note: this flag currently gates batch-formation reuse only. The cluster routing scorers
-`precise-prefix-cache` and `no-hit-lru` still query cache affinity; making those scorers
-ignore affinity when engine prefix caching is disabled is a separate cluster-level follow-up
-rather than being silently conflated with the simulator gate in #1867.
-
-## blis-latency-kernel Mode
-
-This backend prices a step by composing per-operator costs -- GEMMs, attention, grouped
-expert GEMMs, recurrent state updates, collectives, elementwise and host terms -- from
-coefficients fitted against vendor kernel sweeps. The other two backends take their inputs
-from the command line; this one takes them from a committed artifact set, which is the
-main practical difference in using it.
-
-### Inputs
-
-Three paths, all required:
-
-| flag | what it names |
+| input | what it names |
 |---|---|
 | `--scenario` | a scenario **file name** inside `--scenarios` |
-| `--scenarios` | the directory holding scenario YAML files |
+| `--scenarios` | a directory of scenario YAML files |
 | `--registry` | a `blis-registry` clone root, holding the coefficient sets a scenario names |
+| `--catalog` / `BLIS_CATALOG` | a `blis-catalog` clone root |
 
-The catalog is located as it is for every command, by `--catalog` or `BLIS_CATALOG`. The
-releases this backend is tested against are blis-latency-kernel `v0.1.0` (pinned in
-`go.mod`), blis-catalog `0.2.1` and blis-registry `v0.1.1`; the scenario fixtures it was scored
-on ship in the kernel module, under `testdata/aisimulate`
-([installation](../getting-started/installation.md#catalog-compatibility)).
+A scenario directory can be any directory of scenario YAMLs. The kernel module ships the
+scenarios it was scored on, at
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`
+(after `go mod download`). This repo's own fixtures are in `testdata/scenarios/`:
+`glm-5-h200-3p1d-ib.yaml` (P/D) and `glm-5-h200-tp8-mtp3.yaml` (MTP speculation).
 
-A scenario states the model, the hardware, the fabric, which coefficient sets to load, the
-engine version, and each pool's parallelism and engine settings. Because it states them,
-the flags that would restate them are refused rather than reconciled. Passing `--tp 2`
-alongside a scenario that states `parallel.tp` aborts with:
+### Scenario structure
 
-```text
---latency-model blis-latency-kernel reads the deployment from the scenario, so --tp is
-not accepted: s.yaml states it as the pool's parallel.tp. Edit the scenario rather than
-passing both.
+A scenario is a blis-schemas file of two YAML documents, a `Scenario` and a `Deployment`:
+
+```yaml
+kind: Scenario
+name: llama-3.1-70b-instruct-h200-fp8-vllm-tp4
+engine_version: "0.29.0"
+model: llama-3.1-70b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads,
+               cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+  # fabric: ib-400g      # the inter-node fabric, needed when a handoff crosses nodes
+---
+kind: Deployment
+name: llama-3.1-70b-instruct-h200-fp8-vllm-tp4
+pools:
+  - role: colocated        # colocated | prefill | decode
+    nodes: 1
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768   # required
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+      # enable_prefix_caching: false
+      # speculative: {method: mtp, num_spec_tokens: 3}
+# offload: ...               # optional
+# pd_transfer: {connector: NixlConnector}   # optional, P/D scenarios
 ```
 
-The refused set is `--model`, `--hardware`, `--tp`, `--dp` and
-`--enable-expert-parallel`. Two sources for one fact would need precedence rules to decide
-between them, and a run that resolved a deployment nobody chose is the failure those rules
-invite. Everything a scenario does *not* state -- workload, concurrency, routing,
-admission, P/D instance counts, KV offload -- stays on the command line.
+### What comes from the scenario, and what stays on the CLI
 
-### What it models that the others do not
+The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
+TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
+block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (a pool that states
+none is refused), prefix caching, the KV cache dtype, and the speculative draft length and
+method. The flags that used to state these (`--model`, `--hardware`, `--tp`, `--dp`,
+`--total-kv-blocks`, `--max-num-seqs`, `--max-model-len`, `--kv-cache-dtype`,
+`--num-speculative-tokens`, ...) no longer exist; to change one, edit the scenario.
 
-- **Expert and data parallelism** affect step time, so `--dp > 1` and
-  `--enable-expert-parallel` are accepted. Roofline refuses them, being DP/EP-blind for
-  step time; trained-physics accepts them.
-- **Expert geometry comes from the model graph**, not an HF config: a layer kind carrying
-  a `GroupedGEMM` node is what makes a model routed, and that node's `experts` and `top_k`
-  populate the MoE fields the DP/EP gates check.
-- **Per-pool pricing.** A disaggregated scenario states a prefill pool and a decode pool
-  that differ in the quantities setting step time. `kernelmodel.OpenPool` prices one named
-  pool; `kernelmodel.Open` is that function at pool 0, which is what a colocated scenario
-  has.
+Everything a scenario does not state stays on the command line: the workload, rate and
+concurrency, routing, admission, scheduling, flow control, saturation detectors, the
+instance count and P/D topology, LoRA, KV offload tiers, and seed/horizon/output flags. See
+the [Configuration Reference](../reference/configuration.md).
 
-### What it does not yet price
+## What the kernel prices
 
-- **P/D KV transfers.** The kernel prices moving a request's KV between pools from the
-  scenario's fabric (`PDTransferTime`: the fabric's `InterNodeBwGBps`, NVLink for same-node
-  pairs), but the cluster's PD path does not call it yet. A disaggregated run on this backend
-  still charges transfers from `--pd-transfer-bandwidth` (default 25 GB/s) and
-  `--pd-transfer-base-latency`, so a scenario naming `cluster.fabric: ib-400g` transfers at
-  the flag's rate unless the flag is set to match. Routing the PD path through the kernel is
-  follow-on work (#1900).
-
-### Failure is named, never silent
+- **Step time.** One forward pass over the scheduled batch, composed from per-operator
+  costs (GEMMs, attention, grouped expert GEMMs, recurrent state updates, collectives,
+  elementwise and host terms) with coefficients fitted against vendor kernel sweeps.
+  BLIS reads the kernel's no-overlap edge of the band it reports. Expert geometry comes
+  from the model graph in the catalog, not from an HF config.
+- **Memory.** Weights, fixed overheads and the per-block KV cost, from which BLIS takes the
+  KV block budget for each data-parallel rank.
+- **Host overheads.** Per-request queueing (tokenization and preprocessing), per-output-token
+  processing, and the fixed per-request completion overhead.
+- **P/D KV transfer** and **offload tier transfer**, below.
 
 A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
-engine version -- aborts the run naming what failed. It does not fall back to another
-backend: a run served from coefficients the operator did not ask for reports numbers that
-cannot be traced to anything.
+engine version, a deployment that does not fit -- aborts the run naming what failed. There
+is no fallback.
 
-### The published accuracy figures
+## Prefill/decode disaggregation
+
+A scenario with a `prefill` pool and a `decode` pool, run with `--prefill-instances` and
+`--decode-instances`. BLIS builds one kernel per pool, so each pool is priced at its own
+parallelism and engine settings. The KV handoff from a prefill instance to a decode
+instance is priced by the kernel's `PDTransferTime` over the scenario's fabric, between the
+two instances' placements (NVLink when they share a node). Each instance count must not
+exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pcp).
+
+Refused: a P/D topology over a colocated scenario; a disaggregated scenario run without
+`--prefill-instances`/`--decode-instances`; pools that differ in block size, dp or draft
+configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or
+encode instances.
+
+## Data and expert parallelism (MoE)
+
+With `dp > 1` BLIS runs one replica per data-parallel rank, each sized as one EngineCore
+(the kernel's per-rank KV budget and caps). `enable_expert_parallel` is priced by the
+kernel. A dense model with `dp > 1` is refused.
+
+## Speculative Decoding / MTP (#1528)
+
+A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` tokens per
+step. Pass `--speculative-acceptance-rate α` (required when the scenario drafts): BLIS does
+not predict acceptance, since it runs no draft model.
+
+- **Cost: verify width `w = K+1`.** Every decoding request's forward pass is priced by the
+  kernel at the full verify width, whatever is later accepted. Step time is independent of
+  `α` and non-decreasing in `K`.
+- **Progress: `g = 1 + α·K` tokens per step** (mean), applied deterministically through a
+  per-request fractional carry (no RNG), so runs stay byte-identical for a seed (INV-6).
+
+Progress stops at the completion boundary: the final step is granted only the tokens the
+request still needs, as vLLM trims the accepted tail once `check_stop` fires. A request's
+output-token count, and a closed-loop `accumulate` session's context growth, are therefore
+identical to a `K=0` run. Under speculation raw ITL percentiles are per verification step;
+use TPOT for per-token latency.
+
+**Known limitation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)).**
+KV and token-budget occupancy are accounted by the accepted count `g`, not the speculative
+footprint. vLLM reserves `K` lookahead KV slots per running request per step and consumes
+about `K+1` of `max_num_batched_tokens`, so above KV saturation BLIS over-predicts batch size
+and under-predicts preemption. Below saturation the two agree.
+
+## KV offload
+
+`--kv-offload-config` tiers must each name a catalog `device_class`; the kernel prices every
+transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit
+`read_bandwidth`, `write_bandwidth` and `base_latency` in the tier config are refused.
+The legacy `--kv-cpu-blocks` tier is priced by the kernel from the catalog `cpu_dram`
+device. See [KV Offload](kv-offload-calibration.md).
+
+## LoRA
+
+The per-step adapter compute overhead is applied to the kernel's step time, and the static
+adapter HBM reservation is set aside from the kernel's KV budget before blocks are counted.
+The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
+`defaults.yaml`) or `--lora-config`.
+
+## What it does not yet do
+
+- Predict speculative acceptance (it is an input).
+- Account the speculative KV/token-budget footprint (#1627, above).
+- Combine KV offload with P/D, or price shared prefill-decode or encode instances.
+- Run a model or chip absent from the catalog, or a coefficient set absent from the
+  registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
+
+## The published accuracy figures
 
 `cmd/metricscore` is the scorer behind the evaluation tables. It constructs the kernel
-directly, so its figures do not depend on this CLI path. At the tagged releases above, with
+directly, so its figures do not depend on the CLI path. At the tagged releases above, with
 the vendored catalog and registry and the measurement corpora in `BLIS_MEASUREMENTS`
 (see [Reproducing](../kernel-exclusive/REPRODUCE.md#the-measurement-data)):
 
@@ -213,6 +196,10 @@ the vendored catalog and registry and the measurement corpora in `BLIS_MEASUREME
 go run ./cmd/metricscore -framework vllm -config-tier measured
 go run ./cmd/metricscore -framework vllm -config-tier measured -length-range-ratio 1.0
 ```
+
+Its flags are `-corpus`, `-scenarios`, `-catalog`, `-registry`, `-engine-settings`,
+`-absolutes`, `-framework`, `-config-tier`, `-simulated-only`, `-length-range-ratio` and
+`-seed`.
 
 Mean absolute error over the vLLM points whose engine configuration was measured from the
 run's own command line (292 TPOT-shape, 360 TPOT-mape, 288 TTFT-shape, 356 TTFT-mape points):
@@ -228,520 +215,17 @@ A figure quoted without its three flags cannot be checked: `-config-tier`, `-fra
 and `-length-range-ratio` each change every number. `blis-registry`'s
 `scripts/compare_registries.py --check` pins them against a recorded baseline.
 
-## How Trained-Physics Works
-
-Trained-physics mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.
-
-**StepTime formula** (10 beta coefficients in bundled defaults):
-
-```
-StepTime = β₁ₐ × T_pf_compute                  # prefill compute only
-         + β₁ᵦ × T_pf_kv                       # prefill memory (typically ~0)
-         + β₂ₐ × T_dc_compute                  # decode compute (typically ~0)
-         + β₂ᵦ × T_dc_kv                       # decode memory only
-         + β₃ × T_weight                       # weight loading × correction
-         + β₄ × T_tp                           # TP communication × correction
-         + β₅ × L                              # per-layer overhead (µs/layer)
-         + β₆ × batch_size                     # per-request scheduling (µs/req)
-         + β₇                                  # per-step fixed overhead (µs)
-         + β₈ × nMoE                           # per-MoE-layer overhead (µs/layer)
-```
-
-The model supports 7-11 beta coefficients. Bundled defaults use 11 coefficients (prefill/decode split + the MoE expert-parallel dispatch correction β_EP).
-
-**Beta coefficients:**
-
-- **β₁ₐ** (prefill compute, ~0.15): Corrects analytical FlashAttention + MLP FLOP estimates for kernel efficiency, memory access patterns.
-- **β₁ᵦ** (prefill memory, ~0): Prefill KV cache write bandwidth correction (typically near zero).
-- **β₂ₐ** (decode compute, ~0): Decode compute correction (typically near zero, decode is memory-bound).
-- **β₂ᵦ** (decode memory, ~1.9): Corrects KV cache read bandwidth. Primary decode bottleneck.
-- **β₃** (weight loading, ~1.4): Corrects model weight bandwidth for cache effects, prefetching, HBM contention.
-- **β₄** (TP communication, ~0.75): Corrects tensor-parallel All-Reduce overhead.
-- **β₅** (per-layer, ~32 µs/layer): Fixed overhead per transformer layer: kernel launch, CUDA graph, residual connections.
-- **β₆** (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.
-- **β₇** (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.
-- **β₈** (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep > 0). Zero for uniform MoE and dense models.
-- **β_EP** (MoE dispatch/combine, defaults to β₄): Corrects MoE expert-/data-parallel dispatch+combine all-to-all communication. The gate is `m.isMoE && (m.dp > 1 || m.epOn)` — since #1548 expert parallelism activates it too, because EP-on owns whole experts per rank and so must route tokens to their owner even at `DP=1`. The `m.dp > 1` half is **not** reachable from the CLI: under DP-as-placement (#1531 / #1556) every replica is configured at `DP=1`, so a `DP > 1` config now comes only from constructing one directly (e.g. tests); `--enable-expert-parallel` is the reachable activation path. With neither active, an MoE model at `TP > 1` instead pays the MoE-FFN all-reduce over the TP group (the `m.dp == 1 && m.tp > 1 && !m.epOn` branch) — exactly one of the two is ever charged; at `TP == 1` with EP off there is no collective at all. See the DP-as-placement and [Expert Parallelism](#expert-parallelism-ep-1548) notes below. Defaults to β₄ because both comm-backend families run over the same NVLink fabric and share the ring-collective per-phase efficiency β₄ captures (the per-family *volume* difference is in the basis, not the coefficient). The 11th coefficient overrides the default.
-
-**Alpha coefficients** (3 terms, API/framework overheads in µs):
-
-- **α₀** (QueueingTime, ~15,563 µs): Fixed per-request API processing (HTTP parsing, request validation, queue insertion).
-- **α₁** (PostDecodeFixedOverhead, ~777 µs): Fixed per-request post-decode overhead (detokenization setup, finish reason determination).
-- **α₂** (OutputTokenProcessingTime, ~46 µs/token): Per-output-token overhead (streaming token transmission, incremental detokenization).
-
-**Pre-trained coefficients** are stored in `trained_physics_coefficients` in `defaults.yaml`. No per-model calibration needed -- the model generalizes across architectures, workloads, and TP configurations.
-
-### Generalization Scope
-
-The trained-physics model is designed to generalize without per-model calibration:
-
-**Supported hardware:**
-
-- **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
-- **H200** (141 GB HBM3e, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 4.8 TB/s — same Hopper compute die as H100)
-- **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s — Ampere has no FP8 tensor cores)
-- **A100-80** (alias for A100-SXM)
-- **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 733 TFLOPS FP8, 0.864 TB/s)
-
-!!! warning "Peak FLOPs are the **dense** figures — never the with-sparsity ones"
-    `TFlopsPeak` and `TFlopsFP8` are both dense tensor-core throughput, so their ratio is
-    ~2.0x on every entry (H100 1979/989.5, L40S 733/362.05). NVIDIA datasheets also quote a
-    2x-larger *with-sparsity* number, and taking `TFlopsFP8` from that column while
-    `TFlopsPeak` stays dense doubles the FP8 compute ceiling — which is exactly what the
-    bundled L40S entry did until #1829 (it shipped `1466.0`, implying an impossible 4.05x
-    ratio). When adding a GPU, read both numbers out of the same column. The ratio of every
-    bundled entry is a hard test failure (`sim/latency/hw_fp8_ratio_test.go`), and every
-    hardware table BLIS *reads* — a `<catalog>/hardware/<gpu>.yaml` entry or your own
-    `--hardware` file — is checked at the load boundary, which **warns on stderr naming the
-    GPU** rather than refusing the run (the band is a heuristic over today's NVIDIA parts, so
-    a legitimate accelerator outside it must still run).
-
-**Coefficients were trained on H100 traces** but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.
-
-**Model architectures:**
-
-- **Dense transformers** (Llama-2, Qwen3, GPT, etc.): Standard attention + MLP layers
-- **Uniform MoE** (Mixtral): All layers are MoE with top-k expert routing
-- **Interleaved MoE** (Scout): Alternating MoE and dense layers with architecture-specific β₈ overhead
-
-The model automatically detects MoE configuration from `config.json` (`num_local_experts`, `num_experts_per_tok`, `interleave_moe_layer_step`) and adjusts basis functions accordingly.
-
-**Workload types:**
-
-- **Prefill-heavy** (large input, short output): Chatbot prompts, document Q&A
-- **Decode-heavy** (small input, long output): Content generation, code completion
-- **Mixed batches** (concurrent prefill/decode): Production serving with heterogeneous requests
-- **TP configurations**: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)
-
-**Why trained-physics over roofline:**
-
-Trained-physics uses up to **14 coefficients** (11 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead, and the MoE expert-parallel dispatch correction β_EP; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
-
-!!! note "MoE architecture detection"
-    β₈ applies conditionally based on `InterleaveMoELayerStep` from the model's `config.json`: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.
-
-### Data + Expert Parallelism for MoE (trained-physics only)
-
-!!! note "DP-as-placement (#1531, #1556): `blis run` and `blis replay` feed DP=1 per replica"
-    Since #1531 (`blis run`) and #1556 (`blis replay`), BLIS models MoE `--dp N` as **N real single-node engine replicas** (DP-as-placement), each configured at **DP=1**. So with expert parallelism OFF the per-replica step time uses `moeGroup = TP` (experts replicated per DP rank — expert-parallel-OFF physics) and the DP>1 dispatch term below does **not** fire per replica (the all-reduce at `DP=1, TP>1` does). The `moeGroup = TP·DP` / `/dp` / DP>1-dispatch math described in this section is the per-instance latency model's response to a DP>1 `ModelHardwareConfig`, still reached when a config sets DP>1 directly (e.g. tests).
-
-    Since #1548, `--enable-expert-parallel` is **supported alongside `--dp N`** and is **step-time-live** — see [Expert Parallelism](#expert-parallelism-ep-1548) below.
-
-For MoE deployments, trained-physics models data parallelism (`--dp`) and expert parallelism (`--enable-expert-parallel`) the way vLLM does (mirrors `vllm-project/vllm`):
-
-- **Routed-expert weight/compute** are scoped via the `ExpertPlacement` seam. **Compute** uses the flattened MoE group `moeGroup = TP·DP`. **Weights** use the *expert-shard* group (#1548), which equals `moeGroup` unless expert parallelism widens it: each GPU holds `numExperts/expertShardGroup` full-expert-equivalents. That resident count is the **ceiling**, not the per-step charge: since [#1849](https://github.com/inference-sim/inference-sim/issues/1849) the weight term scales it by the expected fraction of experts some token in the step actually routes to, `activatedFraction(B) = 1 − ((N−k)/N)^B` for `B` tokens in the step (the coupon-collector occupancy expectation the roofline backend has used since #764/#790, now shared by both backends). So MoE decode step time rises with the running batch again: `B=1` streams only the `~k` experts one token routes to, and `B → ∞` recovers the full resident count. Because the fraction is in `[0,1]` it only scales the ceiling *down*, so the #1548 expert-shard scoping is untouched. MoE step time at `DP=1` therefore intentionally differs both from pre-DP/EP BLIS and from pre-#1849 BLIS (deliberate fidelity fixes). Dense models at `DP=1` are byte-identical (INV-BC-DP1). For a *single* `ModelHardwareConfig` at `TP·DP`, both EP modes give per-GPU routed bytes `numExperts/(TP·DP)` and that matches vLLM: `FusedMoEParallelConfig.make` flattens TP across DP for MoE layers *unconditionally*. Under DP-as-placement the two modes separate, because a replica's own DP is 1 — see [Expert Parallelism](#expert-parallelism-ep-1548). The step-time and capacity models now agree on the same expert-shard group in both modes, closing the inconsistency [#1666](https://github.com/inference-sim/inference-sim/issues/1666) tracks (that issue also covers the EP-**off** `DP>1` baseline, which BLIS deliberately keeps conservative and #1548 does not change).
-- **Sequence-split terms** (attention/dense-FFN compute, KV read/write) gain a `/dp` factor — each DP rank processes ~`1/dp` of the tokens. Weights stay `/tp` (replicated across DP groups).
-- **Shared experts** (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its shared-expert dim — `config.intermediate_size`, not `intermediate_size_mlp` which is the dense-layer FFN — is mapped).
-- **MoE-FFN communication** partitions on the `DP`-or-`EP` boundary: with EP off at `DP=1, TP>1` an all-reduce over the TP group; at `DP>1`, or whenever expert parallelism is on, a dispatch/combine all-to-all (β_EP). Exactly one of the two is charged.
-
-**`--moe-comm-backend`** selects the dispatch/combine cost model (mirrors vLLM `VLLM_ALL2ALL_BACKEND`). The seven names map to two physical volume families:
-
-| Family | Backends | Per-rank dispatch volume |
-|--------|----------|--------------------------|
-| all-gather | `naive`, `allgather_reducescatter` (default) | dense hidden states, **no top_k** |
-| modular all-to-all | `pplx`, `deepep_high_throughput`, `deepep_low_latency`, `mori`, `flashinfer_all2allv` | top_k-routed tokens (carries `kEff`) |
-
-DP/EP and `--moe-comm-backend` require `--latency-model trained-physics` (roofline is DP/EP-blind for step time) and are rejected on dense models for `--dp > 1` (dense data parallelism is the router-replica mechanism — use `--num-instances`). Absolute MoE communication magnitudes are physics-estimated with β_EP defaulted to β₄; an empirical re-fit is future work.
-
-### Expert Parallelism (EP, #1548)
-
-`--enable-expert-parallel` mirrors vLLM: the expert-parallel group is `EP = TP·DP`, and it
-is **step-time-live** since #1548. It is *not* a new cost term — adding one would
-double-charge the dispatch/combine cost the model already prices. It moves two existing
-things, both derived from what vLLM does rather than from a fitted number:
-
-| | EP **off** | EP **on** |
-|---|---|---|
-| routed-expert **weights** per GPU | `numExperts/(TP·DP)` tensor slices — may be **below 1**, correctly | `numExperts/min(EP, numExperts)` **whole** experts |
-| routed-expert **compute** per GPU | `tokens·k/(TP·DP)` | **unchanged** |
-| MoE-FFN collective | all-reduce over the TP group | dispatch/combine all-to-all over the **full** EP group (unclamped) |
-
-The `min(EP, numExperts)` clamp on the **weight** divisor is the "a loaded rank holds one
-WHOLE expert" rule (`latency.ClampExpertShardToExpertCount`, shared with the KV-capacity
-model so the two agree on the same experts). Charging `numExperts/EP` below one expert would
-model memory that does not exist; clamping down charges *more* bytes, the safe direction, and
-warns. It applies to EP-**on** only: with EP off the experts are tensor-sharded, so a rank
-genuinely holds a *fraction* of every expert and a sub-1 value is the correct charge. The
-dispatch collective is deliberately **not** clamped — it really does span every rank in the
-group, however few experts they hold.
-
-The #1849 activated fraction that scales the resident weight bytes is **global** — computed
-from the model's `N` and `k` over the whole step — and is applied to each rank's resident
-count. EP ownership does **not** make that a per-rank approximation: under uniform top-k every
-expert carries the same activation probability `1 − ((N−k)/N)^B` whichever rank holds it, so by
-linearity of expectation a rank with `R` resident experts activates exactly `R ·
-activatedFraction(B)` of them in expectation, for any balanced placement. The residual
-approximations are elsewhere, and each vanishes at saturation:
-
-- **`B` is the step's own token population.** For a single `ModelHardwareConfig` at `DP>1`
-  that is already the group-wide count the `/dp` divisors presuppose — the right `B`, since
-  all-to-all dispatch means a rank's experts see the whole group's tokens. Under
-  DP-as-placement the two separate: the replica runs `DP=1` over its own batch while the
-  expert-shard group is the wider *logical* EP width, so `B` understates the tokens that
-  really dispatch to that rank and the fraction is charged **low** below saturation.
-- **It prices the expectation, not a realized per-step count** — the relative spread is widest
-  when a rank holds few whole experts (EP on over a wide group).
-- **Uniform, independent, unskewed routing with no capacity limits**, the shared pessimism of
-  the coupon-collector term itself; refinement deferred to #789.
-
-Compute is EP-mode-invariant on purpose: with EP on, the `EP` GPUs jointly process the
-whole group's tokens, so per-GPU FLOPs land on the same value tensor-sharding gives. EP
-re-organises expert *ownership*, not FLOPs. Weights are where the win is.
-
-That derivation assumes the DP ranks are **in lockstep** — which is what vLLM enforces (idle
-ranks run dummy batches so the expert all-to-all can complete). BLIS models the replicas as
-independent instances with their own event queues, so it charges each step as if every rank
-carried a comparable token slice. At the saturation operating point this model targets, that
-is exact; **below** saturation, when some replicas are idle, it is pessimistic (a lightly
-loaded replica is charged for expert compute its peers are not actually contributing). Same
-direction and same operating-point assumption as the rest of the MoE terms.
-
-**With `--dp N`** (DP-as-placement, #1531/#1556) the two separate. Each replica is
-configured `DP=1`, so its own degrees understate the group; the CLI carries the **logical**
-DP width into each replica (`sim.WithExpertParallelGroupDP`) and the weight/collective group
-becomes the full `TP·N`. This is the same trap #1656 documents for KV capacity, and the two
-now agree. The GLM/Kimi Wide-EP shape (`--tp 1 --dp 16 --enable-expert-parallel`) is the
-motivating case: before #1548 a `TP=1` EP-on config charged *every* expert to one GPU.
-
-Expert parallelism reserves **no** GPUs beyond the `num_instances × N × TP` that DP
-placement already takes — the EP group *is* those GPUs.
-
-!!! note "One EP-on shape is deliberately neutral"
-    At `DP=1` with vLLM's **default** backend (`allgather_reducescatter`) the EP toggle
-    changes step time by exactly nothing, and that is correct rather than inert:
-    all-gather + reduce-scatter *is* the ring all-reduce decomposition, so the wire volume
-    is identical, and β_EP defaults to β₄. The toggle becomes observable through a modular
-    all-to-all backend (top_k volume), an EP group wider than the TP group (weight
-    sharding), or a calibrated β_EP.
-
-!!! warning "The inter-replica fabric is not priced"
-    Under `--dp N` the EP group spans `N` independently-placed replicas. Cross-node
-    collective pricing is placement-derived (#1530) but scoped to the collectives WITHIN one
-    instance's TP group; the EP group is formed ACROSS separately-placed single-node replicas,
-    a boundary per-instance topology does not cross. `node_pools` alongside `--dp>1` is
-    supported for GPU reservation since
-    [#1553](https://github.com/inference-sim/inference-sim/issues/1553), but that adds no
-    inter-replica fabric pricing, so the all-to-all is still charged at the **on-node** rate.
-    `blis run` warns about this explicitly; step time is optimistic for a genuinely multi-node
-    EP deployment.
-
-#### Per-role all-to-all backend
-
-`VLLM_ALL2ALL_BACKEND` is a per-process environment variable, so prefill and decode engines
-can run different modes — the production recipe is DeepEP high-throughput on prefill and
-low-latency on decode. `--prefill-moe-comm-backend` / `--decode-moe-comm-backend` express
-that (empty = inherit `--moe-comm-backend`), on both `blis run` and `blis replay`.
-
-The selection routes through a per-mode step-time profile (`all2AllProfile`) rather than only
-through the volume family. **Every backend ships the same nominal profile today** — a
-deliberate shared placeholder, because differentiating DeepEP HT from LL needs its own
-calibration; [#1568](https://github.com/inference-sim/inference-sim/issues/1568) fills the
-table without re-plumbing the selector. So today HT and LL cost the same, while a switch
-between *families* (all-gather vs all-to-all) does change cost.
-
-#### Calibrating β_EP
-
-The β₄ default assumes the dispatch/combine collective runs at the same per-byte efficiency as the TP all-reduce — true when both share one NVLink fabric, but not when EP spans nodes (e.g. inter-node InfiniBand for EP while TP stays intra-node NVLink). To fit β_EP for such a deployment:
-
-1. Collect real per-step latencies for a **MoE model with the dispatch term active** — since #1548 that means either `--enable-expert-parallel` (the CLI-reachable path; `--dp > 1` alone gives every replica `DP=1`) or a directly-constructed `DP > 1` config — with a fixed `--moe-comm-backend`, holding everything else constant.
-2. Freeze the other 10 β coefficients (and the α coefficients) at their bundled values.
-3. Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to `β_EP · tMoEDispatch`.
-
-Because the dispatch term is the *only* term gated on `DP > 1 || EP-on`, the residual isolates it cleanly. Note the EP-on route also *replaces* the `tMoEReduce` all-reduce rather than joining it, so the β₄-weighted reduction disappears from the same prediction — do not fit β_EP against a baseline that still charges it. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
-
-## Inter-Node Network Cost (trained-physics only)
-
-By default a tensor-parallel all-reduce and a MoE expert dispatch/combine are both
-priced at the GPU's on-package bandwidth, with the NVLink/HBM ratio folded into the
-learned coefficient β₄. That is right for an instance living inside one node — and
-*free* for one that spans nodes. Since [#1529](https://github.com/inference-sim/inference-sim/issues/1529)
-an instance can occupy whole nodes across a pool (GLM-5.2 at TP=16 on 2×8 H100), so
-BLIS now charges the crossing.
-
-### How it works
-
-The two communication bases divide byte volume by an **effective** link bandwidth:
-`bwHbmUs` when the collective fits inside one node, and `bwHbmUs / spanScale` when it
-does not. This is a re-scale of the existing term, not an extra one — an additive
-cross-node term would double-charge a `DP>1` MoE instance whose all-to-all is already
-priced by the dispatch basis.
-
-Let `G` be the collective's group size, `p` the size of the node(s) the instance was
-placed on, `n = ceil(G/p)` the nodes spanned, `g = min(G, p)` the group members per
-node, and `r = IntraNodeBwGBps / InterNodeBwGBps`. Two penalty shapes apply:
-
-| Collective | Applies to | Penalty |
-|------------|-----------|---------|
-| Ring | TP all-reduce (`G = tp`: attention, dense FFN, and the `DP=1` MoE-FFN reduce) and the `allgather_reducescatter` / `naive` MoE family, whose volume basis is ring-shaped | `1 + (r-1)·(n-1)/(G-1)` |
-| All-to-all | `deepep_*` / `pplx` / `mori` / `flashinfer_all2allv` MoE dispatch (`G = TP·DP`) | `1 + (r-1)·(G-g)/(G-1)` |
-
-The ring form is derived from the **hierarchical (two-level)** algorithm NCCL uses
-across nodes: an intra-node reduce-scatter + all-gather over the `g` ranks on a node,
-then an inter-node all-reduce of the *reduced* `S/g` chunk across the `n` nodes.
-Normalized by the flat single-node baseline this simplifies exactly to the expression
-above. The all-to-all form is a per-peer split: a rank's egress goes to `G-1` peers,
-`G-g` of which are on other nodes — far more of the traffic leaves the node than in a
-ring, which is why the expert all-to-all rather than the TP all-reduce is the dominant
-cross-node cost for wide expert parallelism.
-
-Both penalties are exactly `1.0` when nothing crosses a boundary (`n = 1`) or when the
-fabric is no slower than the on-node link (`r ≤ 1`), and both are monotone in `r`: a
-worse fabric never lowers the cost.
-
-### The second, size-independent half
-
-Bandwidth is only half the story. Every cross-node collective also pays a fixed cost —
-NCCL launch, fabric round-trip, and the synchronization a two-level collective imposes —
-that does not shrink with the message. For the small messages a decode step produces,
-that fixed cost can exceed the bandwidth half by an order of magnitude, and it is the
-mechanism behind vLLM's guidance to prefer pipeline parallelism across nodes and tensor
-parallelism within a node: per-layer all-reduce means *many small* collectives, not a few
-large ones.
-
-The charge has the analytic form ([#1694](https://github.com/inference-sim/inference-sim/issues/1694)):
-
-```
-T_collective_fixed = n_steps(algorithm, topology) · α_hop · S
-                     └──── analytic, no fit ────┘  └fabric┘ └regime┘
-```
-
-**`n_steps` is the analytic cross-node hop count** — derived purely from the collective
-algorithm and the placed node span, with no free parameters. The count is **per
-collective**: one whole ring all-reduce (reduce-scatter + all-gather) is `2·(nodes−1)`
-hops, while a single-phase collective (one all-to-all direction, or one phase of the
-all-gather family) is `(nodes−1)`. This replaces the flat per-collective term (#1667),
-which was node-span-*invariant* and under-charged a wide span by ~`(nodes−1)×`. The
-per-layer collective count is a *separate* factor applied by the caller: the TP leg is one
-whole all-reduce per comm unit (so `2·(nodes−1)` per unit), and the MoE leg is dispatch +
-combine, two single-phase collectives (`(nodes−1)` each ⇒ `2·(nodes−1)` per layer). So the
-MoE latency term is the **same for both comm families** — the family split is real only for
-the bandwidth *volume*, not the hop count; charging the all-gather family a whole ring here
-would double-count. A step running `L` layers pays `collectives · n_steps · α_hop` and
-skips it entirely for a step that communicates no tokens.
-
-**`α_hop` (`InterNodeHopLatencyUs`) is the per-fabric constant** — the cost of one
-inter-node hop. **It is 0 — not charged — in the bundled hardware config, deliberately.**
-BLIS has no measured per-hop latency to ship, and a guessed constant would sit in front of
-every multi-node estimate. `α_hop` must come from an independent NCCL microbenchmark on a
-reference cluster (the MFU / [Discussion #589](https://github.com/inference-sim/inference-sim/discussions/589)
-pattern) and be reused unchanged across fabrics — **never back-solved from one run's
-residual**. Like the bandwidth half it rides the learned communication coefficient (β₄, or
-β_EP for MoE dispatch), so calibrate it in that frame — the charge is
-`β · units · n_steps · α_hop · S`, not a raw wall-clock number.
-
-**`S` is the serialization multiplier** (`--comm-serialization-factor`, default `1.0`) — a
-*deployment-regime* input, not a fabric property. A deployment running CUDA graphs with
-comm/compute overlap hides most of each collective's launch cost (`S ≈ 1`, inert); one
-running `enforce-eager` with no overlap serializes every collective behind a full barrier
-(`S ≫ 1`). It multiplies **only** this cross-node latency term, and is kept strictly
-separate from `α_hop` — folding it in would make a graphs-on deployment inherit a
-graphs-off fabric constant. Set `--enforce-eager` to declare the regime; it *requires* an
-explicit `--comm-serialization-factor > 1`, because BLIS ships no fitted eager magnitude.
-`S` is re-supplied on both `run` and `replay` (like `--kv-cache-dtype`), not round-tripped
-through the trace header.
-
-Both `α_hop = 0` and `S = 1` are inert defaults, so out of the box the cross-node cost is
-bandwidth-only and the size-independent half is off.
-
-### Where the inputs come from
-
-**Topology is derived from placement, not declared.** There is no CLI flag for it: the
-placement manager reports the size of the node(s) an instance's GPUs actually occupy,
-and that is stamped onto the instance's configuration at every placement site
-(startup, deferred node-ready, autoscaler scale-up). A declared "GPUs per node" knob
-could contradict the real `node_pools` placement, charging for a boundary that was
-never crossed or missing one that was.
-
-**Fabric speeds are hardware calibration**, in the file `--hardware-config` already
-points at:
-
-```json
-"H100": {
-  "TFlopsPeak": 989.5, "BwPeakTBs": 3.35, "MemoryGiB": 80.0,
-  "IntraNodeBwGBps": 450,
-  "InterNodeBwGBps": 50
-}
-```
-
-Both are per-GPU **effective unidirectional** GB/s. Only their ratio is used, so the
-absolute scale cancels — but the *convention* must match on both fields (mixing a
-bidirectional NVLink figure with a unidirectional NIC figure doubles the penalty).
-Committed values: H100 450/50 (NVLink 4 against one 400 Gb/s ConnectX-7 per GPU),
-A100 300/25 (NVLink 3 against HDR-200 per GPU), L40S 32/12.5 (PCIe Gen4 — no NVLink —
-against 100 GbE). Set both or neither; a half-calibration is a hard error.
-
-To compare fabrics (InfiniBand vs RoCE vs a single uplink), run the same workload twice
-with different `InterNodeBwGBps` values in that file. (Giving two pools distinct
-`gpu_type` entries models a *mixed-fabric* fleet in one run, which is a different
-question — and it leans on the `gpu_type` keying that
-[#1662](https://github.com/inference-sim/inference-sim/issues/1662) tracks.)
-
-!!! warning "Check the shape you are comparing actually spans nodes"
-    A cost that is only charged when a collective crosses a node boundary is zero for a
-    deployment where none does. In particular the shape GLM-5.2 is really served with —
-    TP=1, DP=16, EP=16, tensor parallelism kept inside the node — still charges **no
-    cross-node cost** today. #1548 made the expert all-to-all leg *fire* for that shape (it
-    is now charged, at the on-node rate), but its cross-node **pricing** is placement-derived
-    and the EP group spans 16 independently-placed replicas that `node_pools` + `--dp>1`
-    still refuses to place ([#1553](https://github.com/inference-sim/inference-sim/issues/1553)).
-    `blis run` says so explicitly with a warning. Comparing fabrics is therefore meaningful
-    for a multi-node **TP** shape now, and for wide expert parallelism once #1553 lifts that
-    placement guard.
-
-#### Worked example: InfiniBand vs a single 100 GbE uplink, TP=16
-
-```bash
-# A pool of 8-GPU H100 nodes; TP=16 forces the instance across two of them.
-cat > pools.yaml <<'YAML'
-node_pools:
-  - name: h100
-    gpu_type: H100
-    gpus_per_node: 8
-    gpu_memory_gib: 80
-    initial_nodes: 4
-    max_nodes: 4
-    cost_per_hour: 30.0
-YAML
-
-# Run A — the bundled H100 entry: 450/50 GB/s (one 400 Gb/s NIC per GPU), ratio 9x.
-./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --num-requests 500 --rate 8
-
-# Run B — copy hardware_config.json, drop the H100 entry's InterNodeBwGBps to 12.5
-# (a single 100 GbE uplink shared by the node's 8 GPUs), then:
-./blis run --model <your-model> --tp 16 --hardware H100   --latency-model trained-physics --policy-config pools.yaml   --hardware-config ./hardware_config.roce.json   --num-requests 500 --rate 8
-```
-
-Compare `ttft_p50_ms` / `itl_mean_ms` between the two. Run B's ratio is 36× rather than
-9×, so its communication term is larger; the difference is the fabric's contribution.
-Both runs warn once on stderr that an instance spans nodes, and if either run reports
-that the cross-node cost is *unpriced*, the calibration or the backend is the reason —
-the message says which.
-
-### Inert unless a boundary is actually crossed
-
-Three independent gates each make the cost exactly zero, so every configuration that
-existed before this feature produces bit-identical step times:
-
-1. no `node_pools` ⇒ no placement ⇒ no topology;
-2. the collective fits inside one node ⇒ `n = 1`;
-3. the hardware declares no interconnect calibration at all — neither a bandwidth pair
-   (⇒ `r = 1`) nor a per-collective latency. Declaring only one of the two halves still
-   charges that half, which is intentional: a fabric can legitimately be modeled as
-   latency-dominated.
-
-Multi-node placement is `blis run` only — `blis replay` rejects `node_pools` outright
-and `blis observe` takes its timing from a real server — so a cross-node cost cannot
-arise off the run path.
-
-That leaves one hole, which is fenced explicitly. A trace exported from a multi-node run
-could be replayed *without* the `node_pools` section, and replay would then reproduce the
-workload at single-node speed — faster than the run that produced the trace, with nothing
-to indicate it. So `blis run` records the widest instance node span in the trace header
-(`max_nodes_spanned`) and `blis replay` refuses any trace that reports more than one node.
-Traces from runs without multi-node placement omit the field entirely and replay exactly
-as before.
-
-If a spanning placement will *not* be charged (uncalibrated fabric, or a backend with
-no communication term), BLIS says so once on stderr rather than silently returning an
-optimistic number. Watch for this if you use a policy bundle's `hw_config_by_gpu`
-override: it replaces the whole hardware calibration, so an entry that omits the two
-fabric fields drops them.
-
-### How large is the effect, and what is still missing
-
-For TP=16 on 2×8 H100 at `r = 9`, the TP communication term rises about **1.53×**,
-which is roughly **+10%** on total step time for a mid-size dense model. The penalty
-is modest by design: hierarchical all-reduce moves the same bytes as a flat ring, and
-only the reduced `S/g` chunk crosses the fabric. A *flat* multi-node ring would instead
-be throttled to ≈`r` (9×) — an order of magnitude more. Measured two-node H100
-all-reduce bus-bandwidth degradation (~1.3–1.5×) is why the hierarchical model is the
-one used here; treat that as the assumption to revisit if a deployment's collectives
-are known not to be hierarchical.
-
-Read `IntraNodeBwGBps` as *the on-node link speed β₄ was calibrated against*, not as a
-free-standing hardware spec: β₄ already absorbs the NVLink/HBM ratio, so the
-cross-node cost inherits β₄'s calibration as its baseline.
-
-Known approximations, each tracked:
-
-- **Per-hop launch + round-trip cost is modeled but not calibrated.** The mechanism is the
-  analytic `n_steps · α_hop · S` term above (`InterNodeHopLatencyUs`, #1694); `α_hop` is 0
-  in the bundled config, so out of the box the cross-node cost is bandwidth-only — and at
-  decode message sizes the missing fixed cost is plausibly the *dominant* effect. Supplying
-  a measured `α_hop` from an NCCL microbenchmark is
-  [#1694](https://github.com/inference-sim/inference-sim/issues/1694).
-- The fabric is keyed by GPU type rather than by pool, which is only equivalent while
-  #1529's "one `gpu_type` per pool" rule holds
-  ([#1662](https://github.com/inference-sim/inference-sim/issues/1662)).
-- The **roofline** backend models no communication at all, so a spanning placement is
-  unpriced there ([#1663](https://github.com/inference-sim/inference-sim/issues/1663)).
-- The all-to-all penalty sums the on-node and off-node portions rather than overlapping
-  them, and ignores DeepEP's per-node RDMA coalescing. Both are pessimistic.
-- The expert group's span is extrapolated from the placed node size, since BLIS places a
-  TP group. #1548 made the expert-all-to-all *term* reachable (expert parallelism is now
-  supported alongside `--dp N`), but its **cross-node** leg is still inert in every
-  reachable configuration: a cross-node price requires `node_pools`, which remains a
-  fail-fast alongside `--dp>1`
-  ([#1553](https://github.com/inference-sim/inference-sim/issues/1553)). `blis run` emits a
-  warning naming this rather than presenting the on-node price as complete.
-
-## When to Use Which
-
-| Aspect | Roofline | Trained-Physics (default) |
-|--------|----------|---------------------------|
-| **When to use** | Quick analytical estimate | Default (generalizes across architectures, workloads, TP) |
-| **Data required** | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Good (analytical) | Better (13 global params, physics-informed basis functions) |
-| **MoE support** | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
-| **Alpha model** | α₀ + α₁·inputLen (constant + per-token queueing) | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
-| **PostDecodeFixedOverhead** | 0 | α₁ (~777µs) |
-
-!!! tip "Choosing the right mode"
-    **Trained-physics** is the default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
-
-!!! warning "Current limitations"
-    All analytical latency models support tensor parallelism (TP). MoE data parallelism (`--dp`) is a trained-physics step-time term (#1419) **and** real placement on both `blis run` (#1531) and `blis replay` (#1556) — see the DP-as-placement note above. Expert parallelism (EP) is a trained-physics **step-time** term since #1548 and is supported alongside `--dp > 1` on both commands; the roofline backend models no EP (and no communication at all, #1663). EP also changes **KV-capacity sizing**: routed-expert weights are charged to the `TP·DP` EP group rather than to each rank's TP group (#1656). Per-token KV bytes remain EP-independent. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and model-weight memory. KV-cache storage precision is configured **independently** via `--kv-cache-dtype` (vLLM parity, #1565): `auto` (default) follows the compute dtype, while `fp8` stores the KV cache at 1 byte/element — roughly doubling KV-block capacity — regardless of the weight precision. MFU calibration values are still derived from FP16/BF16 measurements.
-
-## Speculative Decoding / MTP (#1528)
-
-Both backends model the decode-throughput effect of speculative decoding / Multi-Token Prediction (GLM-5.2's 5-token MTP, DeepSeek-V3, EAGLE, Medusa). Enable it with `--num-speculative-tokens K` (draft tokens per step, `0` = off) and the **required** `--speculative-acceptance-rate α` (mean fraction accepted, `[0,1]`); `--speculative-method` optionally labels the scheme.
-
-The model splits the effect into two decoupled quantities:
-
-- **Verify width `w = K+1`** — the target verifies `K` drafts plus 1 bonus token in a single forward pass. This drives the per-step **cost**: the decode compute-FLOPs and KV-bandwidth terms scale by `w`, while the once-per-step weight-load, TP/EP communication, and constant overhead terms do **not**. Cost is therefore *sublinear* in `w` — the physics that makes speculative decoding a net win. Verifying drafts is not free (a config with more drafts has a strictly higher per-step time), but it is cheap relative to the tokens it can produce.
-- **Accepted tokens `g = 1 + α·K`** — the sequence advances by `g` tokens per step (mean). This raises throughput and lowers the decode-step count by ≈`g`. It is applied deterministically via a per-request fractional carry (no RNG), so runs stay byte-identical for a seed (INV-6) and every metric is the expectation.
-
-**Progress stops at the completion boundary.** A step is granted only as many tokens as the request still needs to reach the point where it completes, so the final verified block lands exactly on the target instead of 1..`K` past it — the same thing vLLM does (it appends the accepted tokens one at a time and trims the tail once `check_stop` fires). Step time and step count are unaffected (both backends size a decode step by verify width `w`, not by the granted count), so this is not a compute discount: it means a request's output-token count — and a closed-loop `accumulate` session's context growth — is identical to a `K=0` run. The one timing effect is per-token detokenization: the clamped final step charges `OutputTokenProcessingTime` only for the tokens it actually emitted, so a request's total detokenization overhead is exactly `(L−1)×OTPT` as at `K=0` (it was over-charged by up to `K×OTPT` before). Spec-decode E2E/ITL therefore shift slightly downward with this fix; `K=0` runs are byte-identical. Speculative decoding buys fewer, wider decode steps; it never changes token accounting. (Before [#1657](https://github.com/inference-sim/inference-sim/issues/1657) an overshoot was read back as output-accounting corruption and cancelled the entire closed-loop session after round 0.)
-
-`K=0` (the default) leaves step time and progress byte-identical to a pre-feature build. The feature is model-level and supplied by identical flags to `blis run` and `blis replay`, so traces round-trip under INV-13 with no schema change. `α` is user-supplied — BLIS does not predict acceptance (it does not run a real draft model). Under spec-decode the raw ITL percentiles are per-verification-step; use TPOT for per-token latency.
-
-**Known limitation — occupancy contention under saturation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)).** This model captures spec-decode's *latency* (verify width) and *throughput* (accepted tokens), but accounts KV/token-budget *occupancy* by the accepted count `g`, not the speculative footprint. Real vLLM reserves `K` lookahead KV slots per running request per step *unconditionally* (before acceptance is known) and consumes ~`K+1` of `max_num_batched_tokens`. So below KV saturation the two agree (the extra reservation never binds), but **above** saturation BLIS over-predicts max batch size and under-predicts preemption — it shows the MTP speedup without the contention penalty that erodes it. The stated use case (mean throughput / capacity planning below saturation) is faithful; the saturated regime is optimistic. Tracked in #1627. The boundary clamp above sharpens this in one place: BLIS caps the *scheduler grant*, whereas vLLM grants `K+1`, reserves the lookahead KV, and trims only afterwards — so on a request's final step BLIS's KV reservation and `max_num_batched_tokens` debit are further below vLLM's than they were before. Same divergence class, same tracking issue.
-
-The `--speculative-method` values (`mtp`, `eagle`, `medusa`, `ngram`, `draft`) are BLIS labels, not verbatim vLLM method strings — the first four match vLLM's literals exactly, while `draft` is BLIS shorthand for vLLM's `draft_model`. The label is informational provenance today (it does not change the step-time math, which is driven entirely by `K` and `α`).
-
-**Backend note — verify-width attention.** The two backends scale the decode **attention** term differently under `w`, and both are physically defensible:
-
-- **trained-physics** keeps decode attention on `sumCtx` (per active sequence) and deliberately does **not** scale it by `w`: the `w` verified positions are contiguous and attend the same shared KV context, read once per step. This is the more accurate model for MTP.
-- **roofline** routes `w` through its per-request FLOPs helper, so the decode attention-score ops scale with `w` (and its `effectiveCtx` picks up a small prefill-style `(w-1)/2` term).
-
-Both preserve `K=0` byte-identity and monotonicity in `K`; they differ only in the *shape* of the cost-vs-`w` curve, not in correctness. Keep this in mind when calibrating verify-width cost against a specific backend.
-
-## Pluggable Architecture
-
-The `LatencyModel` interface (defined in `sim/latency_model.go`) has four methods:
-
-| Method | Purpose |
-|--------|---------|
-| `StepTime(batch)` | Duration of one batch step given the running batch |
-| `QueueingTime(req)` | Arrival-to-queue delay for a request |
-| `OutputTokenProcessingTime()` | Per-token post-processing time |
-| `PostDecodeFixedOverhead()` | Fixed per-request overhead at completion (0 for roofline, non-zero for trained-physics) |
-
-All time estimates are in microseconds (ticks).
-
-New backends register via the `NewLatencyModelFunc` variable in `sim/latency_model.go`. The `sim/latency/register.go` file uses `init()` to wire the factory, breaking the import cycle between `sim/` (interface owner) and `sim/latency/` (implementation). To add a custom backend, implement the four methods and register your factory via `init()` in a sub-package. See [Extension Recipes](../contributing/extension-recipes.md) for a step-by-step guide.
+## The interface
+
+The simulator consumes latency through the `sim.LatencyModel` interface
+(`sim/latency_model.go`): `StepTime(batch)`, `QueueingTime(req)`,
+`OutputTokenProcessingTime()` and `PostDecodeFixedOverhead()`, all in microseconds (ticks).
+`sim/kernelmodel` is its only production implementation. Improving or extending latency
+pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
+coefficients), not here; see [Extension Recipes](../contributing/extension-recipes.md).
 
 ## Further Reading
 
-- [Roofline Estimation](../concepts/roofline.md) -- the mathematical model behind roofline step time calculation
-- [Configuration Reference](../reference/configuration.md#roofline-mode) -- all roofline-related CLI flags
+- [Configuration Reference](../reference/configuration.md) -- the scenario flags and what the scenario supplies
+- [Supported Models](../reference/models.md) -- which models and chips a run can use
+- [Core Engine](../concepts/core-engine.md) -- where step time enters the event loop

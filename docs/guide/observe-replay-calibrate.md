@@ -1,20 +1,27 @@
 # Observe / Replay / Calibrate
 
-This guide covers the end-to-end pipeline for validating BLIS simulator accuracy against real inference servers: observe real latencies, replay the captured trace through the DES, and calibrate by comparing results.
+This guide covers trace workloads: replaying a captured or converted TraceV2 through the DES (`blis replay`), and the older pipeline that records a real server's latencies (`blis observe`) and compares them with the simulator's (`blis calibrate`).
+
+!!! warning "`blis observe` and `blis calibrate` are deprecated"
+    Both commands are deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)) and documented here for existing users only. `blis replay` is **not** deprecated: it is the command for every trace workload — a trace exported by `blis run --trace-output`, or one produced by `blis convert weka|otel|inference-perf|servegen` — and runs on blis-latency-kernel through the same deployment path as `blis run`.
 
 ```bash
-# Quick example: observe a real server, replay through the simulator, compare
+# Replay a trace through the simulator (the scenario states the deployment)
+./blis replay --trace-header trace.yaml --trace-data trace.csv \
+  --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --results-path results.json
+
+# Deprecated (#1901): observe a real server, then compare it with the replay
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
-./blis replay --trace-header trace.yaml --trace-data trace.csv \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 --results-path results.json
 ./blis calibrate --trace-header trace.yaml --trace-data trace.csv \
   --sim-results results.json --report calibration.json
 ```
 
 ## Pipeline Overview
 
-The observe/replay/calibrate pipeline has three stages:
+The observe/replay/calibrate pipeline has three stages (observe and calibrate are deprecated, #1901):
 
 | Stage | Command | Input | Output |
 |-------|---------|-------|--------|
@@ -41,7 +48,9 @@ WorkloadSpec YAML ──► blis observe ──► TraceV2 (header.yaml + data.c
 
 ---
 
-## `blis observe`
+## `blis observe` (deprecated)
+
+!!! warning "Deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901))"
 
 Dispatches requests to a real inference server, records per-request timing (TTFT, E2E latency, token counts), and exports the results as a TraceV2 file pair.
 
@@ -103,8 +112,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--lazy-generation` | `bool` | `false` | Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as `blis run`). Supports every workload class — multi-session reasoning (`SingleSession=false`, #1458), concurrency clients (`concurrency > 0`, #1459), and time-varying / per-window workloads (#1460); there is no eager fallback. Default (off) dispatch behavior is unchanged |
 | `--think-time-ms` | `int` | `0` | Think time in ms between response and next request (concurrency mode only) |
 | `--api-format` | `string` | `"completions"` | API format: `completions` or `chat` |
-| `--unconstrained-output` | `bool` | `false` | Do not set `max_tokens` (let server decide output length) |
-| `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; requests server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit). Compatible with `--unconstrained-output`: `min_tokens` is still sent, `max_tokens` is still omitted |
+| `--unconstrained-output` | `bool` | `false` | Do not constrain output length: omit `min_tokens`, and omit `max_tokens` (chat) or send MaxInt32 (completions). Without it each request sends `min_tokens` = `max_tokens` = its sampled output length, so the server generates exactly that many tokens (there is no separate `--min-tokens` flag) |
 | `--timeout` | `int` | `300` | HTTP request timeout in seconds (per request); increase for slow servers or large-prefill workloads |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
 | `--catalog` | `string` | `""` | Catalog clone root holding `workloads/<name>.yaml` (preset mode only). No default; `BLIS_CATALOG` is the fallback, and the flag wins when both are set (#1769 replaced `--defaults-filepath` here) |
@@ -208,7 +216,7 @@ The prewarm phase sends small, fixed requests (256 input tokens, 64 output token
 
 ## `blis replay`
 
-Replays a captured TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads real request timing and token counts from the trace.
+Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads request timing and token counts from the trace. It takes the same deployment inputs as `blis run` — `--scenario`, `--scenarios`, `--registry` and the catalog (`--catalog` or `BLIS_CATALOG`) — and builds the deployment and its kernels through the same code path.
 
 ### Replay-Specific Flags
 
@@ -217,61 +225,36 @@ Replays a captured TraceV2 file through the BLIS discrete-event simulator. Inste
 | `--trace-header` | `string` | `""` | Path to TraceV2 header YAML (required) |
 | `--trace-data` | `string` | `""` | Path to TraceV2 data CSV (required) |
 | `--results-path` | `string` | `""` | File to write SimResult JSON for `blis calibrate` consumption |
-| `--model` | `string` | `""` | LLM name (required) |
+| `--scenario` | `string` | `""` | Scenario file name within `--scenarios` (required) |
+| `--scenarios` | `string` | `""` | Directory of scenario YAMLs (required) |
+| `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts all shared simulation config flags (`--latency-model`, `--total-kv-blocks`, `--max-num-seqs`, etc.) — the same flags available in `blis run`. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
 
-!!! note "Re-supply capacity-affecting flags identically on replay"
-    Flags that shape KV-cache capacity are **re-supplied on the replay CLI, not round-tripped through the trace header** — replay recomputes capacity from `--model` and these flags exactly as `blis run` does. In particular, **`--kv-cache-dtype` must be passed identically on replay** (e.g. `--kv-cache-dtype fp8`) to reproduce the run's KV-block count and per-request metrics (INV-13). This mirrors `--gpu-memory-utilization` and the auto-computed `--total-kv-blocks` (the header records those only informationally). It is deliberately **not** the header-authoritative model used by `--kv-offload-config` — a KV dtype only scales a byte width, it drives no runtime mechanism.
-
-!!! note "MoE `--dp N` (DP-as-placement) is supported on replay — re-supply it, and match `--horizon`"
-    On an MoE model, `--dp N` spawns **N real single-node engine replicas** per
-    `--num-instances`, each sized per-rank (`DP=1`). Since #1556 `blis replay` resolves
-    that placement through the same shared code path as `blis run` (#1531), so replaying
-    a `blis run --dp N` trace with the same flags reproduces the run's per-request
-    metrics (INV-13). Two things to get right:
-
-    - **`--dp` is re-supplied on the replay CLI**, like `--tp` / `--kv-cache-dtype` — it
-      is model-level, and the trace header records it (if at all) only informationally;
-      replay never reads it back. Omitting it on the replay leg silently compares an
-      `N`-replica run against a 1-replica replay.
-    - **Pass `--horizon` on both legs.** `blis run` defaults the horizon to unlimited
-      while `blis replay` auto-computes 2x the max arrival time (see the table below),
-      so a default-horizon replay may truncate a run that was still draining.
+!!! note "Replay with the same scenario and flags as the run"
+    The deployment is not round-tripped through the trace header: replay rebuilds it from
+    `--scenario` (and the kernel's KV budget) exactly as `blis run` does. A trace exported by
+    `blis run` and replayed with the **same scenario and identical flags, including
+    `--horizon`**, produces byte-identical stdout (INV-13). Pass `--horizon` on both legs:
+    `blis run` defaults it to unlimited while `blis replay` auto-computes 2x the max arrival
+    time (see the table below), so a default-horizon replay may truncate a run that was still
+    draining. An MoE scenario with `dp > 1` replays the same way — one replica per
+    data-parallel rank on both legs. The autoscaler and node pools are rejected by
+    `blis replay`.
 
     ```bash
     # 9223372036854775807 is 2^63-1 — `blis run`'s own --horizon default, i.e. unlimited.
-    # Passing it explicitly on BOTH legs is what makes the comparison apples-to-apples;
-    # any other shared value works too, as long as it is the same on both.
+    ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+      --rate 10 --num-requests 40 --seed 42 \
+      --horizon 9223372036854775807 --trace-output traces/run1
 
-    # deepseek-v2-lite has no defaults.yaml entry, so --hardware and --tp must be given
-    # explicitly (trained-physics fatals without them, before any DP logic runs).
-
-    # Run N=2 DP replicas and export the workload...
-    ./blis run --model deepseek-ai/deepseek-v2-lite \
-      --catalog blis-catalog \
-      --hardware H100 --hardware-config hardware_config.json --tp 1 \
-      --dp 2 --num-instances 1 \
-      --rate 10 --num-requests 40 --total-kv-blocks 20000 --seed 42 \
-      --horizon 9223372036854775807 --trace-output traces/dp2   # unlimited
-
-    # ...then replay it with the SAME model/hardware flags and the SAME
-    # --dp, --num-instances, --total-kv-blocks, --seed and --horizon.
-    ./blis replay --trace-header traces/dp2.yaml --trace-data traces/dp2.csv \
-      --model deepseek-ai/deepseek-v2-lite \
-      --catalog blis-catalog \
-      --hardware H100 --hardware-config hardware_config.json --tp 1 \
-      --dp 2 --num-instances 1 \
-      --total-kv-blocks 20000 --seed 42 --horizon 9223372036854775807   # unlimited
+    ./blis replay --trace-header traces/run1.yaml --trace-data traces/run1.csv \
+      --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+      --seed 42 --horizon 9223372036854775807
     ```
-
-    `--enable-expert-parallel` is supported alongside `--dp > 1` on both commands since
-    #1548, and — like `--dp` itself — must be re-supplied identically on the replay leg
-    (the EP-group width is a model-level input, not a trace field). PD disaggregation with
-    `--dp > 1` is supported on both commands since #1553 (each pool spawns N per-rank
-    replicas; re-supply the same flags for byte-identical replay). The autoscaler and node
-    pools are still rejected by `blis replay` unconditionally, independently of `--dp`.
 
 ### How Replay Differs from `blis run`
 
@@ -308,12 +291,13 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
       divergence is not preserved when it shares a `prefix_group`.
 
     Fixed-mode (`--session-mode fixed`) re-export is unchanged. Known boundary: a
-    length-capped round (output truncated by `--max-model-len`) reproduces its input
-    length but may diverge in prefix-cache token *content* across the cap boundary — the
-    huge-ISL agentic corpora are replayed with a large `--max-model-len` to avoid capping.
+    length-capped round (output truncated by the scenario's `max_model_len`) reproduces its
+    input length but may diverge in prefix-cache token *content* across the cap boundary —
+    replay huge-ISL agentic corpora with a scenario whose `max_model_len` is large enough to
+    avoid capping.
 
-!!! warning "Latency model matters"
-    The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline and trained-physics modes.
+!!! warning "The scenario must match the server"
+    Replay prices every step with blis-latency-kernel for the deployment the scenario states. To compare against a real server, the scenario's model, hardware, parallelism and engine settings must match that server's. See [Latency Model](latency-models.md).
 
 ---
 
@@ -345,17 +329,21 @@ blis convert otel --input otel_json --trace-output corpus \
 
 # Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200
+  --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --concurrent-sessions 8 --total-sessions 200
 ```
 
 The recorded source model names are pure provenance and are dropped during
-conversion — all calls are simulated under `--model`. (They are deliberately not
+conversion — all calls are simulated under the scenario's model. (They are deliberately not
 written into the trace: `TraceRecord.Model` is routing-significant, and a name
-that differs from `--model` would filter out every request at routing.)
+that differs from the simulated model would filter out every request at routing.)
 `--concurrent-sessions` implies closed-loop session semantics; without it,
 replay behaves as a standard fixed/closed-loop replay.
 
-### Driving the corpus against a real server (`blis observe`)
+### Driving the corpus against a real server (`blis observe`, deprecated)
+
+`blis observe` and `blis calibrate` are deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
 
 The same corpus can be driven against a **live inference server** — the
 observe-side twin of `blis replay --concurrent-sessions`. This records real
@@ -416,7 +404,9 @@ To calibrate real vs simulated over the same corpus:
 
 ```bash
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 --concurrent-sessions 8 --total-sessions 200 \
+  --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --concurrent-sessions 8 --total-sessions 200 \
   --results-path sim.results.json
 blis calibrate --trace-header observed.yaml --trace-data observed.csv \
   --sim-results sim.results.json --report calibration.json
@@ -446,11 +436,11 @@ corpus, not a clock.
     Real agentic traces (e.g. Exgentic `agent-llm-traces`) often carry very large
     prompts — tens of thousands to well over 100K input tokens per call, growing
     further each round as the shared prefix accumulates — which can exceed a
-    model's default `--max-model-len` (e.g. qwen3-14b defaults to ~41K). If the
-    run completes cleanly but reports `completed_requests: 0` with a matching
-    `dropped_unservable` count, the prompts didn't fit: raise `--max-model-len` to
-    cover the largest round, and scale `--total-kv-blocks` up proportionally so
-    the KV cache can hold the growing sessions.
+    scenario's `max_model_len`. If the run completes cleanly but reports
+    `completed_requests: 0` with a matching `dropped_unservable` count, the prompts
+    didn't fit: use a scenario whose `max_model_len` covers the largest round, on a
+    deployment whose KV budget (computed by the kernel from the scenario) can hold the
+    growing sessions.
 
 ### Weka CC traces (`blis convert weka`)
 
@@ -465,8 +455,13 @@ blis convert weka --input traces.jsonl --trace-output corpus \
 
 # Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 --session-mode closed-loop --max-model-len 1000000
+  --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --session-mode closed-loop
 ```
+
+Weka sessions grow to very long contexts; use a scenario whose pools' `max_model_len` covers
+them (a round longer than it is length-capped).
 
 The reader filters each session's `requests[]` to the **linear main-agent stream** —
 `type:"subagent"` groups are skipped (deferred to a later PR); their wall-clock is
@@ -481,7 +476,7 @@ model names are dropped during conversion (same routing-safety reason as OTel).
 
 !!! note "Context compaction is represented (#1609)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
-    `--max-model-len` / `--total-kv-blocks` sizing warning above applies with extra
+    `max_model_len` / KV-budget sizing warning above applies with extra
     force. Real Claude Code traffic **compacts/trims context constantly** — ~30% of
     rounds on the full `051926` dataset have `in_N < in_{N-1}+out_{N-1}` (the model
     summarized or trimmed). The shared agentic-trace encoder emits a per-round
@@ -511,12 +506,13 @@ concurrency > 1:
 
 ```bash
 # Convert once, then replay with recorded arrivals AND reconstructed growing context.
-# (This uses a committed MoE config and a hardware key present in hardware_config.json,
-# so it runs as-is; the motivating shape is a large MLA MoE such as Kimi-K3 on H200.)
+# The motivating shape is a large MLA MoE on H200; any scenario works, as long as its
+# max_model_len covers the corpus's longest context.
 blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
-  --model qwen/qwen3-30b-a3b --hardware H100 --tp 2 --dp 2 --enable-expert-parallel \
-  --session-mode fixed-accumulate --max-model-len 1000000
+  --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --session-mode fixed-accumulate
 ```
 
 The arrival timestamps are already in the corpus (`ArrivalTimeUs`, written per round by
@@ -526,14 +522,6 @@ requires an accumulate corpus, and is mutually exclusive with `--concurrent-sess
 recorded, not regenerated). INV-10 (session causality) is **scoped to closed-loop** and
 does not apply — chaining arrivals to sim completion is exactly the feedback loop this
 mode breaks.
-
-!!! warning "Necessary, not sufficient (decode-side gap, #1627)"
-    Even with faithful arrivals, BLIS's decode/step model currently runs ~5–10× fast on
-    this workload (the unmodeled `--enforce-eager` regime plus MTP-speedup-without-
-    contention, #1627), so queue depth is still under-predicted until decode is
-    calibrated. Treat `fixed-accumulate` as a **necessary precondition** for high-
-    concurrency fidelity — land and validate it alongside (or ahead of) the decode-side
-    work, not as a standalone fix.
 
 !!! warning "Intra-session overlap: recorded arrivals ignore sim completion"
     Each round is injected at its recorded arrival regardless of when the previous round
@@ -566,7 +554,9 @@ mode breaks.
 
 ---
 
-## `blis calibrate`
+## `blis calibrate` (deprecated)
+
+!!! warning "Deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901))"
 
 Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report.
 
@@ -730,13 +720,18 @@ The report uses two levels of analysis because they catch different problems. **
 
     ```bash
     ./blis replay --trace-header trace.yaml --trace-data trace.csv \
-      --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
+      --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+      --flow-control --saturation-detector utilization \
       --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
     ```
 
 ---
 
 ## Worked Example
+
+!!! warning "Uses deprecated commands"
+    Steps 2 and 4 use `blis observe` and `blis calibrate`, deprecated in [#1901](https://github.com/inference-sim/inference-sim/issues/1901).
 
 This walkthrough demonstrates the full pipeline: define a workload, observe a real vLLM server, replay through the simulator, and interpret the calibration report.
 
@@ -789,12 +784,12 @@ This sends 50 requests to the server at ~5 req/s, excludes the first 5 from the 
 ./blis replay \
   --trace-header trace.yaml \
   --trace-data trace.csv \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 \
-  --latency-model roofline \
+  --scenario <scenario matching the server>.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
   --results-path results.json
 ```
 
-The simulator replays the same requests (arrival times, token counts) through the DES using the roofline latency model and writes per-request results.
+The simulator replays the same requests (arrival times, token counts) through the DES, priced by blis-latency-kernel for the scenario's deployment, and writes per-request results.
 
 ### Step 4: Calibrate
 
@@ -822,13 +817,12 @@ Look for:
 - **`request_level.bias_direction` = `"under-predict"`** → simulator latencies are lower than reality (optimistic — may need latency model tuning)
 - **High `token_mismatches`** → data quality issue; check if the server truncated outputs
 
-Low MAPE with high `mean_percent_error` indicates low per-request variance but a systematic offset — the simulator is consistently biased in one direction on every request. High MAPE with high `mean_percent_error` suggests widespread per-request inaccuracy with an additional systematic component; consider switching latency models.
+Low MAPE with high `mean_percent_error` indicates low per-request variance but a systematic offset — the simulator is consistently biased in one direction on every request. High MAPE with high `mean_percent_error` suggests widespread per-request inaccuracy with an additional systematic component.
 
 If calibration quality is poor, try:
 
-1. **Different latency model:** Switch from `roofline` to `trained-physics` (see [Latency Models](latency-models.md))
-2. **Adjust server config flags:** Match `--max-num-seqs` and `--max-num-batched-tokens` to the real server's settings
-3. **Increase sample size:** Use more requests (`--num-requests`) for statistical stability
+1. **Match the scenario to the server:** the scenario's parallelism and engine settings (`max_num_seqs`, `max_num_batched_tokens`, `block_size`, `gpu_memory_utilization`, `cudagraph_mode`, ...) should be the server's own (see [Latency Model](latency-models.md))
+2. **Increase sample size:** Use more requests (`--num-requests`) for statistical stability
 
 ---
 

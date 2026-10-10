@@ -4,6 +4,36 @@ This page describes how BLIS simulates multi-instance inference serving clusters
 
 > **Canonical sources:** Signal freshness (INV-7) is defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If signal freshness descriptions here diverge, `invariants.md` is authoritative.
 
+## The BLIS repositories
+
+BLIS is five repositories, each owning one kind of thing:
+
+| repository | role | owns |
+|---|---|---|
+| **inference-sim** (this repo) | simulates | the end-to-end simulation: arrivals, admission, routing, scheduling, KV block accounting, placement, metrics |
+| **blis-latency-kernel** | prices | step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads |
+| **blis-catalog** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
+| **blis-registry** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
+| **blis-schemas** | defines the formats | the source of truth for every shared format: scenario, deployment, engine and catalog files, and the kernel interface |
+
+```mermaid
+flowchart LR
+    SC["Scenario<br/>(blis-schemas format)"] --> SIM
+    CAT["blis-catalog<br/>facts"] --> K
+    REG["blis-registry<br/>coefficients"] --> K
+    SC --> K
+    SIM["inference-sim<br/>simulates"] -- "batch, transfer, tier" --> K["blis-latency-kernel<br/>prices"]
+    K -- "durations, memory" --> SIM
+```
+
+The simulator decides *when* a step runs and *what* it holds; the kernel says *how long* it
+takes and *how much* memory is left for KV. A deployment choice -- which chip, how many GPUs,
+what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
+the scenario a run names, not in the catalog or registry. Data the kernel reads is never
+copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
+coefficient is a commit to blis-registry. How a scenario reaches the kernel:
+[Latency Models](../guide/latency-models.md).
+
 ## Overview
 
 A BLIS cluster consists of N independent inference instances orchestrated by a shared-clock event loop. Each incoming request passes through a three-stage pipeline — admission, routing, and per-instance processing — before metrics are aggregated across all instances.
@@ -261,30 +291,13 @@ A complete request lifecycle through the cluster pipeline:
 8. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
 9. **Metrics:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
 
-## Observe / Replay / Calibrate Pipeline
+## Replay
 
-Alongside the DES simulation pipeline described above, BLIS provides an offline validation workflow for comparing simulator predictions against real server behavior. This pipeline has three stages, of which only **Replay** engages the DES event loop. **Observe** is an HTTP workload dispatcher that sends requests to a real inference server and records per-request timing. **Calibrate** is a statistical comparison tool that computes per-metric MAPE, Pearson R, and quality grades.
-
-```mermaid
-flowchart LR
-    WS["WorkloadSpec<br/>or --rate flags"] --> Obs
-    SU["Server URL"] --> Obs
-    Obs["blis observe<br/>(HTTP client)"] --> TV["TraceV2<br/>(YAML + CSV)"]
-
-    TV --> Rep
-    MC["--model + sim flags"] --> Rep
-    Rep["blis replay<br/>(DES engine)"] --> SR["SimResult JSON<br/>(--results-path)"]
-
-    TV --> Cal
-    SR --> Cal
-    Cal["blis calibrate<br/>(statistical comparison)"] --> Rpt["Calibration<br/>Report"]
-
-    style Obs fill:#a5d8ff
-    style Rep fill:#d0bfff
-    style Cal fill:#b2f2bb
-    style TV fill:#fff3e0
-    style SR fill:#fff3e0
-    style Rpt fill:#c8e6c9
-```
-
-For the full pipeline guide with worked examples, see [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md). For flag details, see [Configuration Reference](../reference/configuration.md).
+`blis replay` runs a captured TraceV2 (one exported by `blis run --trace-output`, or one
+produced by `blis convert weka|otel|inference-perf|servegen`) through the same DES pipeline
+and the same scenario-driven deployment path as `blis run`. A run's exported trace replayed
+with identical flags (including `--horizon`) yields byte-identical stdout (INV-13).
+`blis observe` and `blis calibrate` are deprecated
+([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). See
+[Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md) and the
+[Configuration Reference](../reference/configuration.md).

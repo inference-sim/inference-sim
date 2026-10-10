@@ -4,7 +4,8 @@ This guide covers how to read BLIS output — from the primary JSON metrics to a
 
 ```bash
 # Quick example: run with all diagnostic output enabled
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 200 --num-requests 1000 \
   --trace-level decisions --summarize-trace \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
@@ -94,56 +95,20 @@ written by both `blis run --metrics-path` and `blis replay --metrics-path`:
 
 ### Saturation Detection
 
-The `saturation` field provides automated classification of simulation runs using post-hoc analysis (#1369). This is enabled via the `--post-hoc-detector` flag and is distinct from the real-time flow control saturation detector.
+Post-hoc saturation analysis classifies a completed run as `STABLE`, `BACKLOGGED` or
+`OVERLOADED`. It is distinct from the real-time flow-control detector. Select detectors with
+`--detectors <name|comma-list|all>` (`composite`, `threshold`, `backlog-drift`, `peak-rate`),
+tune them with `--saturation-config`, and write the per-event verdict trace with
+`--saturation-report`:
 
-**Structure:**
-```json
-{
-  "saturation": {
-    "level": "STABLE",
-    "score": 0.35,
-    "confidence": 0.95,
-    "signals": {
-      "rate_deficit": 0.0,
-      "latency_trend": 0.12
-    }
-  }
-}
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `level` | string | Classification: `STABLE`, `BACKLOGGED`, or `OVERLOADED` |
-| `score` | float | Composite score in [0, 1] range. STABLE: < 0.5, BACKLOGGED: [0.5, 0.75), OVERLOADED: ≥ 0.75 |
-| `confidence` | float | Statistical confidence based on sample size (min(1.0, sqrt(N))) |
-| `signals` | object | Detector-specific metrics (varies by detector type) |
-
-**Detectors:**
-
-- **composite** (default when `--post-hoc-detector composite`): Combines two signals:
-  - `rate_deficit`: max(0, 1 - completions/arrivals) — measures throughput saturation
-  - `latency_trend`: (second_half_mean - first_half_mean) / first_half_mean — detects queue buildup
-
-- **threshold** (when `--post-hoc-detector threshold`): Simple mean E2E comparison against `--saturation-threshold-ms` (default 5000ms):
-  - `mean_e2e`: Mean end-to-end latency across all completed requests
-  - `threshold`: Configured threshold value
-  - STABLE when mean_e2e < threshold, OVERLOADED when mean_e2e > threshold
-
-- **none** (default): No saturation analysis performed, `saturation` field omitted from output
-
-**Usage:**
 ```bash
-# Run with composite detector
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --post-hoc-detector composite
-
-# Run with threshold detector (custom threshold)
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --post-hoc-detector threshold --saturation-threshold-ms 3000
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --rate 10 --num-requests 100 --detectors all --saturation-report sat.json
 ```
 
-**Use cases:**
-- Automated capacity planning: classify runs as under-provisioned (OVERLOADED), near-capacity (BACKLOGGED), or healthy (STABLE)
-- Experiment analysis: quickly identify which configurations saturate the system
-- CI/CD gates: fail builds if saturation score exceeds threshold
+Detector mechanics and tuning knobs:
+[Saturation analyzer](../contributing/saturation-analyzer-extension.md).
 
 ### Per-Request Fields
 
@@ -179,9 +144,9 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | **Rejected Requests (Admission)** | Admission policy rejected the request at cluster ingress | Check token bucket capacity or admission policy |
 | **Shed (tier)** | Per-SLO-class breakdown of admission rejections under overload — printed as indented sub-items beneath Rejected Requests (Admission) | Adjust `slo_priorities` in the policy bundle or raise admission thresholds |
 | **Rejected Requests (Routing)** | No routable instances for the request's model — all instances are `Loading` or `Draining` | Increase `initial_nodes`, reduce `loading_delay.mean`, or stagger drain operations |
-| **Dropped Unservable** | Request exceeds `--max-model-len` context window or needs more KV blocks than exist | Check `--max-model-len` setting; increase `--total-kv-blocks` or reduce max input tokens |
+| **Dropped Unservable** | Request exceeds the context window (the scenario's `max_model_len`) or needs more KV blocks than exist | Check the scenario's `max_model_len`; deploy more GPUs per instance or reduce max input tokens |
 | **Timed Out Requests** | Request exceeded its client deadline before completing | Increase `--timeout` or reduce load |
-| **Length-Capped Requests** | Request was force-completed when it reached `MaxModelLen` tokens during decode | Expected if workloads push against `--max-model-len`; set `--max-model-len 0` (unlimited) to disable the cap |
+| **Length-Capped Requests** | Request was force-completed when it reached `MaxModelLen` tokens during decode | Expected if workloads push against the scenario's `max_model_len` |
 | **Gateway Queue Depth (horizon)** | Requests still waiting in the gateway queue when the simulation ended — printed only when `> 0` | Reduce arrival rate or increase cluster capacity |
 | **Gateway Queue Shed** | Requests shed from the gateway queue because it was full — printed only when `> 0` | Increase `--max-gateway-queue-depth` or enable `--flow-control` with a saturation detector |
 
@@ -191,7 +156,7 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
     All other counters in this table — including **Shed (tier)**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** — are **stdout-only** and do not appear in the JSON file.
 
 !!! note "blis replay anomaly block"
-    `blis replay` produces a subset of this output: **Timed Out Requests**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** are currently missing from the `blis replay` anomaly block even when non-zero (tracked in issue #1184). **PD Disaggregation Metrics** are not supported in replay at all.
+    `blis replay` produces a subset of this output: **Timed Out Requests**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** are currently missing from the `blis replay` anomaly block even when non-zero (tracked in issue #1184).
 
 ## KV Cache Metrics
 
@@ -271,12 +236,9 @@ When PD disaggregation is active (`--prefill-instances > 0`), BLIS prints a `===
 | **Decode Throughput** | Sub-request completion rate on decode instances (sub-req/s) |
 | **Load Imbalance Ratio** | `max(prefill_load, decode_load) / min(...)` — `1.0` = perfectly balanced; `inf` = one pool has no completions |
 | **Parent TTFT** | Client-visible TTFT (decode-sub-request scheduling delay + first decode step) — the arrival → first-token-emitted-by-decode span, including the decode-queue wait and exactly one output-token processing overhead (#1510); distribution in microseconds |
-| **KV Transfer Duration** | Time to transfer KV blocks from prefill to decode instance; distribution in microseconds |
-| **Peak Concurrent Transfers** | Maximum simultaneous in-flight KV transfers (only with `--pd-transfer-contention`) |
-| **Mean Transfer Queue Depth** | Average queue depth at the transfer bandwidth bottleneck (only with `--pd-transfer-contention`) |
+| **KV Transfer Duration** | Time to transfer KV blocks from prefill to decode instance, priced by blis-latency-kernel over the scenario's fabric; distribution in microseconds |
 
-!!! note "blis run only"
-    PD Disaggregation Metrics are produced by `blis run` only. `blis replay` does not support PD disaggregation (a warning is logged if PD flags are passed to replay). `blis observe` dispatches to real servers and produces no DES output.
+PD Disaggregation Metrics are produced by both `blis run` and `blis replay` for a disaggregated scenario run with `--prefill-instances`/`--decode-instances`.
 
 ## Fitness Evaluation
 
@@ -314,20 +276,21 @@ With `kv-utilization` scorer alone at `--snapshot-refresh-interval 100ms`: +354%
 
 All routing policies produce equivalent results (within 5%) at low utilization. Differentiation requires moderate-to-high load where queueing dynamics dominate.
 
-### Alpha Overhead
+### Host Overhead
 
-BLIS models non-GPU overhead (tokenization, API serialization) as `alpha` coefficients. Alpha queueing time (alpha0 + alpha1 × inputLen) delays request enqueue, creating an event gap, but does not occupy the GPU. Alpha output processing time (alpha2) adds to TTFT/E2E metrics but does not affect step scheduling. This means:
-
-- Simulated E2E > theoretical M/M/k E2E (especially at high load)
-- The divergence is 28-71% at ρ ≥ 0.5 but only 0.3-3.3% at ρ ≤ 0.3
-- To compare with theoretical models, use `rho_eff = lambda × step_total` not `lambda × E2E_total`
+blis-latency-kernel prices host work outside the GPU step: per-request queueing (tokenization
+and preprocessing) delays enqueue, creating an event gap, but does not occupy the GPU;
+per-output-token processing adds to TTFT/E2E metrics but does not affect step scheduling. So
+simulated E2E exceeds a theoretical M/M/k E2E, most at high load. To compare with a
+theoretical model, use `rho_eff = lambda × step_total`, not `lambda × E2E_total`.
 
 ## Per-Request Results
 
 For detailed analysis, save per-request data:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
   --rate 100 --num-requests 500 --metrics-path metrics.json
 ```
 

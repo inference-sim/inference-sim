@@ -98,7 +98,12 @@ The same command prints the signed and log-space reports. Expected:
 plus the per-concurrency signed breakdown. The signed figures are the ones that killed the
 batch-composition hypothesis; see `RESULTS.md`.
 
-## Four estimators on the Hopper subset
+## Four estimators on the Hopper subset (historical)
+
+> **Historical.** `cmd/estimatorscore`, the roofline and trained-physics backends, and the
+> `hardware_config.json` it read were removed when BLIS became kernel-exclusive, so the commands in
+> this section and its audit subsection no longer run. The figures are kept as the record of what
+> was measured at the revision listed above.
 
 ```bash
 cd inference-sim
@@ -123,7 +128,7 @@ trained-physics, which completes no requests within the horizon).
 `-hardware-config` and `-defaults` default to the repository's own `hardware_config.json` and
 `defaults.yaml`, so run it from the repository root.
 
-### The audit behind that table
+### The audit behind that table (historical)
 
 ```bash
 go run ./cmd/estimatorscore -curves gpt-oss-120b-h200-fp4-vllm-tp4.yaml
@@ -146,7 +151,10 @@ admission block reporting 817,357 KV blocks and `12 x concurrency` completions, 
 arms: yes` at every point. A `NO` there means the comparison is contaminated and the table above
 is not a step-time comparison.
 
-### Checking the KV number itself
+### Checking the KV number itself (historical)
+
+> **Historical.** `latency.CalculateKVBlocks` was removed with the legacy backends; the KV budget now
+> comes only from the kernel.
 
 The arms sharing one KV budget does not make that budget correct. Deriving it a second way, through
 `latency.CalculateKVBlocks`, is what found **inference-sim#1852**: the two paths agree to within

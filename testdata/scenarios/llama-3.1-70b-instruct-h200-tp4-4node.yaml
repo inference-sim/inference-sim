@@ -1,0 +1,37 @@
+# Llama-3.1-70B, TP4 engines on four H200 nodes over 400G InfiniBand: 8 TP4 ranks, so up to
+# --num-instances 8 replicas behind the router. The kernel's llama-3.1-70b-instruct-h200-fp8-vllm-tp4
+# scenario (one node, measured as one TP4 engine) with the cluster widened and a fabric added;
+# a multi-node cluster must name its fabric.
+kind: Scenario
+name: llama-3.1-70b-instruct-h200-tp4-4node
+engine_version: "0.29.0"
+
+model: llama-3.1-70b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: llama-3.1-70b-instruct-h200-tp4-4node
+
+pools:
+  - role: colocated
+    nodes: 4
+    parallel:
+      tp: 4
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

@@ -33,9 +33,8 @@ import (
 // hand-maintained copy of this file is likewise refused at load — the same one-way
 // KnownFields(true) consequence, and the same reason not to re-declare the field.
 type Config struct {
-	Version                string                  `yaml:"version"`
-	TrainedPhysicsDefaults *TrainedPhysicsDefaults `yaml:"trained_physics_coefficients,omitempty"`
-	LoRADefaults           *LoRADefaults           `yaml:"lora,omitempty"`
+	Version      string        `yaml:"version"`
+	LoRADefaults *LoRADefaults `yaml:"lora,omitempty"`
 }
 
 // LoRADefaults holds inert defaults for the LoRA control-plane subsystem's cost
@@ -53,15 +52,6 @@ type LoRADefaults struct {
 type LoRAStepOverheadDefaults struct {
 	K6 float64 `yaml:"k6"`
 	K7 float64 `yaml:"k7"`
-}
-
-// TrainedPhysicsDefaults holds physics-informed roofline + learned correction coefficients.
-// AlphaCoeffs has 3 elements (α₀-α₂): API/framework overheads in µs.
-// BetaCoeffs has 11 elements (β₁-β₁₀ + β_EP): roofline corrections and per-component overheads.
-// Trained from iter29 (sequential golden section search, β₆ +57%, loss 34.57%).
-type TrainedPhysicsDefaults struct {
-	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
-	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 }
 
 // loadDefaultsConfig parses defaults.yaml into a Config struct.
