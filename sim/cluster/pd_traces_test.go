@@ -13,12 +13,12 @@ func TestPDTrace_NonDisaggMode_NoDisaggRecords(t *testing.T) {
 	// GIVEN non-disaggregated simulation with trace enabled
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              10000000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(10, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             10000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances: 4,
 		TraceLevel:   "decisions",

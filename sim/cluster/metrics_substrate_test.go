@@ -33,13 +33,13 @@ func msClusterLatency() sim.LatencyModel {
 func msClusterConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 100000, 0),
-			LatencyModelOverride: msClusterLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "test-gpu", 1, 1, false, "", "roofline", 0),
-			PolicyConfig:         sim.NewPolicyConfig("fcfs", ""),
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 100000, 0),
+			LatencyModel:        msClusterLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
+			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
 		NumInstances:    numInstances,
 		RoutingPolicy:   "round-robin",

@@ -13,7 +13,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	if bf == nil {
@@ -48,7 +48,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 50, 0), // tight token budget
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -101,7 +101,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(2, 10000, 0), // tight batch size limit
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -156,7 +156,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -222,7 +222,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // very tight
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -277,7 +277,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0), // very small
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -322,7 +322,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // limited KV blocks
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -431,7 +431,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 	cfg := SimConfig{
 		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -544,7 +544,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			2048, // max scheduled tokens
 			0,    // long prefill threshold (disabled)
 		),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		PolicyConfig:        NewPolicyConfig("fcfs", ""),
 	}
 

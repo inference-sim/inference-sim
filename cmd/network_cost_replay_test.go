@@ -54,7 +54,7 @@ func runReplayInSubprocess(t *testing.T, extraHeaderLine string) {
 	t.Helper()
 	dir := t.TempDir()
 	headerPath, dataPath := writeMinimalTrace(t, dir, extraHeaderLine)
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)

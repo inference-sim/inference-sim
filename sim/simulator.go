@@ -70,7 +70,6 @@ type SimConfig struct {
 	// Module-scoped sub-configs (R16)
 	KVCacheConfig
 	BatchConfig
-	LatencyCoeffs
 	ModelHardwareConfig
 	PolicyConfig
 	WorkloadConfig
@@ -92,16 +91,12 @@ type SimConfig struct {
 	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
 	SLOPriorityOverrides map[string]int
 
-	// LatencyModelOverride supplies an already-built latency model instead of letting
-	// the instance construct one from LatencyCoeffs and ModelHardwareConfig. It exists
-	// for a backend whose inputs are a committed artifact set rather than CLI
-	// coefficients -- blis-latency-kernel reads a scenario, a catalog and a registry,
-	// none of which the coefficient factory can express.
-	//
-	// nil (the zero value) is inert: the instance builds its model through
-	// latency.NewLatencyModel exactly as before, so a run that sets no override is
-	// byte-identical to a pre-feature build (INV-6). Set programmatically; no YAML tag.
-	LatencyModelOverride LatencyModel
+	// LatencyModel prices every step the instance runs. The caller builds it -- in production
+	// the blis-latency-kernel adapter (sim/kernelmodel), whose inputs are a scenario, a catalog
+	// and a registry -- and the simulator only times steps with it. Required:
+	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
+	// tag.
+	LatencyModel LatencyModel
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -519,7 +514,6 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
 // overhead in microseconds. Used by the cluster layer to include overhead in
 // parent.CompletionTime when disaggregated decode sub-requests complete.
-// Returns 0 for all backends except trained-physics (BC-1, issue #846).
 func (sim *Simulator) PostDecodeFixedOverhead() int64 {
 	return sim.latencyModel.PostDecodeFixedOverhead()
 }
@@ -720,7 +714,6 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // E2E and RequestCompletionTimes beyond the RequestLeftEvent timestamp by the overhead
 // amount. This is architecturally intentional: real vLLM's post-processing (detokenization,
 // response serialization) is non-blocking but still contributes to client-perceived latency.
-// For trained-physics, PostDecodeFixedOverhead adds ~777µs to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// Release this request's adapter pin (cold-load gate, #1466): a completed
 	// request no longer uses its adapter, so the slot becomes evictable. Covers the

@@ -831,13 +831,12 @@ func TestReleaseInstance_SingleNodeStillFires(t *testing.T) {
 func deploymentForPlacement(numInstances int, pools []NodePoolConfig, globalBlocks int64) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              1_000_000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(globalBlocks, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(8, 2048, 0),
-			LatencyModelOverride: testFakeZeroQueueing(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(),
-				"test-model", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             1_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(globalBlocks, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances: numInstances,
 		NodePools:    pools,

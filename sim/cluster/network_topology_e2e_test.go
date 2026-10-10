@@ -16,29 +16,15 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// netTestModelConfig is a mid-size dense model. NumHeads and NumKVHeads are divisible
-// by 16 so the same config works across the TP matrix.
-func netTestModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{
-		NumLayers:       48,
-		HiddenDim:       8192,
-		NumHeads:        64,
-		NumKVHeads:      16,
-		VocabSize:       128256,
-		BytesPerParam:   2,
-		IntermediateDim: 28672,
-	}
-}
-
 // netTestSimConfig is a fake-priced instance config at the given TP.
 func netTestSimConfig(tp int) sim.SimConfig {
 	return sim.SimConfig{
-		Horizon:              math.MaxInt64,
-		Seed:                 42,
-		KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          sim.NewBatchConfig(256, 8192, 0),
-		LatencyModelOverride: testFakeLatency(),
-		ModelHardwareConfig:  sim.NewModelHardwareConfig(netTestModelConfig(), sim.HardwareCalib{}, "m", "H100", tp, 1, false, "", "", 0),
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 8192, 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "m", "H100", tp, 1, false, 0),
 	}
 }
 

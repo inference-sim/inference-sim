@@ -12,13 +12,14 @@
 // The sim package defines interfaces and bridge types; implementations live in
 // sub-packages:
 //   - sim/kv/: KV cache implementations (single-tier GPU, tiered GPU+CPU)
-//   - sim/latency/: Latency models (roofline FLOPs/bandwidth, trained-physics)
+//   - sim/kernelmodel/: the blis-latency-kernel adapter (the production LatencyModel)
 //   - sim/cluster/: Multi-instance cluster orchestration
 //   - sim/workload/: Workload generation and trace replay
 //   - sim/trace/: Decision trace recording
 //
 // Sub-packages register their implementations via init() functions that set
-// package-level factory variables (NewLatencyModelFunc, NewKVStoreFromConfig).
+// package-level factory variables (e.g. NewKVStoreFromConfig). The latency model is not
+// registered: the caller builds it and passes it in (SimConfig.LatencyModel).
 //
 // # Key Interfaces
 //

@@ -22,12 +22,12 @@ import (
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:     numInstances,
 		CacheSignalDelay: DefaultCacheSignalDelay,
@@ -63,13 +63,13 @@ func TestPerInstanceMetrics_BeforeRun_Panics(t *testing.T) {
 func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 	dc := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              999,
-			Seed:                 7,
-			KVCacheConfig:        sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
-			BatchConfig:          sim.NewBatchConfig(128, 4096, 512),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 2, 1, false, "", "roofline", 0),
-			PolicyConfig:         sim.NewPolicyConfig("priority-fcfs", ""),
+			Horizon:             999,
+			Seed:                7,
+			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
+			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 2, 1, false, 0),
+			PolicyConfig:        sim.NewPolicyConfig("priority-fcfs", ""),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
@@ -141,12 +141,12 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 		t.Run(tc.Model, func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:              math.MaxInt64,
-					Seed:                 tc.Seed,
-					KVCacheConfig:        sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:          sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyModelOverride: testFakeLatency(),
-					ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
+					LatencyModel:        testFakeLatency(),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, 0),
 				},
 				NumInstances: 1,
 			}
@@ -191,12 +191,12 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 		t.Run(tc.Model+"_invariants", func(t *testing.T) {
 			config := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:              math.MaxInt64,
-					Seed:                 tc.Seed,
-					KVCacheConfig:        sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
-					BatchConfig:          sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyModelOverride: testFakeLatency(),
-					ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", 0),
+					Horizon:             math.MaxInt64,
+					Seed:                tc.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
+					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
+					LatencyModel:        testFakeLatency(),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, 0),
 				},
 				NumInstances: 1,
 			}
@@ -1543,12 +1543,12 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              10_000_000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeZeroQueueing(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", maxModelLen),
+			Horizon:             10_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, maxModelLen),
 		},
 		NumInstances: 2,
 	}
@@ -1796,12 +1796,12 @@ func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
 func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
 	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
 	sharedConfig := sim.SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
-		KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:          sim.NewBatchConfig(4, 2048, 0),
-		LatencyModelOverride: testFakeLatency(),
+		Horizon:             1_000_000,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+		LatencyModel:        testFakeLatency(),
 	}
 
 	// WHEN: NodePools path — pool is authoritative (SC-004).
@@ -1912,12 +1912,12 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 	// InitialNodes=0 means no nodes at startup → all instances deferred (pending).
 	cfg := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              1_000_000,
-			Seed:                 42,
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
-			KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(4, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
+			Horizon:             1_000_000,
+			Seed:                42,
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+			LatencyModel:        testFakeLatency(),
 		},
 		NumInstances: 2,
 		NodePools: []NodePoolConfig{
@@ -2474,12 +2474,12 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              500_000_000, // 500s — beyond workload.DefaultTimeoutUs (300s)
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeZeroQueueing(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             500_000_000, // 500s — beyond workload.DefaultTimeoutUs (300s)
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 		},
 		NumInstances: 2,
 	}
@@ -2540,12 +2540,12 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              500_000_000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
-			LatencyModelOverride: testFakeZeroQueueing(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             500_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 		},
 		NumInstances: 1,
 	}

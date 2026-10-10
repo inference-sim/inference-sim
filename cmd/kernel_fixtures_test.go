@@ -18,9 +18,8 @@ const kernelTestScenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 // setupKernelTestFixtures points the package-level deployment at kernelTestScenario for an
 // in-process run or replay -- the pinned kernel module's scenario fixtures and the vendored
 // catalog and registry -- and restores the previous deployment when the test ends. It returns
-// the catalog root (for catalogPath) and, for the call sites that still assign it, an empty
-// hardware-config path: the kernel reads the chip from the catalog.
-func setupKernelTestFixtures(t *testing.T) (catalogDir, hwPath string) {
+// the catalog root (for catalogPath); the kernel reads the chip from the catalog.
+func setupKernelTestFixtures(t *testing.T) (catalogDir string) {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
 	savedScenario, savedDir, savedRegistry, savedOpened := kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened
@@ -34,15 +33,15 @@ func setupKernelTestFixtures(t *testing.T) (catalogDir, hwPath string) {
 		noEnablePrefixCaching = savedPrefix
 	})
 	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = kernelTestScenario, scenarios, registry, (*kernelmodel.Model)(nil)
-	return catalog, ""
+	return catalog
 }
 
 // setupKernelTestFixturesWithDefaults is setupKernelTestFixtures plus the repository's own
 // defaults.yaml, which carries the LoRA cost coefficients a run reads.
-func setupKernelTestFixturesWithDefaults(t *testing.T) (catalogDir, hwPath, defaultsPath string) {
+func setupKernelTestFixturesWithDefaults(t *testing.T) (catalogDir, defaultsPath string) {
 	t.Helper()
-	catalogDir, _ = setupKernelTestFixtures(t)
-	return catalogDir, hwPath, "../defaults.yaml"
+	catalogDir = setupKernelTestFixtures(t)
+	return catalogDir, "../defaults.yaml"
 }
 
 // kernelScenariosDir and kernelRegistryDir are the scenario and registry roots for a test that
@@ -104,10 +103,10 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, b
 				Seed:          seed,
 				KVCacheConfig: sim.NewKVCacheConfig(st.KVBlocks, block, 0, 0.9, 0, 0, kvOpts...),
 				BatchConfig:   sim.NewBatchConfig(int64(st.MaxNumSeqs), int64(st.MaxNumBatchedTokens), 0, batchOpts...),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, strings.ToLower(dep.Model),
-					dep.Hardware, dep.TP, 1, dep.ExpertParallel, "", sim.LatencyBackendKernel, int64(st.MaxModelLen)),
-				PolicyConfig:         sim.NewPolicyConfig("fcfs", ""),
-				LatencyModelOverride: m,
+				ModelHardwareConfig: sim.NewModelHardwareConfig(mc, strings.ToLower(dep.Model),
+					dep.Hardware, dep.TP, 1, dep.ExpertParallel, int64(st.MaxModelLen)),
+				PolicyConfig: sim.NewPolicyConfig("fcfs", ""),
+				LatencyModel: m,
 			},
 			NumInstances:    1,
 			AdmissionPolicy: "always-admit",

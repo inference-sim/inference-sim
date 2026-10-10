@@ -58,12 +58,12 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 func baseDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              50000000, // 50 seconds
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(64, 65536, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "", 1, 1, false, "", "roofline", 0),
+			Horizon:             50000000, // 50 seconds
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "", 1, 1, false, 0),
 		},
 		NumInstances: numInstances,
 		TraceLevel:   "decisions",

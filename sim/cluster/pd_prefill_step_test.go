@@ -31,7 +31,7 @@ func (m slowPrefill) StepTime(batch []*sim.Request) int64 {
 // parent and client-visible TTFT.
 func pdSingleRequest(rt *rapid.T, model sim.LatencyModel, inputLen, outputLen int) (*ParentRequest, float64) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	cfg.LatencyModelOverride = model
+	cfg.LatencyModel = model
 	req := &sim.Request{
 		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, outputLen), State: sim.StateQueued,

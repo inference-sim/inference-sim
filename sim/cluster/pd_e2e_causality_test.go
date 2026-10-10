@@ -257,12 +257,12 @@ func TestPDParentE2E_CompletionTimeMetricConsistency(t *testing.T) {
 func newTestColocatedConfig() DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), sim.HardwareCalib{}, "test-model", "H100", 1, 1, false, "", "", 0),
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:  1,
 		RoutingPolicy: "round-robin",
@@ -311,12 +311,12 @@ func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
 	// newTestColocatedConfig's doc comment rather than trusting it,
 	// so the two helpers cannot silently drift apart.
 	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	pdCfg.LatencyModelOverride = stepModel
+	pdCfg.LatencyModel = stepModel
 	coloCfg := newTestColocatedConfig()
-	coloCfg.LatencyModelOverride = stepModel
-	if !reflect.DeepEqual(pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride) {
+	coloCfg.LatencyModel = stepModel
+	if !reflect.DeepEqual(pdCfg.LatencyModel, coloCfg.LatencyModel) {
 		rt.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
-			pdCfg.LatencyModelOverride, coloCfg.LatencyModelOverride)
+			pdCfg.LatencyModel, coloCfg.LatencyModel)
 	}
 	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
 		rt.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")

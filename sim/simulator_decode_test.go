@@ -13,7 +13,7 @@ func TestSimulator_DecodePhase_RequestCompletesSuccessfully(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 1000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	})
 
 	// Create a request with known input/output that exercises decode phase
@@ -61,7 +61,7 @@ func specDecodeSimConfig(k int, acceptance float64) SimConfig {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 4, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 100000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		SpeculativeConfig:   SpeculativeConfig{K: k, Acceptance: acceptance},
 	}
 }

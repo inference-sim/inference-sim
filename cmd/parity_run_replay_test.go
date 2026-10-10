@@ -299,7 +299,7 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -407,7 +407,7 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -497,7 +497,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	t.Helper()
 	tmpDir := t.TempDir()
 	resultsFile := filepath.Join(tmpDir, "results.json")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -595,7 +595,7 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()

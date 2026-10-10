@@ -12,12 +12,12 @@ func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T)
 	// GIVEN a simulation with tracing enabled
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              5000000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(10, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+			Horizon:             5000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		},
 		NumInstances:    2,
 		TraceLevel:      "decisions",

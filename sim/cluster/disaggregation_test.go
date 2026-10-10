@@ -61,7 +61,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	c := testutil.DefaultFakeLatency()
 	c.PostDecodeOverheadTicks = int64(overhead)
-	cfg.LatencyModelOverride = fakelatency.WithCoeffs(c)
+	cfg.LatencyModel = fakelatency.WithCoeffs(c)
 	return cfg
 }
 
@@ -69,12 +69,12 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 	// Step times come from the fake latency model and KV handoffs from the fake pricer.
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), sim.HardwareCalib{}, "test-model", "H100", 1, 1, false, "", "", 0),
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:     numInstances,
 		PrefillInstances: prefill,
@@ -453,12 +453,12 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 	// BC-PD-13: When pools not configured, behavior is identical
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              math.MaxInt64,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:  4,
 		RoutingPolicy: "round-robin",
@@ -508,12 +508,12 @@ func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
 
 func TestReserveTransferredKV_Success(t *testing.T) {
 	cfg := sim.SimConfig{
-		Horizon:              1000000,
-		Seed:                 42,
-		KVCacheConfig:        sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: testFakeLatency(),
-		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -537,12 +537,12 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 
 func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 	cfg := sim.SimConfig{
-		Horizon:              1000000,
-		Seed:                 42,
-		KVCacheConfig:        sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
-		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: testFakeLatency(),
-		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -950,7 +950,7 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	// OTPT is the per-output-token processing overhead; the old formula carried a
 	// second, phantom copy. Require it positive so the low-load "reported < old"
 	// differential below is non-trivially caused by removing that phantom OTPT.
-	if otpt := config.LatencyModelOverride.OutputTokenProcessingTime(); otpt <= 0 {
+	if otpt := config.LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
 		t.Fatalf("test precondition: OTPT must be positive to distinguish the two-OTPT bug, got %d", otpt)
 	}
 	requests := newTestRequests(5)
@@ -1089,8 +1089,8 @@ func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 	// maxNumSeqs=1: the single decode instance runs one sub-request at a time, so
 	// sub-requests transferred while an earlier decode is still running must queue.
 	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
-	otpt := float64(config.LatencyModelOverride.OutputTokenProcessingTime()) // OTPT; the differential threshold below
-	requests := newShortRequests(6)                                          // ~2000µs decode each, arriving 100µs apart → overlap
+	otpt := float64(config.LatencyModel.OutputTokenProcessingTime()) // OTPT; the differential threshold below
+	requests := newShortRequests(6)                                  // ~2000µs decode each, arriving 100µs apart → overlap
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)

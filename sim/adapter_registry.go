@@ -6,7 +6,7 @@ package sim
 // identity without importing sim/lora (Principle I: no reverse import).
 //
 // The concrete implementation lives in sim/lora and is wired in via
-// NewAdapterRegistryFunc below, mirroring NewLatencyModelFunc / NewKVCacheStateFunc.
+// NewAdapterRegistryFunc below, mirroring NewKVCacheStateFunc.
 type AdapterRegistry interface {
 	// RankOf returns the declared rank of an adapter id, and whether it is registered.
 	RankOf(id string) (int, bool)

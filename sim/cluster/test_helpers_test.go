@@ -70,33 +70,15 @@ func generateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
 	return int(math.Round(clampedVal))
 }
 
-// testModelConfig returns a minimal valid sim.ModelConfig (Llama-3.1-8B-like values)
-// for tests that need one -- e.g. PD KV-transfer sizing reads it. Step time comes from
-// the fake latency model (testFakeLatency), never from these values.
+// testModelConfig returns a dense sim.ModelConfig for tests that need one. Step time comes
+// from the fake latency model (testFakeLatency).
 func testModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{
-		NumLayers:     32,
-		HiddenDim:     4096,
-		NumHeads:      32,
-		NumKVHeads:    8,
-		BytesPerParam: 2, // bfloat16
-	}
-}
-
-// testHWCalib returns a minimal valid sim.HardwareCalib (H100-like values) for tests
-// that need one. Step time comes from the fake latency model, never from these values.
-func testHWCalib() sim.HardwareCalib {
-	return sim.HardwareCalib{
-		TFlopsPeak: 989.0,
-		BwPeakTBs:  3.35,
-		MfuPrefill: 0.55,
-		MfuDecode:  0.30,
-	}
+	return sim.ModelConfig{}
 }
 
 // testFakeLatency is the latency model every cluster behavior test prices steps with:
 // the deterministic, stateless fake from sim/internal/testutil (default coefficients).
-// Set it as SimConfig.LatencyModelOverride so instances never build a pricing backend.
+// Set it as SimConfig.LatencyModel so instances never build a pricing backend.
 func testFakeLatency() sim.LatencyModel { return fakelatency.New() }
 
 // testFakeZeroQueueing is testFakeLatency with no arrival-to-queue delay, for tests that

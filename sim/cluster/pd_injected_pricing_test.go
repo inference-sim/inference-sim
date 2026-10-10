@@ -108,7 +108,7 @@ func newObservingModel(step int64) (observingModel, *bool, *bool, *int) {
 func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	var global int
-	cfg.LatencyModelOverride = countingModel{step: 50, calls: &global}
+	cfg.LatencyModel = countingModel{step: 50, calls: &global}
 	prefill, pPrefill, pDecode, _ := newObservingModel(70)
 	decode, dPrefill, dDecode, dLargest := newObservingModel(30)
 	one := int64(1)

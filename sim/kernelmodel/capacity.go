@@ -2,31 +2,19 @@
 //
 // # Why this exists
 //
-// BLIS sizes its KV cache with latency.CalculateKVBlocks, which is called from cmd/ and
-// sits OUTSIDE the sim.LatencyModel seam. Registering this package's adapter at that seam
-// therefore changes what a step costs but not how many requests fit, so the resident batch
-// would still be decided by the legacy weight estimator.
-//
-// For this experiment that is not a cosmetic inconsistency. The resident batch is the
-// quantity under test: blis-latency-kernel's 13.67% shape error against AISimulate assumes
-// resident batch equals client concurrency, and the reason to run BLIS at all is that its
-// scheduler decides the resident batch for real. If capacity came from the legacy path, the
-// experiment would be measuring the legacy model's admission behaviour while attributing
-// the result to the kernel.
-//
-// So capacity comes from the kernel too, and "BLIS relies exclusively on the kernel" is
-// true of both terms.
+// The KV budget decides how many requests are resident, and the resident batch is what a
+// step is priced for. Taking the budget from the same kernel that prices the step keeps the
+// two describing one engine; a budget from anywhere else would let admission behaviour
+// disagree with the price.
 //
 // # The convention this reproduces
 //
-// latency.CalculateKVBlocks returns blocks PER DP RANK, computed as
+// The budget is blocks PER DP RANK, computed as
 //
 //	allocatableBytes / perBlockBytes
 //
 // and multiplied by dp for an MoE model, because vLLM runs dp independent EngineCores each
-// with a full KV budget and splits requests disjointly across them. This file keeps that
-// convention so the block count means the same thing to BLIS's scheduler as before; only
-// its provenance changes.
+// with a full KV budget and splits requests disjointly across them.
 //
 // The kernel supplies both inputs:
 //
@@ -147,9 +135,9 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 			float64(allocatable)/float64(gibToBytes), perBlock)
 	}
 
-	// DP scaling, matching latency.CalculateKVBlocks: dp independent EngineCores each hold
-	// a full budget and requests split disjointly across them. Gated on MoE for the same
-	// reason it is there -- a dense model is never scaled.
+	// DP scaling: dp independent EngineCores each hold a full budget and requests split
+	// disjointly across them. Gated on MoE -- a dense model's data parallelism is
+	// replicas, so it is never scaled.
 	perRank := blocks
 	dp := m.k.Resolved().DataParallel()
 	scaled := false

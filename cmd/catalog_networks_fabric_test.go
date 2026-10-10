@@ -61,6 +61,10 @@ import (
 const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 
 
+// knownConfigTag is a config key a production struct really binds (cluster.DeploymentConfig's
+// flow-control switch). BC-1 uses it only to prove its tag extraction sees tag names.
+const knownConfigTag = "flow_control_enabled"
+
 // fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
 // bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).
 const fabricBandwidthKey = "InterNodeBwGBps"
@@ -98,9 +102,9 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 			for _, field := range st.Fields.List {
 				line := fset.Position(field.Pos()).Line
 				for _, key := range configTagNames(t, rel, field) {
-					// Non-vacuity anchor: a real, unrelated fabric key proves the tag
+					// Non-vacuity anchor: a real, unrelated config key proves the tag
 					// extraction below actually sees tag names.
-					if key == fabricBandwidthKey {
+					if key == knownConfigTag {
 						sawKnownTag = true
 					}
 					if strings.ToLower(key) == folded {
@@ -129,7 +133,7 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 	if !sawKnownTag {
 		t.Errorf("non-vacuity: the scan of %d file(s) saw no %s config tag, so the "+
 			"tag extraction is not reading tag names and the banned-key check proves nothing",
-			scanned, fabricBandwidthKey)
+			scanned, knownConfigTag)
 	}
 }
 

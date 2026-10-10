@@ -28,7 +28,6 @@ func TestPlanDPPlacement(t *testing.T) {
 		wantActive       bool
 		wantReplicas     int
 		wantPerRankDP    int
-		wantEPGroupDP    int    // logical EP-group DP width the plan must carry (#1548); 0 = none
 		wantErrContains  string // non-empty ⇒ expect an error containing this substring
 	}{
 		{
@@ -40,10 +39,8 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantPerRankDP: 1,
 		},
 		{
-			// The short-circuit at dp=1 with EP on: no expansion, so nothing erases the
-			// config's own DP and there is no logical width to carry (EPGroupDP stays 0).
-			// Distinct from the dp>1 EP-on row below, which does carry one.
-			name:          "MoE dp=1 with expert parallel is a no-op and carries no width",
+			// The short-circuit at dp=1 with EP on: no expansion.
+			name:          "MoE dp=1 with expert parallel is a no-op",
 			isMoE:         true,
 			dp:            1,
 			epOn:          true,
@@ -79,7 +76,6 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantActive:    true,
 			wantReplicas:  2,
 			wantPerRankDP: 1,
-			wantEPGroupDP: 2, // the one thing EP adds: the logical group width to carry
 		},
 		{
 			// #1553 lifted this rejection: each PD pool spawns dp per-rank replicas. The
@@ -128,7 +124,6 @@ func TestPlanDPPlacement(t *testing.T) {
 			wantActive:    true,
 			wantReplicas:  2,
 			wantPerRankDP: 1,
-			wantEPGroupDP: 2,
 		},
 	}
 
@@ -155,16 +150,6 @@ func TestPlanDPPlacement(t *testing.T) {
 			}
 			if plan.PerRankDP != tc.wantPerRankDP {
 				t.Errorf("PerRankDP: got %d, want %d", plan.PerRankDP, tc.wantPerRankDP)
-			}
-			// #1548: the logical EP-group width must survive PerRankDP's erasure of DP —
-			// and must be absent (0 ⇒ no option) whenever expert parallelism is off, which
-			// is what keeps every pre-#1548 config byte-identical.
-			if plan.EPGroupDP != tc.wantEPGroupDP {
-				t.Errorf("EPGroupDP: got %d, want %d", plan.EPGroupDP, tc.wantEPGroupDP)
-			}
-			if opts := plan.EPGroupOptions(); (len(opts) > 0) != (tc.wantEPGroupDP > 1) {
-				t.Errorf("EPGroupOptions() returned %d options for EPGroupDP=%d; a width of 0 or 1 "+
-					"must yield none (INV-6)", len(opts), plan.EPGroupDP)
 			}
 		})
 	}
@@ -304,27 +289,21 @@ func TestApplyDPPlacement(t *testing.T) {
 
 // TestDPPlacement_PerRankDP_ConfiguresConstructor is the behavioral companion to
 // the source-level wiring guard: it proves the plan's PerRankDP, threaded through
-// the canonical NewModelHardwareConfig, yields a config that reports DP=1 and
-// moeGroup=TP (experts replicated per rank — EP-off physics) for an active MoE
-// plan, and leaves DP=1 for the dp=1 no-op. Refactor-safe (asserts observable
+// the canonical NewModelHardwareConfig, yields a config that reports DP=1 for an
+// active MoE plan, and leaves DP=1 for the dp=1 no-op. Refactor-safe (asserts observable
 // config behavior, not source text).
 func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	moe := sim.ModelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
-	hw := sim.HardwareCalib{}
 	const tp = 2
 
-	// Active plan (MoE, dp=4): PerRankDP=1 ⇒ each replica's config is DP=1, moeGroup=TP.
+	// Active plan (MoE, dp=4): PerRankDP=1 ⇒ each replica's config is DP=1.
 	planActive, err := planDPPlacement(true, 4, false, false, false, false)
 	if err != nil {
 		t.Fatalf("planDPPlacement(active): %v", err)
 	}
-	mhcActive := sim.NewModelHardwareConfig(moe, hw, "m", "H100", tp, planActive.PerRankDP, false, "", sim.LatencyBackendKernel, 0)
+	mhcActive := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planActive.PerRankDP, false, 0)
 	if mhcActive.EffectiveDP() != 1 {
 		t.Errorf("active plan: EffectiveDP got %d, want 1 (per-rank)", mhcActive.EffectiveDP())
-	}
-	if mhcActive.EffectiveMoEGroupSize() != tp {
-		t.Errorf("active plan: EffectiveMoEGroupSize got %d, want %d (TP; experts replicated per DP rank)",
-			mhcActive.EffectiveMoEGroupSize(), tp)
 	}
 
 	// dp=1 no-op: PerRankDP=1 ⇒ unchanged DP=1 behavior.
@@ -332,7 +311,7 @@ func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDPPlacement(noop): %v", err)
 	}
-	mhcNoop := sim.NewModelHardwareConfig(moe, hw, "m", "H100", tp, planNoop.PerRankDP, false, "", sim.LatencyBackendKernel, 0)
+	mhcNoop := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planNoop.PerRankDP, false, 0)
 	if mhcNoop.EffectiveDP() != 1 {
 		t.Errorf("dp=1 no-op: EffectiveDP got %d, want 1", mhcNoop.EffectiveDP())
 	}
@@ -470,8 +449,7 @@ func instanceIDs(t *testing.T, stdout string) []string {
 
 // TestRunCmd_MoEDPPlacement_SpawnsReplicas: a scenario stating dp=N runs numInstances x N real
 // engine replicas -- the replica count is a law of the two inputs, not of the kernel's prices
-// -- requests are conserved across them (INV-1), the unpriced inter-replica fabric of the
-// expert-parallel group is disclosed, and a repeat run is byte-identical (INV-6).
+// -- requests are conserved across them (INV-1), and a repeat run is byte-identical (INV-6).
 func TestRunCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 	out, stderr, err := runKernelCLI(t, dpRunArgs(1)...)
 	if err != nil {
@@ -481,10 +459,6 @@ func TestRunCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 		t.Errorf("1 logical instance x dp 2 must run 2 replicas, got %d: %v", len(ids), ids)
 	}
 	clusterConservationHolds(t, out, dpFixtureNumRequests)
-	if !strings.Contains(stderr, "inter-replica fabric cost is NOT priced") {
-		t.Errorf("the expert-parallel group spans replicas; its unpriced fabric must be disclosed:\n%s",
-			lastLines(stderr, 10))
-	}
 	again, _, err := runKernelCLI(t, dpRunArgs(1)...)
 	if err != nil {
 		t.Fatal(err)
@@ -536,14 +510,13 @@ func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 type dpResolveVars struct {
 	dp, prefill, decode, prefillDecode, encode int
 	epOn                                       bool
-	commBackend                                string
 }
 
 func captureDPResolveVars() dpResolveVars {
 	return dpResolveVars{
 		dp: dataParallelism, prefill: prefillInstances, decode: decodeInstances,
 		prefillDecode: prefillDecodeInstances, encode: encodeInstances,
-		epOn: enableExpertParallel, commBackend: moeCommBackend,
+		epOn: enableExpertParallel,
 	}
 }
 
@@ -554,7 +527,6 @@ func (o dpResolveVars) restore() {
 	prefillDecodeInstances = o.prefillDecode
 	encodeInstances = o.encode
 	enableExpertParallel = o.epOn
-	moeCommBackend = o.commBackend
 }
 
 // TestResolveDPPlacement_IsAPerRankExpansion is the law of the shared resolver both `blis run`
@@ -586,7 +558,7 @@ func TestResolveDPPlacement_IsAPerRankExpansion(t *testing.T) {
 		inKV := rapid.Int64Range(1, 1<<20).Draw(rt, "kv")
 		inLen := rapid.Int64Range(0, 1<<22).Draw(rt, "maxModelLen")
 
-		dataParallelism, enableExpertParallel, moeCommBackend = dp, epOn, ""
+		dataParallelism, enableExpertParallel = dp, epOn
 		prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances = inPrefill, inDecode, 0, 0
 		numInstances, totalKVBlocks, maxModelLen, blockSizeTokens = inInst, inKV, inLen, 16
 
@@ -619,8 +591,8 @@ func TestResolveDPPlacement_IsAPerRankExpansion(t *testing.T) {
 			rt.Fatalf("per-rank KV %d->%d / max-model-len %d->%d moved; the kernel already sized one rank",
 				inKV, totalKVBlocks, inLen, maxModelLen)
 		}
-		if err == nil && active && (plan.PerRankDP != 1 || (epOn && plan.EPGroupDP != dp)) {
-			rt.Fatalf("active plan %+v: each replica must run DP=1 and carry the EP group width %d", plan, dp)
+		if err == nil && active && plan.PerRankDP != 1 {
+			rt.Fatalf("active plan %+v: each replica must run DP=1", plan)
 		}
 	})
 }

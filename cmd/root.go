@@ -61,10 +61,9 @@ var (
 	maxNumBatchedTokens       int64              // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool               // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
 	blockSizeTokens           int64              // Number of tokens per KV block
-	defaultsFilePath          string             // Path to default constants - trained-physics coefficients and LoRA cost coefficients (the only sections defaults.yaml still carries)
-	catalogPath               string             // --catalog: model catalog root (one directory per model, each with config.json). No default; BLIS_CATALOG is the fallback (#1731)
-	resolvedCatalogRoot       string             // Catalog ROOT that produced this run's model config (side effect of resolveModelConfig); recorded as results-file provenance (#1732)
-	hwConfigPath              string             // Path to constants specific to hardware type (GPU)
+	defaultsFilePath          string             // Path to default constants: the LoRA cost coefficients
+	catalogPath               string             // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
+	resolvedCatalogRoot       string             // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
 	workloadType              string             // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64              // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64            // Requests arrival per second
@@ -91,9 +90,8 @@ var (
 	model                string // LLM name
 	gpu                  string // GPU type
 	tensorParallelism    int    // TP value
-	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
-	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
-	moeCommBackend       string // MoE all-to-all comm backend (MoE only; trained-physics backend only)
+	dataParallelism      int    // DP value (MoE only), from the kernel scenario
+	enableExpertParallel bool   // EP mode (MoE only), from the kernel scenario
 
 	// cluster config
 	numInstances int // Number of instances in the cluster
@@ -267,12 +265,9 @@ func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, prom
 
 // latencyResolution holds the resolved components from resolveLatencyConfig.
 // Callers use these values to construct sim.SimConfig sub-configs.
-// Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
-// modelConfigDir, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
-	Backend string // always sim.LatencyBackendKernel
 	// KernelModel is the blis-latency-kernel adapter for the scenario's first pool; the caller
-	// puts it on SimConfig.LatencyModelOverride.
+	// puts it on SimConfig.LatencyModel.
 	KernelModel sim.LatencyModel
 	// ModelConfig carries only the model graph's expert geometry, for the MoE gates and the
 	// ModelHardwareConfig boundary.
@@ -287,39 +282,7 @@ type latencyResolution struct {
 type dpPlacementPlan struct {
 	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
 	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
-	PerRankDP int  // DP to configure on each replica's latency+KV model (1 when Active, else dp)
-
-	// EPGroupDP is the LOGICAL data-parallel width of the expert-parallel group to carry
-	// into each replica's latency model (#1548), or 0 when there is none to carry (expert
-	// parallelism off, or no placement expansion). It is NOT a second copy of Replicas:
-	// PerRankDP deliberately erases the replica's DP for token-work purposes, and this is
-	// the one quantity that must survive that erasure — the EP group spans the replicas.
-	EPGroupDP int
-}
-
-// EPGroupOptions returns the ModelHardwareOptions carrying this plan's logical
-// expert-parallel group width, or nil when the plan carries none (#1548). Keeping the
-// decision on the plan — rather than re-deriving it at each NewModelHardwareConfig call
-// site — means `blis run` and `blis replay` cannot disagree about it (R23, INV-13), and
-// makes it unit-testable with the rest of the plan.
-//
-// nil (not a zero-valued option) when there is nothing to carry, so a config built without
-// expert parallelism is constructed exactly as it was before #1548 (INV-6).
-func (p dpPlacementPlan) EPGroupOptions() []sim.ModelHardwareOption {
-	if p.EPGroupDP <= 1 {
-		return nil
-	}
-	return []sim.ModelHardwareOption{sim.WithExpertParallelGroupDP(p.EPGroupDP)}
-}
-
-// modelHardwareOptions assembles the full ModelHardwareOption list for a NewModelHardwareConfig
-// call, in ONE place so `blis run` and `blis replay` cannot diverge on it (R23, INV-13) — the
-// same reason EPGroupOptions exists. Every latency-model input that rides an option
-// (the #1548 EP-group width, the #1694 cross-node serialization factor S) is composed here;
-// a new one is added once, not at both call sites. Reads the CLI (S resolution + its guards)
-// and the resolved placement plan.
-func modelHardwareOptions(cmd *cobra.Command, dpPlan dpPlacementPlan) []sim.ModelHardwareOption {
-	return dpPlan.EPGroupOptions()
+	PerRankDP int  // DP to configure on each replica (1 when Active, else dp)
 }
 
 // dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
@@ -383,13 +346,9 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	// same decision, and so a future combination-specific guard has one home.
 	_ = pdActive
 	_ = nodePoolsActive
-	// epGroupDP is the ONLY effect expert parallelism has on the plan: it reserves no extra
-	// GPUs, so Replicas/PerRankDP are identical either way.
-	epGroupDP := 0
-	if epOn {
-		epGroupDP = dp
-	}
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, EPGroupDP: epGroupDP}, nil
+	// Expert parallelism reserves no extra GPUs, so the plan is identical either way.
+	_ = epOn
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1}, nil
 }
 
 // dpPlacementDeployment carries the deployment quantities DP-as-real-placement
@@ -486,7 +445,7 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 // bodies. The pure decision (planDPPlacement) and the pure arithmetic
 // (applyDPPlacement) stay separately unit-testable.
 //
-// Reads: dataParallelism, enableExpertParallel, moeCommBackend, tensorParallelism,
+// Reads: dataParallelism, enableExpertParallel, tensorParallelism,
 // numInstances, totalKVBlocks, maxModelLen, and the prefill/decode/prefillDecode/encode
 // instance counts (as pre-expansion pool inputs).
 //
@@ -547,37 +506,12 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 			"if --dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
 	}
 	if enableExpertParallel {
-		// EP-ON placement (#1548). The expert-parallel group is the whole N×TP GPU set this
-		// placement already reserves; each replica's own DP is 1, so its latency model can
-		// only learn the group's real width from the LOGICAL --dp. Without this the group
-		// would collapse to TP and the EP sharding would silently no-op — the same trap
-		// #1656 documents on the KV-capacity side.
+		// EP-ON placement (#1548): the expert-parallel group is the whole N×TP GPU set this
+		// placement already reserves. The kernel prices each replica's steps for the
+		// scenario's own parallel layout, EP group included.
 		logrus.Infof("[cluster] EP-as-placement: --enable-expert-parallel over the TP·DP=%d×%d=%d GPU "+
-			"expert-parallel group (no additional GPUs reserved); routed experts are sharded across the "+
-			"group and the MoE FFN uses dispatch/combine all-to-all instead of a TP all-reduce",
+			"expert-parallel group (no additional GPUs reserved)",
 			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
-		// Honesty boundary: the group spans plan.Replicas SEPARATELY placed replicas. BLIS
-		// prices cross-node collective traffic from real placement WITHIN one instance's TP
-		// group (#1530), but the expert-parallel group here is formed ACROSS N independently
-		// placed engine replicas — a boundary the per-instance placement topology does not
-		// cross. Node pools alongside --dp>1 are supported for GPU reservation since #1553,
-		// but that does not add inter-replica fabric pricing, so the inter-replica leg of the
-		// all-to-all is still charged at the on-node rate.
-		logrus.Warnf("[cluster] the %d-GPU expert-parallel group spans %d independently-placed engine "+
-			"replicas, whose inter-replica fabric cost is NOT priced: cross-node collective pricing is "+
-			"placement-derived within a TP group (#1530) but the EP group is formed across separately-placed "+
-			"replicas, so the all-to-all is charged at the on-node rate and step time is optimistic for a "+
-			"multi-node expert-parallel deployment", tensorParallelism*dataParallelism, plan.Replicas)
-	} else if moeCommBackend != "" {
-		// --moe-comm-backend selects the dispatch/combine cost. With EP off, each replica
-		// runs at DP=1, so that term is inert (the MoE FFN all-reduces over the TP group
-		// instead — correct EP-off physics). The resolveLatencyConfig no-op warning does not
-		// fire here (it gates on the CLI dataParallelism, which is >1), so warn explicitly to
-		// avoid a user believing the backend choice affects this run.
-		logrus.Warnf("--moe-comm-backend=%s is inert under DP-as-placement without expert parallelism: "+
-			"each of the %d DP replicas runs at DP=1, so the MoE FFN all-reduces over the TP group (no "+
-			"dispatch/combine). Add --enable-expert-parallel to select the all-to-all it prices.",
-			moeCommBackend, plan.Replicas)
 	}
 	return plan, nil
 }
@@ -747,7 +681,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			kernelScenario, model)
 	}
 	return latencyResolution{
-		Backend:     sim.LatencyBackendKernel,
 		KernelModel: m,
 		ModelConfig: modelConfig,
 	}
@@ -1176,10 +1109,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
 	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
-
-	// Cross-node collective serialization S (#1694, Part B). trained-physics only; fires
-	// only for a multi-node span with a calibrated α_hop (InterNodeHopLatencyUs). Default
-	// 1.0 is inert (byte-identical, INV-6). Re-supply identically on replay (INV-13).
 
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
@@ -1894,10 +1823,6 @@ var runCmd = &cobra.Command{
 		// the legacy CPU tier as one whole per-block reload charge.
 		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
 
-		// All ModelHardwareOptions (EP-group width #1548, cross-node serialization S #1694)
-		// are composed in one shared helper so run and replay cannot diverge (R23, INV-13).
-		mhwOpts := modelHardwareOptions(cmd, dpPlan)
-
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
@@ -1922,15 +1847,13 @@ var runCmd = &cobra.Command{
 				// authoritative from the start (no construct-then-override). Since #1556 replay
 				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
 				// paths agree for every config both support (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, sim.HardwareCalib{}, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen, mhwOpts...),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
 				SLOPriorityOverrides: sloPriorityOverrides,
-				// nil on every backend but blis-latency-kernel, where the coefficient
-				// factory cannot build the model (INV-6: nil leaves construction
-				// exactly as it was).
-				LatencyModelOverride: lr.KernelModel,
+				// The kernel prices every step.
+				LatencyModel: lr.KernelModel,
 			},
 			NumInstances:                    numInstances,
 			AdmissionPolicy:                 admissionPolicy,

@@ -87,7 +87,7 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 		resolved.TotalKVBlocks = *overrides.TotalKVBlocks
 	}
 	if overrides.LatencyModel != nil {
-		resolved.LatencyModelOverride = overrides.LatencyModel
+		resolved.LatencyModel = overrides.LatencyModel
 	}
 	if overrides.MaxNumSeqs != nil {
 		resolved.MaxNumSeqs = *overrides.MaxNumSeqs

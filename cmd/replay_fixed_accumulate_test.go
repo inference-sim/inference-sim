@@ -73,7 +73,7 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 		replayTraceOutput = origTraceOut
 	}()
 
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 	model = "test-model"
 	totalKVBlocks = 100000
 	blockSizeTokens = 16
@@ -218,7 +218,7 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		headerPath, dataPath := writeAccumulateCorpus(t)
 		restore := captureCmdLevelVars()
 		defer restore.restore()
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 100000
 		blockSizeTokens = 16
@@ -289,7 +289,7 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 		restore := captureCmdLevelVars()
 		defer restore.restore()
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -355,7 +355,7 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		restore := captureCmdLevelVars()
 		origThink := replayThinkTimeMs
 		defer func() { restore.restore(); replayThinkTimeMs = origThink }()
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 100000
 		blockSizeTokens = 16

@@ -57,14 +57,14 @@ func msLatency() LatencyModel {
 // No workload — caller injects requests via InjectArrival.
 func msConfig(horizon int64) SimConfig {
 	return SimConfig{
-		Horizon:              horizon,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 100000, 0),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test-model", "test-gpu", 1, 1, false, "", "", 0),
-		PolicyConfig:         NewPolicyConfig("fcfs", ""),
-		WorkloadConfig:       NewWorkloadConfig(),
-		LatencyModelOverride: msLatency(),
+		Horizon:             horizon,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 100000, 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
+		PolicyConfig:        NewPolicyConfig("fcfs", ""),
+		WorkloadConfig:      NewWorkloadConfig(),
+		LatencyModel:        msLatency(),
 	}
 }
 

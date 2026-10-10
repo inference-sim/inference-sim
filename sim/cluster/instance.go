@@ -66,11 +66,11 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// The latency model is built by the caller (blis-latency-kernel's adapter in production);
 	// the simulator only times steps with it. There is no model to fall back to, so an absent
 	// one is a construction error rather than a silent default (R1).
-	if cfg.LatencyModelOverride == nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): SimConfig.LatencyModelOverride is nil; "+
+	if cfg.LatencyModel == nil {
+		panic(fmt.Sprintf("NewInstanceSimulator(%s): SimConfig.LatencyModel is nil; "+
 			"the caller must supply the latency model", id))
 	}
-	latencyModel := sim.WithAdapterOverhead(cfg.LatencyModelOverride, adapterCost)
+	latencyModel := sim.WithAdapterOverhead(cfg.LatencyModel, adapterCost)
 	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
@@ -128,7 +128,6 @@ func (i *InstanceSimulator) Horizon() int64 {
 // PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
 // from the instance's underlying latency model. Used by detectDecodeCompletions
 // to stamp parent.CompletionTime with the correct client-visible completion time.
-// Returns 0 for roofline; non-zero for trained-physics (BC-2, #846).
 func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
 	return i.sim.PostDecodeFixedOverhead()
 }

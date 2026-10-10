@@ -156,12 +156,12 @@ func TestResidentAdapterSet_MixedBaseAndAdapterTraffic(t *testing.T) {
 func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 	capVal := 2
 	cfg := SimConfig{
-		Horizon:              1_000_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(4, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(10, 10_000, 16),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 		LoRAConfig: LoRAConfig{
 			AdapterCapacity:       &capVal,
 			LoadBaseLatencyUs:     fptrGate(1000.0),

@@ -379,7 +379,7 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 	if err := os.WriteFile(specPath, []byte(shape.yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()

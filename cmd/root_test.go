@@ -739,7 +739,7 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
 	// Base list copied from TestReplayCmd_EndToEnd_KernelBackend;
@@ -787,7 +787,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	defer func() {
@@ -833,7 +832,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 	}()
@@ -898,7 +896,7 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
 
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore the package-level flag vars runCmd.Run mutates.
 	// Same list as TestRunCmd_MetricsPath_WritesMetricsOutput, with
@@ -945,7 +943,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	defer func() {
@@ -991,7 +988,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 	}()
@@ -1093,7 +1089,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore package-level flag vars touched by runCmd.Run.
 	orig := captureCmdLevelVars()
@@ -1155,7 +1151,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, hwCfg, gpuVal    string
+	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal           string
 	defaultsFile                                                                          string
 	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency int64
 	threshold, maxModelLen                                                                int64
@@ -1188,7 +1184,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		outputMin: outputTokensMin, outputMax: outputTokensMax,
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
 		traceOut: traceOutput, logLvl: logLevel, catalogDir: catalogPath,
-		hwCfg: hwConfigPath, gpuVal: gpu, tp: tensorParallelism,
+		gpuVal: gpu, tp: tensorParallelism,
 		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
 	}
 }
@@ -1236,7 +1232,6 @@ func (o origCmdLevelVars) restore() {
 	traceOutput = o.traceOut
 	logLevel = o.logLvl
 	catalogPath = o.catalogDir
-	hwConfigPath = o.hwCfg
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
 	lazyGeneration = o.lazy
@@ -1308,7 +1303,7 @@ func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
 func TestRunCmd_LazyGeneration_Concurrency_Streams(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Write a minimal concurrency-mode workload spec.
 	specPath := filepath.Join(tmpDir, "concurrency.yaml")

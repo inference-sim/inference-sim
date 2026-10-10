@@ -412,7 +412,7 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save and restore all package-level flag vars (same pattern as EndToEnd test)
 	origModel := model
@@ -449,7 +449,6 @@ warm_up_requests: 0
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -491,7 +490,6 @@ warm_up_requests: 0
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -625,7 +623,7 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 
-	catalogDir, hwCfgPath := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save and restore package-level flag vars (this test mutates them)
 	origModel := model
@@ -662,7 +660,6 @@ warm_up_requests: 0
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -704,7 +701,6 @@ warm_up_requests: 0
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -772,7 +768,6 @@ warm_up_requests: 0
 	traceDataPath = dataPath
 	simulationHorizon = math.MaxInt64
 	catalogPath = catalogDir
-	hwConfigPath = hwCfgPath
 	gpu = "H100"
 	tensorParallelism = 1
 
@@ -848,7 +843,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir3, _ := setupKernelTestFixtures(t)
+	catalogDir3 := setupKernelTestFixtures(t)
 
 	// Save/restore package-level vars
 	origModel := model
@@ -885,7 +880,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -927,7 +921,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1009,7 +1002,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir4, _ := setupKernelTestFixtures(t)
+	catalogDir4 := setupKernelTestFixtures(t)
 
 	// runOnce runs the replay and returns the content of the output files
 	runOnce := func(prefix string) (yamlBytes, csvBytes []byte) {
@@ -1049,7 +1042,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 		origFlowControlMaxConcurrency := flowControlMaxConcurrency
 		origCatalogPath := catalogPath
-		origHwConfigPath := hwConfigPath
 		origGPU := gpu
 		origTP := tensorParallelism
 		origSessionMode := replaySessionMode
@@ -1091,7 +1083,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 			flowControlMaxConcurrency = origFlowControlMaxConcurrency
 			catalogPath = origCatalogPath
-			hwConfigPath = origHwConfigPath
 			gpu = origGPU
 			tensorParallelism = origTP
 			replaySessionMode = origSessionMode
@@ -1190,7 +1181,7 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save and restore package-level vars (same pattern as TestReplayCmd_EndToEnd_KernelBackend)
 	origModel := model
@@ -1227,7 +1218,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -1269,7 +1259,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1365,7 +1354,7 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -1446,7 +1435,7 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -1528,7 +1517,7 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save/restore PD-related package-level vars.
 	origPrefillInstances := prefillInstances
@@ -1585,7 +1574,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -1627,7 +1615,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1722,7 +1709,7 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -1799,7 +1786,7 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, _ := setupKernelTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -2124,7 +2111,7 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2162,7 +2149,7 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
@@ -2214,7 +2201,7 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2269,7 +2256,7 @@ func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2337,7 +2324,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 			os.Exit(2)
 		}
 
-		catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+		catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -2412,7 +2399,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
 	// shape): completed_requests == 1 is an unambiguous "the guard let this run
 	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
@@ -2471,7 +2458,7 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 			os.Exit(2)
 		}
 
-		catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+		catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 		model = "test-model"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
@@ -2561,7 +2548,7 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus: one 3-round session with a compaction round and a recorded
 	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
@@ -2645,7 +2632,7 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
 	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
@@ -2735,7 +2722,7 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
 	// absolute per-round inputs and a recorded think column.
@@ -2809,7 +2796,7 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, _, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}

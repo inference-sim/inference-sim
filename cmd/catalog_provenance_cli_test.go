@@ -37,7 +37,7 @@ const (
 // vendored catalog that is its OWN git repository (so the dirty flag is scoped to the catalog
 // and nothing else), plus the repository's defaults.yaml -- deliberately OUTSIDE the catalog so
 // it cannot make it dirty. hwPath is empty: the kernel reads the chip from the catalog.
-func setupGitCatalogFixtures(t *testing.T) (catalogRoot, hwPath, defaultsPath, headRevision string) {
+func setupGitCatalogFixtures(t *testing.T) (catalogRoot, defaultsPath, headRevision string) {
 	t.Helper()
 	requireGit(t)
 	catalogRoot = copyKernelCatalog(t)
@@ -49,7 +49,7 @@ func setupGitCatalogFixtures(t *testing.T) (catalogRoot, hwPath, defaultsPath, h
 	gitInRepo(t, catalogRoot, "add", ".")
 	gitInRepo(t, catalogRoot, "commit", "--quiet", "-m", "catalog: initial entries")
 	headRevision = strings.TrimSpace(gitInRepo(t, catalogRoot, "rev-parse", "HEAD"))
-	return catalogRoot, "", defaultsPath, headRevision
+	return catalogRoot, defaultsPath, headRevision
 }
 
 // dirtyCatalogEntry makes the model graph the kernel scenario reads differ from its committed
@@ -109,7 +109,7 @@ func captureRunStdout(t *testing.T, fn func()) []byte {
 
 // setProvenanceRunVars sets the package-level CLI vars shared by the run and replay
 // drivers below to a small deterministic single-instance configuration.
-func setProvenanceRunVars(catalogDir, hwPath, defaultsPath string) {
+func setProvenanceRunVars(catalogDir, defaultsPath string) {
 	catalogPath = catalogDir
 	defaultsFilePath = defaultsPath
 	gpu = "H100"
@@ -142,7 +142,7 @@ func setProvenanceRunVars(catalogDir, hwPath, defaultsPath string) {
 
 // runWithProvenance drives `blis run --metrics-path` in-process over a tiny distribution
 // workload, optionally exporting a trace, and returns stdout plus the parsed results file.
-func runWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
+func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
 	t.Helper()
 	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
@@ -153,7 +153,7 @@ func runWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, tracePref
 		resolvedCatalogRoot = origResolvedCatalog
 	}()
 
-	setProvenanceRunVars(catalogDir, hwPath, defaultsPath)
+	setProvenanceRunVars(catalogDir, defaultsPath)
 	resolvedCatalogRoot = ""
 	metricsPath = metricsFile
 	traceOutput = tracePrefix
@@ -194,7 +194,7 @@ func runWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, tracePref
 
 // replayWithProvenance drives `blis replay --metrics-path` in-process over a trace
 // exported by runWithProvenance, returning stdout plus the parsed results file.
-func replayWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
+func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
 	t.Helper()
 	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
@@ -214,7 +214,7 @@ func replayWithProvenance(t *testing.T, catalogDir, hwPath, defaultsPath, traceP
 	}()
 
 	headerFile, dataFile := tracePrefix+".yaml", tracePrefix+".csv"
-	setProvenanceRunVars(catalogDir, hwPath, defaultsPath)
+	setProvenanceRunVars(catalogDir, defaultsPath)
 	resolvedCatalogRoot = ""
 	traceOutput = ""
 	traceHeaderPath = headerFile
@@ -273,13 +273,13 @@ func assertProvenance(t *testing.T, label string, out sim.MetricsOutput, wantPat
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testing.T) {
-	catalogRoot, hwPath, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
 
-	cleanStdout, cleanFile := runWithProvenance(t, catalogRoot, hwPath, defaultsPath, "")
+	cleanStdout, cleanFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
 	assertProvenance(t, "clean run", cleanFile, catalogRoot, head, false)
 
 	dirtyCatalogEntry(t, catalogRoot)
-	dirtyStdout, dirtyFile := runWithProvenance(t, catalogRoot, hwPath, defaultsPath, "")
+	dirtyStdout, dirtyFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
 	assertProvenance(t, "dirty run", dirtyFile, catalogRoot, head, true)
 
 	// AC-4 / INV-6: the only difference between the two runs is catalog git state, which
@@ -309,18 +309,18 @@ func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testi
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
-	catalogRoot, hwPath, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
 	tracePrefix := filepath.Join(t.TempDir(), "trace")
 
 	// Export a trace from a clean-catalog run, then replay it.
-	if _, runFile := runWithProvenance(t, catalogRoot, hwPath, defaultsPath, tracePrefix); runFile.Catalog == nil {
+	if _, runFile := runWithProvenance(t, catalogRoot, defaultsPath, tracePrefix); runFile.Catalog == nil {
 		t.Fatal("the exporting run must itself record provenance")
 	}
-	cleanStdout, cleanFile := replayWithProvenance(t, catalogRoot, hwPath, defaultsPath, tracePrefix)
+	cleanStdout, cleanFile := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
 	assertProvenance(t, "clean replay", cleanFile, catalogRoot, head, false)
 
 	dirtyCatalogEntry(t, catalogRoot)
-	dirtyStdout, dirtyFile := replayWithProvenance(t, catalogRoot, hwPath, defaultsPath, tracePrefix)
+	dirtyStdout, dirtyFile := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
 	assertProvenance(t, "dirty replay", dirtyFile, catalogRoot, head, true)
 
 	if !bytes.Equal(cleanStdout, dirtyStdout) {
@@ -341,7 +341,7 @@ func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
-	catalogRoot, hwPath, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
 
 	orig := captureCmdLevelVars()
 	origResolvedCatalog := resolvedCatalogRoot
@@ -350,7 +350,7 @@ func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
 		resolvedCatalogRoot = origResolvedCatalog
 	}()
 
-	setProvenanceRunVars(catalogRoot, hwPath, defaultsPath)
+	setProvenanceRunVars(catalogRoot, defaultsPath)
 	resolvedCatalogRoot = ""
 	metricsPath = ""
 	traceOutput = ""

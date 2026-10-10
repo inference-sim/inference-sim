@@ -48,12 +48,12 @@ func (m fakeLatencyModel) QueueingTime(r *Request) int64    { return m.c.Queuein
 func (m fakeLatencyModel) OutputTokenProcessingTime() int64 { return m.c.OutputTokenProcessingTicks }
 func (m fakeLatencyModel) PostDecodeFixedOverhead() int64   { return m.c.PostDecodeOverheadTicks }
 
-// fakeLatencyFor returns cfg.LatencyModelOverride when a test set one (package sim
+// fakeLatencyFor returns cfg.LatencyModel when a test set one (package sim
 // never reads that field itself; the tests use it to pick a fake variant inline in the
 // config literal), else the default fake.
 func fakeLatencyFor(cfg SimConfig) LatencyModel {
-	if cfg.LatencyModelOverride != nil {
-		return cfg.LatencyModelOverride
+	if cfg.LatencyModel != nil {
+		return cfg.LatencyModel
 	}
 	return newFakeLatency()
 }

@@ -12,7 +12,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		Horizon:             1000000,
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
@@ -66,7 +66,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		Horizon:             1000000,
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
@@ -140,7 +140,7 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 		Horizon:              100_000_000,
 		KVCacheConfig:        NewKVCacheConfig(10, 16, 0, 0.0, 0.0, 0.0),
 		BatchConfig:          NewBatchConfig(10, 10000, 0),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		PolicyConfig:         NewPolicyConfig("fcfs", "priority"),
 		SLOPriorityOverrides: map[string]int{"background": 10}, // promote background above batch(-1)
 	}

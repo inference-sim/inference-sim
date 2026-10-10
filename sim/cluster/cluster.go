@@ -1170,7 +1170,7 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 // (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
 // which bulk-initialises the snapshot provider with a full instance map.
 //
-// simCfg must already have GPU and HWConfig set (pool-authoritative, SC-004).
+// simCfg must already have GPU set (pool-authoritative, SC-004).
 // Returns true on success. On false, GPU allocations have been released — callers
 // must not touch the instance and should skip/continue.
 //

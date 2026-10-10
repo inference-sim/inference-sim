@@ -441,15 +441,9 @@ func (m *Model) StepEstimate(batch []*sim.Request) kernel.StepEstimate {
 	return m.k.StepTime(b)
 }
 
-// Deployment reports the scenario facts an ALTERNATIVE latency backend needs to be
-// constructed for the same deployment this kernel models.
-//
-// It exists for cmd/kernelscore's four-estimator comparison, which scores the kernel against
-// BLIS's own roofline and trained-physics backends on one subset. Those backends are
-// configured from a HuggingFace config.json and a hardware-calibration entry rather than from
-// the catalog and registry, so the harness needs the scenario's model name, chip, tensor
-// width and the two precisions -- and must read them from the SAME scenario the kernel was
-// opened from, or the arms would describe different deployments.
+// Deployment reports the scenario facts that identify the deployment this kernel models:
+// the model name, chip, parallel widths and precisions, read from the SAME scenario the
+// kernel was opened from, so a caller configuring a simulator describes one deployment.
 //
 // Nothing here is a latency coefficient: this is deployment identity, not calibration.
 func (m *Model) Deployment() Deployment {

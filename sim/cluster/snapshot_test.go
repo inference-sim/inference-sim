@@ -13,12 +13,12 @@ import (
 // newTestInstance creates a minimal InstanceSimulator for snapshot tests.
 func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 	cfg := sim.SimConfig{
-		Horizon:              1000000,
-		Seed:                 42,
-		KVCacheConfig:        sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
-		BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: testFakeLatency(),
-		ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	return NewInstanceSimulator(id, cfg)
 }
@@ -680,12 +680,12 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 	makeConfig := func(delay int64) DeploymentConfig {
 		return DeploymentConfig{
 			SimConfig: sim.SimConfig{
-				Horizon:              10_000_000,
-				Seed:                 42,
-				KVCacheConfig:        sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
-				BatchConfig:          sim.NewBatchConfig(10, 2048, 0),
-				LatencyModelOverride: testFakeLatency(),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+				Horizon:             10_000_000,
+				Seed:                42,
+				KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
+				BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+				LatencyModel:        testFakeLatency(),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 			},
 			NumInstances:     2,
 			CacheSignalDelay: delay,
@@ -755,12 +755,12 @@ func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
 	// GIVEN a cluster with cache-signal-delay = 0 (oracle mode)
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:              5_000_000,
-			Seed:                 42,
-			KVCacheConfig:        sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
-			BatchConfig:          sim.NewBatchConfig(10, 2048, 0),
-			LatencyModelOverride: testFakeLatency(),
-			ModelHardwareConfig:  sim.NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+			Horizon:             5_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		},
 		NumInstances:  2,
 		RoutingPolicy: "weighted",

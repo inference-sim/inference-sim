@@ -198,7 +198,7 @@ func TestAdapterReservedBytesFor(t *testing.T) {
 // the configured adapter reservation aside. The pool is the kernel's plain answer with no
 // reservation, and is non-increasing in the reserved bytes -- never larger than without one.
 func TestAdoptKernelDeployment_AdapterHBMReservationShrinksThePool(t *testing.T) {
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 	orig := captureCmdLevelVars()
 	origReserved := loraReservedBytesForKV
 	t.Cleanup(func() { orig.restore(); loraReservedBytesForKV = origReserved })

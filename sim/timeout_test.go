@@ -68,12 +68,12 @@ func TestEventQueue_SeqID_BreaksTies(t *testing.T) {
 // transitions to StateTimedOut when its deadline passes.
 func TestTimeout_QueuedRequest_TimesOut(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(1, 2048, 0), // max 1 running request — forces queuing
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(1, 2048, 0), // max 1 running request — forces queuing
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -102,12 +102,12 @@ func TestTimeout_QueuedRequest_TimesOut(t *testing.T) {
 // already-completed request is a no-op.
 func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -133,12 +133,12 @@ func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 // and TimeoutEvent fire at the same tick, the step event fires first (priority ordering).
 func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeFixedStep(1000),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeFixedStep(1000),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -201,12 +201,12 @@ func TestWaitQueue_Remove(t *testing.T) {
 // its state is StateTimedOut, and RunningBatch is nil'd when empty.
 func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -240,12 +240,12 @@ func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
 // while queued should be safe — no double-free, no panic.
 func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              1_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
-		BatchConfig:          NewBatchConfig(2, 2048, 0),          // batch size 2
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
+		BatchConfig:         NewBatchConfig(2, 2048, 0),          // batch size 2
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -285,12 +285,12 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 // the actual completion time.
 func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              500_000_000, // 500s — well beyond the 300s deadline
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             500_000_000, // 500s — well beyond the 300s deadline
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -337,12 +337,12 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 // real-work timestamp rather than the last orphaned timestamp.
 func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:              500_000_000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		Horizon:             500_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -428,7 +428,7 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "test", "H100", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	// Use a fixed-step-time latency model to get deterministic 10ms steps.
 	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)

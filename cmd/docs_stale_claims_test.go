@@ -223,7 +223,7 @@ func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 // is read back at the EmitOutput sites as catalog provenance (#1732). Checked as behavior (the
 // var really is set to the catalog the run read) and as documentation (the comment names it).
 func TestResolveLatencyConfigSideEffects(t *testing.T) {
-	catalogDir, _ := setupKernelTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 	orig := captureCmdLevelVars()
 	savedResolved := resolvedCatalogRoot
 	t.Cleanup(func() { orig.restore(); resolvedCatalogRoot = savedResolved })

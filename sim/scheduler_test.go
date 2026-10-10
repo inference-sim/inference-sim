@@ -244,7 +244,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0),
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		PolicyConfig:        NewPolicyConfig("priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)
@@ -293,7 +293,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // force sequential: only 1 at a time
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		// Scheduler left empty (defaults to fcfs)
 	}
 	s := mustNewSimulator(t, cfg)
@@ -358,13 +358,13 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 	// SJF sorts short before long; short request gets lower E2E latency
 	// because it has fewer prefill tokens to process.
 	cfg := SimConfig{
-		Horizon:              10000000,
-		Seed:                 42,
-		KVCacheConfig:        NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:          NewBatchConfig(256, 2048, 0),
-		LatencyModelOverride: fakeZeroQueueing(),
-		ModelHardwareConfig:  NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
-		PolicyConfig:         NewPolicyConfig("sjf", ""),
+		Horizon:             10000000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		PolicyConfig:        NewPolicyConfig("sjf", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -415,7 +415,7 @@ func TestSimulator_PriorityFCFS_ArrivalTimeTiebreak_OlderFirst(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // only 1 slot: forces sequential scheduling
-		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), testHWCalib(), "", "", 1, 1, false, "", "", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		PolicyConfig:        NewPolicyConfig("priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)

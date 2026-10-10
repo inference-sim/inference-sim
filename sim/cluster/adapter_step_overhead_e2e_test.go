@@ -20,7 +20,7 @@ import (
 // the (unchanged) cold-load charge and proves the accessor reaches production.
 //
 // It holds for both ways a latency model reaches an instance: the coefficient backend the
-// simulator builds, and a model injected through LatencyModelOverride (how
+// simulator builds, and a model injected through LatencyModel (how
 // blis-latency-kernel arrives, which knows nothing of adapters and gets the factor from
 // sim.WithAdapterOverhead).
 func TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E(t *testing.T) {
@@ -38,7 +38,7 @@ func adapterStepOverheadInflatesLatency(t *testing.T, injected bool) {
 		config := newTestDeploymentConfig(2)
 		if injected {
 			var calls int
-			config.LatencyModelOverride = countingModel{step: 500, calls: &calls}
+			config.LatencyModel = countingModel{step: 500, calls: &calls}
 		}
 		config.RoutingPolicy = "round-robin"
 		capVal := 8
