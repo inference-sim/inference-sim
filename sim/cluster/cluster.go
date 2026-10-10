@@ -2127,6 +2127,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Requests metadata keyed by parent ID, HandledBy set to decode instance.
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
+		decodeEntry := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
 		if served {
@@ -2135,7 +2136,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
 			rm.HandledBy = string(parent.DecodeInstanceID)
-			m.Requests[pid] = rm
+			// The parent completes when its decode sub-request does, on the decode instance,
+			// so it takes that completion's place in the completion order.
+			m.Requests[pid] = rm.WithCompletionOf(decodeEntry)
 		}
 
 		// ITL from decode sub-request (prefill ITL is 0 noise).

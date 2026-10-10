@@ -82,6 +82,14 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64) {
 	m.Requests[id] = rm
 }
 
+// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number and
+// clock), for an entry that stands for src's completion under another id -- a disaggregated
+// parent completes when its decode sub-request does.
+func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
+	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
+	return rm
+}
+
 // assignCompletionIndices numbers the completed requests in rs 1..n in the order the
 // simulation processed their completions: by the clock at which each completion was
 // processed, then the serving instance (lowest index first, the cluster's own tie-break for

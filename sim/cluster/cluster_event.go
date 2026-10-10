@@ -505,6 +505,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		SLOClass:     e.request.SLOClass,
 		Model:        e.request.Model,
 	}
+	parent.PrefillSubReq = prefillSubReq
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &PrefillRoutingEvent{
