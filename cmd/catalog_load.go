@@ -15,7 +15,7 @@ import (
 
 	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/spec/hardware"
-	"github.com/inference-sim/inference-sim/sim/latency"
+	schemamodel "github.com/inference-sim/blis-schemas/spec/model"
 )
 
 // This file implements the strict WHOLE-CATALOG load behind the R1/C6 acceptance gate
@@ -26,13 +26,14 @@ import (
 // Two consequences shape the design:
 //
 //  1. NO validate command, and no bespoke validator. Every namespace a run consumes is
-//     loaded through the very function the run uses — models through
-//     resolveModelConfigInCatalog + latency.GetModelConfig, workload presets through
-//     readCatalogPresetWorkload, storage devices through loadCatalogStorageDevices. Only the
-//     two namespaces no run reads yet — models/<name>/model.yaml (identity/provenance) and
-//     hardware/<gpu>.yaml (a blis-schemas chip descriptor; BLIS's calibration still ships in
-//     the in-repo hardware_config.json) — get a reader here, and the hardware one is
-//     blis-schemas' own LoadChip rather than a re-derivation of its format.
+//     loaded through the very function the run uses — model graphs through blis-schemas'
+//     LoadModelGraph (what blis-latency-kernel opens), workload presets through
+//     readCatalogPresetWorkload, storage devices through loadCatalogStorageDevices. The
+//     model identity manifest (models/<name>/model.yaml) and the chip descriptors
+//     (hardware/<gpu>.yaml) are read through blis-schemas' own LoadModelIdentity and LoadChip
+//     rather than a re-derivation of their formats. The vendor config.json beside each graph
+//     is not read by BLIS at all — the graph is derived from it in blis-catalog, whose own
+//     CI checks the pair — so it is not part of this gate.
 //
 //  2. The GATE is a test, not a subcommand: cmd/catalog_load_test.go drives loadCatalog
 //     against the committed fixture catalog (testdata/catalog) unconditionally, and
@@ -43,46 +44,24 @@ import (
 //
 // SCOPE BOUNDARY, stated because it is the one place this file could be misread as doing
 // less than the issue asks: the completeness rule ("a models/<name>/ dir missing either
-// config.json or model.yaml fails") and the deployment-fact rule are properties of the
+// graph.yaml or model.yaml fails") and the deployment-fact rule are properties of the
 // CATALOG AS A WHOLE, enforced here. `blis run` is deliberately NOT tightened to require
-// model.yaml: it resolves exactly ONE model and its refusal diagnostics are settled
-// behaviour (#1771/#1774/#1776), so making a run depend on a provenance file it never reads
-// would break working scratch clones for no fidelity gain. The config.json half of the rule
-// IS the run path — a model whose config.json is absent or unparseable fails a run and fails
-// this gate through the same code.
+// model.yaml: it reads only the graph of the model its scenario names, so making a run depend
+// on a provenance file it never reads would break working scratch clones for no fidelity
+// gain. The graph.yaml half of the rule IS the run path — a graph that is absent or invalid
+// fails a run and fails this gate through the same loader.
 
 const (
 	// catalogHardwareSubdir is the hardware namespace inside a catalog CLONE ROOT (#1774) —
 	// one file per GPU, a SIBLING of models/, workloads/ and devices/.
 	catalogHardwareSubdir = "hardware"
 	// catalogModelEntryFile is the identity/provenance half of a model entry. The other
-	// half is hfConfigFile (the vendor's config.json, committed verbatim).
+	// half is catalogModelGraphFile, the derived graph a run prices from.
 	catalogModelEntryFile = "model.yaml"
 	// catalogYAMLExt is the extension of every catalog-authored file (as opposed to the
 	// vendor JSON configs).
 	catalogYAMLExt = ".yaml"
 )
-
-// catalogModelSource records where a model entry's config.json came from, so a result can be
-// audited and the fetch reproduced by hand.
-type catalogModelSource struct {
-	Provider  string `yaml:"provider"`
-	Repo      string `yaml:"repo"`
-	Revision  string `yaml:"revision"`
-	Retrieved string `yaml:"retrieved"`
-}
-
-// catalogModelEntry is <catalog>/models/<name>/model.yaml: what this model IS and where its
-// config.json came from. It is deliberately NOT a place for deployment facts — the GPU and
-// the tensor-parallel degree are stated on the command line (NS-6, #1733), which
-// rejectCatalogDeploymentFacts enforces for every catalog-authored file.
-//
-// No run reads this file today (resolveModelConfig reads config.json only), so the strict
-// load below is the only thing standing between the catalog and an unnoticed typo in it.
-type catalogModelEntry struct {
-	Name   string             `yaml:"name"`
-	Source catalogModelSource `yaml:"source"`
-}
 
 // catalogLoadReport is the outcome of one whole-catalog load: how much was loaded per
 // namespace, plus every problem found. Counts are reported so the gate can assert
@@ -172,7 +151,7 @@ func loadCatalog(root string) (catalogLoadReport, error) {
 }
 
 // loadCatalogModelEntries loads every models/<name>/ entry: both halves must be present, the
-// vendor config.json must resolve and parse through the RUN path, and model.yaml must parse
+// graph must load and validate through the loader a run uses, and model.yaml must parse
 // strictly and name its own directory.
 func loadCatalogModelEntries(root string) (int, []string) {
 	dir := filepath.Join(root, catalogModelsSubdir)
@@ -206,97 +185,87 @@ func loadCatalogModelEntries(root string) (int, []string) {
 
 // loadCatalogModelEntry loads one models/<name>/ entry and returns every problem with it.
 // Both halves are reported independently: a broken model.yaml must not hide a broken
-// config.json, or an operator fixes one, re-pushes, and learns about the other.
+// graph.yaml, or an operator fixes one, re-pushes, and learns about the other.
 func loadCatalogModelEntry(root, name string) []string {
 	var problems []string
 	entryDir := filepath.Join(root, catalogModelsSubdir, name)
-
-	// config.json — the RUN path, verbatim: resolveModelConfigInCatalog is what
-	// `blis run --model .../<name>` calls, and latency.GetModelConfig is what consumes its
-	// result. A config that fails here fails a run, which is the property C6 asks CI to
-	// prove over every entry.
-	resolvedDir, err := resolveModelConfigInCatalog(name, root)
-	switch {
-	case err != nil:
-		problems = append(problems, fmt.Sprintf("models/%s: %v", name, err))
-	default:
-		if _, cfgErr := latency.GetModelConfig(filepath.Join(resolvedDir, hfConfigFile)); cfgErr != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", filepath.Join(resolvedDir, hfConfigFile), cfgErr))
-		}
+	if _, err := readCatalogModelGraph(entryDir, name); err != nil {
+		problems = append(problems, err.Error())
 	}
-
 	// model.yaml — no run reads it, so this is its only validation.
-	if _, yamlErr := readCatalogModelEntry(entryDir, name); yamlErr != nil {
-		problems = append(problems, yamlErr.Error())
+	if _, err := readCatalogModelEntry(entryDir, name); err != nil {
+		problems = append(problems, err.Error())
 	}
 	return problems
 }
 
-// readCatalogModelEntry reads and strictly validates <catalog>/models/<name>/model.yaml.
+// readCatalogModelGraph loads and validates <catalog>/models/<name>/graph.yaml through
+// blis-schemas — the loader blis-latency-kernel opens a scenario's model with, so a graph
+// that fails here fails a run. The name the graph states must match its directory, because
+// the directory is what a scenario's model resolves against.
+func readCatalogModelGraph(entryDir, name string) (*schemamodel.Graph, error) {
+	path := filepath.Join(entryDir, catalogModelGraphFile)
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, fmt.Errorf("%s: model entry is incomplete — no %s (the model graph a run "+
+				"prices from; blis-catalog derives it from the vendor config)", path, catalogModelGraphFile)
+		}
+		return nil, fmt.Errorf("%s: %s cannot be inspected: %w", path, catalogModelGraphFile, err)
+	}
+	graph, err := blisschemas.LoadModelGraph(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %s is not a valid model graph: %w", path, catalogModelGraphFile, err)
+	}
+	if problems := graph.Validate(); !problems.OK() {
+		return nil, fmt.Errorf("%s: %s is not a valid model graph: %s", path, catalogModelGraphFile, problems.Error())
+	}
+	if graph.Name != name {
+		return nil, fmt.Errorf("%s: %s declares name %q but sits in directory %q; the directory name is "+
+			"what a scenario's model resolves against, so the two must agree", path, catalogModelGraphFile, graph.Name, name)
+	}
+	return graph, nil
+}
+
+// readCatalogModelEntry reads and validates <catalog>/models/<name>/model.yaml through
+// blis-schemas, which owns the identity format: LoadModelIdentity decodes it strictly and
+// Identity.Validate requires the name and the source provenance.
 //
 // Every failure names the file (C6): absent, unreadable, an unknown key, a missing identity
-// or provenance field, or a name that disagrees with the directory it sits in. Strict
-// parsing (R10) so a misspelled key is refused rather than silently dropped — for a
-// provenance record a dropped field means an unauditable result, which is the whole reason
-// the file exists.
-//
-// The name/directory agreement check exists because the DIRECTORY is what --model resolves
-// against: a model.yaml naming a different model makes the entry's provenance describe
-// something other than the config.json beside it.
-func readCatalogModelEntry(entryDir, name string) (*catalogModelEntry, error) {
+// or provenance field, or a name that disagrees with the directory it sits in. The
+// name/directory agreement check is the caller's half of the contract blis-schemas states:
+// the DIRECTORY is what a scenario's model resolves against, so a model.yaml naming a
+// different model makes the entry's provenance describe something other than the graph
+// beside it.
+func readCatalogModelEntry(entryDir, name string) (*schemamodel.Identity, error) {
 	path := filepath.Join(entryDir, catalogModelEntryFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 			return nil, fmt.Errorf("%s: model entry is incomplete — no %s (a catalog model entry is "+
-				"the vendor's %s plus %s, which records the name and the source repo/revision it was "+
-				"fetched from)", path, catalogModelEntryFile, hfConfigFile, catalogModelEntryFile)
+				"the derived %s plus %s, which records the name and the source repo/revision its "+
+				"vendor config was fetched from)", path, catalogModelEntryFile, catalogModelGraphFile, catalogModelEntryFile)
 		}
 		return nil, fmt.Errorf("%s: %s is not readable: %w", path, catalogModelEntryFile, err)
 	}
 
 	// The catalog-wide YAML rules first, so the specific "not catalog data" / "not one
-	// document" message wins over the generic unknown-key one (the same precedence
-	// rejectLegacyInterNodeLatencyKey takes over rejectUnknownHardwareCalibKeys).
+	// document" message wins over the generic unknown-key one.
 	if err := checkCatalogAuthoredYAML(path, data); err != nil {
 		return nil, err
 	}
 
-	var entry catalogModelEntry
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&entry); err != nil && !errors.Is(err, io.EOF) {
+	identity, err := blisschemas.LoadModelIdentity(path)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %s is not a valid model entry: %w", path, catalogModelEntryFile, err)
 	}
-
-	// Required fields, checked explicitly: KnownFields(true) refuses unknown keys but does
-	// not require declared ones, so an omitted key is indistinguishable from an empty
-	// string — the silent-zero class of defect one namespace over (parseCatalogStorageDevices
-	// rescans for the same reason).
-	missing := make([]string, 0, 4)
-	for _, f := range []struct {
-		key   string
-		value string
-	}{
-		{"name", entry.Name},
-		{"source.provider", entry.Source.Provider},
-		{"source.repo", entry.Source.Repo},
-		{"source.revision", entry.Source.Revision},
-	} {
-		if strings.TrimSpace(f.value) == "" {
-			missing = append(missing, f.key)
-		}
+	if problems := identity.Validate(); !problems.OK() {
+		return nil, fmt.Errorf("%s: %s is not a valid model entry: %s", path, catalogModelEntryFile, problems.Error())
 	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("%s: %s is missing required field(s) %v (an entry states its name and "+
-			"where its %s came from: provider, repo and the exact revision)",
-			path, catalogModelEntryFile, missing, hfConfigFile)
-	}
-	if entry.Name != name {
+	if identity.Name != name {
 		return nil, fmt.Errorf("%s: %s declares name %q but sits in directory %q; the directory name is "+
-			"what --model resolves against, so the two must agree", path, catalogModelEntryFile, entry.Name, name)
+			"what a scenario's model resolves against, so the two must agree", path, catalogModelEntryFile, identity.Name, name)
 	}
-	return &entry, nil
+	return identity, nil
 }
 
 // loadCatalogHardwareEntries loads every hardware/<gpu>.yaml file. Absent namespace = not a
@@ -325,10 +294,8 @@ func loadCatalogHardwareEntries(root string) (int, []string) {
 // readCatalogHardwareEntry reads and validates one <catalog>/hardware/<gpu>.yaml through
 // blis-schemas, which owns that format: it is a chip descriptor (peak rates, memory, link
 // bandwidth), decoded strictly by LoadChip and checked by the chip's own field validation.
-// No run reads it yet -- BLIS's analytical calibration still ships in the in-repo
-// hardware_config.json, a different document -- so this reader exists so the gate checks
-// the namespace in the format the catalog actually publishes, with the parser the catalog's
-// own CI uses.
+// A run reads the scenario's chip through blis-latency-kernel, which uses the same loader, so
+// this checks every chip the catalog publishes, not only the ones a scenario happens to name.
 func readCatalogHardwareEntry(path string) (*hardware.Chip, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -521,8 +488,7 @@ func normalizeCatalogKey(key string) string {
 // separator.
 //
 // Rule 1 is still checked over every document, so the specific "this states a deployment fact"
-// diagnostic wins over the generic stream one — the same precedence
-// rejectLegacyInterNodeLatencyKey takes over rejectUnknownHardwareCalibKeys.
+// diagnostic wins over the generic stream one.
 func checkCatalogAuthoredYAML(path string, data []byte) error {
 	docs, err := catalogYAMLDocuments(data)
 	if err != nil {
@@ -543,8 +509,7 @@ func checkCatalogAuthoredYAML(path string, data []byte) error {
 // catalogYAMLDocuments decodes every content-bearing document of a YAML stream.
 //
 // A failure on the FIRST document yields no documents and no error: the caller defers that
-// diagnostic to the typed parse, which produces the real error for its namespace (the same
-// nilerr shape the sibling guards in sim/latency/config.go use). A failure on a LATER document
+// diagnostic to the typed parse, which produces the real error for its namespace. A failure on a LATER document
 // IS returned, because no typed parse ever reaches it.
 func catalogYAMLDocuments(data []byte) ([]any, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))

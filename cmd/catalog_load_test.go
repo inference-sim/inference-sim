@@ -16,8 +16,8 @@ import (
 // Three layers:
 //
 //  1. TestCatalogStrictLoad_CommittedFixtureCatalog — unconditional, over the committed
-//     testdata/catalog. Proves every committed vendor config.json resolves and parses through
-//     the RUN path, every committed preset loads through the production preset reader, and the
+//     testdata/catalog. Proves every committed model graph loads and validates through the
+//     loader a run uses, every committed preset loads through the production preset reader, and the
 //     committed storage-device table loads — on real data, in every `go test ./cmd/...` run.
 //  2. TestCatalogStrictLoad_CompleteCatalogLoadsClean and the contract tables — a fully
 //     populated catalog (all four namespaces) loads with zero problems, and each strict rule
@@ -56,10 +56,15 @@ func fixtureCatalogFile(rel string) string {
 }
 
 // gateModel is the fixture model every temp catalog in this file is built around. Its
-// config.json is copied from the committed fixture catalog, so the model half of a temp
-// catalog is real vendor data rather than a hand-written stub that could drift from what the
-// parser accepts.
+// graph.yaml and vendor config.json are copied from the committed fixture catalog, so the
+// model half of a temp catalog is real catalog data rather than a hand-written stub that
+// could drift from what the loader accepts.
 const gateModel = "qwen3-14b"
+
+// vendorConfigFile is the verbatim vendor config a catalog model entry carries beside its
+// derived graph. BLIS does not read it; the temp catalogs carry it so they look like the
+// real thing.
+const vendorConfigFile = "config.json"
 
 // modelEntryYAML renders a well-formed model.yaml body for the named model.
 func modelEntryYAML(name string) string {
@@ -82,11 +87,13 @@ func newCompleteCatalog(t *testing.T) string {
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
 		t.Fatalf("mkdir model entry: %v", err)
 	}
-	config, err := os.ReadFile(filepath.Join(fixtureCatalog, catalogModelsSubdir, gateModel, hfConfigFile))
-	if err != nil {
-		t.Fatalf("read fixture config.json: %v", err)
+	for _, f := range []string{catalogModelGraphFile, vendorConfigFile} {
+		body, err := os.ReadFile(filepath.Join(fixtureCatalog, catalogModelsSubdir, gateModel, f))
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", f, err)
+		}
+		writeCatalogFile(t, filepath.Join(entryDir, f), string(body))
 	}
-	writeCatalogFile(t, filepath.Join(entryDir, hfConfigFile), string(config))
 	writeCatalogFile(t, filepath.Join(entryDir, catalogModelEntryFile), modelEntryYAML(gateModel))
 	writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), validHardwareEntry)
 	writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "chatbot"+presetFileExt), validWorkloadEntry)
@@ -278,14 +285,14 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantPhrases: []string{"seek_latency"},
 		},
 		{
-			name: "model entry has no config.json",
+			name: "model entry has no graph.yaml",
 			mutate: func(t *testing.T, root string) {
-				if err := os.Remove(filepath.Join(root, modelEntry, hfConfigFile)); err != nil {
-					t.Fatalf("remove config.json: %v", err)
+				if err := os.Remove(filepath.Join(root, modelEntry, catalogModelGraphFile)); err != nil {
+					t.Fatalf("remove graph.yaml: %v", err)
 				}
 			},
-			wantFile:    hfConfigFile,
-			wantPhrases: []string{"not in the catalog"},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"incomplete"},
 		},
 		{
 			name: "model entry has no model.yaml",
@@ -298,12 +305,23 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantPhrases: []string{"incomplete"},
 		},
 		{
-			name: "model entry config.json is not a HuggingFace config",
+			name: "unknown key in graph.yaml",
 			mutate: func(t *testing.T, root string) {
-				writeCatalogFile(t, filepath.Join(root, modelEntry, hfConfigFile), `{"model": "mine"}`)
+				graph := fixtureCatalogFile(filepath.Join(catalogModelsSubdir, gateModel, catalogModelGraphFile))
+				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelGraphFile), graph+"num_hidden_layers: 40\n")
 			},
-			wantFile:    hfConfigFile,
-			wantPhrases: []string{"HuggingFace"},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"num_hidden_layers"},
+		},
+		{
+			name: "graph.yaml names a different model than its directory",
+			mutate: func(t *testing.T, root string) {
+				graph := fixtureCatalogFile(filepath.Join(catalogModelsSubdir, gateModel, catalogModelGraphFile))
+				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelGraphFile),
+					strings.Replace(graph, "name: "+gateModel+"\n", "name: some-other-model\n", 1))
+			},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"some-other-model", gateModel},
 		},
 		{
 			name: "model.yaml names a different model than its directory",
@@ -558,7 +576,7 @@ func TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted(t *testing.T) {
 // stating something it is right to state.
 func TestCatalogStrictLoad_VendorConfigMayStatePretrainingTP(t *testing.T) {
 	root := newCompleteCatalog(t)
-	path := filepath.Join(root, catalogModelsSubdir, gateModel, hfConfigFile)
+	path := filepath.Join(root, catalogModelsSubdir, gateModel, vendorConfigFile)
 	config, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read config.json: %v", err)

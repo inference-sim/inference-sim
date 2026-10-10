@@ -152,6 +152,7 @@ func newCatalogFixtureRepo(t *testing.T, stateDeploymentFact bool) (string, stri
 	// publishes.
 	for _, rel := range []string{
 		filepath.Join("models", "qwen3-14b", "config.json"),
+		filepath.Join("models", "qwen3-14b", "graph.yaml"),
 		filepath.Join("models", "qwen3-14b", "model.yaml"),
 		filepath.Join("workloads", "chatbot.yaml"),
 		filepath.Join("devices", "storage.yaml"),

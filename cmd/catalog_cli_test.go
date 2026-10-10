@@ -23,7 +23,7 @@ import (
 //	AC-5 — locating a catalogued model via --catalog changes no number (INV-6).
 //
 // The precedence law itself and the unusable-root refusal are unit-tested on
-// catalogRootFrom / resolveCatalogRoot in hfconfig_test.go; the tests here prove the
+// catalogRootFrom / resolveCatalogRoot in catalog_root_test.go; the tests here prove the
 // requirement is actually WIRED INTO the commands rather than merely available as a helper.
 
 // catalogLegEnv selects which leg of TestRunCmd_CatalogLocation the re-exec subprocess
@@ -235,7 +235,7 @@ func TestS4_ModelConfigFolderFlag_NotRegisteredOnAnyCommand(t *testing.T) {
 }
 
 // TestS4_CatalogEnvVarReadOnlyInResolver pins WHERE the environment is consulted: exactly
-// one production site reads BLIS_CATALOG (resolveCatalogRoot in hfconfig.go), mirroring the
+// one production site reads BLIS_CATALOG (resolveCatalogRoot in catalog_root.go), mirroring the
 // single HF_TOKEN read that was cmd/'s only os.Getenv before this change. A second reader
 // elsewhere would be a second, unaudited way for the environment to steer a run.
 func TestS4_CatalogEnvVarReadOnlyInResolver(t *testing.T) {
@@ -265,9 +265,9 @@ func TestS4_CatalogEnvVarReadOnlyInResolver(t *testing.T) {
 			return true
 		})
 	}
-	// hfconfig.go names it twice: the catalogEnvVar const, and nothing else.
-	if len(readers) != 1 || readers[0] != "hfconfig.go" {
-		t.Errorf("the %s literal must appear in exactly one production file (cmd/hfconfig.go, "+
+	// catalog_root.go names it twice: the catalogEnvVar const, and nothing else.
+	if len(readers) != 1 || readers[0] != "catalog_root.go" {
+		t.Errorf("the %s literal must appear in exactly one production file (cmd/catalog_root.go, "+
 			"as the catalogEnvVar const); found it in %v — every other site must use the const "+
 			"and go through resolveCatalogRoot", catalogEnvVar, readers)
 	}

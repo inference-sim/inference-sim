@@ -17,8 +17,8 @@ import (
 //   - BC-4: the deployment is never inferred -- it comes from the kernel scenario, and a
 //     flag restating the model, hardware or TP is refused BY NAME.
 //
-// BC-1/BC-2 (the refusal itself and its message) live with the resolver in
-// hfconfig_test.go, since they are properties of resolveModelConfigInCatalog.
+// BC-1/BC-2 (the refusal itself and its message) are properties of blis-latency-kernel, which
+// reads the scenario's model graph; catalog_layout_test.go pins that they reach the CLI.
 
 // ---------------------------------------------------------------------------
 // BC-3: no run-time path creates or modifies a catalog file
@@ -34,9 +34,9 @@ import (
 //     huggingface.co STRING LITERAL — the outbound host. (Prose mentioning HuggingFace is
 //     fine; only a literal could become a URL. `net/http` itself cannot be banned
 //     package-wide because `blis observe` legitimately dispatches to a real server.)
-//  2. At the resolution boundary (cmd/hfconfig.go, the only file that maps a model to a
-//     catalog directory): no network import and no file-creating call, so that file cannot
-//     write a catalog entry however it is edited.
+//  2. At the resolution boundary (cmd/catalog_root.go, the file that locates the catalog):
+//     no network import and no file-creating call, so that file cannot write a catalog entry
+//     however it is edited.
 func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 	bannedIdents := map[string]string{
 		"fetchHFConfig":        "the HuggingFace config fetch was removed by #1733",
@@ -45,7 +45,7 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 		"GetDefaultSpecs":      "per-model --hardware/--tp inference was removed by #1733",
 	}
 	// The resolution boundary must be incapable of writing or fetching.
-	resolverFile := "hfconfig.go"
+	resolverFile := "catalog_root.go"
 	resolverBannedImports := map[string]string{
 		`"net/http"`: "the catalog resolver must not reach the network (NS-6)",
 		`"io"`:       "the catalog resolver reads one file via os.ReadFile; streaming I/O implies a fetch",

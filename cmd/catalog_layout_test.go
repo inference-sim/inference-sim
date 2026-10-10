@@ -32,8 +32,8 @@ func requireCompletedRequests(t *testing.T, label, stdout string) {
 }
 
 // CLI-level contract tests for the catalog CLONE ROOT layout: --catalog / BLIS_CATALOG
-// names the clone root, so a real `blis run` and `blis replay` read the model config from
-// <catalog>/models/<short-name>/config.json.
+// names the clone root, so a real `blis run` and `blis replay` read the scenario's model graph
+// from <catalog>/models/<name>/graph.yaml (through blis-latency-kernel).
 //
 // #1774 introduced this layout alongside a transition fallback that also accepted the flat
 // <catalog>/<short-name> layout (the then-bundled model_configs/ tree). #1771 deleted that
@@ -48,9 +48,8 @@ func requireCompletedRequests(t *testing.T, label, stdout string) {
 //	INV-13 — run and replay share resolveLatencyConfig, so both resolve the clone-root layout.
 //	NS-6   — a model absent from the (sole) layout is refused, naming the canonical path.
 //
-// The unit-level layout laws (candidate derivation, malformed-entry boundary, relative vs
-// absolute paths, uncatalogued refusal) live on catalogModelDirs / resolveModelConfigInCatalog
-// in hfconfig_test.go; these tests prove the contract is wired into the commands.
+// The kernel owns reading the catalog entries; these tests prove the contract is wired into
+// the commands.
 
 // Environment variables driving the re-exec subprocess legs. A leg runs the real cobra
 // tree so a logrus.Fatalf surfaces as a non-zero exit status.
@@ -142,7 +141,7 @@ func catalogLayoutSubprocess() bool {
 
 // TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns is the #1771 INV-6 contract at the
 // `blis run` boundary: a model config stored the way the authoritative blis-catalog
-// repository stores it — <catalog>/models/<name>/config.json — resolves and runs, and the
+// repository stores it — <catalog>/models/<name>/graph.yaml — resolves and runs, and the
 // same catalog produces byte-identical stdout across runs (the layout is not a source of
 // nondeterminism). With the flat transition fallback gone, this is now the only layout.
 func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
@@ -166,7 +165,7 @@ func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 }
 
 // TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns is the INV-13 half: `blis replay`
-// shares resolveModelConfig with `blis run`, so it resolves the clone-root layout too. A
+// shares resolveLatencyConfig with `blis run`, so it resolves the clone-root layout too. A
 // trace exported through the clone-root catalog replays deterministically through it.
 func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	if catalogLayoutSubprocess() {
@@ -197,19 +196,23 @@ func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 // entry belongs at (NS-6, #1733). #1771 removed the flat fallback, so the only path an
 // entry can live at is the one the refusal names.
 func TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused(t *testing.T) {
-	root := t.TempDir()
-	if _, err := resolveModelConfigInCatalog("test-org/not-catalogued", root); err == nil {
+	scenarios, _, registry := kernelRepos(t)
+	root := copyKernelCatalog(t)
+	entry := filepath.Join(root, catalogModelsSubdir, "gpt-oss-120b")
+	if err := os.RemoveAll(entry); err != nil {
+		t.Fatal(err)
+	}
+	_, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{
+		Scenarios: scenarios, Catalog: root, Registry: registry,
+	})
+	if err == nil {
 		t.Fatal("expected refusal for a model absent from the catalog")
-	} else if want := filepath.Join(root, catalogModelsSubdir, "not-catalogued", hfConfigFile); !strings.Contains(err.Error(), want) {
+	}
+	if want := filepath.Join(entry, catalogModelGraphFile); !strings.Contains(err.Error(), want) {
 		t.Errorf("refusal must name the canonical clone-root path (%s), got: %v", want, err)
 	}
-
 	// And nothing may be created under the catalog root by the attempt.
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("read catalog root: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("resolution must not create anything under the catalog root; found %v", entries)
+	if _, statErr := os.Stat(entry); !os.IsNotExist(statErr) {
+		t.Errorf("resolution must not create the missing entry; stat says %v", statErr)
 	}
 }
