@@ -14,8 +14,8 @@ import (
 // sizedKnobs is every engine knob adoptKernelDeployment sizes the run from.
 type sizedKnobs struct {
 	kvBlocks, blockSize, maxNumSeqs, maxBatched, maxModelLen int64
-	specTokens, dp                                          int
-	noPrefixCaching                                         bool
+	specTokens, dp                                           int
+	noPrefixCaching                                          bool
 }
 
 func currentSizedKnobs() sizedKnobs {

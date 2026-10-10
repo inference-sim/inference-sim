@@ -363,7 +363,7 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 // expansion. They are zero for a non-PD run, so the multiply is a strict no-op there.
 type dpPlacementDeployment struct {
 	NumInstances  int   // engine replicas (logical --num-instances on the way in)
-	TotalKVBlocks int64 // KV blocks per instance (the dp-multiplied aggregate on the way in when autoScaledKV)
+	TotalKVBlocks int64 // KV blocks per instance: the kernel's per-rank budget, unchanged by placement
 	MaxModelLen   int64 // engine max_model_len (0 = unset/unlimited)
 
 	// PD pool counts (#1553), each scaled by Replicas when the plan is active. Zero for
@@ -380,12 +380,9 @@ type dpPlacementDeployment struct {
 // against, no dp² double-count — is directly unit-testable rather than re-implemented
 // in a test. On error the deployment is returned UNCHANGED.
 //
-// autoScaledKV=true means the incoming TotalKVBlocks is a dp-multiplied aggregate, which
-// is divided back to one rank and max_model_len re-capped to that rank's budget. No
-// production caller passes it: the kernel sizes KV blocks and max_model_len per rank, so
-// resolveDPPlacement passes false and both are left unchanged. A non-Active plan is the
-// identity.
-func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, autoScaledKV bool, blockSizeTokens int64) (dpPlacementDeployment, error) {
+// The kernel sizes KV blocks and max_model_len per rank, so both pass through unchanged. A
+// non-Active plan is the identity.
+func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
 	if !plan.Active {
 		return dep, nil
 	}
@@ -398,28 +395,13 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
 	out.SharedInstances = dep.SharedInstances * plan.Replicas
 	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
-	if autoScaledKV {
-		out.TotalKVBlocks = dep.TotalKVBlocks / int64(dp)
-	}
-	// A replica with no KV blocks would panic NewSimulator, and its derived kvFeasibleMax
-	// of 0 would silently mean "unlimited" in the re-cap below (the inverse of a cap), so
-	// it is reported as a clean error instead (R1). The kernel refuses a non-positive
-	// per-rank budget, so this is defense in depth.
+	// A replica with no KV blocks would panic NewSimulator, so it is reported as a clean
+	// error instead (R1). The kernel refuses a non-positive per-rank budget, so this is
+	// defense in depth.
 	if out.TotalKVBlocks <= 0 {
 		return dep, fmt.Errorf("dp %d leaves %d KV blocks on each of %d engine replicas; "+
 			"the scenario's per-rank KV budget must be positive",
 			dp, out.TotalKVBlocks, plan.Replicas)
-	}
-	// A divided aggregate leaves each replica only the per-rank budget, so max_model_len
-	// is re-capped to the per-rank KV-feasible maximum; otherwise per-replica
-	// NewSimulator would panic ("KV cache too small for MaxModelLen").
-	if autoScaledKV && out.MaxModelLen > 0 && blockSizeTokens > 0 {
-		kvFeasibleMax := out.TotalKVBlocks * blockSizeTokens
-		if out.MaxModelLen > kvFeasibleMax {
-			logrus.Warnf("max_model_len %d exceeds per-rank KV capacity (%d blocks × %d tokens) under "+
-				"DP-as-placement; capping to %d tokens", out.MaxModelLen, out.TotalKVBlocks, blockSizeTokens, kvFeasibleMax)
-			out.MaxModelLen = kvFeasibleMax
-		}
 	}
 	return out, nil
 }
@@ -458,8 +440,6 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 		return plan, nil
 	}
 	logicalInstances := numInstances
-	// The kernel sized totalKVBlocks per rank already, so the placement never divides it.
-	autoScaledKV := false
 	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
 		NumInstances:     numInstances,
 		TotalKVBlocks:    totalKVBlocks,
@@ -468,7 +448,7 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 		DecodeInstances:  decodeInstances,
 		SharedInstances:  prefillDecodeInstances,
 		EncodeInstances:  encodeInstances,
-	}, autoScaledKV, blockSizeTokens)
+	})
 	if err != nil {
 		return dpPlacementPlan{}, err
 	}
@@ -1682,8 +1662,8 @@ var runCmd = &cobra.Command{
 				if chip := kernelOpened.Deployment().DeviceMemoryGiB; np.GPUMemoryGiB > 0 &&
 					math.Abs(np.GPUMemoryGiB-chip) > 1e-9 {
 					logrus.Fatalf("policy bundle node pool %q states gpu_memory_gib %g, but the catalog "+
-						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g or "+
-						"omit it", np.Name, np.GPUMemoryGiB, gpu, chip, chip)
+						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g",
+						np.Name, np.GPUMemoryGiB, gpu, chip, chip)
 				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,

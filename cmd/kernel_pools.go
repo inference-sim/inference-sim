@@ -57,14 +57,10 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"counts must add up", numInstances, prefillInstances, decodeInstances,
 			prefillInstances+decodeInstances)
 	}
-	// A handoff crosses nodes: prefill and decode pools never share one. With no fabric named,
-	// the kernel would price that crossing at the on-node rate rather than refuse it.
-	if shape, err := kernelmodel.ShapeOf(kernelScenario, repos); err != nil {
-		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
-	} else if shape.Fabric == "" {
-		logrus.Fatalf("scenario %q is disaggregated but names no cluster.fabric; a P/D KV "+
-			"handoff crosses nodes, so the run needs the inter-node fabric it crosses", kernelScenario)
-	}
+	// A handoff crosses nodes (pools never share one), so it needs the inter-node fabric: the
+	// kernel would price a crossing with no fabric at the on-node rate. blis-schemas already
+	// refuses a multi-node cluster that names none, and a P/D deployment always spans two
+	// nodes, so no check is repeated here; transferTime prices every rank pair up front.
 	ps, pe := p.prefill.Settings()
 	ds, de := p.decode.Settings()
 	if pe != nil || de != nil {

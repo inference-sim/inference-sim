@@ -162,7 +162,6 @@ func TestPlanDPPlacement(t *testing.T) {
 // double-count BC-2 exists to prevent. Pure, so it survives a rewrite of the command
 // wiring that applies it.
 func TestApplyDPPlacement(t *testing.T) {
-	const blockSize int64 = 16
 	active4 := dpPlacementPlan{Active: true, Replicas: 4, PerRankDP: 1}
 	inactive := dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: 1}
 
@@ -171,83 +170,50 @@ func TestApplyDPPlacement(t *testing.T) {
 		plan            dpPlacementPlan
 		dp              int
 		in              dpPlacementDeployment
-		autoScaledKV    bool
 		wantErrContains string
 		want            dpPlacementDeployment
 	}{
 		{
-			// The no-op law that makes the feature byte-identical when unused (INV-6):
-			// every quantity survives untouched.
-			name:         "inactive plan is the identity on all three quantities",
-			plan:         inactive,
-			dp:           1,
-			in:           dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
-			autoScaledKV: true,
-			want:         dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
+			// The no-op law that makes the feature byte-identical when unused (INV-6).
+			name: "inactive plan is the identity",
+			plan: inactive,
+			dp:   1,
+			in:   dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
+			want: dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
 		},
 		{
-			// Auto-KV: the incoming total is the dp-multiplied aggregate, so it divides
-			// back to one rank; max-model-len is re-capped to that smaller budget.
-			name:         "auto-KV divides to per-rank, expands the count, re-caps max-model-len",
-			plan:         active4,
-			dp:           4,
-			in:           dpPlacementDeployment{NumInstances: 2, TotalKVBlocks: 40000, MaxModelLen: 1_000_000},
-			autoScaledKV: true,
-			// 8 replicas (2×4), 10000 blocks each (40000/4), max-model-len 10000×16.
-			want: dpPlacementDeployment{NumInstances: 8, TotalKVBlocks: 10000, MaxModelLen: 160000},
+			// The kernel's budget is per rank: placement multiplies replicas, never divides KV
+			// or re-caps the window.
+			name: "active plan multiplies replicas and keeps the per-rank KV and window",
+			plan: active4,
+			dp:   4,
+			in:   dpPlacementDeployment{NumInstances: 2, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
+			want: dpPlacementDeployment{NumInstances: 8, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 		},
 		{
-			// A max-model-len that already fits the per-rank budget must NOT be raised.
-			name:         "auto-KV leaves a feasible max-model-len alone",
-			plan:         active4,
-			dp:           4,
-			in:           dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 40000, MaxModelLen: 4096},
-			autoScaledKV: true,
-			want:         dpPlacementDeployment{NumInstances: 4, TotalKVBlocks: 10000, MaxModelLen: 4096},
+			// BC-2 PD pool expansion: every pool count scales by Replicas alongside the global
+			// NumInstances, so P·N+D·N+S·N+E·N ≤ total·N is preserved.
+			name: "active plan scales every PD pool count by Replicas",
+			plan: active4,
+			dp:   4,
+			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
+			want: dpPlacementDeployment{NumInstances: 40, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 12, DecodeInstances: 16, SharedInstances: 8, EncodeInstances: 4},
 		},
 		{
-			// An explicit --total-kv-blocks is already per-instance: no division, and no
-			// re-cap either (no aggregate was ever used as the cap).
-			name:         "explicit KV keeps the operator value and never re-caps",
-			plan:         active4,
-			dp:           4,
-			in:           dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
-			autoScaledKV: false,
-			want:         dpPlacementDeployment{NumInstances: 4, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
+			name: "inactive plan leaves PD pool counts untouched",
+			plan: inactive,
+			dp:   1,
+			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
+			want: dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 		},
 		{
-			// BC-2 PD pool expansion: every pool count scales by Replicas alongside the
-			// global NumInstances, so P·N+D·N+S·N+E·N ≤ total·N is preserved and each pool
-			// spawns its own N per-rank replicas. Auto-KV still divides to per-rank.
-			name:         "active plan scales every PD pool count by Replicas",
-			plan:         active4,
-			dp:           4,
-			in:           dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
-			autoScaledKV: true,
-			// 40 instances (10×4), pools 12/16/8/4 (each ×4), 10000 blocks each, max-model-len untouched (fits).
-			want: dpPlacementDeployment{NumInstances: 40, TotalKVBlocks: 10000, MaxModelLen: 4096, PrefillInstances: 12, DecodeInstances: 16, SharedInstances: 8, EncodeInstances: 4},
-		},
-		{
-			// The inactive plan is the identity on the pool counts too (INV-6): a PD run
-			// at --dp 1 spawns exactly its configured pools, byte-identical to pre-#1553.
-			name:         "inactive plan leaves PD pool counts untouched",
-			plan:         inactive,
-			dp:           1,
-			in:           dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
-			autoScaledKV: true,
-			want:         dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
-		},
-		{
-			// Production calls applyDPPlacement with autoScaledKV=false (the kernel sizes KV per
-			// rank, so nothing is divided); the zero-block guard is then defense in depth against
-			// a non-positive per-rank budget, which would panic NewSimulator and make a
-			// kvFeasibleMax of 0 mean "unlimited". It must error and leave the deployment
-			// untouched so a caller that ignored the error cannot run a half-applied plan.
+			// Defense in depth against a non-positive per-rank budget, which would panic
+			// NewSimulator: it errors and leaves the deployment untouched, so a caller that
+			// ignored the error cannot run a half-applied plan.
 			name:            "a non-positive per-rank KV budget errors instead of panicking downstream",
 			plan:            dpPlacementPlan{Active: true, Replicas: 8, PerRankDP: 1},
 			dp:              8,
 			in:              dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
-			autoScaledKV:    false,
 			wantErrContains: "per-rank KV budget must be positive",
 			want:            dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
 		},
@@ -255,7 +221,7 @@ func TestApplyDPPlacement(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := applyDPPlacement(tc.plan, tc.dp, tc.in, tc.autoScaledKV, blockSize)
+			got, err := applyDPPlacement(tc.plan, tc.dp, tc.in)
 			if tc.wantErrContains != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got nil", tc.wantErrContains)
@@ -270,20 +236,6 @@ func TestApplyDPPlacement(t *testing.T) {
 				t.Errorf("deployment: got %+v, want %+v", got, tc.want)
 			}
 		})
-	}
-
-	// The conservation law, stated independently of the table: the aggregate KV over all
-	// spawned replicas equals the pre-#1531 lumped total (logical instances × the
-	// dp-multiplied total). A dp² double-count would inflate it by dp.
-	const inNumInst, inTotalKV = 2, int64(40000)
-	got, err := applyDPPlacement(active4, 4, dpPlacementDeployment{NumInstances: inNumInst, TotalKVBlocks: inTotalKV}, true, blockSize)
-	if err != nil {
-		t.Fatalf("conservation case: unexpected error: %v", err)
-	}
-	if int64(got.NumInstances)*got.TotalKVBlocks != int64(inNumInst)*inTotalKV {
-		t.Errorf("aggregate KV (%d×%d=%d) must equal the lumped total (%d×%d=%d); a dp² double-count would give %d",
-			got.NumInstances, got.TotalKVBlocks, int64(got.NumInstances)*got.TotalKVBlocks,
-			inNumInst, inTotalKV, int64(inNumInst)*inTotalKV, int64(inNumInst)*inTotalKV*4)
 	}
 }
 
