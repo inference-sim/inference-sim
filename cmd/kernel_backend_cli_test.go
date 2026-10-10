@@ -699,7 +699,7 @@ func TestRunCmd_KernelBackend_SpeculationFromTheScenario(t *testing.T) {
 	if _, stderr, err := runKernelCLI(t, base...); err == nil || !strings.Contains(stderr, "drafts 3 tokens") {
 		t.Fatalf("a drafting scenario without an acceptance rate was not refused naming it: %v\n%s", err, stderr)
 	}
-	var prev float64
+	var prev, first float64
 	for i, acc := range []string{"0.0", "0.4", "0.8", "1.0"} {
 		out, stderr, err := runKernelCLI(t, append(base, "--speculative-acceptance-rate", acc)...)
 		if err != nil {
@@ -709,7 +709,17 @@ func TestRunCmd_KernelBackend_SpeculationFromTheScenario(t *testing.T) {
 		if i > 0 && e2e > prev {
 			t.Errorf("raising acceptance to %s lengthened mean E2E from %.3f to %.3f ms", acc, prev, e2e)
 		}
+		if i == 0 {
+			first = e2e
+		}
 		prev = e2e
+	}
+	// Non-vacuity: accepting every draft advances each decode step by 1 + 3 tokens at the same
+	// verify width, so it is strictly faster than accepting none; a run that ignored the
+	// acceptance rate would price every rate alike and pass the monotonicity above.
+	if prev >= first {
+		t.Errorf("acceptance 1.0 left mean E2E at %.3f ms against %.3f at 0.0; speculation is not advancing requests",
+			prev, first)
 	}
 }
 

@@ -59,10 +59,21 @@ func TestASpeculativeDecodeIsPricedAtItsVerifyWidth(t *testing.T) {
 			t.Errorf("k=%d: a decode priced %d, below the shorter draft's %d", k, price, prev)
 		}
 		prev = price
-		// The first decode step after the prompt is a decode too.
-		if atBoundary := m.StepTime(decodeAt(2048, 1)); atBoundary < plain.StepTime(decodeAt(2048, 1)) {
-			t.Errorf("k=%d: the first decode after the prompt priced %d, below a plain decode's %d", k,
-				atBoundary, plain.StepTime(decodeAt(2048, 1)))
+		// The first decode step after the prompt is a decode too: it costs exactly what a decode
+		// over the same computed context costs one token later in its life -- a request whose
+		// prompt ended a token earlier -- and so strictly more than the plain engine's decode
+		// whenever the draft widens the step at all.
+		atBoundary := m.StepTime(decodeAt(2048, 1))
+		laterDecode := m.StepTime([]*sim.Request{{InputTokens: make([]sim.TokenID, 2047), ProgressIndex: 2048, NumNewTokens: 1}})
+		if atBoundary != laterDecode {
+			t.Errorf("k=%d: the first decode after the prompt priced %d, a decode over the same context %d; "+
+				"it was not priced at its verify width", k, atBoundary, laterDecode)
+		}
+		if plainBoundary := plain.StepTime(decodeAt(2048, 1)); laterDecode > plain.StepTime(
+			[]*sim.Request{{InputTokens: make([]sim.TokenID, 2047), ProgressIndex: 2048, NumNewTokens: 1}}) &&
+			atBoundary <= plainBoundary {
+			t.Errorf("k=%d: the first decode after the prompt priced %d, no more than a plain decode's %d", k,
+				atBoundary, plainBoundary)
 		}
 		if got, want := m.StepTime(prefill), plain.StepTime(prefill); got != want {
 			t.Errorf("k=%d: a prefill chunk priced %d with a draft configuration, %d without", k, got, want)
