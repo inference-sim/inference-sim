@@ -51,6 +51,30 @@ type ResolvedSettings struct {
 type PointSettings struct {
 	Passed   PassedSettings   `json:"passed"`
 	Resolved ResolvedSettings `json:"resolved"`
+
+	// PassedRaw is every setting the run's command line carried, keyed as the extraction
+	// wrote it -- including the ones PassedSettings has no field for. The coverage report
+	// reads it, so a setting the run used is reported as a gap from the data rather than
+	// from a list of what this package happens to know.
+	PassedRaw map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON decodes the typed fields and keeps the raw passed map beside them.
+func (p *PointSettings) UnmarshalJSON(b []byte) error {
+	type plain PointSettings // drops this method, so the decode below does not recurse
+	var q plain
+	if err := json.Unmarshal(b, &q); err != nil {
+		return err
+	}
+	var raw struct {
+		Passed map[string]json.RawMessage `json:"passed"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*p = PointSettings(q)
+	p.PassedRaw = raw.Passed
+	return nil
 }
 
 // SweepSettings is one (scenario, label) with its per-concurrency record.

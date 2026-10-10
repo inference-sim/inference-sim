@@ -62,8 +62,6 @@ func main() {
 		kernelmodel.DefaultScenarios(), "scenario directory")
 	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
 	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
-	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
-	defaults := flag.String("defaults", "defaults.yaml", "")
 	settings := flag.String("engine-settings",
 		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; configures each point as the run was")
@@ -77,14 +75,6 @@ func main() {
 		"restrict to points whose engine configuration is \"measured\" (the run's own command "+
 			"line) or \"resolved\" (vLLM's defaults, no log captured). Empty includes both, "+
 			"which mixes two kinds of evidence in one average")
-	hopper := flag.String("hopper", "", "set to \"yes\" to restrict to h100/h200 and add the analytic arms")
-	// trained-physics applies one alpha/beta pair with no hardware key -- defaults.yaml
-	// carries a single entry, trained across H100 and A100 and used hardware-agnostically,
-	// so it can be scored on any part. Roofline cannot: its per-chip MFU constants come
-	// from hardware_config.json, which carries no Blackwell part. -trained-physics adds
-	// the one analytic arm that travels, without the Hopper restriction roofline forces.
-	withTrained := flag.Bool("trained-physics", false,
-		"add the trained-physics arm on every chip, without restricting to Hopper")
 	// A corpus measured directly against InferenceX carries no published prediction: an
 	// artifact prediction is keyed per (model, gpu, precision, framework, workload, tp,
 	// concurrency), and a direct corpus separates deployments the artifact never did --
@@ -102,7 +92,13 @@ func main() {
 			"variance sets the queueing regime, not the prompt shape. A sensitivity "+
 			"control, not a tuning knob.")
 	seed := flag.Int64("seed", 42, "")
+	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
+	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
 	flag.Parse()
+	if err := harness.RequireBlis(*blis); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings, "absolutes": *absolutes}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -132,15 +128,11 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Admission:        harness.AdmissionKernelKV,
+		Blis:             *blis,
 		Seed:             *seed,
 		LengthRangeRatio: *lengthRatio,
-		Backends: harness.BackendPaths{
-			Catalog: *catalog, HWConfig: *hwConfig, Defaults: *defaults,
-		},
-		EngineSettings: eset,
+		EngineSettings:   eset,
 	}
-	hopperOnly := *hopper != ""
 
 	// With no framework restriction the corpus spans sglang and trtllm, which BLIS does not
 	// model and for which no vLLM engine log exists. The published arms still can be scored
@@ -158,14 +150,6 @@ func main() {
 			_, _, a := p.MetricOf(m)
 			return a
 		}},
-	}
-	if hopperOnly {
-		arms = append(arms,
-			arm{name: "roofline", est: harness.EstimatorRoofline},
-			arm{name: "trained-physics", est: harness.EstimatorTrainedPhysics})
-	} else if *withTrained {
-		arms = append(arms,
-			arm{name: "trained-physics", est: harness.EstimatorTrainedPhysics})
 	}
 	if *simulatedOnly {
 		kept := arms[:0]
@@ -205,6 +189,8 @@ func main() {
 	byFramework := map[string]map[int]map[harness.Metric][]float64{}
 	byModel := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
+	// Every corpus gap, beside the score rather than in it: see harness.Coverage.
+	coverage := harness.AssessCoverage(c, base)
 	sweeps, points := 0, 0
 	ttftExcluded := 0
 
@@ -214,9 +200,6 @@ func main() {
 			continue
 		}
 		chip := family(sw.GPU)
-		if hopperOnly && chip != "h100" && chip != "h200" {
-			continue
-		}
 
 		// Configuration tier: a sweep is taken whole or not at all, because a mean over a
 		// mix of measured and resolved settings is not a statement about either.
@@ -248,7 +231,6 @@ func main() {
 				continue
 			}
 			cfg := base
-			cfg.Estimator = a.est
 			var anchorITL, anchorTTFT float64
 			per := map[harness.Metric][]float64{}
 			perMape := map[harness.Metric][]float64{}
@@ -258,12 +240,15 @@ func main() {
 				if err != nil {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: %v",
 						sw.Scenario, sw.Label, a.est, p.Concurrency, err))
+					coverage.Dropped(sw, p.Concurrency, err.Error())
 					ok = false
 					break
 				}
+				coverage.Observed(sw, p.Concurrency, obs)
 				if obs.MeanITLUs <= 0 || obs.MeanTTFTUs <= 0 {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: no measurement",
 						sw.Scenario, sw.Label, a.est, p.Concurrency))
+					coverage.Dropped(sw, p.Concurrency, "no measurement")
 					ok = false
 					break
 				}
@@ -407,9 +392,6 @@ func main() {
 	}
 
 	title := "every chip"
-	if hopperOnly {
-		title = "Hopper only (h100, h200), with BLIS's analytic backends"
-	}
 	if publishedOnly {
 		title = "every chip and every framework; published arms only"
 	}
@@ -546,6 +528,10 @@ func main() {
 		for _, f := range failures {
 			fmt.Printf("  %s\n", f)
 		}
+	}
+	if err := coverage.WriteGaps(*gaps); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

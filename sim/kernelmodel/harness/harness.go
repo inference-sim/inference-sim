@@ -15,11 +15,17 @@
 //	parallelism        tp/pp/dp/ep       -> from the scenario file the sweep names
 //
 // Concurrency is a CLIENT level, so it is driven as a closed loop: N sessions in flight, a
-// new request admitted when one finishes. BLIS's own seam does this --
-// `Simulator.OnRequestDone` returns follow-up requests -- so the resident batch is decided
-// by BLIS's admission control rather than assumed equal to N. That decoupling is the entire
+// new request admitted when one finishes. A WorkloadSpec concurrency client does this inside
+// `blis run`, so the resident batch is decided by BLIS's admission control rather than
+// assumed equal to N. That decoupling is the entire
 // point: blis-latency-kernel's 13.67% shape error against this corpus comes from assuming
 // resident batch equals concurrency, and here it does not have to.
+//
+// # It does not simulate
+//
+// Every point is simulated by the `blis` binary (Config.Blis), invoked as `blis run` with the
+// point's scenario and workload spec, exactly as a user would run it (#1902). This package
+// only states the point and reads back the --metrics-path file; see Run.
 //
 // # What it deliberately does not do
 //
@@ -39,11 +45,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-
-	// Registers the KV-store constructor behind sim.MustNewKVStoreFromConfig. BLIS breaks
-	// the import cycle between sim/ and sim/kv/ with a registration variable, so a package
-	// that builds a simulator must import sim/kv for its side effect.
-	_ "github.com/inference-sim/inference-sim/sim/kv"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -149,38 +150,24 @@ func LoadCorpus(path string) (*Corpus, error) {
 	return &c, nil
 }
 
-// Admission selects how the resident batch is bounded.
-type Admission int
-
-const (
-	// AdmissionKernelKV derives the KV budget from the kernel's memory methods, so KV
-	// pressure and preemption bound the resident batch alongside max_num_seqs.
-	AdmissionKernelKV Admission = iota
-	// AdmissionSeqsOnly sets a KV budget large enough never to bind, leaving max_num_seqs
-	// and the token budget as the only bounds. Used where the kernel's FixedBytes cannot
-	// supply a usable budget; see kernelmodel.UpstreamExpertWeightDefect.
-	AdmissionSeqsOnly
-)
-
-// Run simulates one (sweep, concurrency) point and returns the mean ITL in microseconds.
-//
-// The returned Observation carries the resident batch actually achieved, because that is the
-// quantity this experiment is about and a mean latency with no batch beside it cannot be
-// interpreted.
+// Observation is what one (sweep, concurrency) point produced: the mean ITL in microseconds
+// and the counts a reader needs to interpret it.
 type Observation struct {
 	MeanITLUs float64
 	// MeanTTFTUs is the mean time to first token over EVERY measured completion -- deliberately
 	// not the post-warm-up subset MeanITLUs uses. See summarize for why the cut belongs to one
 	// metric and not the other.
-	MeanTTFTUs     float64
-	MeasuredTTFT   int
-	Completed      int
-	MeanResident   float64
-	PeakResident   int
-	Preemptions    int
-	KVBlocks       int64
-	AdmissionUsed  Admission
-	StepsSimulated int64
+	MeanTTFTUs   float64
+	MeasuredTTFT int
+	Completed    int
+	// Preemptions is the run's preemption_count, as `blis run` reports it.
+	Preemptions int64
+	// TimedOut and Dropped are the requests `blis run` ended as timed out (its client timeout)
+	// or dropped as unservable. Neither contributes to a mean -- only completions do -- so a
+	// non-zero value means the point's means omit its slowest or largest requests; the
+	// coverage report names every such point (Coverage.Observed).
+	TimedOut int
+	Dropped  int
 
 	// WarmupDiscarded is how many leading completions were dropped, and Measured how many
 	// contributed to MeanITLUs. Reported so a reader can see the mean was not taken over a
@@ -195,16 +182,19 @@ type Observation struct {
 
 // Config carries what a run needs beyond the sweep itself.
 type Config struct {
-	Repos     kernelmodel.Repos
-	Admission Admission
+	Repos kernelmodel.Repos
+	// Blis is the path of the `blis` binary every point is simulated with. Required: the
+	// harness does not simulate anything itself (#1902) -- it writes the point's scenario and
+	// workload and runs `blis run` on them the way any user would.
+	Blis string
 	// SessionsPerPoint is how many requests each concurrency level completes before the
 	// run stops. Larger is steadier and slower; the value is recorded in the report.
 	SessionsPerPoint int
 	Seed             int64
 
-	// MaxNumSeqsScale and TokenBudgetScale multiply the scenario's stated caps. They exist
+	// MaxNumSeqsScale and TokenBudgetScale multiply the point's resolved caps. They exist
 	// for cmd/sensitivity, which measures how much the score depends on settings the
-	// snapshot does not publish. Zero means "use the scenario's value unchanged", which is
+	// snapshot does not publish. Zero means "use the resolved value unchanged", which is
 	// what every scoring run does -- these are never set to tune a result, and choosing the
 	// best value would be fitting to the evaluation set.
 	MaxNumSeqsScale  float64
@@ -231,18 +221,6 @@ type Config struct {
 	// Like the two scales above, this is a sensitivity control. Picking whichever value
 	// scores best would be fitting to the evaluation set.
 	LengthRangeRatio float64
-
-	// Estimator selects which latency model supplies step time. The zero value is
-	// EstimatorKernel, so a caller that does not set it gets blis-latency-kernel and is
-	// byte-identical to a build without this field (INV-6).
-	//
-	// Only STEP TIME changes with this field. KV blocks still come from the kernel's memory
-	// methods, and the host per-token cost is taken from the kernel and given to every arm,
-	// so an arm differs from another on the forward-pass model alone. See backends.go.
-	Estimator Estimator
-	// Backends locates the inputs the analytic arms need. Required only when Estimator is
-	// not the kernel.
-	Backends BackendPaths
 
 	// EngineSettings carries the settings each measured run was launched with. When nil,
 	// every point falls back to the scenario's values -- which is what this experiment did
@@ -282,8 +260,22 @@ func scaled(v int64, factor float64) int64 {
 	return out
 }
 
-// Run drives one point.
+// Run drives one point by running `blis run` on it.
+//
+// # Why the harness does not simulate
+//
+// An earlier revision built a single-instance simulator in-process, scaled max_num_seqs and the
+// token budget by dp, and priced each step through a rank-splitting wrapper -- a second model
+// of data parallelism beside the one `blis run` ships (DP-as-placement: dp independent
+// per-rank replicas behind the router). The two disagreed (#1902), and the score measured the
+// harness's model rather than the simulator's. So the harness now states the point -- a
+// scenario carrying the point's engine settings and a workload spec -- and runs the same
+// binary, with the same flags, a user would. Whatever `blis run` does with dp, KV sizing,
+// admission and routing is what is scored.
 func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
+	if err := RequireBlis(cfg.Blis); err != nil {
+		return Observation{}, err
+	}
 	isl, osl, err := sw.ISLOSL()
 	if err != nil {
 		return Observation{}, err
@@ -297,33 +289,14 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		return Observation{}, err
 	}
 
-	// The KV budget: from the kernel where it can be derived, else large enough not to
-	// bind. Which one was used is reported, never silently chosen.
-	admission := cfg.Admission
-	var blocks int64
-	if admission == AdmissionKernelKV {
-		b, err := m.KVBudget()
-		if err != nil {
-			return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
-		}
-		blocks = b.TotalBlocks
-	} else {
-		// A ceiling that cannot bind: every session's whole context, plus slack.
-		perSeq := int64(math.Ceil(float64(isl+osl)/float64(eng.BlockSize))) + 2
-		blocks = perSeq * int64(concurrency) * 2
-	}
-
 	// The workload the REAL harness drives, from its own source constants, which AISimulate's
 	// replay also matches. See workload.go for the citations and for why the distribution is
 	// matched rather than the individual draws.
 	//
 	// The request budget is the real harness's too: InferenceX runs `--num-warmups
 	// $((2 * CONC))` and then measures `--num-prompts $((CONC * 10))`, so a point is
-	// 12 x concurrency requests of which the leading 2 x concurrency are discarded. An earlier
-	// version used max(24, 4 x concurrency) with the leading half discarded -- a criterion
-	// derived here from the shape of the transient. It converged, but it measured about
-	// 2 x concurrency requests where the harness measures 10 x, and it discarded a fraction
-	// rather than a fixed phase. SessionsPerPoint survives only as a floor.
+	// 12 x concurrency requests of which the leading 2 x concurrency are discarded.
+	// SessionsPerPoint survives only as a floor.
 	w := AISimulateWorkload(isl, osl, concurrency)
 	// Applied to the INPUT length only. Output-length variance is what makes requests
 	// retire at different times, so the resident batch churns rather than finishing in
@@ -338,29 +311,65 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if floor := cfg.SessionsPerPoint; floor > total {
 		total = floor
 	}
+	spec := pointWorkload(w, concurrency, total, cfg)
+	if err := spec.Validate(); err != nil {
+		return Observation{}, fmt.Errorf("workload spec: %w", err)
+	}
 
-	// Built as a BLIS WorkloadSpec and expanded by BLIS's own generator rather than by
-	// assembling SessionBlueprints here. Three reasons, all about fidelity:
+	// The settings that decide admission, each taken from the strongest source available for
+	// THIS point and reported so a reader knows which was used:
 	//
-	//   - A Concurrency client is BLIS's native closed-loop primitive. GenerateWorkload emits
-	//     N seed requests plus unlimited-round blueprints, and SessionManager.OnComplete
-	//     supplies a follow-up per completion, holding N users in flight. That is what the
-	//     snapshot's concurrency means, and it leaves the RESIDENT batch to BLIS's admission
-	//     control rather than fixing it at N.
-	//   - Concurrency and RateFraction are mutually exclusive in BLIS and Validate() enforces
-	//     it, so that invariant is checked rather than assumed.
-	//   - Every other knob (prefix sharing, multimodal, reasoning, LoRA, network, lifecycle,
-	//     SLO) is left at its zero value, so the spec records exactly what this comparison
-	//     does and does not exercise.
+	//   measured  the run's own command line, from its engine log
+	//   resolved  vLLM's device-memory resolution, for a setting the run did not pass
+	//   scenario  the value in the scenario file, when no measurement exists at all
 	//
-	// Lengths are discrete uniform over AISimulate's one-sided interval, expressed through
-	// BLIS's existing `empirical` sampler. The label is an upper bound: at "1024:1024" the
-	// interval is [819, 1024] on both axes. An earlier version used a constant at the label,
-	// which drove a mean context about 10% longer than the baseline's and removed the length
-	// variance entirely -- and variance matters here beyond its mean, because variable output
-	// lengths make requests retire at different times, so the resident batch churns instead
-	// of finishing in lockstep.
-	spec := &workload.WorkloadSpec{
+	// The ordering matters because the settings are not uniform. Across the 238 scored
+	// points the runs passed max_num_seqs equal to the client concurrency on 92, a fixed
+	// value on 69, and nothing on 77, so neither a single value nor a single rule is right
+	// anywhere near everywhere.
+	//
+	// They are PER RANK -- one vLLM EngineCore's caps -- because that is what the engine was
+	// launched with and what `blis run` reads from a scenario: a dp > 1 deployment runs as
+	// dp replicas, each with these caps. Nothing here multiplies by dp.
+	admit := resolveAdmission(sw, concurrency, eng, m.Deployment(), cfg.EngineSettings)
+	engine := admit
+	engine.MaxNumSeqs = int(scaled(int64(admit.MaxNumSeqs), cfg.MaxNumSeqsScale))
+	engine.MaxNumBatchedTokens = int(scaled(int64(admit.MaxNumBatchedTokens), cfg.TokenBudgetScale))
+
+	out, err := runBlis(cfg, sw.Scenario, engine, spec)
+	if err != nil {
+		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
+	}
+	obs := summarize(out.Requests, warmup, cfg.WarmupFraction)
+	obs.Preemptions = out.PreemptionCount
+	obs.TimedOut = out.TimedOutRequests
+	obs.Dropped = out.DroppedUnservable
+	obs.Settings = admit
+	return obs, nil
+}
+
+// pointWorkload is the point's workload as a BLIS WorkloadSpec, which `blis run` expands with
+// its own generator. Three reasons it is a spec rather than hand-built requests, all about
+// fidelity:
+//
+//   - A Concurrency client is BLIS's native closed-loop primitive: N seed requests plus
+//     unlimited-round session blueprints, a follow-up per completion, holding N users in
+//     flight. That is what the snapshot's concurrency means, and it leaves the RESIDENT batch
+//     to BLIS's admission control rather than fixing it at N.
+//   - Concurrency and RateFraction are mutually exclusive in BLIS and Validate() enforces
+//     it, so that invariant is checked rather than assumed.
+//   - Every other knob (prefix sharing, multimodal, reasoning, LoRA, network, lifecycle,
+//     SLO) is left at its zero value, so the spec records exactly what this comparison
+//     does and does not exercise.
+//
+// Lengths are discrete uniform over AISimulate's one-sided interval, expressed through BLIS's
+// existing `empirical` sampler. The label is an upper bound: at "1024:1024" the interval is
+// [819, 1024] on both axes. An earlier version used a constant at the label, which drove a
+// mean context about 10% longer than the baseline's and removed the length variance entirely
+// -- and variance matters here beyond its mean, because variable output lengths make requests
+// retire at different times, so the resident batch churns instead of finishing in lockstep.
+func pointWorkload(w Workload, concurrency, total int, cfg Config) *workload.WorkloadSpec {
+	return &workload.WorkloadSpec{
 		Version:  "v1",
 		Seed:     cfg.Seed,
 		Category: "language", // plain text generation: the snapshot states no multimodal or reasoning workload
@@ -385,121 +394,27 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		}},
 		NumRequests: int64(total),
 	}
-	if err := spec.Validate(); err != nil {
-		return Observation{}, fmt.Errorf("workload spec: %w", err)
-	}
-	wl, err := workload.GenerateWorkload(spec, math.MaxInt64, int64(total))
-	if err != nil {
-		return Observation{}, err
-	}
-	if len(wl.Sessions) == 0 {
-		return Observation{}, fmt.Errorf(
-			"a concurrency-%d client produced no session blueprints, so the run would be "+
-				"open-loop and the resident batch would not be bounded by the client level",
-			concurrency)
-	}
-	mgr := workload.NewSessionManager(wl.Sessions)
-	if wl.FollowUpBudget >= 0 {
-		mgr.SetFollowUpBudget(wl.FollowUpBudget)
-	}
-
-	// Data parallelism runs dp independent EngineCores, each with its OWN max_num_seqs and
-	// token budget, and requests split disjointly across them. This single-instance
-	// simulator models the aggregate, so both caps scale by dp -- the same rule KVBudget
-	// applies to blocks, and vLLM's own (see latency.CalculateKVBlocks' dp scaling).
-	//
-	// Getting this wrong is not a small inaccuracy. The ep4-dp2 sweeps in this corpus begin
-	// at concurrency 256 against a stated max_num_seqs of 256: without the dp factor the
-	// resident batch saturates at the first point and the predicted curve is FLAT
-	// (1.002, 1.003 across a four-fold concurrency rise) while the measurement doubles.
-	dp := int64(m.DataParallelWidth())
-	if dp < 1 {
-		dp = 1
-	}
-	// The three settings that decide admission, each taken from the strongest source
-	// available for THIS point and reported so a reader knows which was used:
-	//
-	//   measured  the run's own command line, from its engine log
-	//   resolved  vLLM's device-memory resolution, for a setting the run did not pass
-	//   scenario  the value in the scenario file, when no measurement exists at all
-	//
-	// The ordering matters because the settings are not uniform. Across the 238 scored
-	// points the runs passed max_num_seqs equal to the client concurrency on 92, a fixed
-	// value on 69, and nothing on 77, so neither a single value nor a single rule is right
-	// anywhere near everywhere.
-	admit := resolveAdmission(sw, concurrency, eng, m.Deployment(), cfg.EngineSettings)
-	obsSettings := admit
-
-	cfgSim := sim.SimConfig{
-		Horizon:       math.MaxInt64,
-		Seed:          cfg.Seed,
-		KVCacheConfig: sim.NewKVCacheConfig(blocks, int64(admit.BlockSize), 0, 0, 0, 0),
-		BatchConfig: sim.NewBatchConfig(
-			scaled(int64(admit.MaxNumSeqs)*dp, cfg.MaxNumSeqsScale),
-			scaled(int64(admit.MaxNumBatchedTokens)*dp, cfg.TokenBudgetScale), 0,
-			// InferenceX launched 233 of the 238 scored points with
-			// --no-enable-prefix-caching, so a comparison that cached unconditionally
-			// charged less prefill work than the engine did (#1867).
-			sim.WithPrefixCachingDisabled(admit.PrefixCachingDisabled)),
-	}
-	// The latency model under test. The KERNEL supplied everything above -- the KV budget,
-	// the engine settings, the dp width -- so swapping only this leaves the resident batch
-	// and the admission behaviour decided identically for every arm, which is what makes the
-	// comparison a step-time comparison.
-	var lm sim.LatencyModel = m
-	if cfg.Estimator != "" && cfg.Estimator != EstimatorKernel {
-		alt, err := altModel(cfg.Estimator, m.Deployment(), cfg.Backends,
-			hostCosts{perOutputTokenUs: m.OutputTokenProcessingTime()})
-		if err != nil {
-			return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
-		}
-		lm = alt
-	}
-	kvStore := sim.MustNewKVStoreFromConfig(cfgSim.KVCacheConfig)
-	s, err := sim.NewSimulator(cfgSim, kvStore, lm)
-	if err != nil {
-		return Observation{}, err
-	}
-	// The closed loop: BLIS's own seam. Each completion returns the follow-up request that
-	// keeps the pool at N in flight, so the RESIDENT batch is whatever admission control
-	// allows rather than N by construction.
-	// Completion order, for the warm-up discard. OnRequestDone fires once per request
-	// reaching a terminal state, in completion order, which is exactly the sequence the
-	// steady-state cut needs.
-	var order []string
-	s.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-		order = append(order, req.ID)
-		return mgr.OnComplete(req, tick)
-	}
-	// InjectArrival, not EnqueueRequest. EnqueueRequest puts a request in the wait queue and
-	// schedules only its timeout; it is the tail of the arrival path, called BY QueuedEvent,
-	// which is what triggers the first StepEvent. Calling it directly leaves the simulator
-	// with a populated wait queue and no step scheduled, so Run() processes the timeouts and
-	// exits having executed zero steps -- which is exactly what happened before this
-	// comment existed.
-	for _, r := range wl.Requests {
-		s.InjectArrival(r)
-	}
-	s.Run()
-
-	obs := summarize(s, order, warmup, cfg.WarmupFraction, blocks, admission)
-	obs.Settings = obsSettings
-	return obs, nil
 }
 
-// summarize reduces a finished simulation to the observation the score needs.
+// summarize reduces a finished run's per-request metrics to the observation the score needs.
 //
 // The mean is taken over the per-request mean inter-token latencies of the requests that
-// completed AFTER the warm-up prefix, in completion order. Two reasons it is per request
-// rather than over BLIS's pooled AllITLs: a pooled mean weights a long request more heavily
-// than a short one, and only a per-request view can drop a warm-up prefix at all.
-func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction float64,
-	blocks int64, a Admission) Observation {
-	obs := Observation{
-		Completed:     len(order),
-		KVBlocks:      blocks,
-		AdmissionUsed: a,
+// completed AFTER the warm-up prefix, in completion order (completion_index). Two reasons it
+// is per request rather than over a pooled ITL: a pooled mean weights a long request more
+// heavily than a short one, and only a per-request view can drop a warm-up prefix at all.
+//
+// `blis run` reports per-request latencies in milliseconds; they are converted back to
+// microseconds (the simulator's tick) here. The round trip µs -> ms -> µs is exact to within
+// one float64 ulp, far below anything the score prints.
+func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float64) Observation {
+	var order []sim.RequestMetrics
+	for _, r := range reqs {
+		if r.CompletionIndex > 0 {
+			order = append(order, r)
+		}
 	}
+	sort.Slice(order, func(i, j int) bool { return order[i].CompletionIndex < order[j].CompletionIndex })
+	obs := Observation{Completed: len(order)}
 	// The real harness's fixed warm-up phase. WarmupFraction overrides it for
 	// cmd/sensitivity, which varies it to show the score does not turn on the choice.
 	cut := warmupCount
@@ -511,12 +426,13 @@ func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction
 	if cut >= len(order) {
 		cut = 0
 	}
+	const usPerMs = 1e3
 	var sum float64
 	var n int
 	var ttftSum float64
 	var ttftN int
-	for _, id := range order[cut:] {
-		if itl, ok := s.Metrics.RequestITLs[id]; ok && itl > 0 {
+	for _, r := range order[cut:] {
+		if itl := r.ITL * usPerMs; itl > 0 {
 			sum += itl
 			n++
 		}
@@ -543,10 +459,10 @@ func summarize(s *sim.Simulator, order []string, warmupCount int, warmupFraction
 	// 1.000 1.032 1.098 1.212 1.337 with the cut applied, 1.000 1.115 1.343 1.699 2.325 without,
 	// against a measurement of 1.000 1.131 (spike) 1.865 2.871. The cut, not the model, was the
 	// reason the TTFT curve was flat.
-	for _, id := range order {
+	for _, r := range order {
 		// Counted independently of the ITL branch: a request that emitted exactly one token has
 		// a TTFT and no inter-token interval, so requiring both would silently drop it.
-		if t, ok := s.Metrics.RequestTTFTs[id]; ok && t > 0 {
+		if t := r.TTFT * usPerMs; t > 0 {
 			ttftSum += t
 			ttftN++
 		}

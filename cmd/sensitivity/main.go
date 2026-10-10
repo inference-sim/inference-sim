@@ -47,7 +47,13 @@ func main() {
 	framework := flag.String("framework", "vllm", "")
 	sessions := flag.Int("sessions", 40, "")
 	monotoneOnly := flag.Bool("monotone", true, "score only sweeps with a monotone measurement")
+	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
+	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
 	flag.Parse()
+	if err := harness.RequireBlis(*blis); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -62,7 +68,7 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Admission: harness.AdmissionKernelKV, SessionsPerPoint: *sessions, Seed: 42,
+		Blis: *blis, SessionsPerPoint: *sessions, Seed: 42,
 	}
 
 	score := func(cfg harness.Config) (float64, int) {
@@ -112,9 +118,6 @@ func main() {
 		{"max_num_seqs /2", func(c *harness.Config) { c.MaxNumSeqsScale = 0.5 }},
 		{"token budget x2", func(c *harness.Config) { c.TokenBudgetScale = 2 }},
 		{"token budget /2", func(c *harness.Config) { c.TokenBudgetScale = 0.5 }},
-		{"admission: seqs only (no KV)", func(c *harness.Config) {
-			c.Admission = harness.AdmissionSeqsOnly
-		}},
 	}
 	for _, v := range variants {
 		cfg := base
@@ -123,8 +126,19 @@ func main() {
 		fmt.Printf("%-34s %6d %7.2f%% %+7.2f\n", v.label, vn, m, m-baseMAPE)
 	}
 
+	// The former "admission: seqs only (no KV)" row set a KV budget large enough never to
+	// bind. Points are now simulated by `blis run`, which sizes the KV pool from the kernel
+	// and offers no override, so that row cannot be expressed and is reported, not faked
+	// (#1902).
+	fmt.Printf("%-34s %6s %8s %8s\n", "admission: seqs only (no KV)", "-", "n/a", "n/a")
+	fmt.Printf("  (not expressible: blis run sizes KV from the kernel and has no override)\n")
+
 	fmt.Printf("\nA setting whose delta is small is a footnote. One whose delta is large bounds\n")
 	fmt.Printf("what this comparison can claim, because its value is a guess: the snapshot\n")
 	fmt.Printf("states it nowhere. No value is chosen here -- choosing the best would be\n")
 	fmt.Printf("fitting to the evaluation set.\n")
+	if err := harness.AssessCoverage(c, base).WriteGaps(*gaps); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

@@ -33,7 +33,7 @@ func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42,
 		EngineSettings: set}
 	byTier := map[SettingSource]int{}
 	perModel := map[string]map[SettingSource]int{}
@@ -152,7 +152,7 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42,
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42,
 		EngineSettings: set}
 	for i := range c.Sweeps {
 		sw := c.Sweeps[i]
@@ -190,7 +190,7 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 // a number chosen here would be the only case in the table that describes no real deployment.
 func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 	sw := testSweep(t)
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
 	obs, err := Run(sw, 8, cfg)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -229,7 +229,7 @@ func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	if sw.Scenario == "" {
 		t.Skip("no sglang sweep in the corpus")
 	}
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
 	obs, err := Run(sw, sw.Points[0].Concurrency, cfg)
 	if err != nil {
 		t.Fatalf("%s: %v", sw.Scenario, err)

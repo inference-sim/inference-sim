@@ -22,7 +22,7 @@ func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
 	sw := testSweep(t)
 	// Concurrency 64: deep enough that the start-up transient is several prefill waves.
 	const conc = 64
-	base := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	base := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
 
 	withCut, err := Run(sw, conc, base)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestTTFTRisesWithConcurrency(t *testing.T) {
 	}
 	_ = c
 	sw := testSweep(t)
-	cfg := Config{Repos: hopperRepos(), Admission: AdmissionKernelKV, Seed: 42}
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
 
 	lo, err := Run(sw, 4, cfg)
 	if err != nil {

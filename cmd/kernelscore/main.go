@@ -56,7 +56,13 @@ func main() {
 	seed := flag.Int64("seed", 42, "")
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
 	verbose := flag.Bool("verbose", false, "print every point")
+	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
+	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
 	flag.Parse()
+	if err := harness.RequireBlis(*blis); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -71,7 +77,7 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Admission:        harness.AdmissionKernelKV,
+		Blis:             *blis,
 		SessionsPerPoint: *sessions,
 		WarmupFraction:   *warmup,
 		Seed:             *seed,
@@ -117,6 +123,8 @@ func main() {
 	byConc := map[int][]float64{}
 	byConcTheirs := map[int][]float64{}
 	var failures []string
+	// Every corpus gap, beside the score rather than in it: see harness.Coverage.
+	coverage := harness.AssessCoverage(c, cfg)
 
 	for _, sw := range c.Sweeps {
 		if *framework != "" && sw.Framework != *framework {
@@ -134,13 +142,16 @@ func main() {
 			if err != nil {
 				failures = append(failures,
 					fmt.Sprintf("%s %s c=%d: %v", sw.Scenario, sw.Label, p.Concurrency, err))
+				coverage.Dropped(sw, p.Concurrency, err.Error())
 				bad = true
 				break
 			}
+			coverage.Observed(sw, p.Concurrency, obs)
 			if obs.MeanITLUs <= 0 {
 				failures = append(failures, fmt.Sprintf(
 					"%s %s c=%d: no inter-token latency observed from %d completions",
 					sw.Scenario, sw.Label, p.Concurrency, obs.Completed))
+				coverage.Dropped(sw, p.Concurrency, "no inter-token latency observed")
 				bad = true
 				break
 			}
@@ -182,11 +193,11 @@ func main() {
 					fmt.Printf("--- %s %s %s %s tp=%d\n", sw.Scenario, sw.Label,
 						sw.Framework, sw.Precision, sw.Parallelism["tp_size"])
 					fmt.Printf("%6s %10s %10s %8s %10s %8s %8s\n",
-						"conc", "measured", "blis", "error", "aisim", "error", "resident")
+						"conc", "measured", "blis", "error", "aisim", "error", "preempt")
 				}
-				fmt.Printf("%6d %10.4f %10.4f %7.2f%% %10.4f %7.2f%% %8.1f\n",
+				fmt.Printf("%6d %10.4f %10.4f %7.2f%% %10.4f %7.2f%% %8d\n",
 					p.Concurrency, p.MeasuredRelative, predicted, errMine,
-					p.AISimulateRelative/theirAnchor, errTheirs, obs.MeanResident)
+					p.AISimulateRelative/theirAnchor, errTheirs, obs.Preemptions)
 			}
 		}
 		if bad || len(mine) == 0 {
@@ -319,6 +330,10 @@ func main() {
 		for _, f := range failures {
 			fmt.Printf("  %s\n", f)
 		}
+	}
+	if err := coverage.WriteGaps(*gaps); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

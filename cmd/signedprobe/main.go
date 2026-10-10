@@ -28,9 +28,13 @@ func main() {
 	tier := flag.String("config-tier", "",
 		"restrict to \"measured\" sweeps (the run's own command line) or \"resolved\" "+
 			"(vLLM defaults). Same test metricscore applies, so the two agree on membership.")
-	hwConfig := flag.String("hardware-config", "hardware_config.json", "")
-	defaults := flag.String("defaults", "defaults.yaml", "")
+	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
+	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
 	flag.Parse()
+	if err := harness.RequireBlis(*blis); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	c, err := harness.LoadCorpus(*corpusPath)
 	if err != nil {
@@ -51,11 +55,7 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Admission: harness.AdmissionKernelKV,
-		Backends: harness.BackendPaths{
-			Catalog: *catalog, HWConfig: *hwConfig, Defaults: *defaults,
-		},
-		Estimator:      harness.EstimatorKernel,
+		Blis:           *blis,
 		EngineSettings: eset,
 		Seed:           42,
 	}
@@ -114,4 +114,8 @@ func main() {
 	fmt.Fprintf(os.Stderr,
 		"points=%d emitted=%d skipped: no_absolutes=%d no_tpot=%d run_error=%d\n",
 		total, emitted, noAbs, noTPOT, runErr)
+	if err := harness.AssessCoverage(c, cfg).WriteGaps(*gaps); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

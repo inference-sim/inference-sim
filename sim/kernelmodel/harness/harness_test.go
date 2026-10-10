@@ -11,10 +11,10 @@ import (
 // corpusPath is the AISimulate end-to-end corpus, under BLIS_MEASUREMENTS.
 func corpusPath(t testing.TB) string { return artifacts.Measurement(t, "aisimulate_e2e.json") }
 
-func cfg() Config {
+func cfg(t testing.TB) Config {
 	return Config{
 		Repos:            kernelmodel.DefaultRepos(),
-		Admission:        AdmissionKernelKV,
+		Blis:             testBlis(t),
 		SessionsPerPoint: 24,
 		Seed:             42,
 	}
@@ -36,7 +36,7 @@ func corpus(t *testing.T) *Corpus {
 func TestARunCompletesRequestsAndObservesLatency(t *testing.T) {
 	c := corpus(t)
 	sw := c.Sweeps[0]
-	obs, err := Run(sw, sw.Points[0].Concurrency, cfg())
+	obs, err := Run(sw, sw.Points[0].Concurrency, cfg(t))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -46,9 +46,6 @@ func TestARunCompletesRequestsAndObservesLatency(t *testing.T) {
 	}
 	if obs.MeanITLUs <= 0 {
 		t.Fatalf("%d requests completed but mean ITL is %v", obs.Completed, obs.MeanITLUs)
-	}
-	if obs.KVBlocks <= 0 {
-		t.Errorf("KV budget is %d blocks", obs.KVBlocks)
 	}
 }
 
@@ -60,7 +57,7 @@ func TestInterTokenLatencyRisesWithConcurrency(t *testing.T) {
 	sw := c.Sweeps[0]
 	var prev float64
 	for _, p := range sw.Points {
-		obs, err := Run(sw, p.Concurrency, cfg())
+		obs, err := Run(sw, p.Concurrency, cfg(t))
 		if err != nil {
 			t.Fatalf("c=%d: %v", p.Concurrency, err)
 		}
@@ -78,16 +75,16 @@ func TestInterTokenLatencyRisesWithConcurrency(t *testing.T) {
 func TestARunIsDeterministicAtAFixedSeed(t *testing.T) {
 	c := corpus(t)
 	sw := c.Sweeps[0]
-	a, err := Run(sw, 8, cfg())
+	a, err := Run(sw, 8, cfg(t))
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	b, err := Run(sw, 8, cfg())
+	b, err := Run(sw, 8, cfg(t))
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
 	if a.MeanITLUs != b.MeanITLUs {
-		t.Errorf("two runs at seed %d gave %.6f and %.6f us", cfg().Seed,
+		t.Errorf("two runs at seed %d gave %.6f and %.6f us", cfg(t).Seed,
 			a.MeanITLUs, b.MeanITLUs)
 	}
 	if a.Completed != b.Completed {
@@ -115,11 +112,11 @@ func TestTheSweepsWorkloadReachesTheSimulation(t *testing.T) {
 		t.Skip("this deployment does not carry both workloads in the corpus")
 	}
 	const concurrency = 8
-	a, err := Run(short, concurrency, cfg())
+	a, err := Run(short, concurrency, cfg(t))
 	if err != nil {
 		t.Fatalf("1k1k: %v", err)
 	}
-	b, err := Run(long, concurrency, cfg())
+	b, err := Run(long, concurrency, cfg(t))
 	if err != nil {
 		t.Fatalf("8k1k: %v", err)
 	}
@@ -191,7 +188,7 @@ func TestTheObservedMeanDoesNotDependOnTheSessionBudget(t *testing.T) {
 	// Concurrency 32 is where the dependence was worst: a 40-completion budget covered
 	// barely one pool cycle there.
 	const concurrency = 32
-	base := cfg()
+	base := cfg(t)
 	var first float64
 	for _, floor := range []int{24, 60, 120} {
 		c := base
@@ -221,11 +218,11 @@ func TestTheObservedMeanDoesNotDependOnTheSessionBudget(t *testing.T) {
 func TestTheCompletionBudgetScalesWithConcurrency(t *testing.T) {
 	c := corpus(t)
 	sw := c.Sweeps[0]
-	low, err := Run(sw, 4, cfg())
+	low, err := Run(sw, 4, cfg(t))
 	if err != nil {
 		t.Fatalf("c=4: %v", err)
 	}
-	high, err := Run(sw, 64, cfg())
+	high, err := Run(sw, 64, cfg(t))
 	if err != nil {
 		t.Fatalf("c=64: %v", err)
 	}
@@ -246,7 +243,7 @@ func TestTheCompletionBudgetScalesWithConcurrency(t *testing.T) {
 func TestTheWarmupDiscardLeavesSomethingMeasured(t *testing.T) {
 	c := corpus(t)
 	sw := c.Sweeps[0]
-	conf := cfg()
+	conf := cfg(t)
 	conf.WarmupFraction = 0.5
 	obs, err := Run(sw, 8, conf)
 	if err != nil {
