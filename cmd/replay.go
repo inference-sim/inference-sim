@@ -55,13 +55,14 @@ Known limitations:
   - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
     is responsible for excluding the first N warm-up entries from calibration.
   - Multi-model traces: per-request Model field is propagated to the simulator, but
-    the latency model configuration (--model flag) applies globally to all requests.
+    the deployment (--scenario) applies globally to all requests.
   - Horizon: --horizon defaults to 2x the latest arrival time. For heavy-load traces
     where requests queue past 2x max_arrival, pass --horizon explicitly and monitor
     still_queued/still_running in the aggregate metrics output.
 
 Example:
-  blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1`,
+  blis replay --trace-header t.yaml --trace-data d.csv \
+    --scenario <scenario.yaml> --scenarios <dir> --registry <blis-registry> --catalog <blis-catalog>`,
 	Run: func(cmd *cobra.Command, args []string) {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -898,7 +899,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
-	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for `blis calibrate --sim-metrics`, #1583). Symmetric with `blis run --metrics-path`; stdout is unaffected.")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for 'blis calibrate --sim-metrics', #1583). Symmetric with 'blis run --metrics-path'; stdout is unaffected.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
@@ -917,7 +918,7 @@ func init() {
 	// invokes the workload generator. The flag binds to a throwaway local
 	// so no global state is mutated. BC-9.
 	var replayLazyGenerationIgnored bool
-	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with `blis run` (#1441); has no effect on replay.")
+	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with 'blis run' (#1441); has no effect on replay.")
 	rootCmd.AddCommand(replayCmd)
 }
 

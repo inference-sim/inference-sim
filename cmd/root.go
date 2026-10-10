@@ -129,13 +129,14 @@ var (
 	loraLoadBandwidthBytesUs  float64 // --lora-load-bandwidth-bytes-us
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
-	// Speculative decoding / MTP (#1528). All default-off; num-speculative-tokens=0
-	// => feature inert, output byte-identical (INV-6). --speculative-acceptance-rate
-	// is required (Changed-gated) when --num-speculative-tokens > 0 to prevent the
-	// α=0 "pure slowdown" footgun.
-	numSpeculativeTokens  int     // --num-speculative-tokens (K)
+	// Speculative decoding / MTP (#1528). The draft length K and method come from the
+	// scenario's engine.speculative (set when the kernel deployment is adopted); K=0 =>
+	// feature inert, output byte-identical (INV-6). --speculative-acceptance-rate, a workload
+	// property, is required (Changed-gated) when K > 0 to prevent the α=0 "pure slowdown"
+	// footgun.
+	numSpeculativeTokens  int     // K, from the scenario
 	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
-	speculativeMethod     string  // --speculative-method (informational label)
+	speculativeMethod     string  // method, from the scenario (informational label)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation
 	// (bytes) into KV auto-capacity, mirroring how totalKVBlocks is threaded as a
@@ -1115,7 +1116,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
-	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1]. Required when --num-speculative-tokens > 0.")
+	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1] -- a property of the workload, not the deployment. Required when the scenario's engine drafts tokens (engine.speculative).")
 
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
@@ -1125,7 +1126,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
 	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
 	// read only when some tier actually names a class.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io/bandwidth). A per-tier device_class resolves its bandwidth/latency from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"), read only when a tier names one; a tier supplying an explicit read_bandwidth + write_bandwidth + base_latency triple needs no table. Absent => offload subsystem inert. On replay the trace header is authoritative.")
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. Absent => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1223,19 +1224,16 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 // round-trips under identical flags (INV-13). Fatalf on invalid config (CLI boundary,
 // R6).
 func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
-	// Footgun guard: --num-speculative-tokens k>0 with an unsupplied
+	// Footgun guard: a scenario drafting k>0 tokens with an unsupplied
 	// --speculative-acceptance-rate would default α=0, modeling spec-decode as PURE
 	// SLOWDOWN (verify width k+1 raises per-step cost while g=1 gives no throughput
 	// gain) — the opposite of the feature's intent. Require α to be supplied
 	// explicitly when k>0 (α=0 stays legal, but must be a deliberate choice). Mirrors
 	// the codebase's Changed()-gated required-flag idiom.
 	if numSpeculativeTokens > 0 && !cmd.Flags().Changed("speculative-acceptance-rate") {
-		source := "--num-speculative-tokens > 0"
-		if kernelOpened != nil {
-			source = fmt.Sprintf("scenario %q drafts %d tokens (engine.speculative)", kernelScenario, numSpeculativeTokens)
-		}
-		logrus.Fatalf("--speculative-acceptance-rate is required when %s (set it explicitly, e.g. "+
-			"--speculative-acceptance-rate 0.7; use 0 only to deliberately model 0%% acceptance)", source)
+		logrus.Fatalf("--speculative-acceptance-rate is required when scenario %q drafts %d tokens "+
+			"(engine.speculative): set it explicitly, e.g. --speculative-acceptance-rate 0.7; use 0 only "+
+			"to deliberately model 0%% acceptance", kernelScenario, numSpeculativeTokens)
 	}
 	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, speculativeAcceptance, speculativeMethod)
 	if err != nil {
