@@ -43,22 +43,22 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
-!testdata/trained_physics_iter29.json
-!testdata/roofline_goldendataset.json
 !testdata/catalog/models/**/config.json
-!hardware_config.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
-!sim/latency/testdata/**/*.json
 data/
 *.txt
 
-# auto-fetched HuggingFace model configs (downloaded by --roofline)
-
 # binaries
-blis
-blis_iter*
-inference-sim
+#
+# Leading-slash anchored so each matches ONLY the binary built in the repository root. An
+# unanchored `blis` matches any path COMPONENT of that name at any depth, so a directory
+# named blis anywhere in the tree would be silently excluded from `git add`.
+# `inference-sim` unanchored has the same hazard against any directory sharing this
+# repository's own name.
+/blis
+/blis_iter*
+/inference-sim
 
 # archon-go pr-review --out
 .archon/
@@ -138,3 +138,13 @@ docs/plans/
 # Nous campaign orchestration (experiment worktrees + state, not committed)
 .nous-experiments/
 .nous/
+
+# compiled scoring and probe binaries (built with `go build ./cmd/...`; never artefacts in git)
+/blisbaseline
+/kernelscore
+/metricscore
+/sensitivity
+/signedprobe
+
+# rapid property-test failure files (re-generated on every failing run)
+**/testdata/rapid/

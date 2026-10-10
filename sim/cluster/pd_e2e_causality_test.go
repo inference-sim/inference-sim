@@ -6,7 +6,11 @@ import (
 	"reflect"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // Issue #1513: the PD-disaggregated parent (client-visible) E2E under-counted
@@ -244,25 +248,21 @@ func TestPDParentE2E_CompletionTimeMetricConsistency(t *testing.T) {
 	}
 }
 
-// newTestColocatedTrainedPhysicsConfig builds a single-instance (non-PD)
+// newTestColocatedConfig builds a single-instance (non-PD)
 // deployment whose latency parameters MATCH newTestDisaggDeploymentConfig
-// (same betas/alphas/model/hardware). It is the parity baseline: a PD request
+// (same fake latency model, model and hardware). It is the parity baseline: a PD request
 // must not report a SMALLER client-visible E2E than the identical request served
 // co-located, because PD adds a real KV-transfer cost on top of the same
 // prefill+decode work.
-func newTestColocatedTrainedPhysicsConfig() DeploymentConfig {
-	modelCfg := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
-	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
-	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphas := []float64{100, 1, 100}
+func newTestColocatedConfig() DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:  1,
 		RoutingPolicy: "round-robin",
@@ -285,23 +285,51 @@ func newTestColocatedTrainedPhysicsConfig() DeploymentConfig {
 // would confound the two. The out=1 case has no such confound (0 extra decode
 // steps either way), giving a clean, exact decomposition.
 func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
+	// The laws must hold whatever a step costs and however that cost depends on the
+	// step's prefill/decode mix: a constant-cost model hid #1903, where the handoff began
+	// at the START of the prefill step, so PD won whenever prefill cost more than decode.
+	rapid.Check(t, func(rt *rapid.T) {
+		stepModel := fakelatency.WithCoeffs(testutil.FakeLatency{
+			BaseTicks:                  rapid.Int64Range(1, 5000).Draw(rt, "base"),
+			PerScheduledTokenTicks:     rapid.Int64Range(0, 200).Draw(rt, "perToken"),
+			PerDecodeRequestTicks:      rapid.Int64Range(0, 200).Draw(rt, "perDecode"),
+			PerContextTokenMilliTicks:  rapid.Int64Range(0, 1000).Draw(rt, "perContext"),
+			QueueingTicks:              rapid.Int64Range(0, 500).Draw(rt, "queueing"),
+			OutputTokenProcessingTicks: rapid.Int64Range(0, 200).Draw(rt, "otpt"),
+			PostDecodeOverheadTicks:    rapid.Int64Range(0, 500).Draw(rt, "postDecode"),
+		})
+		pdE2EGeqColocated(rt, stepModel, rapid.IntRange(1, 512).Draw(rt, "inputLen"))
+	})
+}
+
+// pdE2EGeqColocated runs one 1-output request through a P/D cluster and a colocated one,
+// both priced by stepModel, and checks PD never under-reports and pays at least its handoff.
+func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
 	// Guard the parity premise: the PD and co-located configs must use identical
 	// latency parameters, otherwise a PD-vs-non-PD E2E comparison is meaningless.
-	// This enforces the "same betas/alphas/model/hardware" claim in
-	// newTestColocatedTrainedPhysicsConfig's doc comment rather than trusting it,
+	// This enforces the "same latency model/model/hardware" claim in
+	// newTestColocatedConfig's doc comment rather than trusting it,
 	// so the two helpers cannot silently drift apart.
 	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	coloCfg := newTestColocatedTrainedPhysicsConfig()
-	if !reflect.DeepEqual(pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs) {
-		t.Fatalf("PD and co-located configs have diverging latency coefficients (%+v vs %+v) — parity comparison invalid",
-			pdCfg.LatencyCoeffs, coloCfg.LatencyCoeffs)
+	pdCfg.LatencyModel = stepModel
+	coloCfg := newTestColocatedConfig()
+	coloCfg.LatencyModel = stepModel
+	if !reflect.DeepEqual(pdCfg.LatencyModel, coloCfg.LatencyModel) {
+		rt.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
+			pdCfg.LatencyModel, coloCfg.LatencyModel)
 	}
 	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
-		t.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
+		rt.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
 	}
 
 	// PD run (single request so there is no queueing skew vs the baseline).
-	mPD, csPD := runShortOutputPD(t, 1, 1)
+	pdReq := &sim.Request{
+		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
+		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
+	}
+	csPD := NewClusterSimulator(pdCfg, NewSliceRequestSource([]*sim.Request{pdReq}), nil)
+	mustRun(rt, csPD)
+	mPD := csPD.AggregatedMetrics()
 	var pdE2E, transferCost float64
 	var found bool
 	for _, parent := range csPD.ParentRequests() {
@@ -313,24 +341,24 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 		found = true
 	}
 	if !found {
-		t.Fatal("PD run produced no completed parent")
+		rt.Fatal("PD run produced no completed parent")
 	}
 
 	// Non-PD baseline: identical single request, co-located instance.
 	nreq := &sim.Request{
-		ID: "request_0", InputTokens: make([]sim.TokenID, 20),
+		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
-	ncs := NewClusterSimulator(newTestColocatedTrainedPhysicsConfig(), NewSliceRequestSource([]*sim.Request{nreq}), nil)
-	mustRun(t, ncs)
+	ncs := NewClusterSimulator(coloCfg, NewSliceRequestSource([]*sim.Request{nreq}), nil)
+	mustRun(rt, ncs)
 	nonPDE2E, ok := ncs.AggregatedMetrics().RequestE2Es["request_0"]
 	if !ok {
-		t.Fatal("non-PD baseline produced no E2E")
+		rt.Fatal("non-PD baseline produced no E2E")
 	}
 
 	// Law 1: PD must not under-report vs co-located.
 	if pdE2E < nonPDE2E {
-		t.Errorf("PD E2E (%.1f) < non-PD baseline E2E (%.1f) — PD must not under-report vs co-located (it adds KV-transfer cost)",
+		rt.Errorf("PD E2E (%.1f) < non-PD baseline E2E (%.1f) — PD must not under-report vs co-located (it adds KV-transfer cost)",
 			pdE2E, nonPDE2E)
 	}
 	// Law 2: the PD surplus over co-located is at least the KV-transfer cost — the
@@ -340,10 +368,10 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 	// not break a physically-correct E2E (the surplus can only grow, never shrink
 	// below the transfer cost).
 	if transferCost <= 0 {
-		t.Fatalf("expected a positive KV-transfer cost, got %.1f", transferCost)
+		rt.Fatalf("expected a positive KV-transfer cost, got %.1f", transferCost)
 	}
 	if diff := pdE2E - nonPDE2E; diff < transferCost-1e-9 {
-		t.Errorf("PD − non-PD E2E surplus = %.1f, want >= %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
+		rt.Errorf("PD − non-PD E2E surplus = %.1f, want >= %.1f (KV-transfer cost); PD=%.1f nonPD=%.1f",
 			diff, transferCost, pdE2E, nonPDE2E)
 	}
 }
@@ -369,14 +397,14 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
 
 	tests := []struct {
-		name          string
-		parent        *ParentRequest
-		setDecodeE2E  bool    // set RequestE2Es[dec] (decode sub-request's own E2E)
-		decodeOwnE2E  float64 // value for RequestE2Es[dec]
-		setDelay      bool    // set RequestSchedulingDelays[dec]
-		decodeDelay   int64   // value for the decode scheduling delay
-		wantEntry     bool    // whether a parent-keyed E2E entry is expected
-		wantE2E       float64 // expected projected E2E (when wantEntry)
+		name           string
+		parent         *ParentRequest
+		setDecodeE2E   bool    // set RequestE2Es[dec] (decode sub-request's own E2E)
+		decodeOwnE2E   float64 // value for RequestE2Es[dec]
+		setDelay       bool    // set RequestSchedulingDelays[dec]
+		decodeDelay    int64   // value for the decode scheduling delay
+		wantEntry      bool    // whether a parent-keyed E2E entry is expected
+		wantE2E        float64 // expected projected E2E (when wantEntry)
 		wantCompletion float64 // expected RequestCompletionTimes[pid] (== ArrivalTime + E2E)
 	}{
 		{
@@ -446,7 +474,7 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 			},
 			setDecodeE2E: true, decodeOwnE2E: 301,
-			setDelay: false,
+			setDelay:  false,
 			wantEntry: true, wantE2E: 5000, wantCompletion: 5000,
 		},
 		{
@@ -551,7 +579,7 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 				ID: "s0", PrefillSubReqID: "s0_prefill", DecodeSubReqID: "s0_decode",
 				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
 				TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
-				DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+				DecodeSubReq: &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 			},
 			setDecodeMaps: true, wantEntries: true,
 		},
@@ -680,7 +708,7 @@ func TestPDParentMetrics_TTFTSumConsistentAcrossDrop(t *testing.T) {
 		ID: "served", PrefillSubReqID: "served_prefill", DecodeSubReqID: "served_decode",
 		OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
 		TransferCompleteTime: 151, DecodeInstanceID: "inst-0",
-		DecodeSubReq:         &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
+		DecodeSubReq: &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 	}
 	dropped := &ParentRequest{
 		ID: "dropped", PrefillSubReqID: "dropped_prefill", DecodeSubReqID: "dropped_decode",

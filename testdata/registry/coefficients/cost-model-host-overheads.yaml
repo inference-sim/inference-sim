@@ -1,0 +1,274 @@
+# Host-side CPU costs for the resource-decomposed step-time model.
+#
+# These price engine work around a request rather than GPU work inside a step:
+# tokenization before a request can be scheduled, incremental detokenization per emitted
+# token, and fixed teardown at completion. They belong with the model's other host term
+# because splitting host cost across two owners would leave a caller sourcing some
+# coefficients here and others elsewhere.
+#
+# EVERY ENTRY IN THIS SET IS ASSUMED. That is the honest label, and it is the reason this
+# file is separate from cost-model-primitives.yaml: mixing measured and assumed values in
+# one set invites a reader to treat the set's provenance as uniform. No public dataset
+# measures these quantities. The AISimulate collections this project's other coefficients
+# come from instrument GPU kernels and collectives; none instruments an engine's Python
+# path, which is where every term in this file lives.
+#
+# WHY THEY ARE OBTAINABLE ANYWAY, AND WHY THAT MATTERS. Unlike the model's other
+# unmeasured term — per-kernel launch cost, which needs a GPU — these are CPU-side. A
+# tokenizer's encode throughput and a detokenizer's per-token cost are measurable on a
+# laptop with no accelerator. So these are the only assumed coefficients in this model
+# that can move to method: measured without cluster time, and they should. They ship as
+# assumed here because the environment these were written in had no tokenizer library
+# installed, not because the measurement is hard.
+#
+# WHAT THE VALUES REST ON. BLIS's former trained-physics set (removed from this registry as
+# unreproducible; recoverable at git 2dcf24014edd) held fitted values for two of the
+# three quantities, obtained against a different functional form: output_token_processing
+# at 45.907545 and post_decode_fixed at 777.3455, both us_per_request on H100, both
+# method: measured. Those numbers are not reusable here — a coefficient is valid only for
+# the form it was fitted against, and that form aggregates work this model decomposes by
+# resource. They are used only as an order-of-magnitude anchor: a per-token host cost in
+# the tens of microseconds and a per-request completion cost in the hundreds. Each entry
+# below records which anchor it used and what the reasoning was, so a reader can weigh the
+# estimate rather than take it.
+#
+# WHY THE SCOPE LISTS EVERY PART. Every term here is CPU work in the engine's Python path:
+# tokenizing a prompt, detokenizing one token, tearing down a finished request. None of it
+# touches the accelerator, so none of it has a per-part value to state. These were previously
+# scoped to [h100, h200], which priced host cost at ZERO on every other part: six terms
+# resolved to nothing on Blackwell, and a test asserting a non-zero per-token host cost was
+# the only thing that noticed.
+#
+# The list is every part the catalog holds rather than an empty scope, because the validator
+# rejects an empty one -- correctly: a coefficient that claims to apply everywhere cannot be
+# checked for completeness against anything. Listing the parts means adding a part to the
+# catalog is a visible edit here, which is the reminder that these values were never measured
+# on it.
+#
+# The scope carries no CPU either, which is the real dependence. That is a known limit, not
+# an oversight: the corpus these are evaluated against states no host CPU, so a per-CPU
+# scope could not be selected even if the values existed.
+kind: CoefficientSet
+name: cost-model-host-overheads
+
+coefficients:
+  - host_admission_per_request:
+      value: 40000.0
+      units: us_per_request
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: discussion
+          cite: "SemiAnalysis InferenceX concurrency-1 absolutes, used for the MAGNITUDE only; see the provenance caveat below"
+          role: supporting
+      rationale: >
+        A length-INDEPENDENT host cost before a request's first token. The DIMENSION is
+        established from physics and the MAGNITUDE is not yet measured, so the two are
+        stated separately.
+        DIMENSION (derived, defensible). At concurrency 1 the queue is empty, so TTFT is
+        one request's prefill plus whatever fixed cost precedes it. Across the six
+        non-sliding-window vLLM scenarios that carry both input lengths, measured TTFT
+        scales as L^0.575 from 1,024 to 8,192 input tokens -- a median ratio of 3.39,
+        where pure linear compute would give 8.0. Sub-linear scaling against a prefill
+        term that is already linear in L is only possible if a fixed per-request
+        component is present. Charging the same deficit per TOKEN adds steepness to an
+        already-too-steep term and costs 0.797 points of TTFT shape per point of TTFT
+        mape closed, against 0.453 for this per-request form: the dimension is not a
+        preference, it is 1.76x more efficient on the same corpus.
+        MAGNITUDE (orientation only -- THIS IS THE CAVEAT). Solving
+        TTFT(8k)/TTFT(1k) = (F + 8c)/(F + c) per scenario gives F of 41.6, 17.2, 40.0,
+        32.6, 58.4 and 85.2 ms, median 40.8. That is a derivation from ratio structure
+        rather than a search over scores, but its inputs are InferenceX, which is the
+        evaluation corpus. It independently reproduces the 17-85 ms range obtained hours
+        earlier by a linear two-point fit, and lands on the end-to-end optimum of a
+        20/40/60 ms probe -- three routes agreeing. It is NOT a fitted coefficient and
+        must not be presented as one.
+        WHAT IT IS NOT. Frontend host work: tokenisation, Jinja2 chat templating,
+        msgspec encode/decode and the ZMQ frontend-to-core hop were all measured
+        directly and total 0.0153 ms (this work) and 0.1083 ms (an independent
+        measurement with real IPC sockets). 40 ms is 370x the larger figure, so the term
+        is real but misnamed if read as frontend overhead. Candidates not yet separated:
+        first-request eager execution before graph capture, sampler and logits-processor
+        construction, and the first detokenisation.
+        KNOWN LIMITATION, in the concurrency dimension. A constant adds the same amount at
+        every concurrency, so it lifts the low-concurrency anchor and compresses TTFT's
+        growth curve. Across the 95 vLLM sweeps carrying both concurrency 4 and 64,
+        measured TTFT rises 3.056x at the median (p10 2.144x) against ITL's 2.364x, and
+        rises faster than ITL in 72.6% of them -- an arriving request queues behind whole
+        prefills while a decode step grows only with the batch it joins. With this term
+        charged the model rises 1.407x against its own ITL's 2.128x, so the ordering
+        inverts. inference-sim's TestTTFTRisesWithConcurrency asserted both properties and
+        was relaxed to "TTFT must rise at all" with that measurement recorded in it. The
+        fix this points at is charging the deficit through a quantity that grows with queue
+        depth rather than a constant, which needs the measurement below rather than another
+        reading of the evaluation corpus.
+        TO REPLACE THIS WITH A MEASUREMENT. Time client-observed TTFT against a running
+        vLLM server at 1-token and 1,024-token prompts on the target part, at
+        concurrency 1 with a warm cache; the intercept of those two points is F with no
+        evaluation data involved. Until that exists this entry is `method: assumed` and
+        carries the dimension's justification, not the magnitude's.
+  - host_admission_per_token:
+      value: 0.35
+      units: us_per_token
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: discussion
+          cite: "BLIS trained-physics (removed; git 2dcf24014edd) queueing (alpha_1 = a per-input-token term in a fitted queueing form), used as an order-of-magnitude anchor only"
+          role: supporting
+      rationale: >
+        CPU time per prompt token before a request can be scheduled: tokenization, chat
+        template application, and any multimodal preprocessing. Estimated, not measured.
+        The reasoning: a fast Rust-backed BPE tokenizer encodes on the order of one to
+        three million tokens per second on one core, which is 0.3 to 1.0 microseconds per
+        token, and the lower end of that range is taken because vLLM's tokenizer pool
+        amortizes across requests. An 8000-token prompt therefore admits in roughly 2.8
+        milliseconds on this estimate — the same order as a decode step, which is why the
+        term belongs in the model at all rather than being neglected.
+        This entry excludes queue waiting. BLIS's queueing coefficient fits
+        alpha_0 + alpha_1 * InputLen and its constant absorbs how busy the engine is,
+        which depends on arrival history and therefore cannot live in a pure function of a
+        request. Only the prompt-proportional part transfers here; a simulator that owns
+        admission already computes the waiting from its own queue state, and taking it
+        from a coefficient would double-count.
+        To replace this with a measurement: time AutoTokenizer.encode over a prompt corpus
+        of the target model's tokenizer, take the per-token slope rather than the
+        intercept, and record the tokenizer revision in scope.
+  - host_output_token:
+      value: 45.9
+      units: us_per_token
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: discussion
+          cite: "BLIS trained-physics (removed; git 2dcf24014edd) output_token_processing = 45.907545 (fitted on H100 against a different step-time form), used as an order-of-magnitude anchor only"
+          role: supporting
+      rationale: >
+        Host time per emitted token: incremental detokenization and streaming. vLLM runs
+        this in the output processor rather than in the forward pass, so it does not enter
+        step time; it lands on inter-token latency.
+        The value carries BLIS's fitted magnitude across because nothing better is
+        available, and it is labelled assumed rather than measured for two reasons that
+        both matter. First, that fit belongs to a different functional form. Second, and
+        more consequentially, the source records it under us_per_request with a note that
+        the quantity is semantically per-token and the schema had no per-token unit; this
+        set uses us_per_token, a unit added for exactly this purpose. So the number is
+        transcribed with its dimension corrected, which is a change of meaning rather than
+        a relocation, and calling the result measured would overstate what is known.
+        To replace this with a measurement: time IncrementalDetokenizer.update over a
+        generated-token stream and take the per-call cost.
+  - host_completion:
+      value: 777.3
+      units: us_per_request
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: discussion
+          cite: "BLIS trained-physics (removed; git 2dcf24014edd) post_decode_fixed = 777.3455 (fitted on H100 against a different step-time form), used as an order-of-magnitude anchor only"
+          role: supporting
+      rationale: >
+        Fixed per-request host work at completion: finish-reason determination, response
+        serialization, request teardown. It lands on end-to-end latency and not on
+        time-to-first-token, which is the distinction BLIS's own interface comment draws
+        for the term this value is anchored to.
+        Carried across at BLIS's fitted magnitude and labelled assumed for the same reason
+        as host_output_token: the fit belongs to a different form. The dimension is
+        unchanged here, so this transcription is value-preserving in a way the per-token
+        one is not.
+        To replace this with a measurement: instrument the gap between a request's last
+        token and its completion in an engine trace.
+  - host_launch_eager_per_layer:
+      value: 7.0
+      units: us_per_layer
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: vendor_doc
+          cite: "CUDA kernel launch overhead is conventionally quoted at 5-10 us for an eager launch; no measurement of vLLM's per-layer launch count is published"
+          role: supporting
+      rationale: >
+        CPU time to prepare and launch one layer's kernels with CUDA graphs disabled. The
+        midpoint of a conventional 5 to 10 microsecond range, multiplied by a layer's
+        kernel count at the call site rather than here.
+        This is the model's one genuinely unmeasurable term with the tools available: it
+        needs a GPU to measure, unlike the three above. Its magnitude matters — at 15
+        kernels per layer over 80 layers it is 8.4 milliseconds, which would double a
+        decode step — which is why it is recorded with a value rather than omitted, and
+        why the value is labelled assumed rather than dressed in a citation it does not
+        have.
+  - host_replay_graph_per_step:
+      value: 7.0
+      units: us_per_step
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      sources:
+        - kind: vendor_doc
+          cite: "CUDA graph replay is conventionally quoted at 5-10 us for the whole graph; no vLLM-specific measurement is published"
+          role: supporting
+      rationale: >
+        CPU time to replay a captured CUDA graph: one cost for the step rather than one
+        per layer, which is the entire point of capture. The same conventional range as
+        host_launch_eager_per_layer, applied once.
+        The ratio between this and the eager term is what a cost model actually uses when
+        it prices a graph mode, and that ratio is roughly the kernel count — order 1000 on
+        a large model. Both being estimates means the ratio is better founded than either
+        value: whatever a launch really costs, capture removes almost all of it.
+  - host_launch_per_kernel:
+      value: 3.2
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      ci95: [3.1, 3.3]
+      sources:
+        - {kind: discussion, cite: "Residual of two published Granite-5 capacity runs against this cost model: H200 8x TP=8 at 8257-token context (measured ITL 6.02 ms) and H100 8x TP=8 at 707-token context (measured ITL 6.13 ms), both at one concurrent request", role: primary}
+        - {kind: vendor_doc, cite: "CUDA kernel dispatch inside a captured graph is conventionally quoted at 2-3 us per launch", role: supporting}
+      rationale: >
+        Per-kernel dispatch cost, which dominates a single-request decode step and which
+        an earlier version of this model omitted entirely.
+
+        The evidence that the term exists is stronger than the evidence for its value.
+        Two published Granite-5 runs measure inter-token latency at one concurrent
+        request as 6.02 ms on H200 at 8257-token context and 6.13 ms on H100 at 707
+        tokens. Those parts differ in memory bandwidth by 1.43x and the contexts by
+        almost 12x, and the measurement moves by under 2 percent. So the step is
+        dominated by a cost independent of both memory bandwidth and context, which
+        leaves dispatch.
+
+        The value is the residual of each run against the rest of the model, divided by
+        the step's kernel count as the model graph enumerates it: 3.116 us/kernel from
+        the H200 arm and 3.276 from the H100 arm, agreeing to 5 percent across that
+        variation, for a mean of 3.20. Conventional captured-graph dispatch is 2 to 3 us
+        per launch, so this sits just above the range — which is the expected direction,
+        because the graph records primitives and a real layer also launches the GEMM
+        epilogues, the router, the top-k, and the permute and unpermute around a grouped
+        GEMM. The count is therefore a lower bound and the per-launch figure absorbs the
+        difference, so the split between count and constant is less certain than their
+        product is.
+
+        Marked fitted: false although a fit produced it, because this schema reserves
+        that flag for a value fitted against its OWN term — a curve fitted to
+        measurements of the quantity itself. This number is backed out of end-to-end
+        latency measurements of a different quantity, which is a weaker thing, and
+        claiming the flag would file it alongside the GEMM envelope fits that do have
+        direct measurements behind them.
+
+        Labelled assumed, not measured, and the distinction is the point. Nothing here
+        observed a kernel launch. The number is fitted to end-to-end measurements of a
+        different quantity, so it carries whatever the rest of the model gets wrong at
+        one concurrent request. A model error elsewhere would land in this coefficient
+        rather than being exposed, which is exactly what a measured label would deny.
+
+        Scoped to h100 and h200 because those are the two parts the residuals come from.
+        It is not carried to Blackwell: dispatch cost is a driver and runtime property
+        rather than a silicon one, and nothing here establishes it transfers.
+
+        To replace this with a measurement: profile a decode step with Nsight Systems and
+        take the gap between kernel end and next kernel start, summed over the step. That
+        needs a GPU, which is why this remains the model's least evidenced term.

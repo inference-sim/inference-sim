@@ -4,38 +4,39 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.
 // Nil pointer / empty string means "use global config" for that field.
 // Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
-// global) from an explicit value. CLI validates TP > 0 and MaxModelLen > 0 when set;
-// TotalKVBlocks may be set by auto-calculation.
+// global) from an explicit value. The CLI fills them from each P/D pool's kernel
+// (TotalKVBlocks is the kernel's per-rank budget).
 //
 // Contract for library callers constructing PoolOverrides directly (bypassing CLI):
-// - *TP must be > 0 when non-nil (the latency model factory enforces TP > 0; TP=0 will
-//   panic at instance construction time for analytical backends)
+// - *TP must be > 0 when non-nil
 // - *MaxModelLen must be > 0 when non-nil
 type PoolOverrides struct {
-	TP             *int   // tensor parallelism (nil = use global)
-	GPU            string // GPU type ("" = use global)
-	LatencyBackend string // latency model backend ("" = use global)
-	MaxModelLen    *int64 // max sequence length (nil = use global)
-	TotalKVBlocks  *int64 // KV blocks (nil = use global; set by CLI after auto-calc)
+	TP            *int   // tensor parallelism (nil = use global)
+	GPU           string // GPU type ("" = use global)
+	MaxModelLen   *int64 // max sequence length (nil = use global)
+	TotalKVBlocks *int64 // KV blocks (nil = use global; set by the CLI from the kernel)
 
-	// MoECommBackend is the MoE all-to-all backend for this pool ("" = use global),
-	// mirroring vLLM's VLLM_ALL2ALL_BACKEND being a per-process environment variable
-	// (#1548). It is per-pool because the production recipe is per-ROLE: DeepEP
-	// high-throughput on the prefill engines (large batched dispatches) and DeepEP
-	// low-latency on the decode engines (tiny latency-critical dispatches). A single
-	// global mode cannot express that.
-	//
-	// Validated by the CLI against latency.IsValidMoECommBackend, and again by Validate below
-	// for library callers that bypass the CLI — an unrecognized name is rejected, never
-	// silently resolved (R1). The trained-physics constructor re-checks it as well, but only
-	// on that backend: a pool resolving to roofline would otherwise ignore a bad value.
-	MoECommBackend string
+	// LatencyModel prices this pool's steps (nil = use global). A disaggregated deployment
+	// runs a different engine per role -- its own parallelism, token budget and graph mode
+	// -- so each role is priced by the kernel for its own pool rather than by one copied to
+	// every pool.
+	LatencyModel sim.LatencyModel
+	// MaxNumSeqs, MaxNumBatchedTokens and PrefixCachingDisabled are the pool's own engine
+	// admission settings (nil = use global), for the same reason.
+	MaxNumSeqs            *int64
+	MaxNumBatchedTokens   *int64
+	PrefixCachingDisabled *bool
+
+	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
+	// the run's one tier description, sized by the pool's bytes per block and priced by its
+	// own kernel, since pools of different widths hold different bytes per block.
+	KVOffload               *sim.KVOffloadConfig
+	KVTransferTicksPerBlock *int64
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -52,41 +53,36 @@ func (o PoolOverrides) Validate(name string) error {
 	if o.TotalKVBlocks != nil && *o.TotalKVBlocks <= 0 {
 		return fmt.Errorf("%s: PoolOverrides.TotalKVBlocks must be > 0 when set, got %d", name, *o.TotalKVBlocks)
 	}
-	// #1548: the CLI validates the per-role backend name before building the overrides, but a
-	// library caller constructing PoolOverrides directly does not go through it. The
-	// trained-physics constructor re-checks the name, so an invalid value cannot reach the
-	// step-time model — but only on that backend: a pool resolving to roofline (a legal
-	// combination whenever DP/EP is off) would silently ignore it. Check it here so the
-	// failure is loud wherever it originates (R1).
-	if o.MoECommBackend != "" && !latency.IsValidMoECommBackend(o.MoECommBackend) {
-		return fmt.Errorf("%s: PoolOverrides.MoECommBackend %q is not a recognized vLLM MoE all-to-all "+
-			"backend (valid: %v)", name, o.MoECommBackend, latency.ValidMoECommBackends)
+	if o.MaxNumSeqs != nil && *o.MaxNumSeqs <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.MaxNumSeqs must be > 0 when set, got %d", name, *o.MaxNumSeqs)
+	}
+	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
+	}
+	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
+		return fmt.Errorf("%s: PoolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
+	}
+	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
 	}
 	return nil
 }
 
 // IsEmpty returns true when no overrides are set.
 func (o PoolOverrides) IsEmpty() bool {
-	return o.TP == nil && o.GPU == "" && o.LatencyBackend == "" &&
-		o.MaxModelLen == nil && o.TotalKVBlocks == nil && o.MoECommBackend == ""
+	return o.TP == nil && o.GPU == "" &&
+		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
+		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
 // Returns a new SimConfig with overridden fields; the global config is not mutated.
 //
-// Struct-copy safety: ModelConfig and HardwareCalib are pure value types (safe to copy).
-// LatencyCoeffs contains slices (BetaCoeffs/AlphaCoeffs) that share backing arrays
-// with the global config after copy. This is safe because: (1) the resolver never
-// mutates slice elements, and (2) slices are written once at CLI time and never
-// modified during simulation. If future code needs to mutate per-pool coefficients,
-// deep-copy the slices here.
+// Struct-copy safety: ModelConfig is a pure value type (safe to copy).
 // SLOPriorityOverrides is a map[string]int that shares its backing map across copies.
-// Safe for the same reason: NewSLOPriorityMap only reads the map (for range), never mutates.
-//
-// Latency backend constraint: when using per-pool LatencyBackend overrides, all
-// backends (roofline, trained-physics) share the same model architecture (HFConfig)
-// and LatencyCoeffs. LatencyCoeffs are global and used by trained-physics;
-// roofline ignores them.
+// Safe because NewSLOPriorityMap only reads the map (for range), never mutates. The
+// per-pool LatencyModel is shared by reference: the kernel adapter is read-only once built.
 func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimConfig {
 	resolved := global // struct copy
 
@@ -96,17 +92,29 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	if overrides.GPU != "" {
 		resolved.GPU = overrides.GPU
 	}
-	if overrides.LatencyBackend != "" {
-		resolved.Backend = overrides.LatencyBackend
-	}
-	if overrides.MoECommBackend != "" {
-		resolved.MoECommBackend = overrides.MoECommBackend
-	}
 	if overrides.MaxModelLen != nil {
 		resolved.MaxModelLen = *overrides.MaxModelLen
 	}
 	if overrides.TotalKVBlocks != nil {
 		resolved.TotalKVBlocks = *overrides.TotalKVBlocks
+	}
+	if overrides.LatencyModel != nil {
+		resolved.LatencyModel = overrides.LatencyModel
+	}
+	if overrides.MaxNumSeqs != nil {
+		resolved.MaxNumSeqs = *overrides.MaxNumSeqs
+	}
+	if overrides.MaxNumBatchedTokens != nil {
+		resolved.MaxNumBatchedTokens = *overrides.MaxNumBatchedTokens
+	}
+	if overrides.PrefixCachingDisabled != nil {
+		resolved.PrefixCachingDisabled = *overrides.PrefixCachingDisabled
+	}
+	if overrides.KVOffload != nil {
+		resolved.Offload = *overrides.KVOffload
+	}
+	if overrides.KVTransferTicksPerBlock != nil {
+		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
 
 	return resolved

@@ -2,22 +2,19 @@
 
 This guide covers KV cache allocation, prefix caching, tiered GPU+CPU offload, and chunked prefill — the memory subsystem that determines how many requests can run concurrently.
 
+The examples use the canonical scenario from [Getting Started](../getting-started/quickstart.md); any scenario directory works.
+
 ```bash
-# Quick example: simulate with reduced KV blocks to observe preemptions
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
-  --total-kv-blocks 5000 --rate 50 --num-requests 200
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --rate 50 --num-requests 200
 ```
 
 ## Block Allocation Model
 
-KV cache is allocated in **blocks** of `--block-size-in-tokens` tokens (default: 16). Each request consumes `ceil(token_count / block_size)` blocks. Blocks are reference-counted and can be shared across requests via prefix caching.
+KV cache is allocated in **blocks** of the scenario pool's `engine.block_size` tokens. Each request consumes `ceil(token_count / block_size)` blocks. Blocks are reference-counted and can be shared across requests via prefix caching.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--total-kv-blocks` | Per-model* | Total GPU-tier KV blocks |
-| `--block-size-in-tokens` | 16 | Tokens per block |
-
-*For roofline and trained-physics modes, the block count is auto-calculated from model architecture and GPU memory. Explicit `--total-kv-blocks` always wins. See [Configuration Reference](../reference/configuration.md#resolution-process).
+The GPU-tier block budget is not a flag. blis-latency-kernel computes it with its memory methods from the scenario — model, hardware, parallelism, quantization, `cache_dtype`, `gpu_memory_utilization` and `block_size` — **per data-parallel rank**: a pool with `dp > 1` (MoE only) becomes one replica per rank, each with its own budget. A LoRA run's static adapter HBM reservation is set aside from that budget. To change the budget, change the scenario (for example its `gpu_memory_utilization` or `cache_dtype`).
 
 !!! tip "Block size affects prefix cache granularity"
     Prefix caching uses block-aligned hashing (`hash.ComputeBlockHashes`). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.
@@ -29,23 +26,46 @@ When requests share common prefixes (e.g., system prompts in RAG), BLIS can reus
 Prefix caching is automatic when using the `weighted` routing policy. The default profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) queries actual instance KV cache state to route requests to instances with cached prefix blocks:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --routing-policy weighted \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
+
+### Disabling reuse across requests
+
+A deployment launched with vLLM's `--no-enable-prefix-caching` reuses nothing across
+requests. A scenario states that with `enable_prefix_caching: false` on its pool's engine
+block; the field is tri-state, and omitting it takes vLLM's own default, which is **on**.
+
+The setting changes the work a prefill does, not only the memory it holds: with reuse on, a
+matched prefix arrives as already-computed tokens and only the remainder is charged. A
+request's own progress is unaffected either way — a chunked prefill resumes from where it
+stopped, because that is not another request's block.
+
+```yaml
+pools:
+  - role: colocated
+    engine:
+      enable_prefix_caching: false
+```
+
+A workload whose requests share no prefix is unaffected by the setting, because there is
+nothing to reuse. That is the case for the AISimulate accuracy corpus, whose spec sets
+`cached_prefix_tokens` to zero.
 
 ## Minimum KV Block Requirements
 
 !!! danger "DroppedUnservable rejection"
     Requests are dropped as **unservable** (incrementing `DroppedUnservable`) in two cases:
 
-    1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length (input + output budget) exceeds the context window are rejected before entering the queue. This mirrors vLLM's `--max-model-len` validation.
+    1. **MaxModelLen guard** — requests whose total sequence length (input + output budget) exceeds the scenario's `max_model_len` are rejected before entering the queue. This mirrors vLLM's `--max-model-len` validation.
     2. **KV capacity guard** — when `ceil(inputTokens / blockSize) > TotalCapacity()`, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.
 
     Both guards fire at enqueue time, before the request enters the wait queue.
 
 !!! info "Proactive MaxModelLen cap"
-    When `--max-model-len` is set, a three-part enforcement matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen` tokens — `ProgressIndex` is BLIS's `num_computed_tokens` and lags the generated-token count by one (the first output token is charged to prefill), so stopping at `maxModelLen - 1` is exactly vLLM's `check_stop` (`num_tokens >= max_model_len`) and the boundary token is counted.
+    A three-part enforcement of the scenario's `max_model_len` matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen` tokens — `ProgressIndex` is BLIS's `num_computed_tokens` and lags the generated-token count by one (the first output token is charged to prefill), so stopping at `maxModelLen - 1` is exactly vLLM's `check_stop` (`num_tokens >= max_model_len`) and the boundary token is counted.
 
 Compute the minimum blocks needed for your workload:
 
@@ -55,36 +75,13 @@ min_blocks = ceil(max_input_tokens / block_size)
 
 For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 438` blocks minimum. Below this, requests are dropped. Below ~2x this threshold, cascading preemptions cause severe throughput degradation.
 
-## How the auto-calculated pool is sized
-
-A KV block is a **global** quantity, in the same units vLLM reports: one block holds `--block-size-in-tokens` tokens of one sequence, a request is charged `ceil(inputTokens / blockSize)` blocks once, and the pool holds `total_kv_blocks × block_size` tokens in total. On a TP>1 deployment each of the TP ranks stores its own shard of every block (its KV-head slice, or a full replica of the compressed latent for an MLA model), so allocating one block consumes memory on **every** GPU in the group.
-
-`CalculateKVBlocks` therefore divides an aggregate budget by an aggregate per-block cost:
-
-```
-blocks = (gpu_mem × util × TP − weights − activation − non_torch × TP − lora_reservation)
-         ─────────────────────────────────────────────────────────────────────────────────
-                         per_GPU_KV_bytes_per_token × block_size × TP
-```
-
-Before #1846 the denominator omitted the `× TP`, dividing a group-total budget by a per-GPU cost and over-estimating the pool by ~TP (measured at 8.7× on a 230B MoE / H200 / TP8 deployment and 10.9× on H100 / TP8). Because the error only bites once a run approaches KV exhaustion, an oversized pool is silent below the knee and then removes the knee entirely — which is usually the headline of a capacity study. TP=1 was and is unaffected.
-
-!!! note "Same units as vLLM, not the same number"
-    The formula above reproduces the constants and structure of llm-d-benchmark's `capacity_planner.py`. It is an **analytical estimate**, not a re-derivation of vLLM's own sizing: vLLM *profiles* each rank's free memory after a warm-up forward pass, so it charges the peak torch activation on every GPU, whereas `activation` above is subtracted **once** from a budget aggregated over TP GPUs. The auto-calc therefore under-charges roughly `(TP − 1) × 5.5–8 GiB`. The two agree at TP=1 and diverge with TP, this estimate staying the optimistic one:
-
-    | Deployment (230B MoE, TP=8, fp8 KV) | Engine's measured pool | BLIS auto-calc | Ratio |
-    |---|---|---|---|
-    | H200, 141 GiB | 480,473 blocks | 521,563 | 1.09× |
-    | H100, 80 GiB | 89,552 blocks | 121,793 | 1.36× |
-
-    The H100 residual is larger because the fixed overhead constants are a bigger share of the budget when the weights nearly fill the card — a second-order effect #1846 scoped out. Both rows are pinned as tests in `sim/latency/kv_capacity_tp_basis_test.go`; the activation basis is tracked as issue #1848. Pin `--total-kv-blocks` to the engine's reported `GPU KV cache size ÷ block_size` when you need the pool to match a specific deployment exactly.
-
 ## Tiered Caching (GPU + CPU Offload)
 
-BLIS models tiered KV cache with GPU→CPU offloading:
+The legacy single CPU tier is enabled with `--kv-cpu-blocks`:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
   --rate 100 --num-requests 500
@@ -94,51 +91,8 @@ BLIS models tiered KV cache with GPU→CPU offloading:
 |------|---------|-------------|
 | `--kv-cpu-blocks` | 0 | CPU-tier blocks (0 = disabled) |
 | `--kv-offload-threshold` | 0.9 | GPU utilization fraction above which blocks offload to CPU |
-| `--kv-transfer-bandwidth` | unset ⇒ derive | Override the CPU↔GPU transfer rate, in tokens/tick. Omit it to derive from `cpu_dram`; a supplied value must be finite and > 0 |
-| `--kv-transfer-base-latency` | unset ⇒ derive | Override the fixed per-block latency in ticks. Omit it to derive from `cpu_dram`; an explicitly supplied `0` disables the fixed cost |
 
-#### Where the transfer cost comes from (#1819)
-
-The per-block transfer cost on this path is **derived**, not defaulted:
-
-```
-ticks per block = ceil(per_block_bytes / effective_bandwidth) + ceil(base_latency)
-per_block_bytes = KVBytesPerToken × block_size
-```
-
-`bandwidth` and `base_latency` are **catalog** facts for the `cpu_dram` storage device —
-`<catalog>/devices/storage.yaml`, the same table `--kv-offload-config`'s `device_class` reads
-— with the bandwidth scaled by a dimensionless **efficiency residual** (R2G3b). Catalog base
-latency is in microseconds; one simulator tick is one microsecond, and fractional values are
-rounded up. Each flag independently overrides its component, including an explicit
-`--kv-transfer-base-latency=0`. If either flag is omitted, `cpu_dram` is required; supplying
-both overrides avoids reading the device table.
-
-The residual is not an efficiency below 1. It is anchored so the derived rate reproduces the
-rate this flag used to default to (100.0) at one named reference deployment
-(`qwen/qwen3-14b`, TP=1) — which works out to **≈819×** `cpu_dram`'s rated bandwidth. That
-number is the honest record of what the retired bandwidth default asserted, and that bandwidth
-term is preserved. The additive catalog base latency is intentionally new: at the reference it
-changes a reload from 1 tick to 2 ticks. The committed matrix remains byte-identical because it
-does not enable the legacy tier. **If you want a faithful CPU-offload cost, use
-`--kv-offload-config`**, whose tiers price the catalog device directly with no residual.
-Authoring the residual into `blis-registry` alongside `kv_transfer_base_latency` is tracked in
-[blis-registry#17](https://github.com/inference-sim/blis-registry/issues/17).
-
-Away from the reference the derived rate scales as `1 / KVBytesPerToken` — a model with a
-quarter the KV per token moves four times the tokens per tick over the same bus, which the
-retired constant could not express.
-
-All latency arithmetic is checked. A rate small enough to make the bandwidth charge exceed
-`2^52` ticks is refused, as is a base latency that is negative, non-finite, unrepresentable, or
-too large to add to the bandwidth charge. `TieredKVCache` repeats the combined check for every
-caller and checks cumulative additions, so repeated reloads cannot wrap pending latency
-negative. These checks apply to **both** catalog-derived and explicitly supplied values on
-`run` and `replay`:
-
-- invalid `cpu_dram` physics is refused with the device and offending field;
-- invalid overrides are refused with the relevant flag. Being finite and `> 0` is not
-  sufficient for bandwidth: `--kv-transfer-bandwidth 1e-300` would still overflow.
+The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device (`<catalog>/devices/storage.yaml`). There are no transfer-rate flags. For a multi-tier hierarchy, use `--kv-offload-config` instead; the two are mutually exclusive.
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 
@@ -149,7 +103,9 @@ mirrors `--lora-config` / `--saturation-config`: absent ⇒ the offload subsyste
 output is byte-identical to a build without it.
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --kv-offload-config offload.yaml
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --kv-offload-config offload.yaml
 ```
 
 ```yaml
@@ -158,7 +114,7 @@ kv_offload:
   block_size: 16                    # optional; default = GPU block size (mutually
                                     #   exclusive with blocks_per_chunk)
   # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
-  eviction_policy: lru              # lru | arc  (default lru)
+  eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
   offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
                                     #   full decode blocks are offloaded and reused too (see below)
   # self_describing_kv_events: false
@@ -170,29 +126,22 @@ kv_offload:
       n_write_threads: 16           # vLLM default 16
       locality: LOCAL               # LOCAL | REMOTE (optional)
       direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit
-      device_class: nvme_gen4       # resolves read/write bandwidth + latency from the catalog
-      # read_bandwidth: 7000.0      # bytes/µs — overrides device_class (per-direction, required as a pair)
-      # write_bandwidth: 5000.0
-      # base_latency: 80.0          # µs
+      device_class: nvme_gen4       # REQUIRED — a catalog storage device; the kernel prices transfers
 ```
 
 Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
 fails **loudly** at startup — never silently ignored: `store_threshold >= 2` is rejected
 (vLLM's `TieringOffloadingSpec` rejects it), and `obj`/`p2p`/`example` tier types are rejected
-(no faithful BLIS mapping yet). `device_class` names resolve against the storage-device table
-in the **catalog** — `<catalog>/devices/storage.yaml`, a sibling of the catalog's `models/`
-namespace, located by the same `--catalog` / `BLIS_CATALOG` that supplies the model config
-(#1770; the table used to be duplicated between `defaults.yaml` and the catalog with nothing
-keeping the copies in sync, so the catalog is now the single source of truth). An explicit
-`read_bandwidth`/`write_bandwidth`/`base_latency` triple overrides the class — a tier that
-supplies one needs no catalog device table at all, and the table is read only when some tier
-actually names a `device_class`. A named class that the catalog table does not define, or a
-missing/malformed table, is a hard error naming the path.
+(no faithful BLIS mapping yet).
 
-Bandwidths are **bytes per microsecond**, latency in **µs**. Bytes/µs and MB/s (MB = 10⁶ bytes,
-not MiB) are the *same number* — 1 MB/s = 10⁶ bytes / 10⁶ µs = 1 byte/µs — so the `blis-catalog`
-file's "MB/s" header and BLIS's "bytes/µs" documentation describe identical values with no
-conversion between them.
+Every tier must name a `device_class` from the catalog's storage-device table
+(`<catalog>/devices/storage.yaml`, located by `--catalog` / `BLIS_CATALOG`); the kernel prices
+each tier transfer from that device (its `TierTime`). An explicit `read_bandwidth`,
+`write_bandwidth` or `base_latency` on a tier is refused. A class the catalog does not define, or
+a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
+sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario that
+states its own `offload` block is refused for now: that block and `--kv-offload-config` describe
+the same tiers in two formats, and #1910 makes them one.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
@@ -217,46 +166,26 @@ the GPU block size). With no `--kv-offload-config`, behavior is unchanged (INV-6
 
 ### Enabling and Disabling Offload
 
-Offload is **off by default**. There is one switch — the presence of `--kv-offload-config`:
-
-```bash
-# ENABLED — CPU staging tier
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload-spec wl_multitenant.yaml \
-  --total-kv-blocks 3000 --kv-offload-config offload_cpu.yaml
-
-# DISABLED — omit the flag
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload-spec wl_multitenant.yaml \
-  --total-kv-blocks 3000
-```
-
-`--kv-offload-config` is mutually exclusive with the legacy scalar `--kv-cpu-blocks` tier.
+Offload is **off by default**. There is one switch — the presence of `--kv-offload-config`
+(or, for the legacy tier, a non-zero `--kv-cpu-blocks`). The two are mutually exclusive.
 
 ### Sizing the CPU Tier
 
 The CPU tier is configured in **bytes**, but the cache uses it in **blocks** — the same unit as
-the GPU tier's `--total-kv-blocks`. BLIS converts once, at startup:
+the GPU tier. BLIS converts once, at startup:
 
 ```
 block_capacity = floor(cpu_bytes_to_use / per_block_bytes)
 ```
 
-Because both tiers are counted in blocks, they are directly comparable, and that gives the one
-sizing rule that matters:
+`per_block_bytes` is derived from the model, so it differs per deployment. The rule that matters:
+**`block_capacity` must comfortably exceed the GPU-tier budget.** A CPU tier no larger than the
+GPU tier cannot serve anything the GPU evicted, and the run will show no benefit.
 
-> **`block_capacity` must comfortably exceed `--total-kv-blocks`.** A CPU tier no larger than the
-> GPU tier cannot serve anything the GPU evicted, and the run will show no benefit.
-
-`per_block_bytes` is derived from the model, so it differs per deployment. For Qwen3-14B at TP=1
-it is **2,621,440 bytes**, which makes the 1 TiB tier used in the example below
-`1099511627776 / 2621440` = **419,430 blocks** — well clear of the 3,000 GPU blocks. To check any
-config, compare `cpu_bytes_to_use / per_block_bytes` against `--total-kv-blocks` before drawing
-conclusions from a run. For the example workload below:
-
-```
-shared prefixes  100 × 1024/16 =  6,400 blocks
-unique tails     600 × 1280/16 = 48,000 blocks
-tier saturates at              = 54,400 blocks
-```
+Offload also only helps if blocks are **evicted** from the GPU and later requested again — for
+example a workload with many distinct per-tenant prefixes (`prefix_sharing: per_member`) whose
+working set exceeds the GPU tier. Note that a workload spec's `prefix_length` is **added** to the
+sampled `input_distribution` length, not carved out of it.
 
 !!! note "`cpu_bytes_to_use` is per GPU, not per deployment"
     Under tensor parallelism the KV cache is sharded across ranks, so both sides of that division
@@ -264,85 +193,15 @@ tier saturates at              = 54,400 blocks
     A node-level memory budget must therefore be divided by TP before it goes in the file. This
     matches vLLM, where `cpu_bytes_to_use` is likewise a per-worker budget.
 
-### Example: The Measured Effect of CPU Offload
-
-#### The workload needs prefixes the GPU will evict
-
-Offload only helps if blocks are **evicted** from the GPU and later requested again. Otherwise the
-KV cache stays on the GPU and the lower tiers have almost nothing to serve. The fixture below uses
-100 distinct per-tenant prefixes so eviction happens without having to starve the GPU:
-
-```yaml
-# wl_multitenant.yaml — 100 tenants, each with its own 1,024-token prefix
-version: "2"
-seed: 42
-aggregate_rate: 4.0
-num_requests: 600
-cohorts:
-  - id: tenants
-    population: 100
-    prefix_group: doc
-    prefix_sharing: per_member     # 100 DISTINCT prefixes => GPU must evict
-    prefix_length: 1024            # ADDITIVE on input_distribution
-    rate_fraction: 1.0
-    arrival: {process: poisson}
-    input_distribution:  {type: constant, params: {value: 1280}}
-    output_distribution: {type: constant, params: {value: 16}}
-```
-
-```yaml
-# offload_cpu.yaml — one CPU tier, sized well above the GPU tier
-kv_offload:
-  cpu_bytes_to_use: 1099511627776   # 1 TiB
-  block_size: 16
-  eviction_policy: lru
-  offload_prompt_only: true
-```
-
-!!! warning "`prefix_length` is added to `input_distribution`"
-    The generator samples `input_distribution` first, then prepends the prefix tokens to that slice:
-
-    ```go
-    // sim/workload/generator.go
-    inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
-    ```
-
-    The prefix is therefore extra tokens on top of the sampled length, not a shared portion carved
-    out of it: `input_distribution: 1280` with `prefix_length: 1024` means 1,024 prefix tokens are
-    added to 1,280 **unique** tokens per request — a **2,304**-token prompt in total.
-
-    Separately, `--workload-spec` supersedes `--prefix-tokens` / `--rate` on the command line, so
-    the arrival rate comes from the spec's `aggregate_rate: 4.0`.
-
-#### Results
-
-Run the enabled and disabled commands from the previous section. `Cache Hit Rate` is printed to
-stdout under `=== KV Cache Metrics ===`; add `--metrics-path m.json` for the full-precision
-`cache_hit_rate` field.
-
-| | `cache_hit_rate` | `ttft_mean_ms` | `e2e_mean_ms` | `responses_per_sec` |
-|---|---|---|---|---|
-| Offload **disabled** | 0.0772 | 52.550 | 250.303 | 4.1640 |
-| Offload **enabled** (1 TiB CPU tier) | **0.3678** | **40.605** | **235.619** | 4.1645 |
-
-Cache hit rate rises **4.8×** and mean TTFT falls **22.7%** (−11.9 ms). Throughput is unchanged
-because this workload is arrival-bound — 4 req/s offered against an unsaturated instance. Offload
-buys latency here; it buys *throughput* only under saturation, where spending fewer prefill tokens
-per request lets more requests into each step.
-
-Why the hit rate lands near 0.37: only the 1,024-token prefix is shareable and each tenant's first
-request must miss, so a little over a third is the ceiling. The enabled run reaches 0.3678 —
-essentially every reuse the workload contains, and the same hit rate an unconstrained GPU cache
-achieves on this workload.
-
 ## Chunked Prefill
 
-Long prefill sequences can cause **head-of-line (HOL) blocking** — a 2,048-token prefill takes ~97ms on Qwen3-14B / H100 / TP=1 (roofline mode), blocking shorter requests from starting.
+Long prefill sequences can cause **head-of-line (HOL) blocking** — a long prefill occupies a whole step, blocking shorter requests from starting.
 
 Chunked prefill splits long prefills into smaller chunks:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
   --long-prefill-token-threshold 256 \
   --rate 100 --num-requests 500
 ```
@@ -352,25 +211,18 @@ Chunked prefill splits long prefills into smaller chunks:
 
 ## Batch Formation Parameters
 
-KV cache pressure is directly coupled to batch formation:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--max-num-seqs` | 256 | Maximum requests in the running batch (vLLM parity; deprecated alias `--max-num-running-reqs`) |
-| `--max-num-batched-tokens` | 2048 | Token budget per step (vLLM parity; deprecated alias `--max-num-scheduled-tokens`) |
-
-These are the primary capacity knobs — in vLLM terms, `max_num_seqs` and `max_num_batched_tokens`. Reducing them decreases KV cache pressure but also reduces throughput.
+KV cache pressure is directly coupled to batch formation. The scenario pool's `engine.max_num_seqs` (maximum requests in the running batch) and `engine.max_num_batched_tokens` (token budget per step) are the primary capacity knobs, with vLLM's meaning. Reducing them decreases KV cache pressure but also reduces throughput.
 
 ## Identifying the KV Pressure Cliff
 
-Preemption rates spike non-linearly as KV blocks decrease past a threshold. The threshold depends on your workload's **median** token count (not mean or tail):
+Preemption rates spike non-linearly once the working set exceeds the KV budget. Sweep offered load against a fixed scenario to find it:
 
 ```bash
-# Sweep KV blocks to find the cliff
-for blocks in 100000 50000 20000 10000 5000 3000; do
-  echo "=== blocks=$blocks ==="
-  ./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
-    --total-kv-blocks $blocks --rate 50 --num-requests 200 2>/dev/null \
+for rate in 5 10 20 40 80; do
+  echo "=== rate=$rate ==="
+  ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+    --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+    --rate $rate --num-requests 200 2>/dev/null \
     | grep -E "preemption_count|completed_requests"
 done
 ```

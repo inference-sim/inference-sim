@@ -1,0 +1,6 @@
+name: glm-5.2-fp8
+source:
+  provider: huggingface
+  repo: zai-org/GLM-5.2-FP8
+  revision: f33c6dc501ee5a2c7e35155653b1b1abbc320951
+  retrieved: 2026-09-16

@@ -8,6 +8,7 @@ type ParentRequest struct {
 	ID              string       // Original request ID
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string
+	PrefillSubReq   *sim.Request // Pointer to the prefill sub-request, set when the parent is created; its DepartureTime is when the KV the handoff moves exists.
 	DecodeSubReqID  string
 	DecodeSubReq    *sim.Request // Pointer to the decode sub-request. Set by KVTransferStartedEvent on successful ReserveTransferredKV (issue #1343); KVTransferCompletedEvent promotes it from StateWaitingForRemoteKVs to StateQueued and enqueues it on the decode instance. Nil after a late-drop (decode pod unroutable at transfer complete) when reserved KV is released.
 	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
@@ -21,11 +22,10 @@ type ParentRequest struct {
 	DecodeEnqueueTime    int64
 	// CompletionTime has four meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
-	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
-	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
-	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
-	//     recordRequestCompletion (issue #846). For roofline (overhead=0), equals
-	//     the raw cluster clock tick.
+	//     DecodeSubReq.DepartureTime + decodeInstance.PostDecodeFixedOverhead(): the
+	//     end of the decode sub-request's last step (#1903), plus PostDecodeFixedOverhead
+	//     so that projectPDMetrics() computes the same client-visible E2E as non-PD
+	//     recordRequestCompletion (issue #846).
 	//   - Dropped at transfer start (issue #1343): set to KVTransferStartedEvent
 	//     time when ReserveTransferredKV fails or the decode pod is non-routable.
 	//     Signature: TransferStartTime > 0 && CompletionTime == TransferStartTime

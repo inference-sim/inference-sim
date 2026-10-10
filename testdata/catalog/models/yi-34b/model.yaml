@@ -1,0 +1,6 @@
+name: yi-34b
+source:
+  provider: huggingface
+  repo: 01-ai/Yi-34B
+  revision: e1fa7c83283f2e1d5a12cb4adea37c3f829e28f8
+  retrieved: 2026-09-16

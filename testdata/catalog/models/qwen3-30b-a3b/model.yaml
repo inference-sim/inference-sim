@@ -1,0 +1,6 @@
+name: qwen3-30b-a3b
+source:
+  provider: huggingface
+  repo: Qwen/Qwen3-30B-A3B
+  revision: ad44e777bcd18fa416d9da3bd8f70d33ebb85d39
+  retrieved: 2026-09-16

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/stretchr/testify/assert"
 )
@@ -30,20 +28,6 @@ func TestRunCmd_DefaultLogLevel_RemainsWarn(t *testing.T) {
 	assert.NotNil(t, flag, "log flag must be registered")
 	assert.Equal(t, "warn", flag.DefValue,
 		"default log level must remain 'warn'; simulation results use fmt.Println to bypass logrus")
-}
-
-func TestRunCmd_LatencyModelDefault_IsTrainedPhysics(t *testing.T) {
-	// GIVEN the run command with its registered flags
-	flag := runCmd.Flags().Lookup("latency-model")
-
-	// WHEN we check the default value
-	// THEN it MUST be "trained-physics" (BC-1: CLI default switched)
-	// Trained-physics provides better out-of-box accuracy with learned correction
-	// coefficients on top of roofline basis functions. Users can still explicitly
-	// pass --latency-model roofline for pure analytical estimation.
-	assert.NotNil(t, flag, "latency-model flag must be registered")
-	assert.Equal(t, "trained-physics", flag.DefValue,
-		"default latency model must be 'trained-physics' for better out-of-box accuracy (#1383)")
 }
 
 func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
@@ -80,27 +64,6 @@ func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	assert.Contains(t, output, "completed_requests", "metrics JSON must be on stdout")
 }
 
-func TestRunCmd_KVBlockFlags_DefaultsArePositive(t *testing.T) {
-	// GIVEN the run command with its registered flags
-	kvBlocksFlag := runCmd.Flags().Lookup("total-kv-blocks")
-	blockSizeFlag := runCmd.Flags().Lookup("block-size-in-tokens")
-
-	// WHEN we check the default values
-	// THEN they MUST be positive (BC-5: valid defaults pass validation)
-	assert.NotNil(t, kvBlocksFlag, "total-kv-blocks flag must be registered")
-	assert.NotNil(t, blockSizeFlag, "block-size-in-tokens flag must be registered")
-
-	kvDefault, err := strconv.ParseInt(kvBlocksFlag.DefValue, 10, 64)
-	assert.NoError(t, err, "total-kv-blocks default must be a valid int64")
-	assert.Greater(t, kvDefault, int64(0),
-		"default total-kv-blocks must be positive (passes <= 0 validation)")
-
-	bsDefault, err := strconv.ParseInt(blockSizeFlag.DefValue, 10, 64)
-	assert.NoError(t, err, "block-size-in-tokens default must be a valid int64")
-	assert.Greater(t, bsDefault, int64(0),
-		"default block-size-in-tokens must be positive (passes <= 0 validation)")
-}
-
 func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
 	// Verify --snapshot-refresh-interval flag exists with a valid (non-negative) default.
 	// Note: BC-5 (negative value rejection via logrus.Fatalf) is validated by code
@@ -115,112 +78,6 @@ func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
 		"default snapshot-refresh-interval must be >= 0")
 }
 
-// TestRunCmd_MaxNumSeqs_FlagRegistered verifies BC-1:
-// --max-num-seqs flag exists with a positive default (vLLM parity, issue #1570).
-func TestRunCmd_MaxNumSeqs_FlagRegistered(t *testing.T) {
-	flag := runCmd.Flags().Lookup("max-num-seqs")
-	assert.NotNil(t, flag, "max-num-seqs flag must be registered")
-	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
-	assert.NoError(t, err)
-	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
-}
-
-// TestRunCmd_MaxNumBatchedTokens_FlagRegistered verifies BC-2:
-// --max-num-batched-tokens flag exists with a positive default (vLLM parity, issue #1570).
-func TestRunCmd_MaxNumBatchedTokens_FlagRegistered(t *testing.T) {
-	flag := runCmd.Flags().Lookup("max-num-batched-tokens")
-	assert.NotNil(t, flag, "max-num-batched-tokens flag must be registered")
-	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
-	assert.NoError(t, err)
-	assert.Greater(t, defVal, int64(0), "default must be > 0 (passes validation)")
-}
-
-// TestRunCmd_DeprecatedBatchFlagAliases_Registered verifies issue #1570:
-// the old flag names remain registered as deprecated aliases for backward
-// compatibility. pflag marks a deprecated flag by populating Deprecated and
-// hiding it from help; the alias binds to the same var so behavior is identical.
-func TestRunCmd_DeprecatedBatchFlagAliases_Registered(t *testing.T) {
-	for old, replacement := range map[string]string{
-		"max-num-running-reqs":     "max-num-seqs",
-		"max-num-scheduled-tokens": "max-num-batched-tokens",
-	} {
-		flag := runCmd.Flags().Lookup(old)
-		assert.NotNil(t, flag, "deprecated alias %q must remain registered", old)
-		if flag != nil {
-			assert.NotEmpty(t, flag.Deprecated, "%q must be marked deprecated", old)
-			assert.Contains(t, flag.Deprecated, replacement,
-				"deprecation message for %q should point to %q", old, replacement)
-		}
-	}
-}
-
-// TestApplyRopeScaling validates the pure function extraction of rope_scaling logic.
-// Covers BC-1 (mrope), BC-2 (blacklist), BC-3 (gemma3), BC-4 (yarn), BC-8 (invalid input), BC-9 (never panics).
-func TestApplyRopeScaling(t *testing.T) {
-	tests := []struct {
-		name        string
-		maxPosEmb   int
-		modelType   string
-		ropeScaling any
-		wantScaled  int
-		wantApplied bool
-	}{
-		// Basic cases
-		{name: "nil rope_scaling", maxPosEmb: 8192, modelType: "", ropeScaling: nil, wantScaled: 8192, wantApplied: false},
-		{name: "linear factor 4", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 32768, wantApplied: true},
-		{name: "dynamic factor 2", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "dynamic", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
-		{name: "default factor 2", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "default", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
-
-		// BC-1: mrope — intentionally not excluded (vLLM normalizes mrope → "default" and applies factor)
-		{name: "mrope factor 8", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "mrope", "factor": 8.0}, wantScaled: 65536, wantApplied: true},
-
-		// BC-2: Blacklist — su, longrope, llama3 excluded
-		{name: "su excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "su", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
-		{name: "longrope excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "longrope", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
-		{name: "llama3 excluded", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "llama3", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
-
-		// BC-3: gemma3 model_type exclusion (substring match covers text_config pivot)
-		{name: "gemma3 skips rope_scaling", maxPosEmb: 8192, modelType: "gemma3", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
-		{name: "gemma3_text skips rope_scaling", maxPosEmb: 8192, modelType: "gemma3_text", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 8192, wantApplied: false},
-
-		// BC-4: yarn uses original_max_position_embeddings
-		{name: "yarn with original", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 2048.0}, wantScaled: 8192, wantApplied: true},
-		{name: "yarn without original", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 2.0}, wantScaled: 8192, wantApplied: true},
-
-		// BC-8: Invalid inputs — warn and ignore
-		{name: "non-object rope_scaling string", maxPosEmb: 8192, modelType: "", ropeScaling: "not-a-map", wantScaled: 8192, wantApplied: false},
-		{name: "non-object rope_scaling array", maxPosEmb: 8192, modelType: "", ropeScaling: []any{1.0, 2.0}, wantScaled: 8192, wantApplied: false},
-		{name: "factor not float64", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": "four"}, wantScaled: 8192, wantApplied: false},
-		{name: "factor lte 1", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 1.0}, wantScaled: 8192, wantApplied: false},
-		{name: "no factor key", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear"}, wantScaled: 8192, wantApplied: false},
-		{name: "null type with factor", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": nil, "factor": 2.0}, wantScaled: 8192, wantApplied: true},
-		{name: "empty type with factor", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"factor": 2.0}, wantScaled: 8192, wantApplied: true},
-
-		// rope_type fallback key
-		{name: "rope_type fallback", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"rope_type": "linear", "factor": 3.0}, wantScaled: 12288, wantApplied: true},
-
-		// NaN/Inf defense-in-depth
-		{name: "NaN factor", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": math.NaN()}, wantScaled: 8192, wantApplied: false},
-		{name: "Inf factor", maxPosEmb: 8192, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": math.Inf(1)}, wantScaled: 8192, wantApplied: false},
-
-		// Overflow guards
-		{name: "overflow guard fires", maxPosEmb: math.MaxInt / 2, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: math.MaxInt / 2, wantApplied: false},
-		{name: "yarn orig overflow", maxPosEmb: 4096, modelType: "", ropeScaling: map[string]any{"type": "yarn", "factor": 2.0, "original_max_position_embeddings": float64(math.MaxInt)}, wantScaled: 4096, wantApplied: false},
-
-		// Degenerate base guards (R3)
-		{name: "maxPosEmb zero", maxPosEmb: 0, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: 0, wantApplied: false},
-		{name: "maxPosEmb negative", maxPosEmb: -1, modelType: "", ropeScaling: map[string]any{"type": "linear", "factor": 4.0}, wantScaled: -1, wantApplied: false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			scaled, applied := applyRopeScaling(tc.maxPosEmb, tc.modelType, tc.ropeScaling)
-			assert.Equal(t, tc.wantScaled, scaled, "scaled value")
-			assert.Equal(t, tc.wantApplied, applied, "applied flag")
-		})
-	}
-}
-
 func TestConvertCmd_NoCSVTraceSubcommand(t *testing.T) {
 	// GIVEN the convert cobra command
 	// WHEN listing its subcommands
@@ -231,16 +88,6 @@ func TestConvertCmd_NoCSVTraceSubcommand(t *testing.T) {
 			return
 		}
 	}
-}
-
-// Regression: yarn with original uses original as base, not maxPosEmb
-func TestApplyRopeScaling_YarnOriginal_UsesOriginalAsBase(t *testing.T) {
-	scaled, applied := applyRopeScaling(8192, "", map[string]any{
-		"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 2048.0,
-	})
-	// 2048 * 4 = 8192, NOT 8192 * 4 = 32768
-	assert.Equal(t, 8192, scaled)
-	assert.True(t, applied)
 }
 
 func TestRunCmd_NoWorkloadTracesFlag(t *testing.T) {
@@ -264,15 +111,6 @@ func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
 	if strings.Contains(f.Usage, "traces") {
 		t.Errorf("--workload flag description must not contain 'traces', got: %q", f.Usage)
 	}
-}
-
-func TestRunCmd_PDTransferContention_FlagRegistered(t *testing.T) {
-	// GIVEN the run cobra command
-	// WHEN looking up the --pd-transfer-contention flag
-	flag := runCmd.Flags().Lookup("pd-transfer-contention")
-	// THEN the flag is registered and defaults to false (off by default for backward compatibility)
-	assert.NotNil(t, flag, "pd-transfer-contention flag must be registered")
-	assert.Equal(t, "false", flag.DefValue, "pd-transfer-contention must default to false for backward compatibility")
 }
 
 // TestPrintPDMetrics_ContentionEnabled verifies that when contentionEnabled=true,
@@ -586,79 +424,6 @@ func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
 	}
 }
 
-// TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil verifies the behavioral contract
-// from issue #1035: when --total-kv-blocks is NOT provided, auto-calculation MUST
-// respect --block-size and --gpu-memory-utilization flags.
-//
-// GIVEN: Different block-size or gpu-memory-utilization values
-// WHEN: KV blocks are auto-calculated (--total-kv-blocks NOT set)
-// THEN: The calculated block counts MUST differ accordingly
-func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
-	// Representative model config (similar to Llama-3-8B)
-	mc := sim.ModelConfig{
-		NumLayers:       32,
-		NumHeads:        32,
-		NumKVHeads:      8, // GQA
-		HiddenDim:       4096,
-		IntermediateDim: 14336,
-		VocabSize:       128256,
-		BytesPerParam:   2.0, // FP16
-	}
-
-	// Representative GPU hardware config (H100-like)
-	hc := sim.HardwareCalib{
-		MemoryGiB:  80.0,
-		TFlopsPeak: 1000.0,
-		BwPeakTBs:  3.35,
-	}
-
-	// KV capacity params for dense SwiGLU model
-	params := latency.NewKVCapacityParams(
-		false,  // isMoE
-		0,      // numLocalExperts
-		false,  // tieWordEmbeddings
-		"silu", // hiddenAct
-		0,      // moeExpertFFNDim
-		0,      // sharedExpertFFNDim
-	)
-
-	const tp = 1
-
-	// Test BC-1: Different block-size values produce different block counts
-	blocks64, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.9, params)
-	if err != nil {
-		t.Fatalf("CalculateKVBlocks with block-size=64: %v", err)
-	}
-
-	blocks128, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 128, 0.9, params)
-	if err != nil {
-		t.Fatalf("CalculateKVBlocks with block-size=128: %v", err)
-	}
-
-	// Larger block size → fewer blocks fit in memory
-	if blocks64 <= blocks128 {
-		t.Errorf("block-size sensitivity: blocks64=%d must be > blocks128=%d (larger blocks → fewer fit)",
-			blocks64, blocks128)
-	}
-
-	// Test BC-2: Different gpu-memory-utilization values produce different block counts
-	blocks85pct, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.85, params)
-	if err != nil {
-		t.Fatalf("CalculateKVBlocks with gpu-util=0.85: %v", err)
-	}
-
-	blocks95pct, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.95, params)
-	if err != nil {
-		t.Fatalf("CalculateKVBlocks with gpu-util=0.95: %v", err)
-	}
-
-	// Higher utilization → more blocks fit in memory
-	if blocks95pct <= blocks85pct {
-		t.Errorf("gpu-memory-utilization sensitivity: blocks95pct=%d must be > blocks85pct=%d (more memory → more blocks)",
-			blocks95pct, blocks85pct)
-	}
-}
-
 // TestRunCmd_HasMetricsPathFlag verifies BC-1: blis run exposes --metrics-path,
 // not --results-path.
 func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
@@ -968,57 +733,19 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 	}
 }
 
-// TestAutoCalcKVBlocks_SuppressedByExplicitFlag verifies that when --total-kv-blocks
-// is explicitly set by the user, auto-calculation is suppressed (guard condition).
-//
-// GIVEN: A command with --total-kv-blocks explicitly set
-// WHEN: We check if auto-calculation should run
-// THEN: cmd.Flags().Changed("total-kv-blocks") returns true, suppressing auto-calc
-func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
-	// Create a cobra command with the total-kv-blocks flag
-	testCmd := &cobra.Command{}
-	var totalKV int64
-	testCmd.Flags().Int64Var(&totalKV, "total-kv-blocks", 1000000, "")
-
-	// Test case 1: Flag NOT set by user (default value)
-	if err := testCmd.ParseFlags([]string{}); err != nil {
-		t.Fatalf("ParseFlags with no args: %v", err)
-	}
-	if testCmd.Flags().Changed("total-kv-blocks") {
-		t.Errorf("Flag not set by user: Changed() should be false (auto-calc allowed)")
-	}
-
-	// Test case 2: Flag explicitly set by user
-	testCmd2 := &cobra.Command{}
-	var totalKV2 int64
-	testCmd2.Flags().Int64Var(&totalKV2, "total-kv-blocks", 1000000, "")
-	if err := testCmd2.ParseFlags([]string{"--total-kv-blocks", "5000"}); err != nil {
-		t.Fatalf("ParseFlags with --total-kv-blocks: %v", err)
-	}
-	if !testCmd2.Flags().Changed("total-kv-blocks") {
-		t.Errorf("Flag set by user: Changed() should be true (auto-calc suppressed)")
-	}
-	if totalKV2 != 5000 {
-		t.Errorf("Flag value: got %d, want 5000", totalKV2)
-	}
-}
-
 // TestRunCmd_MetricsPath_WritesMetricsOutput verifies BC-3: --metrics-path on
 // blis run produces MetricsOutput JSON (instance_id string ≠ SimResult request_id int).
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
-	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
+	// Base list copied from TestReplayCmd_EndToEnd_KernelBackend;
 	// run-only workload vars and metricsPath added on top.
 	origMetrics := metricsPath
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -1060,15 +787,11 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	defer func() {
 		metricsPath = origMetrics
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -1109,7 +832,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 	}()
@@ -1136,14 +858,8 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-requests", "1",
 		"--seed", "42",
 		"--rate", "1.0",
@@ -1180,16 +896,13 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
 
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore the package-level flag vars runCmd.Run mutates.
 	// Same list as TestRunCmd_MetricsPath_WritesMetricsOutput, with
 	// traceOutput added.
 	origMetrics := metricsPath
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -1230,15 +943,11 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	defer func() {
 		metricsPath = origMetrics
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -1279,7 +988,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 	}()
@@ -1307,14 +1015,8 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-requests", strconv.Itoa(wantRecords),
 		"--seed", "42",
 		"--rate", "1.0",
@@ -1387,7 +1089,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Save and restore package-level flag vars touched by runCmd.Run.
 	orig := captureCmdLevelVars()
@@ -1417,14 +1119,8 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
 	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--num-requests", strconv.Itoa(numReq),
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--rate", "1.0",
@@ -1455,26 +1151,24 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, backend, results, policyConfig, traceOut, logLvl, catalogDir, hwCfg, gpuVal string
-	defaultsFile                                                                                string
-	beta, alpha                                                                                 []float64
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency       int64
-	threshold, maxModelLen                                                                      int64
-	offload, bandwidth                                                                          float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix                    int
-	rateV                                                                                       float64
-	seedV                                                                                       int64
-	traceLvl, workloadT, admission, routing, sched, workloadSpec                                string
-	promptMean, promptStdev, promptMin, promptMax                                               int
-	outputMean, outputStdev, outputMin, outputMax                                               int
-	requestTimeout                                                                              int
-	lazy                                                                                        bool
+	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal           string
+	defaultsFile                                                                          string
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency int64
+	threshold, maxModelLen                                                                int64
+	offload, bandwidth                                                                    float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix              int
+	rateV                                                                                 float64
+	seedV                                                                                 int64
+	traceLvl, workloadT, admission, routing, sched, workloadSpec                          string
+	promptMean, promptStdev, promptMin, promptMax                                         int
+	outputMean, outputStdev, outputMin, outputMax                                         int
+	requestTimeout                                                                        int
+	lazy                                                                                  bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
 	return origCmdLevelVars{
-		metrics: metricsPath, model: model, backend: latencyModelBackend,
-		beta: betaCoeffs, alpha: alphaCoeffs,
+		metrics: metricsPath, model: model,
 		totalKV: totalKVBlocks, blockSize: blockSizeTokens, maxRunning: maxNumSeqs,
 		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed, results: resultsPath,
 		threshold: longPrefillTokenThreshold, kvCPU: kvCPUBlocks, offload: kvOffloadThreshold,
@@ -1490,7 +1184,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		outputMin: outputTokensMin, outputMax: outputTokensMax,
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
 		traceOut: traceOutput, logLvl: logLevel, catalogDir: catalogPath,
-		hwCfg: hwConfigPath, gpuVal: gpu, tp: tensorParallelism,
+		gpuVal: gpu, tp: tensorParallelism,
 		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
 	}
 }
@@ -1498,9 +1192,6 @@ func captureCmdLevelVars() origCmdLevelVars {
 func (o origCmdLevelVars) restore() {
 	metricsPath = o.metrics
 	model = o.model
-	latencyModelBackend = o.backend
-	betaCoeffs = o.beta
-	alphaCoeffs = o.alpha
 	totalKVBlocks = o.totalKV
 	blockSizeTokens = o.blockSize
 	maxNumSeqs = o.maxRunning
@@ -1541,7 +1232,6 @@ func (o origCmdLevelVars) restore() {
 	traceOutput = o.traceOut
 	logLevel = o.logLvl
 	catalogPath = o.catalogDir
-	hwConfigPath = o.hwCfg
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
 	lazyGeneration = o.lazy
@@ -1613,7 +1303,7 @@ func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
 func TestRunCmd_LazyGeneration_Concurrency_Streams(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Write a minimal concurrency-mode workload spec.
 	specPath := filepath.Join(tmpDir, "concurrency.yaml")
@@ -1654,14 +1344,8 @@ clients:
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
 	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--seed", strconv.FormatInt(seed, 10),
 		"--workload-spec", specPath,
 		"--horizon", "2000000",

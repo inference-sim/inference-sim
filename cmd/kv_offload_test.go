@@ -51,7 +51,7 @@ func validBlock() *kvOffloadBlock {
 // devices/storage.yaml parses through the real reader and a device resolves to a triple.
 func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
 	catalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 	devices, err := loadCatalogStorageDevices(catalog)
 	if err != nil {
 		t.Fatalf("catalog storage device table must load: %v", err)
@@ -379,7 +379,7 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 	if err := os.WriteFile(specPath, []byte(shape.yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -400,10 +400,8 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
-		"--defaults-filepath", defaultsPath, "--catalog", catalogDir,
-		"--hardware-config", hwPath, "--hardware", "H100", "--tp", "1",
-		"--total-kv-blocks", "1000", "--seed", strconv.FormatInt(seedVal, 10),
+		"--defaults-filepath", defaultsPath, "--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath, "--horizon", strconv.FormatInt(horizon, 10),
 		"--trace-output", tracePrefix, "--kv-offload-config", offloadPath,
 	}
@@ -428,12 +426,16 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 		"    - type: fs\n" +
 		"      root_dir: /mnt/kv\n" +
 		"      direct_io: true\n" +
-		"      read_bandwidth: 7000.0\n" +
-		"      write_bandwidth: 5000.0\n" +
-		"      base_latency: 80.0\n"
+		"      device_class: nvme_gen4\n"
 	if err := os.WriteFile(offloadPath, []byte(offloadYAML), 0644); err != nil {
 		t.Fatal(err)
 	}
+	_, catalog, _ := kernelRepos(t)
+	devices, err := loadCatalogStorageDevices(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nvme := devices["nvme_gen4"]
 
 	headerFile, dataFile := runToTraceWithOffload(t, offloadPath, 20260818, 60_000_000)
 
@@ -448,11 +450,15 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 	if h.CPUBytesToUse != 17179869184 || h.EvictionPolicy != "lru" || !h.OffloadPromptOnly {
 		t.Errorf("recorded scalars wrong: %+v", h)
 	}
-	if h.BlockSize != 16 || h.BlocksPerChunk != 1 || h.TokensPerHash != 16 {
+	// The offload block size defaults to the GPU block size the kernel sized the run with,
+	// one block per chunk and one hash per block.
+	if h.BlockSize <= 0 || h.BlocksPerChunk != 1 || h.TokensPerHash != h.BlockSize {
 		t.Errorf("resolved defaults not recorded: %+v", h)
 	}
-	if len(h.Tiers) != 1 || h.Tiers[0].ReadBandwidth != 7000 || h.Tiers[0].WriteBandwidth != 5000 || !h.Tiers[0].DirectIO {
-		t.Errorf("recorded tier wrong: %+v", h.Tiers)
+	// The tier records the catalog device it names.
+	if len(h.Tiers) != 1 || h.Tiers[0].DeviceClass != "nvme_gen4" || !h.Tiers[0].DirectIO ||
+		h.Tiers[0].ReadBandwidth != nvme.ReadBandwidth || h.Tiers[0].WriteBandwidth != nvme.WriteBandwidth {
+		t.Errorf("recorded tier %+v, want the catalog's nvme_gen4 %+v", h.Tiers, nvme)
 	}
 
 	// Replay the trace: the header is authoritative; no flag passed. Must reproduce

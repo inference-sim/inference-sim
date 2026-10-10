@@ -10,6 +10,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/spf13/cobra"
+	"pgregory.net/rapid"
 )
 
 // TestLoRAFlags_RegisteredOnRunAndReplay verifies the --lora-* config flags are
@@ -192,190 +193,39 @@ func TestAdapterReservedBytesFor(t *testing.T) {
 	}
 }
 
-// TestResolveLatencyConfig_AppliesAdapterHBMReservation is the cmd-level end-to-end
-// check that the static LoRA HBM reservation threads into the auto-derived KV
-// capacity (PR5). resolveLatencyConfig is the shared auto-calc chokepoint for BOTH
-// run and replay, so exercising it pins the main-path INV-13 parity too: the same
-// reservation reduces the same block count regardless of command. It resolves an
-// identical fixture WITHOUT --total-kv-blocks (so the auto-capacity path runs) at
-// reservation 0 vs a non-zero reservation and asserts the block count shrinks.
-func TestResolveLatencyConfig_AppliesAdapterHBMReservation(t *testing.T) {
-	dir := t.TempDir()
-	// Dense Llama-like fixture: the auto-capacity path needs vocab_size + realistic
-	// dims so the derived block count is comfortably positive on an 80 GiB GPU.
-	configJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "num_key_value_heads": 8,
-  "vocab_size": 32000,
-  "hidden_act": "silu",
-  "torch_dtype": "float16",
-  "max_position_embeddings": 4096
-}`
-	catalogDir, err := writeTestCatalog(dir, configJSON)
-	if err != nil {
-		t.Fatalf("write test catalog: %v", err)
-	}
-	hwPath := filepath.Join(dir, "hw.json")
-	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
-		t.Fatalf("write hw: %v", err)
-	}
-
-	// Full isolation: this test mutates several cmd-level package vars, so save and
-	// restore ALL of them to avoid leaking state into other cmd tests.
-	// captureCmdLevelVars covers most (model, backend, gpu, tp, totalKVBlocks,
-	// catalogPath, hwConfigPath, defaultsFilePath, blockSizeTokens,
-	// maxModelLen, ...); save the few it does not, including the new
-	// loraReservedBytesForKV.
+// TestAdoptKernelDeployment_AdapterHBMReservationShrinksThePool is the cmd-level end-to-end
+// law for the static LoRA HBM reservation (PR5): a run adopts the kernel's KV pool, then sets
+// the configured adapter reservation aside. The pool is the kernel's plain answer with no
+// reservation, and is non-increasing in the reserved bytes -- never larger than without one.
+func TestAdoptKernelDeployment_AdapterHBMReservationShrinksThePool(t *testing.T) {
+	catalogDir := setupKernelTestFixtures(t)
 	orig := captureCmdLevelVars()
-	origDP, origEP, origMoE := dataParallelism, enableExpertParallel, moeCommBackend
-	origUtil, origReserved := gpuMemoryUtilization, loraReservedBytesForKV
-	defer func() {
-		orig.restore()
-		dataParallelism, enableExpertParallel, moeCommBackend = origDP, origEP, origMoE
-		gpuMemoryUtilization, loraReservedBytesForKV = origUtil, origReserved
-	}()
+	origReserved := loraReservedBytesForKV
+	t.Cleanup(func() { orig.restore(); loraReservedBytesForKV = origReserved })
+	catalogPath = catalogDir
 
-	resolve := func(reserved int64) int64 {
-		// Reset the package-level vars resolveLatencyConfig reads.
-		model = "test-model"
-		latencyModelBackend = "trained-physics"
-		gpu = "H100"
-		tensorParallelism = 1
-		dataParallelism = 1
-		enableExpertParallel = false
-		moeCommBackend = ""
-		totalKVBlocks = 0 // auto-derive
-		blockSizeTokens = 16
-		maxModelLen = 0
-		gpuMemoryUtilization = 0.9
-		catalogPath = catalogDir
-		hwConfigPath = hwPath
-		defaultsFilePath = "../defaults.yaml"
-		loraReservedBytesForKV = reserved
-
-		testCmd := &cobra.Command{}
-		registerSimConfigFlags(testCmd)
-		// No --total-kv-blocks, so Changed("total-kv-blocks") is false and the
-		// auto-capacity path (which passes WithAdapterReservedBytes) runs.
-		args := []string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
-			"--defaults-filepath", "../defaults.yaml",
-		}
-		if err := testCmd.ParseFlags(args); err != nil {
-			t.Fatalf("ParseFlags: %v", err)
-		}
-		resolveLatencyConfig(testCmd)
+	adoptKernelDeployment(&cobra.Command{})
+	adopted := totalKVBlocks
+	poolWith := func(reserved int64) int64 {
+		totalKVBlocks, loraReservedBytesForKV = adopted, reserved
+		applyKernelLoRAReservation()
 		return totalKVBlocks
 	}
-
-	base := resolve(0)
-	withRes := resolve(8 << 30)   // 8 GiB reservation
-	withRes2 := resolve(16 << 30) // 16 GiB reservation (double)
-	if base <= 0 {
-		t.Fatalf("baseline auto-derived blocks must be positive, got %d", base)
+	plain := poolWith(0)
+	if plain != adopted {
+		t.Errorf("no reservation moved the adopted pool from %d to %d blocks", adopted, plain)
 	}
-	if withRes >= base {
-		t.Errorf("adapter HBM reservation not applied via resolveLatencyConfig: base=%d withReservation=%d (expected fewer)", base, withRes)
+	if plain <= 0 {
+		t.Fatalf("non-vacuity: the kernel sized a %d-block pool", plain)
 	}
-	// Magnitude law, not just direction: block loss must be LINEAR in the reserved
-	// bytes (the reservation is subtracted as GiB from a fixed overhead, then blocks =
-	// floor(remaining / per_block)), so doubling the reservation must remove ~twice
-	// the blocks. This ratio catches a wiring bug that threads the value through with a
-	// constant/fixed offset or otherwise non-linearly — it would still shrink the count
-	// and pass a direction-only check, but breaks the 2× ratio. It intentionally does
-	// NOT probe dp/tp scaling: at dp=tp=1 a dp/tp-scale error multiplies by 1 and a
-	// uniform coefficient error preserves the ratio, so both are invisible here; the
-	// per-DP-rank scaling law is pinned separately by the library test
-	// TestCalculateKVBlocks_AdapterReservationPerDPRankScaling. Slack absorbs floor()
-	// truncation at each of the two subtractions.
-	lost1, lost2 := base-withRes, base-withRes2
-	if lost1 <= 0 {
-		t.Fatalf("8 GiB reservation removed no blocks: base=%d withReservation=%d", base, withRes)
+	if got := poolWith(8 << 30); got >= plain {
+		t.Errorf("an 8 GiB reservation left the pool at %d blocks, not below the plain %d", got, plain)
 	}
-	if lost2 <= lost1 {
-		t.Errorf("16 GiB reservation must remove more blocks than 8 GiB: lost(8GiB)=%d lost(16GiB)=%d", lost1, lost2)
-	}
-	if diff := lost2 - 2*lost1; diff < -2 || diff > 2 {
-		t.Errorf("block loss must scale linearly with the reservation: lost(8GiB)=%d, lost(16GiB)=%d, want lost(16GiB) ≈ 2×lost(8GiB) (±2 blocks truncation slack)", lost1, lost2)
-	}
-}
-
-// TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation pins the scope
-// boundary documented in the --lora-config flag help: when --total-kv-blocks is set
-// explicitly, the auto-calc path does NOT run, so the static LoRA HBM reservation is
-// NOT subtracted — the explicit value is used as-is. Guards against a future refactor
-// that accidentally applies the reservation to an explicit block count.
-func TestResolveLatencyConfig_ExplicitTotalKVBlocksBypassesReservation(t *testing.T) {
-	dir := t.TempDir()
-	configJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "num_key_value_heads": 8,
-  "vocab_size": 32000,
-  "hidden_act": "silu",
-  "torch_dtype": "float16",
-  "max_position_embeddings": 4096
-}`
-	catalogDir, err := writeTestCatalog(dir, configJSON)
-	if err != nil {
-		t.Fatalf("write test catalog: %v", err)
-	}
-	hwPath := filepath.Join(dir, "hw.json")
-	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
-		t.Fatalf("write hw: %v", err)
-	}
-
-	orig := captureCmdLevelVars()
-	origDP, origEP, origMoE := dataParallelism, enableExpertParallel, moeCommBackend
-	origUtil, origReserved := gpuMemoryUtilization, loraReservedBytesForKV
-	defer func() {
-		orig.restore()
-		dataParallelism, enableExpertParallel, moeCommBackend = origDP, origEP, origMoE
-		gpuMemoryUtilization, loraReservedBytesForKV = origUtil, origReserved
-	}()
-
-	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	gpu = "H100"
-	tensorParallelism = 1
-	dataParallelism = 1
-	enableExpertParallel = false
-	moeCommBackend = ""
-	blockSizeTokens = 16
-	maxModelLen = 0
-	gpuMemoryUtilization = 0.9
-	catalogPath = catalogDir
-	hwConfigPath = hwPath
-	defaultsFilePath = "../defaults.yaml"
-	loraReservedBytesForKV = 8 << 30 // a reservation IS configured...
-
-	const explicit = int64(5000)
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	// ...but --total-kv-blocks is set explicitly, so Changed("total-kv-blocks") is
-	// true and the auto-calc path (which would subtract the reservation) is skipped.
-	args := []string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
-		"--defaults-filepath", "../defaults.yaml",
-		"--total-kv-blocks", "5000",
-	}
-	if err := testCmd.ParseFlags(args); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-	resolveLatencyConfig(testCmd)
-
-	if totalKVBlocks != explicit {
-		t.Errorf("explicit --total-kv-blocks must be used as-is (reservation NOT applied), got %d, want %d", totalKVBlocks, explicit)
-	}
+	rapid.Check(t, func(rt *rapid.T) {
+		a := rapid.Int64Range(0, 8<<30).Draw(rt, "reserved")
+		b := rapid.Int64Range(a, 8<<30).Draw(rt, "more")
+		if pa, pb := poolWith(a), poolWith(b); pb > pa {
+			rt.Fatalf("reserving %d bytes left %d blocks, more than %d bytes' %d", b, pb, a, pa)
+		}
+	})
 }

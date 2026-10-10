@@ -70,7 +70,6 @@ type SimConfig struct {
 	// Module-scoped sub-configs (R16)
 	KVCacheConfig
 	BatchConfig
-	LatencyCoeffs
 	ModelHardwareConfig
 	PolicyConfig
 	WorkloadConfig
@@ -91,6 +90,13 @@ type SimConfig struct {
 	// Shared with admission: same overrides flow from policy bundle slo_priorities.
 	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
 	SLOPriorityOverrides map[string]int
+
+	// LatencyModel prices every step the instance runs. The caller builds it -- in production
+	// the blis-latency-kernel adapter (sim/kernelmodel), whose inputs are a scenario, a catalog
+	// and a registry -- and the simulator only times steps with it. Required:
+	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
+	// tag.
+	LatencyModel LatencyModel
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -119,9 +125,9 @@ type Simulator struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model       string
-	gpu         string
-	maxModelLen int64 // max total sequence length (0 = unlimited)
+	model                string
+	gpu                  string
+	maxModelLen          int64 // max total sequence length (0 = unlimited)
 	// Speculative decoding / MTP (#1528). specEnabled gates ALL spec-decode behavior;
 	// when false every decode path is byte-identical to a pre-feature build (INV-6).
 	// specTokensPerStep is the mean accepted tokens/step (1+α·K) consumed by the
@@ -239,7 +245,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	// could never start a load (adapterCost nil) — stranding them. A malformed cost
 	// config is a library-boundary error (R6), not a panic.
 	// BuildAdapterCost centralizes the activation condition (R4) so NewSimulator and
-	// the sim/cluster latency backend agree on exactly when adapter costs apply; it
+	// the sim/cluster latency-model wrapper (WithAdapterOverhead) agree on exactly when adapter costs apply; it
 	// returns (nil, nil) when the LoRA subsystem is inert (no adapters, no capacity,
 	// or sim/lora unlinked). A non-nil ac therefore stands in for the full
 	// HasAdapters && capacity != nil && factories-registered condition.
@@ -508,7 +514,6 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
 // overhead in microseconds. Used by the cluster layer to include overhead in
 // parent.CompletionTime when disaggregated decode sub-requests complete.
-// Returns 0 for all backends except trained-physics (BC-1, issue #846).
 func (sim *Simulator) PostDecodeFixedOverhead() int64 {
 	return sim.latencyModel.PostDecodeFixedOverhead()
 }
@@ -709,7 +714,6 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // E2E and RequestCompletionTimes beyond the RequestLeftEvent timestamp by the overhead
 // amount. This is architecturally intentional: real vLLM's post-processing (detokenization,
 // response serialization) is non-blocking but still contributes to client-perceived latency.
-// For trained-physics, PostDecodeFixedOverhead adds ~777µs to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// Release this request's adapter pin (cold-load gate, #1466): a completed
 	// request no longer uses its adapter, so the slot becomes evictable. Covers the
@@ -817,6 +821,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	}
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
+	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
@@ -1068,8 +1073,8 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// in RunningBatch for the next step, but do not contribute to this step's
 	// compute time. See vllm/v1/core/sched/scheduler.py scheduled_running_reqs.
 	// Note: scheduled may be empty when all requests are idle (e.g., after
-	// Phase 1 preemption cascade). All StepTime backends handle empty batches
-	// correctly (return >= 1), and the max(1, ...) floor below guarantees INV-3.
+	// Phase 1 preemption cascade). The LatencyModel contract requires StepTime to
+	// handle an empty batch (return >= 1), and the max(1, ...) floor below guarantees INV-3.
 	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
 	for _, req := range sim.RunningBatch.Requests {
 		if req.NumNewTokens > 0 {
@@ -1081,7 +1086,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
 
-	// INV-3 defense-in-depth: guarantee clock advancement regardless of backend.
+	// INV-3 defense-in-depth: guarantee clock advancement regardless of the latency model.
 	// All LatencyModel implementations must return >= 1 per interface contract;
 	// this floor catches violations that would cause infinite livelock.
 	currStepAdvance = max(1, currStepAdvance)
@@ -1186,8 +1191,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// preserved and Release frees all blocks from prior successful allocations.
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
+			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
-				time:    now + currStepAdvance,
+				time:    req.DepartureTime,
 				Request: req,
 			})
 
@@ -1247,8 +1253,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			req.State = StateCompleted
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
+			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
-				time:    now + currStepAdvance,
+				time:    req.DepartureTime,
 				Request: req,
 			})
 			sim.recordRequestCompletion(req)

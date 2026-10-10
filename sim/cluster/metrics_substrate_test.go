@@ -8,6 +8,9 @@
 //	BC-MS-14c: E2E >= TTFT for every request in aggregated cluster metrics
 //	BC-MS-7c: CacheHitRate ∈ [0, 1] in aggregated cluster metrics
 //	BC-MS-10c: PeakKVBlocksUsed bounded by total capacity per instance
+//
+// The fake latency model here has PostDecodeFixedOverhead = 0, so the E2E identity
+// (E2E = TTFT + decode latency) holds exactly.
 package cluster
 
 import (
@@ -15,7 +18,16 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
+
+// msClusterLatency is the default fake with no post-decode overhead (see file header).
+func msClusterLatency() sim.LatencyModel {
+	c := testutil.DefaultFakeLatency()
+	c.PostDecodeOverheadTicks = 0
+	return fakelatency.WithCoeffs(c)
+}
 
 // msClusterConfig returns a DeploymentConfig for metrics substrate cluster tests.
 func msClusterConfig(numInstances int) DeploymentConfig {
@@ -25,8 +37,8 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 100000, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{5000, 10, 3}, []float64{1000, 2, 500}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "test-gpu", 1, 1, false, "", "roofline", 0),
+			LatencyModel:        msClusterLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
 			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
 		NumInstances:    numInstances,

@@ -54,8 +54,10 @@ var (
 )
 
 var calibrateCmd = &cobra.Command{
-	Use:   "calibrate",
-	Short: "Compare real observed latencies against simulator predictions",
+	// Printed to stderr by cobra, so stdout stays deterministic (INV-6).
+	Deprecated: "it is scheduled for removal (#1901): coefficients are fitted in blis-registry, not calibrated here.",
+	Use:        "calibrate",
+	Short:      "Compare real observed latencies against simulator predictions",
 	Long: `Calibrate takes a TraceV2 file (from blis observe) and a SimResult JSON file
 (from blis replay --results-path) and computes a calibration report comparing
 real vs simulated TTFT and E2E latencies.
@@ -701,6 +703,6 @@ func init() {
 	calibrateCmd.Flags().Float64Var(&calibrateAdapterMAPEThresh, "adapter-mape-threshold", 0.20, "MAPE bound (fraction) for the adapter-reference comparison (SC-007 target 0.20).")
 	calibrateCmd.Flags().Float64Var(&calibrateThroughputTolerancePct, "throughput-tolerance-pct", 0, "Within-tolerance verdict (percent) on real-vs-sim output-token throughput (#1647). Verdict emitted only when > 0.")
 	calibrateCmd.Flags().IntVar(&calibrateNumGPUs, "num-gpus", 0, "GPU count (TP×PP×DP×instances) for per-GPU throughput normalization (#1647). Per-GPU fields emitted only when > 0. Operator-supplied since the trace header records only TP.")
-	calibrateCmd.Flags().StringVar(&calibrateReplayMode, "replay-mode", "fixed", "Replay mode the SimResults were produced under: \"fixed\" or \"closed-loop\" (#1647, qa-review G3). The throughput makespan is valid ONLY for fixed-mode replay of a plain trace; calibrate REFUSES the throughput block otherwise (closed-loop replay, or a delta corpus). calibrate cannot observe the `blis replay --session-mode` choice, so the operator affirms it here (durable auto-stamp: #1652).")
+	calibrateCmd.Flags().StringVar(&calibrateReplayMode, "replay-mode", "fixed", "Replay mode the SimResults were produced under: \"fixed\" or \"closed-loop\" (#1647, qa-review G3). The throughput makespan is valid ONLY for fixed-mode replay of a plain trace; calibrate REFUSES the throughput block otherwise (closed-loop replay, or a delta corpus). calibrate cannot observe the 'blis replay --session-mode' choice, so the operator affirms it here (durable auto-stamp: #1652).")
 	rootCmd.AddCommand(calibrateCmd)
 }

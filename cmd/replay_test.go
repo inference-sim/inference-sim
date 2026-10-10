@@ -16,102 +16,8 @@ import (
 	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
-
-// testCatalogModels are the model short names the cmd CLI tests run against. Since
-// #1731 a model config is located by CATALOG ROOT (--catalog / BLIS_CATALOG) and the
-// entry directory is derived from the model's short name, so a shared fixture must
-// write one entry per name a consumer might pass to --model.
-var testCatalogModels = []string{"test-model", "test-moe", "qwen3-14b"}
-
-// writeTestCatalog writes configJSON as the config.json of one catalog entry per name
-// in testCatalogModels (plus any extraModels short names a caller needs), under the
-// catalog root dir, and returns dir. Entries are written in the canonical clone-root
-// layout <dir>/models/<name>/config.json — the ONLY layout resolution accepts since #1771
-// removed the flat transition fallback. Every entry holds the same architecture, so which
-// name a test passes to --model does not change the resolved ModelConfig.
-func writeTestCatalog(dir, configJSON string, extraModels ...string) (string, error) {
-	for _, name := range append(append([]string{}, testCatalogModels...), extraModels...) {
-		entryDir := filepath.Join(dir, catalogModelsSubdir, name)
-		if err := os.MkdirAll(entryDir, 0o755); err != nil {
-			return "", fmt.Errorf("mkdir catalog entry %s: %w", entryDir, err)
-		}
-		if err := os.WriteFile(filepath.Join(entryDir, "config.json"), []byte(configJSON), 0o644); err != nil {
-			return "", fmt.Errorf("write %s/config.json: %w", entryDir, err)
-		}
-	}
-	return dir, nil
-}
-
-// testCatalogConfigPath returns the config.json path of the named entry inside a
-// catalog written by writeTestCatalog. Tests that parse the fixture directly (rather
-// than letting the CLI resolve it via --catalog) use this to address the same entry
-// the resolver would pick for that model name — the canonical models/ layout.
-func testCatalogConfigPath(catalogDir, model string) string {
-	return filepath.Join(catalogDir, catalogModelsSubdir, model, "config.json")
-}
-
-// setupTrainedPhysicsTestFixtures creates a temp model catalog and hardware config
-// file for integration tests that need a working latency backend.
-// Returns the catalog root (for --catalog) and the hardware config file path.
-func setupTrainedPhysicsTestFixtures(t *testing.T) (catalogDir, hwPath string) {
-	t.Helper()
-	dir := t.TempDir()
-
-	// Minimal HF config.json (Llama-like, 2-layer for fast simulation)
-	configJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 4,
-  "num_hidden_layers": 2,
-  "hidden_size": 64,
-  "intermediate_size": 128,
-  "num_key_value_heads": 4,
-  "torch_dtype": "float16",
-  "max_position_embeddings": 4096
-}`
-	catalogDir, err := writeTestCatalog(dir, configJSON)
-	if err != nil {
-		t.Fatalf("write test catalog: %v", err)
-	}
-
-	// Minimal hardware config
-	hwFile := filepath.Join(dir, "hw.json")
-	hwJSON := `{
-  "H100": {
-    "MemoryGiB": 80.0,
-    "TFlopsPeak": 1.0,
-    "BwPeakTBs": 0.001
-  }
-}`
-	if err := os.WriteFile(hwFile, []byte(hwJSON), 0644); err != nil {
-		t.Fatalf("write hw config: %v", err)
-	}
-
-	return catalogDir, hwFile
-}
-
-// setupTrainedPhysicsTestFixturesWithDefaults extends setupTrainedPhysicsTestFixtures
-// by also creating a defaults.yaml with trained_physics_coefficients.
-// Returns the catalog root, hardware config path, and defaults file path.
-func setupTrainedPhysicsTestFixturesWithDefaults(t *testing.T) (catalogDir, hwPath, defaultsPath string) {
-	t.Helper()
-	catalogDir, hwPath = setupTrainedPhysicsTestFixtures(t)
-
-	// Create minimal defaults.yaml with trained_physics_coefficients
-	defaultsPath = filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
-	defaultsYAML := `trained_physics_coefficients:
-  alpha_coeffs: [100.0, 1.0, 100.0]
-  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-`
-	if err := os.WriteFile(defaultsPath, []byte(defaultsYAML), 0644); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
-
-	return catalogDir, hwPath, defaultsPath
-}
 
 // TestReplayCmd_SimConfigFlags_Registered verifies BC-4:
 // all sim config flags registered on replayCmd.
@@ -119,18 +25,11 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 	flags := []string{
 		// registerSimConfigFlags: general
 		"seed", "horizon", "log", "defaults-filepath",
-		"catalog", "hardware-config",
+		"catalog",
 
-		// registerSimConfigFlags: vLLM server configs
-		"total-kv-blocks", "max-num-seqs", "max-num-batched-tokens", "no-enable-prefix-caching",
-		// Deprecated aliases (issue #1570).
-		"max-num-running-reqs", "max-num-scheduled-tokens",
-		"beta-coeffs", "alpha-coeffs", "block-size-in-tokens",
+		// registerSimConfigFlags: the kernel scenario (the deployment and its engine)
+		"scenario", "scenarios", "registry",
 		"long-prefill-token-threshold",
-
-		// registerSimConfigFlags: BLIS model configs
-		"model", "hardware", "tp",
-		"latency-model", "max-model-len",
 
 		// registerSimConfigFlags: cluster config
 		"num-instances",
@@ -156,7 +55,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 
 		// registerSimConfigFlags: tiered KV cache
 		"kv-cpu-blocks", "kv-offload-threshold",
-		"kv-transfer-bandwidth", "kv-transfer-base-latency",
 		"snapshot-refresh-interval",
 
 		// registerSimConfigFlags: cache signal delay
@@ -390,23 +288,6 @@ func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
 	}
 }
 
-func TestReplayCmd_LatencyModelDefault_IsTrainedPhysics(t *testing.T) {
-	// GIVEN the replay command with its registered flags
-	flag := replayCmd.Flags().Lookup("latency-model")
-
-	// WHEN we check the default value
-	// THEN it MUST be "trained-physics" (BC-1: CLI default switched)
-	// This test ensures run/replay parity for the latency model default.
-	// Both commands share registerSimConfigFlags, but explicit per-command
-	// assertions match the project's flag testing pattern.
-	if flag == nil {
-		t.Fatal("replayCmd missing --latency-model flag")
-	}
-	if flag.DefValue != "trained-physics" {
-		t.Errorf("default latency model must be 'trained-physics', got %q (#1383)", flag.DefValue)
-	}
-}
-
 // TestReplayCmd_TraceOutputFlag_Registered verifies BC-6:
 // --trace-output is registered with empty default (flag is optional).
 func TestReplayCmd_TraceOutputFlag_Registered(t *testing.T) {
@@ -531,13 +412,10 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save and restore all package-level flag vars (same pattern as EndToEnd test)
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -571,7 +449,6 @@ warm_up_requests: 0
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -580,9 +457,6 @@ warm_up_requests: 0
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -616,7 +490,6 @@ warm_up_requests: 0
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -627,8 +500,6 @@ warm_up_requests: 0
 
 	// Set package-level vars
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml trained_physics_coefficients
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -654,10 +525,9 @@ warm_up_requests: 0
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = outputPrefix
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
-	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+	defaultsFilePath = "../defaults.yaml" // LoRA cost coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -665,14 +535,8 @@ warm_up_requests: 0
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model",
-		"--latency-model", "trained-physics",
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
-		"--total-kv-blocks", "1000",
-		"--hardware", "H100",
-		"--tp", "1",
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
 		"--trace-output", outputPrefix,
@@ -730,7 +594,7 @@ warm_up_requests: 0
 	}
 }
 
-func TestReplayCmd_EndToEnd_TrainedPhysicsMode(t *testing.T) {
+func TestReplayCmd_EndToEnd_KernelBackend(t *testing.T) {
 	// NOTE: This test mutates package-level flag vars shared with runCmd.
 	// Do NOT use t.Parallel() — concurrent execution would create data races.
 
@@ -759,13 +623,10 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 
-	catalogDir, hwCfgPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save and restore package-level flag vars (this test mutates them)
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -799,7 +660,6 @@ warm_up_requests: 0
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -808,9 +668,6 @@ warm_up_requests: 0
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -844,7 +701,6 @@ warm_up_requests: 0
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -888,8 +744,6 @@ warm_up_requests: 0
 
 	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -914,25 +768,18 @@ warm_up_requests: 0
 	traceDataPath = dataPath
 	simulationHorizon = math.MaxInt64
 	catalogPath = catalogDir
-	hwConfigPath = hwCfgPath
 	gpu = "H100"
 	tensorParallelism = 1
 
 	// Create a cobra command with Changed() tracking for the flags the Run closure checks.
-	// This is required so cmd.Flags().Changed("latency-model") etc. return correct values.
+	// This is required so cmd.Flags().Changed(...) returns correct values.
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model",
-		"--latency-model", "trained-physics",
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
-		"--total-kv-blocks", "1000",
-		"--hardware", "H100",
-		"--tp", "1",
-		"--catalog", catalogDir,
-		"--hardware-config", hwCfgPath,
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
@@ -977,11 +824,6 @@ warm_up_requests: 0
 		}
 	}
 
-	// TTFT must be in microseconds (not ms) and positive.
-	// With trained-physics (β₅=100 µs/layer, L=2), TTFT ≈ 200+ µs.
-	if len(simResults) > 0 && simResults[0].TTFT <= 0 {
-		t.Errorf("TTFT %f must be positive (microseconds)", simResults[0].TTFT)
-	}
 }
 
 // TestReplayCmd_TraceOutput_NoOp verifies BC-4:
@@ -1001,13 +843,10 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir3, hwPath3 := setupTrainedPhysicsTestFixtures(t)
+	catalogDir3 := setupKernelTestFixtures(t)
 
 	// Save/restore package-level vars
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -1041,7 +880,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -1050,9 +888,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -1086,7 +921,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1096,8 +930,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	}()
 
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -1123,20 +955,17 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = "" // BC-4: no --trace-output flag set
 	catalogPath = catalogDir3
-	hwConfigPath = hwPath3
 	gpu = "H100"
 	tensorParallelism = 1
-	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+	defaultsFilePath = "../defaults.yaml" // LoRA cost coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
-		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir3, "--hardware-config", hwPath3,
+		// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
+		"--catalog", catalogDir3, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
@@ -1173,16 +1002,13 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir4, hwPath4 := setupTrainedPhysicsTestFixtures(t)
+	catalogDir4 := setupKernelTestFixtures(t)
 
 	// runOnce runs the replay and returns the content of the output files
 	runOnce := func(prefix string) (yamlBytes, csvBytes []byte) {
 		t.Helper()
 
 		origModel := model
-		origBackend := latencyModelBackend
-		origBeta := betaCoeffs
-		origAlpha := alphaCoeffs
 		origTotalKV := totalKVBlocks
 		origBlockSize := blockSizeTokens
 		origMaxRunning := maxNumSeqs
@@ -1216,7 +1042,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 		origFlowControlMaxConcurrency := flowControlMaxConcurrency
 		origCatalogPath := catalogPath
-		origHwConfigPath := hwConfigPath
 		origGPU := gpu
 		origTP := tensorParallelism
 		origSessionMode := replaySessionMode
@@ -1225,9 +1050,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origDefaultsFilePathInner := defaultsFilePath
 		defer func() {
 			model = origModel
-			latencyModelBackend = origBackend
-			betaCoeffs = origBeta
-			alphaCoeffs = origAlpha
 			totalKVBlocks = origTotalKV
 			blockSizeTokens = origBlockSize
 			maxNumSeqs = origMaxRunning
@@ -1261,7 +1083,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 			flowControlMaxConcurrency = origFlowControlMaxConcurrency
 			catalogPath = origCatalogPath
-			hwConfigPath = origHwConfigPath
 			gpu = origGPU
 			tensorParallelism = origTP
 			replaySessionMode = origSessionMode
@@ -1271,8 +1092,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		}()
 
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
-		// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -1298,10 +1117,9 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		simulationHorizon = math.MaxInt64
 		replayTraceOutput = prefix
 		catalogPath = catalogDir4
-		hwConfigPath = hwPath4
 		gpu = "H100"
 		tensorParallelism = 1
-		defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
+		defaultsFilePath = "../defaults.yaml" // LoRA cost coefficients (relative to cmd/ test dir)
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)
@@ -1309,10 +1127,8 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir4, "--hardware-config", hwPath4,
+			// The kernel scenario states the deployment and prices every step; there are no coefficient flags.
+			"--catalog", catalogDir4, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath,
 			"--trace-data", dataPath, "--trace-output", prefix,
 			"--defaults-filepath", "../defaults.yaml",
@@ -1365,13 +1181,10 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
-	// Save and restore package-level vars (same pattern as TestReplayCmd_EndToEnd_TrainedPhysicsMode)
+	// Save and restore package-level vars (same pattern as TestReplayCmd_EndToEnd_KernelBackend)
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -1405,7 +1218,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -1414,9 +1226,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -1450,7 +1259,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1460,7 +1268,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	}()
 
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -1486,7 +1293,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = ""
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
 	defaultsFilePath = "../defaults.yaml"
@@ -1504,13 +1310,7 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model",
-		"--latency-model", "trained-physics",
-		"--total-kv-blocks", "1000",
-		"--hardware", "H100",
-		"--tp", "1",
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
@@ -1554,9 +1354,8 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -1579,7 +1378,6 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -1592,9 +1390,7 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
@@ -1639,9 +1435,8 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -1664,7 +1459,6 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -1677,9 +1471,7 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
@@ -1725,15 +1517,13 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	// Save/restore PD-related package-level vars.
 	origPrefillInstances := prefillInstances
 	origDecodeInstances := decodeInstances
 	origSharedInstances := prefillDecodeInstances
 	origPDDecider := pdDecider
-	origPDTransferBandwidth := pdTransferBandwidth
-	origPDTransferBaseLatency := pdTransferBaseLatency
 	origPDTransferContention := pdTransferContention
 	origPDPrefixThreshold := pdPrefixThreshold
 	origPrefillScorers := prefillRoutingScorers
@@ -1743,8 +1533,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		decodeInstances = origDecodeInstances
 		prefillDecodeInstances = origSharedInstances
 		pdDecider = origPDDecider
-		pdTransferBandwidth = origPDTransferBandwidth
-		pdTransferBaseLatency = origPDTransferBaseLatency
 		pdTransferContention = origPDTransferContention
 		pdPrefixThreshold = origPDPrefixThreshold
 		prefillRoutingScorers = origPrefillScorers
@@ -1753,9 +1541,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 
 	// Save/restore standard vars.
 	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
 	origMaxRunning := maxNumSeqs
@@ -1789,7 +1574,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
@@ -1798,9 +1582,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
 		maxNumSeqs = origMaxRunning
@@ -1834,7 +1615,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
@@ -1845,7 +1625,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 
 	// WHEN: replay with PD config: 1 prefill + 1 decode out of 2 total instances.
 	model = "test-model"
-	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -1871,7 +1650,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = ""
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
 	defaultsFilePath = "../defaults.yaml"
@@ -1892,8 +1670,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	decodeInstances = 1
 	prefillDecodeInstances = 0
 	pdDecider = "always"
-	pdTransferBandwidth = 25.0
-	pdTransferBaseLatency = 0.05
 	pdTransferContention = false
 	pdPrefixThreshold = 0
 	prefillRoutingScorers = ""
@@ -1904,13 +1680,11 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--scenarios", pdScenarios, "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--num-instances", "2",
-		"--prefill-instances", "1", "--decode-instances", "1",
-		"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+		"--num-instances", "4",
+		"--prefill-instances", "3", "--decode-instances", "1",
+		"--pd-decider", "always",
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
@@ -1925,442 +1699,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	replayCmd.Run(testCmd, nil)
 }
 
-// TestINV13_RunReplayParity_PD verifies INV-13 for PD disaggregation:
-// running the same requests through a PD cluster directly vs. through
-// trace-export-then-replay produces identical per-request TTFT and E2E.
-func TestINV13_RunReplayParity_PD(t *testing.T) {
-	const fixedSeed int64 = 99
-	requests := makeMinimalPDRequests(t)
-
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
-	dir := t.TempDir()
-
-	// Write defaults.yaml with trained-physics coefficients.
-	defaultsContent := `trained_physics_coefficients:
-  alpha_coeffs: [100.0, 1.0, 100.0]
-  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-`
-	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
-	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
-
-	// Build SimConfig from model config files.
-	hfPath := testCatalogConfigPath(catalogDir, "test-model")
-	hfConfig, err := latency.ParseHFConfig(hfPath)
-	if err != nil {
-		t.Fatalf("ParseHFConfig: %v", err)
-	}
-	mc, err := latency.GetModelConfigFromHF(hfConfig)
-	if err != nil {
-		t.Fatalf("GetModelConfigFromHF: %v", err)
-	}
-	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
-	if err != nil {
-		t.Fatalf("GetHWConfig: %v", err)
-	}
-
-	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
-	alphaCfg := []float64{100.0, 1.0, 100.0}
-
-	// INV-13 SYNC POINT: cfg must match the DeploymentConfig built by replayCmd.Run
-	// for the same flags. Keep in sync with cmd/replay.go (see cmd/root.go:1500).
-	cfg := cluster.DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             10_000_000,
-			Seed:                fixedSeed,
-			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
-			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
-			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
-		},
-		NumInstances:            2,
-		AdmissionPolicy:         "always-admit",
-		RoutingPolicy:           "round-robin",
-		PrefillInstances:        1,
-		DecodeInstances:         1,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-	}
-
-	// WHEN: direct run.
-	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
-	if err := cs1.Run(); err != nil {
-		t.Fatalf("direct run failed: %v", err)
-	}
-	runTTFTs := cs1.AggregatedMetrics().RequestTTFTs
-	runE2Es := cs1.AggregatedMetrics().RequestE2Es
-
-	if len(runTTFTs) == 0 {
-		t.Fatal("INV-13: direct run produced no completed requests — cannot verify parity")
-	}
-
-	// WHEN: export to trace → reload → replay with same config.
-	traceRecords := workload.RequestsToTraceRecords(requests)
-	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
-	traceHeaderFile := filepath.Join(dir, "trace.yaml")
-	traceDataFile := filepath.Join(dir, "trace.csv")
-	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
-		t.Fatalf("ExportTraceV2: %v", err)
-	}
-	traceData, err := workload.LoadTraceV2(traceHeaderFile, traceDataFile)
-	if err != nil {
-		t.Fatalf("LoadTraceV2: %v", err)
-	}
-	replayReqs, err := workload.LoadTraceV2Requests(traceData, fixedSeed)
-	if err != nil {
-		t.Fatalf("LoadTraceV2Requests: %v", err)
-	}
-
-	cs2 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(replayReqs), nil)
-	if err := cs2.Run(); err != nil {
-		t.Fatalf("replay run failed: %v", err)
-	}
-	replayTTFTs := cs2.AggregatedMetrics().RequestTTFTs
-	replayE2Es := cs2.AggregatedMetrics().RequestE2Es
-
-	// THEN: per-request metrics must be identical (INV-13, BC-1).
-	if len(runTTFTs) != len(replayTTFTs) {
-		t.Errorf("INV-13: TTFT map size mismatch: run=%d replay=%d", len(runTTFTs), len(replayTTFTs))
-	}
-	for id, ttft := range runTTFTs {
-		if got, ok := replayTTFTs[id]; !ok {
-			t.Errorf("INV-13: request %s present in run but missing from replay TTFTs", id)
-		} else if got != ttft {
-			t.Errorf("INV-13: request %s TTFT mismatch: run=%f replay=%f", id, ttft, got)
-		}
-	}
-	for id, e2e := range runE2Es {
-		if got, ok := replayE2Es[id]; !ok {
-			t.Errorf("INV-13: request %s present in run but missing from replay E2Es", id)
-		} else if got != e2e {
-			t.Errorf("INV-13: request %s E2E mismatch: run=%f replay=%f", id, e2e, got)
-		}
-	}
-}
-
-// makeMinimalPDRequests creates a small set of deterministic requests for PD parity testing.
-func makeMinimalPDRequests(t *testing.T) []*sim.Request {
-	t.Helper()
-	reqs := make([]*sim.Request, 3)
-	for i := range reqs {
-		inputToks := make([]sim.TokenID, 10)
-		for j := range inputToks {
-			inputToks[j] = sim.TokenID(100 + i*10 + j)
-		}
-		outputToks := make([]sim.TokenID, 5)
-		for j := range outputToks {
-			outputToks[j] = sim.TokenID(200 + j)
-		}
-		reqs[i] = &sim.Request{
-			ID:           fmt.Sprintf("request_%d", i),
-			ArrivalTime:  int64(i) * 100_000,
-			InputTokens:  inputToks,
-			OutputTokens: outputToks,
-			MaxOutputLen: 100,
-		}
-	}
-	return reqs
-}
-
-// TestINV13_RunReplayParity_PD_CLI verifies INV-13 end-to-end through replayCmd.Run:
-// export trace from a PD cluster, replay via the CLI path, and confirm per-request
-// TTFT/E2E match the direct library run. This catches bugs in the replayCmd CLI
-// wiring that TestINV13_RunReplayParity_PD (library-level) would miss.
-func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
-	const fixedSeed int64 = 99
-	requests := makeMinimalPDRequests(t)
-
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
-	dir := t.TempDir()
-
-	defaultsContent := `trained_physics_coefficients:
-  alpha_coeffs: [100.0, 1.0, 100.0]
-  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-`
-	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
-	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
-
-	hfPath := testCatalogConfigPath(catalogDir, "test-model")
-	hfConfig, err := latency.ParseHFConfig(hfPath)
-	if err != nil {
-		t.Fatalf("ParseHFConfig: %v", err)
-	}
-	mc, err := latency.GetModelConfigFromHF(hfConfig)
-	if err != nil {
-		t.Fatalf("GetModelConfigFromHF: %v", err)
-	}
-	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
-	if err != nil {
-		t.Fatalf("GetHWConfig: %v", err)
-	}
-
-	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
-	alphaCfg := []float64{100.0, 1.0, 100.0}
-
-	// WHEN: direct library run (reference values).
-	cfg := cluster.DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             10_000_000,
-			Seed:                fixedSeed,
-			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
-			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
-			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
-		},
-		NumInstances:            2,
-		AdmissionPolicy:         "always-admit",
-		RoutingPolicy:           "round-robin",
-		PrefillInstances:        1,
-		DecodeInstances:         1,
-		PDDecider:               "always",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-	}
-	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
-	if err := cs1.Run(); err != nil {
-		t.Fatalf("direct run failed: %v", err)
-	}
-	wantTTFTs := cs1.AggregatedMetrics().RequestTTFTs
-	wantE2Es := cs1.AggregatedMetrics().RequestE2Es
-	if len(wantTTFTs) == 0 {
-		t.Fatal("INV-13 CLI: direct run produced no completed requests")
-	}
-
-	// WHEN: export trace → replay through replayCmd.Run → read SimResult JSON.
-	traceRecords := workload.RequestsToTraceRecords(requests)
-	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
-	traceHeaderFile := filepath.Join(dir, "trace.yaml")
-	traceDataFile := filepath.Join(dir, "trace.csv")
-	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
-		t.Fatalf("ExportTraceV2: %v", err)
-	}
-
-	resultsFile := filepath.Join(dir, "results.json")
-
-	// Save/restore all package-level vars including PD vars.
-	origPrefillInstances := prefillInstances
-	origDecodeInstances := decodeInstances
-	origSharedInstances := prefillDecodeInstances
-	origPDDecider := pdDecider
-	origPDTransferBandwidth := pdTransferBandwidth
-	origPDTransferBaseLatency := pdTransferBaseLatency
-	origPDTransferContention := pdTransferContention
-	origPDPrefixThreshold := pdPrefixThreshold
-	origPrefillScorers := prefillRoutingScorers
-	origDecodeScorers := decodeRoutingScorers
-	defer func() {
-		prefillInstances = origPrefillInstances
-		decodeInstances = origDecodeInstances
-		prefillDecodeInstances = origSharedInstances
-		pdDecider = origPDDecider
-		pdTransferBandwidth = origPDTransferBandwidth
-		pdTransferBaseLatency = origPDTransferBaseLatency
-		pdTransferContention = origPDTransferContention
-		pdPrefixThreshold = origPDPrefixThreshold
-		prefillRoutingScorers = origPrefillScorers
-		decodeRoutingScorers = origDecodeScorers
-	}()
-	origModel := model
-	origBackend := latencyModelBackend
-	origBeta := betaCoeffs
-	origAlpha := alphaCoeffs
-	origTotalKV := totalKVBlocks
-	origBlockSize := blockSizeTokens
-	origMaxRunning := maxNumSeqs
-	origMaxSched := maxNumBatchedTokens
-	origInstances := numInstances
-	origSeedV := seed
-	origResults := resultsPath
-	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
-	origScheduler := scheduler
-	origPolicyConfig := policyConfigPath
-	origMaxModelLen := maxModelLen
-	origTraceLevel := traceLevel
-	origCounterfactualK := counterfactualK
-	origTraceHeader := traceHeaderPath
-	origTraceData := traceDataPath
-	origSimHorizon := simulationHorizon
-	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
-	origCatalogPath := catalogPath
-	origHwConfigPath := hwConfigPath
-	origGPU := gpu
-	origTP := tensorParallelism
-	origDefaultsFilePath := defaultsFilePath
-	origSessionMode := replaySessionMode
-	origThinkTimeMs := replayThinkTimeMs
-	origThinkTimeDist := replayThinkTimeDist
-	defer func() {
-		model = origModel
-		latencyModelBackend = origBackend
-		betaCoeffs = origBeta
-		alphaCoeffs = origAlpha
-		totalKVBlocks = origTotalKV
-		blockSizeTokens = origBlockSize
-		maxNumSeqs = origMaxRunning
-		maxNumBatchedTokens = origMaxSched
-		numInstances = origInstances
-		seed = origSeedV
-		resultsPath = origResults
-		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
-		scheduler = origScheduler
-		policyConfigPath = origPolicyConfig
-		maxModelLen = origMaxModelLen
-		traceLevel = origTraceLevel
-		counterfactualK = origCounterfactualK
-		traceHeaderPath = origTraceHeader
-		traceDataPath = origTraceData
-		simulationHorizon = origSimHorizon
-		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
-		catalogPath = origCatalogPath
-		hwConfigPath = origHwConfigPath
-		gpu = origGPU
-		tensorParallelism = origTP
-		defaultsFilePath = origDefaultsFilePath
-		replaySessionMode = origSessionMode
-		replayThinkTimeMs = origThinkTimeMs
-		replayThinkTimeDist = origThinkTimeDist
-	}()
-
-	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	totalKVBlocks = 1000
-	blockSizeTokens = 16
-	maxNumSeqs = 64
-	maxNumBatchedTokens = 2048
-	numInstances = 2
-	seed = fixedSeed
-	resultsPath = resultsFile
-	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
-	scheduler = "fcfs"
-	policyConfigPath = ""
-	maxModelLen = 0
-	traceLevel = "none"
-	counterfactualK = 0
-	traceHeaderPath = traceHeaderFile
-	traceDataPath = traceDataFile
-	simulationHorizon = 10_000_000
-	replayTraceOutput = ""
-	catalogPath = catalogDir
-	hwConfigPath = hwPath
-	gpu = "H100"
-	tensorParallelism = 1
-	defaultsFilePath = defaultsPath
-	replaySessionMode = "fixed"
-	replayThinkTimeMs = 0
-	replayThinkTimeDist = ""
-	cacheSignalDelay = 0
-	flowControlEnabled = false
-	prefillInstances = 1
-	decodeInstances = 1
-	prefillDecodeInstances = 0
-	pdDecider = "always"
-	pdTransferBandwidth = 25.0
-	pdTransferBaseLatency = 0.05
-	pdTransferContention = false
-	pdPrefixThreshold = 0
-	prefillRoutingScorers = ""
-	decodeRoutingScorers = ""
-
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
-	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
-	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
-		"--trace-header", traceHeaderFile, "--trace-data", traceDataFile,
-		"--results-path", resultsFile,
-		"--num-instances", "2",
-		"--prefill-instances", "1", "--decode-instances", "1",
-		"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
-		"--pd-transfer-base-latency", "0.05",
-		"--horizon", "10000000",
-		"--defaults-filepath", defaultsPath,
-	}); err != nil {
-		t.Fatalf("ParseFlags failed: %v", err)
-	}
-	replayCmd.Run(testCmd, nil)
-
-	// Read per-request SimResult JSON written by replayCmd.Run.
-	data, err := os.ReadFile(resultsFile)
-	if err != nil {
-		t.Fatalf("results file not written: %v", err)
-	}
-	var simResults []workload.SimResult
-	if err := json.Unmarshal(data, &simResults); err != nil {
-		t.Fatalf("parse SimResult JSON: %v", err)
-	}
-
-	// THEN: per-request TTFT and E2E must match the direct library run (INV-13).
-	for _, sr := range simResults {
-		reqID := fmt.Sprintf("request_%d", sr.RequestID)
-		wantTTFT, ok := wantTTFTs[reqID]
-		if !ok {
-			t.Errorf("INV-13 CLI: request %s missing from library run TTFTs", reqID)
-			continue
-		}
-		if sr.TTFT != wantTTFT {
-			t.Errorf("INV-13 CLI: request %s TTFT: CLI=%f library=%f", reqID, sr.TTFT, wantTTFT)
-		}
-		wantE2E, ok := wantE2Es[reqID]
-		if !ok {
-			t.Errorf("INV-13 CLI: request %s missing from library run E2Es", reqID)
-			continue
-		}
-		if sr.E2E != wantE2E {
-			t.Errorf("INV-13 CLI: request %s E2E: CLI=%f library=%f", reqID, sr.E2E, wantE2E)
-		}
-	}
-	if len(simResults) != len(wantTTFTs) {
-		t.Errorf("INV-13 CLI: completed request count mismatch: CLI=%d library=%d", len(simResults), len(wantTTFTs))
-	}
-}
-
 // TestReplayCmd_AutoscalerFlagFatal verifies BC-3:
 // passing --model-autoscaler-interval-us directly to blis replay causes fatal exit.
 func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
@@ -2371,9 +1709,8 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -2396,7 +1733,6 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -2409,9 +1745,7 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--model-autoscaler-interval-us", "500000",
 			"--defaults-filepath", "../defaults.yaml",
@@ -2452,9 +1786,8 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
 		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
 
-		catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -2477,7 +1810,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
@@ -2488,21 +1820,17 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		decodeInstances = 0
 		prefillDecodeInstances = 0
 		pdDecider = "always"
-		pdTransferBandwidth = 25.0
-		pdTransferBaseLatency = 0.05
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--num-instances", "2",
 			"--prefill-instances", "4", "--decode-instances", "0",
-			"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+			"--pd-decider", "always",
 			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
@@ -2657,7 +1985,7 @@ func TestReplayCmd_SessionPoolFlags(t *testing.T) {
 // for tests that run after it.
 //
 // registerSimConfigFlags(testCmd) on a fresh *cobra.Command DOES reset its
-// own bound globals (model, hardware, tp, latency-model, num-instances,
+// own bound globals (scenario, scenarios, registry, num-instances,
 // admission/routing policy, scheduler, PD/encode/flow-control fields, etc.)
 // to their registration-time defaults as a side effect of pflag's *Var
 // constructors — so those do not need manual resetting here.
@@ -2783,7 +2111,7 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2798,11 +2126,8 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 
 	args := []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
 		"--concurrent-sessions", "2", "--total-sessions", "4",
 	}
 	a := runReplayCaptureStdout(t, args)
@@ -2824,7 +2149,7 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
@@ -2839,11 +2164,8 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	// --horizon unset → self-draining. 4 waves of 2 sessions each = 8 total.
 	out := runReplayCaptureStdout(t, []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
 		"--concurrent-sessions", "2", "--total-sessions", "8",
 	})
 
@@ -2879,7 +2201,7 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2892,11 +2214,8 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 
 	out := runReplayCaptureStdout(t, []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
 		"--session-mode", "closed-loop", "--think-time-ms", "700000",
 		"--concurrent-sessions", "1", "--total-sessions", "1",
 	})
@@ -2937,7 +2256,7 @@ func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
@@ -2951,11 +2270,8 @@ func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
 	// to closed-loop BEFORE --think-time-ms's "requires closed-loop" check runs.
 	out := runReplayCaptureStdout(t, []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
 		"--concurrent-sessions", "1", "--total-sessions", "1",
 		"--think-time-ms", "500",
 	})
@@ -3008,9 +2324,8 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 			os.Exit(2)
 		}
 
-		catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -3033,7 +2348,6 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = defaultsPath
@@ -3050,9 +2364,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", defaultsPath,
 		}); err != nil {
@@ -3087,7 +2399,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
 	// shape): completed_requests == 1 is an unambiguous "the guard let this run
 	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
@@ -3100,11 +2412,8 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 	}
 	out2 := runReplayCaptureStdout(t, []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
 		"--concurrent-sessions", "1", "--total-sessions", "1",
 	})
 	var m2 map[string]any
@@ -3149,9 +2458,8 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 			os.Exit(2)
 		}
 
-		catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+		catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 		model = "test-model"
-		latencyModelBackend = "trained-physics"
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxNumSeqs = 64
@@ -3174,7 +2482,6 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		traceHeaderPath = headerPath
 		traceDataPath = dataPath
 		catalogPath = catalogDir
-		hwConfigPath = hwPath
 		gpu = "H100"
 		tensorParallelism = 1
 		defaultsFilePath = defaultsPath
@@ -3194,9 +2501,7 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		// (set above), not a registerSimConfigFlags flag, so it is NOT in the parsed
 		// args — mirroring TestReplayCmd_AccumulateHeaderRequiresClosedLoop's setup.
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "trained-physics",
-			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-			"--catalog", catalogDir, "--hardware-config", hwPath,
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--defaults-filepath", defaultsPath,
 		}); err != nil {
@@ -3243,7 +2548,7 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus: one 3-round session with a compaction round and a recorded
 	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
@@ -3259,12 +2564,9 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 
 	commonArgs := []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
-		"--max-model-len", "100000", // large: no length cap, so the round-trip is exact
+		// large: no length cap, so the round-trip is exact
 		"--session-mode", "closed-loop",
 	}
 
@@ -3306,12 +2608,8 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 	// (4) Replay the RE-EXPORT closed-loop; capture aggregate metrics.
 	outArgs := []string{
 		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000",
-		"--max-model-len", "100000",
 		"--session-mode", "closed-loop",
 	}
 	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
@@ -3334,7 +2632,7 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
 	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
@@ -3354,11 +2652,8 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 	const bigHorizon = "100000000000"
 	poolArgs := []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000", "--max-model-len", "100000",
 		"--concurrent-sessions", "2", "--total-sessions", "3", "--horizon", bigHorizon,
 	}
 
@@ -3391,11 +2686,8 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 	// (4) Replay the re-export as a plain closed-loop corpus; capture aggregate metrics.
 	outArgs := []string{
 		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000", "--max-model-len", "100000",
 		"--session-mode", "closed-loop", "--horizon", bigHorizon,
 	}
 	reexportMetrics := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
@@ -3430,7 +2722,7 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
 	// absolute per-round inputs and a recorded think column.
@@ -3446,11 +2738,8 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 
 	commonArgs := []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000", "--max-model-len", "100000",
 		"--session-mode", "closed-loop",
 	}
 
@@ -3486,11 +2775,8 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 
 	outArgs := []string{
 		"--trace-header", outPrefix + ".yaml", "--trace-data", outPrefix + ".csv",
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000", "--max-model-len", "100000",
 		"--session-mode", "closed-loop",
 	}
 	metrics2 := extractMetricsJSON(t, runReplayCaptureStdout(t, outArgs))
@@ -3510,7 +2796,7 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
 	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
@@ -3527,11 +2813,8 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	outPrefix := filepath.Join(dir, "reexport")
 	_ = runReplayCaptureStdout(t, []string{
 		"--trace-header", headerPath, "--trace-data", dataPath,
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--defaults-filepath", defaultsPath,
-		"--total-kv-blocks", "1000", "--max-model-len", "100000",
 		"--concurrent-sessions", "1", "--total-sessions", "4", "--horizon", "100000000000",
 		"--trace-output", outPrefix,
 	})

@@ -1,8 +1,14 @@
 # BLIS — Blackbox Inference Simulator
 
-A discrete-event simulator for LLM inference serving systems. BLIS models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — all driven by pluggable latency models (data-driven coefficients, analytical roofline, or custom backends).
+BLIS is a discrete-event simulator of an LLM serving stack. Its goal is **llm-d stack-level
+parity**: simulating an [llm-d](https://github.com/llm-d/llm-d) deployment end to end — the
+router (EPP), admission and flow control, prefill/decode disaggregation, KV caching and
+offload, and autoscaling — initially with vLLM as the engine, and eventually a wider range of
+engines.
 
-The simulator is CPU-only, deterministic, and designed for **capacity planning**, **policy optimization research**, and **performance prediction** across model/GPU/TP configurations without requiring real GPUs.
+Its primary uses are **configuration search and optimization**, **capacity planning**, and
+**policy discovery**, done robustly and with high fidelity. BLIS is CPU-only and
+deterministic: the same seed produces byte-identical results, and no GPU is needed.
 
 ---
 
@@ -12,50 +18,65 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate \
+  --registry $PWD/blis-registry \
+  --rate 10 --num-requests 100
 ```
 
-`blis run` and `blis replay` must be told where the **model catalog** is — a checkout of
-the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-repository, which holds a `models/<short-name>/config.json` for each catalogued model.
-Supply the clone root with `--catalog <path>` or the `BLIS_CATALOG` environment variable
-(the flag wins when both are set); there is **no default and no search path**, so a run
-with neither is refused naming both forms. The examples throughout these docs omit it —
-export `BLIS_CATALOG` once, as above. The clone pins release tag `0.1.1`, the catalog
-version BLIS is tested against; see
-[Catalog compatibility](getting-started/installation.md#catalog-compatibility) for why and
-how to bump it.
+`blis run` and `blis replay` need a catalog (`--catalog` or `BLIS_CATALOG`, no default), a
+registry (`--registry`), a scenario directory (`--scenarios`, any directory of scenario YAMLs)
+and a scenario file name within it (`--scenario`). The kernel module's own scenarios are at
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`;
+`testdata/scenarios/` in this repository adds a P/D and an MTP example. The clones pin the
+releases BLIS is tested against — see
+[Catalog compatibility](getting-started/installation.md#catalog-compatibility).
 
 ---
 
-## Key Features
+## How BLIS fits together
 
-- **Discrete-event simulation** for prefill, decode, and request scheduling
-- **Deterministic execution** — same seed produces byte-identical output across runs
-- **KV-cache modeling** with prefix caching and tiered GPU+CPU offload
-- **Chunked prefill and preemption-aware batch formation**
-- **Pluggable latency models** — roofline (default, analytical FLOPs/bandwidth) and trained-physics (physics-informed basis functions with MoE-aware scaling), with an extensible interface for custom backends
-- **Multi-instance cluster simulation** with shared-clock event loop
-- **Pluggable routing policies** — round-robin, least-loaded, and composable weighted-scoring with six pluggable scorers (default: precise-prefix-cache, queue-depth, kv-utilization)
-- **Admission control**, **priority policies**, and **instance schedulers** — each a pluggable policy axis
-- **Canonical workload specification** — multi-client YAML DSL with Poisson/Gamma/Weibull/constant arrival processes, 5 distribution types, SLO classes (critical/standard/sheddable/batch/background), prefix groups, cohort dynamics, multimodal, reasoning multi-turn, and composable specs via `blis compose`
-- **Rich metrics pipeline** — per-request, per-instance, and cluster-level metrics including TTFT/ITL/E2E distributions, KV cache diagnostics, anomaly detection (priority inversions, HOL blocking), SLO attainment, Jain fairness index, and multi-objective fitness evaluation
-- **Decision tracing and counterfactual analysis** with top-k regret computation
-- **Hypothesis experimentation framework** for rigorous, reproducible experiments
+| Repository | Role | Holds |
+|---|---|---|
+| **inference-sim** | *simulates* | Arrivals, admission, routing, scheduling, KV block accounting, placement, metrics. |
+| [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. |
+| [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
+| [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
+| [`blis-schemas`](https://github.com/inference-sim/blis-schemas) | *defines the formats* | Scenario, deployment, engine and catalog file formats. |
 
----
-
-## Architecture Overview
+A **scenario** names a catalog model and chip, registry coefficient sets, and the deployment
+(nodes, fabric, and each pool's parallelism and engine settings). inference-sim simulates
+traffic through the stack and asks the kernel for every cost; the kernel computes it from the
+catalog's facts and the registry's coefficients.
 
 ```
 Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
                                             ↓              ↓
-                                      KV Allocation   Latency Estimation
+                                      KV Allocation   Step pricing (blis-latency-kernel)
 ```
 
-Admission and Routing apply in cluster mode (multi-instance). Single-instance mode skips directly to WaitQueue.
+Admission and Routing apply in cluster mode (multi-instance). Single-instance mode skips
+directly to WaitQueue. See [Architecture](concepts/architecture.md).
+
+---
+
+## Features
+
+| Feature | In one line | Guide |
+|---|---|---|
+| Latency pricing | The scenario fixes the deployment; the kernel prices every step, memory budget and transfer. | [Latency model](guide/latency-models.md) |
+| Workloads | Catalog presets, token distributions, multi-client YAML specs, closed-loop sessions. | [Workloads](guide/workloads.md) |
+| Routing | llm-d-style weighted scoring across instances (`--routing-policy weighted`). | [Routing](guide/routing.md) |
+| Admission and flow control | Token bucket, tier shedding, gateway queue (`--flow-control`), SLO goodput. | [Admission](guide/admission.md) |
+| Scheduling and preemption | Per-instance schedulers and preemption policies. | [Scheduling](guide/scheduling.md) |
+| P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |
+| KV caching and offload | Prefix caching and tiered offload over catalog storage devices. | [KV cache](guide/kv-cache.md) |
+| Autoscaling | Node pools with provisioning delays (`--policy-config`). | [Cluster](guide/cluster.md) |
+| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/observe-replay-calibrate.md) |
+| Results and analysis | TTFT/ITL/E2E, saturation detectors, decision traces, fitness. | [Results](guide/results.md) |
 
 ---
 
@@ -64,21 +85,17 @@ Admission and Routing apply in cluster mode (multi-instance). Single-instance mo
 | Section | What You'll Find |
 |---------|-----------------|
 | [Getting Started](getting-started/index.md) | What is BLIS, installation, quick start, capacity planning tutorial |
-| [Concepts](concepts/index.md) | System architecture, core engine, glossary, roofline estimation |
-| [User Guide](guide/index.md) | Task-oriented guides: routing, admission, scheduling, latency models, KV cache, workloads, cluster, metrics, experimentation |
+| [Concepts](concepts/index.md) | System architecture, core engine, glossary |
+| [User Guide](guide/index.md) | Task-oriented guides for each feature |
 | [Reference](reference/index.md) | Configuration reference, supported models, workload spec schema |
 | [Contributing](contributing/index.md) | Extension recipes, PR workflow, standards, templates |
 
-### Reading Order for Newcomers
-
-1. **[What is BLIS?](getting-started/index.md)** — understand the problem BLIS solves
-2. **[Quick Start](getting-started/quickstart.md)** — run your first simulation
-3. **[Tutorial: Capacity Planning](getting-started/tutorial.md)** — end-to-end walkthrough
-4. **[Glossary](concepts/glossary.md)** — learn BLIS-specific terminology
-5. **[User Guide](guide/index.md)** — task-oriented how-to guides
+Newcomers: [What is BLIS?](getting-started/index.md) →
+[Quick Start](getting-started/quickstart.md) →
+[Tutorial](getting-started/tutorial.md) → [Glossary](concepts/glossary.md).
 
 ---
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](https://github.com/inference-sim/inference-sim/blob/main/LICENSE) for details.
+Apache License, Version 2.0. See [LICENSE](https://github.com/inference-sim/inference-sim/blob/main/LICENSE).

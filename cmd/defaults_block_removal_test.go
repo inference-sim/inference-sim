@@ -16,8 +16,8 @@ import (
 // #1768: the per-model `defaults:` block (GPU / tensor_parallelism / hf_repo) and the Go
 // surface that declared it (Config.Defaults, the DefaultConfig struct, GetHFRepo) are gone.
 //
-// NS-6 (#1733) already made that policy unreachable — the deployment is a required operator
-// input (--hardware/--tp) and the model config is read from the catalog (#1731) — so this is
+// NS-6 (#1733) already made that policy unreachable — the deployment is the kernel scenario's
+// (--scenario) and the model config is read from the catalog (#1731) — so this is
 // the retirement of inert policy, not a data migration. Nothing consumed it, so nothing is
 // lost, and no number moves (INV-6).
 //
@@ -29,8 +29,7 @@ import (
 //	     than silently ignored — strict parsing (R10) is what enforces the removal;
 //	BC-3 the deleted surface cannot come back unnoticed.
 //
-// BC-4 (byte-identity) is TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline, which compares
-// a run against a golden captured before #1733 and is unaffected by this change.
+// BC-4 (inertness) is TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline.
 
 // ---------------------------------------------------------------------------
 // BC-1: the trimmed file still parses, and nothing but the block was removed
@@ -49,14 +48,6 @@ func TestDefaultsBlockRemoved_BundledFileStillParses(t *testing.T) {
 	// The `workloads:` block that used to be checked here is gone too (#1769) — the presets
 	// live in the catalog now, and TestCatalogPresets_BundledCatalogMatchesRetiredDefaults
 	// owns their values.
-	if cfg.TrainedPhysicsDefaults == nil {
-		t.Fatal("trained_physics_coefficients must survive the defaults: trim — it is the " +
-			"default latency backend's coefficient source")
-	}
-	if len(cfg.TrainedPhysicsDefaults.AlphaCoeffs) == 0 || len(cfg.TrainedPhysicsDefaults.BetaCoeffs) == 0 {
-		t.Errorf("trained_physics_coefficients parsed empty: alpha=%d beta=%d",
-			len(cfg.TrainedPhysicsDefaults.AlphaCoeffs), len(cfg.TrainedPhysicsDefaults.BetaCoeffs))
-	}
 	if cfg.LoRADefaults == nil {
 		t.Error("lora block must survive the defaults: trim")
 	}
@@ -118,6 +109,39 @@ version: "0.0.1"
 	}
 }
 
+// TestTrainedPhysicsBlockRemoved_StaleBlockIsRefused: #1851 removed the trained-physics
+// backend and its shipped coefficients. A hand-maintained defaults.yaml that still carries the
+// block is refused at load, naming it, rather than parsed into a field nothing reads. The
+// fixture differs from the loadable control below only in that block.
+func TestTrainedPhysicsBlockRemoved_StaleBlockIsRefused(t *testing.T) {
+	if os.Getenv("BLIS_STALE_TP_DEFAULTS_SUBPROCESS") == "1" {
+		content := `trained_physics_coefficients:
+  alpha_coeffs: [1, 2, 3]
+  beta_coeffs: [1, 2, 3]
+version: "0.0.1"
+`
+		path := filepath.Join(t.TempDir(), "defaults.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			os.Exit(2)
+		}
+		loadDefaultsConfig(path) // must Fatalf before returning
+		os.Exit(0)               // reached only if the stale block was accepted
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestTrainedPhysicsBlockRemoved_StaleBlockIsRefused", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_STALE_TP_DEFAULTS_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("a defaults.yaml carrying trained_physics_coefficients must be refused at load "+
+			"with logrus.Fatalf (exit 1); got err=%v; output:\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "trained_physics_coefficients") {
+		t.Errorf("the refusal must name the trained_physics_coefficients field; output:\n%s", out)
+	}
+}
+
 // TestDefaultsBlockRemoved_SameFileWithoutBlockLoads is the negative control for BC-2: the
 // fixture above differs from a loadable file ONLY in the `defaults:` block, so the rejection
 // is attributable to that key and not to anything else about the fixture.
@@ -142,8 +166,9 @@ func TestDefaultsBlockRemoved_SameFileWithoutBlockLoads(t *testing.T) {
 // today's inputs do not read the policy; this shows there is nothing left to read.
 func TestDefaultsBlockRemoved_StaticGuard(t *testing.T) {
 	bannedIdents := map[string]string{
-		"GetHFRepo":     "the caller-less hf_repo accessor was removed by #1768",
-		"DefaultConfig": "the per-model deployment entry was removed by #1768",
+		"GetHFRepo":              "the caller-less hf_repo accessor was removed by #1768",
+		"DefaultConfig":          "the per-model deployment entry was removed by #1768",
+		"TrainedPhysicsDefaults": "the trained-physics coefficient block was removed by #1851",
 	}
 	if len(bannedIdents) == 0 {
 		t.Fatal("non-vacuity: the guard has nothing to check")
@@ -202,4 +227,52 @@ func TestDefaultsBlockRemoved_StaticGuard(t *testing.T) {
 				"catalog (#1731), so such a key has no consumer (#1768)", banned.what)
 		}
 	}
+}
+
+// With --defaults-filepath unset, a run uses a defaults.yaml in its working directory when
+// there is one and the copy compiled into the binary when there is not, so a run outside a
+// checkout gets the shipped LoRA defaults instead of refusing. An explicit path is unaffected.
+func TestLoadRunDefaults_WorkingDirectoryFileWinsOverTheBundledCopy(t *testing.T) {
+	shipped, err := os.ReadFile("../defaults.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedBundle, savedPath := bundledDefaults, defaultsFilePath
+	wd, _ := os.Getwd()
+	defer func() {
+		bundledDefaults, defaultsFilePath = savedBundle, savedPath
+		_ = os.Chdir(wd)
+	}()
+	SetBundledDefaults(shipped)
+	defaultsFilePath = defaultDefaultsPath
+
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	want := loadDefaultsConfig(filepath.Join(wd, "../defaults.yaml"))
+	if got := loadRunDefaults(false); got.LoRADefaults == nil || !loraDefaultsEqual(got.LoRADefaults, want.LoRADefaults) {
+		t.Fatalf("with no defaults.yaml in the working directory the bundled copy must be used")
+	}
+
+	local := "lora:\n  load_base_latency_us: 7.0\n  load_bandwidth_bytes_us: 1.0\n  footprint_bytes_per_rank: 1.0\nversion: \"0.0.1\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "defaults.yaml"), []byte(local), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadRunDefaults(false); got.LoRADefaults == nil || got.LoRADefaults.LoadBaseLatencyUs != 7.0 {
+		t.Errorf("a defaults.yaml in the working directory must win over the bundled copy, got %+v", got.LoRADefaults)
+	}
+}
+
+func loraDefaultsEqual(a, b *LoRADefaults) bool {
+	if a.LoadBaseLatencyUs != b.LoadBaseLatencyUs || a.LoadBandwidthBytesUs != b.LoadBandwidthBytesUs ||
+		a.FootprintBytesPerRank != b.FootprintBytesPerRank || len(a.StepOverheadTiers) != len(b.StepOverheadTiers) {
+		return false
+	}
+	for k, v := range a.StepOverheadTiers {
+		if b.StepOverheadTiers[k] != v {
+			return false
+		}
+	}
+	return true
 }

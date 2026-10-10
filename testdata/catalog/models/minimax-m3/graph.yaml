@@ -1,0 +1,153 @@
+kind: ModelGraph
+name: minimax-m3
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: c9c97ce1e4eece60012d5a10ea87717458bfb1f19c2c7a615a3dbff83d090c6b
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 200064
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 6144
+  - op: Attention
+    kind: gqa
+    n_q: 64
+    n_kv: 4
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 24576
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 12288
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+- id: sparse_attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 6144
+  - op: GEMM
+    role: index_qk_proj
+    n: 640
+    k: 6144
+  - op: Attention
+    role: block_index_scores
+    kind: gqa
+    n_q: 4
+    n_kv: 1
+    d_h: 128
+  - op: Attention
+    kind: swa
+    n_q: 64
+    n_kv: 4
+    d_h: 128
+    window: 2176
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 3072
+    k: 6144
+    experts: 128
+    top_k: 4
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+stack:
+  prologue:
+  - dense
+  - dense
+  - dense
+  pattern:
+  - sparse_attn_moe
+  repeat: 57
+modality: text_decoder_of_multimodal
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 200064
+  k: 6144
+speculator:
+  method: minimax_m3_mtp
+  num_spec_tokens: 7
+  stack:
+    pattern:
+    - sparse_attn_moe
+    repeat: 1

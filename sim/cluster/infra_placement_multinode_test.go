@@ -150,7 +150,7 @@ func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	prefillTP := 4
 	cfg.PrefillOverrides = PoolOverrides{TP: &prefillTP} // diverges from global TP=8
@@ -172,7 +172,7 @@ func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	decodeTP := 16
 	cfg.DecodeOverrides = PoolOverrides{TP: &decodeTP} // diverges from global TP=8
@@ -187,7 +187,7 @@ func TestNewClusterSimulator_PerRoleTPEqualToGlobalOK(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	sameTP := 8
 	cfg.PrefillOverrides = PoolOverrides{TP: &sameTP}               // equal to global — must be accepted
@@ -642,7 +642,7 @@ func TestStartupPlacement_SpanningInstanceCost(t *testing.T) {
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 2, MinNodes: 2, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
 	// TP=16 forces the single startup instance to span both 8-GPU nodes.
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 16
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 
@@ -667,7 +667,7 @@ func TestStartupPlacement_UnplacedEmitsOneSummaryWarning(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 4, MinNodes: 4, MaxNodes: 4, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(3, false, pools, 9999)
+	cfg := deploymentForPlacement(3, pools, 9999)
 	cfg.TP = 12 // 12 > 8 and 12 % 8 != 0 → structurally unsatisfiable on this pool
 	var cs *ClusterSimulator
 	out := captureLogWarn(t, func() {
@@ -699,7 +699,7 @@ func TestDeferredPlacement_SpanningInstanceCost(t *testing.T) {
 	pools := []NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 0, MinNodes: 0, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 16
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 	if len(cs.instances) != 0 {
@@ -731,7 +731,7 @@ func TestAutoscalerScaleUp_SpanningInstanceCost(t *testing.T) {
 	}
 	// TP=16 matches the scale-up variant (realizable config); the startup instance
 	// spans both nodes, so release it and clear the list to give scale-up a clean pool.
-	cfg := deploymentForPlacement(1, false, pools, 9999)
+	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.Model = "test-model"
 	cfg.TP = 16
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
@@ -822,5 +822,23 @@ func TestReleaseInstance_SingleNodeStillFires(t *testing.T) {
 	}
 	if err := pm.VerifyConservation(); err != nil {
 		t.Errorf("VerifyConservation: %v", err)
+	}
+}
+
+// deploymentForPlacement builds a DeploymentConfig over the given node pools with a global
+// KV capacity, for exercising the placement paths. numInstances instances are placed by
+// first-fit.
+func deploymentForPlacement(numInstances int, pools []NodePoolConfig, globalBlocks int64) DeploymentConfig {
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(globalBlocks, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		},
+		NumInstances: numInstances,
+		NodePools:    pools,
 	}
 }

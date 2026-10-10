@@ -1,0 +1,166 @@
+kind: ModelGraph
+name: deepseek-v2-lite
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: f346286b0f1c8b044252fd54cb4fa78b9fab6472a6e8bebb9edfe03d414ea03d
+  deriver_version: 1
+global:
+  hidden_size: 2048
+  vocab_size: 102400
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: attn_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 2048
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_proj
+    n: 3072
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 4096
+    k: 512
+  - op: Attention
+    kind: mla
+    n_q: 16
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 2048
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 21888
+    k: 2048
+  - op: GEMM
+    role: mlp_down
+    n: 2048
+    k: 10944
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 2048
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_proj
+    n: 3072
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 4096
+    k: 512
+  - op: Attention
+    kind: mla
+    n_q: 16
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 2048
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 1408
+    k: 2048
+    experts: 64
+    top_k: 6
+    shared_experts: 2
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+stack:
+  prologue:
+  - attn_dense
+  pattern:
+  - attn_moe
+  repeat: 26
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 102400
+  k: 2048

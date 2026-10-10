@@ -155,8 +155,8 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -206,8 +206,8 @@ func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 

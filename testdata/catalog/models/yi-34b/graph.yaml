@@ -1,0 +1,74 @@
+kind: ModelGraph
+name: yi-34b
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 30cffdbbce0077bb474b491695c81fb5085470015a05808d352591501008f489
+  deriver_version: 1
+global:
+  hidden_size: 7168
+  vocab_size: 64000
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 7168
+  - op: Attention
+    kind: gqa
+    n_q: 56
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 7168
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 40960
+    k: 7168
+  - op: GEMM
+    role: mlp_down
+    n: 7168
+    k: 20480
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - dense
+  repeat: 60
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 64000
+  k: 7168

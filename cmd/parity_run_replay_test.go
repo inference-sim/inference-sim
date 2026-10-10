@@ -33,10 +33,10 @@ package cmd
 // Design notes:
 //   - These tests mutate package-level CLI vars, so they MUST NOT use
 //     t.Parallel(); each restores state via captureCmdLevelVars().restore().
-//   - Workloads are kept tiny (num_requests ≤ ~30, a 2-layer model fixture) so
-//     the full matrix runs in a couple of seconds.
+//   - Workloads are kept tiny (num_requests ≤ ~30) so the full matrix runs in a
+//     couple of seconds on the kernel's committed scenario.
 //   - Shared helpers reused: captureCmdLevelVars/restore and
-//     setupTrainedPhysicsTestFixturesWithDefaults.
+//     setupKernelTestFixturesWithDefaults.
 
 import (
 	"bytes"
@@ -299,7 +299,7 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -320,14 +320,8 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
@@ -413,7 +407,7 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -432,14 +426,8 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
@@ -509,7 +497,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	t.Helper()
 	tmpDir := t.TempDir()
 	resultsFile := filepath.Join(tmpDir, "results.json")
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -535,7 +523,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	}()
 
 	model = "qwen/qwen3-14b"
-	latencyModelBackend = "trained-physics"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxNumSeqs = 64
@@ -558,7 +545,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	traceHeaderPath = traceHeaderFile
 	traceDataPath = traceDataFile
 	catalogPath = catalogDir
-	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
 	defaultsFilePath = defaultsPath
@@ -575,9 +561,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
-		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", traceHeaderFile, "--trace-data", traceDataFile,
 		"--results-path", resultsFile,
 		"--num-instances", "1",
@@ -611,7 +595,7 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
@@ -631,14 +615,8 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--model", "qwen/qwen3-14b",
-		"--latency-model", "trained-physics",
 		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir,
-		"--hardware-config", hwPath,
-		"--hardware", "H100",
-		"--tp", "1",
-		"--total-kv-blocks", "1000",
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
@@ -722,86 +700,3 @@ func TestParity_RunReplay_INV13_BothModes(t *testing.T) {
 // of paritySpecShapes() flowing through TestParity_RunReplay_TraceByteIdentity_Matrix
 // (eager≡lazy trace + lazy determinism) — no separate fallback test is needed, as
 // there is no fallback anymore (#1460).
-
-// runSpecAndCaptureStdoutSpecFlag is runSpecAndCaptureStdout that optionally passes
-// --num-speculative-tokens 0 explicitly. Used to prove BC-1: passing the disabled
-// spec-decode flag is byte-identical on stdout to not passing it at all (INV-6).
-func runSpecAndCaptureStdoutSpecFlag(t *testing.T, specYAML string, seedVal, horizon int64, passK0 bool) []byte {
-	t.Helper()
-	tmpDir := t.TempDir()
-	specPath := filepath.Join(tmpDir, "workload.yaml")
-	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
-		t.Fatalf("write spec: %v", err)
-	}
-	catalogDir, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
-
-	orig := captureCmdLevelVars()
-	defer orig.restore()
-	origK, origAcc, origMethod := numSpeculativeTokens, speculativeAcceptance, speculativeMethod
-	defer func() { numSpeculativeTokens, speculativeAcceptance, speculativeMethod = origK, origAcc, origMethod }()
-
-	traceOutput = ""
-	workloadSpecPath = specPath
-	workloadType = ""
-	simulationHorizon = horizon
-	seed = seedVal
-	lazyGeneration = false
-	requestTimeoutSecs = 300
-
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
-	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
-	args := []string{
-		"--model", "qwen/qwen3-14b", "--latency-model", "trained-physics",
-		"--defaults-filepath", defaultsPath, "--catalog", catalogDir,
-		"--hardware-config", hwPath, "--hardware", "H100", "--tp", "1",
-		"--total-kv-blocks", "1000", "--seed", strconv.FormatInt(seedVal, 10),
-		"--workload-spec", specPath, "--horizon", strconv.FormatInt(horizon, 10),
-	}
-	if passK0 {
-		args = append(args, "--num-speculative-tokens", "0")
-	}
-	if err := testCmd.ParseFlags(args); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	os.Stdout = w
-	done := make(chan []byte, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		done <- buf.Bytes()
-	}()
-	runCmd.Run(testCmd, nil)
-	_ = w.Close()
-	os.Stdout = oldStdout
-	return <-done
-}
-
-// TestParity_SpecDecodeOff_ByteIdenticalStdout pins BC-1 (INV-6): a run with
-// --num-speculative-tokens 0 produces byte-identical stdout to a run without the
-// flag at all. This is the direct guard that the feature is inert when off — every
-// spec-decode branch is a guarded addition, not a rewrite of the K=0 path.
-//
-// NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
-func TestParity_SpecDecodeOff_ByteIdenticalStdout(t *testing.T) {
-	const seed int64 = 20260808
-	shape := paritySpecShapes()[0] // chatbot
-
-	noFlag := runSpecAndCaptureStdoutSpecFlag(t, shape.yaml, seed, shape.horizon, false)
-	k0 := runSpecAndCaptureStdoutSpecFlag(t, shape.yaml, seed, shape.horizon, true)
-
-	if len(noFlag) == 0 {
-		t.Fatal("run produced empty stdout; test is vacuous")
-	}
-	if !bytes.Equal(noFlag, k0) {
-		t.Fatalf("BC-1: --num-speculative-tokens 0 changed stdout vs no flag\nNO-FLAG:\n%s\nK0:\n%s", noFlag, k0)
-	}
-}

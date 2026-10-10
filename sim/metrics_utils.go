@@ -28,6 +28,22 @@ type RequestMetrics struct {
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
+
+	// CompletionIndex is this request's 1-based position in the run's completion order,
+	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
+	// only in the --metrics-path file (Requests[] never reaches stdout). A consumer that
+	// discards a leading warm-up phase by completion -- the accuracy harness does -- needs
+	// the order the simulator completed requests in, which neither arrival order nor
+	// ArrivedAt+E2E recovers.
+	CompletionIndex int `json:"completion_index,omitempty"`
+
+	// completionSeq is the order in which the serving instance completed this request
+	// (1-based, per instance; 0 = not completed) and completionClock the simulation clock
+	// when it did, both recorded by Metrics.recordCompletionOrder. They survive the
+	// cluster's value-copy merge of Requests, and EmitOutput derives CompletionIndex from
+	// them. Unexported, so never serialized.
+	completionSeq   int
+	completionClock int64
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.

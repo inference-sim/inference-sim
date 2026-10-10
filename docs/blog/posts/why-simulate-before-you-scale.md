@@ -17,6 +17,8 @@ categories:
 
 # Why Simulate Before You Scale
 
+> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.
+
 Deploying large language models in production is one of the most expensive infrastructure decisions an organization can make. A single high-end GPU costs upwards of $30,000, and a production cluster can run into millions per year. Yet most teams make their first scaling decisions based on rough estimates, vendor benchmarks, or — worst of all — trial and error on live hardware.
 
 What if you could test your deployment plan *before* spending a dollar on GPUs?

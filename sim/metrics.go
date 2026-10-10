@@ -60,6 +60,70 @@ type Metrics struct {
 	// adapter-blind run produces no adapter output (INV-6). Surfaced via buildAdapterMetrics.
 	AdapterLoadCounts     map[string]int64
 	AdapterEvictionCounts map[string]int64
+
+	// completions counts completions on this instance, so each completed request's
+	// Requests entry carries its per-instance completion sequence (see
+	// recordCompletionOrder and RequestMetrics.CompletionIndex).
+	completions int
+}
+
+// recordCompletionOrder stamps a completed request's Requests entry with this instance's
+// next completion sequence number and the simulation clock at which the completion was
+// processed. Called once per completion, in completion order, from recordRequestCompletion.
+// A request with no Requests entry is left alone (nothing would carry the stamp).
+func (m *Metrics) recordCompletionOrder(id string, clock int64) {
+	rm, ok := m.Requests[id]
+	if !ok {
+		return
+	}
+	m.completions++
+	rm.completionSeq = m.completions
+	rm.completionClock = clock
+	m.Requests[id] = rm
+}
+
+// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number and
+// clock), for an entry that stands for src's completion under another id -- a disaggregated
+// parent completes when its decode sub-request does.
+func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
+	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
+	return rm
+}
+
+// assignCompletionIndices numbers the completed requests in rs 1..n in the order the
+// simulation processed their completions: by the clock at which each completion was
+// processed, then the serving instance (lowest index first, the cluster's own tie-break for
+// simultaneous events), then that instance's completion sequence, then ID. On one instance
+// the clock never decreases along its sequence, so this is exactly the order its completion
+// callback fired in. Completion TIME (arrival + E2E) is deliberately not the key: it is not
+// monotone in that order. Entries never stamped as completed keep CompletionIndex 0.
+func (m *Metrics) assignCompletionIndices(rs []RequestMetrics) {
+	idx := make([]int, 0, len(rs))
+	for i := range rs {
+		if rs[i].completionSeq > 0 {
+			idx = append(idx, i)
+		}
+	}
+	sort.SliceStable(idx, func(a, b int) bool {
+		x, y := rs[idx[a]], rs[idx[b]]
+		if x.completionClock != y.completionClock {
+			return x.completionClock < y.completionClock
+		}
+		if x.HandledBy != y.HandledBy {
+			// "instance_2" before "instance_10": shorter names first, then lexical.
+			if len(x.HandledBy) != len(y.HandledBy) {
+				return len(x.HandledBy) < len(y.HandledBy)
+			}
+			return x.HandledBy < y.HandledBy
+		}
+		if x.completionSeq != y.completionSeq {
+			return x.completionSeq < y.completionSeq
+		}
+		return x.ID < y.ID
+	})
+	for rank, i := range idx {
+		rs[i].CompletionIndex = rank + 1
+	}
 }
 
 func NewMetrics() *Metrics {
@@ -322,6 +386,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
 			output.Requests = append(output.Requests, detail)
 		}
+		m.assignCompletionIndices(output.Requests)
 
 		sort.Slice(output.Requests, func(i, j int) bool {
 			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt

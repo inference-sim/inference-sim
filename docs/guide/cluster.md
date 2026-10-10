@@ -4,7 +4,8 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 ```bash
 # Quick example: 4-instance cluster with tracing
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 ```
@@ -31,49 +32,61 @@ Each stage is configurable:
 | **Admission** | Whether to accept the request | `--admission-policy`, `--token-bucket-capacity` |
 | **Routing** | Which instance receives it | `--routing-policy`, `--routing-scorers` |
 | **Scheduling** | What order within the instance | `--scheduler`, `--priority-policy` |
-| **Batch Formation** | Which requests form the next batch | `--max-num-seqs`, `--max-num-batched-tokens` |
+| **Batch Formation** | Which requests form the next batch | scenario `max_num_seqs`, `max_num_batched_tokens` |
 
-## Tensor Parallelism
+## Deployment Shape: Parallelism, DP and P/D
 
-The `--tp` flag sets the tensor parallelism degree for all instances. TP affects both latency (FLOPs split across the TP ranks) and memory (each rank contributes its GPU's memory to one shared budget):
+Each instance's shape comes from the scenario, not from flags: the pool's `parallel` block
+(`tp`, `pp`, `dp`, `enable_expert_parallel`) and its `engine` settings. blis-latency-kernel prices
+the step time and sizes the KV budget for that shape. `--num-instances` sets how many instances
+run; all instances of a pool are identical.
+
+`--num-instances` must not exceed the scenario's rank capacity: pool `nodes` × `gpus_per_node` /
+(pp × tp × pcp). The single-node TP4 Llama scenario fits 2 instances;
+`testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml` (4 H200 nodes over 400G
+InfiniBand, TP4) fits 8. For another shape, copy a scenario, raise `cluster.nodes` and the pool's
+`nodes`, and add a `cluster.fabric`.
+
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one replica per data-parallel rank,
+each sized as one vLLM EngineCore (its own KV budget and batch limits). `dp > 1` on a dense model
+is refused.
+
+**Prefill/decode disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per
+pool. Choose the topology with `--prefill-instances` and `--decode-instances` (whose sum must not exceed `--num-instances`) and `--pd-decider`;
+each must not exceed its pool's rank capacity, `nodes × gpus_per_node / (pp × tp × pcp)`. The KV
+handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two
+instances' placements. This repository's `testdata/scenarios/glm-5-h200-3p1d-ib.yaml` is a 3P1D
+example:
 
 ```bash
-# TP=2: 2 GPUs per instance
-./blis run --model qwen/qwen3-14b --hardware H100 \
-  --num-instances 4 --tp 2 --rate 100 --num-requests 500
-
-# TP=4: 4 GPUs per instance (lower latency, and usually a larger total KV pool)
-./blis run --model qwen/qwen3-14b --hardware H100 \
-  --num-instances 2 --tp 4 --rate 100 --num-requests 500
+./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
+  --num-instances 4 --prefill-instances 3 --decode-instances 1 --pd-decider always \
+  --rate 10 --num-requests 100
 ```
 
-`total_kv_blocks` is a **global** count for the instance, not a per-GPU one: every TP rank stores its own shard of each block, so raising `--tp` does not split a fixed pool into smaller per-GPU pieces. It usually *increases* the pool, because each added GPU brings a whole GPU of memory while the model weights stay one fixed total shared across the ranks. See [KV Cache Management](kv-cache.md#how-the-auto-calculated-pool-is-sized) for the formula and its accuracy limits.
+Refused: a P/D topology over a colocated scenario; a disaggregated scenario without
+`--prefill-instances`/`--decode-instances`; prefill and decode pools that differ in block size,
+`dp` or draft configuration; shared (`--prefill-decode-instances`) or encode instances.
+KV offload works with P/D: each pool sizes the same tiers by its own bytes per block and prices
+them with its own kernel.
 
-!!! note "Homogeneous instances"
-    All instances share the same SimConfig (model, GPU, TP, KV blocks). BLIS does not currently model heterogeneous fleets (mixed GPU types or TP configurations).
+### Node pools and multi-node placement
 
-### Multi-node tensor parallelism
+When node pools are configured (`--policy-config` with `node_pools`), every pool's `gpu_type` must
+equal the scenario's `cluster.hardware`, and `gpu_type` must be unique across pools.
 
-When node pools are configured (`--policy-config` with `node_pools`), an instance whose `--tp` exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same pool** — enabling multi-node TP for models too large for a single node (e.g. TP=16 on 2×8 H100). This happens automatically and only as a fallback: BLIS first tries to fit the instance on a single node in any matching pool, and spans nodes only when no single node can host the full TP group.
-
-Multi-node TP is modeled as **whole-node occupancy**: it engages only when `tp` is a whole multiple of `gpus_per_node` (e.g. `tp=16` on 8-GPU nodes → 2 nodes), and the instance takes complete nodes so every node carries an equal TP rank count. This is the shape vLLM's multiprocessing (`mp`) executor enforces (it asserts `world_size % nnodes == 0` and derives an equal per-node rank count); vLLM's Ray backend tolerates an asymmetric spread but warns against it, so BLIS is deliberately stricter than the most permissive backend. (vLLM's docs actually recommend avoiding multi-node TP altogether in favor of TP-within-node + PP-across-nodes — see the interconnect note below.) If `tp ≤ gpus_per_node` but the pool is merely fragmented (no single node momentarily has room), the instance is **not** spanned (the resulting asymmetric rank split is discouraged and not modeled); it stays pending, exactly as before. Single-node placement is unchanged.
-
-A spanning instance is billed for every node it occupies (`cost_per_hour × nodes_spanned`).
-
-!!! note "Configuration constraints"
-    Two node-pool configurations are rejected at startup (with a clear panic) because they would otherwise produce silently-wrong span/cost numbers — both tracked for proper support by [#1543](https://github.com/inference-sim/inference-sim/issues/1543):
-
-    - A per-role tensor-parallel override (`--prefill-tp` / `--decode-tp`) that **differs from the global `--tp`** is not supported with `node_pools`: placement, node-span, and cost all use the global `--tp`, so a differing per-role TP would be simulated at one degree but placed and billed at another. Use a uniform `--tp`.
-    - Every pool must have a **distinct `gpu_type`**: cost (`cost_per_hour`) and capacity (`gpu_memory_gib`) are resolved by first-match on `gpu_type`, so two pools sharing a type would resolve ambiguously.
-
-!!! warning "Cross-node interconnect: bandwidth priced, per-hop latency not calibrated"
-    Cross-node collective traffic **is** priced ([#1530](https://github.com/inference-sim/inference-sim/issues/1530)): when a collective's group does not fit inside one node, the trained-physics communication terms charge it at a blended intra/inter-node bandwidth derived from the actual placement. Two things gate it. The `--latency-model` must be `trained-physics` (roofline models no communication at all — [#1663](https://github.com/inference-sim/inference-sim/issues/1663)), and the placed GPU's entry in `--hardware-config` must declare `IntraNodeBwGBps` / `InterNodeBwGBps`; BLIS warns once, on first span, when either is missing, so an unpriced span is never silent. Expect roughly +10% on step time for TP=16 on 2×8 H100 — modest because NCCL's hierarchical all-reduce sends only the reduced chunk across the fabric. What is still **optimistic** is the fixed launch and round-trip cost of each cross-node hop: it *is* modeled as an analytic `n_steps · α_hop · S` term (`InterNodeHopLatencyUs`, [#1694](https://github.com/inference-sim/inference-sim/issues/1694) — `n_steps` is the hop count of the placed span, node-span-aware), but `α_hop` ships **uncalibrated at 0**, so nothing is charged for it out of the box — and at decode message sizes it is plausibly the larger of the two effects. Supplying a measured `α_hop` from an NCCL microbenchmark is [#1694](https://github.com/inference-sim/inference-sim/issues/1694). The eager/no-overlap serialization multiplier `S` (`--comm-serialization-factor`, default 1.0; `--enforce-eager` requires an explicit `S > 1`) scales that term for deployments that run without CUDA graphs. Note also that cross-node TP is itself the aggressive topology: vLLM recommends **pipeline parallelism across nodes and tensor parallelism within a node**, precisely because per-layer TP all-reduce means many small collectives over inter-node links (InfiniBand/Ethernet, roughly an order of magnitude below NVLink). Multi-node placement is `blis run` only: `blis replay` rejects `node_pools` outright, and `blis observe` cannot express them at all (it has no `--policy-config` and builds no simulator — its timing comes from a real server). Pipeline parallelism is not yet modeled (tracked by [#1535](https://github.com/inference-sim/inference-sim/issues/1535)).
+An instance whose TP group exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same
+pool**. This happens only as a fallback (BLIS first tries a single node in any matching pool) and
+only when `tp` is a whole multiple of `gpus_per_node` (e.g. `tp=16` on 8-GPU nodes → 2 nodes), so
+every node carries an equal rank count — the shape vLLM's multiprocessing executor enforces. If
+`tp ≤ gpus_per_node` but the pool is merely fragmented, the instance is not spanned; it stays
+pending. A spanning instance is billed for every node it occupies (`cost_per_hour × nodes_spanned`).
+Node pools are `blis run` only: `blis replay` rejects `node_pools`.
 
 ## Scaling and Saturation
 
-Instance scaling produces **super-linear** TTFT improvement near saturation. With the default model (Qwen3-14B / H100 / TP=1, ~17 req/s per instance at saturation), scaling from 4→12 instances at rate=200 improves TTFT p99 from ~1,500ms to ~54ms.
-
-This happens because the per-instance queue growth rate `excess = λ/k - μ` drops faster than linearly:
+Instance scaling produces **super-linear** TTFT improvement near saturation, because the per-instance queue growth rate `excess = λ/k - μ` drops faster than linearly. For example, with a per-instance saturation rate μ = 17 req/s at λ = 200 req/s:
 
 ```
 4 instances:  excess = 200/4 - 17  = 33 req/s per instance   → rapid queue growth
@@ -81,7 +94,7 @@ This happens because the per-instance queue growth rate `excess = λ/k - μ` dro
 12 instances: excess = 200/12 - 17 = -0.3 req/s per instance → balanced (sub-saturation)
 ```
 
-At sub-saturation (excess ≤ 0): TTFT converges to the baseline (~54ms) and further scaling provides diminishing returns.
+At sub-saturation (excess ≤ 0): TTFT converges to its unloaded baseline and further scaling provides diminishing returns. Measure μ for your own scenario and workload.
 
 ## Admission Control
 
@@ -103,7 +116,8 @@ These add simulated delays to the admission and routing pipeline, modeling gRPC 
 Log every routing decision for offline analysis:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --counterfactual-k 3
 ```

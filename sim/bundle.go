@@ -131,7 +131,6 @@ var (
 	validRoutingPolicies        = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validSchedulers             = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validPreemptionPolicies     = map[string]bool{"": true, "fcfs": true, "priority": true}
-	validLatencyBackends        = map[string]bool{"": true, LatencyBackendRoofline: true, LatencyBackendTrainedPhysics: true}
 	validDisaggregationDeciders = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validEncodeDeciders         = map[string]bool{"": true, "never": true, "always": true, "multimodal": true}
 	validSaturationDetectors    = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
@@ -160,20 +159,6 @@ func IsValidPreemptionPolicy(name string) bool { return validPreemptionPolicies[
 
 // ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
 func ValidPreemptionPolicyNames() []string { return validNamesList(validPreemptionPolicies) }
-
-// IsValidLatencyBackend returns true if name is a recognized latency model backend.
-func IsValidLatencyBackend(name string) bool { return validLatencyBackends[name] }
-
-// Latency backend names. The empty string resolves to LatencyBackendRoofline.
-// LatencyBackendTrainedPhysics is the only backend that models communication, and so
-// the only one an inter-node network cost can apply to (#1530).
-const (
-	LatencyBackendRoofline       = "roofline"
-	LatencyBackendTrainedPhysics = "trained-physics"
-)
-
-// ValidLatencyBackendNames returns sorted valid latency backend names (excluding empty).
-func ValidLatencyBackendNames() []string { return validNamesList(validLatencyBackends) }
 
 // IsValidDisaggregationDecider returns true if name is a recognized disaggregation decider.
 func IsValidDisaggregationDecider(name string) bool { return validDisaggregationDeciders[name] }

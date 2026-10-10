@@ -76,16 +76,20 @@ type DeploymentConfig struct {
 	EncodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
 	EncodeDecider   string // Encode decider: "", "never" (default), "always", "multimodal"
 
-	// PD KV transfer configuration (PR2)
+	// PD KV transfer configuration (PR2).
 	//
-	// PDTransferBaseLatencyMs is a MODELING ESTIMATE, not a datasheet fact: its 0.05 ms default is
-	// a placeholder owned by blis-registry (blis-registry#10, `method: assumed`). It is sourced
-	// SOLELY from --pd-transfer-base-latency, and the effective base latency is that value alone —
-	// the catalog's networks/ fabric classes state no per-transfer base latency to compose with it
-	// (blis-catalog#12 removed the key; the closed fabric schema now rejects it, #1838).
-	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
-	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
-	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
+	// PDTransferContention enables the fair-share bandwidth contention model (INV-P2-2). It
+	// divides a bandwidth term the simulator composed itself, and the simulator no longer
+	// composes one -- the handoff is priced by PDTransferTime -- so NewClusterSimulator
+	// refuses it for any PD deployment.
+	PDTransferContention bool
+
+	// PDTransferTime prices moving one request's KV from a prefill instance to a decode
+	// instance, in ticks, for the token capacity of the KV blocks being moved. The latency
+	// backend owns the transfer price (blis-latency-kernel's PDTransferTime reads the fabric
+	// and the KV geometry) and the simulator owns only when it happens. Required whenever
+	// PD disaggregation is enabled; NewClusterSimulator refuses a PD deployment without it.
+	PDTransferTime func(tokens int64, from, to InstanceID) int64
 
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.
@@ -141,27 +145,6 @@ type DeploymentConfig struct {
 	FlowControlQueueShedding        bool    `yaml:"flow_control_queue_shedding,omitempty"`          // BLIS-extra: cross-band shedding on full queue (not in llm-d). Default false.
 	FlowControlDispatchTickInterval int64   `yaml:"flow_control_dispatch_tick_interval,omitempty"`  // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity). 0 = use default.
 	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
-
-	// Issue #893: per-GPU-type hardware calibration for roofline and trained-physics backends.
-	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
-	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
-	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),
-	// ensuring pool-placed instances use the correct roofline hardware coefficients
-	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
-	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
-	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
-
-	// Issue #1522: per-instance KV-block capacity for node-pool placement. When
-	// KVAutoCalc.Enabled is true, each node-pool-placed instance recomputes its
-	// TotalKVBlocks from its ACTUAL placed GPU memory (node_pools[].gpu_memory_gib),
-	// TP, DP, block size, memory utilization, and weight precision — instead of
-	// inheriting the single global capacity computed from the --hardware GPU. Applied
-	// at all three placement sites (startup, deferred NodeReadyEvent, autoscaler
-	// scale-up), immediately after the HWConfigByGPU execution-calibration override,
-	// so the placed GPU is authoritative for KV capacity just as it is for execution
-	// coefficients (SC-004). Zero value (Enabled=false) is inert and backward-compatible
-	// (INV-6). See KVAutoCalcConfig and applyPerInstanceKVCapacity.
-	KVAutoCalc KVAutoCalcConfig `yaml:"-"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
@@ -169,17 +152,6 @@ type DeploymentConfig struct {
 // and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
-}
-
-// EffectivePrefillTP returns the tensor parallelism degree used by the prefill pool.
-// Used for KV transfer sizing in both NewClusterSimulator (upfront validation) and
-// KVTransferStartedEvent.Execute (runtime). Note: resolveConfigForRole independently
-// applies PrefillOverrides via ResolvePoolConfig.
-func (d DeploymentConfig) EffectivePrefillTP() int {
-	if d.PrefillOverrides.TP != nil {
-		return *d.PrefillOverrides.TP
-	}
-	return d.TP
 }
 
 // resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.

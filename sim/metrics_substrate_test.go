@@ -14,7 +14,7 @@
 //	BC-MS-3: TTFT recorded exactly once per request (chunked or not)
 //	BC-MS-4: sum(AllITLs) = sum(E2E - TTFT) across completed requests
 //	BC-MS-5: Scheduling delay monotonically increases with input length
-//	BC-MS-6: Scheduling delay for an isolated request equals alpha overhead
+//	BC-MS-6: Scheduling delay for an isolated request equals the model's QueueingTime
 //	BC-MS-7: CacheHitRate ∈ [0, 1] (range invariant)
 //	BC-MS-8: Unit conversion is consistent: ticks/1000 = ticks/1e3
 //	BC-MS-9: Zero-output requests have TTFT > 0 and E2E >= TTFT
@@ -24,10 +24,11 @@
 //	BC-MS-13: Chunked prefill preserves request conservation
 //	BC-MS-14: E2E ≥ TTFT for every completed request (causality)
 //
-// Test coefficients:
+// Latency: the deterministic fake (msLatency) --
 //
-//	alpha = [1000, 2, 500]  →  QueueingTime = 1000 + 2*inputLen
-//	beta  = [5000, 10, 3]   →  StepTime = 5000 + 10*cacheMiss + 3*decode
+//	QueueingTime = 1000 + 2*inputLen, OutputTokenProcessingTime = 500,
+//	StepTime = 5000 + 10*scheduledTokens + 3*decodeRequests,
+//	PostDecodeFixedOverhead = 0 (so E2E = TTFT + decode latency exactly).
 //	Block size = 16 tokens.
 package sim
 
@@ -36,13 +37,21 @@ import (
 	"math"
 	"sort"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
-// msAlpha returns simple alpha coefficients for metrics substrate tests.
-func msAlpha() []float64 { return []float64{1000, 2, 500} }
-
-// msBeta returns simple beta coefficients for metrics substrate tests.
-func msBeta() []float64 { return []float64{5000, 10, 3} }
+// msLatency is the fake latency model for metrics substrate tests (see file header).
+func msLatency() LatencyModel {
+	return newFakeLatencyWith(testutil.FakeLatency{
+		BaseTicks:                  5000,
+		PerScheduledTokenTicks:     10,
+		PerDecodeRequestTicks:      3,
+		QueueingTicks:              1000,
+		QueueingPerInputTokenTicks: 2,
+		OutputTokenProcessingTicks: 500,
+	})
+}
 
 // msConfig returns a SimConfig for metrics substrate tests.
 // No workload — caller injects requests via InjectArrival.
@@ -52,10 +61,10 @@ func msConfig(horizon int64) SimConfig {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 100000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "test-gpu", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
 		PolicyConfig:        NewPolicyConfig("fcfs", ""),
 		WorkloadConfig:      NewWorkloadConfig(),
+		LatencyModel:        msLatency(),
 	}
 }
 
@@ -235,7 +244,7 @@ func TestMetrics_ChunkedPrefill_PreservesConservation(t *testing.T) {
 }
 
 func TestMetrics_ChunkedPrefill_TTFT_HigherThanNonChunked(t *testing.T) {
-	// Behavioral: chunked prefill incurs overhead (more steps, each with beta0).
+	// Behavioral: chunked prefill incurs overhead (more steps, each paying the per-step base cost).
 	// TTFT(chunked) >= TTFT(non-chunked) for the same request.
 	sNC := msInjectAndRun(t, msConfig(math.MaxInt64), "nc", 64, 3, 0)
 
@@ -249,7 +258,7 @@ func TestMetrics_ChunkedPrefill_TTFT_HigherThanNonChunked(t *testing.T) {
 	if ttftNC <= 0 || ttftC <= 0 {
 		t.Errorf("TTFT not positive: non-chunked=%.1f, chunked=%.1f", ttftNC, ttftC)
 	}
-	// Chunked should be >= non-chunked (3 extra beta0 costs for 4 chunks vs 1 step)
+	// Chunked should be >= non-chunked (3 extra base step costs for 4 chunks vs 1 step)
 	if ttftC < ttftNC {
 		t.Errorf("Chunked TTFT (%.1f) < non-chunked TTFT (%.1f) — expected >=", ttftC, ttftNC)
 	}
@@ -352,24 +361,21 @@ func TestMetrics_AllITLs_Sum_WithZeroOutputRequests(t *testing.T) {
 // BC-MS-5 + BC-MS-6: Scheduling Delay Properties
 //
 // For an isolated request (no queueing contention):
-//   Scheduling delay = alpha overhead (QueueingTime)     (BC-MS-6)
+//   Scheduling delay = QueueingTime                      (BC-MS-6)
 // Scheduling delay monotonically increases with input length (BC-MS-5)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func TestMetrics_SchedulingDelay_EqualsAlpha_Isolated(t *testing.T) {
-	// Regression anchor (one per method, per project convention): for an isolated
-	// request with roofline latency model and no queueing contention, the scheduling
-	// delay equals QueueingTime = alpha0 + alpha1 * inputLen. This exact-value check
-	// is intentionally model-specific — it would need updating if the latency model
-	// changes, but it catches formula regressions that behavioral tests miss.
+	// For an isolated request (no queueing contention) the scheduling delay is exactly
+	// the latency model's QueueingTime for that request -- whatever model prices it.
 	inputLen := 32
 	s := msInjectAndRun(t, msConfig(math.MaxInt64), "sd", inputLen, 3, 0)
 
 	schedDelay := s.Metrics.RequestSchedulingDelays["sd"]
-	expectedAlpha := int64(1000 + 2*inputLen) // alpha0 + alpha1 * inputLen
+	expectedAlpha := msLatency().QueueingTime(&Request{InputTokens: msMakeTokens(inputLen)})
 
 	if schedDelay != expectedAlpha {
-		t.Errorf("BC-MS-6 regression: scheduling delay (%d) != alpha overhead (%d)",
+		t.Errorf("BC-MS-6 regression: scheduling delay (%d) != QueueingTime (%d)",
 			schedDelay, expectedAlpha)
 	}
 }
@@ -617,7 +623,7 @@ func TestMetrics_PeakKVBlocks_BoundedAndZeroAfterCompletion(t *testing.T) {
 //   - StepTime non-decreasing in cacheMissTokens (holding batch composition fixed)
 //
 // This yields PARTIAL monotonicity:
-//   (a) Holding cacheMissTokens fixed, TTFT ↑ when totalInputTokens ↑  (alpha side)
+//   (a) Holding cacheMissTokens fixed, TTFT ↑ when totalInputTokens ↑  (queueing side)
 //   (b) Holding totalInputTokens fixed, TTFT ↑ when cacheMissTokens ↑  (step-time side)
 //   (c) When totalInputTokens ↑ but cacheMissTokens ↓ (prefix caching),
 //       the net direction depends on relative magnitudes — monotonicity NOT guaranteed.
@@ -625,8 +631,8 @@ func TestMetrics_PeakKVBlocks_BoundedAndZeroAfterCompletion(t *testing.T) {
 // Without prefix caching: cacheMissTokens == totalInputTokens, so (a) and (b)
 // collapse into simple monotonicity with input length.
 //
-// These properties hold for any LatencyModel (roofline
-// FLOPs/bandwidth, or future implementations) as long as the interface
+// These properties hold for any LatencyModel (the fake these tests use, the
+// latency kernel, or future implementations) as long as the interface
 // contract is satisfied. The tests below verify the properties, not any
 // particular formula.
 // ═══════════════════════════════════════════════════════════════════════════════

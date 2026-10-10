@@ -1,0 +1,6 @@
+name: minimax-m3
+source:
+  provider: huggingface
+  repo: MiniMaxAI/MiniMax-M3
+  revision: f0e1c1e04d40177e4673a22097036854f536e9c0
+  retrieved: 2026-10-01

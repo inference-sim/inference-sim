@@ -95,12 +95,13 @@ func parseKVOffloadBytes(data []byte) (kvOffloadFile, error) {
 // sim.KVOffloadConfig. It is PURE and error-returning (Deviation #9) so every reject
 // branch is unit-testable and fuzzable. It applies vLLM's defaults knob-for-knob
 // (BC-G2), resolves device_class against the catalog's storage-device table supplied by
-// the caller — <catalog>/devices/storage.yaml, #1770 (explicit
-// read/write/base override the class), enforces the block_size XOR blocks_per_chunk
+// the caller — <catalog>/devices/storage.yaml, #1770 (explicit read/write/base override
+// the class; a library-only path, since the CLI refuses them via
+// refuseExplicitTierPhysics), enforces the block_size XOR blocks_per_chunk
 // user-input rule then derives the canonical pair, rejects store_threshold>=2 and
 // non-fs tiers loudly (BC-G1), and finally runs cfg.Validate() (BC-G3).
 //
-// gpuBlockSizeTokens is the GPU block size (--block-size-in-tokens); vLLM's block_size
+// gpuBlockSizeTokens is the GPU block size (the scenario's engine.block_size); vLLM's block_size
 // default equals it, and it converts between the block_size and blocks_per_chunk
 // encodings of the same quantity.
 func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice, gpuBlockSizeTokens int64) (sim.KVOffloadConfig, error) {
@@ -108,7 +109,7 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: the --kv-offload-config file has no top-level kv_offload: block")
 	}
 	if gpuBlockSizeTokens <= 0 {
-		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: GPU block size (--block-size-in-tokens) must be > 0, got %d", gpuBlockSizeTokens)
+		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: GPU block size (the scenario's engine.block_size) must be > 0, got %d", gpuBlockSizeTokens)
 	}
 	cfg := sim.KVOffloadConfig{Enabled: true}
 
@@ -172,6 +173,12 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 	cfg.EvictionPolicy = "lru"
 	if block.EvictionPolicy != nil {
 		cfg.EvictionPolicy = *block.EvictionPolicy
+	}
+	// The offload cache simulates LRU only; vLLM's other in-tree policy (arc) is refused here,
+	// at config time, rather than reaching the cache's constructor as a panic.
+	if cfg.EvictionPolicy != "lru" {
+		return cfg, fmt.Errorf("kv_offload: eviction_policy %q is not simulated; the offload cache "+
+			"is LRU (vLLM's arc is not yet modelled)", cfg.EvictionPolicy)
 	}
 
 	// offload_prompt_only: vLLM DEFAULT TRUE (trap 1).
@@ -240,10 +247,11 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]k
 	}
 
 	// direct_io: REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe an explicit
-	// config axis (direct vs buffered I/O are different physics regimes; a simulator
-	// cannot probe the operator's disk). No silent default.
+	// config axis (a simulator cannot probe the operator's disk). No silent default. It is
+	// recorded with the tier; the kernel prices a tier from its catalog device's rates, so on
+	// the kernel path buffered I/O is not priced differently (priceOffload warns).
 	if tb.DirectIO == nil {
-		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].direct_io must be set explicitly (BLIS makes vLLM's runtime O_DIRECT probe an explicit config axis; direct vs buffered I/O are materially different storage physics)", index)
+		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].direct_io must be set explicitly (BLIS makes vLLM's runtime O_DIRECT probe an explicit config axis rather than guess the operator's disk)", index)
 	}
 	tier.DirectIO = *tb.DirectIO
 
@@ -354,6 +362,7 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	refuseExplicitTierPhysics(f.KVOffload)
 	// #1770: device_class physics come from the CATALOG (<catalog>/devices/storage.yaml),
 	// the single source of truth, not from defaults.yaml. Read LAZILY — a config whose
 	// tiers all carry explicit bandwidth/latency triples never touches the catalog
@@ -446,8 +455,8 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 			return sim.KVOffloadConfig{}, fmt.Errorf("blis replay cannot reproduce the trace's kv_offload config: %w (INV-13: never silent degradation)", err)
 		}
 		// Compare user-facing fields only: PerBlockBytes is DERIVED from the model KV
-		// size (not a user knob) and the replay-path flagCfg cannot compute it (no
-		// sim/latency import, and reconcile runs before the latency config resolves),
+		// size (not a user knob) and the replay-path flagCfg cannot compute it (the kernel
+		// prices it, and reconcile runs before the latency config resolves),
 		// so it is zero on the flag side. The header value is authoritative by design
 		// (INV-13 cross-host, never re-resolved), so exclude it from the equality gate;
 		// otherwise identical flags would spuriously conflict.

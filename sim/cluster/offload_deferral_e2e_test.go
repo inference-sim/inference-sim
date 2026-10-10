@@ -33,8 +33,8 @@ func offloadE2ECfg(seed int64) sim.SimConfig {
 		Seed:                seed,
 		KVCacheConfig:       sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0, sim.WithKVOffload(off)), // small GPU
 		BatchConfig:         sim.NewBatchConfig(8, 512, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 }
 
@@ -138,8 +138,8 @@ func cpuOnlyOffloadCfg(seed, cpuBlocks int64) sim.SimConfig {
 		Seed:                seed,
 		KVCacheConfig:       sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0, sim.WithKVOffload(off)),
 		BatchConfig:         sim.NewBatchConfig(8, 512, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 }
 
