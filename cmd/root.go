@@ -406,11 +406,10 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment, a
 	// The per-rank division floors, so a --dp larger than the auto-derived block count
 	// would leave a 0-block replica — which NewSimulator panics on, and whose derived
 	// kvFeasibleMax of 0 would silently mean "unlimited" in the re-cap below (the
-	// inverse of a cap). Report it as a clean CLI error instead (R1). The guarantee
-	// that the auto path cannot produce this lives in another package
-	// (sim/latency/kv_capacity.go rejects a non-positive total before multiplying by
-	// dp), so this is defense in depth. Unreachable on the explicit
-	// --total-kv-blocks path, which is validated > 0 upstream and is not divided.
+	// inverse of a cap). Report it as a clean CLI error instead (R1). The kernel
+	// refuses a non-positive per-rank budget, so this is defense in depth. Unreachable
+	// on the explicit --total-kv-blocks path, which is validated > 0 upstream and is not
+	// divided.
 	if out.TotalKVBlocks <= 0 {
 		return dep, fmt.Errorf("--dp %d exceeds the auto-derived KV capacity: dividing it across %d engine "+
 			"replicas leaves %d KV blocks each. Lower --dp, raise --gpu-memory-utilization, use a larger GPU "+
@@ -1806,11 +1805,10 @@ var runCmd = &cobra.Command{
 		// feature whose whole point is that the two commands agree).
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks", totalKVBlocks, simulationHorizon)
 
-		// #1590 (H1): derive per_block_bytes for the offload tier chain. sim/kv cannot
-		// import sim/latency, so compute the per-rank KV byte size of one GPU block here
-		// (model + TP are resolved) and record it on the resolved offload config. It
-		// feeds the CPU-tier block capacity and transfer-job sizing, and round-trips
-		// through the trace header (INV-13). Only when offload is enabled.
+		// #1590 (H1): derive per_block_bytes for the offload tier chain -- the kernel's
+		// per-rank KV byte size of one GPU block -- and record it on the resolved offload
+		// config. It feeds the CPU-tier block capacity and transfer-job sizing, and
+		// round-trips through the trace header (INV-13). Only when offload is enabled.
 		if kvOffloadCfg.IsEnabled() {
 			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
 		}

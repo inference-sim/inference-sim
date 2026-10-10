@@ -447,8 +447,8 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 			return sim.KVOffloadConfig{}, fmt.Errorf("blis replay cannot reproduce the trace's kv_offload config: %w (INV-13: never silent degradation)", err)
 		}
 		// Compare user-facing fields only: PerBlockBytes is DERIVED from the model KV
-		// size (not a user knob) and the replay-path flagCfg cannot compute it (no
-		// sim/latency import, and reconcile runs before the latency config resolves),
+		// size (not a user knob) and the replay-path flagCfg cannot compute it (the kernel
+		// prices it, and reconcile runs before the latency config resolves),
 		// so it is zero on the flag side. The header value is authoritative by design
 		// (INV-13 cross-host, never re-resolved), so exclude it from the equality gate;
 		// otherwise identical flags would spuriously conflict.

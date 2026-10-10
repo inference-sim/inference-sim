@@ -1894,8 +1894,8 @@ var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
 //
 // Deliberately out of scope: sim/ subpackages. sim/workload/ generates requests rather
 // than deciding whether to admit or route them, so it holds no servability decision for
-// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/latency/
-// and sim/kv/ are likewise execution-side. Only sim/cluster/ contains control-plane code,
+// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/kv/ is
+// likewise execution-side. Only sim/cluster/ contains control-plane code,
 // and it is scanned by the explicit list further down.
 var simControlPlaneGlobs = []string{
 	"routing*.go",

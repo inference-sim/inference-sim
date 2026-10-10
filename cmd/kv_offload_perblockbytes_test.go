@@ -9,7 +9,7 @@ import (
 )
 
 // #1590 Task 1 / BC-C13: PerBlockBytes is a model-DERIVED field. The replay-path
-// flagCfg cannot compute it (no sim/latency import; reconcile runs before the
+// flagCfg cannot compute it (the kernel prices it; reconcile runs before the
 // latency config resolves), so it is 0 on the flag side while the header carries
 // the run-computed value. Reconcile must exclude it from the flag-vs-header
 // equality gate (header authoritative) — otherwise identical flags spuriously
