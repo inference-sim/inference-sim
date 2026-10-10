@@ -83,7 +83,7 @@ var catalogStorageDevicesRelPath = filepath.Join(catalogDevicesSubdir, catalogSt
 
 // catalogStorageDevicesPath returns <catalog>/devices/storage.yaml. Pure: the catalog
 // root is an argument, so the path law is table-testable without touching globals or
-// the environment (same shape as catalogModelDirs, #1774).
+// the environment (#1774).
 func catalogStorageDevicesPath(catalog string) string {
 	return filepath.Join(catalog, catalogDevicesSubdir, catalogStorageDevicesFile)
 }

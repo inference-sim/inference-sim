@@ -15,8 +15,8 @@ import (
 //
 // #1768: there is deliberately NO `defaults:` section. It held per-model GPU /
 // tensor_parallelism / hf_repo, which NS-6 (#1733) made unreachable on every run path — the
-// deployment is a required operator input (--hardware/--tp, see requireDeploymentFlags) and
-// the model config comes from the catalog (--catalog / BLIS_CATALOG, #1731). Because
+// deployment comes from the required --scenario (adoptKernelDeployment) and the model graph
+// from the catalog (--catalog / BLIS_CATALOG, #1731). Because
 // KnownFields(true) is one-way — an undeclared YAML key is a hard error, an unsupplied Go
 // field is legal and zero-valued — a `defaults:` block surviving in a hand-maintained copy of
 // the file is now refused at load rather than silently ignored. Do not re-add the field to

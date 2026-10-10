@@ -83,7 +83,7 @@ Example:
 		if _, statErr := os.Stat(traceDataPath); os.IsNotExist(statErr) {
 			logrus.Fatalf("--trace-data file not found: %s", traceDataPath)
 		}
-		// Same as runCmd: on the kernel backend the deployment and the engine knobs come
+		// Same as runCmd: the deployment and the engine knobs come
 		// from the scenario and the kernel, resolved before any gate reads them.
 		adoptKernelDeployment(cmd)
 		if model == "" {
@@ -307,11 +307,10 @@ Example:
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
-		// LoRA control-plane (#1464): resolve ONCE (R4) so the KV auto-capacity path
-		// (resolveLatencyConfig + per-pool calc) subtracts the same static HBM
-		// reservation runCmd does (PR5 / INV-13 parity) and the SimConfig below reuses
-		// it. Reservation is 0 when the subsystem is inert (INV-6). Set before
-		// resolveLatencyConfig.
+		// LoRA control-plane (#1464): resolve ONCE (R4) so the kernel's KV sizing
+		// (applyKernelLoRAReservation here, each P/D pool's overrides below) sets aside
+		// the same static HBM reservation runCmd does (PR5 / INV-13 parity) and the
+		// SimConfig below reuses it. Reservation is 0 when the subsystem is inert (INV-6).
 		loraCfg := resolveLoRAConfig(cmd)
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 		applyKernelLoRAReservation()
@@ -338,7 +337,7 @@ Example:
 			logrus.Fatalf("%v", err)
 		}
 
-		// Resolve latency backend configuration (single code path shared with runCmd).
+		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
 		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
@@ -350,12 +349,9 @@ Example:
 			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, kvOffloadCfg.BlockSize)
 		}
 
-		// #1819/#1841: both legacy single-CPU-tier transfer components are resolved
-		// through the SAME helper runCmd uses. The flags are registered in the shared
-		// registerSimConfigFlags, so run and replay derive and override identically
-		// (INV-13). No-op unless --kv-cpu-blocks > 0.
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
-		// the legacy CPU tier as one whole per-block reload charge.
+		// the legacy CPU tier as one whole per-block reload charge, through the SAME helper
+		// runCmd uses (INV-13).
 		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
 
 		// Numeric flag validation (same as runCmd)
@@ -363,13 +359,13 @@ Example:
 			logrus.Fatalf("num-instances must be >= 1")
 		}
 		if totalKVBlocks <= 0 {
-			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
+			logrus.Fatalf("scenario %q: the kernel sized %d KV blocks per rank; it must be > 0", kernelScenario, totalKVBlocks)
 		}
 		if maxNumSeqs <= 0 {
-			logrus.Fatalf("--max-num-seqs must be > 0, got %d", maxNumSeqs)
+			logrus.Fatalf("scenario %q: engine max_num_seqs must be > 0, got %d", kernelScenario, maxNumSeqs)
 		}
 		if maxNumBatchedTokens <= 0 {
-			logrus.Fatalf("--max-num-batched-tokens must be > 0, got %d", maxNumBatchedTokens)
+			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
 		}
 		if longPrefillTokenThreshold < 0 {
 			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
@@ -445,12 +441,10 @@ Example:
 			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
 		}
 
-		// DP-as-placement plan DECISION (#1531/#1556, #1553) — decided here, early, so the
-		// per-pool KV auto-calc below sizes each pool per-rank when the plan is active (BC-3),
-		// exactly as runCmd does. planDPPlacement is pure; it is APPLIED below at the shared
-		// resolveDPPlacement (R23). autoscaler / node pools are structurally false on replay
-		// (rejected unconditionally above), so a replay plan is only ever active for PD or a
-		// plain MoE --dp>1.
+		// DP-as-placement plan DECISION (#1531/#1556, #1553), as runCmd makes it.
+		// planDPPlacement is pure; it is APPLIED below at the shared resolveDPPlacement (R23).
+		// autoscaler / node pools are structurally false on replay (rejected unconditionally
+		// above), so a replay plan is only ever active for PD or a plain MoE scenario dp>1.
 		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
 			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
 			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
@@ -461,7 +455,7 @@ Example:
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
-		// Same as runCmd: on the kernel backend each role's engine is its own pool's.
+		// Same as runCmd: each P/D role's engine is its own pool's.
 		kernelPD := openKernelPools(resolvedCatalogRoot)
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
@@ -487,19 +481,14 @@ Example:
 		}
 
 		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
-		// guards): on an MoE model, `--dp N` means N independent single-node engine replicas
-		// (vLLM's internal DP EngineCores), not one lumped instance. resolveDPPlacement is the
-		// ONE code path run and replay share (R23) — it expands numInstances × N (and the four
-		// PD pool counts), divides the auto-KV total back to the per-rank budget, and re-caps
-		// --max-model-len to that budget — so identical flags over the same trace produce
-		// identical metrics (INV-13). Placed AFTER the PD / autoscaler / node-pool validation
-		// above and BEFORE the DeploymentConfig literal below, which reads the adjusted
-		// quantities. A no-op for --dp 1 and dense models (INV-6).
-		//
-		// The plan was DECIDED above (dpPlan), before the per-pool KV auto-calc, so each pool
-		// is sized per-rank via perPoolKVDP (BC-3, #1553) — the former ordering caveat (the
-		// per-pool block reading a pre-division maxModelLen while PD + --dp>1 was a fail-fast)
-		// is resolved rather than merely guarded. runCmd carries the identical structure.
+		// guards): on an MoE model, the scenario's dp N means N independent single-node engine
+		// replicas (vLLM's internal DP EngineCores), not one lumped instance.
+		// resolveDPPlacement is the ONE code path run and replay share (R23) — it expands
+		// numInstances × N and the four PD pool counts; KV blocks and max_model_len are
+		// already per rank from the kernel and stay unchanged — so identical flags over the
+		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
+		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
+		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
 		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)

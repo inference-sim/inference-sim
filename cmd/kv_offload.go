@@ -95,12 +95,13 @@ func parseKVOffloadBytes(data []byte) (kvOffloadFile, error) {
 // sim.KVOffloadConfig. It is PURE and error-returning (Deviation #9) so every reject
 // branch is unit-testable and fuzzable. It applies vLLM's defaults knob-for-knob
 // (BC-G2), resolves device_class against the catalog's storage-device table supplied by
-// the caller — <catalog>/devices/storage.yaml, #1770 (explicit
-// read/write/base override the class), enforces the block_size XOR blocks_per_chunk
+// the caller — <catalog>/devices/storage.yaml, #1770 (explicit read/write/base override
+// the class; a library-only path, since the CLI refuses them via
+// refuseExplicitTierPhysics), enforces the block_size XOR blocks_per_chunk
 // user-input rule then derives the canonical pair, rejects store_threshold>=2 and
 // non-fs tiers loudly (BC-G1), and finally runs cfg.Validate() (BC-G3).
 //
-// gpuBlockSizeTokens is the GPU block size (--block-size-in-tokens); vLLM's block_size
+// gpuBlockSizeTokens is the GPU block size (the scenario's engine.block_size); vLLM's block_size
 // default equals it, and it converts between the block_size and blocks_per_chunk
 // encodings of the same quantity.
 func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice, gpuBlockSizeTokens int64) (sim.KVOffloadConfig, error) {
@@ -108,7 +109,7 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: the --kv-offload-config file has no top-level kv_offload: block")
 	}
 	if gpuBlockSizeTokens <= 0 {
-		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: GPU block size (--block-size-in-tokens) must be > 0, got %d", gpuBlockSizeTokens)
+		return sim.KVOffloadConfig{}, fmt.Errorf("kv_offload: GPU block size (the scenario's engine.block_size) must be > 0, got %d", gpuBlockSizeTokens)
 	}
 	cfg := sim.KVOffloadConfig{Enabled: true}
 

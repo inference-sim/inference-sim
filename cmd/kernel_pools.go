@@ -23,8 +23,8 @@ type kernelPools struct {
 	prefill, decode *kernelmodel.Model
 }
 
-// openKernelPools opens the prefill and decode pools of the run's scenario. It returns nil off
-// the kernel backend or when the run is not disaggregated, and is fatal when a disaggregated
+// openKernelPools opens the prefill and decode pools of the run's scenario. It returns nil
+// when no kernel is open or the run is not disaggregated, and is fatal when a disaggregated
 // run's scenario does not state both pools -- a P/D topology on the CLI over a colocated
 // scenario would simulate engines nobody described.
 func openKernelPools(catalogRoot string) *kernelPools {
@@ -78,8 +78,8 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"the decode pool in %d; a P/D handoff moves whole blocks, so the pools must agree",
 			kernelScenario, ps.BlockSize, ds.BlockSize)
 	}
-	// DP-as-placement expands every pool by one replica factor (--dp), so per-pool widths that
-	// differ cannot be expressed as a placement.
+	// DP-as-placement expands every pool by one replica factor (the scenario's dp), so
+	// per-pool widths that differ cannot be expressed as a placement.
 	if ps.DataParallel != ds.DataParallel {
 		logrus.Fatalf("scenario %q runs the prefill pool at dp %d and the decode "+
 			"pool at dp %d; one replica factor applies to both pools, so their dp must match",
@@ -197,8 +197,8 @@ func requireKernelCapacity(p *kernelPools) {
 	check("decode", decodeInstances, p.decode)
 }
 
-// kernelCPUTier is the catalog storage device the legacy --kv-cpu-blocks tier's
-// CPU↔GPU reloads cross: host DRAM across the PCIe/NVLink boundary.
+// kernelCPUTier is the catalog storage device the kernel prices the legacy --kv-cpu-blocks
+// tier's CPU↔GPU reloads at: host DRAM across the PCIe/NVLink boundary.
 const kernelCPUTier = "cpu_dram"
 
 // kernelTierTicks is m's kernel's price for one transfer, in whole ticks rounded up: a
@@ -221,7 +221,7 @@ func kernelTierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64
 
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
 // run, from the run's one pool: see priceOffload. It returns the legacy per-block charge, 0
-// off the kernel or with no legacy tier. A disaggregated run's pools are priced separately,
+// when no kernel is open or with no legacy tier. A disaggregated run's pools are priced separately,
 // each by its own kernel (kernelPools.applyOffload). Shared by run and replay.
 func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kernelOpened == nil {
@@ -300,8 +300,8 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 	}
 }
 
-// refuseExplicitTierPhysics refuses, on the kernel backend, a kv_offload tier that states its
-// own bandwidth or latency: the kernel prices the tier from its catalog device, and a second
+// refuseExplicitTierPhysics refuses a kv_offload tier that states its own bandwidth or
+// latency: the kernel prices the tier from its catalog device, and a second
 // source for the same physics would need precedence rules to reconcile.
 func refuseExplicitTierPhysics(block *kvOffloadBlock) {
 	if kernelOpened == nil || block == nil {
@@ -320,7 +320,7 @@ func refuseExplicitTierPhysics(block *kvOffloadBlock) {
 // applyKernelLoRAReservation re-sizes a kernel run's KV pool with the static LoRA adapter
 // reservation set aside, once the LoRA config is known (it is resolved after the deployment
 // is adopted). vLLM takes the reservation beside the weights before profiling the KV pool, so
-// the kernel's budget shrinks by it. No-op off the kernel or with no reservation.
+// the kernel's budget shrinks by it. No-op when no kernel is open or with no reservation.
 func applyKernelLoRAReservation() {
 	if kernelOpened == nil || loraReservedBytesForKV <= 0 {
 		return

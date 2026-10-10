@@ -32,9 +32,10 @@ reconstructs the exact growing prompt with a strictly-identical shared prefix. P
 pure client think time is recomputed as max(0, t_i − t_{i-1} − api_time_{i-1}) between
 consecutive main turns and carried in the think_time_us column.
 
-Caveats: Weka input token counts are huge (p50 ≈ 110K, p90 ≈ 395K); raise --max-model-len
-(the ~41K default drops every request as unservable) and scale --total-kv-blocks at replay.
-The recorded model name (claude-*) is dropped so requests inherit --model (routing safety).
+Caveats: Weka input token counts are huge (p50 ≈ 110K, p90 ≈ 395K); replay them against a
+scenario whose engine.max_model_len and KV budget hold such prompts, or requests are dropped
+as unservable. The recorded model name (claude-*) is dropped so requests inherit the
+scenario's model (routing safety).
 
 Note: unlike other 'blis convert' subcommands (which emit a WorkloadSpec to stdout),
 'convert weka' writes TraceV2 files, because it targets 'blis replay' (fixed per-call

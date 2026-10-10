@@ -349,7 +349,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					modelEntryYAML(gateModel)+"gpu: H100\n")
 			},
 			wantFile:    catalogModelEntryFile,
-			wantPhrases: []string{"deployment fact", "--hardware", `"gpu"`},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice", `"gpu"`},
 		},
 		{
 			name: "model.yaml states a nested tensor-parallel degree",
@@ -358,7 +358,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					modelEntryYAML(gateModel)+"deployment:\n  tensor_parallel_size: 8\n")
 			},
 			wantFile:    catalogModelEntryFile,
-			wantPhrases: []string{"deployment fact", "--tp", "deployment.tensor_parallel_size"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice", "deployment.tensor_parallel_size"},
 		},
 		{
 			name: "workload preset states a tensor-parallel degree",
@@ -367,7 +367,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validWorkloadEntry+"tp: 4\n")
 			},
 			wantFile:    filepath.Join(catalogWorkloadsSubdir, "chatbot"+presetFileExt),
-			wantPhrases: []string{"deployment fact", "--tp"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice"},
 		},
 		{
 			name: "hardware entry states a GPU type",
@@ -376,7 +376,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validHardwareEntry+"gpu_type: H100\n")
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"deployment fact", "--hardware"},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice"},
 		},
 		{
 			name: "storage-device table states a tensor-parallel degree",
@@ -385,7 +385,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validDeviceTable+"deployment: {tensor_parallelism: 2}\n")
 			},
 			wantFile:    catalogStorageDevicesRelPath,
-			wantPhrases: []string{"deployment fact", "--tp"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice"},
 		},
 		{
 			// A second document is read by NOTHING: every typed reader decodes one document,
@@ -408,7 +408,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validHardwareEntry+"---\ngpu: H100\n")
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"deployment fact", "--hardware", "document[2].gpu"},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice", "document[2].gpu"},
 		},
 		{
 			// A later document that does not even parse is reported here, because no typed

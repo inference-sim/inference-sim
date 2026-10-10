@@ -428,29 +428,28 @@ func catalogDirContents(dir string) []string {
 
 // catalogDeploymentFactKeys are the key spellings a catalog file may NOT use, in the
 // normalized form normalizeCatalogKey produces. Deployment choices — which GPU, how many
-// tensor-parallel ranks — are stated on the command line and required there
-// (requireDeploymentFlags, NS-6 / #1733); a catalog that also stated them would give a run
-// two disagreeing sources for one fact, and the catalog's copy would be the one no operator
-// chose.
+// tensor-parallel ranks — are stated by the --scenario's deployment (NS-6 / #1733); a
+// catalog that also stated them would give a run two disagreeing sources for one fact, and
+// the catalog's copy would be the one no operator chose.
 //
 // KEY-based, deliberately: a VALUE scan would have to guess which strings name GPUs
 // ("h100" is also a plausible nickname in a provenance comment), while a key is a
 // declaration. The set covers the spellings a person would actually reach for, including the
 // vLLM/BLIS flag names.
 var catalogDeploymentFactKeys = map[string]string{
-	"gpu":                     "GPU type is a deployment choice (--hardware)",
-	"gpus":                    "GPU type is a deployment choice (--hardware)",
-	"gputype":                 "GPU type is a deployment choice (--hardware)",
-	"hardware":                "GPU type is a deployment choice (--hardware)",
-	"tp":                      "tensor-parallel degree is a deployment choice (--tp)",
-	"tpsize":                  "tensor-parallel degree is a deployment choice (--tp)",
-	"tpdegree":                "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparallel":          "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparallelism":       "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparallelsize":      "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparalleldegree":    "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparallelismsize":   "tensor-parallel degree is a deployment choice (--tp)",
-	"tensorparallelismdegree": "tensor-parallel degree is a deployment choice (--tp)",
+	"gpu":                     "GPU type is a deployment choice, stated by the scenario's deployment",
+	"gpus":                    "GPU type is a deployment choice, stated by the scenario's deployment",
+	"gputype":                 "GPU type is a deployment choice, stated by the scenario's deployment",
+	"hardware":                "GPU type is a deployment choice, stated by the scenario's deployment",
+	"tp":                      "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tpsize":                  "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tpdegree":                "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparallel":          "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparallelism":       "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparallelsize":      "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparalleldegree":    "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparallelismsize":   "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
+	"tensorparallelismdegree": "tensor-parallel degree is a deployment choice, stated by the scenario's deployment",
 }
 
 // normalizeCatalogKey folds a YAML key to the form catalogDeploymentFactKeys is written in:
@@ -562,7 +561,7 @@ func rejectCatalogDeploymentFacts(path string, docs []any) error {
 	sort.Strings(offenders)
 	return fmt.Errorf("%s: catalog file states deployment fact(s): %s. A catalog says what a model, "+
 		"a chip, a workload or a storage tier IS; the deployment — which GPU, how many tensor-parallel "+
-		"ranks — is stated on the command line and required there (--hardware / --tp). Remove the key(s)",
+		"ranks — is stated by the --scenario's deployment. Remove the key(s)",
 		path, strings.Join(offenders, "; "))
 }
 

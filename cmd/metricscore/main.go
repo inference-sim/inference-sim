@@ -1,10 +1,9 @@
 // Command metricscore scores every available estimator on every available metric.
 //
-// # What is comparable, and why that is less than four things
+// # What is comparable
 //
 // The snapshot publishes four accuracy figures per estimator: TTFT and TPOT, each as a mean
-// absolute percentage error (mape) and as a shape error. Only the two SHAPE figures can be
-// reproduced here, and the reason is a property of the data rather than a choice.
+// absolute percentage error (mape) and as a shape error.
 //
 // Shape error re-anchors each side to its OWN value at the sweep's lowest concurrency and excludes
 // the anchor from the mean (scripts/build_e2e_accuracy_overview.py, _aggregate_shape_error). It
@@ -12,10 +11,10 @@
 // offset cancels exactly.
 //
 // mape is the plain absolute error on absolute latency. The artifact ships NO absolute latency:
-// every point carries exactly tpot_relative and ttft_relative per estimator, verified by
-// enumerating every key of every point in the artifact. The published mape figures come from rows
-// NVIDIA does not ship, so nobody can recompute them from this corpus -- including NVIDIA. A mape
-// column here would have to be invented, and is omitted instead.
+// every point carries exactly tpot_relative and ttft_relative per estimator. A published arm's
+// mape is still recoverable from those ratios (both are divided by the same measured anchor). A
+// simulated arm produces absolute microseconds, so its mape needs the measured absolute curves,
+// which -absolutes supplies from the InferenceX rows the published arms were scored against.
 //
 // # The estimators
 //
@@ -23,15 +22,12 @@
 // ai-dynamo/aisimulate for both, AIC being the analytic configurator path since absorbed into the
 // simulator. They are reported side by side as modes, not as rival baselines.
 //
-// ROOFLINE and TRAINED-PHYSICS are BLIS's own backends, scored only where they are calibrated.
-// hardware_config.json carries H100, H200, A100-SXM, A100-80 and L40S and blis-registry has no
-// roofline-b200.yaml, so including Blackwell would mean inventing mfuPrefill/mfuDecode. Passing
-// -hopper restricts the corpus to the chips they are calibrated for and adds them as columns.
+// blis-latency-kernel is BLIS's latency backend, simulated per point by exec'ing -blis.
 //
 // Usage:
 //
-//	go run ./cmd/metricscore                 # kernel vs AISimulate vs AIC, every chip
-//	go run ./cmd/metricscore -hopper         # the above plus roofline and trained-physics
+//	go build -o blis main.go
+//	go run ./cmd/metricscore -blis ./blis    # kernel vs AISimulate vs AIC
 package main
 
 import (
@@ -171,14 +167,13 @@ func main() {
 	}
 
 	// errs[arm][metric] accumulates signed per-point SHAPE errors; mapes[arm][metric] the
-	// absolute per-point mape errors, which only the published arms can supply.
+	// absolute per-point mape errors of every arm.
 	//
-	// Why mape is computable for them and not for us. Both of a point's relatives are divided by
-	// the MEASURED anchor -- a published prediction's relative at the lowest concurrency is never
-	// 1.0, which is the fingerprint -- so pred_relative/measured_relative = pred(c)/meas(c), a
-	// true absolute ratio with the unknown anchor cancelled. BLIS instead produces absolute
-	// microseconds, and the measurement exists only as a ratio to an anchor latency the artifact
-	// does not ship, so a BLIS mape would require inventing that anchor.
+	// Why both can be scored. A published point's relatives are both divided by the MEASURED
+	// anchor -- a published prediction's relative at the lowest concurrency is never 1.0, which
+	// is the fingerprint -- so pred_relative/measured_relative = pred(c)/meas(c), a true absolute
+	// ratio with the unknown anchor cancelled. BLIS instead produces absolute microseconds, which
+	// are scored against the measured absolute curves loaded from -absolutes.
 	errs := make([]map[harness.Metric][]float64, len(arms))
 	mapes := make([]map[harness.Metric][]float64, len(arms))
 	for i := range errs {

@@ -238,18 +238,18 @@ func TestApplyDPPlacement(t *testing.T) {
 			want:         dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 		},
 		{
-			// The division floors: a --dp bigger than the auto-derived block count would
-			// leave 0 blocks per replica (NewSimulator panics) and a kvFeasibleMax of 0
-			// would silently mean "unlimited" — the inverse of a cap. Must error, and
-			// must leave the deployment untouched so a caller that ignored the error
-			// cannot run a half-applied plan.
-			name:            "auto-KV division to zero blocks errors instead of panicking downstream",
+			// Production calls applyDPPlacement with autoScaledKV=false (the kernel sizes KV per
+			// rank, so nothing is divided); the zero-block guard is then defense in depth against
+			// a non-positive per-rank budget, which would panic NewSimulator and make a
+			// kvFeasibleMax of 0 mean "unlimited". It must error and leave the deployment
+			// untouched so a caller that ignored the error cannot run a half-applied plan.
+			name:            "a non-positive per-rank KV budget errors instead of panicking downstream",
 			plan:            dpPlacementPlan{Active: true, Replicas: 8, PerRankDP: 1},
 			dp:              8,
-			in:              dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 5, MaxModelLen: 4096},
-			autoScaledKV:    true,
-			wantErrContains: "exceeds the auto-derived KV capacity",
-			want:            dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 5, MaxModelLen: 4096},
+			in:              dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
+			autoScaledKV:    false,
+			wantErrContains: "per-rank KV budget must be positive",
+			want:            dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
 		},
 	}
 
