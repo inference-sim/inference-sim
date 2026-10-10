@@ -462,6 +462,25 @@ func writeKernelOffloadConfig(t *testing.T, tierExtra string) string {
 	return path
 }
 
+// writeOffloadYAML writes body as a --kv-offload-config file and returns its path.
+func writeOffloadYAML(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "offload.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
 // KV offload on the kernel: a tier named by its catalog device is priced by the kernel, a run
 // with it completes and its trace replays byte-identically, and a tier stating its own physics
 // -- or a legacy-tier flag restating the kernel's price -- is refused.
@@ -501,11 +520,24 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 			[]string{"run", "--kv-offload-config", writeKernelOffloadConfig(t, "      read_bandwidth: 7000.0\n")}},
 		{"a legacy-tier bandwidth flag", "unknown flag: --kv-transfer-bandwidth",
 			[]string{"run", "--kv-cpu-blocks", "2000", "--kv-transfer-bandwidth", "5"}},
+		{"a tier naming an unknown device", `device_class=\"floppy\" is not defined`,
+			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
+				readFile(t, writeKernelOffloadConfig(t, "")), "device_class: nvme_gen4", "device_class: floppy", 1))}},
+		{"a tier naming an empty device", `device_class=\"\" is not defined`,
+			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
+				readFile(t, writeKernelOffloadConfig(t, "")), "device_class: nvme_gen4", `device_class: ""`, 1))}},
+		// The offload cache simulates LRU only: arc is refused at config time, never a panic.
+		{"an arc eviction policy", `eviction_policy \"arc\" is not simulated`,
+			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
+				readFile(t, writeKernelOffloadConfig(t, "")), "kv_offload:\n", "kv_offload:\n  eviction_policy: arc\n", 1))}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, append(tt.args, base...)...)
 			if err == nil || !strings.Contains(stderr, tt.want) {
 				t.Errorf("want a refusal naming %q, got err=%v\n%s", tt.want, err, stderr)
+			}
+			if strings.Contains(stderr, "panic:") {
+				t.Errorf("refused by a panic rather than an error:\n%s", lastLines(stderr, 10))
 			}
 		})
 	}
@@ -732,6 +764,18 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
+		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
+			pd(writeScenarioVariant(t, "      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+				"      block_size: 128\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer"), topology...)},
+		{"pools at different dp", "their dp must match",
+			pd(writeScenarioVariant(t, "  - role: decode\n    nodes: 1\n    parallel:\n      tp: 8\n      pp: 1\n      dp: 1\n      enable_expert_parallel: false",
+				"  - role: decode\n    nodes: 1\n    parallel:\n      tp: 4\n      pp: 1\n      dp: 2\n      enable_expert_parallel: true"), topology...)},
+		{"shared prefill-decode instances", "--prefill-decode-instances and --encode-instances are not supported",
+			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "1", "--prefill-decode-instances", "1")},
+		{"encode instances", "--prefill-decode-instances and --encode-instances are not supported",
+			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "1", "--encode-instances", "1")},
+		{"instances belonging to no pool", "the counts must add up",
+			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "1")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, tt.args...)
