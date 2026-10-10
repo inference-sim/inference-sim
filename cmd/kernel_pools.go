@@ -179,15 +179,15 @@ func requireKernelCapacity(p *kernelPools) {
 // CPU↔GPU reloads cross: host DRAM across the PCIe/NVLink boundary.
 const kernelCPUTier = "cpu_dram"
 
-// kernelTierTicks is the kernel's price for one transfer, in whole ticks rounded up: a
+// kernelTierTicks is m's kernel's price for one transfer, in whole ticks rounded up: a
 // transfer is not done until its last byte lands. An unknown tier is refused rather than
 // charged the kernel's unbounded sentinel, which would stall the clock.
-func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64 {
+func kernelTierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64, inService int) int64 {
 	dir := kernel.DirectionFromTier
 	if toTier {
 		dir = kernel.DirectionToTier
 	}
-	d := kernelOpened.Kernel().TierTime(tier, dir, bytes, inService)
+	d := m.Kernel().TierTime(tier, dir, bytes, inService)
 	if d >= time.Duration(math.MaxInt64/2) {
 		logrus.Fatalf("the kernel cannot price a %d-byte transfer %s storage tier %q: "+
 			"either the catalog's %s defines no such device, or it states no bandwidth in that "+
@@ -197,26 +197,29 @@ func kernelTierTicks(tier string, toTier bool, bytes int64, inService int) int64
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
-// applyKernelOffloadPricing has the kernel price every KV-offload transfer, on the kernel
-// backend: each secondary tier through TierTime for its catalog device class, at the depth the
-// transfer station is serving, and the legacy CPU tier as one whole per-block reload charge.
-// TierTime's contract is a GPU↔tier transfer, while the station's secondary-tier jobs run
-// CPU↔tier; the kernel's price is applied to them deliberately -- the device and the host
-// link it names are the ones those jobs cross -- rather than as an exact match.
-// The simulator keeps the servers, queues and timing; the kernel owns the price (blis-schemas
-// kernel.TierTime: the slower of the device and the host link binds). It returns the legacy
-// per-block charge, 0 off the kernel or with no legacy tier. Shared by run and replay.
+// applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
+// run, from the run's one pool: see priceOffload. It returns the legacy per-block charge, 0
+// off the kernel or with no legacy tier. A disaggregated run's pools are priced separately,
+// each by its own kernel (kernelPools.applyOffload). Shared by run and replay.
 func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kernelOpened == nil {
 		return 0
 	}
-	if (cfg.IsEnabled() || kvCPUBlocks > 0) && (prefillInstances > 0 || decodeInstances > 0) {
-		// One KV-cache config serves every instance, so offload would be sized and priced
-		// from one pool's layout for both: per-pool offload is not expressible yet.
-		logrus.Fatalf("KV offload is not supported with a P/D topology: the offload " +
-			"tiers would be sized and priced from one pool's layout for both pools")
-	}
-	perBlock := kernelOpened.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	return priceOffload(kernelOpened, cfg)
+}
+
+// priceOffload has m's kernel price every KV-offload transfer of m's pool: each secondary
+// tier through TierTime for its catalog device class, at the depth the transfer station is
+// serving, and the legacy CPU tier as one whole per-block reload charge, both at m's own
+// per-block bytes (SequenceVariableBytes).
+//
+// TierTime's contract is a GPU↔tier transfer, while the station's secondary-tier jobs run
+// CPU↔tier; the kernel's price is applied to them deliberately -- the device and the host
+// link it names are the ones those jobs cross -- rather than as an exact match. The simulator
+// keeps the servers, queues and timing; the kernel owns the price (blis-schemas
+// kernel.TierTime: the slower of the device and the host link binds).
+func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
+	perBlock := m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
 	if (cfg.IsEnabled() || kvCPUBlocks > 0) && perBlock <= 0 {
 		logrus.Fatalf("the kernel prices a %d-token block at %d bytes; offload "+
 			"needs a block to occupy memory", blockSizeTokens, perBlock)
@@ -231,17 +234,43 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 			}
 			// Price one real block each way up front, so an unknown device or one with no
 			// bandwidth in a direction is refused now rather than at its first transfer.
-			kernelTierTicks(class, true, perBlock, 1)
-			kernelTierTicks(class, false, perBlock, 1)
+			kernelTierTicks(m, class, true, perBlock, 1)
+			kernelTierTicks(m, class, false, perBlock, 1)
 			cfg.Tiers[i].ServiceTime = func(write bool, bytes int64, inService int) int64 {
-				return kernelTierTicks(class, write, bytes, inService)
+				return kernelTierTicks(m, class, write, bytes, inService)
 			}
 		}
 	}
 	if kvCPUBlocks <= 0 {
 		return 0
 	}
-	return kernelTierTicks(kernelCPUTier, false, perBlock, 1)
+	return kernelTierTicks(m, kernelCPUTier, false, perBlock, 1)
+}
+
+// applyOffload prices the run's KV offload once per pool, each by that pool's own kernel,
+// and records it on the pool's overrides: the same tiers and capacities (cfg, the run's one
+// offload description), sized and priced from each pool's layout. No-op when the run
+// offloads nothing.
+func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *cluster.PoolOverrides) {
+	if !cfg.IsEnabled() && kvCPUBlocks <= 0 {
+		return
+	}
+	for _, c := range []struct {
+		m   *kernelmodel.Model
+		dst *cluster.PoolOverrides
+	}{{p.prefill, prefill}, {p.decode, decode}} {
+		pool := cfg
+		// Each pool gets its own tier slice: priceOffload installs a per-pool ServiceTime.
+		pool.Tiers = append([]sim.KVOffloadTier(nil), cfg.Tiers...)
+		// A pool's block is its own layout's slice of the KV, so pools of different widths
+		// hold different bytes per block, and the tiers' block capacity and job sizes follow.
+		if pool.IsEnabled() {
+			pool.PerBlockBytes = c.m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+		}
+		ticks := priceOffload(c.m, &pool)
+		c.dst.KVOffload = &pool
+		c.dst.KVTransferTicksPerBlock = &ticks
+	}
 }
 
 // refuseExplicitTierPhysics refuses, on the kernel backend, a kv_offload tier that states its

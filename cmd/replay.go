@@ -464,6 +464,8 @@ Example:
 		kernelPD := openKernelPools(resolvedCatalogRoot)
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
+			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
+			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
 
 		// Parse per-pool scorer configs (same as runCmd).

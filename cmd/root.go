@@ -1820,6 +1820,10 @@ var runCmd = &cobra.Command{
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge.
 		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
+		// A disaggregated run's pools each size and price the offload by their own kernel.
+		if kernelPD != nil {
+			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
+		}
 
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd

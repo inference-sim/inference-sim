@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -728,8 +729,6 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 			pd(plain, append(topology, "--decode-moe-comm-backend", "naive")...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
-		{"KV offload with a P/D topology", "KV offload is not supported with a P/D topology",
-			pd(plain, append(topology, "--kv-cpu-blocks", "100")...)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, tt.args...)
@@ -822,5 +821,114 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 	if prevE2E >= firstE2E {
 		t.Errorf("accepting every draft left mean E2E at %.3f ms against %.3f with none; the "+
 			"decode pool is not speculating", prevE2E, firstE2E)
+	}
+}
+
+// A disaggregated run offloads KV like a colocated one, each pool sizing and pricing the same
+// tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
+// completes, and its exported trace replays byte-identically (INV-13).
+func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
+	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--pd-decider", "always",
+		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
+		"--horizon", "600000000"}
+	for _, tt := range []struct {
+		name    string
+		offload []string
+	}{
+		{"tiered offload", []string{"--kv-offload-config", writeKernelOffloadConfig(t, "")}},
+		{"legacy CPU tier", []string{"--kv-cpu-blocks", "2000"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := filepath.Join(t.TempDir(), "trace")
+			args := append(append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix},
+				tt.offload...), common...)
+			runOut, stderr, err := runKernelCLI(t, args...)
+			if err != nil || !strings.Contains(runOut, `"completed_requests": 16`) {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
+			}
+			replay := append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, common...)
+			if tt.offload[0] == "--kv-cpu-blocks" {
+				replay = append(replay, tt.offload...) // the legacy tier is a flag, not a header field
+			}
+			repOut, stderr, err := runKernelCLI(t, replay...)
+			if err != nil {
+				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
+			}
+			if repOut != runOut {
+				t.Errorf("the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
+			}
+		})
+	}
+}
+
+// Each pool of a disaggregated run sizes and prices the run's one offload description by its
+// own kernel. The fixture's decode pool caches in bf16 and its prefill pool in fp8, so their
+// blocks hold different bytes, and a pool priced by the other's kernel cannot pass:
+//
+//   - per-block bytes, every tier's service time and the legacy reload charge are each the
+//     pool's own kernel's answer;
+//   - the run's description is not mutated, and the pools share no tier slice.
+func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
+	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
+	pools := &kernelPools{}
+	for _, c := range []struct {
+		role deployment.Role
+		dst  **kernelmodel.Model
+	}{{deployment.RolePrefill, &pools.prefill}, {deployment.RoleDecode, &pools.decode}} {
+		m, err := kernelmodel.OpenRole("variant.yaml", repos, c.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		*c.dst = m
+	}
+	saved := []int64{kvCPUBlocks, blockSizeTokens}
+	defer func() { kvCPUBlocks, blockSizeTokens = saved[0], saved[1] }()
+	kvCPUBlocks, blockSizeTokens = 100, 64
+
+	run := sim.KVOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
+		Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4"}}}
+	var pre, dec cluster.PoolOverrides
+	pools.applyOffload(run, &pre, &dec)
+
+	if run.Tiers[0].ServiceTime != nil || run.PerBlockBytes != 1 {
+		t.Error("applyOffload mutated the run's offload description")
+	}
+	ticks := func(m *kernelmodel.Model, tier string, dir kernel.Direction, bytes int64) int64 {
+		return max(1, (m.Kernel().TierTime(tier, dir, bytes, 1).Nanoseconds()+999)/1000)
+	}
+	bytesOf := map[string]int64{}
+	for _, c := range []struct {
+		name string
+		m    *kernelmodel.Model
+		o    cluster.PoolOverrides
+	}{{"prefill", pools.prefill, pre}, {"decode", pools.decode, dec}} {
+		if c.o.KVOffload == nil || c.o.KVTransferTicksPerBlock == nil {
+			t.Fatalf("%s pool: no offload override", c.name)
+		}
+		want := c.m.Kernel().SequenceVariableBytes(64)
+		bytesOf[c.name] = want
+		if got := c.o.KVOffload.PerBlockBytes; got != want {
+			t.Errorf("%s pool: %d bytes per block, its kernel says %d", c.name, got, want)
+		}
+		if got, w := *c.o.KVTransferTicksPerBlock, ticks(c.m, "cpu_dram", kernel.DirectionFromTier, want); got != w {
+			t.Errorf("%s pool: legacy reload %d ticks, its kernel prices %d", c.name, got, w)
+		}
+		for _, b := range []int64{want, 1 << 20, 1 << 28} {
+			if got, w := c.o.KVOffload.Tiers[0].ServiceTime(false, b, 1), ticks(c.m, "nvme_gen4", kernel.DirectionFromTier, b); got != w {
+				t.Errorf("%s pool: %d-byte read priced %d, its kernel %d", c.name, b, got, w)
+			}
+		}
+		if err := c.o.Validate(c.name); err != nil {
+			t.Errorf("%s pool overrides invalid: %v", c.name, err)
+		}
+	}
+	if bytesOf["prefill"] == bytesOf["decode"] {
+		t.Fatalf("fixture lost its point: both pools hold %d bytes per block", bytesOf["prefill"])
+	}
+	if &pre.KVOffload.Tiers[0] == &dec.KVOffload.Tiers[0] {
+		t.Error("the pools share one tier slice, so one pool's pricer overwrites the other's")
 	}
 }

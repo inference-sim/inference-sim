@@ -31,6 +31,12 @@ type PoolOverrides struct {
 	MaxNumSeqs            *int64
 	MaxNumBatchedTokens   *int64
 	PrefixCachingDisabled *bool
+
+	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
+	// the run's one tier description, sized by the pool's bytes per block and priced by its
+	// own kernel, since pools of different widths hold different bytes per block.
+	KVOffload               *sim.KVOffloadConfig
+	KVTransferTicksPerBlock *int64
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -53,6 +59,12 @@ func (o PoolOverrides) Validate(name string) error {
 	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
 		return fmt.Errorf("%s: PoolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
 	}
+	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
+		return fmt.Errorf("%s: PoolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
+	}
+	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
+		return fmt.Errorf("%s: PoolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
+	}
 	return nil
 }
 
@@ -61,7 +73,7 @@ func (o PoolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" &&
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
-		o.PrefixCachingDisabled == nil
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -97,6 +109,12 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	}
 	if overrides.PrefixCachingDisabled != nil {
 		resolved.PrefixCachingDisabled = *overrides.PrefixCachingDisabled
+	}
+	if overrides.KVOffload != nil {
+		resolved.Offload = *overrides.KVOffload
+	}
+	if overrides.KVTransferTicksPerBlock != nil {
+		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
 
 	return resolved
