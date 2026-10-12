@@ -120,6 +120,9 @@ func TestIdleWake_ArrivalPreemptsWake(t *testing.T) {
 	if got := kv.admitAt["B"]; got != 500 {
 		t.Fatalf("B arrived at tick 500 during A's idle wait and must be admitted then, got %d", got)
 	}
+	if got := s.IdleWakesSuperseded(); got != 1 {
+		t.Errorf("B's arrival must supersede exactly one pending wake, got %d", got)
+	}
 	if got := kv.admitAt["A"]; got != ready {
 		t.Fatalf("A must still be admitted at its completion tick %d, got %d", ready, got)
 	}

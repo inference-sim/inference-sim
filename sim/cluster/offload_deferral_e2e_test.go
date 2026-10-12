@@ -51,6 +51,15 @@ func offloadE2ECfgReadBW(seed int64, readBW float64) sim.SimConfig {
 // churn reliably exercises the deferral, unlike a single hot shared prefix (which
 // stays GPU-resident forever).
 func cyclingPrefixWorkload(seed int64, nPrefix, nCycles int) []*sim.Request {
+	return cyclingPrefixWorkloadSpaced(seed, nPrefix, nCycles, 500)
+}
+
+// cyclingPrefixWorkloadSpaced is cyclingPrefixWorkload with the arrival gap (µs) set.
+// The default 500 µs packs every arrival into the first few tens of ms, which is well
+// inside one slow-tier promotion — so the queue is complete long before any idle wait
+// begins and no arrival ever supersedes an idle wake. A gap wider than a promotion
+// interleaves the two, which is what the cluster clock-restore path needs.
+func cyclingPrefixWorkloadSpaced(seed int64, nPrefix, nCycles int, gapUs int64) []*sim.Request {
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(seed)).ForSubsystem(sim.SubsystemWorkload)
 	prefixes := make([][]sim.TokenID, nPrefix)
 	for i := range prefixes {
@@ -70,7 +79,7 @@ func cyclingPrefixWorkload(seed int64, nPrefix, nCycles int) []*sim.Request {
 				OutputTokens: sim.GenerateRandomTokenIDs(rng, 6),
 				State:        sim.StateQueued,
 			})
-			t += 500 // 500µs apart: leaves time for mirror+cascade before reuse
+			t += gapUs // default 500µs: leaves time for mirror+cascade before reuse
 			idx++
 		}
 	}
@@ -157,6 +166,83 @@ func TestInstanceSimulator_Offload_SlowTierIdleWaitDrains(t *testing.T) {
 	if m.SimEndedTime != b.Metrics().SimEndedTime || m.TTFTSum != b.Metrics().TTFTSum {
 		t.Fatalf("slow-tier run must be deterministic (INV-6): SimEndedTime %d/%d TTFTSum %d/%d",
 			m.SimEndedTime, b.Metrics().SimEndedTime, m.TTFTSum, b.Metrics().TTFTSum)
+	}
+}
+
+// The cluster loop advances c.clock to an instance's next event time before knowing the
+// event is real, and restores it when ProcessNextEvent reports a superseded idle wake
+// (cluster.go, the INV-3 carve-out). This test drives that branch through
+// ClusterSimulator.Run; the single-instance tests above cannot, because they call
+// InstanceSimulator.Run directly and never enter the cluster loop.
+//
+// Two things to know before changing it.
+//
+// It needs arrivals spaced WIDER than a promotion. With the default 500 µs gap every
+// request is queued within the first few tens of ms, the idle waits all happen later with
+// the queue complete, and no arrival is left to supersede a wake — measured zero
+// supersessions, so the branch never ran. Hence cyclingPrefixWorkloadSpaced and the
+// IdleWakesSuperseded gate below: if the workload drifts back to that shape the test fails
+// loudly instead of quietly covering nothing.
+//
+// It cannot assert the restored VALUE. The restore is invisible to every observable:
+// aggregated SimEndedTime is a max over per-instance metrics (cluster.go), each taken from
+// that instance's OWN clock (sim/simulator.go), and c.clock is overwritten at the top of
+// every loop iteration, so by end of run the cluster clock, max instance clock and
+// SimEndedTime are identical with the restore and without it (verified by deleting it).
+// Its only reader is a progress snapshot delivered in the same iteration. So this test
+// pins that the branch executes and that the run's laws hold around it; the restore keeps
+// c.clock from reporting a no-op's timestamp to such a snapshot.
+func TestClusterSimulator_SupersededIdleWake_DoesNotAdvanceClusterClock(t *testing.T) {
+	// 24 prefixes × 4 cycles: twice the single-instance workload, so each of the two
+	// instances still sees more distinct prefixes per cycle than its GPU and CPU tiers
+	// hold and a recurring prefix survives only on the secondary tier.
+	const injected = 96
+
+	run := func() *ClusterSimulator {
+		cfg := DeploymentConfig{
+			SimConfig:        offloadE2ECfgReadBW(7, 0.1), // ~123 ms per 3-block promotion
+			NumInstances:     2,
+			CacheSignalDelay: DefaultCacheSignalDelay,
+		}
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(cyclingPrefixWorkloadSpaced(7, 24, 4, 40_000)), nil)
+		mustRun(t, cs)
+		return cs
+	}
+
+	cs := run()
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != injected {
+		t.Fatalf("every request must complete (INV-1, INV-8): completed=%d want %d", m.CompletedRequests, injected)
+	}
+
+	deferrals, superseded := int64(0), int64(0)
+	for _, inst := range cs.Instances() {
+		if oc, ok := inst.sim.KVCache.(*kv.OffloadCache); ok {
+			deferrals += oc.DeferralsStarted()
+		}
+		superseded += inst.sim.IdleWakesSuperseded()
+	}
+	if deferrals == 0 {
+		t.Fatal("the slow tier must actually defer requests, otherwise this tests nothing")
+	}
+	if superseded == 0 {
+		t.Fatal("no idle wake was superseded, so the cluster clock-restore branch never ran: " +
+			"space arrivals wider than a promotion")
+	}
+
+	lastDone := 0.0
+	for _, done := range m.RequestCompletionTimes {
+		lastDone = math.Max(lastDone, done)
+	}
+	if float64(cs.Clock()) > lastDone {
+		t.Errorf("cluster clock %d is past the last completion %.0f: a superseded idle wake advanced it",
+			cs.Clock(), lastDone)
+	}
+
+	b := run()
+	if m.SimEndedTime != b.AggregatedMetrics().SimEndedTime || m.TTFTSum != b.AggregatedMetrics().TTFTSum {
+		t.Errorf("cluster slow-tier run must be deterministic (INV-6): SimEndedTime %d/%d TTFTSum %d/%d",
+			m.SimEndedTime, b.AggregatedMetrics().SimEndedTime, m.TTFTSum, b.AggregatedMetrics().TTFTSum)
 	}
 }
 

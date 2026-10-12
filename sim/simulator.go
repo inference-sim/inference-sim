@@ -116,6 +116,11 @@ type Simulator struct {
 	prefixCachingDisabled     bool
 	stepEvent                 Event
 	stepCount                 int
+	// Cumulative count of idle wakes superseded by scheduleStepBy — the one path whose
+	// effect is invisible in metrics (a cancelled step executes nothing), so without a
+	// counter a test cannot tell whether it exercised the path at all. Load-independent
+	// diagnostic, in the DeferralsStarted/promotionsFired family (#1586).
+	idleWakesSuperseded int64
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -509,6 +514,12 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
+// IdleWakesSuperseded returns how many times work arriving during an idle deferral wait
+// superseded the pending wake (scheduleStepBy). A load-independent diagnostic, and the
+// only way a test can assert it reached that path: the superseded step executes nothing,
+// so it leaves no trace in any metric. 0 for a run that never slept on a deferral.
+func (sim *Simulator) IdleWakesSuperseded() int64 { return sim.idleWakesSuperseded }
+
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
@@ -529,6 +540,7 @@ func (sim *Simulator) scheduleStepBy(t int64) {
 			return
 		}
 		pending.cancelled = true
+		sim.idleWakesSuperseded++
 	}
 	step := &StepEvent{time: t}
 	sim.stepEvent = step
