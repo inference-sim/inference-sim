@@ -145,6 +145,102 @@ func TestIdleWake_NoWakeKeepsRepoll(t *testing.T) {
 	}
 }
 
+// newIdleWakeSim builds a Simulator whose WaitQ holds ids, with every id in deferred
+// marked as waiting on a fetch that lands at readyAt[id]. It bypasses arrival/admission
+// so a test can put the scheduler in an exact queue state and inspect one decision.
+func newIdleWakeSim(t *testing.T, readyAt map[string]int64, deferred []string, ids ...string) (*Simulator, *timedDeferKV) {
+	t.Helper()
+	kv := newTimedDeferKV(readyAt)
+	s, err := NewSimulator(newTestSimConfig(), kv, &fixedOverheadModel{})
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+	for _, id := range ids {
+		s.WaitQ.Enqueue(deferReq(id))
+	}
+	for _, id := range deferred {
+		kv.waiting[id] = true
+	}
+	return s, kv
+}
+
+// A single NOT-deferred request in the WaitQ must veto the sleep entirely: an empty step
+// would admit it, so skipping ahead would strand runnable work (INV-8). idleDeferralWake
+// enforces this by requiring EVERY waiting request to be deferred, and the position of the
+// odd one out must not matter.
+//
+// The decision is driven directly rather than through Run() because the state is
+// defense-in-depth, not reachable from a whole run: for a step to leave the batch empty
+// while a non-deferred request is still queued, that request has to be blocked by capacity
+// — and with nothing running there is nothing to free it, so no choice of sleep length
+// changes the outcome. An end-to-end variant of this test passes even with the guard
+// weakened to "any deferred", which is what makes it worth saying so here.
+func TestIdleWake_MixedQueueDoesNotSleep(t *testing.T) {
+	ready := map[string]int64{"A": 1000, "B": 1000}
+
+	for _, tc := range []struct {
+		name  string
+		order []string
+	}{
+		{"non-deferred last", []string{"A", "B"}},
+		{"non-deferred first", []string{"B", "A"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Only A is deferred; B is runnable.
+			s, _ := newIdleWakeSim(t, ready, []string{"A"}, tc.order...)
+			if wake, ok := s.idleDeferralWake(0); ok {
+				t.Fatalf("a runnable request is waiting: must not sleep, got wake=(%d, %v)", wake, ok)
+			}
+		})
+	}
+
+	// Contrast, so the cases above are not vacuous: once every waiting request is
+	// deferred, the same queue does report a wake.
+	s, _ := newIdleWakeSim(t, ready, []string{"A", "B"}, "A", "B")
+	if wake, ok := s.idleDeferralWake(0); !ok || wake != 1000 {
+		t.Fatalf("all-deferred queue must report its earliest wake: got (%d, %v), want (1000, true)", wake, ok)
+	}
+}
+
+// The wake only ever moves the next step LATER, never earlier: scheduleNextStep takes it
+// just when wake > now+currStepAdvance. A wake at or before the normal next step must
+// leave both the tick and the idleWake flag alone — the flag is what makes a step
+// eligible for supersession by scheduleStepBy, so mislabelling an ordinary step as an
+// idle wake would let a later arrival cancel a step that was already due.
+func TestIdleWake_WakeNotLaterThanNextStepIsNotIdle(t *testing.T) {
+	const now = int64(0)
+
+	for _, tc := range []struct {
+		name     string
+		advance  int64
+		readyAt  int64
+		wantTime int64
+		wantIdle bool
+	}{
+		{"wake far in the future: sleep to it", 1, 1_000_000, 1_000_000, true},
+		{"wake exactly at the next step: no sleep", 1, now + 1, now + 1, false},
+		{"wake before the next step: no sleep", 1000, now + 1, now + 1000, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newIdleWakeSim(t, map[string]int64{"A": tc.readyAt}, []string{"A"}, "A")
+
+			// Empty batch (remaining == nil) with pending WaitQ work: the idle-wake branch.
+			s.scheduleNextStep(now, tc.advance, nil)
+
+			step, ok := s.stepEvent.(*StepEvent)
+			if !ok {
+				t.Fatalf("a step must stay pending while a request waits (INV-8), got %T", s.stepEvent)
+			}
+			if step.time != tc.wantTime {
+				t.Errorf("step time = %d, want %d", step.time, tc.wantTime)
+			}
+			if step.idleWake != tc.wantIdle {
+				t.Errorf("idleWake = %v, want %v", step.idleWake, tc.wantIdle)
+			}
+		})
+	}
+}
+
 // Same inputs give the same admissions and step count (INV-6).
 func TestIdleWake_Deterministic(t *testing.T) {
 	run := func() (int, int64, int64) {

@@ -227,6 +227,16 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 
 	// INV-8 work-conserving: if running batch is now empty but WaitQ has work,
 	// schedule a StepEvent (defense-in-depth, BC-18)
+	//
+	// Deliberately NOT scheduleStepBy (#1886): this is the one idle-scheduling site that
+	// keeps the stepEvent == nil form. scheduleStepBy would pull a pending idle wake
+	// forward to e.time, re-creating the cascade the comment above describes. Nothing is
+	// stranded by waiting: an idle wake exists only when every WaitQ entry is deferred,
+	// and a queued timeout frees no CPU-tier capacity a deferral could use —
+	// OffloadCache.ReleaseKVBlocks delegates to the GPU tier alone (kv/offload_chain.go)
+	// and ClearDeferred leaves in-flight CPU slots to complete (kv/offload_deferral.go).
+	// So the remaining deferrals are polled at the wake, at a tick where admission could
+	// not have happened sooner anyway.
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
 		pbe := &StepEvent{time: e.time}

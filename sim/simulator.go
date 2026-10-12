@@ -307,11 +307,21 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
 //
-// Special case — lazy cancellation: if the popped event is a TimeoutEvent for a
-// request that has already completed (State == StateCompleted), the event is
-// returned immediately without advancing Clock or calling Execute(). This models
-// real-world client behavior where a deadline timer is cancelled the moment a
-// response arrives, preventing orphaned timeouts from inflating SimEndedTime.
+// Special case — lazy cancellation: events are never removed from the heap when they
+// become obsolete; they are popped and skipped. A popped event that has been cancelled
+// is returned immediately WITHOUT advancing Clock or calling Execute(), so Finalize()
+// takes SimEndedTime from the last real-work event rather than from a no-op far in the
+// future. Two kinds of event are cancelled this way, each recognized differently:
+//
+//   - a TimeoutEvent whose request already completed (State == StateCompleted) — the
+//     real-world equivalent of a client cancelling its deadline timer the moment the
+//     response arrives;
+//   - a StepEvent marked cancelled — an idle wake (see scheduleNextStep/idleDeferralWake)
+//     that scheduleStepBy superseded because work arrived before the wake tick.
+//
+// INV-3 (clock monotonicity) is stated over *processed* events and explicitly excludes
+// this restore, so skipping does not break it. ClusterSimulator mirrors the skip by
+// restoring prevClusterClock for both kinds (sim/cluster/cluster.go).
 func (sim *Simulator) ProcessNextEvent() Event {
 	entry := heap.Pop(&sim.eventQueue).(eventEntry)
 	ev := entry.event
