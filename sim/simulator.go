@@ -1328,10 +1328,24 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// millisecond transfer in thousands of steps. Sleep until the next tick a
 		// deferred request can change state instead; arrivals pull the wake forward
 		// (scheduleStepBy). Admission lands on the same tick either way.
+		//
+		// The wake is clamped to the horizon so a run truncated mid-deferral ends where
+		// the 1-tick crawl ended. The cluster loop tests the horizon BEFORE executing an
+		// instance event (sim/cluster/cluster.go), so a wake past the horizon would never
+		// be processed, leaving the instance clock at the last real event and reporting a
+		// SimEndedTime short of the horizon — a different throughput denominator than
+		// before this optimization. Clamped, the step fires AT the horizon, admits
+		// nothing, and the next step at horizon+1 ends the run with the clock at the
+		// horizon, exactly as the crawl did. Inert at the default unlimited horizon.
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
 			next, idle := now+currStepAdvance, false
 			if wake, ok := sim.idleDeferralWake(now); ok && wake > next {
-				next, idle = wake, true
+				if wake > sim.Horizon {
+					wake = sim.Horizon
+				}
+				if wake > next {
+					next, idle = wake, true
+				}
 			}
 			pbe := StepEvent{time: next, idleWake: idle}
 			sim.Schedule(&pbe)
