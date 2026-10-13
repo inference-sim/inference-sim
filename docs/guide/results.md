@@ -47,6 +47,7 @@ The JSON output on stdout (and in the `--metrics-path` file when set) contains:
 | `timed_out_requests` | count | Requests that exceeded their deadline |
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
 | `catalog` | object | Model-catalog provenance: path, git revision, dirty flag — **`--metrics-path` file only, never stdout** (see [Catalog Provenance](#catalog-provenance)) |
+| `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}` — **`--metrics-path` file only, never stdout**; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)) |
 | `requests` | array | Per-request detail records (omitted when empty; see [Per-Request Fields](#per-request-fields)) |
 
 ### Scheduling Delay
@@ -55,6 +56,24 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 
 !!! warning "Per-request units"
     All per-request latency fields (`ttft_ms`, `e2e_ms`, `itl_ms`, `scheduling_delay_ms`) are in **milliseconds** — converted from internal ticks by dividing by 1,000. Aggregate metrics (`scheduling_delay_p99_ms`, etc.) are also in milliseconds. See [Known Unit Gotchas](../reference/configuration.md#known-unit-gotchas) for the full unit reference. Note: hypothesis scripts written before BC-14 may divide `scheduling_delay_ms` by 1,000 unnecessarily — that field is now already in ms.
+
+### Scenario Overrides
+
+A run reproduces its scenario unless a flag or a policy bundle chooses another value for a
+setting the scenario states. Today that is the instance scheduler: an explicit `--scheduler`,
+or a `--policy-config` bundle's `scheduler`, that differs from the scenario's
+`engine.scheduling_policy` (vLLM `priority` is BLIS `priority-fcfs`). The override is kept,
+since exploring a policy against a fixed deployment is the point, and the results file says so:
+
+```json
+{
+  "overrides": [
+    {"setting": "scheduler", "scenario": "priority-fcfs", "run": "sjf", "source": "--scheduler"}
+  ]
+}
+```
+
+A warning on stderr says the same. Like `catalog`, the block is file-only.
 
 ### Catalog Provenance
 
