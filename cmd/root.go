@@ -1714,7 +1714,8 @@ var runCmd = &cobra.Command{
 				// pool of another GPU would simulate hardware the kernel never priced.
 				if !strings.EqualFold(np.GPUType, gpu) {
 					logrus.Fatalf("policy bundle node pool %q is %q GPUs, but scenario %q runs on %q; every "+
-						"instance is priced for the scenario's hardware, so node pools must match it",
+						"instance is priced for the scenario's hardware, so node pools must match it (heterogeneous "+
+						"fleets: #1925)",
 						np.Name, np.GPUType, kernelScenario, gpu)
 				}
 				// The kernel sizes every instance's KV from the catalog chip's memory; a pool
