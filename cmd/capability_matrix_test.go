@@ -368,6 +368,42 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		}
 	})
 
+	t.Run("routing/lora-affinity keeps each adapter's requests where it is resident", func(t *testing.T) {
+		t.Parallel()
+		lora := capFile(t, "lora.yaml", "lora:\n  adapter_capacity: 2\n  adapters:\n    - id: a0\n      rank: 16\n    - id: a1\n      rank: 16\n")
+		spec := capSpec(t, 20, 60,
+			strings.Replace(capClient("a0", "standard", 0.5, 800, 64, ""), "    rate_fraction:", "    adapter: a0\n    rate_fraction:", 1),
+			strings.Replace(capClient("a1", "standard", 0.5, 800, 64, ""), "    rate_fraction:", "    adapter: a1\n    rate_fraction:", 1))
+		base := with(colocated(4), "--workload-spec", spec, "--lora-config", lora)
+		_, rr := capRunRows(t, runArgs(base, "--routing-policy", "round-robin")...)
+		o, la := capRunRows(t, runArgs(base, "--routing-policy", "weighted", "--routing-scorers", "lora-affinity:1")...)
+		o.conserves(t, 60)
+		for _, tenant := range []string{"t-a0", "t-a1"} {
+			if got, spread := instancesServing(la, tenant), instancesServing(rr, tenant); got > 2 || spread != 4 {
+				t.Errorf("adapter %s served from %d instances under lora-affinity, %d under round-robin", tenant, got, spread)
+			}
+		}
+	})
+
+	t.Run("routing/signal delays: a stale cache signal blinds the prefix scorer, stale snapshots slow load routing", func(t *testing.T) {
+		t.Parallel()
+		base := with(colocated(4), "--workload-spec", prefixMix(t), "--routing-policy", "weighted")
+		_, fresh := capRunRows(t, runArgs(base, "--routing-scorers", "precise-prefix-cache:1", "--cache-signal-delay", "0")...)
+		_, stale := capRunRows(t, runArgs(base, "--routing-scorers", "precise-prefix-cache:1", "--cache-signal-delay", "5000000")...)
+		if instancesServing(stale, "t-a") <= instancesServing(fresh, "t-a") {
+			t.Errorf("the prefix group spread over %d instances with a 5 s cache-signal delay, %d with none; "+
+				"a scorer that cannot see the cache must scatter it", instancesServing(stale, "t-a"), instancesServing(fresh, "t-a"))
+		}
+		oracle := capRun(t, runArgs(base, "--routing-scorers", "queue-depth:1", "--snapshot-refresh-interval", "0")...)
+		lagged := capRun(t, runArgs(base, "--routing-scorers", "queue-depth:1", "--snapshot-refresh-interval", "2000000")...)
+		oracle.conserves(t, 60)
+		lagged.conserves(t, 60)
+		if lagged.num("ttft_mean_ms") <= oracle.num("ttft_mean_ms") {
+			t.Errorf("queue-depth routing on 2 s-old snapshots gave mean TTFT %.1f ms, no worse than %.1f on live ones",
+				lagged.num("ttft_mean_ms"), oracle.num("ttft_mean_ms"))
+		}
+	})
+
 	t.Run("admission/each policy turns away load it should and conserves the rest", func(t *testing.T) {
 		t.Parallel()
 		base := with(colocated(2), "--workload-spec", classMix(t))
