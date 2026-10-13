@@ -212,7 +212,7 @@ func TestEveryPointIsScoredOrCoveredByAGap(t *testing.T) {
 			case rapid.Bool().Draw(rt, "badMeasurement"):
 				cv.BadMeasurement(sw, sw.Points[fail].Concurrency, "relative <= 0")
 			default:
-				cv.Dropped(sw, sw.Points[fail].Concurrency, "blis run: exit status 1\nlast line")
+				cv.Dropped(sw, sw.Points[fail].Concurrency, "blis replay: exit status 1\nlast line")
 			}
 		}
 		covered := map[string]int{}

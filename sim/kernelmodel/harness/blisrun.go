@@ -32,7 +32,7 @@ import (
 // one clear error rather than one failure per point.
 func RequireBlis(path string) error {
 	if path == "" {
-		return errors.New("harness: no blis binary given. Every point is simulated by `blis run`; " +
+		return errors.New("harness: no blis binary given. Every point is simulated by `blis replay`; " +
 			"build it with `go build -o blis main.go` at the repository root and pass its path " +
 			"(-blis on the scorer commands, Config.Blis in code)")
 	}

@@ -52,7 +52,7 @@ func TestARunIsTheBenchmarksMainPhase(t *testing.T) {
 	}
 }
 
-// Mean inter-token latency must rise with client concurrency at a fixed deployment. This is
+// Mean time per output token must rise with client concurrency at a fixed deployment. This is
 // the property the entire comparison rests on: a flat curve would give a meaningless shape
 // score, and a falling one would mean the closed loop is not applying load.
 func TestInterTokenLatencyRisesWithConcurrency(t *testing.T) {

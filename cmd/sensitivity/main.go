@@ -105,7 +105,7 @@ func main() {
 			for i, p := range sw.Points {
 				obs, err := harness.Run(sw, p.Concurrency, cfg)
 				if err == nil && obs.MeanTPOTUs <= 0 {
-					err = fmt.Errorf("no inter-token latency observed")
+					err = fmt.Errorf("no time per output token observed")
 				}
 				if err != nil {
 					// Reported, not swallowed: a sweep dropped from one configuration but not

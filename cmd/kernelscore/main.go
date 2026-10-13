@@ -164,7 +164,7 @@ func main() {
 				failures = append(failures, fmt.Sprintf(
 					"%s %s c=%d: no time per output token observed from %d completions",
 					sw.Scenario, sw.Label, p.Concurrency, obs.Completed))
-				coverage.Dropped(sw, p.Concurrency, "no inter-token latency observed")
+				coverage.Dropped(sw, p.Concurrency, "no time per output token observed")
 				bad = true
 				break
 			}

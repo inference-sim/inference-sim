@@ -28,7 +28,7 @@ var (
 )
 
 // testBlis is the blis binary the harness tests simulate with, built once per test process
-// from this checkout's main.go -- so a test exercises the `blis run` of the tree under test,
+// from this checkout's main.go -- so a test exercises the `blis replay` of the tree under test,
 // never a stale binary on PATH.
 //
 // It is built into the user cache directory and moved into place atomically, so concurrent
