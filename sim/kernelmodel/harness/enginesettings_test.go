@@ -34,26 +34,27 @@ func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42,
-		EngineSettings: set}
+	// The settings are decided before any simulation (pointSettings, which Run calls), so every
+	// scored vLLM point on every chip is checked without simulating one.
+	cfg := Config{Repos: testRepos(), EngineSettings: set}
 	byTier := map[SettingSource]int{}
 	perModel := map[string]map[SettingSource]int{}
 	for i := range c.Sweeps {
 		sw := c.Sweeps[i]
-		if sw.Framework != "vllm" || sw.GPU != "h200" {
-			continue // one chip keeps the test quick; the resolution is chip-independent
+		if sw.Framework != "vllm" {
+			continue
 		}
 		for _, p := range sw.Points {
-			obs, err := Run(sw, p.Concurrency, cfg)
+			pc, _, err := pointSettings(sw, p.Concurrency, cfg)
 			if err != nil {
 				t.Fatalf("%s c=%d: %v", sw.Scenario, p.Concurrency, err)
 			}
-			byTier[obs.Settings.SeqsFrom]++
+			byTier[pc.SeqsFrom]++
 			if perModel[sw.Model] == nil {
 				perModel[sw.Model] = map[SettingSource]int{}
 			}
-			perModel[sw.Model][obs.Settings.SeqsFrom]++
-			if obs.Settings.SeqsFrom == SourceScenario {
+			perModel[sw.Model][pc.SeqsFrom]++
+			if pc.SeqsFrom == SourceScenario {
 				t.Errorf("%s c=%d: max_num_seqs came from the scenario, which is a value "+
 					"this project chose rather than one the engine used",
 					sw.Scenario, p.Concurrency)
@@ -153,8 +154,7 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42,
-		EngineSettings: set}
+	cfg := Config{Repos: testRepos(), EngineSettings: set}
 	for i := range c.Sweeps {
 		sw := c.Sweeps[i]
 		if sw.Framework != "vllm" || sw.Scenario != "gpt-oss-120b-h200-fp4-vllm-tp4.yaml" ||
@@ -167,17 +167,17 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 			if want == nil || want.Passed.MaxNumSeqs == nil {
 				continue
 			}
-			obs, err := Run(sw, p.Concurrency, cfg)
+			pc, _, err := pointSettings(sw, p.Concurrency, cfg)
 			if err != nil {
 				t.Fatalf("c=%d: %v", p.Concurrency, err)
 			}
-			if obs.Settings.MaxNumSeqs != *want.Passed.MaxNumSeqs {
-				t.Errorf("c=%d: ran with max_num_seqs %d, but the run passed %d",
-					p.Concurrency, obs.Settings.MaxNumSeqs, *want.Passed.MaxNumSeqs)
+			if pc.MaxNumSeqs != *want.Passed.MaxNumSeqs {
+				t.Errorf("c=%d: runs with max_num_seqs %d, but the run passed %d",
+					p.Concurrency, pc.MaxNumSeqs, *want.Passed.MaxNumSeqs)
 			}
-			if obs.Settings.SeqsFrom != SourceMeasured {
+			if pc.SeqsFrom != SourceMeasured {
 				t.Errorf("c=%d: provenance says %q for a value the run passed",
-					p.Concurrency, obs.Settings.SeqsFrom)
+					p.Concurrency, pc.SeqsFrom)
 			}
 		}
 		return
@@ -191,14 +191,13 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 // a number chosen here would be the only case in the table that describes no real deployment.
 func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 	sw := testSweep(t)
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
-	obs, err := Run(sw, 8, cfg)
+	pc, _, err := pointSettings(sw, 8, Config{Repos: testRepos()})
 	if err != nil {
-		t.Fatalf("run: %v", err)
+		t.Fatalf("settings: %v", err)
 	}
 	for name, got := range map[string]SettingSource{
-		"seqs": obs.Settings.SeqsFrom, "tokens": obs.Settings.TokensFrom,
-		"block": obs.Settings.BlockFrom, "prefix": obs.Settings.PrefixFrom,
+		"seqs": pc.SeqsFrom, "tokens": pc.TokensFrom,
+		"block": pc.BlockFrom, "prefix": pc.PrefixFrom,
 	} {
 		if got != SourceResolved {
 			t.Errorf("with no settings file, %s on a vLLM sweep should report %q, got %q",
@@ -206,7 +205,7 @@ func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 		}
 	}
 	// And the value must be vLLM's, not the scenario's.
-	if obs.Settings.MaxNumSeqs == 256 {
+	if pc.MaxNumSeqs == 256 {
 		t.Error("max_num_seqs is 256, the scenario's assumed value; vLLM resolves 1024 on " +
 			"every chip in this corpus")
 	}
@@ -230,14 +229,13 @@ func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	if sw.Scenario == "" {
 		t.Skip("no sglang sweep in the corpus")
 	}
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
-	obs, err := Run(sw, sw.Points[0].Concurrency, cfg)
+	pc, _, err := pointSettings(sw, sw.Points[0].Concurrency, Config{Repos: testRepos()})
 	if err != nil {
 		t.Fatalf("%s: %v", sw.Scenario, err)
 	}
-	if obs.Settings.SeqsFrom != SourceScenario {
+	if pc.SeqsFrom != SourceScenario {
 		t.Errorf("an sglang sweep should report %q, got %q -- vLLM's device-memory "+
-			"resolution is not sglang's", SourceScenario, obs.Settings.SeqsFrom)
+			"resolution is not sglang's", SourceScenario, pc.SeqsFrom)
 	}
 }
 

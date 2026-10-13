@@ -297,26 +297,10 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
 	}
-	m, err := kernelmodel.Open(sw.Scenario, cfg.Repos)
-	if err != nil {
-		return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
-	}
-	eng, err := m.Engine()
+	admit, dp, err := pointSettings(sw, concurrency, cfg)
 	if err != nil {
 		return Observation{}, err
 	}
-
-	// The run settings, each taken from the strongest source available for THIS point and
-	// reported so a reader knows which was used:
-	//
-	//   measured  the run's own command line, from its engine log
-	//   resolved  vLLM's own default, for a setting the run did not pass
-	//   scenario  the value in the scenario file, when neither exists
-	//
-	// They are PER RANK -- one vLLM EngineCore's settings -- because that is what the engine
-	// was launched with and what `blis replay` reads from a scenario: a dp > 1 deployment runs
-	// as dp replicas, each with these. Nothing here multiplies by dp.
-	admit := resolveAdmission(sw, concurrency, eng, m.Deployment(), cfg.EngineSettings)
 	engine := admit
 	engine.MaxNumSeqs = int(scaled(int64(admit.MaxNumSeqs), cfg.MaxNumSeqsScale))
 	engine.MaxNumBatchedTokens = int(scaled(int64(admit.MaxNumBatchedTokens), cfg.TokenBudgetScale))
@@ -324,7 +308,7 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	primed := !admit.PrefixCachingDisabled && !cfg.cold
 	run, ignore := mainPhase(pl), func(string) bool { return false }
 	if primed {
-		copies := max(m.Deployment().DP, 1)
+		copies := max(dp, 1)
 		run = primedPhase(pl, copies)
 		ignore = func(id string) bool {
 			i, err := requestIndex(id)
@@ -348,6 +332,31 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	obs.Settings = admit
 	obs.Primed = primed
 	return obs, nil
+}
+
+// pointSettings is the configuration a point runs with -- each setting from the strongest source
+// available for THIS point, with its provenance -- and the deployment's data-parallel width. It
+// is decided before any simulation, and Run calls it, so a caller that needs only the settings
+// reads exactly what Run would run without simulating:
+//
+//	measured  the run's own command line, from its engine log
+//	resolved  vLLM's own default, for a setting the run did not pass
+//	scenario  the value in the scenario file, when neither exists
+//
+// The settings are PER RANK -- one vLLM EngineCore's -- because that is what the engine was
+// launched with and what `blis replay` reads from a scenario: a dp > 1 deployment runs as dp
+// replicas, each with these. Nothing here multiplies by dp.
+func pointSettings(sw Sweep, concurrency int, cfg Config) (PointConfig, int, error) {
+	m, err := kernelmodel.Open(sw.Scenario, cfg.Repos)
+	if err != nil {
+		return PointConfig{}, 0, fmt.Errorf("%s: %w", sw.Scenario, err)
+	}
+	eng, err := m.Engine()
+	if err != nil {
+		return PointConfig{}, 0, err
+	}
+	d := m.Deployment()
+	return resolveAdmission(sw, concurrency, eng, d, cfg.EngineSettings), d.DP, nil
 }
 
 // RunCold is Run with the main phase started from an empty engine whatever the point's prefix
