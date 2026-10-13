@@ -23,7 +23,7 @@ import (
 //	AC-5 — locating a catalogued model via --catalog changes no number (INV-6).
 //
 // The precedence law itself and the unusable-root refusal are unit-tested on
-// catalogRootFrom / resolveCatalogRoot in hfconfig_test.go; the tests here prove the
+// catalogRootFrom / resolveCatalogRoot in catalog_root_test.go; the tests here prove the
 // requirement is actually WIRED INTO the commands rather than merely available as a helper.
 
 // catalogLegEnv selects which leg of TestRunCmd_CatalogLocation the re-exec subprocess
@@ -53,14 +53,14 @@ func runCatalogLeg(t *testing.T, leg, env string) (stdout, stderr string, err er
 // logrus.Fatalf surfaces as exit status 1.
 func TestRunCmd_CatalogLocation(t *testing.T) {
 	if leg := os.Getenv(catalogLegEnv); leg != "" {
+		scenarios, catalog, registry := kernelRepos(t)
 		args := []string{
-			"run", "--model", "qwen/qwen3-14b",
-			"--hardware", "H100", "--tp", "1",
+			"run", "--scenario", kernelTestScenario, "--scenarios", scenarios, "--registry", registry,
 			"--seed", "42", "--num-requests", "5",
 			"--defaults-filepath", "../defaults.yaml",
 		}
 		if leg == "flag" {
-			args = append(args, "--catalog", "../testdata/catalog")
+			args = append(args, "--catalog", catalog)
 		}
 		rootCmd.SetArgs(args)
 		if execErr := rootCmd.Execute(); execErr != nil {
@@ -69,6 +69,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		os.Exit(0)
 	}
 
+	_, catalog, _ := kernelRepos(t)
 	tests := []struct {
 		name      string
 		leg       string
@@ -76,7 +77,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		wantFatal bool
 	}{
 		{name: "--catalog locates the catalog", leg: "flag", wantFatal: false},
-		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: "../testdata/catalog", wantFatal: false},
+		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: catalog, wantFatal: false},
 		{name: "neither is refused", leg: "none", wantFatal: true},
 	}
 
@@ -131,7 +132,8 @@ func TestRunCmd_CatalogLocation_ByteIdenticalAcrossForms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--catalog leg failed: %v\nstderr:\n%s", err, stderrFlag)
 	}
-	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", "../testdata/catalog")
+	_, catalog, _ := kernelRepos(t)
+	viaEnv, stderrEnv, err := runCatalogLeg(t, "env", catalog)
 	if err != nil {
 		t.Fatalf("%s leg failed: %v\nstderr:\n%s", catalogEnvVar, err, stderrEnv)
 	}
@@ -233,7 +235,7 @@ func TestS4_ModelConfigFolderFlag_NotRegisteredOnAnyCommand(t *testing.T) {
 }
 
 // TestS4_CatalogEnvVarReadOnlyInResolver pins WHERE the environment is consulted: exactly
-// one production site reads BLIS_CATALOG (resolveCatalogRoot in hfconfig.go), mirroring the
+// one production site reads BLIS_CATALOG (resolveCatalogRoot in catalog_root.go), mirroring the
 // single HF_TOKEN read that was cmd/'s only os.Getenv before this change. A second reader
 // elsewhere would be a second, unaudited way for the environment to steer a run.
 func TestS4_CatalogEnvVarReadOnlyInResolver(t *testing.T) {
@@ -263,9 +265,9 @@ func TestS4_CatalogEnvVarReadOnlyInResolver(t *testing.T) {
 			return true
 		})
 	}
-	// hfconfig.go names it twice: the catalogEnvVar const, and nothing else.
-	if len(readers) != 1 || readers[0] != "hfconfig.go" {
-		t.Errorf("the %s literal must appear in exactly one production file (cmd/hfconfig.go, "+
+	// catalog_root.go names it twice: the catalogEnvVar const, and nothing else.
+	if len(readers) != 1 || readers[0] != "catalog_root.go" {
+		t.Errorf("the %s literal must appear in exactly one production file (cmd/catalog_root.go, "+
 			"as the catalogEnvVar const); found it in %v — every other site must use the const "+
 			"and go through resolveCatalogRoot", catalogEnvVar, readers)
 	}

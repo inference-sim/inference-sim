@@ -56,14 +56,7 @@ var physicsPricedFlagPattern = regexp.MustCompile(
 // is the point.
 //
 // It is NOT a way to keep a number here — it is a record of what R2 has not reached yet.
-var physicsPricedFlagExceptions = map[string]string{
-	"pd-transfer-bandwidth": "PD fabric rate; transcribed in blis-registry " +
-		"coefficients/pd-transfer-estimates.yaml as pd_transfer_bandwidth but not yet derived " +
-		"from a catalog fabric class in cmd/. Retired by the PD half of R2, not by #1819.",
-	"pd-transfer-base-latency": "PD modelling per-transfer latency; transcribed in " +
-		"blis-registry coefficients/pd-transfer-estimates.yaml as pd_transfer_base_latency " +
-		"but still authored here. Retired by the PD half of R2, not by #1819.",
-}
+var physicsPricedFlagExceptions = map[string]string{}
 
 // flagDefaultFinding is one flag registration the guard objects to — in any of pflag's four
 // registration forms, not only `...Var`. Two shapes:
@@ -354,7 +347,7 @@ func TestPhysicsPricedFlagDefaults_NoneInProductionSources(t *testing.T) {
 		t.Errorf("%s:%d: --%s is given the physics literal %s as a flag default.\n"+
 			"  A number that prices a physical quantity belongs to the CATALOG (a device or "+
 			"hardware fact) or to blis-registry (a fitted/modelling coefficient), and must be "+
-			"DERIVED here — see cmd/kv_transfer_derive.go for the shape (#1819, R2G3b).\n"+
+			"DERIVED from there — as the kernel prices every offload tier from its catalog device (#1819, R2G3b).\n"+
 			"  If it genuinely cannot be converted yet, add it to physicsPricedFlagExceptions "+
 			"with the reason and what retires it.",
 			o.file, o.line, o.flag, o.lit)
@@ -374,33 +367,6 @@ func TestPhysicsPricedFlagDefaults_NoneInProductionSources(t *testing.T) {
 		t.Error("--kv-transfer-bandwidth must not be in physicsPricedFlagExceptions: #1819 " +
 			"derives it from the catalog cpu_dram device, so an exception would mean the " +
 			"conversion was reverted")
-	}
-}
-
-// TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero is the positive statement of the same
-// law for the flags #1819 and R2G3b touched: both legacy KV-transfer flags must register a
-// ZERO registered default. Cobra's Changed bit is load-bearing: omission derives each value,
-// while a supplied bandwidth 0 is invalid and a supplied base-latency 0 is a valid override.
-// Both commands are checked: the flags live in the shared registerSimConfigFlags, so a
-// divergence would also be an INV-13 defect.
-func TestPhysicsPricedFlagDefaults_ConvertedFlagsAreZero(t *testing.T) {
-	for _, flagName := range []string{"kv-transfer-bandwidth", "kv-transfer-base-latency"} {
-		for cmdName, flags := range map[string]*pflag.FlagSet{
-			"run": runCmd.Flags(), "replay": replayCmd.Flags(),
-		} {
-			f := flags.Lookup(flagName)
-			if f == nil {
-				t.Fatalf("%s must register --%s (registerSimConfigFlags)", cmdName, flagName)
-			}
-			got, err := strconv.ParseFloat(f.DefValue, 64)
-			if err != nil {
-				t.Fatalf("%s --%s default %q is not numeric: %v", cmdName, flagName, f.DefValue, err)
-			}
-			if got != 0 {
-				t.Errorf("%s --%s default is %v, want 0 — a non-zero default re-authors physics in "+
-					"a flag table (#1819)", cmdName, flagName, got)
-			}
-		}
 	}
 }
 

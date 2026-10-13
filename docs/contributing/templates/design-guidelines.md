@@ -60,7 +60,7 @@ Before including a component in BLIS, evaluate it against these six criteria:
 
 1. Will including it significantly affect the accuracy of results for the target analysis questions?
 2. What level of accuracy is actually required for the analysis to be useful?
-3. Can the component's data requirements be satisfied (alpha/beta coefficients, hardware specs, workload traces)?
+3. Can the component's data requirements be satisfied (a blis-registry coefficient set, a catalog hardware/device entry, workload traces)?
 4. What is the cost of inclusion — code complexity, maintenance burden, configuration surface?
 5. What breaks if we omit it? (Sensitivity analysis — if removing it changes results by <5%, defer it)
 6. What is the simplest version that answers the same questions? (Start coarse, refine only with evidence)

@@ -31,9 +31,9 @@ type KVOffloadConfig struct {
 	CPUBytesToUse int64
 
 	// PerBlockBytes is the resolved KV-cache byte size of one GPU block on one TP
-	// rank: KVBytesPerToken(model, tp) × BlockSizeTokens (H1, #1590). It is DERIVED
-	// from the model + block size, not a user knob — sim/kv cannot import sim/latency
-	// to compute it, so cmd resolves it and records it here so the tier-chain
+	// rank (H1, #1590). It is DERIVED from the model + block size, not a user knob: the
+	// latency backend prices it (blis-latency-kernel's SequenceVariableBytes), and cmd
+	// records it here so the tier-chain
 	// mechanism can convert CPUBytesToUse into a block capacity and size transfer
 	// jobs. Required (>0) when Enabled. Being derived, it is authoritative from the
 	// trace header on replay and excluded from the flag-vs-header reconcile.
@@ -132,6 +132,12 @@ type KVOffloadTier struct {
 	// a per-transfer factor from the seeded kv-offload RNG partition; the station
 	// itself stays deterministic.
 	LatencyJitterStddev float64
+
+	// ServiceTime, when set, prices one transfer on this tier -- write reports the direction
+	// (to the tier), inService the depth -- replacing the bandwidth/latency/ramp physics
+	// above. Supplied by the latency backend (blis-latency-kernel's TierTime) at run time
+	// and never serialized: a trace header records the tier, not the pricer.
+	ServiceTime func(write bool, bytes int64, inService int) int64 `yaml:"-" json:"-"`
 }
 
 // Valid enumerations for the offload config surface.

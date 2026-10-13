@@ -1,0 +1,65 @@
+# A disaggregated deployment with data parallelism, for the P/D + DP-as-placement tests: one
+# prefill and one decode pool of minimax-m2.5 (a routed MoE, so dp > 1 is placement), each
+# TP4 x DP2 with expert parallelism over two four-GPU GB200 trays. Each simulated instance is
+# one data-parallel rank, so one logical prefill and one logical decode instance run as two
+# replicas each, one rank per tray.
+#
+# gpus_per_rack 12 places a rack boundary between the decode pool's two trays: trays 0-2 share
+# an NVLink domain and tray 3 sits behind the InfiniBand fabric. A handoff to decode rank 0
+# therefore moves at the in-rack rate and one to decode rank 1 at the fabric's, so the handoff
+# price depends on which ranks a request crosses -- the property the per-pair pricing law needs
+# to be non-vacuous. Authored here (every vendored kernel scenario is colocated); engine
+# settings follow the kernel's minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2 scenario.
+kind: Scenario
+name: minimax-m2.5-gb200-1p1d-dp2
+engine_version: "0.29.0"
+
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: gb200-nvl72
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 4
+  gpus_per_rack: 12
+---
+kind: Deployment
+name: minimax-m2.5-gb200-1p1d-dp2
+
+pools:
+  - role: prefill
+    nodes: 2
+    parallel:
+      tp: 4
+      pp: 1
+      dp: 2
+      enable_expert_parallel: true
+    engine:
+      quantization: nvfp4
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+  - role: decode
+    nodes: 2
+    parallel:
+      tp: 4
+      pp: 1
+      dp: 2
+      enable_expert_parallel: true
+    engine:
+      quantization: nvfp4
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+
+pd_transfer:
+  connector: NixlConnector

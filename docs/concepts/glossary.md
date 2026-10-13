@@ -8,17 +8,13 @@ This page defines terminology used throughout BLIS documentation. Terms are list
 
 A cluster-level gate that decides whether an incoming request enters the routing pipeline or is rejected. Built-in policies: `always-admit` (accept all), `token-bucket` (rate-limiting), `reject-all` (testing only). See [Cluster Architecture](architecture.md#admission-pipeline).
 
-### Alpha Coefficients
-
-Three regression coefficients `[alpha0, alpha1, alpha2]` that model non-GPU overhead per request. `alpha0 + alpha1 * input_length` estimates queueing delay (tokenization, API serialization); `alpha2` estimates output token processing time. These overheads are added to per-request metrics but do not block the simulation clock. See [Core Engine: Latency Models](core-engine.md#latency-models).
-
 ### Batch Formation
 
 The process of selecting which requests from the wait queue join the running batch for the next step. BLIS implements vLLM-style continuous batching with chunked prefill and preemption. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
 
-### Beta Coefficients
+### blis-latency-kernel
 
-Three regression coefficients `[beta0, beta1, beta2]` that predict GPU step time: `beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens`. Trained offline via Bayesian optimization against real vLLM measurements. See [Core Engine: Latency Models](core-engine.md#latency-models).
+The Go module (`github.com/inference-sim/blis-latency-kernel`) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-catalog and fitted coefficients from blis-registry. See [Latency Models Guide](../guide/latency-models.md).
 
 ### Block (KV Block)
 
@@ -58,7 +54,7 @@ The `--rate` mode of `blis observe` that generates workload from statistical dis
 
 ### E2E (End-to-End Latency)
 
-Total time from request arrival to final token completion. Computed as `TTFT + sum(ITLs)`, where each ITL includes step time plus output processing overhead (alpha2). See [Core Engine: Metrics](core-engine.md#metrics).
+Total time from request arrival to final token completion. Computed as `TTFT + sum(ITLs)`, where each ITL includes step time plus per-token output processing overhead. See [Core Engine: Metrics](core-engine.md#metrics).
 
 ### Effective Load
 
@@ -78,7 +74,7 @@ An optional flow-control buffer between admission and routing, enabled with `--f
 
 ### HOL Blocking (Head-of-Line Blocking)
 
-A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step (~97 ms on Qwen3-14B / H100 / TP=1 in roofline mode), blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (`--long-prefill-token-threshold`), which splits long prefills so decode requests can be interleaved. See [KV Cache: Chunked Prefill](../guide/kv-cache.md#chunked-prefill) and [Chunked Prefill](#chunked-prefill).
+A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step, blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (`--long-prefill-token-threshold`), which splits long prefills so decode requests can be interleaved. See [KV Cache: Chunked Prefill](../guide/kv-cache.md#chunked-prefill) and [Chunked Prefill](#chunked-prefill).
 
 ### Horizon
 
@@ -94,7 +90,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step. Two modes: *Roofline* (default; analytical FLOPs/bandwidth estimation) and *Trained-Physics* (physics-informed basis functions with architecture-aware MoE scaling). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
+The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: [blis-latency-kernel](#blis-latency-kernel), adapted to the `sim.LatencyModel` interface by `sim/kernelmodel`. See [Core Engine: Latency Models](core-engine.md#latency-models) and [Latency Models Guide](../guide/latency-models.md).
 
 ### llm-d
 
@@ -102,15 +98,11 @@ An open-source LLM inference routing and serving framework that BLIS is designed
 
 ### MaxModelLen
 
-Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len`. When set (> 0), requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`) — `ProgressIndex` is `num_computed_tokens`, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. Set to 0 for unlimited. Auto-derived from `max_position_embeddings` in roofline and trained-physics modes, with [`rope_scaling`](#rope_scaling) factor application and KV-feasible capping. See [Configuration Reference](../reference/configuration.md#simulation-control).
-
-### MFU (Model FLOPS Utilization)
-
-The fraction of a GPU's theoretical peak TFLOPS actually achieved during model execution, accounting for kernel efficiency, memory-access patterns, and CUDA overhead. BLIS uses separate MFU values for the prefill phase (`mfuPrefill`, typically higher because prefill is compute-bound) and the decode phase (`mfuDecode`, lower because decode is memory-bandwidth-bound). Both are configured per GPU in `hardware_config.json`. In trained-physics mode, MFU-equivalent corrections are captured by the learned β₁–β₄ coefficients rather than explicit fractions. See [Roofline Estimation](roofline.md).
+Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len` and is **required** in each scenario pool as `engine.max_model_len`. Requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM `scheduler.py:773-774`: FormBatch clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`) — `ProgressIndex` is `num_computed_tokens`, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. See [Latency Models Guide](../guide/latency-models.md#scenario-structure).
 
 ### MoE (Mixture of Experts)
 
-A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. BLIS distinguishes two MoE layouts: *uniform MoE* (every layer is a MoE layer, e.g., Mixtral-8x7B) and *interleaved MoE* (alternating MoE and dense layers, e.g., Scout). The trained-physics latency model applies a per-MoE-layer overhead term (β₈) only to interleaved architectures, auto-detected from `interleave_moe_layer_step` in the HuggingFace `config.json`. See [Latency Models Guide](../guide/latency-models.md).
+A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. blis-latency-kernel reads expert geometry (expert count, top-k) from the model graph in the catalog. A scenario's `dp > 1` runs one replica per data-parallel rank; `enable_expert_parallel` is priced by the kernel. See [Latency Models Guide](../guide/latency-models.md#data-and-expert-parallelism-moe).
 
 ### Observe / Replay / Calibrate Pipeline
 
@@ -148,16 +140,6 @@ A routing scorer that directs requests to instances likely to have their prefix 
 
 A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: `constant`, `slo-based`, `inverted-slo` (testing only). Note: despite its name, `slo-based` currently uses only request age (favoring older requests), not per-request SLO metadata. See [Core Engine: Scheduling](core-engine.md#scheduling-policies).
 
-### Roofline Model
-
-An analytical latency estimation technique that predicts step time as `max(FLOPs / peak_compute, bytes / peak_bandwidth)`. Requires only the model's HuggingFace `config.json` and GPU hardware specs. No training data needed. See [Roofline Estimation](roofline.md).
-
-### rope_scaling
-
-A field in a model's HuggingFace `config.json` that extends the effective context window beyond the base `max_position_embeddings` value by scaling the positional frequencies of RoPE (Rotary Position Embeddings). The object contains a `type` (or `rope_type`) field identifying the scaling method and a `factor` field specifying the multiplier.
-
-BLIS applies the scaling factor when auto-deriving [`MaxModelLen`](#maxmodellen) in roofline and trained-physics modes, following vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded because they encode the full extended context length directly in `max_position_embeddings`. For `yarn`, `original_max_position_embeddings` is used as the base when present. Models whose `model_type` contains `gemma3` skip `rope_scaling` entirely — their `max_position_embeddings` is already pre-scaled. Override the auto-derived value with `--max-model-len`. See [Latency Models Guide](../guide/latency-models.md#roofline-mode-default) and [Configuration Reference](../reference/configuration.md#simulation-control).
-
 ### Routing Policy
 
 A cluster-level policy that selects which instance receives an admitted request. Simple policies (round-robin, least-loaded) use fixed rules. The weighted scoring policy composes multiple scorers with configurable weights. See [Cluster Architecture: Routing Pipeline](architecture.md#routing-pipeline).
@@ -166,9 +148,13 @@ A cluster-level policy that selects which instance receives an admitted request.
 
 A point-in-time view of instance state used for routing decisions. Contains queue depth, batch size, KV utilization, cache hit rate, and pending request count. Signals have different freshness tiers depending on how they're collected. See [Cluster Architecture: Signal Freshness](architecture.md#signal-freshness).
 
+### Scenario
+
+A blis-schemas YAML file of two documents, `Scenario` and `Deployment`, naming the model, cluster hardware/fabric/nodes, coefficient sets, engine version, and each pool's role, parallelism and engine settings. Passed to `blis run`/`blis replay` with `--scenario` and `--scenarios`. See [Latency Models Guide](../guide/latency-models.md#scenario-structure).
+
 ### Scheduling Delay
 
-The elapsed time between a request's arrival and the moment it enters the running batch, reported as `scheduling_delay_ms` (per-request JSON) and `scheduling_delay_p99_ms` (aggregate). Includes the alpha queueing overhead (`alpha0 + alpha1 × inputLen`) plus wait queue residence time. Distinct from TTFT, which additionally includes prefill compute time. High scheduling delay with low preemption rate indicates queue saturation (add instances); low scheduling delay with high TTFT indicates compute saturation (reduce batch size or enable chunked prefill). See [Metrics & Results](../guide/results.md#scheduling-delay) and [Core Engine: Metrics](core-engine.md#metrics).
+The elapsed time between a request's arrival and the moment it enters the running batch, reported as `scheduling_delay_ms` (per-request JSON) and `scheduling_delay_p99_ms` (aggregate). Includes the host queueing overhead plus wait queue residence time. Distinct from TTFT, which additionally includes prefill compute time. High scheduling delay with low preemption rate indicates queue saturation (add instances); low scheduling delay with high TTFT indicates compute saturation (reduce batch size or enable chunked prefill). See [Metrics & Results](../guide/results.md#scheduling-delay) and [Core Engine: Metrics](core-engine.md#metrics).
 
 ### Scorer
 
@@ -188,7 +174,7 @@ A single iteration of the inference engine. Each step processes one batch: prefi
 
 ### Tensor Parallelism (TP)
 
-A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements. Configured via `--tp`. Higher TP reduces per-request latency (fewer FLOPs per GPU, less KV memory per rank) but adds All-Reduce communication overhead per transformer layer (modeled by the β₄ coefficient in trained-physics mode). When an instance's TP group spans nodes (#1529), that All-Reduce is charged at a blended intra/inter-node bandwidth rather than the on-package rate (#1530) — see [Inter-Node Network Cost](../guide/latency-models.md#inter-node-network-cost-trained-physics-only). Increasing the instance count (replication) instead increases throughput without reducing per-request latency. For MoE models, BLIS models data parallelism (`--dp`, trained-physics only) as both a latency/KV term (#1419) and real placement: `--dp N` spawns N single-node engine replicas per `--num-instances`, on `blis run` (#1531) and `blis replay` (#1556). Expert parallelism (`--enable-expert-parallel`) shards routed-expert weights across the `TP·DP` EP group both when sizing KV-cache capacity (#1656) and in the trained-physics **step time** (#1548) — routed-expert *compute* is EP-mode-invariant, and the MoE-FFN collective becomes a dispatch/combine all-to-all instead of a TP all-reduce. Since #1548 it is supported alongside `--dp N` on both commands and reserves no GPUs beyond the ones DP placement already takes; the all-to-all backend is selectable per role (`--prefill-moe-comm-backend` / `--decode-moe-comm-backend`). See [Latency Models Guide](../guide/latency-models.md#tensor-parallelism-and-roofline) and [Roofline Estimation](roofline.md).
+A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements at the cost of per-layer collective communication, which blis-latency-kernel prices. Stated in the scenario as a pool's `parallel.tp`. Increasing the instance count (replication) instead increases throughput without reducing per-request latency. See [Latency Models Guide](../guide/latency-models.md).
 
 ### Tick
 
@@ -200,7 +186,7 @@ An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceed
 
 ### TPOT (Time Per Output Token)
 
-The mean inter-token latency across all decode steps for a request, computed as `mean(ITL)`. TPOT represents the steady-state token generation speed once prefill completes; lower TPOT means faster streaming throughput. Each ITL sample includes the step time plus the alpha2 output-processing overhead per token. Reported as the `itl_mean_ms` field in JSON output. See [ITL](#itl-inter-token-latency) and [Core Engine: Metrics](core-engine.md#metrics).
+The mean inter-token latency across all decode steps for a request, computed as `mean(ITL)`. TPOT represents the steady-state token generation speed once prefill completes; lower TPOT means faster streaming throughput. Each ITL sample includes the step time plus the per-token output-processing overhead. Reported as the `itl_mean_ms` field in JSON output. See [ITL](#itl-inter-token-latency) and [Core Engine: Metrics](core-engine.md#metrics).
 
 ### TraceV2
 
@@ -208,7 +194,7 @@ The trace format used by the observe/replay/calibrate pipeline, consisting of tw
 
 ### TTFT (Time To First Token)
 
-Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and output processing overhead (alpha2). A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
+Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and per-token output processing overhead. A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
 
 ### Warmup Requests
 

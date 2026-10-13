@@ -2,18 +2,17 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// makeSharedPrefixRequests builds requests that share a long common prefix, so the
-// KV-offload chain actually exercises mirror + cascade + reload paths. outputLen sets
+// makeSharedPrefixRequests builds requests that share a long common prefix (as a prefix
+// group, so the sharing survives the trace round trip), so the KV-offload chain actually
+// exercises mirror + cascade + reload paths. outputLen sets
 // the number of decode tokens per request: a value >= blockSize (16) forms full decode
 // blocks, which the offload_prompt_only=false path mirrors (decode-KV offload).
 func makeSharedPrefixRequests(outputLen int) []*sim.Request {
@@ -35,6 +34,11 @@ func makeSharedPrefixRequests(outputLen int) []*sim.Request {
 			InputTokens:  in,
 			OutputTokens: out,
 			MaxOutputLen: 100,
+			// The group makes the sharing structure round-trip through the trace: replay
+			// re-synthesizes the shared prefix, so hit/miss counts -- and with them the
+			// prefill work the kernel prices -- are the run's.
+			PrefixGroup:  "g",
+			PrefixLength: len(shared),
 		}
 	}
 	return reqs
@@ -65,38 +69,11 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 	const fixedSeed int64 = 99
 	requests := makeSharedPrefixRequests(outputLen)
 
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
 	dir := t.TempDir()
-
-	defaultsContent := `trained_physics_coefficients:
-  alpha_coeffs: [100.0, 1.0, 100.0]
-  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-`
-	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
-	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
-		t.Fatalf("write defaults.yaml: %v", err)
-	}
-
-	hfConfig, err := latency.ParseHFConfig(testCatalogConfigPath(catalogDir, "test-model"))
-	if err != nil {
-		t.Fatalf("ParseHFConfig: %v", err)
-	}
-	mc, err := latency.GetModelConfigFromHF(hfConfig)
-	if err != nil {
-		t.Fatalf("GetModelConfigFromHF: %v", err)
-	}
-	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
-	if err != nil {
-		t.Fatalf("GetHWConfig: %v", err)
-	}
-
-	perTok, err := latency.KVBytesPerToken(*mc, 1)
-	if err != nil {
-		t.Fatalf("KVBytesPerToken: %v", err)
-	}
+	d := newKernelDeployment(t, fixedSeed, nil)
 	offload := sim.KVOffloadConfig{
-		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: int64(perTok * 16),
-		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16,
+		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: d.BlockBytes,
+		BlockSize: d.BlockSize, BlocksPerChunk: 1, TokensPerHash: d.BlockSize,
 		EvictionPolicy: "lru", OffloadPromptOnly: offloadPromptOnly,
 		Tiers: []sim.KVOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 16, NWriteThreads: 16,
@@ -104,25 +81,11 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 		}},
 	}
 	if offload.PerBlockBytes <= 0 {
-		t.Fatalf("derived PerBlockBytes must be > 0, got %d", offload.PerBlockBytes)
+		t.Fatalf("the kernel's per-block bytes must be > 0, got %d", offload.PerBlockBytes)
 	}
-
-	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
-	alphaCfg := []float64{100.0, 1.0, 100.0}
-	cfg := cluster.DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             10_000_000,
-			Seed:                fixedSeed,
-			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0, sim.WithKVOffload(offload)),
-			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 4096),
-			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
-		},
-		NumInstances:    1,
-		AdmissionPolicy: "always-admit",
-		RoutingPolicy:   "round-robin",
-	}
+	cfg := d.Config
+	// A small GPU pool, so the offload chain sees eviction pressure.
+	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, sim.WithKVOffload(offload))
 
 	// Direct run.
 	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)

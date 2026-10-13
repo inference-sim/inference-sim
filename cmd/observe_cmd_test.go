@@ -1819,16 +1819,10 @@ func TestObserveCmd_CatalogFlag_Exists(t *testing.T) {
 func TestBuildPresetSpec_MatchesPresetDefinition(t *testing.T) {
 	// Deliberately NOT the bundled values: a spec built from a built-in default would pass
 	// a golden-value assertion just as well, so the fixture has to be distinguishable.
-	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": `prefix_tokens: 0
-prompt_tokens: 512
-prompt_tokens_stdev: 100
-prompt_tokens_min: 50
-prompt_tokens_max: 1024
-output_tokens: 256
-output_tokens_stdev: 50
-output_tokens_min: 10
-output_tokens_max: 512
-`})
+	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
+		PromptTokensMean: 512, PromptTokensStdev: 100, PromptTokensMin: 50, PromptTokensMax: 1024,
+		OutputTokensMean: 256, OutputTokensStdev: 50, OutputTokensMin: 10, OutputTokensMax: 512,
+	})})
 
 	const testRate = 5.0
 	const testNumRequests = 10
@@ -1876,16 +1870,11 @@ output_tokens_max: 512
 // reads --catalog / BLIS_CATALOG) rather than the injectable core, so the two commands are
 // shown to agree on where the catalog is as well as on what the preset says.
 func TestBuildPresetSpec_ParityWithRunPresetPath(t *testing.T) {
-	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": `prefix_tokens: 32
-prompt_tokens: 512
-prompt_tokens_stdev: 100
-prompt_tokens_min: 50
-prompt_tokens_max: 1024
-output_tokens: 256
-output_tokens_stdev: 50
-output_tokens_min: 10
-output_tokens_max: 512
-`})
+	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
+		PrefixTokens:     32,
+		PromptTokensMean: 512, PromptTokensStdev: 100, PromptTokensMin: 50, PromptTokensMax: 1024,
+		OutputTokensMean: 256, OutputTokensStdev: 50, OutputTokensMin: 10, OutputTokensMax: 512,
+	})})
 
 	const presetName = "chatbot"
 	const testRate = 7.0

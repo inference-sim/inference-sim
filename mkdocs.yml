@@ -100,13 +100,12 @@ nav:
       - Glossary: concepts/glossary.md
       - Cluster Architecture: concepts/architecture.md
       - Core Engine: concepts/core-engine.md
-      - Roofline Estimation: concepts/roofline.md
   - User Guide:
       - guide/index.md
       - Routing Policies: guide/routing.md
       - Admission Control: guide/admission.md
       - Scheduling & Priority: guide/scheduling.md
-      - Latency Models: guide/latency-models.md
+      - "Latency Kernel": guide/latency-models.md
       - KV Cache & Memory: guide/kv-cache.md
       - Workload Specifications: guide/workloads.md
       - Cluster Simulation: guide/cluster.md

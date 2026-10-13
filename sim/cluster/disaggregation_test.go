@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -50,89 +53,50 @@ func TestParentRequest_ZeroInputTokens(t *testing.T) {
 // --- Integration and invariant tests ---
 
 // newTestDisaggDeploymentConfigWithOverhead creates a 4-instance (2 prefill, 2 decode)
-// disaggregated DeploymentConfig using trained-physics with the given post-decode
-// overhead (µs). alpha[1] = overhead, so PostDecodeFixedOverhead() == overhead.
+// disaggregated DeploymentConfig whose fake latency model has the given post-decode
+// overhead (µs), so PostDecodeFixedOverhead() == overhead.
 // Used to test that detectDecodeCompletions stamps parent.CompletionTime correctly
 // when overhead > 0 (issue #846).
 func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfig {
-	// Minimal trained-physics model: 2-layer, 4-head, 64-dim with positive HW numbers.
-	// beta[5] = 100 µs/layer gives finite step times; remaining betas zero.
-	// NumKVHeads=0 triggers MHA fallback (uses NumHeads), divisible by TP=1.
-	modelCfg := sim.ModelConfig{
-		NumLayers:       2,
-		NumHeads:        4,
-		HiddenDim:       64,
-		IntermediateDim: 128,
-		BytesPerParam:   2.0,
-	}
-	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
-	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0} // β₅ = 100 µs/layer
-	alphas := []float64{0.0, overhead, 0.0}                 // α₁ = overhead (PostDecodeFixedOverhead)
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
-		},
-		NumInstances:            4,
-		PrefillInstances:        2,
-		DecodeInstances:         2,
-		PDDecider:               "always",
-		RoutingPolicy:           "round-robin",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
-	}
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	c := testutil.DefaultFakeLatency()
+	c.PostDecodeOverheadTicks = int64(overhead)
+	cfg.LatencyModel = fakelatency.WithCoeffs(c)
+	return cfg
 }
 
 func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
-	// ModelConfig produces 512 KV bytes/token/GPU at TP=1:
-	// 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512
-	//
-	// Uses trained-physics backend (not roofline) so that step times are
-	// controlled by beta coefficients rather than FLOPs/bandwidth calculations.
-	// β₅ = 100 µs/layer gives predictable step durations for metric-projection
-	// and causality tests. Matches newTestDisaggDeploymentConfigWithOverhead pattern.
-	modelCfg := sim.ModelConfig{
-		NumLayers:       2,
-		NumHeads:        4,
-		HiddenDim:       64,
-		IntermediateDim: 128,
-		BytesPerParam:   2.0,
-	}
-	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
-	// 7 betas: β₅ = 100 µs/layer gives finite step times; 3 alphas for queueing/overhead.
-	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphas := []float64{100, 1, 100}
+	// Step times come from the fake latency model and KV handoffs from the fake pricer.
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
-		NumInstances:            numInstances,
-		PrefillInstances:        prefill,
-		DecodeInstances:         decode,
-		PDDecider:               "always",
-		RoutingPolicy:           "round-robin",
-		PDTransferBandwidthGBps: 25.0,
-		PDTransferBaseLatencyMs: 0.05,
+		NumInstances:     numInstances,
+		PrefillInstances: prefill,
+		DecodeInstances:  decode,
+		PDDecider:        "always",
+		RoutingPolicy:    "round-robin",
+		PDTransferTime:   testPDTransferTime,
 	}
 }
 
-func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
+// A PD deployment without a transfer pricer is refused at construction: the simulator has no
+// formula of its own to fall back to, so a missing one must not surface mid-run (R1).
+func TestNewClusterSimulator_PDWithoutTransferPricer_Panics(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	// Replace the valid ModelConfig with a zero-value one to trigger the PD guard.
-	// PD mode requires valid ModelConfig for KV transfer size calculation.
-	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(sim.ModelConfig{}, testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0)
+	cfg.PDTransferTime = nil
 	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for PD with zero ModelConfig, got none")
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for a PD deployment with no PDTransferTime, got none")
+		}
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "PDTransferTime") {
+			t.Errorf("panic must name the missing PDTransferTime; got %v", r)
 		}
 	}()
 	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
@@ -292,8 +256,8 @@ func newShortRequests(n int) []*sim.Request {
 	// Create requests with short input (20 tokens = 2 blocks at blockSize=16) and
 	// moderate output (10 tokens) to ensure decode phases overlap on the single
 	// decode instance when transfers from parallel prefill instances land concurrently.
-	// With trained-physics β₅=100 µs/layer, L=2: ~200 µs/step, 10 output tokens
-	// need ~2000 µs of decode. Requests arrive 100 µs apart so that prefills
+	// With the default fake latency (~1 ms/step), 10 output tokens need ~10 ms of
+	// decode. Requests arrive 100 µs apart so that prefills
 	// complete and transfers land while earlier decodes are still running.
 	requests := make([]*sim.Request, n)
 	for i := 0; i < n; i++ {
@@ -493,8 +457,8 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
 		NumInstances:  4,
 		RoutingPolicy: "round-robin",
@@ -548,8 +512,8 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -577,8 +541,8 @@ func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -983,11 +947,11 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 //	(2) a differential comparison against the old buggy formula.
 func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	// OTPT (α₂) is the per-output-token processing overhead; the old formula carried a
+	// OTPT is the per-output-token processing overhead; the old formula carried a
 	// second, phantom copy. Require it positive so the low-load "reported < old"
 	// differential below is non-trivially caused by removing that phantom OTPT.
-	if otpt := config.AlphaCoeffs[2]; otpt <= 0 {
-		t.Fatalf("test precondition: OTPT (α₂) must be positive to distinguish the two-OTPT bug, got %.1f", otpt)
+	if otpt := config.LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
+		t.Fatalf("test precondition: OTPT must be positive to distinguish the two-OTPT bug, got %d", otpt)
 	}
 	requests := newTestRequests(5)
 
@@ -1125,8 +1089,8 @@ func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 	// maxNumSeqs=1: the single decode instance runs one sub-request at a time, so
 	// sub-requests transferred while an earlier decode is still running must queue.
 	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
-	otpt := float64(config.AlphaCoeffs[2]) // OTPT (α₂); the differential threshold below
-	requests := newShortRequests(6)        // ~2000µs decode each, arriving 100µs apart → overlap
+	otpt := float64(config.LatencyModel.OutputTokenProcessingTime()) // OTPT; the differential threshold below
+	requests := newShortRequests(6)                                  // ~2000µs decode each, arriving 100µs apart → overlap
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
@@ -1728,7 +1692,6 @@ func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testin
 
 // BC-3: parent.CompletionTime is >= all prior phase timestamps.
 // Law: CompletionTime >= DecodeEnqueueTime >= TransferCompleteTime (phase causality).
-// For roofline (overhead=0): CompletionTime == cluster clock at decode completion tick.
 func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)

@@ -4,40 +4,47 @@ Run your first BLIS simulation in 30 seconds.
 
 No credentials or network access are needed to *run* a simulation: BLIS reads each model's architecture from a local checkout of the model catalog and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
 
-## Locate the model catalog
+## Set up the catalog, registry and scenarios
 
-Every `blis run` / `blis replay` must be told where the **model catalog** is — a directory
-holding a `models/<short-name>/config.json` for each catalogued model. The authoritative
-catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository;
-clone it once and point BLIS at the clone root. There is **no default and no
-search path**: supply `--catalog <path>` or set `BLIS_CATALOG` (the flag wins when both are
-set), or the run is refused naming both forms.
+Every `blis run` / `blis replay` needs three things besides the binary:
+
+- the **catalog** — a clone of [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
+  (models, chips, fabrics, storage devices, workload presets), located by `--catalog <path>`
+  or `BLIS_CATALOG` (the flag wins; there is no default and no search path);
+- the **registry** — a clone of [`blis-registry`](https://github.com/inference-sim/blis-registry)
+  (the fitted coefficients), passed as `--registry`;
+- a **scenario** — a [`blis-schemas`](https://github.com/inference-sim/blis-schemas) Scenario +
+  Deployment YAML naming the model, hardware, parallelism and engine settings, picked with
+  `--scenario <file name>` from `--scenarios <dir>`.
 
 ```bash
-git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
+export SCENARIOS=$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate
 ```
 
-The examples below (and elsewhere in these docs) assume you have exported it.
-
-The clone pins release tag `0.1.1` — the catalog version BLIS is tested against — so a later
-catalog release cannot change what a fresh clone hands your build. See
-[Catalog compatibility](installation.md#catalog-compatibility) for why, and for how to move
-to a newer catalog release deliberately.
+A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is the kernel
+module's own set (present after `go build`); `testdata/scenarios/` in this repository adds a
+P/D and an MTP example. The clones pin the releases BLIS is tested against — see
+[Catalog compatibility](installation.md#catalog-compatibility).
 
 ## Single-Instance Simulation
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios $SCENARIOS --registry $PWD/blis-registry \
+  --rate 10 --num-requests 100
 ```
 
-This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
+This runs 100 requests at 10 requests/second through one Llama-3.1-70B-Instruct engine on
+H200 (FP8, vLLM, TP4), priced by `blis-latency-kernel`.
 
-!!! note "A model runs only if it is catalogued"
-    BLIS reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (above) and never fetches or writes it at run time. A model with no catalog entry is refused, naming the path its entry belongs at — so runs are offline and reproducible, and running an unknown model can never quietly add a catalog entry. To use a model that is not yet catalogued, commit its `config.json` at `<catalog>/models/<model>/config.json`, or point `--catalog` at a scratch clone that has it.
-
-!!! note "`--hardware` and `--tp` are required"
-    BLIS does not infer the deployment. Omitting either flag is refused by name rather than filled in from a per-model default, so every reported number belongs to a deployment you chose.
+!!! note "The scenario states the deployment"
+    There are no `--model`, `--hardware` or `--tp` flags. Model, hardware, parallelism, block
+    size, batch limits, max model length, prefix caching, cache dtype and speculative decoding
+    all come from the scenario; the KV block budget comes from the kernel. A model runs only
+    if it is in the catalog — nothing is fetched at run time.
 
 ### Reading the Output
 
@@ -71,11 +78,15 @@ BLIS prints diagnostic logs to stderr and results to stdout. You'll see log line
 
 ## Cluster Mode
 
-Scale to 4 instances with routing:
+Scale to 4 instances with routing. `--num-instances` cannot exceed the scenario pool's rank
+capacity (pool nodes × gpus_per_node / (pp × tp × pcp)); the single-node scenario above holds
+two TP4 engines, so this uses the committed four-node fixture in `testdata/scenarios/` (up to
+eight instances):
 
 ```bash
 ./blis run \
-  --model qwen/qwen3-14b --hardware H100 --tp 1 \
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 \
   --routing-policy weighted \
   --rate 100 --num-requests 500
@@ -90,27 +101,25 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 
 ```bash
 # Higher traffic rate
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
-  --num-instances 4 --rate 500 --num-requests 2000
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --num-instances 8 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
-# With trained-physics mode (recommended for new models)
-./blis run --model qwen/qwen3-14b \
-  --latency-model trained-physics --hardware H100 --tp 1 \
-  --num-instances 4 --rate 100 --num-requests 500
-
-# With pure roofline mode (analytical, no learned corrections)
-./blis run --model qwen/qwen3-14b \
-  --latency-model roofline --hardware H100 --tp 1 \
-  --num-instances 4 --rate 100 --num-requests 500
+# A different deployment: pick another scenario (one node, TP4: at most 2 instances)
+./blis run --scenario gpt-oss-120b-h200-fp4-vllm-tp4.yaml \
+  --scenarios $SCENARIOS --registry $PWD/blis-registry \
+  --num-instances 2 --rate 100 --num-requests 500
 ```
 
 ## What's Next
 
 - **[Tutorial: Capacity Planning](tutorial.md)** — Full walkthrough: find the right instance count for your workload
 - **[Routing Policies](../guide/routing.md)** — Understand and compare routing strategies
+- **[Latency Model](../guide/latency-models.md)** — What the kernel prices and how scenarios are structured
 - **[Configuration Reference](../reference/configuration.md)** — Complete CLI flag reference

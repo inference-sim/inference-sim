@@ -1,0 +1,6 @@
+name: qwen3.5-397b-a17b
+source:
+  provider: huggingface
+  repo: Qwen/Qwen3.5-397B-A17B
+  revision: 8472618112abcbd45acbcdc58436aff4233c23f7
+  retrieved: 2026-09-30

@@ -26,7 +26,9 @@ type GoldenDataset struct {
 	Tests []GoldenTestCase `json:"tests"`
 }
 
-// GoldenTestCase represents a single test case from the golden dataset.
+// GoldenTestCase represents a single test case from the golden dataset. Steps are
+// priced by the deterministic fake latency model (FakeLatency, default coefficients),
+// so a case carries no latency coefficients; Approach records that ("fake-latency").
 type GoldenTestCase struct {
 	Model                     string        `json:"model"`
 	Workload                  string        `json:"workload"`
@@ -51,8 +53,6 @@ type GoldenTestCase struct {
 	TotalKVBlocks             int64         `json:"total-kv-blocks"`
 	BlockSizeInTokens         int64         `json:"block-size-in-tokens"`
 	LongPrefillTokenThreshold int64         `json:"long-prefill-token-threshold"`
-	AlphaCoeffs               []float64     `json:"alpha-coeffs"`
-	BetaCoeffs                []float64     `json:"beta-coeffs"`
 	BlisCMD                   string        `json:"blis-cmd,omitempty"`
 	Metrics                   GoldenMetrics `json:"metrics"`
 }

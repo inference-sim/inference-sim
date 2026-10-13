@@ -11,9 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation — driven by trained performance coefficients (alpha/beta), analytical roofline estimates, or physics-informed cross-model prediction.
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by `blis-latency-kernel` (the only latency backend; adapter `sim/kernelmodel`).
 
-The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across model/GPU/TP configurations without requiring real GPUs.
+The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
 ## Catalog and deployment rules (mandatory)
 
@@ -21,11 +21,11 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 1. **Locate the catalog** with `--catalog <path>` or the `BLIS_CATALOG` env var — no default, no search path, no remote fetch (`--catalog` wins, announced on stderr; neither is refused). Both name the catalog **clone root**. Clone `blis-catalog` at its pinned release tag and export it once (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
    ```bash
-   git clone --branch 0.1.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+   git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
    export BLIS_CATALOG=$PWD/blis-catalog
    ```
 2. **A model runs iff it is in the catalog.** Its config is read from `<catalog>/models/<short-name>/config.json`; an absent entry is refused naming that path. No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by committing its config to `blis-catalog`.
-3. **`--hardware` and `--tp` are required** on both `run` and `replay` (refused naming the missing flag). `blis observe` takes neither (it resolves no model config).
+3. **A scenario and the registry are required** on both `run` and `replay`: `--scenario <file> --scenarios <dir> --registry <blis-registry clone root>`. The scenario (a blis-schemas Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
 4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload`, `observe --workload`, and `convert preset --name` (all take `--catalog`/`BLIS_CATALOG`).
 
 ## Build and Run Commands
@@ -33,9 +33,9 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 One canonical form per command. `--help` and the guides carry the full flag surface — by home:
 
 - SLO goodput, flow-control, dispatch ordering → `docs/guide/admission.md`
-- speculative decoding/MTP, MoE `--dp`/`--enable-expert-parallel`, `--kv-cache-dtype`, inter-node cost → `docs/guide/latency-models.md` (+ `docs/reference/models.md` for MLA/hybrid/quant)
-- KV-offload (`--kv-offload-config`, `--scrape-kv-metrics`) → `docs/guide/kv-offload-calibration.md`
-- closed-loop/corpus sessions, `observe`, `calibrate` → `docs/guide/observe-replay-calibrate.md`
+- the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
+- KV-offload (`--kv-offload-config`) → `docs/guide/kv-offload-calibration.md`
+- closed-loop/corpus sessions, `replay` (`observe`/`calibrate` are deprecated, #1901) → `docs/guide/observe-replay-calibrate.md`
 - workloads & `convert` → `docs/guide/workloads.md`
 - saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
 
@@ -43,22 +43,15 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 # Build
 go build -o blis main.go
 
-# Run (single deployment). --hardware and --tp required; catalog located via BLIS_CATALOG.
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1
+# Run. Scenario + registry required; catalog located via BLIS_CATALOG.
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios <dir of scenario files> --registry $PWD/blis-registry --rate 10 --num-requests 100
 
 # Run and export the workload as a TraceV2 (prefix auto-appends .yaml/.csv)
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --trace-output traces/run1
+./blis run --scenario <file> --scenarios <dir> --registry <root> --trace-output traces/run1
 
 # Replay a captured TraceV2 through the DES (identical flags reproduce run metrics — INV-13)
-./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b --hardware H100 --tp 1
-
-# Observe a real server's latency into a TraceV2 (black-box dispatcher; no --hardware/--tp)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --workload chatbot --rate 10 --num-requests 100 \
-  --trace-header trace.yaml --trace-data trace.csv
-
-# Compare real observed latencies against simulator predictions
-./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+./blis replay --trace-header t.yaml --trace-data d.csv --scenario <file> --scenarios <dir> --registry <root>
 
 # Convert a workload/agentic trace to a TraceV2 (preset | servegen | inference-perf | otel | weka)
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
@@ -96,7 +89,7 @@ BLIS follows a layered design-document hierarchy (read the design guidelines fir
 
 ### Key Invariants
 
-Full registry (19 core invariants INV-1…INV-19 plus INV-A, INV-BC-DP1, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
+Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
 - **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (twelve-term cluster form; five-term single-instance form).
 - **INV-6 Determinism** — same seed ⇒ byte-identical **stdout**; wall-clock timing goes to stderr.
@@ -105,7 +98,7 @@ Full registry (19 core invariants INV-1…INV-19 plus INV-A, INV-BC-DP1, the LoR
 
 ### Notable subsystems (pointers)
 
-Routing scorers + the default profile (`precise-prefix-cache:2,queue-depth:1,kv-utilization:1`): `docs/guide/routing.md`. LoRA control plane, MoE `--dp` placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for policies, scorers, latency backends, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
+Routing scorers + the default profile (`precise-prefix-cache:2,queue-depth:1,kv-utilization:1`): `docs/guide/routing.md`. LoRA control plane, MoE data-parallel placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for policies, scorers, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
 
 ### Code Style
 
@@ -152,7 +145,7 @@ Pick the template that matches your situation, reproduce its structure, and appl
 
 ## Latency Estimation
 
-Two modes, selected via `--latency-model`. **Trained-physics is the default** (roofline basis functions plus learned correction coefficients; generalizes across architectures, workloads, and TP configs — no per-model calibration). **Roofline** (`--latency-model roofline`) is a pure analytical FLOPs/bandwidth model. The deprecated `blackbox`/`crossmodel`/`trained-roofline` backends were removed. Detail (MoE/EP, MLA, hybrid attention, spec-decode, quantization, KV dtype, inter-node network cost): `docs/guide/latency-models.md` and `docs/reference/models.md`.
+`blis-latency-kernel` (Go module `github.com/inference-sim/blis-latency-kernel`, adapter `sim/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from `blis-registry`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
 
 ## Post-Hoc Saturation Detection
 
@@ -189,7 +182,7 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 
 ## Active Technologies
 
-- Go 1.22+ with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
+- Go 1.24+ with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
 - In-memory node/GPU inventory maps; no external storage.
 
 ## Change History

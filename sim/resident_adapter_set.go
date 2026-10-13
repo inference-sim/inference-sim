@@ -4,7 +4,7 @@ package sim
 // slots: a capacity-bounded resident set of adapter ids. The Simulator uses it to
 // track which adapters are "loaded" on the instance as requests are scheduled. The
 // concrete implementation (an LRU) lives in sim/lora and is wired in via
-// NewResidentAdapterSetFunc, mirroring NewAdapterRegistryFunc / NewLatencyModelFunc,
+// NewResidentAdapterSetFunc, mirroring NewAdapterRegistryFunc / NewKVCacheStateFunc,
 // so sim/ can own the state without importing sim/lora (Principle I: no reverse
 // import).
 //

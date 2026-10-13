@@ -4,8 +4,7 @@
 // INV-19 is the one entry in the enforcement-anchored set whose enforcement is a
 // WARNING rather than a panic, and that choice is the substance of the invariant: a
 // zero delta is inert, so skipping it leaves cluster state exactly as a correct engine
-// would have, unlike the negative activeTransfers count in pd_events.go which fails
-// the run. These tests pin both halves of "warn and skip": the decision does not
+// would have. These tests pin both halves of "warn and skip": the decision does not
 // actuate and does not fail the run, and — the part that is not obvious from the
 // `continue` — it does not sustain a stabilization timer either.
 package cluster

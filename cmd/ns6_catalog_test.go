@@ -1,28 +1,24 @@
 package cmd
 
 import (
-	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 // NS-6 (#1733): a model runs if and only if it is in the catalog.
 //
 // This file holds the contracts for the two run-time behaviours #1733 removes:
 //   - BC-3: no run-time path can create or modify a catalog file (there is no fetch left);
-//   - BC-4: --hardware and --tp are required, refused BY NAME rather than inferred from
-//     defaults.yaml and warned-about.
+//   - BC-4: the deployment is never inferred -- it comes from the kernel scenario, and a
+//     flag restating the model, hardware or TP is refused BY NAME.
 //
-// BC-1/BC-2 (the refusal itself and its message) live with the resolver in
-// hfconfig_test.go, since they are properties of resolveModelConfig.
+// BC-1/BC-2 (the refusal itself and its message) are properties of blis-latency-kernel, which
+// reads the scenario's model graph; catalog_layout_test.go pins that they reach the CLI.
 
 // ---------------------------------------------------------------------------
 // BC-3: no run-time path creates or modifies a catalog file
@@ -38,9 +34,9 @@ import (
 //     huggingface.co STRING LITERAL — the outbound host. (Prose mentioning HuggingFace is
 //     fine; only a literal could become a URL. `net/http` itself cannot be banned
 //     package-wide because `blis observe` legitimately dispatches to a real server.)
-//  2. At the resolution boundary (cmd/hfconfig.go, the only file that maps a model to a
-//     catalog directory): no network import and no file-creating call, so that file cannot
-//     write a catalog entry however it is edited.
+//  2. At the resolution boundary (cmd/catalog_root.go, the file that locates the catalog):
+//     no network import and no file-creating call, so that file cannot write a catalog entry
+//     however it is edited.
 func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 	bannedIdents := map[string]string{
 		"fetchHFConfig":        "the HuggingFace config fetch was removed by #1733",
@@ -49,7 +45,7 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 		"GetDefaultSpecs":      "per-model --hardware/--tp inference was removed by #1733",
 	}
 	// The resolution boundary must be incapable of writing or fetching.
-	resolverFile := "hfconfig.go"
+	resolverFile := "catalog_root.go"
 	resolverBannedImports := map[string]string{
 		`"net/http"`: "the catalog resolver must not reach the network (NS-6)",
 		`"io"`:       "the catalog resolver reads one file via os.ReadFile; streaming I/O implies a fetch",
@@ -134,17 +130,17 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 
 // TestNS6_ObserveTakesNoDeploymentFlags pins the boundary that makes BC-3 hold for
 // `blis observe` by construction: observe is a black-box dispatcher against a real
-// server, so it places no instances and takes no --hardware/--tp. Were someone to give it
-// registerSimConfigFlags, it would inherit the required-flag rule silently; this test says
-// that has to be a deliberate decision.
+// server, so it places no instances and takes no deployment -- no --scenario, and none of the
+// retired --hardware/--tp. Were someone to give it registerSimConfigFlags, it would inherit
+// the scenario requirement silently; this test says that has to be a deliberate decision.
 //
 // #1769 narrowed this: observe DOES now declare --catalog, because the named workload
 // presets moved into the catalog and observe resolves one for --workload. It still resolves
-// no MODEL config, which is what the deployment flags are about, so the two halves of the
-// old claim have come apart — --hardware/--tp stay banned here, and
-// TestCatalogPresets_CatalogFlagOnEveryConsumer owns the positive --catalog claim.
+// no MODEL config, which is what the deployment flags are about, so the deployment flags stay
+// banned here, and TestCatalogPresets_CatalogFlagOnEveryConsumer owns the positive --catalog
+// claim.
 func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
-	for _, flag := range []string{"hardware", "tp"} {
+	for _, flag := range []string{"scenario", "hardware", "tp"} {
 		if f := observeCmd.Flags().Lookup(flag); f != nil {
 			t.Errorf("`blis observe` must not declare --%s: it resolves no model config and "+
 				"places no instances, so a deployment flag there would be inert", flag)
@@ -157,151 +153,33 @@ func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BC-4: --hardware and --tp are required, refused by name
+// BC-4: the deployment has one source -- the scenario
 // ---------------------------------------------------------------------------
 
-// TestNS6_RequireDeploymentFlags_AcceptsFullySpecified is the negative control for the
-// refusal tests below: a fully-specified deployment must pass the guard (if it fatally
-// exited here the subprocess tests would prove nothing about the missing-flag case).
-func TestNS6_RequireDeploymentFlags_AcceptsFullySpecified(t *testing.T) {
-	// requireDeploymentFlags terminates the process on refusal, so reaching the next
-	// statement IS the assertion that a complete deployment is accepted.
-	requireDeploymentFlags(deploymentFlagValues{GPU: "H100", GPUSupplied: true, TP: 1, TPSupplied: true})
-}
-
-// ns6DeploymentFatalSubprocess drives resolveLatencyConfig in a subprocess with one of
-// --hardware/--tp withheld. Everything else is fully specified (explicit --catalog and
-// --hardware-config), so the ONLY reason it can fail is the missing flag.
-func ns6DeploymentFatalSubprocess(t *testing.T) {
-	t.Helper()
-	if os.Getenv("BLIS_TEST_SUBPROCESS") != "1" {
-		return
-	}
-	dir := t.TempDir()
-	catalogDir, hwPath, err := writeMoEConfigFixture(dir)
-	if err != nil {
-		os.Exit(2)
-	}
-
-	args := []string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
-		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
-	}
-	switch os.Getenv("BLIS_NS6_SCENARIO") {
-	case "missing-hardware":
-		args = append(args, "--tp", "1")
-	case "missing-tp":
-		args = append(args, "--hardware", "H100")
-	case "missing-both":
-		// neither flag supplied
-	default:
-		os.Exit(2)
-	}
-
-	// Mirror the package-var state the CLI would have; registerSimConfigFlags below
-	// resets the bound vars to their flag defaults ("" / 0), which is exactly the
-	// "flag absent" state under test.
-	defaultsFilePath = "../defaults.yaml"
-
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	if err := testCmd.ParseFlags(args); err != nil {
-		os.Exit(2)
-	}
-	resolveLatencyConfig(testCmd) // must Fatalf before returning
-	os.Exit(0)
-}
-
-// TestNS6_MissingDeploymentFlagIsRefusedByName is BC-4. Before #1733 each of these ran to
-// completion on a defaults.yaml-supplied deployment after a `logrus.Warnf`; now each is a
-// hard refusal that names the flag the operator omitted.
-func TestNS6_MissingDeploymentFlagIsRefusedByName(t *testing.T) {
-	ns6DeploymentFatalSubprocess(t)
-	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
-		return
-	}
-
-	tests := []struct {
-		scenario string
-		wantAll  []string
-		wantNot  []string
-	}{
-		{
-			scenario: "missing-hardware",
-			wantAll:  []string{"missing required flag", "--hardware"},
-			wantNot:  []string{"--tp ("},
-		},
-		{
-			scenario: "missing-tp",
-			wantAll:  []string{"missing required flag", "--tp"},
-			wantNot:  []string{"--hardware ("},
-		},
-		{
-			scenario: "missing-both",
-			wantAll:  []string{"missing required flag", "--hardware", "--tp"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.scenario, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestNS6_MissingDeploymentFlagIsRefusedByName", "-test.v")
-			cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1", "BLIS_NS6_SCENARIO="+tt.scenario)
-			out, err := cmd.CombinedOutput()
-
-			var exitErr *exec.ExitError
-			if !errors.As(err, &exitErr) {
-				t.Fatalf("expected logrus.Fatalf (exit 1), got err=%v; output:\n%s", err, out)
-			}
-			if exitErr.ExitCode() != 1 {
-				t.Fatalf("expected exit 1, got %d; output:\n%s", exitErr.ExitCode(), out)
-			}
-			for _, want := range tt.wantAll {
-				if !strings.Contains(string(out), want) {
-					t.Errorf("refusal must mention %q; output:\n%s", want, out)
+// TestNS6_DeploymentComesOnlyFromTheScenario is BC-4 on the kernel: BLIS never infers a
+// deployment, and since the scenario states the model, the hardware and the tensor-parallel
+// width, no flag can restate them. Each such flag is refused by name on BOTH commands
+// (INV-13: neither can accept a deployment input the other refuses), and a run that names
+// no scenario is refused naming the missing flag rather than run on a default.
+func TestNS6_DeploymentComesOnlyFromTheScenario(t *testing.T) {
+	for _, command := range []string{"run", "replay"} {
+		for _, flag := range []string{"--model", "--hardware", "--tp"} {
+			t.Run(command+" "+flag, func(t *testing.T) {
+				_, stderr, err := runKernelCLI(t, command, "--scenario", kernelTestScenario, flag, "1")
+				if err == nil {
+					t.Fatalf("%s %s was accepted; the scenario is the only deployment source", command, flag)
 				}
-			}
-			// The refusal must name only the flag that is actually missing — a message
-			// listing both would not tell the operator what to fix.
-			for _, notWant := range tt.wantNot {
-				if strings.Contains(string(out), notWant) {
-					t.Errorf("refusal must not mention %q when that flag was supplied; output:\n%s", notWant, out)
+				if !strings.Contains(stderr, "unknown flag: "+flag) {
+					t.Errorf("refusal must name %s; stderr:\n%s", flag, lastLines(stderr, 3))
 				}
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// BC-5: byte-identity on the fully-specified path (INV-6)
-// ---------------------------------------------------------------------------
-
-// #1768 removed TestNS6_ByteIdentityAnchor_GoldenModelDeployment, which lived here. It read
-// defaults.yaml's per-model GPU/tensor_parallelism keys to machine-verify that the explicit
-// --hardware H100 --tp 1 passed by TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline equalled
-// what defaults.yaml would have inferred pre-#1733. Those keys are now deleted, so the
-// cross-check has no data left to read. The INV-6 evidence itself is undiminished and lives in
-// that byte-identity test: its golden (specs/007-lora-control-plane/testdata/baseline_noop.json)
-// was captured from a run that supplied NEITHER flag, and it still matches.
-
-// TestNS6_DeploymentFlagsRequiredOnRunAndReplay is the INV-13 half of BC-4: both commands
-// register the flags and both resolve through the same requireDeploymentFlags call inside
-// resolveLatencyConfig, so neither can drift into inferring a deployment the other refuses.
-func TestNS6_DeploymentFlagsRequiredOnRunAndReplay(t *testing.T) {
-	for _, name := range []string{"run", "replay"} {
-		c := &cobra.Command{}
-		registerSimConfigFlags(c)
-		for flag, wantDefault := range map[string]string{"hardware": "", "tp": "0"} {
-			f := c.Flags().Lookup(flag)
-			if f == nil {
-				t.Fatalf("%s: --%s must be registered (registerSimConfigFlags)", name, flag)
-			}
-			// The "absent" sentinel must stay a value requireDeploymentFlags rejects,
-			// otherwise the requirement could be satisfied by the default itself.
-			if f.DefValue != wantDefault {
-				t.Errorf("%s: --%s default must remain the unset sentinel %q so an omitted "+
-					"flag is refused, got %q", name, flag, wantDefault, f.DefValue)
-			}
+			})
 		}
 	}
+	t.Run("run without a scenario", func(t *testing.T) {
+		_, stderr, err := runKernelCLI(t, "run", "--num-requests", "1")
+		if err == nil || !strings.Contains(stderr, "--scenario") {
+			t.Errorf("a run naming no scenario must be refused naming --scenario: err=%v\n%s",
+				err, lastLines(stderr, 3))
+		}
+	})
 }

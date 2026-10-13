@@ -19,7 +19,7 @@
 
 node_pools:
   - name: h100-tp1
-    gpu_type: H100           # must match --hardware H100
+    gpu_type: H100           # must equal the scenario's cluster.hardware
     gpus_per_node: 1         # 1 GPU per instance at TP=1
     gpu_memory_gib: 80.0     # H100 80 GiB
     initial_nodes: 5         # 5 nodes pre-provisioned: 1 for startup, 4 for autoscaler

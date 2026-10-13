@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-19, plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family INV-L1-INV-L7, PD disaggregation INV-PD-* and pool/transfer INV-P2-*) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-19, plus INV-A, INV-A2, INV-W3, the LoRA family INV-L1-INV-L6, PD disaggregation INV-PD-* and pool/transfer INV-P2-*) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 
@@ -23,7 +23,7 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 
 | Event Type | Trigger | Effect |
 |------------|---------|--------|
-| `ArrivalEvent` | Request enters system | Computes queueing delay (alpha overhead), schedules `QueuedEvent` |
+| `ArrivalEvent` | Request enters system | Computes queueing delay (host overhead priced by the kernel), schedules `QueuedEvent` |
 | `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
 | `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
 | `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
@@ -99,7 +99,7 @@ Requests follow a linear state machine with one exception (preemption):
 ```mermaid
 stateDiagram-v2
     [*] --> Arrival
-    Arrival --> Queued : alpha queueing delay
+    Arrival --> Queued : host queueing delay
     Arrival --> DroppedUnservable : exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
@@ -150,7 +150,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 | Timestamp | When Recorded | Used For |
 |-----------|---------------|----------|
 | Arrival time | Request creation | E2E and scheduling delay baseline |
-| Enqueue time | After alpha queueing delay | Conceptual start of wait queue residence |
+| Enqueue time | After host queueing delay | Conceptual start of wait queue residence |
 | Schedule time | Batch formation selects request | Scheduling delay = time in wait queue |
 | First token time | End of prefill phase | TTFT = FirstTokenTime (stored on Request) |
 | Completion time | All tokens generated | E2E = FirstTokenTime + sum(ITLs) |
@@ -171,10 +171,10 @@ Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and the
 
 Requests are dropped as unservable at enqueue time (incrementing `DroppedUnservable`) via two guards:
 
-1. **MaxModelLen guard** — when `--max-model-len` is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
+1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
 2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
 
-Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when `--max-model-len` is set, a proactive cap in `FormBatch` clamps token scheduling to `maxModelLen - 1 - ProgressIndex` (matching vLLM `scheduler.py:773-774`), a decode guard in `executeBatchStep` prevents phantom token generation when 0 tokens are allocated, and `processCompletions` force-completes any request whose `ProgressIndex` reaches `MaxModelLen - 1`. Output tokens per length-capped request: `MaxModelLen - len(InputTokens)`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`). `ProgressIndex` is BLIS's `num_computed_tokens`, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's `num_computed_tokens` lags `num_tokens` by the token the forward pass has just appended — so the `MaxModelLen - 1` boundary is reached with the final token already generated, and it is counted.
+Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, a proactive cap in `FormBatch` clamps token scheduling to `maxModelLen - 1 - ProgressIndex` (matching vLLM `scheduler.py:773-774`), a decode guard in `executeBatchStep` prevents phantom token generation when 0 tokens are allocated, and `processCompletions` force-completes any request whose `ProgressIndex` reaches `MaxModelLen - 1`. Output tokens per length-capped request: `MaxModelLen - len(InputTokens)`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`). `ProgressIndex` is BLIS's `num_computed_tokens`, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's `num_computed_tokens` lags `num_tokens` by the token the forward pass has just appended — so the `MaxModelLen - 1` boundary is reached with the final token already generated, and it is counted.
 
 ## Batch Formation
 
@@ -192,14 +192,14 @@ Process requests already in the running batch:
 Dequeue requests from the wait queue:
 - Compute cached prefix blocks (prefix caching reduces allocation needs)
 - Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (`--max-num-seqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
+- Stop dequeuing when: max batch size reached (`max_num_seqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
 
 ### Constraints
 
-| Constraint | Flag | Effect |
+| Constraint | Source | Effect |
 |------------|------|--------|
-| Max batch size | `--max-num-seqs` | Limits number of concurrent requests in the running batch (deprecated alias: `--max-num-running-reqs`) |
-| Token budget | `--max-num-batched-tokens` | Limits total new tokens across all running requests per step (deprecated alias: `--max-num-scheduled-tokens`) |
+| Max batch size | scenario `max_num_seqs` | Limits number of concurrent requests in the running batch |
+| Token budget | scenario `max_num_batched_tokens` | Limits total new tokens across all running requests per step |
 | Chunked prefill | `--long-prefill-token-threshold` | Splits long prefills across multiple steps |
 
 ### Preemption Strategy
@@ -213,7 +213,7 @@ When KV allocation fails for a continuing request:
 
 ## KV Cache Management
 
-The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds `--block-size-in-tokens` tokens (default: 16).
+The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds the scenario's `block_size` tokens; the block budget comes from blis-latency-kernel's memory methods, per data-parallel rank.
 
 ### Single-Tier Cache
 
@@ -235,52 +235,25 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 - **CPU tier:** Simple capacity store for offloaded blocks
 - **Offload trigger:** When GPU utilization exceeds `--kv-offload-threshold` (default: 0.9), blocks are offloaded to CPU
 - **Reload:** On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty
-- **Transfer latency:** Per reloaded block: `base_latency + ceil(block_size_tokens / bandwidth)`. Accumulated across all reloaded blocks. Non-blocking (added to step time).
-- **Where transfer physics comes from:** bandwidth and base latency are independently **derived** from the catalog `cpu_dram` storage device (#1819/#1841). `--kv-transfer-bandwidth` and `--kv-transfer-base-latency` independently override them; explicit base latency `0` disables the fixed cost. See [Tiered Caching](../guide/kv-cache.md#tiered-caching-gpu--cpu-offload).
+- **Transfer latency:** each reloaded block is charged a per-block reload time that blis-latency-kernel prices from the catalog `cpu_dram` device. Accumulated across all reloaded blocks; non-blocking (added to step time). See [Tiered Caching](../guide/kv-cache.md#tiered-caching-gpu--cpu-offload).
 - **Thrashing detection:** Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter
 
 ## Latency Models
 
-BLIS predicts GPU step time through two latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
+Step time and host overheads come from **blis-latency-kernel**, through the
+`sim.LatencyModel` interface (adapter: `sim/kernelmodel`). The simulator decides when a step
+runs and which requests it holds; the kernel prices that batch from the model graph, chip and
+coefficients the scenario names. See the [Latency Models guide](../guide/latency-models.md).
 
-### Roofline Model (Default)
+Host overheads are charged around the GPU step, never on it:
 
-Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:
+- **Queueing time** (tokenization, preprocessing) delays request enqueue but does not block
+  the server; the simulation clock is not advanced by it.
+- **Output token processing time** (detokenization, streaming) is added to per-request
+  ITL/TTFT metrics but does not block the next step.
+- **Post-decode fixed overhead** is charged once per request at completion.
 
-```
-Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
-Step Time  = Prefill Phase Time + Decode Phase Time
-```
-
-- Requires HuggingFace `config.json` (model architecture: layers, heads, hidden dim)
-- Requires `hardware_config.json` (GPU specs: peak TFLOPS, peak bandwidth, MFU)
-- Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads
-- No training data needed — works for any supported model immediately
-
-See [Roofline Estimation](roofline.md) for implementation details.
-
-### Trained-Physics Mode (Recommended)
-
-Applies learned correction factors to roofline basis functions with additional architecture-aware terms:
-
-```
-StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
-```
-
-- **13 global coefficients** (8-10 beta for roofline corrections + 3 alpha for CPU overhead)
-- **Generalizes across architectures, workloads, and TP configurations**
-- No per-model calibration needed
-
-See [Latency Models Guide](../guide/latency-models.md#trained-physics-mode) for details.
-
-### Alpha Overhead
-
-Alpha overhead models non-GPU processing time:
-- **Queueing time** (`alpha0 + alpha1 * input_length`): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
-- **Output token processing time** (`alpha2`): Added to per-request ITL/TTFT metrics but does not block the next step.
-
-This is architecturally correct for vLLM, where CPU post-processing (tokenization, output serialization) runs concurrently with GPU execution.
+This matches vLLM, where CPU post-processing runs concurrently with GPU execution.
 
 ## Scheduling Policies
 
@@ -303,10 +276,10 @@ BLIS records per-request and aggregate metrics throughout the simulation.
 
 | Metric | Definition |
 |--------|------------|
-| **TTFT** | Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2) |
-| **E2E** | `FirstTokenTime + sum(ITLs)`, where each ITL includes step time + alpha2 |
-| **ITL** | Observed time between consecutive decode steps (includes alpha2 per token) |
-| **Scheduling Delay** | Time from request arrival to entering the running batch (includes alpha queueing overhead + wait queue residence) |
+| **TTFT** | Time from arrival to first token: includes queueing delay, prefill step times, and per-token output processing overhead |
+| **E2E** | `FirstTokenTime + sum(ITLs)`, where each ITL includes step time + per-token output processing |
+| **ITL** | Observed time between consecutive decode steps (includes per-token output processing) |
+| **Scheduling Delay** | Time from request arrival to entering the running batch (includes host queueing overhead + wait queue residence) |
 
 ### Aggregate Metrics
 

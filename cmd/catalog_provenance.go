@@ -109,16 +109,20 @@ func runCatalogGit(dir string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// catalogProvenanceEmitOptions builds the sim.EmitOutput options that add catalog
-// provenance to a results file. It is the SINGLE shared helper both `blis run` and
-// `blis replay` call at their EmitOutput sites, so neither command can drift into
-// recording provenance the other omits (INV-13, R23).
+// resultsFileEmitOptions builds the sim.EmitOutput options that add a results file's
+// file-only blocks: catalog provenance, and the settings the run took from somewhere other
+// than its scenario (scenarioOverrides). It is the SINGLE shared helper both `blis run` and
+// `blis replay` call at their EmitOutput sites, so neither command can drift into recording
+// provenance the other omits (INV-13, R23).
 //
 // It returns no options when outputFilePath is empty: provenance is file-only, so a
 // stdout-only run must not pay for a git subprocess it would then discard.
-func catalogProvenanceEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption {
+func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption {
 	if outputFilePath == "" {
 		return nil
 	}
-	return []sim.EmitOption{sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot))}
+	return []sim.EmitOption{
+		sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot)),
+		sim.WithScenarioOverrides(scenarioOverrides),
+	}
 }
