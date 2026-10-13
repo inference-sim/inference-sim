@@ -526,6 +526,10 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 		{"a tier naming an empty device", `device_class=\"\" is not defined`,
 			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
 				readFile(t, writeKernelOffloadConfig(t, "")), "device_class: nvme_gen4", `device_class: ""`, 1))}},
+		// A catalog device states O_DIRECT rates only; buffered I/O is not priced as them.
+		{"a buffered-I/O tier", "uses buffered I/O (direct_io: false)",
+			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
+				readFile(t, writeKernelOffloadConfig(t, "")), "direct_io: true", "direct_io: false", 1))}},
 		// The offload cache simulates LRU only: arc is refused at config time, never a panic.
 		{"an arc eviction policy", `eviction_policy \"arc\" is not simulated`,
 			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
@@ -567,7 +571,7 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	kernelOpened, kvCPUBlocks, blockSizeTokens = m, 100, 16
-	cfg := sim.KVOffloadConfig{Enabled: true, Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4"}}}
+	cfg := sim.KVOffloadConfig{Enabled: true, Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
 	legacy := applyKernelOffloadPricing(&cfg)
 
 	ns := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
@@ -960,7 +964,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	kvCPUBlocks, blockSizeTokens = 100, 64
 
 	run := sim.KVOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
-		Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4"}}}
+		Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
 	var pre, dec cluster.PoolOverrides
 	pools.applyOffload(run, &pre, &dec)
 

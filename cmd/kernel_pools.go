@@ -298,10 +298,13 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 					"the kernel prices a tier by its catalog device, so every tier must name one",
 					i)
 			}
+			// A catalog device's rates are O_DIRECT rates; buffered (page-cache) I/O, vLLM's
+			// fallback where O_DIRECT is unsupported, is another regime the kernel does not
+			// price yet (blis-latency-kernel#41), so it is refused rather than priced as O_DIRECT.
 			if !cfg.Tiers[i].DirectIO {
-				logrus.Warnf("kv_offload secondary_tiers[%d] (%s) uses buffered I/O (direct_io: "+
-					"false); the kernel prices the tier at its catalog device's rates, so page-cache "+
-					"effects of buffered I/O are not modelled", i, class)
+				logrus.Fatalf("kv_offload secondary_tiers[%d] (%s) uses buffered I/O (direct_io: "+
+					"false), which the kernel does not price (blis-latency-kernel#41); only "+
+					"direct_io: true tiers can be simulated", i, class)
 			}
 			// Price one real block each way up front, so an unknown device or one with no
 			// bandwidth in a direction is refused now rather than at its first transfer.

@@ -125,7 +125,8 @@ kv_offload:
       n_read_threads: 16            # vLLM default 16
       n_write_threads: 16           # vLLM default 16
       locality: LOCAL               # LOCAL | REMOTE (optional)
-      direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit
+      direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit;
+                                    #   false (buffered I/O) is refused: not priced yet
       device_class: nvme_gen4       # REQUIRED — a catalog storage device; the kernel prices transfers
 ```
 
@@ -137,7 +138,10 @@ fails **loudly** at startup — never silently ignored: `store_threshold >= 2` i
 Every tier must name a `device_class` from the catalog's storage-device table
 (`<catalog>/devices/storage.yaml`, located by `--catalog` / `BLIS_CATALOG`); the kernel prices
 each tier transfer from that device (its `TierTime`). An explicit `read_bandwidth`,
-`write_bandwidth` or `base_latency` on a tier is refused. A class the catalog does not define, or
+`write_bandwidth` or `base_latency` on a tier is refused. A catalog device's rates are O_DIRECT
+rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesystems that reject
+O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
+([blis-latency-kernel#41](https://github.com/inference-sim/blis-latency-kernel/issues/41)). A class the catalog does not define, or
 a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
 sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario that
 states its own `offload` block is refused for now: that block and `--kv-offload-config` describe

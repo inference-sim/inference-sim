@@ -247,9 +247,8 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]k
 	}
 
 	// direct_io: REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe an explicit
-	// config axis (a simulator cannot probe the operator's disk). No silent default. It is
-	// recorded with the tier; the kernel prices a tier from its catalog device's rates, so on
-	// the kernel path buffered I/O is not priced differently (priceOffload warns).
+	// config axis (a simulator cannot probe the operator's disk). No silent default. A run
+	// refuses direct_io: false (priceOffload): the kernel prices only O_DIRECT I/O.
 	if tb.DirectIO == nil {
 		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].direct_io must be set explicitly (BLIS makes vLLM's runtime O_DIRECT probe an explicit config axis rather than guess the operator's disk)", index)
 	}
