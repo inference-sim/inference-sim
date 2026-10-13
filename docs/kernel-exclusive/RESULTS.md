@@ -8,12 +8,132 @@ subset they are calibrated for; they supply nothing to the figures below. Both b
 
 > **Reading order.** This document is chronological: it records what was measured when, including
 > figures that a later measurement superseded. The live numbers are under
-> [Current standing](#current-standing). The Headline below is the FIRST scored run and is
-> superseded -- it predates the InferenceX protocol match, which changed both the point count
-> (238 to 192) and AISimulate's own re-anchored figure (7.15% to 8.87%). It is kept because the
-> path from it to the current number is the evidence that no step was tuned.
+> [Current standing](#current-standing), scored by replaying the InferenceX benchmark's main phase
+> from its own seed-0 vectors (`APPLES-TO-APPLES.md` says what that does and does not reproduce).
+> Every section after it is dated history under earlier protocols and an earlier corpus
+> extraction. Its first scored run, under "Headline", predates a change of error definition that
+> moved the point count from 238 to 192 and AISimulate's own re-anchored figure from 7.15% to
+> 8.87%. It is kept because the path from it to the current number shows that no step was tuned.
 
-## Headline (superseded -- see [Current standing](#current-standing))
+## Current standing
+
+Each point is the InferenceX benchmark client's main phase, replayed by `blis replay`:
+
+- the `10*CONC` target lengths numpy drew at seed 0, in request order, which are verified per
+  point to be the lengths the client sent;
+- gated at `CONC`;
+- every run setting the measured engine passed carried into the scenario;
+- on a prefix-caching point, run after the warm-up's state (request 0's prompt cached);
+- scored with the client's own `mean_ttft` and `mean_tpot` definitions.
+
+What that does and does not reproduce is in `APPLES-TO-APPLES.md`, and the commands are in
+`REPRODUCE.md`. The figures below are printed by `cmd/metricscore -framework vllm` at
+`e4d76827`, as mean absolute error, BLIS / AISimulate / AIC on the same points:
+
+| tier | sweeps | n (shape / mape) | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
+|---|---|---|---|---|---|---|
+| STRICT | 0 | 0 | -- | -- | -- | -- |
+| MEASURED-OR-RESOLVED | 10 | 52 / 62 | 11.38 / 8.73 / 9.15 | 16.79 / 19.85 / 19.08 | 13.96 / 23.22 / 22.34 | 23.47 / 42.96 / 23.77 |
+| ALL (approximate) | 113 | 460 / 573 | 9.64 / 10.43 / 10.56 | 15.04 / 15.39 / 15.71 | 17.85 / 23.05 / 30.12 | 25.30 / 37.86 / 36.66 |
+
+(TTFT n is 456 / 569 in ALL: four measured TTFT excursions are excluded for every arm.)
+
+**No sweep is STRICT.** Every logged vLLM sweep falls short in one of two ways:
+
+- it passed `max_cudagraph_capture_size`, which blis-schemas cannot express (298 of the 360
+  logged points); or
+- it left an admission setting unpassed, so that setting runs at vLLM's resolved value rather than
+  a measured one.
+
+The 10 MEASURED-OR-RESOLVED sweeps, with the settings resolved on each (the scorer
+prints this list):
+
+| sweep | resolved |
+|---|---|
+| kimi-k2.5 b300 tp4 and tp8, 1k1k | block_size, max_num_batched_tokens |
+| minimax-m2.5 b200 fp8 tp2 and tp4, 1k8k | max_num_seqs, max_num_batched_tokens |
+| minimax-m2.5 h200 fp8 tp4, 1k1k and 8k1k | block_size |
+| minimax-m2.5 h200 fp8 tp4, 1k8k | max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching (on, vLLM's default) |
+| minimax-m2.5 h200 fp8 tp8, 1k1k, 1k8k and 8k1k | max_num_seqs, max_num_batched_tokens, block_size |
+
+minimax-m2.5 h200 fp8 tp4 1k8k entered the tier when the warm-up's state became reproduced: its
+2026-03-01 runs did not pass `--no-enable-prefix-caching`, so the engine cached prefixes, and each
+point is scored after request 0's prompt was cached.
+
+**On the headline tier, BLIS is behind on TPOT shape and ahead on the other three metrics.** The
+whole TPOT-shape deficit comes from two sweeps on one deployment, minimax-m2.5-h200-fp8-vllm-tp4.
+BLIS's excess over AISimulate, summed over the tier's 52 points, is 137.7
+percentage points, made up as follows:
+
+- **8k1k: +90.5.** BLIS 16.42%, AISimulate 5.10%. BLIS over-predicts the rise in TPOT by +7.8% at
+  concurrency 4 and by +14.7% to +22.6% from concurrency 8 to 256.
+- **1k8k: +47.9.** BLIS 27.83%, AISimulate 15.86%. BLIS over-predicts the rise by +12.8% to +38.4%
+  from concurrency 8 to 64.
+- **The other eight sweeps: -0.7** together.
+
+Without these two sweeps the two models are level: 8.73% against 8.75% over the other 40 points.
+On TTFT level BLIS is biased low: its signed mean TTFT mape on the tier is **-21.53%**
+(AISimulate -42.96%, AIC -9.26%).
+
+ALL mixes approximate points in and is labelled accordingly. On it BLIS leads every metric.
+
+### What moved, and why
+
+The baseline is the scorer at `13c5b552`. It ran BLIS's Go-sampled lengths in `blis run`, as a
+`12*CONC` continuous pool; it took TPOT after a `2*CONC` cut and TTFT over all `12*CONC`; and it
+carried four run settings. The table below is over the 360 logged points. For each step, the move
+columns give median / p90 / max of `|log ratio|` of BLIS's prediction, and the four error columns
+give the resulting scores. TTFT excursions are not excluded here.
+
+| step | TPOT moves | TTFT moves | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
+|---|---|---|---|---|---|---|
+| before | | | 10.85 | 13.55 | 26.06 | 30.11 |
+| main phase only, client metric population, replay (same lengths) | 0.03 / 0.11 / 1.47% | 3.11 / 11.04 / 16.39% | 10.84 | 13.55 | 23.73 | 28.31 |
+| numpy seed-0 vectors instead of those Go draws | 0.07 / 0.29 / 0.45% | 0.40 / 1.68 / 6.19% | 10.82 | 13.54 | 23.72 | 28.41 |
+| max_model_len, gpu_memory_utilization, enable_expert_parallel carried | under 0.01% on 332 points; up to 19.5% | under 0.01% on 332 points; up to 37.4% | 10.60 | 13.67 | 23.73 | 29.13 |
+| concurrent commits by others to HEAD | 0 | 0 | 10.60 | 13.67 | 23.73 | 29.13 |
+| prefix-caching points scored after the warm-up's state (5 points) | 0 / 0 / 0.0016% | 0 / 0 / 1.70% | 10.60 | 13.67 | 23.72 | 29.14 |
+
+**Step 1: the protocol.** This step kept each point's own `blis run` lengths (its first `10*CONC`
+generated requests) and changed only the protocol. The per-request TPOT formula is unchanged:
+`itl_ms` was already the client's `(latency - ttft)/(output_len - 1)`. What moved is which requests
+are averaged: the main phase alone, started against an empty queue, rather than the post-cut tail
+of a continuously refilled pool for TPOT and all 12x for TTFT. That raised TTFT by +4.5% on average
+and barely moved TPOT.
+
+**Step 2: the vectors.** This step is the draw itself.
+
+**Step 3: the settings.** This step moved 28 points, all on five minimax-m2.5 sweeps whose runs
+passed `--enable-expert-parallel` against scenarios that state it off.
+
+**Step 5: the warm-up.** This step moved only the 5 logged prefix-caching points: minimax-m2.5
+h200 fp8 tp4 1k8k, whose 2026-03-01 runs did not pass `--no-enable-prefix-caching`. Scored after
+request 0's prompt was cached, their TTFT is 0.30% to 1.70% lower than from an empty engine, and
+their TPOT moves by at most 0.0016%. The same change brought the sweep into
+MEASURED-OR-RESOLVED.
+
+### The residuals, quantified
+
+- **Warm-up.** On a prefix-caching point, the scored main phase runs after the warm-up's state. The
+  cold run is printed beside it as information only. Over ALL's 218 such points (the 213
+  Llama-3.1-70B points, whose runs captured no log and so take vLLM's default of prefix caching
+  on, plus the 5 minimax points above), the scored figure lies a median 1.998% (at most 6.861%)
+  from the cold one on TTFT, and a median 0.0092% (at most 0.1508%) on TPOT. A drain-gated
+  two-phase trace is blis-schemas#56 / inference-sim#1926.
+- **Sent prompt lengths.** The client's prompt construction was reproduced at the run-date and
+  today's revision of each tokenizer (`testdata/inferencex-workloads/prompt-lengths.json`: 360
+  points, 7 pinned revisions). It gives `|sent - target|` = 0 and no server-added token at every
+  logged point, including every MEASURED-OR-RESOLVED point. The Llama points are unverified (no
+  log, gated tokenizer) and stay in ALL.
+
+---
+
+> **Everything below this line is superseded history**, measured before 2026-10-12 under earlier
+> harness protocols (BLIS's own Go-sampled lengths, a continuous `12*CONC` pool, a `2*CONC` cut,
+> no warm-up state) and, for most of it, an earlier corpus extraction. It is kept as the record of
+> how the current figures were reached; no figure below is a current result.
+
+## Headline (superseded 2026-10-13 -- see [Current standing](#current-standing))
 
 On the 238 points measured under vLLM -- the engine BLIS models:
 
@@ -384,10 +504,14 @@ too expensive, and under-charging the windowed layers was partly cancelling it. 
 coefficients stay, because they are measured and the cancellation was accidental; the
 cancelling term is the thing to find.
 
-## Current standing
+## Standing under the previous protocol (superseded 2026-10-13)
 
-Measured under the protocol InferenceX actually used, which `APPLES-TO-APPLES.md` documents and
-`REPRODUCE.md` shows how to re-run:
+> **Superseded** by [Current standing](#current-standing). This was scored before 2026-10-12 on an
+> earlier corpus extraction (192 vLLM points). It used BLIS's own Go-sampled lengths and a
+> continuous `12*CONC` pool, and did not reproduce the benchmark's warm-up. It is kept as the
+> record of what was measured then.
+
+Measured under what was then taken to be InferenceX's protocol:
 
 | Model | n | MAPE | median | worst |
 |---|---|---|---|---|
@@ -416,12 +540,10 @@ they are on.
 | Kernel alone, resident batch assumed equal to concurrency | 13.67% (447 pts) |
 | BLIS scheduler deciding the resident batch | 14.98% |
 | Routed-expert term composing as a sum | 10.39% |
-| Warm-up and request budget matched to InferenceX's protocol | **10.41%** |
+| A `2*CONC` warm-up cut and `12*CONC` budget (a continuous pool, not the benchmark's drained phases) | **10.41%** |
 
-The last step is behaviour-neutral to two decimal places, which is the useful result: it confirms
-the harness's earlier convergence criterion was already converged, so no figure in this project
-rests on a budget this project chose. The protocol is now the measured one rather than a defended
-one.
+The last step moved the figure by 0.02 points. It showed that the earlier convergence criterion
+had converged. It did not reproduce the benchmark's two phases, which `Current standing` now does.
 
 ### What remains
 

@@ -188,43 +188,80 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 
 ## The published accuracy figures
 
-`cmd/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself:
-for every measured point it writes a scenario (the sweep's, with the engine settings the run
-used) and a workload spec, and runs `blis run` on them, exactly as a user would. Its figures
-are therefore the CLI's. At the tagged releases above, with the vendored catalog and registry
-and the measurement corpora in `BLIS_MEASUREMENTS`
-(see [Reproducing](../kernel-exclusive/REPRODUCE.md#the-measurement-data)):
+`cmd/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself. For
+every measured point it writes two files and runs `blis replay` on them, exactly as a user replays
+a trace:
+
+- a scenario: the sweep's own, with every run setting the measured engine passed;
+- a trace of the InferenceX benchmark client's main phase: the `10*CONC` target lengths numpy drew
+  at the client's seed 0, in request order, which are also the lengths the client sent (verified
+  per point; see below).
+
+The trace runs in pool mode at concurrency `CONC`. On a point whose engine caches prefixes, the
+main phase runs after copies of request 0 have completed. That leaves the one state the
+benchmark's drained warm-up leaves which the simulator reads: request 0's prompt cached, on an
+idle engine.
+
+TTFT and TPOT are the client's own `mean_ttft` and `mean_tpot` over the main-phase requests. Its
+figures are therefore the CLI's. What is and is not reproduced, with the tests that check each
+claim, is in [What the accuracy comparison reproduces](../kernel-exclusive/APPLES-TO-APPLES.md).
+
+At the tagged releases above, with the vendored catalog and registry and the measurement corpora in
+`BLIS_MEASUREMENTS` (see [Reproducing](../kernel-exclusive/REPRODUCE.md#the-measurement-data)):
 
 ```bash
 go build -o blis main.go
-go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured
-go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured -length-range-ratio 1.0
+go run ./cmd/metricscore -blis ./blis -framework vllm
 ```
 
 Its flags are `-blis`, `-gaps`, `-corpus`, `-scenarios`, `-catalog`, `-registry`,
-`-engine-settings`, `-absolutes`, `-framework`, `-config-tier`, `-simulated-only`,
-`-length-range-ratio` and `-seed`.
+`-engine-settings`, `-absolutes`, `-framework`, `-config-tier`, `-simulated-only` and `-seed`.
+`-seed` seeds only the synthetic prompts' token IDs, which move no latency.
 
-`-gaps <file>` (default: stderr) lists every point that cannot be scored apples-to-apples with
-the measurement, and the repository whose change would close the gap: a model, chip or fabric
-missing from blis-catalog, coefficients missing from blis-registry, an engine setting
-blis-schemas cannot express, a setting the measured run did not record, an engine BLIS does not
-model (sglang, TensorRT-LLM), or a setting the scorer does not yet carry into the scenario. It
-ends with a count of points per cause.
+`-gaps <file>` (default: stderr) lists every point that cannot be scored as the measured run was,
+with the repository whose change would close the gap. Possible gaps:
 
-Mean absolute error over the vLLM points whose engine configuration was measured from the
-run's own command line (292 TPOT-shape, 360 TPOT-mape, 288 TTFT-shape, 356 TTFT-mape points):
+- a model, chip or fabric missing from blis-catalog;
+- coefficients missing from blis-registry;
+- a run setting blis-schemas cannot express;
+- a setting the measured run did not record;
+- sent prompt lengths not verified equal to the targets;
+- an engine BLIS does not model (sglang, TensorRT-LLM).
 
-| metric | kernel, AISimulate lengths | kernel, constant lengths (`1.0`) | AISimulate | AIC |
-|---|---|---|---|---|
-| TPOT shape | 10.85% | 11.45% | 11.91% | 12.00% |
-| TPOT mape | 13.55% | 13.96% | 19.72% | 19.88% |
-| TTFT shape | 25.08% | 23.03% | 31.54% | 31.28% |
-| TTFT mape | 29.35% | 26.93% | 45.07% | 39.03% |
+The report ends with a count of points per cause. The scorer reads those gaps to put every sweep
+into one of three tiers, and prints every arm on each:
 
-A figure quoted without its three flags cannot be checked: `-config-tier`, `-framework`
-and `-length-range-ratio` each change every number. `blis-registry`'s
-`scripts/compare_registries.py --check` pins them against a recorded baseline.
+- **STRICT**: every point has an engine log, and every setting it passed is carried. The admission
+  settings and `max_model_len` were measured. The sent prompt lengths are verified. No other gap.
+- **MEASURED-OR-RESOLVED**: as STRICT, but an unpassed admission setting may take the value vLLM
+  resolves for it.
+- **ALL (approximate)**: every scoreable sweep. These are not the measured runs as they ran.
+
+Mean absolute error, BLIS / AISimulate / AIC, on the same points:
+
+| tier | sweeps | n (shape / mape) | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
+|---|---|---|---|---|---|---|
+| STRICT | 0 | 0 | -- | -- | -- | -- |
+| MEASURED-OR-RESOLVED | 10 | 52 / 62 | 11.38 / 8.73 / 9.15 | 16.79 / 19.85 / 19.08 | 13.96 / 23.22 / 22.34 | 23.47 / 42.96 / 23.77 |
+| ALL (approximate) | 113 | 460 / 573 | 9.64 / 10.43 / 10.56 | 15.04 / 15.39 / 15.71 | 17.85 / 23.05 / 30.12 | 25.30 / 37.86 / 36.66 |
+
+No sweep is STRICT. Every logged vLLM sweep either passed `max_cudagraph_capture_size`, which
+blis-schemas cannot express, or left an admission setting unpassed.
+
+On the MEASURED-OR-RESOLVED tier BLIS is **behind on TPOT shape** (11.38% against 8.73% and 9.15%) and
+ahead on the other three metrics. The TPOT-shape deficit comes from two sweeps of one deployment,
+minimax-m2.5-h200-fp8-vllm-tp4:
+
+- **8k1k:** BLIS over-predicts the rise of TPOT with concurrency by +14.7% to +22.6% from
+  concurrency 8 to 256, scoring 16.42% against AISimulate's 5.10%.
+- **1k8k:** BLIS over-predicts it by +12.8% to +38.4% from concurrency 8 to 64, scoring 27.83%
+  against AISimulate's 15.86%.
+
+Without those two sweeps the two models are level, 8.73% against 8.75%. On the same tier BLIS's
+TTFT is biased low: its signed mean TTFT mape is **-21.53%**.
+
+A figure quoted without its tier and `-framework` cannot be checked. `-config-tier` (sweeps with
+or without an engine log) changes the ALL row as well.
 
 ## The interface
 
