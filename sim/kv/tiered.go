@@ -214,6 +214,18 @@ func NewTieredKVCache(gpu *KVCacheState, cpuBlocks int64, threshold, bandwidth f
 	}
 }
 
+// NewTieredKVCacheWithBlockTicks is NewTieredKVCache with the per-block reload charge given
+// whole, by a latency backend that prices the transfer itself, rather than composed here from
+// a bandwidth and a base latency.
+func NewTieredKVCacheWithBlockTicks(gpu *KVCacheState, cpuBlocks int64, threshold float64, ticksPerBlock int64) *TieredKVCache {
+	if ticksPerBlock < 1 {
+		panic(fmt.Sprintf("NewTieredKVCacheWithBlockTicks: ticksPerBlock must be >= 1, got %d", ticksPerBlock))
+	}
+	// A bandwidth of BlockSize tokens per tick makes the bandwidth term exactly one tick, so
+	// the base carries the rest; NewTieredKVCache's validation then applies unchanged.
+	return NewTieredKVCache(gpu, cpuBlocks, threshold, float64(gpu.BlockSize()), ticksPerBlock-1)
+}
+
 // accumulateTransferLatency performs the shared, checked update for every legacy-tier
 // reload. Constructor validation proves one charge fits; this check proves an arbitrary
 // number of charges cannot wrap pendingLatency negative before the scheduler consumes it.

@@ -20,7 +20,8 @@
 #                     KV updates, all seeing the same stale utilization.
 #                     Result: severely skewed distribution, 3x worse tail latency.
 #
-# Expected output (llama-3.1-8b-instruct, 4 instances, 1000 requests):
+# Illustrative output (recorded before BLIS priced with blis-latency-kernel, on
+# llama-3.1-8b-instruct; absolute values differ now, the ordering is the point):
 #
 #   | Configuration            | Distribution          | TTFT p99 (ms) |
 #   |--------------------------|-----------------------|---------------|
@@ -40,11 +41,20 @@
 #
 # Prerequisites:
 #   go build -o blis main.go
+#   export BLIS_CATALOG=<blis-catalog clone root>   # see docs/getting-started/installation.md
+#   export SCENARIO=llama-3.1-70b-instruct-h200-tp4-4node.yaml   # 4 H200 nodes, TP4: up to 8 instances
+#   export SCENARIOS=testdata/scenarios
+#   export REGISTRY=<blis-registry clone root>
 
 set -e
 
 BINARY=${BLIS_BINARY:-./blis}
-MODEL="meta-llama/llama-3.1-8b-instruct"
+for v in SCENARIO SCENARIOS REGISTRY; do
+    if [ -z "${!v:-}" ]; then
+        echo "error: $v is not set (see Prerequisites at the top of this script)" >&2
+        exit 1
+    fi
+done
 INSTANCES=4
 REQUESTS=1000
 RATE=5000
@@ -57,7 +67,7 @@ fi
 
 echo "================================================================"
 echo "  BLIS Routing Policy Comparison"
-echo "  Model: $MODEL | Instances: $INSTANCES | Requests: $REQUESTS | Rate: $RATE req/s"
+echo "  Scenario: $SCENARIO | Instances: $INSTANCES | Requests: $REQUESTS | Rate: $RATE req/s"
 echo "================================================================"
 echo ""
 
@@ -65,7 +75,8 @@ run_experiment() {
     local label="$1"
     shift
     echo "--- $label ---"
-    $BINARY run --model "$MODEL" --num-instances $INSTANCES \
+    $BINARY run --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" \
+        --num-instances $INSTANCES \
         --num-requests $REQUESTS --rate $RATE \
         --trace-level decisions --summarize-trace --log error "$@" 2>/dev/null \
         | grep -E "(\"ttft_p99|\"ttft_mean|\"responses_per_sec|Target Dist|  instance)" \
@@ -105,7 +116,8 @@ run_prefix_experiment() {
     local label="$1"
     shift
     echo "--- $label ---"
-    $BINARY run --model "$MODEL" --num-instances $INSTANCES \
+    $BINARY run --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" \
+        --num-instances $INSTANCES \
         --workload-spec examples/prefix-affinity-demo.yaml \
         --trace-level decisions --summarize-trace --log error "$@" 2>/dev/null \
         | grep -E "(\"ttft_p99|\"ttft_mean|\"responses_per_sec|Target Dist|  instance)" \

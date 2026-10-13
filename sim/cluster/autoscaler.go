@@ -286,9 +286,7 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		// INV-19 (docs/contributing/standards/invariants.md#inv-19): every emitted
 		// ScaleDecision carries a non-zero Delta. Warn-and-skip is deliberate, not an
 		// oversight: a zero delta is inert (skipping it actuates nothing and leaves
-		// cluster state exactly as a correct engine would have), unlike the negative
-		// activeTransfers count in pd_events.go, where the accounting has already
-		// diverged and the run is failed. Note the skip happens BEFORE the
+		// cluster state exactly as a correct engine would have). Note the skip happens BEFORE the
 		// stabilization gate and before the modelsWithScaleUp/Down sets above, so a
 		// model whose only decision this tick was a zero delta counts as having lost
 		// its signal and has its timer reset — correct (a zero delta carries no

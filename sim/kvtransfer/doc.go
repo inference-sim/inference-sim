@@ -12,8 +12,8 @@
 //
 // A disk or object store saturates on concurrency, not on divided bandwidth.
 // This station therefore models a bounded queue with N = NRead+NWrite servers
-// per tier and priority classes — NOT the fair-share bandwidth split of
-// sim/cluster's PDTransferContention. The two models predict opposite signs for
+// per tier and priority classes — NOT a fair-share bandwidth split of the kind
+// sim/cluster once applied to P/D handoffs. The two models predict opposite signs for
 // "add write threads, watch read latency" (see BC-S2), which is what makes the
 // difference testable rather than cosmetic.
 //

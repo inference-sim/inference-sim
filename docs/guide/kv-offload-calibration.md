@@ -1,5 +1,8 @@
 # KV Cache Hit-Rate Calibration
 
+!!! warning "Deprecated workflow"
+    `blis observe` and `blis calibrate` are deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). `blis replay` is not. This page is kept for existing users of the pipeline.
+
 This note documents how to validate BLIS's tiered KV-offload model against real vLLM
 runs using the `observe → replay → calibrate` pipeline (issue #1583, part of the
 multi-tier KV-offload epic #1585). It complements
@@ -42,7 +45,7 @@ separate, weaker check.
 ## Minimal experiment set
 
 Validate against the four canonical cache paths, over a small prefix-length sweep,
-single replica, TP=1:
+single replica:
 
 | Path | How to elicit it |
 |------|------------------|
@@ -52,8 +55,9 @@ single replica, TP=1:
 | **Full miss** | A unique prefix with no cached blocks anywhere. |
 
 Sweep the shared prefix length (e.g. 256 / 1024 / 4096 tokens) so the hit-rate spans
-its range. Keep the deployment to a single replica at TP=1 so the aggregate hit-rate
-is unambiguous.
+its range. Keep the deployment to a single replica so the aggregate hit-rate is
+unambiguous; the replay scenario must state the same model, hardware and parallelism
+as the observed server.
 
 ## Procedure
 
@@ -70,9 +74,11 @@ blis observe --server-url http://localhost:8000 --model <model> \
 
 # 2. Replay the captured trace through the DES to produce the SIM-side hit-rate. Supply
 #    --kv-offload-config matching the observed deployment — replay models the tiers and
-#    derives the aggregate cache_hit_rate into --metrics-path. (A tiered observation
+#    derives the aggregate cache_hit_rate into --metrics-path. Each tier must name a
+#    catalog device_class. (A tiered observation
 #    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)
-blis replay --trace-header t.yaml --trace-data t.csv --model <model> --hardware <gpu> --tp <N> \
+blis replay --trace-header t.yaml --trace-data t.csv \
+  --scenario <scenario.yaml> --scenarios <dir of scenario files> --registry <blis-registry> \
   --kv-offload-config offload.yaml \
   --results-path sim.json --metrics-path simagg.json
 

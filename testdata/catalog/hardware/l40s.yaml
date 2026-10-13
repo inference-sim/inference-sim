@@ -1,0 +1,10 @@
+_comment: "TFlopsFP8=733 is DENSE FP8, consistent with TFlopsPeak=362.05 being DENSE BF16 (NVIDIA L40S datasheet: FP8 733 dense / 1466 sparse; BF16 362.05 dense / 733 sparse), giving a ~2.0x dense FP8:BF16 ratio (733/362.05=2.02, the datasheet dense pair; H100/H200 are exactly 2.0x). Corrected from the migrated 1466 (the WITH-SPARSITY figure, which mixed sparsity conventions for an architecturally-impossible 4.05x ratio) per blis-catalog#2 / inference-sim#1738."
+Provenance: vendor_spec
+TFlopsPeak: 362.05
+TFlopsFP8: 733.0
+BwPeakTBs: 0.864
+MemoryGiB: 48.0
+_comment_interconnect: "IntraNodeBwGBps is the on-package link as a per-GPU NOMINAL unidirectional bandwidth in GB/s: no NVLink, so peer-to-peer runs over PCIe Gen4 x16 (~32 GB/s per direction, vendor_spec). NOT measured effective throughput; any measured correction is a per-cluster blis-registry number. The inter-node fabric figure and the intra:inter ratio it feeds (#1530) live with the reusable Network fabric class (networks/ethernet-100gbe.yaml), paired with this chip per deployment (a cluster/pool concept, #1662)."
+IntraNodeBwGBps: 32
+_comment_sm: 'SMCount is the count of enabled Streaming Multiprocessors on the AD102 die as shipped in this part, from the NVIDIA datasheet (https://resources.nvidia.com/en-us-l40s/l40s-datasheet-28413). L40S enables 142 of the AD102 die''s 144 SMs. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 8.45% at this part''s 142 SMs.'
+SMCount: 142

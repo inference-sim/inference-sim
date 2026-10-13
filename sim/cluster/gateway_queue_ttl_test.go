@@ -22,9 +22,11 @@ func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 5000, "concurrency")
 	cfg.FlowControlMaxConcurrency = 1
 	cfg.Horizon = 100_000
+	// r1 holds the single concurrency slot for 50 steps -- far longer than the 5 ms
+	// TTL at any step cost -- so r2 must expire in the gateway queue.
 	reqs := []*sim.Request{
 		{ID: "r1", ArrivalTime: 0, SLOClass: "standard",
-			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 50), State: sim.StateQueued},
 		{ID: "r2", ArrivalTime: 100, SLOClass: "batch",
 			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 	}

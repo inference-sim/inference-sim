@@ -18,9 +18,27 @@ import (
 // identical across both runs, the total completed-request E2E must be STRICTLY
 // larger with overhead than without. This isolates the step-overhead effect from
 // the (unchanged) cold-load charge and proves the accessor reaches production.
+//
+// It holds whatever model prices the steps: the test fake latency model, and a model that
+// knows nothing of adapters (as blis-latency-kernel does), which gets the factor from
+// sim.WithAdapterOverhead.
 func TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E(t *testing.T) {
+	for _, injected := range []bool{false, true} {
+		name := "fake latency model"
+		if injected {
+			name = "adapter-unaware model"
+		}
+		t.Run(name, func(t *testing.T) { adapterStepOverheadInflatesLatency(t, injected) })
+	}
+}
+
+func adapterStepOverheadInflatesLatency(t *testing.T, injected bool) {
 	sumE2E := func(k6 float64) float64 {
 		config := newTestDeploymentConfig(2)
+		if injected {
+			var calls int
+			config.LatencyModel = countingModel{step: 500, calls: &calls}
+		}
 		config.RoutingPolicy = "round-robin"
 		capVal := 8
 		base, bw, fp := 1000.0, 2.0e6, 2.0e6

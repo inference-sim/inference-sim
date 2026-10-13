@@ -53,6 +53,7 @@ To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern
 3. **Update `NewKVStore` factory** in `sim/kv/register.go` to instantiate your tier based on `KVCacheConfig` fields (add new fields to `KVCacheConfig` in `sim/config.go`)
 4. **Add CLI flags** in `cmd/root.go` for new parameters (e.g., `--kv-nvme-blocks`) and wire them into the `KVCacheConfig` sub-config
+   Tier transfer *time* is not computed here: each tier names a catalog `device_class`, and `blis-latency-kernel` prices the transfer (`TierTime`). A new device class is added to `blis-catalog`.
 5. **Aggregate metrics** — combine hit/miss/thrashing counters from all tiers; see `TieredKVCache.CacheHitRate()` for the 2-tier pattern
 6. **Add behavioral tests** in `sim/kv/*_test.go`
 7. **Check-then-act allocation (no rollback)** — `KVCacheState.AllocateKVBlocks` uses a pre-check gate: it computes the total blocks needed (new blocks + cached blocks leaving the free list) and compares against `countFreeBlocks()` before any state mutation. If insufficient, it returns `false` immediately with zero side effects. Post-pre-check `popFreeBlock() == nil` is a `panic` (INV-4 violation, structurally unreachable in single-threaded DES). This mirrors vLLM's `kv_cache_manager.py:334-336` universal pre-check. If your tier adds mutations before delegating to `gpu.AllocateKVBlocks()`, ensure the inner pre-check sees the updated `FreeBlockCnt` (e.g., `commitCachedBlocks` calls `removeFromFreeList` which decrements `FreeBlockCnt` before the inner call).
@@ -106,25 +107,16 @@ Examples:
 - See `FinishReason`/`ErrorMessage` fields — always-present optional strings (empty when not set)
 - See `ServerInputTokens` field — observability metadata that differs from `InputTokens`
 
-## Adding New Latency Model Backends
+## Extending Latency Pricing
 
-To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):
+Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter `sim/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
 
-1. **Implement the `LatencyModel` interface** in `sim/latency/latency.go` (or a new file in `sim/latency/` for complex models) — 4 methods:
-   - `StepTime(batch []*Request) int64` — estimate batch step duration from request states
-   - `QueueingTime(req *Request) int64` — estimate arrival-to-queue delay
-   - `OutputTokenProcessingTime() int64` — per-token post-processing overhead
-   - `PostDecodeFixedOverhead() int64` — fixed per-request completion overhead (return 0 if not applicable)
-   - **All `float64 → int64` conversions MUST use `clampToInt64(v)` (defined in `sim/latency/latency.go`).** Direct `int64(v)` casts on float64 values are undefined behavior in Go when the value is out of range. `clampToInt64` handles NaN and positive overflow correctly.
-2. **Register the backend name** in `sim/bundle.go`: add `"your-backend": true` to `validLatencyBackends` map.
-3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-physics"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
-4. **Add CLI wiring** (if needed) in `cmd/root.go`: add a loading block for your backend's coefficients from `defaults.yaml`. If your backend needs a custom defaults section, add a struct to `cmd/default_config.go`.
-5. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
-6. Extension friction: **3-5 touch points** (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)
+- **A new pricing term, engine feature or model shape** → change `blis-latency-kernel`, release it, and bump the pinned module version in `go.mod`.
+- **New or refitted coefficients** → publish them in `blis-registry` and name the coefficient sets in the scenario's `coefficients:` list.
+- **A new model, chip, fabric or storage device** → add it to `blis-catalog`.
+- **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
 
-Examples:
-- See `RooflineLatencyModel` in `sim/latency/latency.go` for a simple stateless analytical model (FLOPs/bandwidth roofline)
-- See `TrainedPhysicsModel` in `sim/latency/trained_physics_model.go` for a physics-informed model with roofline basis functions, learned corrections, and MoE-aware overhead modeling
+On the BLIS side, a new kernel capability usually needs only the adapter in `sim/kernelmodel` and the scenario-to-`SimConfig` wiring in `cmd/`. See [Latency models](../guide/latency-models.md).
 
 ## Adding New Batch Formation Strategies
 
@@ -148,26 +140,7 @@ Examples:
 
 ## Adding New Quantization Formats
 
-To add support for a new quantization format (e.g., GGUF, HQQ, Marlin):
-
-1. **Add `quantization_config` parsing** in `sim/latency/config.go` inside `ParseHuggingFaceConfig()`. The three-tier detection order:
-   - **Tier 1 — `quantization_config`**: Add a new `else if` branch after the existing `compressed-tensors` case (~line 240). Extract the weight bit-width from the format's config structure and set `weightBytesPerParam = bits / 8.0`. Use case-insensitive matching for `quant_method` (`strings.EqualFold`).
-   - **Tier 2 — Model name conventions**: If the format has recognizable naming patterns (like `w4a16` or `FP8`), add a regex to the compiled patterns (`reWxAy`, `reFP8Name`) or add a new pattern near line 283. Update `InferWeightBytesFromModelName()` accordingly.
-   - **Tier 3 — `torch_dtype` fallback**: No changes needed — this is automatic via `BytesPerParam`.
-
-2. **Add tests** in `sim/latency/config_test.go`:
-   - A `TestParseHuggingFaceConfig_YourFormat_*` test with a synthetic `config.json` containing the new `quantization_config` structure
-   - Verify `WeightBytesPerParam` is set correctly
-   - If adding name-based detection, add cases to `TestInferWeightBytesFromModelName`
-
-3. **No changes needed to roofline/KV capacity code** — they already use `EffectiveWeightBytesPerParam()` which automatically picks up the new format's weight precision.
-
-4. Extension friction: **1-2 touch points** (config parsing + optional name regex)
-
-Examples:
-- See the GPTQ/AWQ `bits` extraction (~line 229) for formats with a top-level `bits` field
-- See the `compressed-tensors` branch (~line 240) for formats with nested config structures
-- See `InferWeightBytesFromModelName()` for regex-based name pattern detection
+Quantization is stated per pool in the scenario (`engine.quantization`, `engine.cache_dtype`) and priced by `blis-latency-kernel`. A new format is added there (and to `blis-schemas` if the field's allowed values change), not in this repository.
 
 ## Adding a New Engine
 

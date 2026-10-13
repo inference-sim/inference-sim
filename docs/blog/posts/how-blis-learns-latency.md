@@ -17,6 +17,8 @@ categories:
 
 # What We've Learned About Modeling LLM Latency
 
+> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.
+
 The [last post](building-trust-physics-of-simulation.md) covered how BLIS models the engine,
 data plane, and control plane to predict full-pipeline latency without touching a GPU. What it
 didn't answer is whether the predictions can be trusted.

@@ -1,10 +1,10 @@
-# BLIS defaults.yaml — shipped coefficient and device constants.
+# BLIS defaults.yaml — shipped LoRA control-plane defaults.
 #
-# There is no per-model `defaults:` block any more (#1768). The deployment is a required
-# operator input supplied via --hardware/--tp on `blis run` and `blis replay` (NS-6, #1733),
-# never inferred per-model, and the model config is read from the catalog located by
-# --catalog / BLIS_CATALOG (#1731). A `defaults:` key left in a hand-maintained copy of this
-# file is now rejected by strict parsing (R10) — delete the block and pass the flags.
+# There is no per-model `defaults:` block any more (#1768). The deployment is the
+# blis-schemas scenario named by --scenario on `blis run` and `blis replay`, never inferred
+# per-model, and the model config is read from the catalog located by --catalog /
+# BLIS_CATALOG (#1731). A `defaults:` key left in a hand-maintained copy of this file is
+# rejected by strict parsing (R10) — delete the block and name a scenario.
 #
 # There is no `workloads:` block any more (#1769). The named workload presets (chatbot,
 # summarization, contentgen, multidoc) live in the catalog, at
@@ -14,31 +14,11 @@
 # left in a hand-maintained copy of this file is now rejected by strict parsing (R10) —
 # delete the block and point --catalog / BLIS_CATALOG at a catalog that defines the preset.
 
-# Trained from iter29: sequential golden section search, β₆ +57%, loss 34.57%.
-trained_physics_coefficients:
-  # Alpha coefficients: API/framework overheads (µs)
-  # α₀: QueueingTime (HTTP parsing, request validation, queue insertion)
-  # α₁: PostDecodeFixedOverhead (per-request post-decode overhead)
-  # α₂: OutputTokenProcessingTime (streaming detokenization per output token)
-  alpha_coeffs: [15563.199579, 777.3455, 45.907545]
-  # Beta coefficients: roofline corrections + overheads
-  # β₁ₐ: prefill compute correction (dimensionless)
-  # β₂ₐ: decode compute correction (dimensionless, unused in 10-beta mode)
-  # β₃: weight loading correction (dimensionless)
-  # β₄: TP communication correction (dimensionless)
-  # β₅: per-layer overhead (µs/layer)
-  # β₆: per-request scheduling overhead (µs/request)
-  # β₇: per-step constant overhead (µs/step)
-  # β₈: per-MoE-layer overhead - architecture-aware (µs/MoE-layer, interleaved only)
-  # β₁ᵦ (β₉): prefill memory correction (dimensionless, unused in 10-beta mode)
-  # β₂ᵦ (β₁₀): decode memory correction (dimensionless)
-  # β_EP (β₁₁): MoE dispatch/combine all-to-all comm correction (dimensionless, #1419).
-  #   Seeded to β₄ (0.752037): both comm families run over the same NVLink fabric β₄
-  #   calibrates, and NCCL's bus-bandwidth model gives all-gather/reduce-scatter and
-  #   all-to-all the same (n-1)/n per-phase efficiency as the ring all-reduce β₄ corrects.
-  #   The comm-family VOLUME difference lives in the dispatch basis, not this coefficient.
-  #   Per-family efficiency refit is deferred to #E; omitting the 11th value defaults to β₄.
-  beta_coeffs: [0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771, 0.752037]
+# There is no `trained_physics_coefficients:` block any more (#1851). BLIS takes every
+# latency, memory and transfer price from blis-latency-kernel, whose fitted coefficients
+# live in blis-registry (--registry). A stale block in a hand-maintained copy of this file
+# is rejected by strict parsing (R10) — delete it.
+
 # LoRA control-plane defaults (#1464). INERT: these seed the --lora-* flag defaults
 # but are only applied to a run when adapters are configured. With no adapters
 # declared, the subsystem is a no-op and output is byte-identical to a pre-feature

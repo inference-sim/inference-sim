@@ -83,8 +83,10 @@ var (
 )
 
 var observeCmd = &cobra.Command{
-	Use:   "observe",
-	Short: "Dispatch workload requests to a real inference server and record timing",
+	// Printed to stderr by cobra, so stdout stays deterministic (INV-6).
+	Deprecated: "it is scheduled for removal (#1901): comparisons against real llm-d runs move to collecting run data and comparing like for like from it.",
+	Use:        "observe",
+	Short:      "Dispatch workload requests to a real inference server and record timing",
 	Long: `Observe sends requests from a WorkloadSpec to a real OpenAI-compatible inference
 server at precise arrival times, recording per-request timing into TraceV2 files.
 

@@ -6,45 +6,25 @@ import (
 	"testing"
 )
 
-// BC-D7: a catalog devices/storage.yaml carrying the #1581 device-model fields parses
-// under strict YAML (KnownFields), and a tier resolved against it (direct_io=false)
-// picks up the buffered regime + ramp + jitter — the full YAML→map→resolver path.
-// #1770 retargeted the YAML source from defaults.yaml to the catalog; the resolver half
-// of the path is unchanged, which is the point.
-func TestKVOffloadDevices_DeviceModelYAMLParses(t *testing.T) {
+// BC-D7: the #1581 device-model fields have no catalog source. blis-schemas owns the
+// devices/storage.yaml format, its StorageDevice does not define them, and its strict
+// loader refuses a key it does not define -- so a catalog stating them is refused naming
+// them, rather than half-read with the ramp silently dropped. The resolver half of the
+// device model is exercised from a device map below, which is the only way it is reached.
+func TestKVOffloadDevices_DeviceModelFieldsAreNotACatalogFormat(t *testing.T) {
 	catalog := writeCatalogStorageDevices(t,
 		"nvme_dm:\n"+
-			"  read_bandwidth: 7.0e3\n"+
-			"  write_bandwidth: 5.0e3\n"+
-			"  base_latency: 80.0\n"+
-			"  saturation_queue_depth: 8\n"+
-			"  single_transfer_fraction: 0.4\n"+
-			"  latency_jitter_stddev: 0.1\n"+
-			"  buffered_read_bandwidth: 4.0e3\n"+
-			"  buffered_base_latency: 120.0\n")
+			"  read_bandwidth_mb_s: 7.0e3\n"+
+			"  write_bandwidth_mb_s: 5.0e3\n"+
+			"  base_latency_us: 80.0\n"+
+			"  saturation_queue_depth: 8\n")
 	devices, err := loadCatalogStorageDevices(catalog)
-	if err != nil {
-		t.Fatalf("catalog storage device table must load: %v", err)
+	if err == nil {
+		t.Fatalf("a catalog table stating saturation_queue_depth loaded (%d classes); the "+
+			"catalog format does not define it", len(devices))
 	}
-	dev, ok := devices["nvme_dm"]
-	if !ok {
-		t.Fatalf("nvme_dm device class must parse from %s", catalogStorageDevicesRelPath)
-	}
-	if dev.SaturationQueueDepth == nil || *dev.SaturationQueueDepth != 8 {
-		t.Errorf("saturation_queue_depth did not parse: %v", dev.SaturationQueueDepth)
-	}
-	// Buffered regime: buffered_read_bandwidth + buffered_base_latency explicit,
-	// buffered_write_bandwidth absent => falls back to O_DIRECT write_bandwidth 5000.
-	buffered, err := resolveKVOffload(rampBlock("nvme_dm", false), devices, 16)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tr := buffered.Tiers[0]
-	if tr.ReadBandwidth != 4000 || tr.WriteBandwidth != 5000 || tr.BaseLatency != 120 {
-		t.Errorf("buffered regime resolve wrong: %+v", tr)
-	}
-	if tr.SaturationQueueDepth != 8 || tr.SingleTransferFraction != 0.4 || tr.LatencyJitterStddev != 0.1 {
-		t.Errorf("buffered inherited O_DIRECT ramp/jitter wrong: Qsat=%d f1=%v sigma=%v", tr.SaturationQueueDepth, tr.SingleTransferFraction, tr.LatencyJitterStddev)
+	if !strings.Contains(err.Error(), "saturation_queue_depth") {
+		t.Errorf("the refusal must name the undefined key, got: %v", err)
 	}
 }
 

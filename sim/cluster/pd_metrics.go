@@ -49,24 +49,10 @@ type PDMetrics struct {
 	// were dropped because the decode instance had insufficient KV capacity.
 	// Detection predicate: TransferCompleteTime > 0 && DecodeInstanceID == "".
 	DroppedAtDecodeKV int
-
-	// PeakConcurrentTransfers is the maximum number of KV transfers in flight
-	// simultaneously. Populated when --pd-transfer-contention is enabled;
-	// callers attach from cs.PeakConcurrentTransfers().
-	PeakConcurrentTransfers int
-
-	// MeanTransferQueueDepth is the mean active-transfer count sampled at each transfer start,
-	// including the initiating transfer (arrival-weighted mean, not a time-average).
-	// Populated when --pd-transfer-contention is enabled; callers attach from cs.MeanTransferQueueDepth().
-	MeanTransferQueueDepth float64
 }
 
 // CollectPDMetrics computes disaggregation-aware metrics from post-simulation state.
 // Returns nil when parents is empty (BC-7). Pure function -- no mutation of inputs.
-//
-// NOTE: PeakConcurrentTransfers and MeanTransferQueueDepth are populated when
-// --pd-transfer-contention is enabled. Callers attach these from
-// cs.PeakConcurrentTransfers() and cs.MeanTransferQueueDepth() after Run().
 //
 // Parameters:
 //   - parents: slice of ParentRequest records (disaggregated request lifecycles)

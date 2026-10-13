@@ -104,7 +104,7 @@ func TestNewRegistry_Rejections(t *testing.T) {
 
 // TestNewAdapterRegistryFunc_Registered verifies sim/lora's init() wired the registry
 // factory into the sim package (breaking the import cycle, mirroring
-// sim.NewLatencyModelFunc). Production code reaches the registry through this seam.
+// sim.NewKVCacheStateFunc). Production code reaches the registry through this seam.
 func TestNewAdapterRegistryFunc_Registered(t *testing.T) {
 	if sim.NewAdapterRegistryFunc == nil {
 		t.Fatalf("sim.NewAdapterRegistryFunc must be registered by sim/lora init()")

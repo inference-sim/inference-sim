@@ -48,6 +48,9 @@ func NewKVStore(cfg sim.KVCacheConfig, seed int64) sim.KVStore {
 	if cfg.KVOffloadThreshold < 0 || cfg.KVOffloadThreshold > 1 || math.IsNaN(cfg.KVOffloadThreshold) {
 		panic(fmt.Sprintf("NewKVStore: KVOffloadThreshold must be in [0,1] when KVCPUBlocks > 0, got %v", cfg.KVOffloadThreshold))
 	}
+	if cfg.KVTransferTicksPerBlock > 0 {
+		return NewTieredKVCacheWithBlockTicks(gpu, cfg.KVCPUBlocks, cfg.KVOffloadThreshold, cfg.KVTransferTicksPerBlock)
+	}
 	if cfg.KVTransferBandwidth <= 0 || math.IsNaN(cfg.KVTransferBandwidth) || math.IsInf(cfg.KVTransferBandwidth, 0) {
 		panic(fmt.Sprintf("NewKVStore: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", cfg.KVTransferBandwidth))
 	}

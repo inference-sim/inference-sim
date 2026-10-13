@@ -1,0 +1,6 @@
+name: llama-3.1-70b-instruct
+source:
+  provider: huggingface
+  repo: meta-llama/Llama-3.1-70B-Instruct
+  revision: 1605565b47bb9346c5515c34102e054115b4f98b
+  retrieved: 2026-09-16

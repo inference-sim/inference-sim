@@ -1,0 +1,7 @@
+# Plain Ethernet (100 GbE, TCP, no RDMA) — reusable inter-node fabric CLASS.
+# Per inference-sim#1662 a fabric is a property of the cluster/pool, not of the
+# GPU die, so it is defined once here and paired with a chip per deployment.
+Provenance: vendor_spec
+InterNodeBwGBps: 12.5
+_comment_interconnect: "Plain Ethernet, TCP/IP (no RDMA): one 100 GbE port per GPU. InterNodeBwGBps is the NOMINAL datasheet figure — 100 Gb/s / 8 = 12.5 GB/s per GPU, per direction — NOT a measurement; TCP typically reaches a smaller fraction of line rate than RDMA (CPU stays in the data path), so real payload throughput runs well below nominal (inference-sim#1632). The measured overhead/correction factor (effective / nominal) is a per-deployment number and lives in blis-registry, not in the catalog. Paired with a chip's on-node IntraNodeBwGBps, only the RATIO prices cross-node collective traffic (#1530); that ratio is a per-deployment (chip + fabric) quantity, resolved wherever a chip and fabric are paired."
+_comment_pd_transfer: "PD KV-transfer over this fabric uses this same InterNodeBwGBps (12.5 GB/s nominal) as its bandwidth — no separate PD figure. The fabric carries no PD base-latency field: the catalog states no inherent fabric base latency, so there is nothing to record here (the nominal figure would only ever be 0). The 0.05 ms --pd-transfer-base-latency default is a modeling placeholder, not a fabric fact, and lives in blis-registry (blis-registry#10). The CLI flags remain the defaults/overrides, so a run that resolves no fabric is byte-identical."

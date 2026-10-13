@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -188,4 +189,38 @@ func TestConvertWeka_JSONLIndependentAndSkips(t *testing.T) {
 			t.Errorf("out.csv should not exist on the failure path; stat err = %v", statErr)
 		}
 	})
+}
+
+// A sub-agent session stops the conversion with the refusal, even beside usable sessions:
+// it is not skipped like an unparseable line, which would let the trace come out without it.
+// --drop-subagents converts the main-agent streams of both.
+func TestConvertWeka_RefusesSubagentFanOutUnlessDropped(t *testing.T) {
+	dir := t.TempDir()
+	inPath := filepath.Join(dir, "traces.jsonl")
+	plain := `{"id":"plain","requests":[{"type":"n","t":0.0,"in":100,"out":10,"api_time":1.0}]}`
+	fanOut := `{"id":"fan","requests":[{"type":"n","t":0.0,"in":100,"out":10,"api_time":1.0},` +
+		`{"type":"subagent","t":2.0,"agent_id":"a","requests":[{"type":"n","t":2.5,"in":50,"out":5,"api_time":0.5}]},` +
+		`{"type":"n","t":5.0,"in":160,"out":10,"api_time":1.0}]}`
+	if err := os.WriteFile(inPath, []byte(plain+"\n"+fanOut+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := workload.WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1}
+	err := runConvertWeka(inPath, filepath.Join(dir, "refused"), opts)
+	if !errors.Is(err, workload.ErrWekaSubagentFanOut) {
+		t.Fatalf("want the sub-agent refusal, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "refused.csv")); !os.IsNotExist(statErr) {
+		t.Errorf("a refused conversion must write no trace")
+	}
+	opts.DropSubagents = true
+	if err := runConvertWeka(inPath, filepath.Join(dir, "dropped"), opts); err != nil {
+		t.Fatalf("--drop-subagents: %v", err)
+	}
+	trace, err := workload.LoadTraceV2(filepath.Join(dir, "dropped.yaml"), filepath.Join(dir, "dropped.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.Records) != 3 {
+		t.Errorf("dropping sub-agents keeps the 3 main turns, got %d records", len(trace.Records))
+	}
 }

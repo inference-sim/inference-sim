@@ -54,7 +54,7 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 }
 
 // baseDeploymentConfig returns a cluster config with realistic processing times.
-// BetaCoeffs/AlphaCoeffs match the existing cluster test conventions.
+// Steps are priced by the shared fake latency model (testFakeLatency).
 func baseDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -62,8 +62,8 @@ func baseDeploymentConfig(numInstances int) DeploymentConfig {
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
-			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "", 1, 1, false, "", "roofline", 0),
+			LatencyModel:        testFakeLatency(),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "", 1, 1, false, 0),
 		},
 		NumInstances: numInstances,
 		TraceLevel:   "decisions",
@@ -82,7 +82,7 @@ func TestPrefixAffinityRouting_LongPrefix_ConcentratesVsLoadOnly(t *testing.T) {
 
 	// 256-token shared prefix (16 blocks at block_size=16) + 64-token suffix (4 blocks)
 	// Prefix match ratio = 16/20 = 0.80
-	// At 500µs between requests (2000 req/s), queues build up with realistic betas.
+	// At 500µs between requests (2000 req/s), queues build up.
 	requests := makeSharedPrefixRequests(
 		numRequests,
 		1.0, // 100% shared prefix for maximum signal

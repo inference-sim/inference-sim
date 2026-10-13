@@ -4,7 +4,8 @@ Admission control is the first gate in the cluster pipeline. It decides whether 
 
 ```bash
 # Rate-limit a 4-instance cluster with token bucket admission
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --rate 500 --num-requests 2000 \
   --admission-policy token-bucket \
   --token-bucket-capacity 10000 --token-bucket-refill-rate 1000
@@ -98,7 +99,8 @@ Priorities affect three components:
 The `tier-shed` policy sheds lower-priority SLO tiers under cluster overload. It activates when the maximum per-instance in-flight load exceeds `tier_shed_threshold`:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --rate 500 --num-requests 2000 \
   --admission-policy tier-shed \
   --policy-config policies.yaml
@@ -251,7 +253,8 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).
 ### Example
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --per-band-capacity 100 --max-gateway-queue-depth 500
 ```
@@ -282,12 +285,13 @@ With `--dispatch-order slo-deadline`, the gateway queue dispatches the request w
 **Example:**
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --flow-control --saturation-detector utilization \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
 ```
 
-**Observe integration:** When `slo_target_us > 0`, `blis observe` injects the `x-slo-ttft-ms` HTTP header on outgoing requests, matching GIE's header convention.
+**Observe integration** (`blis observe` is deprecated, #1901): When `slo_target_us > 0`, `blis observe` injects the `x-slo-ttft-ms` HTTP header on outgoing requests, matching GIE's header convention.
 
 ### In-Flight Eviction
 

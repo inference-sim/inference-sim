@@ -73,40 +73,24 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 			continue
 		}
 
-		// Build simCfg: start from the cluster default, then apply pool-authoritative GPU
-		// type and HWConfig override (SC-004, mirrors NewClusterSimulator startup path).
+		// Build simCfg: start from the cluster default, then apply the pool-authoritative GPU
+		// type (SC-004, mirrors NewClusterSimulator startup path).
 		// PoolRole(0) returns the global SimConfig unchanged — autoscaler does not yet
 		// support PD disaggregation. If PD + autoscaler are combined in future, this
 		// will need to resolve the correct prefill/decode role for the pool.
 		simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
 		simCfg.GPU = matchedGPU
-		if hc, ok := a.cluster.config.HWConfigByGPU[matchedGPU]; ok {
-			if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
-				panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
-					matchedGPU, hc.TFlopsPeak, hc.BwPeakTBs))
-			}
-			simCfg.HWConfig = hc
-		}
 
 		// Look up CostPerHour for this GPU type (mirrors NodeReadyEvent and startup path).
-		// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 		var costPerHour float64
-		var poolGPUMemoryGiB float64
 		for i := range a.cluster.config.NodePools {
 			if a.cluster.config.NodePools[i].GPUType == matchedGPU {
 				costPerHour = a.cluster.config.NodePools[i].CostPerHour
-				poolGPUMemoryGiB = a.cluster.config.NodePools[i].GPUMemoryGiB
 				break
 			}
 		}
-		// Issue #1522: recompute KV capacity from the placed GPU memory for autoscaler-
-		// created instances too (mirrors startup + deferred paths). No-op when
-		// KVAutoCalc.Enabled is false.
-		applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, a.cluster.config.KVAutoCalc, matchedGPU)
-		// Issue #1530: stamp the placement-derived interconnect topology (mirrors the
-		// startup + deferred paths) so an autoscaled instance prices cross-node comm
-		// identically.
-		a.cluster.applyPlacementTopology(&simCfg, gpuIDs)
+		// Record the instance's node span (mirrors the startup + deferred paths).
+		a.cluster.recordNodeSpan(gpuIDs)
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup +
 		// deferred paths). Single-node instances are unchanged (1×).

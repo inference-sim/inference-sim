@@ -1,0 +1,9 @@
+Provenance: vendor_spec
+TFlopsPeak: 312
+TFlopsFP8: 0
+BwPeakTBs: 2.039
+MemoryGiB: 80.0
+_comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 3 link as a per-GPU NOMINAL unidirectional bandwidth in GB/s: 600 GB/s bidirectional datasheet spec => 300 unidirectional per GPU. vendor_spec (bidirectional / 2), NOT measured effective throughput; any measured correction is a per-cluster blis-registry number. The inter-node fabric figure and the intra:inter ratio it feeds (#1530) live with the reusable Network fabric class (networks/roce-200g.yaml), paired with this chip per deployment (a cluster/pool concept, #1662)."
+IntraNodeBwGBps: 300
+_comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GA100 die as shipped in this part, from the NVIDIA datasheet (https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf). A100 enables 108 of the GA100 die's 128 SMs. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."
+SMCount: 108

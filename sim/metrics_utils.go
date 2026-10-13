@@ -28,6 +28,22 @@ type RequestMetrics struct {
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
+
+	// CompletionIndex is this request's 1-based position in the run's completion order,
+	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
+	// only in the --metrics-path file (Requests[] never reaches stdout). A consumer that
+	// discards a leading warm-up phase by completion -- the accuracy harness does -- needs
+	// the order the simulator completed requests in, which neither arrival order nor
+	// ArrivedAt+E2E recovers.
+	CompletionIndex int `json:"completion_index,omitempty"`
+
+	// completionSeq is the order in which the serving instance completed this request
+	// (1-based, per instance; 0 = not completed) and completionClock the simulation clock
+	// when it did, both recorded by Metrics.recordCompletionOrder. They survive the
+	// cluster's value-copy merge of Requests, and EmitOutput derives CompletionIndex from
+	// them. Unexported, so never serialized.
+	completionSeq   int
+	completionClock int64
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -120,6 +136,21 @@ type MetricsOutput struct {
 	// omitempty, so a results file written without the option is byte-identical to
 	// a pre-feature build.
 	Catalog *CatalogProvenance `json:"catalog,omitempty"`
+
+	// Overrides lists every setting this run simulated differently from its scenario -- an
+	// explicit flag or policy bundle chose another value than the scenario's deployment
+	// states -- so a results file always says when it does not reproduce its scenario.
+	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
+	// scenario exactly.
+	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+}
+
+// ScenarioOverride is one setting a run took from somewhere other than its scenario.
+type ScenarioOverride struct {
+	Setting  string `json:"setting"`  // what was overridden, e.g. "scheduler"
+	Scenario string `json:"scenario"` // the value the scenario states (in BLIS's terms)
+	Run      string `json:"run"`      // the value the run simulated
+	Source   string `json:"source"`   // what chose it, e.g. "--scheduler" or "--policy-config"
 }
 
 // CatalogProvenance attributes a results file to the model catalog that produced it

@@ -167,6 +167,11 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 				SingleTransferFraction: t.SingleTransferFraction,
 				MaxQueueDepth:          0, // unbounded (vLLM deque default); keeps prepareStore→Submit leak-safe
 			}
+			if price := t.ServiceTime; price != nil {
+				stationCfg.Tiers[i].ServiceTime = func(dir kvtransfer.Direction, bytes int64, q int) int64 {
+					return price(dir == kvtransfer.Write, bytes, q)
+				}
+			}
 		}
 		station, err := kvtransfer.New(stationCfg)
 		if err != nil {

@@ -4,7 +4,8 @@ Routing decides **which instance** receives a request. Scheduling decides **what
 
 ```bash
 # Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --scheduler priority-fcfs
 # SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)
@@ -84,7 +85,7 @@ BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request
 
 This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With `priority-fcfs` and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.
 
-By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (`scheduler.py:1086`).
+By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). A scenario stating `engine.scheduling_policy: priority` selects both `priority-fcfs` queueing and `priority` preemption, as vLLM does (`fcfs` selects `fcfs` for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file ([Scenario Overrides](results.md#scenario-overrides)).
 
 ## When to Use Which
 

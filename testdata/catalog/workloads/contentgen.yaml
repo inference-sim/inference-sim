@@ -1,9 +1,11 @@
 prefix_tokens: 0
-prompt_tokens: 1024
-prompt_tokens_stdev: 150
-prompt_tokens_min: 10
-prompt_tokens_max: 2048
-output_tokens: 1024
-output_tokens_stdev: 200
-output_tokens_min: 10
-output_tokens_max: 2048
+prompt:
+  tokens: 1024
+  tokens_stdev: 150
+  tokens_min: 10
+  tokens_max: 2048
+output:
+  tokens: 1024
+  tokens_stdev: 200
+  tokens_min: 10
+  tokens_max: 2048

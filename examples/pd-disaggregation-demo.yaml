@@ -6,33 +6,32 @@
 #
 # When to use PD disaggregation:
 #   - Long-context workloads where prefill computation dominates
-#   - Heterogeneous hardware (faster GPUs for prefill, more memory for decode)
 #   - When co-location interference between prefill and decode is significant
 #
 # ============================================================================
-# TRY IT: Compare co-located vs disaggregated configurations
+# TRY IT: a disaggregated run
 # ============================================================================
 #
-#   # Baseline: 4 co-located instances (no disaggregation)
-#   ./blis run \
-#     --model qwen/qwen3-14b --hardware H100 --tp 1 \
-#     --num-instances 4 --rate 100 --num-requests 1000
+#   P/D needs a disaggregated scenario (prefill and decode pools). This repo ships
+#   one: testdata/scenarios/glm-5-h200-3p1d-ib.yaml (3 one-node TP8 prefill engines,
+#   1 one-node TP8 decode engine, 400G InfiniBand). The prefill/decode counts must
+#   not exceed each pool's rank capacity (pool nodes x gpus_per_node / (pp x tp x pcp)).
 #
-#   # PD disaggregation: 2 prefill + 2 decode, always disaggregate
 #   ./blis run \
-#     --model qwen/qwen3-14b --hardware H100 --tp 1 \
+#     --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
+#     --registry $PWD/blis-registry \
 #     --num-instances 4 \
-#     --prefill-instances 2 --decode-instances 2 \
+#     --prefill-instances 3 --decode-instances 1 \
 #     --pd-decider always \
-#     --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
-#     --rate 100 --num-requests 1000
+#     --rate 10 --num-requests 200
 #
 # ============================================================================
-# PD Transfer Parameters
+# KV transfer pricing
 # ============================================================================
 #
-#   --pd-transfer-bandwidth N   Inter-pool KV transfer bandwidth in GB/s (default: 25)
-#   --pd-transfer-base-latency N  Fixed setup latency per transfer in ms (default: 0.05)
+#   There are no transfer flags. blis-latency-kernel prices each KV handoff
+#   (PDTransferTime) over the scenario's fabric between the two instances'
+#   placements; the scenario's pd_transfer block names the connector.
 #
 # ============================================================================
 # Decider Strategies

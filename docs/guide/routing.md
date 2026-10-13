@@ -4,7 +4,8 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 
 ```bash
 # Quick example: compare round-robin vs weighted routing
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --routing-policy weighted --trace-level decisions --summarize-trace
 ```
@@ -60,11 +61,13 @@ BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
 
 ```bash
 # Oracle mode (immediate signals — best for algorithmic studies):
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --routing-scorers "vllm-dp:1" \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --routing-scorers "vllm-dp:1" \
   --snapshot-refresh-interval 0
 
 # Staleness-matched mode (matches vLLM's 100ms coordinator interval):
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --routing-scorers "vllm-dp:1" \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --routing-scorers "vllm-dp:1" \
   --snapshot-refresh-interval 100000
 ```
 

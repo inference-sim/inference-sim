@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +10,8 @@ import (
 	"strings"
 	"syscall"
 
-	"gopkg.in/yaml.v3"
+	blisschemas "github.com/inference-sim/blis-schemas"
+	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -35,18 +35,35 @@ const (
 // single source of truth, consistent with NS-6 (#1733): a run already requires the catalog
 // for its model, and nothing about a run is inferred from a bundled default.
 //
-// The YAML keys are the catalog's, unchanged from the retired defaults.yaml block, so the
-// same files parse before and after the cutover (INV-6).
+// The FILE format is not declared here. It is blis-schemas' workload.Shape, which owns the
+// catalog's workloads namespace (blis-catalog#18 moved it to nested prompt:/output:
+// distributions), and it is decoded by blis-schemas' own strict LoadWorkload. This struct
+// is the value BLIS reads out of a Shape, so there is one parser per catalog format.
 type presetWorkload struct {
-	PrefixTokens      int `yaml:"prefix_tokens"`
-	PromptTokensMean  int `yaml:"prompt_tokens"`
-	PromptTokensStdev int `yaml:"prompt_tokens_stdev"`
-	PromptTokensMin   int `yaml:"prompt_tokens_min"`
-	PromptTokensMax   int `yaml:"prompt_tokens_max"`
-	OutputTokensMean  int `yaml:"output_tokens"`
-	OutputTokensStdev int `yaml:"output_tokens_stdev"`
-	OutputTokensMin   int `yaml:"output_tokens_min"`
-	OutputTokensMax   int `yaml:"output_tokens_max"`
+	PrefixTokens      int
+	PromptTokensMean  int
+	PromptTokensStdev int
+	PromptTokensMin   int
+	PromptTokensMax   int
+	OutputTokensMean  int
+	OutputTokensStdev int
+	OutputTokensMin   int
+	OutputTokensMax   int
+}
+
+// presetFromShape reads the token distributions out of a catalog workload shape.
+func presetFromShape(s *schemaworkload.Shape) presetWorkload {
+	return presetWorkload{
+		PrefixTokens:      s.PrefixTokens,
+		PromptTokensMean:  s.Prompt.Mean,
+		PromptTokensStdev: s.Prompt.StdDev,
+		PromptTokensMin:   s.Prompt.Min,
+		PromptTokensMax:   s.Prompt.Max,
+		OutputTokensMean:  s.Output.Mean,
+		OutputTokensStdev: s.Output.StdDev,
+		OutputTokensMin:   s.Output.Min,
+		OutputTokensMax:   s.Output.Max,
+	}
 }
 
 // toPresetConfig converts a catalog preset into the library's PresetConfig. It is the ONE
@@ -133,10 +150,9 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		// ENOENT and ENOTDIR both mean "the catalog does not define this preset"; any
-		// other read failure (EACCES, EIO) is reported as such, so a permission problem
+		// other failure (EACCES, EIO) is reported as such, so a permission problem
 		// is never reported as an unknown preset name.
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 			available := availablePresetNames(catalog)
@@ -153,19 +169,31 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 		return nil, fmt.Errorf("workload preset %q at %s is not readable: %w", name, path, err)
 	}
 
-	// Strict parsing (R10): an unrecognized key is a hard error rather than a silently
-	// dropped field, which for a token distribution would mean a plausible-but-wrong zero.
-	var wl presetWorkload
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	// An empty file decodes as io.EOF with every field left zero; the token-mean check
-	// below reports it, so it needs no separate branch.
-	if err := decoder.Decode(&wl); err != nil && !errors.Is(err, io.EOF) {
+	// blis-schemas' strict loader (R10): an unrecognized key is a hard error rather than a
+	// silently dropped field, which for a token distribution would mean a
+	// plausible-but-wrong zero. Its field validation runs too, so a preset BLIS accepts is
+	// one the catalog's own gate accepts.
+	shape, err := blisschemas.LoadWorkload(path)
+	if errors.Is(err, io.EOF) {
+		// An empty file has no document; the token-distribution check below reports it.
+		shape, err = &schemaworkload.Shape{Name: name}, nil
+	}
+	if err != nil {
 		return nil, fmt.Errorf("workload preset %q at %s is not a valid preset definition: %w", name, path, err)
+	}
+	wl := presetFromShape(shape)
+	// The schema's field validation runs once the means are present, so a preset that
+	// states no distribution at all gets the actionable message below rather than the
+	// schema's per-field list.
+	if wl.PromptTokensMean > 0 && wl.OutputTokensMean > 0 {
+		if problems := shape.Validate(); !problems.OK() {
+			return nil, fmt.Errorf("workload preset %q at %s is not a valid preset definition: %s",
+				name, path, problems.Error())
+		}
 	}
 	if wl.PromptTokensMean <= 0 || wl.OutputTokensMean <= 0 {
 		return nil, fmt.Errorf(
-			"workload preset %q at %s declares no token distribution (prompt_tokens=%d, output_tokens=%d); both must be > 0",
+			"workload preset %q at %s declares no token distribution (prompt.tokens=%d, output.tokens=%d); both must be > 0",
 			name, path, wl.PromptTokensMean, wl.OutputTokensMean)
 	}
 
@@ -177,6 +205,10 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 	// in root.go, shared by the concurrency and rate-mode synthesis paths), so a preset and
 	// the equivalent --prompt-tokens-* / --output-tokens-* flags are refused identically. A
 	// preset with valid bounds is unaffected (INV-6): the bundled presets all pass.
+	//
+	// This is stricter than blis-schemas, where tokens_min/tokens_max are optional. The
+	// difference is deliberate: BLIS samples from a clamped Gaussian, and an omitted bound
+	// would clamp at zero rather than at "unbounded", so BLIS requires what its sampler needs.
 	if msg := validateDistributionParams(
 		wl.PromptTokensMin, wl.PromptTokensMax,
 		wl.OutputTokensMin, wl.OutputTokensMax,
@@ -185,7 +217,7 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 	); msg != "" {
 		return nil, fmt.Errorf(
 			"workload preset %q at %s has invalid token distribution bounds: %s\n"+
-				"  (a preset's YAML keys mirror the CLI flags: e.g. prompt_tokens_min is --prompt-tokens-min)",
+				"  (a preset's YAML keys mirror the CLI flags: e.g. prompt.tokens_min is --prompt-tokens-min)",
 			name, path, msg)
 	}
 	return &wl, nil

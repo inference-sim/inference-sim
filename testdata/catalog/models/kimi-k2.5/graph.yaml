@@ -1,0 +1,185 @@
+kind: ModelGraph
+name: kimi-k2.5
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: acd5bb01a16f64b309599cd6ed196be056f613c99d6bc9300692b82cd10882f6
+  deriver_version: 1
+global:
+  hidden_size: 7168
+  vocab_size: 163840
+  tie_word_embeddings: false
+  weight_dtype: int4
+layer_kinds:
+- id: attn_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2112
+    k: 7168
+    weight_dtype: bf16
+  - op: Elementwise
+    role: q_a_layernorm
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj
+    n: 12288
+    k: 1536
+    weight_dtype: bf16
+  - op: GEMM
+    role: kv_b_proj
+    n: 16384
+    k: 512
+    weight_dtype: bf16
+  - op: Attention
+    kind: mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 8192
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 36864
+    k: 7168
+  - op: GEMM
+    role: mlp_down
+    n: 7168
+    k: 18432
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2112
+    k: 7168
+    weight_dtype: bf16
+  - op: Elementwise
+    role: q_a_layernorm
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj
+    n: 12288
+    k: 1536
+    weight_dtype: bf16
+  - op: GEMM
+    role: kv_b_proj
+    n: 16384
+    k: 512
+    weight_dtype: bf16
+  - op: Attention
+    kind: mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 8192
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 2048
+    k: 7168
+    experts: 384
+    top_k: 8
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+stack:
+  prologue:
+  - attn_dense
+  pattern:
+  - attn_moe
+  repeat: 60
+modality: text_decoder_of_multimodal
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 163840
+  k: 7168

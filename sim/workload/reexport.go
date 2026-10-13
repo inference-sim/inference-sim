@@ -229,7 +229,7 @@ func accumulatedOutputLen(req *sim.Request) int {
 // would double-count on re-replay). Model IS copied — unlike the converter (which sets
 // Model="" for routing safety), req.Model here came from the original trace and already
 // drove routing in THIS replay, so preserving it keeps re-replay routing consistent (it is
-// empty for converter corpora, which still inherit --model).
+// empty for converter corpora, which still inherit the run's model).
 func copyReExportMetadata(rec *TraceRecord, req *sim.Request) {
 	rec.ClientID = req.ClientID
 	rec.TenantID = req.TenantID

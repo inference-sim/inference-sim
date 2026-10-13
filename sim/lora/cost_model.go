@@ -15,12 +15,12 @@ import (
 //   - LoadLatency(id)        — one-time cold-load latency (µs), charged by the
 //     pre-admission gate (PR3): base + ceil(footprint(rank)/bandwidth).
 //   - StepOverheadFactor(b)  — multiplicative per-step compute overhead >= 1.0,
-//     1 + (K6(r_max)/K7(r_max))·A_B, applied by both latency backends (PR4).
+//     1 + (K6(r_max)/K7(r_max))·A_B, applied to the latency model's step price (PR4).
 //   - FootprintBytes(id)     — per-adapter HBM footprint (footprint_bytes_per_rank
 //     · rank); an input to LoadLatency, not itself a KV-reservation term.
 //   - AdapterReservedBytes() — the FIXED, capacity-based static HBM reservation
 //     (adapter_capacity × per-slot footprint, sized from the max declared rank)
-//     subtracted from the KV budget once at startup (PR5). A constant, NOT a
+//     set aside from the kernel's KV budget once at startup (PR5). A constant, NOT a
 //     running sum over currently-resident adapters (D2 / INV-L4).
 //
 // All methods are pure queries (Principle III): they never mutate the model and
@@ -28,8 +28,8 @@ import (
 // resolved from the pre-declared registry built once at construction; requests
 // carry only the adapter id.
 //
-// It satisfies sim.AdapterCost; the type stays exported so the latency backends
-// consume StepOverheadFactor and the KV-capacity path consumes AdapterReservedBytes
+// It satisfies sim.AdapterCost; the type stays exported so the latency-model wrapper
+// consumes StepOverheadFactor and the kernel's KV sizing consumes AdapterReservedBytes
 // through that seam (each term wired as its PR landed — PR3/PR4/PR5; R13).
 type CostModel struct {
 	loadBaseLatencyUs     float64
@@ -229,7 +229,7 @@ func (c *CostModel) LoadLatency(id string) float64 {
 // The K6/K7 coefficients are selected by r_max's tier (rank enters here — FR-009),
 // clamped to the nearest calibrated tier when out of envelope. Normalized so the
 // factor is exactly 1.0 when A_B==0 for any fitted K7 (INV-6). Applied to the base
-// step time by both latency backends via applyAdapterOverhead (#1467).
+// step time by sim.WithAdapterOverhead (#1467).
 func (c *CostModel) StepOverheadFactor(batch []*sim.Request) float64 {
 	seen := make(map[string]struct{}, len(batch))
 	maxRank := 0

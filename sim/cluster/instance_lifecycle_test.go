@@ -70,7 +70,7 @@ func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
 	// is applied to the baseline TTFT, but queueing/scheduling delays are
 	// additive and independent of the multiplier, which compresses the observed
 	// ratio below 2.0x. The exact compression depends on the latency model
-	// backend (roofline vs trained-physics produce different baseline timing).
+	// (its fixed queueing term versus its step cost).
 	ratio1 := ttft1 / ttft3
 	ratio2 := ttft2 / ttft3
 	if ratio1 < 1.3 || ratio1 > 2.5 {

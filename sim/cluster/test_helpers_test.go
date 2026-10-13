@@ -6,6 +6,8 @@ import (
 	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // testGenerateRequests replicates the exact algorithm from the old
@@ -68,28 +70,30 @@ func generateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
 	return int(math.Round(clampedVal))
 }
 
-// testRooflineModelConfig returns a minimal valid sim.ModelConfig for roofline tests.
-// Llama-3.1-8B-like values; used wherever tests need a valid model configuration.
-func testRooflineModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{
-		NumLayers:     32,
-		HiddenDim:     4096,
-		NumHeads:      32,
-		NumKVHeads:    8,
-		BytesPerParam: 2, // bfloat16
-	}
+// testModelConfig returns a dense sim.ModelConfig for tests that need one. Step time comes
+// from the fake latency model (testFakeLatency).
+func testModelConfig() sim.ModelConfig {
+	return sim.ModelConfig{}
 }
 
-// testRooflineHWCalib returns a minimal valid sim.HardwareCalib for roofline tests.
-// H100-like values; used wherever tests need a valid hardware configuration.
-func testRooflineHWCalib() sim.HardwareCalib {
-	return sim.HardwareCalib{
-		TFlopsPeak: 989.0,
-		BwPeakTBs:  3.35,
-		MfuPrefill: 0.55,
-		MfuDecode:  0.30,
-	}
+// testFakeLatency is the latency model every cluster behavior test prices steps with:
+// the deterministic, stateless fake from sim/internal/testutil (default coefficients).
+// Set it as SimConfig.LatencyModel so instances never build a pricing backend.
+func testFakeLatency() sim.LatencyModel { return fakelatency.New() }
+
+// testFakeZeroQueueing is testFakeLatency with no arrival-to-queue delay, for tests that
+// need a request to enter the wait queue at its arrival tick.
+func testFakeZeroQueueing() sim.LatencyModel {
+	c := testutil.DefaultFakeLatency()
+	c.QueueingTicks = 0
+	return fakelatency.WithCoeffs(c)
 }
+
+// testPDTransferTime is the KV-handoff price every PD behavior test injects as
+// DeploymentConfig.PDTransferTime: a fixed setup cost plus a per-token term, so a larger
+// handoff takes longer and every handoff takes at least one tick. The simulator only decides
+// when a transfer happens; how long it takes is the pricer's, so tests supply one.
+func testPDTransferTime(tokens int64, _, _ InstanceID) int64 { return 50 + tokens/50 }
 
 // newTestRequests creates test requests matching the old newTestWorkload(n) behavior:
 // rate=10/1e6, seed=42, horizon=MaxInt64, no prefix, prompt mean=100 std=20 [10,200],

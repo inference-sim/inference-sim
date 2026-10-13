@@ -1,19 +1,12 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
-
-	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
 )
 
 // This file is the R1/C6 acceptance GATE (#1750): CI runs a load over every catalog entry,
@@ -23,8 +16,8 @@ import (
 // Three layers:
 //
 //  1. TestCatalogStrictLoad_CommittedFixtureCatalog — unconditional, over the committed
-//     testdata/catalog. Proves every committed vendor config.json resolves and parses through
-//     the RUN path, every committed preset loads through the production preset reader, and the
+//     testdata/catalog. Proves every committed model graph loads and validates through the
+//     loader a run uses, every committed preset loads through the production preset reader, and the
 //     committed storage-device table loads — on real data, in every `go test ./cmd/...` run.
 //  2. TestCatalogStrictLoad_CompleteCatalogLoadsClean and the contract tables — a fully
 //     populated catalog (all four namespaces) loads with zero problems, and each strict rule
@@ -38,42 +31,40 @@ import (
 // fixtureCatalog is the committed clone-root-shaped test catalog.
 const fixtureCatalog = "../testdata/catalog"
 
-// validHardwareEntry is a well-formed hardware/<gpu>.yaml body (the H100 shape: every
-// required calibration field, plus the optional interconnect pair and provenance comments).
-const validHardwareEntry = `_comment: "fixture — mirrors the committed blis-catalog h100.yaml shape"
-TFlopsPeak: 989.5
-TFlopsFP8: 1979.0
-BwPeakTBs: 3.35
-mfuPrefill: 0.45
-mfuDecode: 0.30
-MemoryGiB: 80.0
-_comment_interconnect: "fixture"
-IntraNodeBwGBps: 450
-InterNodeBwGBps: 50
-`
+// The well-formed bodies every temp catalog is built from are the committed fixture
+// catalog's own files -- a verbatim subset of a tagged blis-catalog release -- rather than
+// hand-written copies of their shape, so a temp catalog is real catalog data and cannot
+// drift from the format the release publishes.
+var (
+	// validHardwareEntry is a well-formed hardware/<gpu>.yaml body.
+	validHardwareEntry = fixtureCatalogFile(filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt))
+	// validWorkloadEntry is a well-formed workloads/<name>.yaml body.
+	validWorkloadEntry = fixtureCatalogFile(filepath.Join(catalogWorkloadsSubdir, "chatbot"+presetFileExt))
+	// validDeviceTable is a well-formed devices/storage.yaml body.
+	validDeviceTable = fixtureCatalogFile(catalogStorageDevicesRelPath)
+)
 
-// validWorkloadEntry is a well-formed workloads/<name>.yaml body.
-const validWorkloadEntry = `prefix_tokens: 0
-prompt_tokens: 256
-prompt_tokens_stdev: 100
-prompt_tokens_min: 2
-prompt_tokens_max: 800
-output_tokens: 256
-output_tokens_stdev: 100
-output_tokens_min: 1
-output_tokens_max: 1024
-`
-
-// validDeviceTable is a well-formed devices/storage.yaml body.
-const validDeviceTable = `nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
-cpu_dram: {read_bandwidth: 2.0e4, write_bandwidth: 2.0e4, base_latency: 1.0}
-`
+// fixtureCatalogFile reads one file of the committed fixture catalog. It panics rather than
+// returning an error because it initializes package variables, and a missing fixture is a
+// broken checkout that no test in this package could run without.
+func fixtureCatalogFile(rel string) string {
+	data, err := os.ReadFile(filepath.Join(fixtureCatalog, rel))
+	if err != nil {
+		panic(fmt.Sprintf("fixture catalog file %s: %v", rel, err))
+	}
+	return string(data)
+}
 
 // gateModel is the fixture model every temp catalog in this file is built around. Its
-// config.json is copied from the committed fixture catalog, so the model half of a temp
-// catalog is real vendor data rather than a hand-written stub that could drift from what the
-// parser accepts.
+// graph.yaml and vendor config.json are copied from the committed fixture catalog, so the
+// model half of a temp catalog is real catalog data rather than a hand-written stub that
+// could drift from what the loader accepts.
 const gateModel = "qwen3-14b"
+
+// vendorConfigFile is the verbatim vendor config a catalog model entry carries beside its
+// derived graph. BLIS does not read it; the temp catalogs carry it so they look like the
+// real thing.
+const vendorConfigFile = "config.json"
 
 // modelEntryYAML renders a well-formed model.yaml body for the named model.
 func modelEntryYAML(name string) string {
@@ -96,11 +87,13 @@ func newCompleteCatalog(t *testing.T) string {
 	if err := os.MkdirAll(entryDir, 0o755); err != nil {
 		t.Fatalf("mkdir model entry: %v", err)
 	}
-	config, err := os.ReadFile(filepath.Join(fixtureCatalog, catalogModelsSubdir, gateModel, hfConfigFile))
-	if err != nil {
-		t.Fatalf("read fixture config.json: %v", err)
+	for _, f := range []string{catalogModelGraphFile, vendorConfigFile} {
+		body, err := os.ReadFile(filepath.Join(fixtureCatalog, catalogModelsSubdir, gateModel, f))
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", f, err)
+		}
+		writeCatalogFile(t, filepath.Join(entryDir, f), string(body))
 	}
-	writeCatalogFile(t, filepath.Join(entryDir, hfConfigFile), string(config))
 	writeCatalogFile(t, filepath.Join(entryDir, catalogModelEntryFile), modelEntryYAML(gateModel))
 	writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), validHardwareEntry)
 	writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "chatbot"+presetFileExt), validWorkloadEntry)
@@ -155,50 +148,27 @@ func TestCatalogStrictLoad_CompleteCatalogLoadsClean(t *testing.T) {
 }
 
 // TestCatalogStrictLoad_CommittedFixtureCatalog loads the committed testdata/catalog. It is
-// the unconditional half of the gate, and asserts TWO things about real committed data:
-//
-//   - every vendor config.json resolves through resolveModelConfigInCatalog and parses through
-//     latency.GetModelConfig (the RUN path), every committed preset loads through the
-//     production preset reader, and the committed storage-device table loads;
-//   - the ONLY problems the fixture catalog has are its missing model.yaml files.
-//
-// The fixture catalog deliberately carries no model.yaml and no hardware/ namespace: it exists
-// so `go test ./cmd/...` can resolve models and presets offline, and three of its config.json
-// files are older/trimmed copies of the authoritative ones (tracked by #1748), so giving them a
-// provenance record stating an upstream revision would state something untrue. Asserting the
-// incompleteness here — rather than leaving it unexplained — makes the completeness rule fire
-// on real committed data, and pins that no OTHER rule false-positives on it.
+// the unconditional half of the gate. The fixture is a verbatim subset of a tagged
+// blis-catalog release (testdata/README.md), so it must load with NO problems through the
+// same readers a run uses, and every namespace a run can consume must be represented --
+// otherwise the gate would be vacuous for it.
 func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 	report := loadOrFatal(t, fixtureCatalog)
-
-	if report.Presets == 0 {
-		t.Error("the fixture catalog's committed workload presets must all load through the production reader")
+	if err := report.Err(); err != nil {
+		t.Fatalf("the fixture catalog is a verbatim subset of a release and must load clean: %v", err)
 	}
-	if report.DeviceClasses == 0 {
-		t.Error("the fixture catalog's committed storage-device table must load through the production reader")
-	}
-
-	modelDirs, err := os.ReadDir(filepath.Join(fixtureCatalog, catalogModelsSubdir))
-	if err != nil {
-		t.Fatalf("read fixture models: %v", err)
-	}
-	wantModelEntries := 0
-	for _, e := range modelDirs {
-		if e.IsDir() {
-			wantModelEntries++
-		}
-	}
-	if wantModelEntries == 0 {
-		t.Fatal("the fixture catalog has no model entries, so this gate would be vacuous")
-	}
-	if len(report.Problems) != wantModelEntries {
-		t.Fatalf("expected exactly one problem per fixture model entry (its missing %s); got %d problem(s) for %d entries:\n%v",
-			catalogModelEntryFile, len(report.Problems), wantModelEntries, report.Err())
-	}
-	for _, problem := range report.Problems {
-		if !strings.Contains(problem, catalogModelEntryFile) {
-			t.Errorf("the only expected fixture-catalog problem is a missing %s, but got: %s",
-				catalogModelEntryFile, problem)
+	for _, got := range []struct {
+		namespace string
+		count     int
+	}{
+		{catalogModelsSubdir, report.Models},
+		{catalogHardwareSubdir, report.Hardware},
+		{catalogWorkloadsSubdir, report.Presets},
+		{catalogDevicesSubdir, report.DeviceClasses},
+	} {
+		if got.count == 0 {
+			t.Errorf("%s: the fixture loaded 0 entries, so the gate would be vacuous for that namespace",
+				got.namespace)
 		}
 	}
 }
@@ -279,34 +249,16 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantPhrases: []string{"MemoryGB", "unknown"},
 		},
 		{
-			name: "case-mismatched key in hardware entry",
-			mutate: func(t *testing.T, root string) {
-				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt),
-					strings.Replace(validHardwareEntry, "IntraNodeBwGBps", "IntraNodeBwGbps", 1))
-			},
-			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"IntraNodeBwGbps", "letter case"},
-		},
-		{
-			name: "retired per-collective interconnect key in hardware entry",
-			mutate: func(t *testing.T, root string) {
-				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt),
-					validHardwareEntry+"InterNodeLatencyUs: 25.0\n")
-			},
-			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"InterNodeLatencyUs", "InterNodeHopLatencyUs"},
-		},
-		{
-			name: "hardware entry omits a required calibration field",
+			name: "hardware entry omits a required chip fact",
 			mutate: func(t *testing.T, root string) {
 				body := strings.Replace(validHardwareEntry, "MemoryGiB: 80.0\n", "", 1)
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), body)
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"MemoryGiB", "required"},
+			wantPhrases: []string{"MemoryGiB"},
 		},
 		{
-			name: "hardware entry states a non-positive calibration value",
+			name: "hardware entry states a non-positive chip fact",
 			mutate: func(t *testing.T, root string) {
 				body := strings.Replace(validHardwareEntry, "BwPeakTBs: 3.35", "BwPeakTBs: 0", 1)
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), body)
@@ -315,41 +267,32 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantPhrases: []string{"BwPeakTBs"},
 		},
 		{
-			name: "hardware entry sets only one interconnect bandwidth",
-			mutate: func(t *testing.T, root string) {
-				body := strings.Replace(validHardwareEntry, "InterNodeBwGBps: 50\n", "", 1)
-				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), body)
-			},
-			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"InterNodeBwGBps"},
-		},
-		{
 			name: "unknown key in workload preset",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "chatbot"+presetFileExt),
-					validWorkloadEntry+"prompt_tokens_median: 12\n")
+					validWorkloadEntry+"prompt_median: 12\n")
 			},
 			wantFile:    filepath.Join(catalogWorkloadsSubdir, "chatbot"+presetFileExt),
-			wantPhrases: []string{"prompt_tokens_median"},
+			wantPhrases: []string{"prompt_median"},
 		},
 		{
 			name: "unknown key in storage-device table",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, catalogStorageDevicesPath(root),
-					validDeviceTable+"tape: {read_bandwidth: 1.0, write_bandwidth: 1.0, base_latency: 1.0, seek_latency: 9.0}\n")
+					validDeviceTable+"tape: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 1.0, base_latency_us: 1.0, seek_latency: 9.0}\n")
 			},
 			wantFile:    catalogStorageDevicesRelPath,
 			wantPhrases: []string{"seek_latency"},
 		},
 		{
-			name: "model entry has no config.json",
+			name: "model entry has no graph.yaml",
 			mutate: func(t *testing.T, root string) {
-				if err := os.Remove(filepath.Join(root, modelEntry, hfConfigFile)); err != nil {
-					t.Fatalf("remove config.json: %v", err)
+				if err := os.Remove(filepath.Join(root, modelEntry, catalogModelGraphFile)); err != nil {
+					t.Fatalf("remove graph.yaml: %v", err)
 				}
 			},
-			wantFile:    hfConfigFile,
-			wantPhrases: []string{"not in the catalog"},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"incomplete"},
 		},
 		{
 			name: "model entry has no model.yaml",
@@ -362,12 +305,23 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantPhrases: []string{"incomplete"},
 		},
 		{
-			name: "model entry config.json is not a HuggingFace config",
+			name: "unknown key in graph.yaml",
 			mutate: func(t *testing.T, root string) {
-				writeCatalogFile(t, filepath.Join(root, modelEntry, hfConfigFile), `{"model": "mine"}`)
+				graph := fixtureCatalogFile(filepath.Join(catalogModelsSubdir, gateModel, catalogModelGraphFile))
+				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelGraphFile), graph+"num_hidden_layers: 40\n")
 			},
-			wantFile:    hfConfigFile,
-			wantPhrases: []string{"HuggingFace"},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"num_hidden_layers"},
+		},
+		{
+			name: "graph.yaml names a different model than its directory",
+			mutate: func(t *testing.T, root string) {
+				graph := fixtureCatalogFile(filepath.Join(catalogModelsSubdir, gateModel, catalogModelGraphFile))
+				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelGraphFile),
+					strings.Replace(graph, "name: "+gateModel+"\n", "name: some-other-model\n", 1))
+			},
+			wantFile:    catalogModelGraphFile,
+			wantPhrases: []string{"some-other-model", gateModel},
 		},
 		{
 			name: "model.yaml names a different model than its directory",
@@ -395,7 +349,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					modelEntryYAML(gateModel)+"gpu: H100\n")
 			},
 			wantFile:    catalogModelEntryFile,
-			wantPhrases: []string{"deployment fact", "--hardware", `"gpu"`},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice", `"gpu"`},
 		},
 		{
 			name: "model.yaml states a nested tensor-parallel degree",
@@ -404,7 +358,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					modelEntryYAML(gateModel)+"deployment:\n  tensor_parallel_size: 8\n")
 			},
 			wantFile:    catalogModelEntryFile,
-			wantPhrases: []string{"deployment fact", "--tp", "deployment.tensor_parallel_size"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice", "deployment.tensor_parallel_size"},
 		},
 		{
 			name: "workload preset states a tensor-parallel degree",
@@ -413,7 +367,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validWorkloadEntry+"tp: 4\n")
 			},
 			wantFile:    filepath.Join(catalogWorkloadsSubdir, "chatbot"+presetFileExt),
-			wantPhrases: []string{"deployment fact", "--tp"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice"},
 		},
 		{
 			name: "hardware entry states a GPU type",
@@ -422,7 +376,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validHardwareEntry+"gpu_type: H100\n")
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"deployment fact", "--hardware"},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice"},
 		},
 		{
 			name: "storage-device table states a tensor-parallel degree",
@@ -431,7 +385,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validDeviceTable+"deployment: {tensor_parallelism: 2}\n")
 			},
 			wantFile:    catalogStorageDevicesRelPath,
-			wantPhrases: []string{"deployment fact", "--tp"},
+			wantPhrases: []string{"deployment fact", "tensor-parallel degree is a deployment choice"},
 		},
 		{
 			// A second document is read by NOTHING: every typed reader decodes one document,
@@ -454,7 +408,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 					validHardwareEntry+"---\ngpu: H100\n")
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),
-			wantPhrases: []string{"deployment fact", "--hardware", "document[2].gpu"},
+			wantPhrases: []string{"deployment fact", "GPU type is a deployment choice", "document[2].gpu"},
 		},
 		{
 			// A later document that does not even parse is reported here, because no typed
@@ -614,130 +568,6 @@ func TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted(t *testing.T) {
 	}
 }
 
-// TestCatalogHardwareKeys_ClassifyEveryCalibField is the drift guard on the hardware namespace's
-// one hand-written policy. The ACCEPTED key set is derived reflectively in
-// latency.ParseHardwareCalibEntries, so a field added to sim.HardwareCalib is accepted with no
-// parser change — but whether a new field must be STATED is a judgement no reflection can make,
-// and defaulting it to "optional" would silently reintroduce the silent-zero defect
-// hardwareCalibRequiredKeys exists to prevent. So every field must appear in exactly one of the
-// two lists, and this test is what forces that decision at the moment the field is added.
-func TestCatalogHardwareKeys_ClassifyEveryCalibField(t *testing.T) {
-	classification := make(map[string]string, len(hardwareCalibRequiredKeys)+len(hardwareCalibOptionalKeys))
-	for _, key := range hardwareCalibRequiredKeys {
-		classification[key] = "required"
-	}
-	for _, key := range hardwareCalibOptionalKeys {
-		if was, dup := classification[key]; dup {
-			t.Errorf("%q is classified both %s and optional; a key must be one or the other", key, was)
-		}
-		classification[key] = "optional"
-	}
-
-	typ := reflect.TypeOf(sim.HardwareCalib{})
-	fields := make(map[string]bool, typ.NumField())
-	for i := 0; i < typ.NumField(); i++ {
-		f := typ.Field(i)
-		if !f.IsExported() {
-			continue // invisible to the decoder, so not a catalog key either
-		}
-		key := f.Name
-		if tag, ok := f.Tag.Lookup("json"); ok {
-			if name := strings.Split(tag, ",")[0]; name == "-" {
-				continue
-			} else if name != "" {
-				key = name
-			}
-		}
-		fields[key] = true
-		if _, classified := classification[key]; !classified {
-			t.Errorf("sim.HardwareCalib field %q is in neither hardwareCalibRequiredKeys nor "+
-				"hardwareCalibOptionalKeys: decide whether a catalog hardware entry must STATE it "+
-				"(an omitted non-pointer float reads 0) and add it to the right list", key)
-		}
-	}
-	for key := range classification {
-		if !fields[key] {
-			t.Errorf("%q is classified but is not a sim.HardwareCalib field; it could never be "+
-				"required or omitted", key)
-		}
-	}
-	// A positivity rule on a key nothing requires would never run.
-	for _, key := range hardwareCalibPositiveKeys {
-		if classification[key] != "required" {
-			t.Errorf("%q must be > 0 but is not required to be present; the check would never run", key)
-		}
-	}
-}
-
-// TestCatalogHardwareEntry_SharesTheRunPathValueValidation pins the PARITY the catalog reader
-// depends on: the values a hardware entry may hold are decided by
-// latency.ValidateHardwareCalibEntry, the single home for the load-boundary rules, so the
-// catalog namespace and the run path (latency.GetHWConfig over hardware_config.json) accept and
-// reject the same entries (R23). A rule that lands there fails a catalog entry too; a rule added
-// to only one path is what this asserts against, and its row goes here.
-func TestCatalogHardwareEntry_SharesTheRunPathValueValidation(t *testing.T) {
-	const gpu = "h100"
-	for _, tc := range []struct {
-		name       string
-		yamlBody   string
-		wantReject bool
-	}{
-		{
-			name:     "a complete interconnect pair is accepted by both",
-			yamlBody: validHardwareEntry,
-		},
-		{
-			name:       "a half-set interconnect pair is rejected by both",
-			yamlBody:   strings.Replace(validHardwareEntry, "InterNodeBwGBps: 50\n", "", 1),
-			wantReject: true,
-		},
-		{
-			name:       "a negative per-hop latency is rejected by both",
-			yamlBody:   validHardwareEntry + "InterNodeHopLatencyUs: -3.0\n",
-			wantReject: true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			yamlPath := filepath.Join(dir, gpu+catalogYAMLExt)
-			writeCatalogFile(t, yamlPath, tc.yamlBody)
-			_, catalogErr := readCatalogHardwareEntry(yamlPath)
-
-			// The same entry as the run path sees it: one GPU of a hardware_config.json.
-			calib, err := parseHardwareYAMLForTest(t, tc.yamlBody)
-			if err != nil {
-				t.Fatalf("convert the fixture entry to a hardware config: %v", err)
-			}
-			jsonPath := filepath.Join(dir, "hardware_config.json")
-			writeCatalogFile(t, jsonPath, calib)
-			_, runErr := latency.GetHWConfig(jsonPath, gpu)
-
-			if (catalogErr != nil) != (runErr != nil) {
-				t.Fatalf("the catalog namespace and the run path disagree about this entry — "+
-					"catalog: %v; run path (GetHWConfig): %v", catalogErr, runErr)
-			}
-			if tc.wantReject && catalogErr == nil {
-				t.Fatalf("both paths accepted an entry they must reject")
-			}
-			if !tc.wantReject && catalogErr != nil {
-				t.Fatalf("both paths rejected a valid entry: %v", catalogErr)
-			}
-		})
-	}
-}
-
-// parseHardwareYAMLForTest re-expresses a hardware/<gpu>.yaml body as the hardware_config.json
-// payload the run path reads, so one fixture drives both sides of the parity test above.
-func parseHardwareYAMLForTest(t *testing.T, body string) (string, error) {
-	t.Helper()
-	var fields map[string]any
-	if err := yaml.Unmarshal([]byte(body), &fields); err != nil {
-		return "", err
-	}
-	payload, err := json.Marshal(map[string]any{"h100": fields})
-	return string(payload), err
-}
-
 // TestCatalogStrictLoad_VendorConfigMayStatePretrainingTP is the precision control on the
 // deployment-fact rule: it is scoped to catalog-AUTHORED YAML, never the vendor config.json,
 // which is committed verbatim and never edited. 10 of the authoritative catalog's vendor
@@ -746,7 +576,7 @@ func parseHardwareYAMLForTest(t *testing.T, body string) (string, error) {
 // stating something it is right to state.
 func TestCatalogStrictLoad_VendorConfigMayStatePretrainingTP(t *testing.T) {
 	root := newCompleteCatalog(t)
-	path := filepath.Join(root, catalogModelsSubdir, gateModel, hfConfigFile)
+	path := filepath.Join(root, catalogModelsSubdir, gateModel, vendorConfigFile)
 	config, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read config.json: %v", err)

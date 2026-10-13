@@ -237,22 +237,23 @@ func TestCatalogProvenance_NoCatalogResolved_OmitsBlock(t *testing.T) {
 
 // TestCatalogProvenanceEmitOptions_FileOnly pins that the shared emit-option helper is a
 // no-op without an output file path (provenance is file-only, so a stdout-only run must
-// not pay for a git subprocess) and supplies exactly one option when a file is written.
+// not pay for a git subprocess) and supplies its options -- catalog provenance and the
+// scenario overrides -- when a file is written.
 func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 	catalogRoot, _ := newGitCatalog(t)
 
-	if opts := catalogProvenanceEmitOptions("", catalogRoot); len(opts) != 0 {
+	if opts := resultsFileEmitOptions("", catalogRoot); len(opts) != 0 {
 		t.Errorf("no output file path must yield no emit options, got %d", len(opts))
 	}
-	opts := catalogProvenanceEmitOptions(filepath.Join(t.TempDir(), "metrics.json"), catalogRoot)
-	if len(opts) != 1 {
-		t.Fatalf("an output file path must yield exactly one emit option, got %d", len(opts))
+	opts := resultsFileEmitOptions(filepath.Join(t.TempDir(), "metrics.json"), catalogRoot)
+	if len(opts) != 2 {
+		t.Fatalf("an output file path must yield the catalog-provenance and scenario-override options, got %d", len(opts))
 	}
 	// The option must carry a populated provenance, not a nil one.
 	m := sim.NewMetrics()
 	out := m.BuildOutput("cluster")
 	fpath := filepath.Join(t.TempDir(), "metrics.json")
-	if err := m.EmitOutput(out, fpath, catalogProvenanceEmitOptions(fpath, catalogRoot)...); err != nil {
+	if err := m.EmitOutput(out, fpath, resultsFileEmitOptions(fpath, catalogRoot)...); err != nil {
 		t.Fatalf("EmitOutput: %v", err)
 	}
 	data, err := os.ReadFile(fpath)
@@ -266,7 +267,7 @@ func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 
 // TestCatalogProvenance_EveryFileEmitSitePassesProvenance is the R23 drift guard for
 // INV-13: every production EmitOutput call in cmd/ must route through
-// catalogProvenanceEmitOptions, so a new emit site cannot silently produce a results file
+// resultsFileEmitOptions, so a new emit site cannot silently produce a results file
 // with no provenance while its sibling command records one. (The per-instance
 // stdout-only path goes through SaveResults, which writes no file and is not an
 // EmitOutput site.)
@@ -286,8 +287,8 @@ func TestCatalogProvenance_EveryFileEmitSitePassesProvenance(t *testing.T) {
 		}
 		for _, call := range emitOutputCallArgs(string(src)) {
 			sites++
-			if !strings.Contains(call.args, "catalogProvenanceEmitOptions") {
-				t.Errorf("%s:%d: EmitOutput call must pass catalogProvenanceEmitOptions(...) "+
+			if !strings.Contains(call.args, "resultsFileEmitOptions") {
+				t.Errorf("%s:%d: EmitOutput call must pass resultsFileEmitOptions(...) "+
 					"so its results file records catalog provenance (#1732, INV-13):\n\t%s",
 					file, call.line, strings.Join(strings.Fields(call.args), " "))
 			}

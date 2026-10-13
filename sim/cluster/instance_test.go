@@ -20,8 +20,8 @@ func newTestSimConfig() sim.SimConfig {
 		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        testFakeLatency(),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 }
 
@@ -52,8 +52,8 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
+					LatencyModel:        testFakeLatency(),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, tc.MaxModelLen),
 				},
 			)
 
@@ -106,8 +106,8 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					Seed:                tc.Seed,
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
+					LatencyModel:        testFakeLatency(),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, tc.MaxModelLen),
 				},
 			)
 
@@ -499,12 +499,16 @@ func TestInstanceSimulator_SnapshotCacheQueryFn_NilSim(t *testing.T) {
 }
 
 // BC-2: PostDecodeFixedOverhead() delegates to inner sim.Simulator.PostDecodeFixedOverhead().
-// Uses roofline config (overhead=0) to verify the delegation path exists and returns 0.
+// The fake latency model's overhead is non-zero, so delegation is observable.
 func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) {
-	cfg := newTestSimConfig() // roofline model → PostDecodeFixedOverhead() = 0
+	cfg := newTestSimConfig()
 	inst := NewInstanceSimulator("instance_0", cfg)
-	if got := inst.PostDecodeFixedOverhead(); got != 0 {
-		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for roofline model", got)
+	want := cfg.LatencyModel.PostDecodeFixedOverhead()
+	if want == 0 {
+		t.Fatal("precondition: the fake's PostDecodeFixedOverhead must be non-zero, else delegation is unobservable")
+	}
+	if got := inst.PostDecodeFixedOverhead(); got != want {
+		t.Errorf("PostDecodeFixedOverhead() = %d, want %d (the latency model's value)", got, want)
 	}
 }
 

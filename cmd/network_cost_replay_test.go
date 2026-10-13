@@ -54,16 +54,15 @@ func runReplayInSubprocess(t *testing.T, extraHeaderLine string) {
 	t.Helper()
 	dir := t.TempDir()
 	headerPath, dataPath := writeMinimalTrace(t, dir, extraHeaderLine)
-	catalogDir, hwPath := setupTrainedPhysicsTestFixtures(t)
+	catalogDir := setupKernelTestFixtures(t)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
-		"--catalog", catalogDir, "--hardware-config", hwPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario,
+		"--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {

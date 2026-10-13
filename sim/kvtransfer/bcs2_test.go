@@ -228,7 +228,7 @@ func TestBCS2_Metamorphic_ReadLatencyNonIncreasing(t *testing.T) {
 
 // fairShareStation models the tier as a single shared-bandwidth pipe whose total
 // bandwidth is divided across all provisioned concurrent slots (cap =
-// NRead+NWrite) — the shape of sim/cluster's PDTransferContention. Adding threads
+// NRead+NWrite) — a fair-share bandwidth split. Adding threads
 // splits the bandwidth more ways, so every transfer slows down: the opposite sign
 // to the real station under BC-S2. It exists ONLY to give the metamorphic test
 // something it must reject.
