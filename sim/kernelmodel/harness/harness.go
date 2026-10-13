@@ -203,6 +203,9 @@ type Config struct {
 	// every point falls back to the scenario's values -- which is what this experiment did
 	// before the settings were extracted, and is reported as such rather than assumed.
 	EngineSettings *EngineSettingSet
+
+	// primed runs the main phase with request 0's prompt cached (RunWarmupBracket's (b)).
+	primed bool
 }
 
 var (
@@ -309,17 +312,117 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	engine.MaxNumSeqs = int(scaled(int64(admit.MaxNumSeqs), cfg.MaxNumSeqsScale))
 	engine.MaxNumBatchedTokens = int(scaled(int64(admit.MaxNumBatchedTokens), cfg.TokenBudgetScale))
 
-	out, err := runBlis(cfg, sw.Scenario, engine, pl)
+	run, ignore := mainPhase(pl), func(string) bool { return false }
+	if cfg.primed {
+		copies := max(m.Deployment().DP, 1)
+		run = primedPhase(pl, copies)
+		ignore = func(id string) bool {
+			i, err := requestIndex(id)
+			return err != nil || i >= len(pl.InputLens) // a warm-up copy or its holder round
+		}
+	}
+	out, err := runBlis(cfg, sw.Scenario, engine, run)
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
-	obs, err := summarize(out.Requests, pl)
+	if cfg.primed {
+		if err := checkPrimed(out.Requests, len(pl.InputLens)); err != nil {
+			return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
+		}
+	}
+	obs, err := summarize(out.Requests, pl, ignore)
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
 	obs.Preemptions = out.PreemptionCount
 	obs.Settings = admit
 	return obs, nil
+}
+
+// checkPrimed refuses a primed run in which a warm-up copy had not finished before the main
+// phase started, or in which the first main request did not start with the main phase: either
+// would make (b) something other than "the main phase, with request 0's prompt cached".
+func checkPrimed(reqs []sim.RequestMetrics, n int) error {
+	const usPerS, usPerMs = 1e6, 1e3
+	for _, r := range reqs {
+		i, err := requestIndex(r.ID)
+		switch {
+		case err == nil && i >= n && r.RoundIndex == 0:
+			if end := r.ArrivedAt*usPerS + r.E2E*usPerMs; end >= float64(primeMainStartUs) {
+				return fmt.Errorf("warm-up copy %s ended at %.0f us, not before the main phase at %d us",
+					r.ID, end, primeMainStartUs)
+			}
+		case err == nil && i == 0:
+			if math.Abs(r.ArrivedAt*usPerS-float64(primeMainStartUs)) > 1 {
+				return fmt.Errorf("main request 0 arrived at %.0f us, not with the main phase at %d us",
+					r.ArrivedAt*usPerS, primeMainStartUs)
+			}
+		}
+	}
+	return nil
+}
+
+// WarmupBracket is a prefix-caching point's warm-up uncertainty: the point's main phase run
+// (a) from an empty engine, as Run scores it, and (b) with request 0's prompt already cached --
+// the one state the benchmark's drained warm-up leaves that the simulator would read (see Run).
+// The measured run is (b); the score uses (a); the difference is what the unmodelled warm-up
+// can move.
+//
+// Noise is the point's own draw spread: the range (max - min) of the cold metric over the
+// numpy seed-0..4 length fixtures, relative to seed 0. The benchmark's seed-0 measurement is one
+// realisation of a client whose draw is random; a warm-up effect smaller than the spread of
+// that realisation is below the resolution the point's measurement carries. Bounded reports
+// that the bracket is within the noise on BOTH metrics; such a point keeps its tier, with the
+// bound stated (Coverage.BoundWarmup).
+type WarmupBracket struct {
+	Cold, Primed               Observation
+	DTTFTPct, DTPOTPct         float64 // 100 * (b - a) / a
+	NoiseTTFTPct, NoiseTPOTPct float64 // 100 * (max - min over seeds 0..4) / a
+	Bounded                    bool
+}
+
+// RunWarmupBracket computes a point's bracket. cold is Run's observation of the point at the
+// benchmark's seed-0 lengths; seeds are the other draws' fixtures for the noise.
+func RunWarmupBracket(sw Sweep, concurrency int, cfg Config, cold Observation, seeds []*BenchmarkWorkloads) (WarmupBracket, error) {
+	b := WarmupBracket{Cold: cold}
+	pc := cfg
+	pc.primed = true
+	primed, err := Run(sw, concurrency, pc)
+	if err != nil {
+		return b, fmt.Errorf("primed: %w", err)
+	}
+	b.Primed = primed
+	b.DTTFTPct = 100 * (primed.MeanTTFTUs/cold.MeanTTFTUs - 1)
+	b.DTPOTPct = 100 * (primed.MeanTPOTUs/cold.MeanTPOTUs - 1)
+	loT, hiT, loP, hiP := cold.MeanTTFTUs, cold.MeanTTFTUs, cold.MeanTPOTUs, cold.MeanTPOTUs
+	for _, ws := range seeds {
+		c := cfg
+		c.Workloads = ws
+		o, err := Run(sw, concurrency, c)
+		if err != nil {
+			return b, fmt.Errorf("seed %d: %w", ws.Seed, err)
+		}
+		loT, hiT = math.Min(loT, o.MeanTTFTUs), math.Max(hiT, o.MeanTTFTUs)
+		loP, hiP = math.Min(loP, o.MeanTPOTUs), math.Max(hiP, o.MeanTPOTUs)
+	}
+	b.NoiseTTFTPct = 100 * (hiT - loT) / cold.MeanTTFTUs
+	b.NoiseTPOTPct = 100 * (hiP - loP) / cold.MeanTPOTUs
+	b.Bounded = len(seeds) > 0 && math.Abs(b.DTTFTPct) <= b.NoiseTTFTPct && math.Abs(b.DTPOTPct) <= b.NoiseTPOTPct
+	return b, nil
+}
+
+// LoadDrawFixtures loads the numpy seed-1..4 fixtures the warm-up bracket's noise and
+// cmd/sensitivity's draw sweep use.
+func LoadDrawFixtures() ([]*BenchmarkWorkloads, error) {
+	var out []*BenchmarkWorkloads
+	for seed := 1; seed <= 4; seed++ {
+		ws, err := LoadBenchmarkWorkloads(DefaultWorkloadsPath(seed))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ws)
+	}
+	return out, nil
 }
 
 // summarize reduces a finished run's per-request metrics to InferenceX's two means, after
@@ -351,14 +454,14 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 // `blis replay` reports per-request latencies in milliseconds; they are converted back to
 // microseconds (the simulator's tick) here. The round trip is exact to within one float64 ulp,
 // far below anything the score prints.
-func summarize(reqs []sim.RequestMetrics, pl PointLengths) (Observation, error) {
+func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string) bool) (Observation, error) {
 	n := len(pl.InputLens)
 	seen := make([]bool, n)
 	const usPerMs = 1e3
 	var ttftSum, tpotSum float64
 	var tpotN, completed int
 	for _, r := range reqs {
-		if r.CompletionIndex == 0 {
+		if r.CompletionIndex == 0 || (ignore != nil && ignore(r.ID)) {
 			continue
 		}
 		i, err := requestIndex(r.ID)

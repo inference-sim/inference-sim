@@ -136,7 +136,7 @@ func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
 		{ID: "request_1", CompletionIndex: 2, NumPrefillTokens: 3, NumDecodeTokens: 1, TTFT: 30, E2E: 30},
 		{ID: "request_0", CompletionIndex: 1, NumPrefillTokens: 4, NumDecodeTokens: 4, TTFT: 10, ITL: 2, E2E: 99},
 	}
-	obs, err := summarize(reqs, pl)
+	obs, err := summarize(reqs, pl, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
 			NumDecodeTokens: 4}},
 		"an uncompleted request": {reqs[0], {ID: "request_0", NumPrefillTokens: 4, NumDecodeTokens: 4}},
 	} {
-		if _, err := summarize(bad, pl); err == nil {
+		if _, err := summarize(bad, pl, nil); err == nil {
 			t.Errorf("summarize accepted %s", name)
 		}
 	}

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
@@ -54,6 +55,7 @@ func TestThePoolIsTheClientsSemaphore(t *testing.T) {
 	inFlight := append([]string(nil), "request_0", "request_1", "request_2")
 	for k, tick := conc, int64(1000); k < n; k, tick = k+1, tick+1000 {
 		done := initialOrAdmitted(initial, inFlight[0])
+		done.State = sim.StateCompleted // as the simulator hands a completion to the pool
 		inFlight = inFlight[1:]
 		next := driver.OnComplete(done, tick)
 		if len(next) != 1 {
@@ -71,7 +73,9 @@ func TestThePoolIsTheClientsSemaphore(t *testing.T) {
 		inFlight = append(inFlight, got.ID)
 	}
 	// With every record started, a completion admits nothing more.
-	if more := driver.OnComplete(initialOrAdmitted(initial, inFlight[0]), 99999); len(more) != 0 {
+	last := initialOrAdmitted(initial, inFlight[0])
+	last.State = sim.StateCompleted
+	if more := driver.OnComplete(last, 99999); len(more) != 0 {
 		t.Errorf("after the last record a completion admitted %d more", len(more))
 	}
 	if driver.Unstarted() != 0 || driver.TotalSessions() != n {
@@ -116,7 +120,7 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 		ByConcurrency: map[string]*PointSettings{"4": ps}}}}
 	pc := resolveAdmission(sw, conc, eng, m.Deployment(), set)
 	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
-	out, err := runBlis(cfg, sw.Scenario, pc, pl)
+	out, err := runBlis(cfg, sw.Scenario, pc, mainPhase(pl))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +145,96 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 			t.Errorf("request %d arrived at %v s, before request %d at %v s: trace order lost", i, a, i-1, arrival[i-1])
 		}
 	}
-	if _, err := summarize(out.Requests, pl); err != nil {
+	if _, err := summarize(out.Requests, pl, nil); err != nil {
 		t.Errorf("summarize: %v", err)
 	}
+}
+
+// The primed trace states request 0's prompt cached, with existing trace features only: each
+// warm-up copy's prompt is token-for-token main request 0's; the pool starts the copies at t=0
+// and the first CONC main requests together, in order, at the main-phase start; and a copy's
+// completion admits no main request (its session holds the slot for a far-later holder round).
+func TestThePrimedTraceCachesRequestZerosPromptAndNothingElse(t *testing.T) {
+	const conc, n, copies = 3, 7, 2
+	pl := PointLengths{ISL: 64, OSL: 64, Concurrency: conc}
+	for i := 0; i < n; i++ {
+		pl.InputLens = append(pl.InputLens, 51+i)
+		pl.OutputLens = append(pl.OutputLens, 60+i)
+	}
+	run := primedPhase(pl, copies)
+	if run.pool != conc+copies || run.sessions != n+copies {
+		t.Fatalf("pool %d of %d sessions, want %d of %d", run.pool, run.sessions, conc+copies, n+copies)
+	}
+	r0, bps, err := workload.LoadTraceV2SessionBlueprints(&workload.TraceV2{Header: *run.header, Records: run.records},
+		42, nil, 1<<62)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver, initial, err := workload.BuildSessionPool(bps, r0, run.pool, run.sessions, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial) != conc+copies {
+		t.Fatalf("%d initial requests, want %d", len(initial), conc+copies)
+	}
+	main0 := initial[copies]
+	if main0.ID != "request_0" || int(main0.InputLen()) != pl.InputLens[0] {
+		t.Fatalf("first main request is %s with %d tokens", main0.ID, main0.InputLen())
+	}
+	for j := 0; j < copies; j++ {
+		w := initial[j]
+		if w.ArrivalTime != 0 || !slices.Equal(w.InputTokens, main0.InputTokens) || len(w.OutputTokens) != pl.OutputLens[0] {
+			t.Errorf("warm-up copy %d (%s) at %d is not request 0's prompt and output", j, w.ID, w.ArrivalTime)
+		}
+	}
+	for i, r := range initial[copies:] {
+		if r.ID != "request_"+strconv.Itoa(i) || r.ArrivalTime != primeMainStartUs {
+			t.Errorf("main request %d is %s at %d, want request_%d at %d", i, r.ID, r.ArrivalTime, i, primeMainStartUs)
+		}
+		if i > 0 && slices.Equal(r.InputTokens[:16], main0.InputTokens[:16]) {
+			t.Errorf("main request %d shares request 0's first block", i)
+		}
+	}
+	// A warm-up copy completing yields only its holder round, far after the main phase, and
+	// admits no main request. (A completion reaches the pool in state completed; a queued
+	// request reaching it means a drop, which cancels the session.)
+	initial[0].State = sim.StateCompleted
+	next := driver.OnComplete(initial[0], 5000)
+	if len(next) != 1 || next[0].SessionID != "warmup-0" || next[0].ArrivalTime != 5000+primeHoldUs {
+		t.Fatalf("a warm-up copy's completion produced %+v, want only its holder round at %d", next, 5000+primeHoldUs)
+	}
+	// A main completion admits the next main request, in order.
+	main0.State = sim.StateCompleted
+	if got := driver.OnComplete(main0, primeMainStartUs+7); len(got) != 1 || got[0].ID != "request_"+strconv.Itoa(conc) {
+		t.Fatalf("a main completion admitted %+v, want request_%d", got, conc)
+	}
+}
+
+// End to end: with prefix caching on, the primed run's main request 0 is served from the
+// warm-up copy's cached prompt, so its first token comes sooner than in the cold run; the run
+// still completes the point's 10*CONC main requests, and the bracket reports both.
+func TestThePrimedRunServesRequestZeroFromTheCache(t *testing.T) {
+	sw := committedSweep("vllm")
+	sw.Points = sw.Points[:1]
+	enabled := true
+	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
+		ByConcurrency: map[string]*PointSettings{"4": {Passed: PassedSettings{EnablePrefixCaching: &enabled}}}}}}
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42, EngineSettings: set}
+	cold, err := Run(sw, 4, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := RunWarmupBracket(sw, 4, cfg, cold, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Primed.Completed != 40 || b.Primed.MeanTTFTUs >= cold.MeanTTFTUs {
+		t.Errorf("primed run completed %d, mean TTFT %.0f us against the cold %.0f us; request 0's cached "+
+			"prompt should lower it", b.Primed.Completed, b.Primed.MeanTTFTUs, cold.MeanTTFTUs)
+	}
+	if b.Bounded {
+		t.Error("a bracket with no noise draws cannot be bounded")
+	}
+	t.Logf("cold TTFT %.0f us TPOT %.1f us; primed TTFT %.0f us (%+.2f%%) TPOT %.1f us (%+.3f%%)",
+		cold.MeanTTFTUs, cold.MeanTPOTUs, b.Primed.MeanTTFTUs, b.DTTFTPct, b.Primed.MeanTPOTUs, b.DTPOTPct)
 }

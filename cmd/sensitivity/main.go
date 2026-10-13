@@ -176,12 +176,13 @@ func main() {
 		fmt.Printf("%-10s %6s %10s %8s %10s %8s\n", "numpy seed", "n", "TPOT shape", "delta", "TTFT shape", "delta")
 		fmt.Printf("%-10d %6d %9.2f%% %8s %9.2f%% %8s\n", 0, n, baseMAPE, "-", baseTTFT, "-")
 		tp, tt := []float64{baseMAPE}, []float64{baseTTFT}
-		for seed := 1; seed <= 4; seed++ {
-			ws, err := harness.LoadBenchmarkWorkloads(harness.DefaultWorkloadsPath(seed))
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
+		fixtures, err := harness.LoadDrawFixtures()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		for _, ws := range fixtures {
+			seed := ws.Seed
 			cfg := base
 			cfg.Workloads = ws
 			m, mt, vn := score(cfg)

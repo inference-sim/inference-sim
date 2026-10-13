@@ -191,6 +191,20 @@ func main() {
 	// Every corpus gap: written out beside the score, and read DURING scoring to put each
 	// sweep in its tier (harness.Coverage.TierOf).
 	coverage := harness.AssessCoverage(c, base)
+	// The numpy seed-1..4 fixtures: each prefix-caching point's warm-up bracket is judged
+	// against the point's own draw spread over them.
+	draws, err := harness.LoadDrawFixtures()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	type pointBracket struct {
+		sw   harness.Sweep
+		conc int
+		b    harness.WarmupBracket
+	}
+	var brackets []pointBracket
+	bracketsIn := map[harness.Tier][]harness.WarmupBracket{}
 	sweeps, points := 0, 0
 	ttftExcluded := 0
 
@@ -258,6 +272,19 @@ func main() {
 					coverage.Dropped(sw, p.Concurrency, "no measurement")
 					ok = false
 					break
+				}
+				// The warm-up bracket, for a point whose engine caches prefixes: the main
+				// phase again with request 0's prompt cached, and the point's draw spread.
+				// A failed bracket leaves the warm-up gap approximate and is reported.
+				if !obs.Settings.PrefixCachingDisabled {
+					b, err := harness.RunWarmupBracket(sw, p.Concurrency, cfg, obs, draws)
+					if err != nil {
+						failures = append(failures, fmt.Sprintf("%s %s c=%d warm-up bracket: %v",
+							sw.Scenario, sw.Label, p.Concurrency, err))
+					} else {
+						coverage.ApplyWarmupBracket(sw, p.Concurrency, b)
+						brackets = append(brackets, pointBracket{sw, p.Concurrency, b})
+					}
 				}
 				// mape at EVERY point including the anchor: it compares two absolute values
 				// and has no anchor to cancel.
@@ -358,6 +385,11 @@ func main() {
 		for _, t := range harness.AllTiers {
 			if sweepTier.In(t) {
 				sweepsIn[t]++
+				for _, pb := range brackets {
+					if pb.sw.Scenario == sw.Scenario && pb.sw.Label == sw.Label {
+						bracketsIn[t] = append(bracketsIn[t], pb.b)
+					}
+				}
 			}
 		}
 		// Count from whichever arm is present: in published-only mode there is no simulated
@@ -436,12 +468,21 @@ func main() {
 	fmt.Println("points with prefix caching enabled, run settings blis-schemas cannot express. See")
 	fmt.Println("docs/kernel-exclusive/APPLES-TO-APPLES.md.")
 	fmt.Println()
-	fmt.Println("Tiers, decided per sweep from the coverage gaps (-gaps) before any point is scored:")
-	fmt.Println("  STRICT                every point has an engine log, every setting it passed is carried,")
-	fmt.Println("                        every setting the simulation decides was measured, no protocol gap")
-	fmt.Println("  MEASURED-OR-RESOLVED  as STRICT, but a setting the run did not pass may take vLLM's default")
+	fmt.Println("Tiers, decided per sweep from the coverage gaps (-gaps), the worst point deciding:")
+	fmt.Println("  STRICT                every point has an engine log; every setting it passed is carried;")
+	fmt.Println("                        the admission settings and max_model_len were measured; expert")
+	fmt.Println("                        parallelism and gpu_memory_utilization measured or vLLM's unconditional")
+	fmt.Println("                        default; and no protocol gap, or only a warm-up gap whose measured")
+	fmt.Println("                        bracket is within the point's draw noise (bounded)")
+	fmt.Println("  MEASURED-OR-RESOLVED  as STRICT, but an unpassed admission setting may take the value vLLM")
+	fmt.Println("                        resolves by a rule this harness restates")
 	fmt.Println("  ALL (approximate)     every scoreable sweep; NOT the measured runs as they ran")
 	fmt.Println("Each table includes the stricter ones; within a table every arm scores the same points.")
+	fmt.Println("Warm-up bracket: the benchmark's drained warm-up leaves request 0's prompt cached on a")
+	fmt.Println("prefix-caching engine; the simulation starts empty (a). Each such point is also run with")
+	fmt.Println("that prompt cached (b); |b-a|/a is its warm-up uncertainty, judged against the point's")
+	fmt.Println("range over the numpy seed-0..4 draws. A prefix-caching-disabled point's bracket is zero:")
+	fmt.Println("nothing the warm-up leaves is read. Exact two-phase replay: blis-schemas#56, inference-sim#1926.")
 	fmt.Println("Shape error divides each side by its own value at the sweep's lowest concurrency and")
 	fmt.Println("excludes that anchor; mape compares absolute latency at every point.")
 	fmt.Printf("\n%d sweeps, %d points for TPOT shape, over all tiers\n", sweeps, points)
@@ -479,6 +520,41 @@ func main() {
 						t, a.name, st.N, st.Mean, st.Median, st.MeanAbs, 100*st.FractionOver, st.P10, st.P90)
 				}
 			}
+		}
+	}
+
+	fmt.Printf("\n=== Tier summary for %s, with the warm-up bracket (mean|e|; bracket |b-a|/a over the tier's\n"+
+		"    prefix-caching points; every other point's bracket is zero)\n", arms[0].name)
+	fmt.Printf("%-22s %5s %9s %9s %9s %9s %8s %15s %15s %8s\n", "tier", "n", "TPOT shp", "TPOT mape",
+		"TTFT shp", "TTFT mape", "warm pts", "TTFT med/max", "TPOT med/max", "bounded")
+	for _, t := range harness.AllTiers {
+		cell := func(v []float64) string {
+			if len(v) == 0 {
+				return "--"
+			}
+			return fmt.Sprintf("%.2f%%", harness.MAPE2(harness.Abs(v)))
+		}
+		bs := harness.SummarizeBrackets(bracketsIn[t])
+		fmt.Printf("%-22s %5d %9s %9s %9s %9s %8d %6.3f/%6.3f%% %6.4f/%6.4f%% %8d\n", t,
+			len(errs[t][0][harness.MetricTPOT]), cell(errs[t][0][harness.MetricTPOT]), cell(mapes[t][0][harness.MetricTPOT]),
+			cell(errs[t][0][harness.MetricTTFT]), cell(mapes[t][0][harness.MetricTTFT]),
+			bs.N, bs.MedianTTFT, bs.MaxTTFT, bs.MedianTPOT, bs.MaxTPOT, bs.Bounded)
+	}
+
+	if len(brackets) > 0 {
+		fmt.Printf("\n=== Warm-up bracket per prefix-caching point (a: empty engine, scored; b: request 0's\n" +
+			"    prompt cached; noise: range over numpy seeds 0..4, relative to a)\n")
+		fmt.Printf("%-44s %-5s %5s %12s %9s %8s %11s %9s %8s %s\n", "scenario", "label", "conc",
+			"TTFT a (us)", "dTTFT", "noise", "TPOT a (us)", "dTPOT", "noise", "")
+		for _, pb := range brackets {
+			b := pb.b
+			verdict := "approximate"
+			if b.Bounded {
+				verdict = "bounded"
+			}
+			fmt.Printf("%-44s %-5s %5d %12.0f %+8.3f%% %7.3f%% %11.1f %+8.4f%% %7.4f%% %s\n",
+				trunc(pb.sw.Scenario, 44), pb.sw.Label, pb.conc, b.Cold.MeanTTFTUs, b.DTTFTPct, b.NoiseTTFTPct,
+				b.Cold.MeanTPOTUs, b.DTPOTPct, b.NoiseTPOTPct, verdict)
 		}
 	}
 

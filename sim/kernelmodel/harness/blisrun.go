@@ -110,7 +110,7 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 // session is admitted at the completion tick, which is the client's zero-wait behaviour at
 // --request-rate inf. No per-request deadline: the trace states none (deadline_us 0), as the
 // client sets no timeout on a request.
-func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath string, requests, concurrency int) []string {
+func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath string, sessions, concurrency int) []string {
 	return []string{
 		"replay",
 		"--scenario", scenarioName,
@@ -121,7 +121,7 @@ func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metri
 		"--trace-data", dataPath,
 		"--session-mode", "closed-loop",
 		"--concurrent-sessions", strconv.Itoa(concurrency),
-		"--total-sessions", strconv.Itoa(requests),
+		"--total-sessions", strconv.Itoa(sessions),
 		"--seed", strconv.FormatInt(cfg.Seed, 10),
 		"--metrics-path", metricsPath,
 		"--log", "error",
@@ -154,9 +154,75 @@ func pointTrace(pl PointLengths) (*workload.TraceHeader, []workload.TraceRecord)
 	return header, records
 }
 
+// replayRun is one `blis replay` invocation: the trace and the pool that gates it.
+type replayRun struct {
+	header   *workload.TraceHeader
+	records  []workload.TraceRecord
+	sessions int // --total-sessions: the trace's session count
+	pool     int // --concurrent-sessions
+}
+
+// mainPhase is the point's main phase alone, as pointTrace states it.
+func mainPhase(pl PointLengths) replayRun {
+	h, r := pointTrace(pl)
+	return replayRun{header: h, records: r, sessions: len(r), pool: pl.Concurrency}
+}
+
+// The primed main phase -- request 0's prompt already in the prefix cache when the main phase
+// starts -- written with existing trace features only, so that BLIS itself carries nothing of
+// the benchmark's protocol. The exact two-phase protocol (drain-gated phases) needs a trace
+// format extension, tracked as blis-schemas#56 and inference-sim#1926; until then this
+// bracket is the stated uncertainty.
+//
+// The trace is the main phase plus `copies` warm-up sessions, listed FIRST:
+//
+//   - warm-up session j: round 0 is a copy of request 0 (its prompt as a shared prefix group,
+//     zero further tokens, its output length) arriving at t=0; round 1 is a one-token holder
+//     with think time primeHoldUs, so the session -- and its pool slot -- stays open until
+//     long after the main phase ends, and its completion admits no main request early;
+//   - main request 0 is in the same prefix group, so its prompt is token-for-token the
+//     warm-up copy's;
+//   - every main request is recorded at arrival primeMainStartUs, after the warm-up copies
+//     have completed and released their blocks (Run checks this).
+//
+// The pool is CONC + copies, so the first CONC main requests start together at
+// primeMainStartUs, in trace order, exactly as the cold main phase starts at 0, and each later
+// one is admitted at a main completion. copies is the deployment's dp width: round-robin
+// routing puts copy j on replica j and then main request i on replica (copies + i) mod dp =
+// i mod dp, the replica it has in the cold run, and main request 0 lands on a replica holding
+// its prompt.
+const (
+	primeMainStartUs = int64(10_000_000_000)    // 10^4 s: after any single warm-up copy completes
+	primeHoldUs      = int64(1_000_000_000_000) // 10^6 s: after any main phase completes
+	primePrefixGroup = "request-0-prompt"
+)
+
+// primedPhase is pointTrace with request 0's prompt cached by `copies` warm-up copies.
+func primedPhase(pl PointLengths, copies int) replayRun {
+	h, main := pointTrace(pl)
+	n := len(main)
+	hold := primeHoldUs
+	var records []workload.TraceRecord
+	for j := 0; j < copies; j++ {
+		sid := "warmup-" + strconv.Itoa(j)
+		records = append(records,
+			workload.TraceRecord{RequestID: n + 2*j, ClientID: "inferencex-benchmark-serving", SessionID: sid,
+				RoundIndex: 0, PrefixGroup: primePrefixGroup, PrefixLength: pl.InputLens[0], Streaming: true,
+				InputTokens: 0, OutputTokens: pl.OutputLens[0], Status: "ok"},
+			workload.TraceRecord{RequestID: n + 2*j + 1, ClientID: "inferencex-benchmark-serving", SessionID: sid,
+				RoundIndex: 1, Streaming: true, InputTokens: 1, OutputTokens: 1, ThinkTimeUs: &hold, Status: "ok"})
+	}
+	for i := range main {
+		main[i].ArrivalTimeUs = primeMainStartUs
+	}
+	main[0].PrefixGroup, main[0].PrefixLength, main[0].InputTokens = primePrefixGroup, pl.InputLens[0], 0
+	records = append(records, main...)
+	return replayRun{header: h, records: records, sessions: n + copies, pool: pl.Concurrency + copies}
+}
+
 // runBlis runs one point through `blis replay` in a fresh temporary directory and returns the
 // --metrics-path output.
-func runBlis(cfg Config, scenarioName string, pc PointConfig, pl PointLengths) (*sim.MetricsOutput, error) {
+func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*sim.MetricsOutput, error) {
 	dir, err := os.MkdirTemp("", "blis-harness-")
 	if err != nil {
 		return nil, err
@@ -167,15 +233,15 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, pl PointLengths) (
 		filepath.Join(dir, scenarioName), pc); err != nil {
 		return nil, err
 	}
-	header, records := pointTrace(pl)
+	records := run.records
 	headerPath, dataPath := filepath.Join(dir, "trace.yaml"), filepath.Join(dir, "trace.csv")
-	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+	if err := workload.ExportTraceV2(run.header, records, headerPath, dataPath); err != nil {
 		return nil, err
 	}
 	metricsPath := filepath.Join(dir, "metrics.json")
 
 	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath,
-		len(records), pl.Concurrency)...)
+		run.sessions, run.pool)...)
 	// From the repository root, as a user runs it: the command reads its bundled defaults.yaml
 	// relative to the working directory, and scorer tests run from their package directory.
 	cmd.Dir = repoRoot()

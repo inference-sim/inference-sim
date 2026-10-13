@@ -134,6 +134,15 @@ func main() {
 	var failures []string
 	// Every corpus gap, beside the score rather than in it: see harness.Coverage.
 	coverage := harness.AssessCoverage(c, cfg)
+	// The warm-up bracket of each prefix-caching vLLM point, judged against its own draw
+	// spread over the numpy seed-1..4 fixtures; see harness.WarmupBracket.
+	draws, err := harness.LoadDrawFixtures()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	sweepBrackets := map[string][]harness.WarmupBracket{}
+	bracketsIn := map[harness.Tier][]harness.WarmupBracket{}
 
 	for _, sw := range c.Sweeps {
 		if *framework != "" && sw.Framework != *framework {
@@ -167,6 +176,17 @@ func main() {
 				coverage.Dropped(sw, p.Concurrency, "no time per output token observed")
 				bad = true
 				break
+			}
+			if sw.Framework == "vllm" && !obs.Settings.PrefixCachingDisabled {
+				b, err := harness.RunWarmupBracket(sw, p.Concurrency, cfg, obs, draws)
+				if err != nil {
+					failures = append(failures, fmt.Sprintf("%s %s c=%d warm-up bracket: %v",
+						sw.Scenario, sw.Label, p.Concurrency, err))
+				} else {
+					coverage.ApplyWarmupBracket(sw, p.Concurrency, b)
+					key := sw.Scenario + " " + sw.Label
+					sweepBrackets[key] = append(sweepBrackets[key], b)
+				}
 			}
 			if i == 0 {
 				anchor = obs.MeanTPOTUs
@@ -228,6 +248,7 @@ func main() {
 		st := coverage.TierOf(sw)
 		for _, t := range harness.AllTiers {
 			if st.In(t) {
+				bracketsIn[t] = append(bracketsIn[t], sweepBrackets[sw.Scenario+" "+sw.Label]...)
 				tierMine[t] = append(tierMine[t], mine...)
 				tierTheirs[t] = append(tierTheirs[t], theirs...)
 			}
@@ -255,12 +276,17 @@ func main() {
 	}
 
 	fmt.Printf("%d sweeps, %d points\n\n", len(rows), len(allMine))
-	fmt.Printf("By tier, decided per sweep from the coverage gaps before scoring. STRICT: every\n" +
-		"setting measured and carried, no protocol gap. MEASURED-OR-RESOLVED: a setting the run\n" +
-		"did not pass may take vLLM's default. ALL: every scored sweep, approximate. Each\n" +
-		"includes the stricter; both columns score the same points. A non-vLLM sweep is in no\n" +
-		"tier: it appears only below, as context.\n\n")
-	fmt.Printf("%-22s %-30s %5s %8s %8s %8s\n", "tier", "model", "n", "MAPE", "median", "worst")
+	fmt.Printf("By tier, decided per sweep from the coverage gaps, the worst point deciding. STRICT:\n" +
+		"every setting the run passed carried, the admission settings and max_model_len measured,\n" +
+		"no protocol gap -- or only a warm-up gap whose bracket is within the point's draw noise.\n" +
+		"MEASURED-OR-RESOLVED: an unpassed admission setting may take vLLM's resolved value. ALL:\n" +
+		"every scored sweep, approximate. Each includes the stricter; both columns score the same\n" +
+		"points. A non-vLLM sweep is in no tier: it appears only below, as context. The warm-up\n" +
+		"bracket is |b-a|/a, b being the main phase with request 0's prompt cached, over the tier's\n" +
+		"prefix-caching points (every other point's is zero); exact two-phase replay is tracked as\n" +
+		"blis-schemas#56 and inference-sim#1926.\n\n")
+	fmt.Printf("%-22s %-30s %5s %8s %8s %8s %6s %17s\n", "tier", "model", "n", "MAPE", "median", "worst",
+		"warm", "dTPOT med/max")
 	for _, t := range harness.AllTiers {
 		for _, r := range []struct {
 			name string
@@ -271,8 +297,9 @@ func main() {
 				continue
 			}
 			a := harness.Abs(r.errs)
-			fmt.Printf("%-22s %-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", t, r.name, len(a),
-				harness.MAPE2(a), harness.Median(a), maxOf(a))
+			bs := harness.SummarizeBrackets(bracketsIn[t])
+			fmt.Printf("%-22s %-30s %5d %7.2f%% %7.2f%% %7.2f%% %6d %7.4f/%7.4f%%\n", t, r.name, len(a),
+				harness.MAPE2(a), harness.Median(a), maxOf(a), bs.N, bs.MedianTPOT, bs.MaxTPOT)
 		}
 	}
 	fmt.Printf("\nEverything below is over every scored sweep (approximate; with no -framework,\n" +
