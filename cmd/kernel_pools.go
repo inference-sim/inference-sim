@@ -28,13 +28,16 @@ type kernelPools struct {
 // run's scenario does not state both pools -- a P/D topology on the CLI over a colocated
 // scenario would simulate engines nobody described.
 func openKernelPools(catalogRoot string) *kernelPools {
-	if kernelOpened == nil || (prefillInstances == 0 && decodeInstances == 0) {
-		return nil
-	}
-	if prefillDecodeInstances > 0 || encodeInstances > 0 {
+	// Checked before the early return below: a shared-only or encode+shared topology states no
+	// dedicated prefill or decode instance, yet is still disaggregated, and would otherwise reach
+	// cluster construction with no handoff pricer.
+	if kernelOpened != nil && (prefillDecodeInstances > 0 || encodeInstances > 0) {
 		logrus.Fatalf("--prefill-decode-instances and --encode-instances are not " +
 			"supported: a blis-schemas deployment's roles are colocated, prefill and decode, so no " +
 			"scenario describes the engine a shared or encode instance would run")
+	}
+	if kernelOpened == nil || (prefillInstances == 0 && decodeInstances == 0) {
+		return nil
 	}
 	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry}
 	p := &kernelPools{}

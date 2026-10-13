@@ -73,6 +73,15 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		{"an unsimulated scheduling policy", `engine.scheduling_policy \"lifo\"`,
 			run(writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
 				"      gpu_memory_utilization: 0.9\n      scheduling_policy: lifo\n"))},
+		// A shared-only or encode+shared topology states no dedicated prefill or decode
+		// instance yet is disaggregated; it is refused, not run into a missing handoff pricer.
+		{"shared prefill-decode instances only", "--prefill-decode-instances and --encode-instances are not supported",
+			run(plain, "--num-instances", "2", "--prefill-decode-instances", "1")},
+		{"encode with shared instances", "--prefill-decode-instances and --encode-instances are not supported",
+			run(plain, "--num-instances", "2", "--prefill-decode-instances", "1", "--encode-instances", "1")},
+		// Encode alone is refused earlier, by the topology check (no decode-capable pool).
+		{"encode instances only", "requires a decode-capable pool",
+			run(plain, "--num-instances", "2", "--encode-instances", "1")},
 		{"a node pool of another GPU", "node pools must match it",
 			run(plain, "--policy-config", writeNodePoolBundle(t, "H100", "141"))},
 		{"a node pool stating other GPU memory", "states gpu_memory_gib 80",
