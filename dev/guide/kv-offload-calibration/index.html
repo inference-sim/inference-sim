@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1026,7 +996,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -2989,6 +2959,10 @@
 
 
 <h1 id="kv-cache-hit-rate-calibration">KV Cache Hit-Rate Calibration<a class="headerlink" href="#kv-cache-hit-rate-calibration" title="Permanent link">&para;</a></h1>
+<div class="admonition warning">
+<p class="admonition-title">Deprecated workflow</p>
+<p><code>blis observe</code> and <code>blis calibrate</code> are deprecated (<a href="https://github.com/inference-sim/inference-sim/issues/1901">#1901</a>). <code>blis replay</code> is not. This page is kept for existing users of the pipeline.</p>
+</div>
 <p>This note documents how to validate BLIS's tiered KV-offload model against real vLLM
 runs using the <code>observe → replay → calibrate</code> pipeline (issue #1583, part of the
 multi-tier KV-offload epic #1585). It complements
@@ -3024,7 +2998,7 @@ no offload tiers) and is never conflated with a tiered hit-rate — treat it as 
 separate, weaker check.</p>
 <h2 id="minimal-experiment-set">Minimal experiment set<a class="headerlink" href="#minimal-experiment-set" title="Permanent link">&para;</a></h2>
 <p>Validate against the four canonical cache paths, over a small prefix-length sweep,
-single replica, TP=1:</p>
+single replica:</p>
 <table>
 <thead>
 <tr>
@@ -3052,8 +3026,9 @@ single replica, TP=1:</p>
 </tbody>
 </table>
 <p>Sweep the shared prefix length (e.g. 256 / 1024 / 4096 tokens) so the hit-rate spans
-its range. Keep the deployment to a single replica at TP=1 so the aggregate hit-rate
-is unambiguous.</p>
+its range. Keep the deployment to a single replica so the aggregate hit-rate is
+unambiguous; the replay scenario must state the same model, hardware and parallelism
+as the observed server.</p>
 <h2 id="procedure">Procedure<a class="headerlink" href="#procedure" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1. Observe the real server, scraping the per-tier counters into the trace header.</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">#    --vllm-commit records the pinned (unreleased) vLLM the counters require. observe</span>
@@ -3067,17 +3042,19 @@ is unambiguous.</p>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># 2. Replay the captured trace through the DES to produce the SIM-side hit-rate. Supply</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1">#    --kv-offload-config matching the observed deployment — replay models the tiers and</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1">#    derives the aggregate cache_hit_rate into --metrics-path. (A tiered observation</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1">#    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span>--model<span class="w"> </span>&lt;model&gt;<span class="w"> </span>--hardware<span class="w"> </span>&lt;gpu&gt;<span class="w"> </span>--tp<span class="w"> </span>&lt;N&gt;<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--kv-offload-config<span class="w"> </span>offload.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--results-path<span class="w"> </span>sim.json<span class="w"> </span>--metrics-path<span class="w"> </span>simagg.json
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="c1"># 3. Compare. TTFT/E2E come from --sim-results; the hit-rate comes from --sim-metrics.</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>blis<span class="w"> </span>calibrate<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span>--sim-results<span class="w"> </span>sim.json<span class="w"> </span>--sim-metrics<span class="w"> </span>simagg.json<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--hit-rate-tolerance-pp<span class="w"> </span><span class="m">5</span><span class="w"> </span>--ttft-mape-threshold<span class="w"> </span><span class="m">0</span>.15<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--report<span class="w"> </span>calibration.json
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1">#    derives the aggregate cache_hit_rate into --metrics-path. Each tier must name a</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1">#    catalog device_class. (A tiered observation</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1">#    replayed WITHOUT an offload config is a hard error, never a silent GPU-only value.)</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--scenario<span class="w"> </span>&lt;scenario.yaml&gt;<span class="w"> </span>--scenarios<span class="w"> </span>&lt;dir<span class="w"> </span>of<span class="w"> </span>scenario<span class="w"> </span>files&gt;<span class="w"> </span>--registry<span class="w"> </span>&lt;blis-registry&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span>--kv-offload-config<span class="w"> </span>offload.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span>--results-path<span class="w"> </span>sim.json<span class="w"> </span>--metrics-path<span class="w"> </span>simagg.json
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="c1"># 3. Compare. TTFT/E2E come from --sim-results; the hit-rate comes from --sim-metrics.</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>blis<span class="w"> </span>calibrate<span class="w"> </span>--trace-header<span class="w"> </span>t.yaml<span class="w"> </span>--trace-data<span class="w"> </span>t.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--sim-results<span class="w"> </span>sim.json<span class="w"> </span>--sim-metrics<span class="w"> </span>simagg.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span>--hit-rate-tolerance-pp<span class="w"> </span><span class="m">5</span><span class="w"> </span>--ttft-mape-threshold<span class="w"> </span><span class="m">0</span>.15<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span>--report<span class="w"> </span>calibration.json
 </code></pre></div>
 <blockquote>
 <p><strong>Note.</strong> <code>blis observe</code> records the observed hit-rate and its source, but not the

@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -1493,6 +1463,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deployment-inputs-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Inputs (required)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deployment Inputs (required)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-and-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario and Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#simulation-control" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1533,56 +1531,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Latency Model">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#regression-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Regression Coefficients
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#model-and-hardware-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Model and Hardware Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#roofline-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#latency-mode-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Latency Mode Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1778,14 +1726,69 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="defaults.yaml">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-flag-summary-by-sub-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flag Summary by Sub-Config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-observe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis observe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis observe">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resolution-process" class="md-nav__link">
+  <a href="#required" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resolution Process
+        Required
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#distribution-synthesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribution Synthesis
       
     </span>
   </a>
@@ -1798,10 +1801,38 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#coefficient-calibration" class="md-nav__link">
+  <a href="#blis-replay" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Coefficient Calibration
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis calibrate
       
     </span>
   </a>
@@ -1809,10 +1840,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#interconnect-calibration" class="md-nav__link">
+  <a href="#blis-convert" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Interconnect Calibration
+        blis convert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis convert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-servegen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert servegen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-inference-perf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert inference-perf
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis compose
       
     </span>
   </a>
@@ -3286,6 +3367,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deployment-inputs-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Inputs (required)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deployment Inputs (required)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-and-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario and Deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#simulation-control" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3326,56 +3435,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Latency Model">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#regression-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Regression Coefficients
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#model-and-hardware-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Model and Hardware Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#roofline-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#latency-mode-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Latency Mode Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -3571,14 +3630,69 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="defaults.yaml">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-flag-summary-by-sub-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flag Summary by Sub-Config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-observe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis observe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis observe">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resolution-process" class="md-nav__link">
+  <a href="#required" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resolution Process
+        Required
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload Input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#distribution-synthesis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distribution Synthesis
       
     </span>
   </a>
@@ -3591,10 +3705,38 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#coefficient-calibration" class="md-nav__link">
+  <a href="#blis-replay" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Coefficient Calibration
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis calibrate
       
     </span>
   </a>
@@ -3602,10 +3744,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#interconnect-calibration" class="md-nav__link">
+  <a href="#blis-convert" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Interconnect Calibration
+        blis convert
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis convert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-servegen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert servegen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blis-convert-inference-perf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis convert inference-perf
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis compose
       
     </span>
   </a>
@@ -3635,27 +3827,19 @@
 <h1 id="configuration-reference">Configuration Reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h1>
 <p>This page documents all CLI flags, configuration files, and their interactions. For architectural context on what these settings control, see <a href="../../concepts/architecture/">Cluster Architecture</a> and <a href="../../concepts/core-engine/">Core Engine</a>.</p>
 <h2 id="configuration-precedence">Configuration Precedence<a class="headerlink" href="#configuration-precedence" title="Permanent link">&para;</a></h2>
-<p>BLIS uses a layered configuration system where more specific sources override more general ones:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>CLI flags (highest priority — explicit user input)
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    ↓ overrides
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>YAML files (policy-config, workload-spec, defaults.yaml)
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    ↓ overrides
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Hardcoded defaults (lowest priority)
+<p>BLIS takes its configuration from four sources. They do not overlap: each setting has exactly one home.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Scenario file (--scenario in --scenarios)  — the deployment: model, hardware, fabric, pools,
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                                             parallelism, engine settings, coefficient sets
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>CLI flags                                  — workload, policies, topology, seed/horizon/output
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>YAML files (policy-config, workload-spec,  — CLI flags override these values when explicitly set
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>            kv-offload-config, lora-config, defaults.yaml)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>Hardcoded defaults (lowest priority)
 </code></pre></div>
-<p>CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration.</p>
+<p>CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration. No CLI flag overrides a scenario setting.</p>
 <h3 id="parameter-resolution-by-category">Parameter Resolution by Category<a class="headerlink" href="#parameter-resolution-by-category" title="Permanent link">&para;</a></h3>
-<p>The general precedence (CLI → YAML → hardcoded) applies everywhere, but each parameter category has its own resolution layers. The chains below show highest-to-lowest priority for each category.</p>
-<p><strong>Latency coefficients</strong> (<code>--alpha-coeffs</code>, <code>--beta-coeffs</code>):</p>
-<ol>
-<li>Explicit CLI flags — if passed, used directly (no <code>defaults.yaml</code> lookup)</li>
-<li>Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs</li>
-</ol>
-<p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>):</p>
-<ol>
-<li>Explicit CLI flags — the only source. Both are <strong>required</strong> on <code>blis run</code> and <code>blis replay</code></li>
-<li>Error — omitting either is refused naming the missing flag. There is no per-model fallback: the <code>defaults:</code> block that once supplied them is gone (NS-6, #1733; block removed in #1768)</li>
-</ol>
-<p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — three layers: CLI flag, auto-calculation, or 1M default.</p>
+<p><strong>Deployment and engine settings</strong> — from the scenario only. See <a href="#scenario-and-deployment">Scenario and Deployment</a> below for the full list. There is no CLI override and no per-model fallback.</p>
+<p><strong>Latency</strong> — priced by <a href="../../guide/latency-models/">blis-latency-kernel</a>, the only latency backend. The scenario names the coefficient sets; they are read from the <a href="https://github.com/inference-sim/blis-registry">blis-registry</a> clone named by <code>--registry</code>. There are no coefficient flags.</p>
+<p><strong>KV cache blocks</strong> — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, <code>gpu_memory_utilization</code>, <code>cache_dtype</code>, <code>block_size</code>), per data-parallel rank. There is no flag to set it.</p>
 <p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
 <ol>
 <li><code>--workload-spec</code> YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored</li>
@@ -3673,12 +3857,7 @@
 <li><code>--policy-config</code> YAML bundle — loads all policy settings from one file</li>
 <li>Hardcoded defaults — <code>round-robin</code>, <code>always-admit</code>, <code>fcfs</code></li>
 </ol>
-<p><strong>Batch formation</strong> (<code>--max-num-seqs</code>, <code>--max-num-batched-tokens</code>, etc.):</p>
-<ol>
-<li>Explicit CLI flags</li>
-<li>Hardcoded defaults — 256 running reqs, 2048 scheduled tokens</li>
-</ol>
-<p>Batch formation has no YAML override path — <code>defaults.yaml</code> and <code>--policy-config</code> do not include batch settings.</p>
+<p><strong>Batch formation</strong> — <code>max_num_seqs</code> and <code>max_num_batched_tokens</code> come from the scenario's pool <code>engine</code> block. Only <code>--long-prefill-token-threshold</code> and <code>--preemption-policy</code> remain on the CLI.</p>
 <h3 id="known-unit-gotchas">Known Unit Gotchas<a class="headerlink" href="#known-unit-gotchas" title="Permanent link">&para;</a></h3>
 <p>All internal timestamps in the DES (arrival time, schedule time, completion time, clock) use <strong>ticks</strong>, where <strong>1 tick = 1 microsecond (μs)</strong>. Output metrics convert to milliseconds for human readability, but several fields and flags use different units:</p>
 <table>
@@ -3725,25 +3904,125 @@
 <td>requests/second</td>
 <td>Not ticks — real-world time unit</td>
 </tr>
-<tr>
-<td><code>--kv-transfer-bandwidth</code></td>
-<td>tokens/tick</td>
-<td>Transfer rate between GPU and CPU KV tiers on the legacy <code>--kv-cpu-blocks</code> path. Unset ⇒ <strong>derived</strong> from the catalog <code>cpu_dram</code> device (#1819)</td>
-</tr>
-<tr>
-<td><code>--kv-transfer-base-latency</code></td>
-<td>ticks (μs)</td>
-<td>Fixed per-block overhead on the legacy CPU tier. Unset ⇒ derived from <code>cpu_dram.base_latency</code>; explicit <code>0</code> disables it</td>
-</tr>
 </tbody>
 </table>
 <h3 id="common-pitfalls">Common Pitfalls<a class="headerlink" href="#common-pitfalls" title="Permanent link">&para;</a></h3>
 <p><strong>Capacity estimate mismatch (issue #390).</strong> CLI distribution mode defaults to <code>--prompt-tokens 512, --output-tokens 512</code>. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.</p>
 <p><strong><code>--rate</code> does NOT override workload-spec YAML.</strong> The <code>--rate</code> flag only applies in CLI distribution mode. When <code>--workload-spec</code> is set, request rate comes from <code>aggregate_rate</code> in the YAML file — the <code>--rate</code> flag is ignored. To change the rate for a YAML workload, edit the <code>aggregate_rate</code> field in the spec.</p>
-<p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert infperf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
-<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace <code>config.json</code> is available and the hardware config specifies <code>MemoryGiB</code>. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing <code>config.json</code>, missing <code>MemoryGiB</code>, or unsupported model architecture).</p>
+<p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert inference-perf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
 <p><strong><code>enable_multi_turn_chat</code> semantic mismatch (issue #517).</strong> inference-perf's <code>enable_multi_turn_chat</code> creates one persistent session per virtual user. BLIS's closest equivalent is <code>multi_turn.single_session: true</code> in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.</p>
-<p><strong>Custom <code>defaults.yaml</code> files must remove <code>total_kv_blocks</code> entries (migration note).</strong> BLIS uses strict YAML parsing (<code>KnownFields(true)</code>) to catch typos and invalid fields. As of issue #1035, <code>total_kv_blocks</code> is no longer a recognized field in <code>defaults.yaml</code> — KV capacity is now always auto-calculated from model architecture and GPU memory. If you maintain a custom <code>defaults.yaml</code> file, remove all <code>total_kv_blocks</code> entries or BLIS will exit with a parse error: <code>field total_kv_blocks not found</code>. To override auto-calculation, use the <code>--total-kv-blocks</code> CLI flag instead.</p>
+<h2 id="deployment-inputs-required">Deployment Inputs (required)<a class="headerlink" href="#deployment-inputs-required" title="Permanent link">&para;</a></h2>
+<p><code>blis run</code> and <code>blis replay</code> both require all four of these. Omitting any is refused.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--scenario</code></td>
+<td>string</td>
+<td>""</td>
+<td><strong>Required.</strong> Scenario <strong>file name</strong> within <code>--scenarios</code>, e.g. <code>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml</code>. The file is a <a href="https://github.com/inference-sim/blis-schemas">blis-schemas</a> Scenario + Deployment (two YAML documents) — see <a href="#scenario-and-deployment">Scenario and Deployment</a>.</td>
+</tr>
+<tr>
+<td><code>--scenarios</code></td>
+<td>string</td>
+<td>""</td>
+<td><strong>Required.</strong> Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at <code>$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate</code>; this repository's <code>testdata/scenarios/</code> holds a P/D example (<code>glm-5-h200-3p1d-ib.yaml</code>) and an MTP example (<code>glm-5-h200-tp8-mtp3.yaml</code>).</td>
+</tr>
+<tr>
+<td><code>--registry</code></td>
+<td>string</td>
+<td>""</td>
+<td><strong>Required.</strong> <a href="https://github.com/inference-sim/blis-registry">blis-registry</a> clone root, holding the fitted coefficient sets the scenario names. Pinned release: <code>v0.1.1</code>.</td>
+</tr>
+<tr>
+<td><code>--catalog</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to the <a href="https://github.com/inference-sim/blis-catalog">blis-catalog</a> <strong>clone root</strong> (pinned release <code>0.2.1</code>; see <a href="../../getting-started/installation/#catalog-compatibility">Catalog compatibility</a>) — model graphs, chips, fabrics, storage devices and workload presets. <strong>No default and no search path</strong> — supply this flag or the <code>BLIS_CATALOG</code> environment variable, or the run is refused naming both (#1731). <code>--catalog</code> wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on <code>convert preset</code> (and the deprecated <code>observe</code>) for the workload presets in the <code>workloads/</code> namespace. BLIS never fetches or writes a catalog file at run time (NS-6).</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span><span class="m">0</span>.2.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span>v0.1.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-registry.git
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>--scenarios<span class="w"> </span>&lt;dir<span class="w"> </span>of<span class="w"> </span>scenario<span class="w"> </span>files&gt;<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span>
+</code></pre></div>
+<h3 id="scenario-and-deployment">Scenario and Deployment<a class="headerlink" href="#scenario-and-deployment" title="Permanent link">&para;</a></h3>
+<p>A scenario file holds two YAML documents in the blis-schemas format:</p>
+<ul>
+<li><strong>Scenario</strong> — <code>name</code>, <code>engine_version</code>, <code>model</code> (a catalog model), <code>coefficients</code> (the registry coefficient sets that price it), and <code>cluster</code> (<code>hardware</code>, <code>fabric</code>, <code>nodes</code>, <code>gpus_per_node</code>).</li>
+<li><strong>Deployment</strong> — <code>pools</code>, each with a <code>role</code> (<code>colocated</code>, <code>prefill</code> or <code>decode</code>), <code>nodes</code>, a <code>parallel</code> block (<code>tp</code>, <code>pp</code>, <code>dp</code>, <code>enable_expert_parallel</code>) and an <code>engine</code> block (<code>block_size</code>, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code>, <code>quantization</code>, <code>cache_dtype</code>, <code>cudagraph_mode</code>, <code>gpu_memory_utilization</code>, <code>enable_prefix_caching</code>, <code>speculative: {method, num_spec_tokens}</code>); plus optional <code>offload</code> and <code>pd_transfer</code>.</li>
+</ul>
+<p>These settings come from the scenario (and the kernel), and no CLI flag sets them:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model</td>
+<td>Scenario <code>model</code></td>
+</tr>
+<tr>
+<td>Hardware, fabric</td>
+<td>Scenario <code>cluster.hardware</code>, <code>cluster.fabric</code></td>
+</tr>
+<tr>
+<td>TP / DP / expert parallelism</td>
+<td>Pool <code>parallel.tp</code>, <code>parallel.dp</code>, <code>parallel.enable_expert_parallel</code></td>
+</tr>
+<tr>
+<td>KV block budget</td>
+<td>The kernel's memory methods, per data-parallel rank</td>
+</tr>
+<tr>
+<td>Block size</td>
+<td>Pool <code>engine.block_size</code></td>
+</tr>
+<tr>
+<td>Max running requests</td>
+<td>Pool <code>engine.max_num_seqs</code></td>
+</tr>
+<tr>
+<td>Token budget per step</td>
+<td>Pool <code>engine.max_num_batched_tokens</code></td>
+</tr>
+<tr>
+<td>Max sequence length</td>
+<td>Pool <code>engine.max_model_len</code> — <strong>required</strong> in the scenario</td>
+</tr>
+<tr>
+<td>Prefix caching</td>
+<td>Pool <code>engine.enable_prefix_caching</code></td>
+</tr>
+<tr>
+<td>KV-cache dtype</td>
+<td>Pool <code>engine.cache_dtype</code></td>
+</tr>
+<tr>
+<td>Speculative decoding</td>
+<td>Pool <code>engine.speculative.method</code> / <code>num_spec_tokens</code> (<code>--speculative-acceptance-rate</code> is still required on the CLI when the scenario drafts tokens)</td>
+</tr>
+<tr>
+<td>Step time, memory, P/D KV transfer, offload tier transfer, host overheads</td>
+<td>Priced by blis-latency-kernel with the scenario's registry coefficients</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Data parallelism (MoE only).</strong> A pool with <code>dp &gt; 1</code> becomes one replica per data-parallel rank, each sized as one vLLM EngineCore. <code>dp &gt; 1</code> on a dense model is refused.</p>
+<p><strong>Node pools.</strong> When <code>node_pools</code> are configured in <code>--policy-config</code>, every pool's <code>gpu_type</code> must equal the scenario's <code>cluster.hardware</code>.</p>
 <h2 id="simulation-control">Simulation Control<a class="headerlink" href="#simulation-control" title="Permanent link">&para;</a></h2>
 <p>Top-level settings that control the simulation run.</p>
 <table>
@@ -3778,12 +4057,12 @@
 <td><code>--metrics-path</code></td>
 <td>string</td>
 <td>""</td>
-<td>File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the <code>cache_hit_rate</code> and <code>catalog</code> provenance fields when those apply). Accepted on <strong>both</strong> <code>blis run</code> and <code>blis replay</code> (#1583 added it to replay so <code>blis calibrate --sim-metrics</code> can read a replayed hit-rate). Distinct from replay's <code>--results-path</code>, which writes the <strong>per-request</strong> <code>[]SimResult</code> array and is replay-only. Empty = no file output.</td>
+<td>File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the <code>cache_hit_rate</code> and <code>catalog</code> provenance fields when those apply). Accepted on <strong>both</strong> <code>blis run</code> and <code>blis replay</code> (#1583). Distinct from replay's <code>--results-path</code>, which writes the <strong>per-request</strong> <code>[]SimResult</code> array and is replay-only. Empty = no file output.</td>
 </tr>
 </tbody>
 </table>
 <h2 id="kv-cache-configuration">KV Cache Configuration<a class="headerlink" href="#kv-cache-configuration" title="Permanent link">&para;</a></h2>
-<p>Controls GPU and CPU memory simulation for key-value cache blocks. Maps to <code>KVCacheConfig</code>.</p>
+<p>The GPU-tier block budget and block size come from the scenario and the kernel (see <a href="#scenario-and-deployment">Scenario and Deployment</a>). The remaining flags configure CPU / storage offload tiers. Maps to <code>KVCacheConfig</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3795,52 +4074,27 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--total-kv-blocks</code></td>
-<td>int64</td>
-<td>1000000*</td>
-<td>Total GPU-tier KV blocks.</td>
-</tr>
-<tr>
-<td><code>--kv-cache-dtype</code></td>
-<td>string</td>
-<td><code>auto</code></td>
-<td>KV-cache storage precision, independent of the compute/activation dtype <strong>and</strong> of weight quantization (vLLM <code>--kv-cache-dtype</code> parity, #1565). <code>auto</code> follows the model/compute dtype (byte-identical default); <code>fp8</code>/<code>fp8_e4m3</code>/<code>fp8_e5m2</code> = 1 byte/element → roughly <strong>doubles</strong> the auto-computed <code>--total-kv-blocks</code> under bf16 compute; <code>bf16</code>/<code>fp16</code>/<code>fp32</code> pin it explicitly. Affects only the auto-calc block count (and PD KV-transfer sizing) — inert when <code>--total-kv-blocks</code> is set explicitly. <strong>Re-supply identically on replay</strong> to reproduce capacity (not round-tripped through the trace header — see the replay guide).</td>
-</tr>
-<tr>
-<td><code>--block-size-in-tokens</code></td>
-<td>int64</td>
-<td>16</td>
-<td>Tokens per KV block.</td>
-</tr>
-<tr>
 <td><code>--kv-cpu-blocks</code></td>
 <td>int64</td>
 <td>0</td>
-<td>CPU-tier blocks. 0 disables tiered caching.</td>
+<td>Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's <code>cpu_dram</code> storage device.</td>
 </tr>
 <tr>
 <td><code>--kv-offload-threshold</code></td>
 <td>float64</td>
 <td>0.9</td>
-<td>GPU utilization fraction above which blocks are offloaded to CPU. Range [0, 1].</td>
+<td>GPU utilization fraction above which blocks are offloaded to CPU on the legacy <code>--kv-cpu-blocks</code> path. Range [0, 1].</td>
 </tr>
 <tr>
-<td><code>--kv-transfer-bandwidth</code></td>
-<td>float64</td>
-<td>unset ⇒ derive</td>
-<td>GPU↔CPU transfer rate in tokens/tick for the legacy <code>--kv-cpu-blocks</code> tier. Omit it to derive from <code>cpu_dram.read_bandwidth</code> with the R2G3b residual; supply a finite positive value to override it. A rate whose per-block charge exceeds the safe tick budget is refused. Passing <code>0</code> is invalid, not a request to derive.</td>
-</tr>
-<tr>
-<td><code>--kv-transfer-base-latency</code></td>
-<td>int64</td>
-<td>unset ⇒ derive</td>
-<td>Fixed per-block latency in ticks. Omit it to derive from <code>cpu_dram.base_latency</code> (microseconds rounded up to whole ticks); an explicitly supplied <code>0</code> is a valid independent override. If either transfer flag is omitted, <code>&lt;catalog&gt;/devices/storage.yaml</code> must define <code>cpu_dram</code>; if both are supplied, the table is not read. Combined and cumulative transfer-latency additions are checked against <code>int64</code>.</td>
+<td><code>--kv-offload-config</code></td>
+<td>string</td>
+<td>""</td>
+<td>Path to a YAML file with a top-level <code>kv_offload:</code> block (multi-tier offload). Each tier must name a catalog storage <code>device_class</code>; the kernel prices every tier transfer (its <code>TierTime</code>). An explicit <code>read_bandwidth</code> / <code>write_bandwidth</code> / <code>base_latency</code> on a tier is refused. KV offload combined with P/D disaggregation is refused. See <a href="../../guide/kv-cache/">KV Cache Management</a>.</td>
 </tr>
 </tbody>
 </table>
-<p>* The effective value of <code>--total-kv-blocks</code> follows a 3-layer resolution: (1) explicit <code>--total-kv-blocks</code> CLI flag, (2) auto-calculation from model architecture and GPU memory via <code>CalculateKVBlocks</code> (for all backends when <code>config.json</code> and <code>MemoryGiB</code> are available), (3) hardcoded default of 1,000,000 blocks. See <a href="#resolution-process">Resolution Process</a> for details.</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
-<p>Controls how requests are selected for the running batch. Maps to <code>BatchConfig</code>.</p>
+<p><code>max_num_seqs</code> and <code>max_num_batched_tokens</code> come from the scenario's pool <code>engine</code> block. Maps to <code>BatchConfig</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3851,18 +4105,6 @@
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>--max-num-seqs</code></td>
-<td>int64</td>
-<td>256</td>
-<td>Maximum requests in the running batch simultaneously (vLLM parity). Deprecated alias: <code>--max-num-running-reqs</code>.</td>
-</tr>
-<tr>
-<td><code>--max-num-batched-tokens</code></td>
-<td>int64</td>
-<td>2048</td>
-<td>Maximum total new tokens across all running requests per step (token budget; vLLM parity). Deprecated alias: <code>--max-num-scheduled-tokens</code>.</td>
-</tr>
 <tr>
 <td><code>--long-prefill-token-threshold</code></td>
 <td>int64</td>
@@ -3878,8 +4120,7 @@
 </tbody>
 </table>
 <h2 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h2>
-<h3 id="regression-coefficients">Regression Coefficients<a class="headerlink" href="#regression-coefficients" title="Permanent link">&para;</a></h3>
-<p>Trained coefficients for physics-informed latency estimation. Maps to <code>LatencyCoeffs</code>.</p>
+<p>BLIS prices every step with <a href="https://github.com/inference-sim/blis-latency-kernel">blis-latency-kernel</a> (<code>v0.1.0</code>, adapter <code>sim/kernelmodel</code>). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and <code>--registry</code> locates them. See <a href="../../guide/latency-models/">Latency Models</a>.</p>
 <table>
 <thead>
 <tr>
@@ -3891,135 +4132,13 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--alpha-coeffs</code></td>
-<td>float64 slice</td>
-<td>[0, 0, 0]</td>
-<td>Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative.</td>
-</tr>
-<tr>
-<td><code>--beta-coeffs</code></td>
-<td>float64 slice</td>
-<td>[0, 0, 0]</td>
-<td>Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative.</td>
+<td><code>--speculative-acceptance-rate</code></td>
+<td>float64</td>
+<td>0.0</td>
+<td>Mean fraction of draft tokens accepted, in [0, 1]. <strong>Required</strong> when the scenario's pool drafts tokens (<code>engine.speculative.num_spec_tokens &gt; 0</code>). The draft length and method come from the scenario.</td>
 </tr>
 </tbody>
 </table>
-<p>When <code>--latency-model trained-physics</code> (the default) is in force and <code>--alpha-coeffs</code>/<code>--beta-coeffs</code> are not explicitly provided on the CLI, BLIS loads the coefficients from the single <code>trained_physics_coefficients</code> block in <code>defaults.yaml</code> (<code>alpha_coeffs</code> + <code>beta_coeffs</code>). That block is <strong>global — one set for every model, GPU and TP degree</strong>; there is no per-model, per-GPU or per-TP keyed lookup, and none has ever existed. Generalizing across architectures without a per-deployment fit is the point of the trained-physics backend: the roofline basis functions carry the architecture and hardware dependence, and the coefficients only correct them.</p>
-<p>The two flags must be supplied <strong>together or not at all</strong> (supplying one without the other is refused), so either both values come from the file or both come from the CLI. Explicitly passing <code>--alpha-coeffs 0,0,0</code> preserves zero coefficients — they are not overridden by the file, because the file is consulted only for a flag the user did not set.</p>
-<p><code>--latency-model roofline</code> reads no coefficients at all: it computes step time analytically, and passing either flag alongside an explicit <code>--latency-model roofline</code> is a hard error.</p>
-<h3 id="model-and-hardware-selection">Model and Hardware Selection<a class="headerlink" href="#model-and-hardware-selection" title="Permanent link">&para;</a></h3>
-<p>Maps to <code>ModelHardwareConfig</code>.</p>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--model</code></td>
-<td>string</td>
-<td>(required)</td>
-<td>LLM model name (e.g., <code>qwen/qwen3-14b</code>).</td>
-</tr>
-<tr>
-<td><code>--hardware</code></td>
-<td>string</td>
-<td>""</td>
-<td><strong>Required</strong> GPU type (<code>run</code> and <code>replay</code>). Bundled options: <code>H100</code>, <code>H200</code>, <code>A100-SXM</code>, <code>A100-80</code>, <code>L40S</code> (the full set of <code>hardware_config.json</code> entries — see <a href="../../guide/latency-models/#generalization-scope">Generalization Scope</a> for each one's specs). Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733). Add new GPUs to <code>hardware_config.json</code> (include <code>IntraNodeBwGBps</code>/<code>InterNodeBwGBps</code> if instances on that GPU may span nodes — see <a href="#interconnect-calibration">Interconnect Calibration</a>).</td>
-</tr>
-<tr>
-<td><code>--tp</code></td>
-<td>int</td>
-<td>0</td>
-<td><strong>Required</strong> tensor parallelism degree, &gt; 0 (<code>run</code> and <code>replay</code>). Never loaded from <code>defaults.yaml</code> — omitting it is refused naming the flag (NS-6, #1733).</td>
-</tr>
-<tr>
-<td><code>--dp</code></td>
-<td>int</td>
-<td>1</td>
-<td>Data parallelism degree (MoE models only; <code>--latency-model trained-physics</code> only). <code>--dp N</code> spawns N real single-node engine replicas per <code>--num-instances</code>, each sized per-rank (<code>DP=1</code>) — on both <code>blis run</code> (#1531) and <code>blis replay</code> (#1556); re-supply it identically on replay — the TraceV2 header has no <code>data_parallel</code> field at all, and replay reads no parallelism field back from it, so omitting <code>--dp</code> on the replay leg silently compares an N-replica run against a 1-replica replay. Supported with <code>--enable-expert-parallel</code> since #1548 (the EP group is those same replicas' GPUs; re-supply both flags on replay). Supported with PD disaggregation (each pool spawns N per-rank replicas) and node pools (N×M replicas reserve N×M×TP GPUs, each sized per-rank) since #1553. Rejected with the model autoscaler (#1553: dp-group co-scaling is undefined).</td>
-</tr>
-<tr>
-<td><code>--enable-expert-parallel</code></td>
-<td>bool</td>
-<td>false</td>
-<td>Enable expert parallelism for MoE models (mirrors vLLM <code>--enable-expert-parallel</code>; <code>--latency-model trained-physics</code> only). Since #1548 it affects <strong>step time</strong> (routed-expert weights shard across the <code>TP·DP</code> EP group; the MoE FFN dispatch/combines instead of all-reducing) as well as KV-capacity sizing (#1656), and is supported alongside <code>--dp &gt; 1</code>. Reserves no GPUs beyond those <code>--dp</code> placement already takes.</td>
-</tr>
-<tr>
-<td><code>--moe-comm-backend</code></td>
-<td>string</td>
-<td>""</td>
-<td>MoE all-to-all comm backend for the dispatch/combine cost (mirrors vLLM <code>VLLM_ALL2ALL_BACKEND</code>): <code>naive</code>, <code>allgather_reducescatter</code> (default), <code>pplx</code>, <code>deepep_high_throughput</code>, <code>deepep_low_latency</code>, <code>mori</code>, <code>flashinfer_all2allv</code>. Charged when <code>--dp &gt; 1</code> <strong>or</strong> <code>--enable-expert-parallel</code> (#1548); inert otherwise. The two DeepEP modes share one placeholder cost until #1568 calibrates them.</td>
-</tr>
-<tr>
-<td><code>--prefill-moe-comm-backend</code></td>
-<td>string</td>
-<td>""</td>
-<td>Per-role MoE all-to-all backend for prefill pool instances (<code>""</code> = inherit <code>--moe-comm-backend</code>). Mirrors <code>VLLM_ALL2ALL_BACKEND</code> being per-process, so prefill and decode engines can run different modes (#1548).</td>
-</tr>
-<tr>
-<td><code>--decode-moe-comm-backend</code></td>
-<td>string</td>
-<td>""</td>
-<td>Per-role MoE all-to-all backend for decode pool instances (<code>""</code> = inherit <code>--moe-comm-backend</code>) (#1548).</td>
-</tr>
-<tr>
-<td><code>--max-model-len</code></td>
-<td>int64</td>
-<td>0</td>
-<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/trained-physics backends. Applies <code>rope_scaling</code> factor for types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, <code>mrope</code>; excludes <code>su</code>, <code>longrope</code>, <code>llama3</code>; skips entirely for <code>gemma3</code> models. Capped at KV-feasible maximum.</td>
-</tr>
-<tr>
-<td><code>--no-enable-prefix-caching</code></td>
-<td>bool</td>
-<td>false</td>
-<td>Disable cross-request GPU prefix reuse, mirroring vLLM's <code>--no-enable-prefix-caching</code>. Default false means prefix caching remains enabled (INV-6). The flag affects batch-formation work only; CPU/offload reload remains independent. Re-supply it identically on <code>replay</code> for INV-13; it is not persisted in the TraceV2 header.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="roofline-mode">Roofline Mode<a class="headerlink" href="#roofline-mode" title="Permanent link">&para;</a></h3>
-<p>For analytical step time estimation without trained coefficients.</p>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--latency-model</code></td>
-<td>string</td>
-<td>"trained-physics"</td>
-<td>Latency model backend: <code>trained-physics</code> (default), <code>roofline</code>. Both read the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code> for latency estimation and KV sizing; an uncatalogued model is refused and nothing is fetched. Both require <code>--hardware</code> and <code>--tp</code>.</td>
-</tr>
-<tr>
-<td><code>--catalog</code></td>
-<td>string</td>
-<td>""</td>
-<td>Path to the <strong>model catalog clone root</strong> (#1774). A model's HuggingFace <code>config.json</code> is read from <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> — the layout the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository uses, with <code>workloads/</code>, <code>devices/</code>, <code>hardware/</code> and <code>networks/</code> as sibling namespaces under the same root. This is the <strong>only</strong> layout: #1771 deleted the bundled <code>model_configs/</code> tree (blis-catalog is the sole catalog) and the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code> transition fallback #1774 had carried. <strong>Path semantics:</strong> a <strong>relative</strong> value is resolved against the process working directory, an <strong>absolute</strong> value is used as given; neither is rewritten. <strong>No default and no search path</strong> — supply this flag or the <code>BLIS_CATALOG</code> environment variable, or the run is refused naming both (#1731). <code>--catalog</code> wins when both are set, and the override is announced on stderr. Replaces the retired <code>--model-config-folder</code>: point <code>--catalog</code> at a scratch clone to use your own config. Registered on <code>run</code>, <code>replay</code>, <code>observe</code> and <code>convert preset</code> — the last two for the workload presets in the <code>workloads/</code> namespace (#1769), not for a model config, which only <code>run</code>/<code>replay</code> resolve. BLIS never fetches or writes a config at run time (NS-6, #1733).</td>
-</tr>
-<tr>
-<td><code>--hardware-config</code></td>
-<td>string</td>
-<td>""</td>
-<td>Path to <code>hardware_config.json</code> with GPU specifications. Overrides <code>--latency-model</code> auto-resolution. Also carries the optional per-GPU interconnect calibration (<code>IntraNodeBwGBps</code> / <code>InterNodeBwGBps</code>) that prices cross-node collective traffic — see <a href="#interconnect-calibration">Interconnect calibration</a> below.</td>
-</tr>
-</tbody>
-</table>
-<p>See <a href="../../concepts/roofline/">Roofline Estimation</a> for details on the analytical model.</p>
-<h3 id="latency-mode-selection">Latency Mode Selection<a class="headerlink" href="#latency-mode-selection" title="Permanent link">&para;</a></h3>
-<p>The latency model mode is selected based on available configuration:</p>
-<ol>
-<li><strong>Trained-physics mode</strong> (default): Resolves the model config from the catalog (<code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code>) and the hardware config from the bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> explicitly (never inferred, NS-6). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. Physics-informed basis functions with learned corrections.</li>
-<li><strong>Roofline mode</strong>: If <code>--latency-model roofline</code> is explicitly set with <code>--hardware</code> and <code>--tp</code>. Pure analytical estimation from model architecture and hardware specifications.</li>
-</ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
 <p>With <code>--num-instances 1</code> (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With <code>--num-instances N</code> (N &gt; 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See <a href="../../concepts/architecture/">Cluster Architecture</a> for the multi-instance pipeline and <a href="../../concepts/core-engine/">Core Engine</a> for single-instance internals.</p>
 <table>
@@ -4036,10 +4155,29 @@
 <td><code>--num-instances</code></td>
 <td>int</td>
 <td>1</td>
-<td>Number of inference instances. 1 = single-instance mode; &gt; 1 = cluster mode with admission and routing.</td>
+<td>Number of inference instances. 1 = single-instance mode; &gt; 1 = cluster mode with admission and routing. Must not exceed the scenario's rank capacity (pool <code>nodes</code> × <code>gpus_per_node</code> / (pp × tp × pcp)); <code>testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml</code> allows up to 8.</td>
+</tr>
+<tr>
+<td><code>--prefill-instances</code></td>
+<td>int</td>
+<td>0</td>
+<td>Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with <code>prefill</code> and <code>decode</code> pools, and must not exceed the prefill pool's rank capacity (pool <code>nodes</code> × <code>gpus_per_node</code> / (pp × tp × pcp)).</td>
+</tr>
+<tr>
+<td><code>--decode-instances</code></td>
+<td>int</td>
+<td>0</td>
+<td>Decode instances for P/D disaggregation. Same rules, against the decode pool.</td>
+</tr>
+<tr>
+<td><code>--pd-decider</code></td>
+<td>string</td>
+<td>"never"</td>
+<td>P/D disaggregation decider: <code>never</code>, <code>always</code>, <code>prefix-threshold</code>.</td>
 </tr>
 </tbody>
 </table>
+<p><strong>P/D disaggregation.</strong> A scenario with <code>prefill</code> and <code>decode</code> pools runs one kernel per pool; the KV handoff is priced by the kernel's <code>PDTransferTime</code> over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without <code>--prefill-instances</code>/<code>--decode-instances</code>; pools that differ in block size, <code>dp</code> or draft configuration; KV offload combined with P/D; shared (<code>--prefill-decode-instances</code>) or encode instances.</p>
 <h2 id="admission-policy">Admission Policy<a class="headerlink" href="#admission-policy" title="Permanent link">&para;</a></h2>
 <p>Controls which requests enter the routing pipeline. See <a href="../../concepts/architecture/#admission-pipeline">Cluster Architecture: Admission</a>.</p>
 <table>
@@ -4192,11 +4330,11 @@
 </table>
 <p><strong>Key semantic:</strong> <code>IsSheddable(class) = Priority(class) &lt; 0</code>. This matches llm-d's <code>sheddable.go</code> contract. Classes with priority &gt;= 0 are protected from tenant budget shedding and are shed by tier-shed only when their priority is below <code>tier_shed_min_priority</code>.</p>
 <p><strong>Custom overrides:</strong> Override specific priorities via the policy bundle YAML. Unspecified classes retain defaults.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">admission</span><span class="p">:</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"tier-shed"</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">       </span><span class="c1"># make batch non-sheddable (protected like standard)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># increase critical priority gap</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"tier-shed"</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">       </span><span class="c1"># make batch non-sheddable (protected like standard)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># increase critical priority gap</span>
 </code></pre></div>
 <p><strong>Where priorities are used in the codebase:</strong></p>
 <table>
@@ -4250,19 +4388,19 @@
 </tbody>
 </table>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">admission</span><span class="p">:</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"tier-shed"</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">tier_shed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">tier_shed_min_priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># admit standard(3) and critical(4); shed sheddable tiers (priority &lt; 0)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span><span class="w">             </span><span class="c1"># optional: override specific priorities</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">                  </span><span class="c1"># promote batch to non-sheddable</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">slo_targets</span><span class="p">:</span><span class="w">                </span><span class="c1"># optional: per-class TTFT targets in µs for slo-deadline ordering</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span><span class="w">          </span><span class="c1"># 100ms TTFT target</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500000</span><span class="w">          </span><span class="c1"># 500ms TTFT target</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">alice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span><span class="w">   </span><span class="c1"># alice may use at most 30% of total cluster capacity</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">bob</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">     </span><span class="c1"># bob may use at most 70% of total cluster capacity</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"tier-shed"</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">tier_shed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">tier_shed_min_priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># admit standard(3) and critical(4); shed sheddable tiers (priority &lt; 0)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span><span class="w">             </span><span class="c1"># optional: override specific priorities</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">                  </span><span class="c1"># promote batch to non-sheddable</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">slo_targets</span><span class="p">:</span><span class="w">                </span><span class="c1"># optional: per-class TTFT targets in µs for slo-deadline ordering</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span><span class="w">          </span><span class="c1"># 100ms TTFT target</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500000</span><span class="w">          </span><span class="c1"># 500ms TTFT target</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">alice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span><span class="w">   </span><span class="c1"># alice may use at most 30% of total cluster capacity</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">bob</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">     </span><span class="c1"># bob may use at most 70% of total cluster capacity</span>
 </code></pre></div>
 <h2 id="flow-control-gateway-queue">Flow Control (Gateway Queue)<a class="headerlink" href="#flow-control-gateway-queue" title="Permanent link">&para;</a></h2>
 <p>When <code>--flow-control</code> is enabled, admission IS the queue — requests are enqueued into per-priority-band, per-tenant flow queues and dispatched under saturation gating. See <a href="../../guide/admission/#flow-control-mode">Admission: Flow Control</a>.</p>
@@ -4285,7 +4423,7 @@
 <tr>
 <td><code>--saturation-detector</code></td>
 <td>string</td>
-<td>"utilization"</td>
+<td>"never"</td>
 <td>Saturation detection: <code>utilization</code>, <code>concurrency</code>, <code>never</code></td>
 </tr>
 <tr>
@@ -4303,7 +4441,7 @@
 <tr>
 <td><code>--max-concurrency</code></td>
 <td>int</td>
-<td>64</td>
+<td>100</td>
 <td>Max in-flight requests for concurrency-based saturation</td>
 </tr>
 <tr>
@@ -4378,7 +4516,7 @@
 </table>
 <h3 id="scorer-configuration">Scorer Configuration<a class="headerlink" href="#scorer-configuration" title="Permanent link">&para;</a></h3>
 <p>When using <code>--routing-policy weighted</code>, the <code>--routing-scorers</code> flag configures which scorers are used and their relative weights:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>--routing-scorers<span class="w"> </span><span class="s2">"precise-prefix-cache:2,queue-depth:1,kv-utilization:1"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>--routing-scorers<span class="w"> </span><span class="s2">"precise-prefix-cache:2,queue-depth:1,kv-utilization:1"</span>
 </code></pre></div>
 <p>Available scorers: <code>prefix-affinity</code>, <code>precise-prefix-cache</code>, <code>no-hit-lru</code>, <code>queue-depth</code>, <code>kv-utilization</code>, <code>load-balance</code>, <code>active-requests</code>, <code>running-requests</code>, <code>load-aware</code>.</p>
 <p>Default (when <code>--routing-scorers</code> is empty): <code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code> (llm-d parity).</p>
@@ -4435,7 +4573,7 @@
 <tr>
 <td><strong>Preset</strong></td>
 <td><code>--workload &lt;name&gt;</code></td>
-<td>Named preset read from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769): <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>. Needs <code>--catalog</code> / <code>BLIS_CATALOG</code>, which <code>blis run</code> already requires for the model.</td>
+<td>Named preset read from the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769): <code>chatbot</code>, <code>contentgen</code>, <code>summarization</code>, <code>multidoc</code>. Needs <code>--catalog</code> / <code>BLIS_CATALOG</code>, which <code>blis run</code> already requires.</td>
 </tr>
 </tbody>
 </table>
@@ -4521,49 +4659,49 @@
 </table>
 <h3 id="workload-spec-yaml">Workload-Spec YAML<a class="headerlink" href="#workload-spec-yaml" title="Permanent link">&para;</a></h3>
 <p>The <code>--workload-spec</code> flag loads a YAML file defining multi-client workloads:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">aggregate_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">       </span><span class="c1"># Total arrival rate in requests/second</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">num_requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">seed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nt">horizon</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000000000</span><span class="w">       </span><span class="c1"># Ticks (microseconds)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">clients</span><span class="p">:</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"interactive"</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.6</span><span class="w">    </span><span class="c1"># 60% of aggregate rate</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">prefix_group</span><span class="p">:</span><span class="w"> </span><span class="s">"chat"</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">prefix_length</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="s">"poisson"</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4096</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"exponential"</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"batch"</span>
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
-<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
-<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="s">"gamma"</span>
-<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a><span class="w">      </span><span class="nt">cv</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
-<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
-<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span>
-<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
-<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7000</span>
-<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
-<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
-<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
-<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
-<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
-<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-4-43" name="__codelineno-4-43" href="#__codelineno-4-43"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7000</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">aggregate_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">       </span><span class="c1"># Total arrival rate in requests/second</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">num_requests</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">seed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nt">horizon</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000000000</span><span class="w">       </span><span class="c1"># Ticks (microseconds)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"interactive"</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.6</span><span class="w">    </span><span class="c1"># 60% of aggregate rate</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">prefix_group</span><span class="p">:</span><span class="w"> </span><span class="s">"chat"</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">prefix_length</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="s">"poisson"</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4096</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"exponential"</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"batch"</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">    </span><span class="nt">arrival</span><span class="p">:</span>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">      </span><span class="nt">process</span><span class="p">:</span><span class="w"> </span><span class="s">"gamma"</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="w">      </span><span class="nt">cv</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">    </span><span class="nt">input_distribution</span><span class="p">:</span>
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7000</span>
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">    </span><span class="nt">output_distribution</span><span class="p">:</span>
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"gaussian"</span>
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">        </span><span class="nt">std_dev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">        </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">        </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7000</span>
 </code></pre></div>
 <p><strong>Supported arrival processes:</strong> <code>poisson</code>, <code>gamma</code> (with <code>cv</code> parameter), <code>weibull</code> (with <code>cv</code> parameter), <code>constant</code>.</p>
 <p><strong>Supported token distributions:</strong> <code>gaussian</code>, <code>exponential</code>, <code>pareto_lognormal</code>, <code>constant</code>, <code>empirical</code>.</p>
@@ -4589,7 +4727,7 @@
 <td><code>--defaults-filepath</code></td>
 <td>string</td>
 <td>"defaults.yaml"</td>
-<td>Path to <code>defaults.yaml</code> (shipped constants; workload presets come from the catalog since #1769).</td>
+<td>Path to <code>defaults.yaml</code> (the LoRA cost block; see <a href="#defaultsyaml">defaults.yaml</a>).</td>
 </tr>
 <tr>
 <td><code>--trace-output</code></td>
@@ -4601,98 +4739,68 @@
 </table>
 <h2 id="policy-bundle">Policy Bundle<a class="headerlink" href="#policy-bundle" title="Permanent link">&para;</a></h2>
 <p>The <code>--policy-config</code> flag loads admission, routing, priority, and scheduling configuration from a single YAML file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">admission</span><span class="p">:</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"always-admit"</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">token_bucket_capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000.0</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">token_bucket_refill_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000.0</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">routing</span><span class="p">:</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"weighted"</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">scorers</span><span class="p">:</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"prefix-affinity"</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.0</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"queue-depth"</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"kv-utilization"</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="nt">priority</span><span class="p">:</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"constant"</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="nt">scheduler</span><span class="p">:</span><span class="w"> </span><span class="s">"fcfs"</span>
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="nt">preemption</span><span class="p">:</span>
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"priority"</span><span class="w">    </span><span class="c1"># fcfs (default) or priority (least-urgent SLO tier evicted first)</span>
-<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
-<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="c1"># Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)</span>
-<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="c1"># Two startup-guard constraints apply when node_pools are set (both panic at startup; #1537, tracked #1543):</span>
-<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="c1">#   - gpu_type must be UNIQUE across pools (metadata is resolved by first-match on gpu_type).</span>
-<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="c1">#   - a per-role TP override (--prefill-tp/--decode-tp) may not differ from the global --tp</span>
-<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="c1">#     (placement, node-span, and cost all use the global TP).</span>
-<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="c1"># An instance whose --tp exceeds a pool's gpus_per_node occupies whole nodes across the pool</span>
-<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="c1"># (multi-node TP), when --tp is a whole multiple of gpus_per_node; see docs/guide/cluster.md.</span>
-<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="nt">node_pools</span><span class="p">:</span>
-<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"gpu-pool-1"</span>
-<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">    </span><span class="nt">gpu_type</span><span class="p">:</span><span class="w"> </span><span class="s">"H100"</span><span class="w">      </span><span class="c1"># pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-physics backends); see issues #892/#893; must be unique across pools (#1537)</span>
-<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">    </span><span class="nt">gpus_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
-<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">    </span><span class="nt">gpu_memory_gib</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80.0</span>
-<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">    </span><span class="nt">initial_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">    </span><span class="nt">min_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">    </span><span class="nt">max_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">    </span><span class="nt">provisioning_delay</span><span class="p">:</span>
-<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">      </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30.0</span><span class="w">   </span><span class="c1"># seconds</span>
-<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">      </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">  </span><span class="c1"># 0 = constant delay</span>
-<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a>
-<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="c1"># Per-GPU hardware calibration overrides for roofline/trained-physics backends (issue #893 — optional)</span>
-<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="c1"># ⚠ NOT settable through --policy-config as shown — PolicyBundle has no such key. Tracked</span>
-<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="c1">#   as a pre-existing doc defect in issue #1668; the block below is programmatic-only today.</span>
-<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="c1"># Key: GPU type string matching a pool's gpu_type. Value: HardwareCalib for that GPU.</span>
-<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="c1"># When a pool's gpu_type is found in this map, the matched calibration overrides the CLI</span>
-<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="c1"># --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),</span>
-<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="c1"># ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.</span>
-<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="c1"># Omitting this field (zero value) is safe: no override, backward-compatible with all callers.</span>
-<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="c1"># Keys must exactly match the gpu_type strings used in the node_pools entries above.</span>
-<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="c1"># NOTE (#1530): an entry REPLACES the whole calibration, including the optional</span>
-<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="c1"># interconnect fields, so a programmatic caller must repeat them for any pool whose</span>
-<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="c1"># instances may span nodes. Until #1668 makes this reachable from a policy bundle, a</span>
-<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="c1"># mixed-gpu_type node-pool fleet shares the single --hardware entry (issue #893).</span>
-<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="c1"># See "Interconnect Calibration" below.</span>
-<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="nt">hw_config_by_gpu</span><span class="p">:</span>
-<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">  </span><span class="nt">H100</span><span class="p">:</span>
-<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1979.0</span><span class="w">    </span><span class="c1"># FP16 TFLOPS</span>
-<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.35</span><span class="w">      </span><span class="c1"># HBM bandwidth in TB/s</span>
-<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="w">  </span><span class="nt">A100</span><span class="p">:</span>
-<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1248.0</span>
-<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a>
-<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a><span class="c1"># Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)</span>
-<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="nt">instance_lifecycle</span><span class="p">:</span>
-<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="w">  </span><span class="nt">loading_delay</span><span class="p">:</span>
-<a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="w">    </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span><span class="w">    </span><span class="c1"># seconds to load model weights onto GPU</span>
-<a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a><span class="w">    </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span><span class="w">   </span><span class="c1"># 0 = constant delay</span>
-<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="w">  </span><span class="nt">warm_up_request_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">    </span><span class="c1"># requests served before leaving WarmingUp state</span>
-<a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="w">  </span><span class="nt">warm_up_ttft_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span><span class="w">    </span><span class="c1"># TTFT multiplier applied to warm-up requests (≥ 1.0)</span>
-<a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a><span class="w">  </span><span class="nt">drain_policy</span><span class="p">:</span><span class="w"> </span><span class="s">"WAIT"</span><span class="w">        </span><span class="c1"># IMMEDIATE | WAIT | REDIRECT</span>
-<a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="w">  </span><span class="nt">warm_start_initial_instances</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay</span>
-<a id="__codelineno-5-78" name="__codelineno-5-78" href="#__codelineno-5-78"></a>
-<a id="__codelineno-5-79" name="__codelineno-5-79" href="#__codelineno-5-79"></a><span class="c1"># SLO priority overrides (optional; omit for GAIE defaults)</span>
-<a id="__codelineno-5-80" name="__codelineno-5-80" href="#__codelineno-5-80"></a><span class="c1"># GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3</span>
-<a id="__codelineno-5-81" name="__codelineno-5-81" href="#__codelineno-5-81"></a><span class="c1"># Negative priority = sheddable. Override to change which classes are sheddable.</span>
-<a id="__codelineno-5-82" name="__codelineno-5-82" href="#__codelineno-5-82"></a><span class="c1"># admission:</span>
-<a id="__codelineno-5-83" name="__codelineno-5-83" href="#__codelineno-5-83"></a><span class="c1">#   slo_priorities:</span>
-<a id="__codelineno-5-84" name="__codelineno-5-84" href="#__codelineno-5-84"></a><span class="c1">#     batch: 0    # make batch non-sheddable</span>
-<a id="__codelineno-5-85" name="__codelineno-5-85" href="#__codelineno-5-85"></a>
-<a id="__codelineno-5-86" name="__codelineno-5-86" href="#__codelineno-5-86"></a><span class="c1"># Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)</span>
-<a id="__codelineno-5-87" name="__codelineno-5-87" href="#__codelineno-5-87"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxNumSeqs).</span>
-<a id="__codelineno-5-88" name="__codelineno-5-88" href="#__codelineno-5-88"></a><span class="c1"># Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].</span>
-<a id="__codelineno-5-89" name="__codelineno-5-89" href="#__codelineno-5-89"></a><span class="c1"># Non-sheddable traffic (priority &gt;= 0: critical, standard) is always protected from budget shedding.</span>
-<a id="__codelineno-5-90" name="__codelineno-5-90" href="#__codelineno-5-90"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
-<a id="__codelineno-5-91" name="__codelineno-5-91" href="#__codelineno-5-91"></a><span class="w">  </span><span class="nt">team-a</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
-<a id="__codelineno-5-92" name="__codelineno-5-92" href="#__codelineno-5-92"></a><span class="w">  </span><span class="nt">team-b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"always-admit"</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">token_bucket_capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000.0</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">token_bucket_refill_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000.0</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">routing</span><span class="p">:</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"weighted"</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">scorers</span><span class="p">:</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"prefix-affinity"</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.0</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"queue-depth"</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"kv-utilization"</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">      </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="nt">priority</span><span class="p">:</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"constant"</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="nt">scheduler</span><span class="p">:</span><span class="w"> </span><span class="s">"fcfs"</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="nt">preemption</span><span class="p">:</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">"priority"</span><span class="w">    </span><span class="c1"># fcfs (default) or priority (least-urgent SLO tier evicted first)</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># Node pool infrastructure (optional; omit for single-pool mode)</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="c1"># Every pool's gpu_type must equal the scenario's cluster.hardware, and gpu_type must be</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="c1"># unique across pools (#1537). See docs/guide/cluster.md.</span>
+<a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="nt">node_pools</span><span class="p">:</span>
+<a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"gpu-pool-1"</span>
+<a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">    </span><span class="nt">gpu_type</span><span class="p">:</span><span class="w"> </span><span class="s">"h200"</span><span class="w">      </span><span class="c1"># must equal the scenario's cluster.hardware</span>
+<a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">    </span><span class="nt">gpus_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+<a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">    </span><span class="nt">gpu_memory_gib</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">141.0</span>
+<a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="w">    </span><span class="nt">initial_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="w">    </span><span class="nt">min_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a><span class="w">    </span><span class="nt">max_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+<a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a><span class="w">    </span><span class="nt">provisioning_delay</span><span class="p">:</span>
+<a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a><span class="w">      </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30.0</span><span class="w">   </span><span class="c1"># seconds</span>
+<a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a><span class="w">      </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">  </span><span class="c1"># 0 = constant delay</span>
+<a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a>
+<a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a><span class="c1"># Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)</span>
+<a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a><span class="nt">instance_lifecycle</span><span class="p">:</span>
+<a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a><span class="w">  </span><span class="nt">loading_delay</span><span class="p">:</span>
+<a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a><span class="w">    </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span><span class="w">    </span><span class="c1"># seconds to load model weights onto GPU</span>
+<a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a><span class="w">    </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span><span class="w">   </span><span class="c1"># 0 = constant delay</span>
+<a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a><span class="w">  </span><span class="nt">warm_up_request_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">    </span><span class="c1"># requests served before leaving WarmingUp state</span>
+<a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a><span class="w">  </span><span class="nt">warm_up_ttft_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span><span class="w">    </span><span class="c1"># TTFT multiplier applied to warm-up requests (≥ 1.0)</span>
+<a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a><span class="w">  </span><span class="nt">drain_policy</span><span class="p">:</span><span class="w"> </span><span class="s">"WAIT"</span><span class="w">        </span><span class="c1"># IMMEDIATE | WAIT | REDIRECT</span>
+<a id="__codelineno-6-47" name="__codelineno-6-47" href="#__codelineno-6-47"></a><span class="w">  </span><span class="nt">warm_start_initial_instances</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay</span>
+<a id="__codelineno-6-48" name="__codelineno-6-48" href="#__codelineno-6-48"></a>
+<a id="__codelineno-6-49" name="__codelineno-6-49" href="#__codelineno-6-49"></a><span class="c1"># SLO priority overrides (optional; omit for GAIE defaults)</span>
+<a id="__codelineno-6-50" name="__codelineno-6-50" href="#__codelineno-6-50"></a><span class="c1"># GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3</span>
+<a id="__codelineno-6-51" name="__codelineno-6-51" href="#__codelineno-6-51"></a><span class="c1"># Negative priority = sheddable. Override to change which classes are sheddable.</span>
+<a id="__codelineno-6-52" name="__codelineno-6-52" href="#__codelineno-6-52"></a><span class="c1"># admission:</span>
+<a id="__codelineno-6-53" name="__codelineno-6-53" href="#__codelineno-6-53"></a><span class="c1">#   slo_priorities:</span>
+<a id="__codelineno-6-54" name="__codelineno-6-54" href="#__codelineno-6-54"></a><span class="c1">#     batch: 0    # make batch non-sheddable</span>
+<a id="__codelineno-6-55" name="__codelineno-6-55" href="#__codelineno-6-55"></a>
+<a id="__codelineno-6-56" name="__codelineno-6-56" href="#__codelineno-6-56"></a><span class="c1"># Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)</span>
+<a id="__codelineno-6-57" name="__codelineno-6-57" href="#__codelineno-6-57"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxNumSeqs).</span>
+<a id="__codelineno-6-58" name="__codelineno-6-58" href="#__codelineno-6-58"></a><span class="c1"># Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].</span>
+<a id="__codelineno-6-59" name="__codelineno-6-59" href="#__codelineno-6-59"></a><span class="c1"># Non-sheddable traffic (priority &gt;= 0: critical, standard) is always protected from budget shedding.</span>
+<a id="__codelineno-6-60" name="__codelineno-6-60" href="#__codelineno-6-60"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
+<a id="__codelineno-6-61" name="__codelineno-6-61" href="#__codelineno-6-61"></a><span class="w">  </span><span class="nt">team-a</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<a id="__codelineno-6-62" name="__codelineno-6-62" href="#__codelineno-6-62"></a><span class="w">  </span><span class="nt">team-b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
 </code></pre></div>
 <p>CLI flags override policy bundle values when explicitly set. For example, <code>--routing-policy least-loaded</code> overrides the bundle's <code>routing.policy</code> setting.</p>
 <div class="admonition note">
@@ -4752,215 +4860,19 @@
 </table>
 <p>When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via <code>1/(1 + value/1000)</code> where <code>value</code> is in ticks (microseconds) and 1000 = 1ms reference (lower is better); throughput metrics via <code>value/(value + reference)</code> where <code>referenceRPS = 100.0</code> and <code>referenceTPS = 10000.0</code> (higher is better). Useful for automated policy comparison across multiple simulation runs.</p>
 <h2 id="defaultsyaml">defaults.yaml<a class="headerlink" href="#defaultsyaml" title="Permanent link">&para;</a></h2>
-<p>The <code>defaults.yaml</code> file is a home for shipped constants — trained coefficients, LoRA cost
-terms and KV-offload device physics. It carries neither per-model deployment policy nor
-workload presets: the <code>defaults:</code> block that once mapped a model to a
-<code>GPU</code>/<code>tensor_parallelism</code>/<code>hf_repo</code> triple was removed in #1768, having been unreachable on
-every run path since NS-6 (#1733) made <code>--hardware</code>/<code>--tp</code> required and #1731 made the catalog
-the only model-config source; the <code>workloads:</code> block was removed in #1769, because the named
-presets also existed in the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>) with nothing keeping
-the two copies in sync. The catalog copy is now the only one.</p>
-<div class="admonition warning">
-<p class="admonition-title">Custom <code>defaults.yaml</code> files must remove the <code>defaults:</code> block (migration note)</p>
-<p>Strict parsing (<code>KnownFields(true)</code>) rejects an undeclared key, so a hand-maintained
-<code>defaults.yaml</code> that still carries a <code>defaults:</code> block now fails to load with
-<code>field defaults not found in type cmd.Config</code>. Delete the block and pass <code>--hardware</code>/<code>--tp</code>
-on the command line. Nothing is lost — no run path read those values.</p>
-</div>
-<div class="admonition warning">
-<p class="admonition-title">Custom <code>defaults.yaml</code> files must remove the <code>workloads:</code> block (migration note)</p>
-<p>By the same strict-parsing rule, a hand-maintained <code>defaults.yaml</code> that still carries a
-<code>workloads:</code> block now fails to load with
-<code>field workloads not found in type cmd.Config</code> (#1769). Move the preset to
-<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code> — the same keys, one preset per file — and locate the
-catalog with <code>--catalog</code> or <code>BLIS_CATALOG</code>. <code>blis run --workload</code>,
-<code>blis convert preset --name</code> and <code>blis observe --workload</code> all read it from there.</p>
-</div>
-<p>These are the top-level keys the file may carry, and strict parsing accepts no others
-(<code>KnownFields(true)</code>, R10 — the authoritative list is <code>cmd.Config</code> in <code>cmd/default_config.go</code>;
-the bundled <code>defaults.yaml</code> is the worked example):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.1</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Trained-physics coefficients — ONE GLOBAL SET, not keyed by model, GPU or TP.</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Consulted only by --latency-model trained-physics, and only for a flag the user did not pass.</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nt">trained_physics_coefficients</span><span class="p">:</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">alpha_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">15563.199579</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">777.3455</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">45.907545</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># α₀-α₂: API/framework overheads (µs)</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">beta_coeffs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.152128</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.36252915</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># β₁-β₁₀ + optional β_EP</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="nt">lora</span><span class="p">:</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span><span class="nt">load_base_latency_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="c1"># ... bandwidth, per-rank footprint, per-rank step-overhead tiers</span>
+<p>The <code>defaults.yaml</code> file (located by <code>--defaults-filepath</code>, default <code>defaults.yaml</code>) carries only the LoRA control-plane cost terms and a <code>version</code>. It holds no latency coefficients, no per-model deployment policy and no workload presets: latency coefficients live in <a href="https://github.com/inference-sim/blis-registry">blis-registry</a>, named by the scenario; the deployment lives in the scenario; workload presets live in the catalog (<code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769).</p>
+<p>These are the top-level keys the file may carry, and strict parsing accepts no others (<code>KnownFields(true)</code>, R10 — the authoritative list is <code>cmd.Config</code> in <code>cmd/default_config.go</code>; the bundled <code>defaults.yaml</code> is the worked example):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.1</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># LoRA control-plane cost terms (#1464). Inert unless a run declares adapters.</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nt">lora</span><span class="p">:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">load_base_latency_us</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1500.0</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="c1"># ... bandwidth, per-rank footprint, per-rank step-overhead tiers</span>
 </code></pre></div>
-<div class="admonition warning">
-<p class="admonition-title">There is no <code>models:</code> section, and there never was a keyed coefficient table</p>
-<p>Earlier revisions of this page showed a <code>models:</code> list mapping a model+GPU+TP triple to its own
-<code>alpha_coeffs</code>/<code>beta_coeffs</code>. No such section exists — <code>cmd.Config</code> declares no <code>Models</code> field, so
-strict parsing would reject one outright. Coefficients live in the single global
-<code>trained_physics_coefficients</code> block above. The removed <code>defaults:</code> block (#1768) was a different
-thing again: per-model <code>GPU</code>/<code>tensor_parallelism</code>/<code>hf_repo</code>, never coefficients.</p>
-</div>
-<h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
-<p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
-<p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
-<p>Before any backend-specific logic runs, BLIS requires the deployment: <code>--hardware</code> and <code>--tp</code> must both be supplied, on <code>blis run</code> and <code>blis replay</code> alike. Omitting either is refused naming the missing flag (NS-6, #1733). BLIS reads no per-model <code>GPU</code>/<code>tensor_parallelism</code> values from <code>defaults.yaml</code> — inferring a deployment let a run complete and emit metrics for a configuration nobody chose — and as of #1768 the file declares no such keys at all.</p>
-<p><strong>Backend-specific resolution:</strong></p>
-<ol>
-<li>If <code>--latency-model trained-physics</code> (default) or <code>roofline</code>:</li>
-<li>Resolve the model config inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>, which names the catalog <strong>clone root</strong>: <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code>, with a transition fallback to the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code> (#1774; #1771 removes the fallback). A relative catalog path is resolved against the process working directory, an absolute one is used as given. A run that names no catalog is refused naming both forms (#1731); a model with no entry in <strong>either</strong> layout is refused naming every path looked at and the canonical <code>models/</code> path its entry belongs at — nothing is fetched, and no run writes to the catalog (NS-6). Only ABSENCE falls through to the flat layout: a <code>models/</code> entry that exists but is malformed is reported, never silently replaced by a flat one</li>
-<li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
-<li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
-<li>For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code></li>
-<li><code>--catalog</code> / <code>BLIS_CATALOG</code> locates the model config (required, no default); <code>--hardware-config</code> overrides auto-resolution when explicitly set</li>
-<li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
-<li>Use them directly, no <code>defaults.yaml</code> lookup</li>
-</ol>
-<p><strong><code>--total-kv-blocks</code> resolution</strong> (highest priority wins):</p>
-<ol>
-<li><strong>Explicit CLI flag</strong> — if <code>--total-kv-blocks</code> is set, that value is used regardless of backend</li>
-<li><strong>Auto-calculation</strong> (all backends) — when <code>MemoryGiB &gt; 0</code> in the hardware config and <code>config.json</code> is available, <code>CalculateKVBlocks</code> derives the block count from model architecture and GPU memory. BLIS resolves <code>config.json</code> as the catalog entry <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> (transition fallback: the flat <code>&lt;catalog&gt;/&lt;short-name&gt;/config.json</code>, #1774) inside the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>; there is no step outside that catalog root — an uncatalogued model is refused rather than fetched (NS-6). Failure modes: (a) if <code>MemoryGiB</code> is missing from <code>hardware_config.json</code>, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from <code>config.json</code>, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., an unsupported activation function), <code>CalculateKVBlocks</code> returns an error and BLIS <strong>aborts with a fatal error</strong> (<code>logrus.Fatalf</code>) rather than falling back. Auto-calculation currently requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>, <code>situ</code> — Kimi-K3's SiTU-GLU, a 3-matrix gated GLU with SwiGLU's weight/FLOP shape); a model with another activation (e.g., Falcon's <code>gelu</code>) therefore aborts the run during auto-calculation unless <code>--total-kv-blocks</code> is set explicitly (which skips auto-calculation)</li>
-<li><strong>Hardcoded default</strong> — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)</li>
-</ol>
-<p>Auto-calculation divides an <strong>aggregate</strong> memory budget (<code>gpu_mem × util × TP</code>, less the weight, activation, non-torch and LoRA-reservation overheads) by the <strong>aggregate</strong> cost of one block (<code>per_GPU_KV_bytes_per_token × block_size × TP</code>) — blocks are global, and each of the TP ranks stores its shard of every block. Before #1846 the denominator was the per-GPU cost alone, which over-estimated the pool by ~TP on every multi-GPU deployment (TP=1 was unaffected). This is an analytical estimate in vLLM's units, not a reproduction of vLLM's per-rank memory profiling, and remains slightly optimistic at high TP. The formula, the measured residual, and when to pin <code>--total-kv-blocks</code> instead are in <a href="../../guide/kv-cache/#how-the-auto-calculated-pool-is-sized">KV Cache Management</a>.</p>
 <div class="admonition note">
-<p class="admonition-title">Per-instance capacity with mixed-GPU node pools (#1522)</p>
-<p>When <code>node_pools</code> are configured (via <code>--policy-config</code>) and <code>--total-kv-blocks</code> is <strong>not</strong> explicitly set, each placed instance auto-calculates KV capacity from its <strong>own</strong> pool's <code>gpu_memory_gib</code> — not the single global <code>--hardware</code> GPU. So an H100 pool (80 GiB) and an L40S pool (48 GiB) serving the same role get different block counts. This applies to startup placement, deferred placement (nodes provisioned after start), and autoscaler-created instances. An explicit <code>--total-kv-blocks</code> disables this and forces a uniform global capacity across all instances (layer 1 above wins). A per-GPU capacity smaller than <code>--max-model-len</code> auto-caps that instance's <code>max-model-len</code> to the KV-feasible maximum. If a pool's memory is unavailable or the calc fails, that instance falls back to the global capacity with a warning. Node pools are <code>blis run</code> only.</p>
-<p><strong><code>gpu_type</code> is the hardware-identity key, and must be unique across pools.</strong> Per-GPU metadata (KV memory, cost, execution calibration) is resolved by matching <code>gpu_type</code> against the placed instance's GPU. Because that lookup is first-match, two pools sharing a <code>gpu_type</code> would resolve ambiguously — so as of #1537 (multi-node TP, whose <code>nodes-spanned × cost_per_hour</code> multiplier makes a wrong cost lookup worse) <strong>duplicate <code>gpu_type</code> across pools is rejected with a startup panic</strong>. To model two hardware variants that differ in memory or cost, give them distinct <code>gpu_type</code> strings (e.g., <code>A100-40</code> and <code>A100-80</code>) rather than the same type with different <code>gpu_memory_gib</code>. (Making duplicate <code>gpu_type</code> legal via pool-identity lookup is tracked by #1543.)</p>
+<p class="admonition-title">Node pools and the scenario's hardware</p>
+<p>When <code>node_pools</code> are configured (via <code>--policy-config</code>), every pool's <code>gpu_type</code> must equal the scenario's <code>cluster.hardware</code>. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. <code>gpu_type</code> must also be unique across pools (#1537).</p>
 </div>
-<h2 id="coefficient-calibration">Coefficient Calibration<a class="headerlink" href="#coefficient-calibration" title="Permanent link">&para;</a></h2>
-<p>BLIS uses a data-driven calibration strategy to ensure simulation accuracy. This process runs once per environment configuration (model, GPU, TP degree, vLLM version):</p>
-<ol>
-<li><strong>Initialization</strong>: Define baseline estimates for alpha and beta coefficients as starting points for optimization</li>
-<li><strong>Profiling</strong>: Execute training workloads on a live vLLM instance to collect ground-truth mean and P90 metrics for TTFT, ITL, and E2E</li>
-<li><strong>Optimization</strong>: Run BLIS iteratively using Blackbox Bayesian Optimization to minimize the multi-objective loss:</li>
-</ol>
-<p>$<span class="arithmatex">\(\text{Loss} = \sum_{m \in \{\text{TTFT, ITL, E2E}\}} \left( |GT_{\text{mean},m} - Sim_{\text{mean},m}| + |GT_{\text{p90},m} - Sim_{\text{p90},m}| \right)\)</span>$</p>
-<ol>
-<li><strong>Artifact generation</strong>: Optimal alpha/beta coefficients are stored in <code>defaults.yaml</code> for production use</li>
-</ol>
-<p>For environments where live profiling is not feasible, the <a href="../../concepts/roofline/">Roofline model</a> provides analytical step time estimation without any training data.</p>
-<h2 id="interconnect-calibration">Interconnect Calibration<a class="headerlink" href="#interconnect-calibration" title="Permanent link">&para;</a></h2>
-<p><code>hardware_config.json</code> carries two optional per-GPU fields that price <strong>cross-node</strong>
-collective traffic in the trained-physics backend (issue #1530):</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>IntraNodeBwGBps</code></td>
-<td>On-node GPU-to-GPU link bandwidth (NVLink/xGMI, or PCIe on parts without NVLink)</td>
-</tr>
-<tr>
-<td><code>InterNodeBwGBps</code></td>
-<td>Per-GPU share of the node's inter-node fabric (InfiniBand/RoCE NIC)</td>
-</tr>
-<tr>
-<td><code>InterNodeHopLatencyUs</code></td>
-<td>Per-<strong>hop</strong> inter-node latency α_hop in µs (launch + fabric round-trip of one collective step). The charge is <code>n_steps · α_hop · S</code>, where <code>n_steps</code> is the analytic hop count of the placed span (#1694). <strong>0 in the bundled config</strong> — see below</td>
-</tr>
-</tbody>
-</table>
-<p>Both are <strong>effective (achievable, not theoretical-peak) per-GPU unidirectional GB/s</strong>.
-Only their <em>ratio</em> is used, so the absolute scale cancels — but the convention must
-match across the two fields, since mixing a bidirectional figure with a unidirectional
-one changes the ratio by 2×.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">"H100"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">"TFlopsPeak"</span><span class="p">:</span><span class="w"> </span><span class="mf">989.5</span><span class="p">,</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">"TFlopsFP8"</span><span class="p">:</span><span class="w"> </span><span class="mf">1979.0</span><span class="p">,</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">"BwPeakTBs"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.35</span><span class="p">,</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="nt">"mfuPrefill"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.45</span><span class="p">,</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="nt">"mfuDecode"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.30</span><span class="p">,</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w"> </span><span class="mf">80.0</span><span class="p">,</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">"IntraNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">450</span><span class="p">,</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">"InterNodeBwGBps"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">"InterNodeHopLatencyUs"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="p">}</span>
-</code></pre></div>
-<p>Rules:</p>
-<ul>
-<li><strong>Set both, or neither.</strong> Declaring one without the other is a hard error: it would
-  produce no cross-node cost at all, which is not what someone who set a value expects.</li>
-<li><strong>Omitting both is valid and inert</strong> — cross-node traffic is then priced at the
-  on-node rate, exactly as before #1530, and BLIS warns once if an instance actually
-  spans nodes so the optimism is visible.</li>
-<li>A negative, NaN or infinite value is rejected rather than silently clamped, at load
-  time — so the same malformed file fails identically under either latency backend.</li>
-<li><strong>Unrecognized keys are rejected</strong> (#1728). <code>hardware_config.json</code> is parsed strictly,
-  like every other BLIS config file: a key that is not one of the fields below fails the
-  load with an error naming the key <em>and</em> the GPU entry it appears under, instead of
-  leaving the intended field at 0 (a plausible-but-wrong bandwidth, MFU or memory
-  capacity). Three documentation-only keys are accepted and ignored — <code>_comment</code> and
-  <code>_comment_interconnect</code>, which the bundled file uses to record calibration provenance
-  next to the numbers, plus <code>Provenance</code>, the structured provenance tag catalog <code>hardware/</code>
-  entries carry (R2H2, blis-catalog#10); its enum value is validated by the catalog CI gate,
-  not by this loader. Keys must be spelled canonically: a key differing only in letter
-  case (<code>IntraNodeBwGbps</code>) is also rejected, with the canonical spelling named. Valid
-  keys: <code>TFlopsPeak</code>, <code>TFlopsFP8</code>, <code>BwPeakTBs</code>, <code>mfuPrefill</code>, <code>mfuDecode</code>, <code>MemoryGiB</code>,
-  <code>IntraNodeBwGBps</code>, <code>InterNodeBwGBps</code>, <code>InterNodeHopLatencyUs</code>.</li>
-<li><strong>Migrating from the pre-#1694 <code>InterNodeLatencyUs</code> key:</strong> it was renamed to
-  <code>InterNodeHopLatencyUs</code> <strong>and its unit changed</strong> from µs-per-collective to µs-per-hop.
-  A config still carrying the old key is <strong>rejected at load</strong> with an error naming the GPU
-  and the new key — it is not silently accepted (which would drop the value to 0). This is
-  a <em>recalibration</em>, not a rename: divide the old per-collective value by the collective's
-  cross-node hop count before setting the new key; do not copy it verbatim.</li>
-<li><code>InterNodeHopLatencyUs</code> (α_hop) stands alone (a fabric can be modeled as
-  latency-dominated), so it is not paired with the bandwidths. It is <strong>0 in the bundled
-  config</strong>: BLIS has no measured per-hop latency to ship, and a guessed constant would sit
-  in front of every multi-node estimate. Out of the box the cross-node cost is therefore
-  bandwidth-only. Supply a measured value (from an independent NCCL microbenchmark, reused
-  across fabrics — never back-solved from one run, #1694) to model the size-independent
-  half — it is often the larger one for decode-sized messages. It rides the learned
-  communication coefficient, so the charge is <code>β · units · n_steps · α_hop · S</code>, where
-  <code>n_steps</code> is the analytic hop count of the placed span.</li>
-<li>The topology (<em>whether</em> a collective crosses a boundary, and over how many nodes) is
-  <strong>not</strong> configured here. It is derived from real <code>node_pools</code> placement; there is no CLI
-  flag for it.</li>
-<li>The <strong>serialization factor <code>S</code></strong> (<code>--comm-serialization-factor</code>, default 1.0) is a
-  <em>deployment-regime</em> input, <strong>not</strong> a hardware field — it captures eager / no-overlap
-  execution and multiplies only the α_hop term. It lives on the CLI (both <code>run</code> and
-  <code>replay</code>), never in this file, so a graphs-on deployment cannot inherit a graphs-off
-  constant. <code>--enforce-eager</code> requires an explicit <code>S &gt; 1</code>.</li>
-<li>Whether the cost applies also depends on the backend: only
-  <code>--latency-model trained-physics</code> models communication.</li>
-</ul>
-<p>To compare fabrics, change <code>InterNodeBwGBps</code> (a slower fabric never lowers the charged
-cost), or give pools distinct <code>gpu_type</code> entries with different values.</p>
-<div class="admonition note">
-<p class="admonition-title">The catalog's <code>networks/</code> fabric classes state bandwidth, not a PD-transfer base latency</p>
-<p>The catalog's reusable fabric classes (<code>&lt;catalog&gt;/networks/*.yaml</code> — <code>ethernet-100gbe</code>,
-<code>ib-400g</code>, <code>roce-200g</code>) state a nominal <code>InterNodeBwGBps</code>, and that figure <strong>is</strong> the
-PD-transfer bandwidth: there is no separate PD bandwidth number
-(<a href="https://github.com/inference-sim/blis-catalog/pull/10">blis-catalog#10</a>). They carry <strong>no</strong>
-<code>PDTransferBaseLatencyMs</code> — <a href="https://github.com/inference-sim/blis-catalog/pull/12">blis-catalog#12</a>
-removed it, because a fabric class has no inherent per-transfer base latency to state (the
-nominal value was always a <code>0</code> placeholder), and the fabric schema is <em>closed</em>, so the catalog
-CI gate now rejects the key as unknown. The PD-transfer base latency is a <strong>modeling
-estimate</strong>, supplied by <code>--pd-transfer-base-latency</code> (default <code>0.05</code> ms) and owned by
-<a href="https://github.com/inference-sim/blis-registry/issues/10"><code>blis-registry</code></a> (<code>method: assumed</code>);
-the effective value is that number alone, with no catalog <code>0</code> to compose with. BLIS has no
-<code>networks/</code> reader yet (nothing reads a fabric file today) — <code>cmd/catalog_networks_fabric_test.go</code>
-guards the rule so the reader cannot be written against the retired field
-(<a href="https://github.com/inference-sim/inference-sim/issues/1838">#1838</a>).</p>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Node-pool instances use the <code>--hardware</code> entry</p>
-<p>A node-pool instance is calibrated from whichever <code>hardware_config.json</code> entry
-<code>--hardware</code> resolved, including these fabric fields — <code>hw_config_by_gpu</code> would
-override it per placed pool, but that field has no policy-bundle key today (issue</p>
-<h1 id="893-so-a-mixed-gpu_type-fleet-currently-shares-one-calibration-where">893), so a mixed-<code>gpu_type</code> fleet currently shares one calibration. Where<a class="headerlink" href="#893-so-a-mixed-gpu_type-fleet-currently-shares-one-calibration-where" title="Permanent link">&para;</a></h1>
-<p><code>hw_config_by_gpu</code> <em>is</em> supplied programmatically it replaces the <em>entire</em>
-<code>HardwareCalib</code>, so an entry omitting the interconnect fields drops them. Either way
-BLIS warns once when a spanning placement lands on an uncalibrated GPU, so the
-resulting optimism is never silent.</p>
-</div>
-<p>See <a href="../../guide/latency-models/#inter-node-network-cost-trained-physics-only">Latency Models — Inter-Node Network Cost</a>
-for the cost model and its known approximations.</p>
 <hr />
 <h2 id="cli-flag-summary-by-sub-config">CLI Flag Summary by Sub-Config<a class="headerlink" href="#cli-flag-summary-by-sub-config" title="Permanent link">&para;</a></h2>
 <table>
@@ -4972,20 +4884,20 @@ for the cost model and its known approximations.</p>
 </thead>
 <tbody>
 <tr>
+<td><strong>Deployment (required)</strong></td>
+<td><code>--scenario</code>, <code>--scenarios</code>, <code>--registry</code>, <code>--catalog</code> (or <code>BLIS_CATALOG</code>)</td>
+</tr>
+<tr>
 <td><strong>KVCacheConfig</strong></td>
-<td><code>--total-kv-blocks</code>, <code>--block-size-in-tokens</code>, <code>--kv-cpu-blocks</code>, <code>--kv-offload-threshold</code>, <code>--kv-transfer-bandwidth</code>, <code>--kv-transfer-base-latency</code></td>
+<td><code>--kv-cpu-blocks</code>, <code>--kv-offload-threshold</code>, <code>--kv-offload-config</code> (block budget and block size: scenario + kernel)</td>
 </tr>
 <tr>
 <td><strong>BatchConfig</strong></td>
-<td><code>--max-num-seqs</code>, <code>--max-num-batched-tokens</code>, <code>--long-prefill-token-threshold</code></td>
+<td><code>--long-prefill-token-threshold</code> (<code>max_num_seqs</code>, <code>max_num_batched_tokens</code>: scenario)</td>
 </tr>
 <tr>
-<td><strong>LatencyCoeffs</strong></td>
-<td><code>--alpha-coeffs</code>, <code>--beta-coeffs</code></td>
-</tr>
-<tr>
-<td><strong>ModelHardwareConfig</strong></td>
-<td><code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--latency-model</code>, <code>--catalog</code> (or <code>BLIS_CATALOG</code>), <code>--hardware-config</code>, <code>--max-model-len</code>. Placement-derived, no flag: the inter-node network topology (#1530)</td>
+<td><strong>Latency</strong></td>
+<td><code>--speculative-acceptance-rate</code> (everything else: scenario + registry, priced by blis-latency-kernel)</td>
 </tr>
 <tr>
 <td><strong>PolicyConfig</strong></td>
@@ -4993,11 +4905,15 @@ for the cost model and its known approximations.</p>
 </tr>
 <tr>
 <td><strong>WorkloadConfig</strong></td>
-<td><code>--workload</code> (preset read from <code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769), <code>--workload-spec</code>, <code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
+<td><code>--workload</code> (preset read from <code>&lt;catalog&gt;/workloads/&lt;name&gt;.yaml</code>, #1769), <code>--workload-spec</code>, <code>--rate</code>, <code>--concurrency</code>, <code>--num-requests</code>, <code>--prompt-tokens*</code>, <code>--output-tokens*</code>, <code>--prefix-tokens</code></td>
 </tr>
 <tr>
 <td><strong>DeploymentConfig</strong></td>
-<td><code>--num-instances</code>, <code>--admission-policy</code>, <code>--admission-latency</code>, <code>--token-bucket-capacity</code>, <code>--token-bucket-refill-rate</code>, <code>--routing-policy</code>, <code>--routing-latency</code>, <code>--routing-scorers</code>, <code>--snapshot-refresh-interval</code>, <code>--trace-level</code>, <code>--counterfactual-k</code></td>
+<td><code>--num-instances</code>, <code>--prefill-instances</code>, <code>--decode-instances</code>, <code>--pd-decider</code>, <code>--admission-policy</code>, <code>--admission-latency</code>, <code>--token-bucket-capacity</code>, <code>--token-bucket-refill-rate</code>, <code>--routing-policy</code>, <code>--routing-latency</code>, <code>--routing-scorers</code>, <code>--snapshot-refresh-interval</code>, <code>--trace-level</code>, <code>--counterfactual-k</code>. YAML-only (no CLI flag): <code>node_pools</code>, <code>instance_lifecycle</code></td>
+</tr>
+<tr>
+<td><strong>LoRA</strong></td>
+<td><code>--lora-config</code>, <code>--lora-adapter-capacity</code>, <code>--lora-*</code> cost overrides, <code>--defaults-filepath</code> (the <code>lora:</code> block)</td>
 </tr>
 <tr>
 <td><strong>Top-level</strong></td>
@@ -5007,6 +4923,10 @@ for the cost model and its known approximations.</p>
 </table>
 <hr />
 <h2 id="blis-observe">blis observe<a class="headerlink" href="#blis-observe" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Deprecated</p>
+<p><code>blis observe</code> is deprecated (<a href="https://github.com/inference-sim/inference-sim/issues/1901">#1901</a>).</p>
+</div>
 <p>Dispatches a workload to a real inference server and records request-level timing into TraceV2 files for later replay and calibration.</p>
 <h3 id="required">Required<a class="headerlink" href="#required" title="Permanent link">&para;</a></h3>
 <table>
@@ -5132,7 +5052,7 @@ for the cost model and its known approximations.</p>
 </tbody>
 </table>
 <h3 id="distribution-synthesis">Distribution Synthesis<a class="headerlink" href="#distribution-synthesis" title="Permanent link">&para;</a></h3>
-<p>Used when <code>--rate</code> is set instead of <code>--workload-spec</code>. Same flag names as <code>blis run</code> but with different defaults tuned for observe workloads.</p>
+<p>Used when <code>--rate</code> is set instead of <code>--workload-spec</code>. Same flag names and defaults as <code>blis run</code>.</p>
 <table>
 <thead>
 <tr>
@@ -5152,19 +5072,19 @@ for the cost model and its known approximations.</p>
 <tr>
 <td><code>--prompt-tokens-stdev</code></td>
 <td>int</td>
-<td>50</td>
+<td>256</td>
 <td>Prompt token standard deviation.</td>
 </tr>
 <tr>
 <td><code>--prompt-tokens-min</code></td>
 <td>int</td>
-<td>1</td>
+<td>2</td>
 <td>Minimum prompt tokens.</td>
 </tr>
 <tr>
 <td><code>--prompt-tokens-max</code></td>
 <td>int</td>
-<td>2048</td>
+<td>7000</td>
 <td>Maximum prompt tokens.</td>
 </tr>
 <tr>
@@ -5176,19 +5096,19 @@ for the cost model and its known approximations.</p>
 <tr>
 <td><code>--output-tokens-stdev</code></td>
 <td>int</td>
-<td>50</td>
+<td>256</td>
 <td>Output token standard deviation.</td>
 </tr>
 <tr>
 <td><code>--output-tokens-min</code></td>
 <td>int</td>
-<td>1</td>
+<td>2</td>
 <td>Minimum output tokens.</td>
 </tr>
 <tr>
 <td><code>--output-tokens-max</code></td>
 <td>int</td>
-<td>2048</td>
+<td>7000</td>
 <td>Maximum output tokens.</td>
 </tr>
 <tr>
@@ -5219,7 +5139,7 @@ for the cost model and its known approximations.</p>
 </table>
 <hr />
 <h2 id="blis-replay">blis replay<a class="headerlink" href="#blis-replay" title="Permanent link">&para;</a></h2>
-<p>Replays a captured TraceV2 file through the discrete-event simulator. Replay reuses the full simulation engine, so it accepts the same sim-config flags as <code>blis run</code> — see the sections above for <a href="#simulation-control">Simulation Control</a>, <a href="#kv-cache-configuration">KV Cache Configuration</a>, <a href="#batch-formation">Batch Formation</a>, <a href="#latency-model">Latency Model</a>, <a href="#cluster-configuration">Cluster Configuration</a>, <a href="#admission-policy">Admission Policy</a>, <a href="#routing-policy">Routing Policy</a>, <a href="#scheduling-and-priority">Scheduling and Priority</a>, <a href="#decision-tracing">Decision Tracing</a>, and <a href="#fitness-evaluation">Fitness Evaluation</a>.</p>
+<p>Replays a captured TraceV2 file (any TraceV2, including one from <code>blis convert</code>) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as <code>blis run</code>, so it requires the same <a href="#deployment-inputs-required">Deployment Inputs</a> and accepts the same sim-config flags — see <a href="#simulation-control">Simulation Control</a>, <a href="#kv-cache-configuration">KV Cache Configuration</a>, <a href="#batch-formation">Batch Formation</a>, <a href="#latency-model">Latency Model</a>, <a href="#cluster-configuration">Cluster Configuration</a>, <a href="#admission-policy">Admission Policy</a>, <a href="#routing-policy">Routing Policy</a>, <a href="#scheduling-and-priority">Scheduling and Priority</a>, <a href="#decision-tracing">Decision Tracing</a>, and <a href="#fitness-evaluation">Fitness Evaluation</a>. A run's exported trace replayed with identical flags (including <code>--horizon</code>) yields byte-identical stdout (INV-13).</p>
 <h3 id="replay-specific-flags">Replay-Specific Flags<a class="headerlink" href="#replay-specific-flags" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -5257,6 +5177,10 @@ table above. The two are complementary rather than alternatives: <code>--results
 rows, <code>--metrics-path</code> writes the run aggregate that <code>blis calibrate --sim-metrics</code> reads.</p>
 <hr />
 <h2 id="blis-calibrate">blis calibrate<a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Deprecated</p>
+<p><code>blis calibrate</code> is deprecated (<a href="https://github.com/inference-sim/inference-sim/issues/1901">#1901</a>).</p>
+</div>
 <p>Compares real observed latencies (from <code>blis observe</code>) against simulator predictions (from <code>blis replay</code>) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.</p>
 <table>
 <thead>
@@ -5375,7 +5299,7 @@ rows, <code>--metrics-path</code> writes the run aggregate that <code>blis calib
 </tr>
 </tbody>
 </table>
-<h3 id="blis-convert-infperf"><code>blis convert infperf</code><a class="headerlink" href="#blis-convert-infperf" title="Permanent link">&para;</a></h3>
+<h3 id="blis-convert-inference-perf"><code>blis convert inference-perf</code><a class="headerlink" href="#blis-convert-inference-perf" title="Permanent link">&para;</a></h3>
 <p>Converts an inference-perf YAML specification into WorkloadSpec format.</p>
 <table>
 <thead>

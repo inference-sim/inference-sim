@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1377,7 +1347,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3489,10 +3459,11 @@
 <h1 id="admission-control">Admission Control<a class="headerlink" href="#admission-control" title="Permanent link">&para;</a></h1>
 <p>Admission control is the first gate in the cluster pipeline. It decides whether to accept or reject incoming requests before they reach the routing stage. Admission only applies in cluster mode (<code>--num-instances</code> &gt; 1) -- single-instance simulations skip directly to the wait queue.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Rate-limit a 4-instance cluster with token bucket admission</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--admission-policy<span class="w"> </span>token-bucket<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--token-bucket-capacity<span class="w"> </span><span class="m">10000</span><span class="w"> </span>--token-bucket-refill-rate<span class="w"> </span><span class="m">1000</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--admission-policy<span class="w"> </span>token-bucket<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--token-bucket-capacity<span class="w"> </span><span class="m">10000</span><span class="w"> </span>--token-bucket-refill-rate<span class="w"> </span><span class="m">1000</span>
 </code></pre></div>
 <h2 id="available-policies">Available Policies<a class="headerlink" href="#available-policies" title="Permanent link">&para;</a></h2>
 <table>
@@ -3643,10 +3614,11 @@
 </ol>
 <h2 id="tier-shed-admission">Tier-Shed Admission<a class="headerlink" href="#tier-shed-admission" title="Permanent link">&para;</a></h2>
 <p>The <code>tier-shed</code> policy sheds lower-priority SLO tiers under cluster overload. It activates when the maximum per-instance in-flight load exceeds <code>tier_shed_threshold</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--admission-policy<span class="w"> </span>tier-shed<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--policy-config<span class="w"> </span>policies.yaml
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--admission-policy<span class="w"> </span>tier-shed<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--policy-config<span class="w"> </span>policies.yaml
 </code></pre></div>
 <p>Where <code>policies.yaml</code> contains:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">admission</span><span class="p">:</span>
@@ -3913,9 +3885,10 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
 <p><strong>Queue shedding</strong> (<code>--queue-shedding</code>): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.</p>
 <p><strong>Dispatch tick</strong> (<code>--dispatch-tick-interval</code>): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms <code>dispatchTicker</code>. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.</p>
 <h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h3 id="slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering<a class="headerlink" href="#slo-deadline-dispatch-ordering" title="Permanent link">&para;</a></h3>
 <p>With <code>--dispatch-order slo-deadline</code>, the gateway queue dispatches the request with the earliest SLO deadline first within each flow. This matches GIE's <code>slo-deadline-ordering-policy</code>.</p>
@@ -3955,11 +3928,12 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
 </tbody>
 </table>
 <p><strong>Example:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--dispatch-order<span class="w"> </span>slo-deadline<span class="w"> </span>--slo-targets<span class="w"> </span><span class="s2">"critical=100000,standard=500000"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--dispatch-order<span class="w"> </span>slo-deadline<span class="w"> </span>--slo-targets<span class="w"> </span><span class="s2">"critical=100000,standard=500000"</span>
 </code></pre></div>
-<p><strong>Observe integration:</strong> When <code>slo_target_us &gt; 0</code>, <code>blis observe</code> injects the <code>x-slo-ttft-ms</code> HTTP header on outgoing requests, matching GIE's header convention.</p>
+<p><strong>Observe integration</strong> (<code>blis observe</code> is deprecated, #1901): When <code>slo_target_us &gt; 0</code>, <code>blis observe</code> injects the <code>x-slo-ttft-ms</code> HTTP header on outgoing requests, matching GIE's header convention.</p>
 <h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
 <p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This is a BLIS-extra feature, not present in llm-d (llm-d's <code>RequestEvictor</code>/<code>EvictN</code> exists in code but has zero non-test callers in the production dispatch path).</p>
 <p><strong>How it works:</strong></p>

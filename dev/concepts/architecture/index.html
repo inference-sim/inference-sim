@@ -657,8 +657,6 @@
       
         
       
-        
-      
     
     
     
@@ -809,6 +807,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-blis-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The BLIS repositories
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#overview" class="md-nav__link">
@@ -1039,10 +1048,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#observe-replay-calibrate-pipeline" class="md-nav__link">
+  <a href="#replay" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Observe / Replay / Calibrate Pipeline
+        Replay
       
     </span>
   </a>
@@ -1073,34 +1082,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1312,7 +1293,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3098,6 +3079,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#the-blis-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The BLIS repositories
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3326,10 +3318,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#observe-replay-calibrate-pipeline" class="md-nav__link">
+  <a href="#replay" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Observe / Replay / Calibrate Pipeline
+        Replay
       
     </span>
   </a>
@@ -3361,6 +3353,58 @@
 <blockquote>
 <p><strong>Canonical sources:</strong> Signal freshness (INV-7) is defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If signal freshness descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
 </blockquote>
+<h2 id="the-blis-repositories">The BLIS repositories<a class="headerlink" href="#the-blis-repositories" title="Permanent link">&para;</a></h2>
+<p>BLIS is five repositories, each owning one kind of thing:</p>
+<table>
+<thead>
+<tr>
+<th>repository</th>
+<th>role</th>
+<th>owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>inference-sim</strong> (this repo)</td>
+<td>simulates</td>
+<td>the end-to-end simulation: arrivals, admission, routing, scheduling, KV block accounting, placement, metrics</td>
+</tr>
+<tr>
+<td><strong>blis-latency-kernel</strong></td>
+<td>prices</td>
+<td>step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads</td>
+</tr>
+<tr>
+<td><strong>blis-catalog</strong></td>
+<td>states the facts</td>
+<td>declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets</td>
+</tr>
+<tr>
+<td><strong>blis-registry</strong></td>
+<td>holds what was fitted</td>
+<td>coefficient sets, each with its provenance and the range it holds over</td>
+</tr>
+<tr>
+<td><strong>blis-schemas</strong></td>
+<td>defines the formats</td>
+<td>the source of truth for every shared format: scenario, deployment, engine and catalog files, and the kernel interface</td>
+</tr>
+</tbody>
+</table>
+<pre class="mermaid"><code>flowchart LR
+    SC["Scenario&lt;br/&gt;(blis-schemas format)"] --&gt; SIM
+    CAT["blis-catalog&lt;br/&gt;facts"] --&gt; K
+    REG["blis-registry&lt;br/&gt;coefficients"] --&gt; K
+    SC --&gt; K
+    SIM["inference-sim&lt;br/&gt;simulates"] -- "batch, transfer, tier" --&gt; K["blis-latency-kernel&lt;br/&gt;prices"]
+    K -- "durations, memory" --&gt; SIM</code></pre>
+<p>The simulator decides <em>when</em> a step runs and <em>what</em> it holds; the kernel says <em>how long</em> it
+takes and <em>how much</em> memory is left for KV. A deployment choice -- which chip, how many GPUs,
+what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
+the scenario a run names, not in the catalog or registry. Data the kernel reads is never
+copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
+coefficient is a commit to blis-registry. How a scenario reaches the kernel:
+<a href="../../guide/latency-models/">Latency Models</a>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>A BLIS cluster consists of N independent inference instances orchestrated by a shared-clock event loop. Each incoming request passes through a three-stage pipeline — admission, routing, and per-instance processing — before metrics are aggregated across all instances.</p>
 <pre class="mermaid"><code>flowchart TD
@@ -3706,28 +3750,15 @@
 <li><strong>Completion/Drop:</strong> InFlightRequests decremented when request completes or is dropped as unservable</li>
 <li><strong>Metrics:</strong> Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level</li>
 </ol>
-<h2 id="observe-replay-calibrate-pipeline">Observe / Replay / Calibrate Pipeline<a class="headerlink" href="#observe-replay-calibrate-pipeline" title="Permanent link">&para;</a></h2>
-<p>Alongside the DES simulation pipeline described above, BLIS provides an offline validation workflow for comparing simulator predictions against real server behavior. This pipeline has three stages, of which only <strong>Replay</strong> engages the DES event loop. <strong>Observe</strong> is an HTTP workload dispatcher that sends requests to a real inference server and records per-request timing. <strong>Calibrate</strong> is a statistical comparison tool that computes per-metric MAPE, Pearson R, and quality grades.</p>
-<pre class="mermaid"><code>flowchart LR
-    WS["WorkloadSpec&lt;br/&gt;or --rate flags"] --&gt; Obs
-    SU["Server URL"] --&gt; Obs
-    Obs["blis observe&lt;br/&gt;(HTTP client)"] --&gt; TV["TraceV2&lt;br/&gt;(YAML + CSV)"]
-
-    TV --&gt; Rep
-    MC["--model + sim flags"] --&gt; Rep
-    Rep["blis replay&lt;br/&gt;(DES engine)"] --&gt; SR["SimResult JSON&lt;br/&gt;(--results-path)"]
-
-    TV --&gt; Cal
-    SR --&gt; Cal
-    Cal["blis calibrate&lt;br/&gt;(statistical comparison)"] --&gt; Rpt["Calibration&lt;br/&gt;Report"]
-
-    style Obs fill:#a5d8ff
-    style Rep fill:#d0bfff
-    style Cal fill:#b2f2bb
-    style TV fill:#fff3e0
-    style SR fill:#fff3e0
-    style Rpt fill:#c8e6c9</code></pre>
-<p>For the full pipeline guide with worked examples, see <a href="../../guide/observe-replay-calibrate/">Observe / Replay / Calibrate</a>. For flag details, see <a href="../../reference/configuration/">Configuration Reference</a>.</p>
+<h2 id="replay">Replay<a class="headerlink" href="#replay" title="Permanent link">&para;</a></h2>
+<p><code>blis replay</code> runs a captured TraceV2 (one exported by <code>blis run --trace-output</code>, or one
+produced by <code>blis convert weka|otel|inference-perf|servegen</code>) through the same DES pipeline
+and the same scenario-driven deployment path as <code>blis run</code>. A run's exported trace replayed
+with identical flags (including <code>--horizon</code>) yields byte-identical stdout (INV-13).
+<code>blis observe</code> and <code>blis calibrate</code> are deprecated
+(<a href="https://github.com/inference-sim/inference-sim/issues/1901">#1901</a>). See
+<a href="../../guide/observe-replay-calibrate/">Observe / Replay / Calibrate</a> and the
+<a href="../../reference/configuration/">Configuration Reference</a>.</p>
 
 
 

@@ -657,8 +657,6 @@
       
         
       
-        
-      
     
     
     
@@ -794,17 +792,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#alpha-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Coefficients
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#batch-formation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -816,10 +803,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#beta-coefficients" class="md-nav__link">
+  <a href="#blis-latency-kernel" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Beta Coefficients
+        blis-latency-kernel
       
     </span>
   </a>
@@ -1058,17 +1045,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mfu-model-flops-utilization" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MFU (Model FLOPS Utilization)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#moe-mixture-of-experts" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1179,28 +1155,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#roofline-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rope_scaling" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        rope_scaling
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#routing-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1216,6 +1170,17 @@
     <span class="md-ellipsis">
       
         Routing Snapshot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scenario" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario
       
     </span>
   </a>
@@ -1441,34 +1406,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1667,7 +1604,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3464,17 +3401,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#alpha-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Coefficients
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#batch-formation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3486,10 +3412,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#beta-coefficients" class="md-nav__link">
+  <a href="#blis-latency-kernel" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Beta Coefficients
+        blis-latency-kernel
       
     </span>
   </a>
@@ -3728,17 +3654,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mfu-model-flops-utilization" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MFU (Model FLOPS Utilization)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#moe-mixture-of-experts" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3849,28 +3764,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#roofline-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rope_scaling" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        rope_scaling
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#routing-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3886,6 +3779,17 @@
     <span class="md-ellipsis">
       
         Routing Snapshot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scenario" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario
       
     </span>
   </a>
@@ -4071,12 +3975,10 @@
 <hr />
 <h3 id="admission-policy">Admission Policy<a class="headerlink" href="#admission-policy" title="Permanent link">&para;</a></h3>
 <p>A cluster-level gate that decides whether an incoming request enters the routing pipeline or is rejected. Built-in policies: <code>always-admit</code> (accept all), <code>token-bucket</code> (rate-limiting), <code>reject-all</code> (testing only). See <a href="../architecture/#admission-pipeline">Cluster Architecture</a>.</p>
-<h3 id="alpha-coefficients">Alpha Coefficients<a class="headerlink" href="#alpha-coefficients" title="Permanent link">&para;</a></h3>
-<p>Three regression coefficients <code>[alpha0, alpha1, alpha2]</code> that model non-GPU overhead per request. <code>alpha0 + alpha1 * input_length</code> estimates queueing delay (tokenization, API serialization); <code>alpha2</code> estimates output token processing time. These overheads are added to per-request metrics but do not block the simulation clock. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>.</p>
 <h3 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h3>
 <p>The process of selecting which requests from the wait queue join the running batch for the next step. BLIS implements vLLM-style continuous batching with chunked prefill and preemption. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
-<h3 id="beta-coefficients">Beta Coefficients<a class="headerlink" href="#beta-coefficients" title="Permanent link">&para;</a></h3>
-<p>Three regression coefficients <code>[beta0, beta1, beta2]</code> that predict GPU step time: <code>beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens</code>. Trained offline via Bayesian optimization against real vLLM measurements. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>.</p>
+<h3 id="blis-latency-kernel">blis-latency-kernel<a class="headerlink" href="#blis-latency-kernel" title="Permanent link">&para;</a></h3>
+<p>The Go module (<code>github.com/inference-sim/blis-latency-kernel</code>) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-catalog and fitted coefficients from blis-registry. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="block-kv-block">Block (KV Block)<a class="headerlink" href="#block-kv-block" title="Permanent link">&para;</a></h3>
 <p>The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
 <h3 id="calibration-report">Calibration Report<a class="headerlink" href="#calibration-report" title="Permanent link">&para;</a></h3>
@@ -4096,7 +3998,7 @@
 <h3 id="distribution-synthesis">Distribution Synthesis<a class="headerlink" href="#distribution-synthesis" title="Permanent link">&para;</a></h3>
 <p>The <code>--rate</code> mode of <code>blis observe</code> that generates workload from statistical distributions (prompt/output token counts, arrival rate) instead of a workload spec YAML file. Useful for quick single-client experiments without crafting a full workload specification. See <a href="../../guide/observe-replay-calibrate/#distribution-synthesis-flags">Observe / Replay / Calibrate: Distribution Synthesis Flags</a>.</p>
 <h3 id="e2e-end-to-end-latency">E2E (End-to-End Latency)<a class="headerlink" href="#e2e-end-to-end-latency" title="Permanent link">&para;</a></h3>
-<p>Total time from request arrival to final token completion. Computed as <code>TTFT + sum(ITLs)</code>, where each ITL includes step time plus output processing overhead (alpha2). See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<p>Total time from request arrival to final token completion. Computed as <code>TTFT + sum(ITLs)</code>, where each ITL includes step time plus per-token output processing overhead. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="effective-load">Effective Load<a class="headerlink" href="#effective-load" title="Permanent link">&para;</a></h3>
 <p>A routing signal computed as <code>QueueDepth + BatchSize + InFlightRequests</code>. Because <code>InFlightRequests</code> tracks the full dispatch-to-completion window, it overlaps with <code>QueueDepth</code> and <code>BatchSize</code> — this intentional double-counting combines stale Prometheus signals with the synchronous gateway counter. Used by least-loaded routing and load-balance scoring. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
 <h3 id="fitness-score">Fitness Score<a class="headerlink" href="#fitness-score" title="Permanent link">&para;</a></h3>
@@ -4106,7 +4008,7 @@
 <h3 id="gateway-queue">Gateway Queue<a class="headerlink" href="#gateway-queue" title="Permanent link">&para;</a></h3>
 <p>An optional flow-control buffer between admission and routing, enabled with <code>--flow-control</code>. When active, admitted requests enter a priority-ordered queue instead of routing immediately. A saturation detector (<code>--saturation-detector</code>) evaluates cluster capacity on each step completion; when saturation falls below 1.0, the highest-priority waiting request is dequeued and routed with fresh routing snapshots (late-binding dispatch). Requests that exceed <code>--max-gateway-queue-depth</code> are shed and counted in the INV-1 conservation formula. See <a href="../architecture/#admission-pipeline">Cluster Architecture</a>.</p>
 <h3 id="hol-blocking-head-of-line-blocking">HOL Blocking (Head-of-Line Blocking)<a class="headerlink" href="#hol-blocking-head-of-line-blocking" title="Permanent link">&para;</a></h3>
-<p>A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step (~97 ms on Qwen3-14B / H100 / TP=1 in roofline mode), blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (<code>--long-prefill-token-threshold</code>), which splits long prefills so decode requests can be interleaved. See <a href="../../guide/kv-cache/#chunked-prefill">KV Cache: Chunked Prefill</a> and <a href="#chunked-prefill">Chunked Prefill</a>.</p>
+<p>A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step, blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (<code>--long-prefill-token-threshold</code>), which splits long prefills so decode requests can be interleaved. See <a href="../../guide/kv-cache/#chunked-prefill">KV Cache: Chunked Prefill</a> and <a href="#chunked-prefill">Chunked Prefill</a>.</p>
 <h3 id="horizon">Horizon<a class="headerlink" href="#horizon" title="Permanent link">&para;</a></h3>
 <p>The simulation time limit in ticks (microseconds). The simulation stops when the clock exceeds the horizon or all requests complete, whichever comes first. See <a href="../../reference/configuration/#simulation-control">Configuration Reference</a>.</p>
 <h3 id="itl-inter-token-latency">ITL (Inter-Token Latency)<a class="headerlink" href="#itl-inter-token-latency" title="Permanent link">&para;</a></h3>
@@ -4114,15 +4016,13 @@
 <h3 id="kv-cache">KV Cache<a class="headerlink" href="#kv-cache" title="Permanent link">&para;</a></h3>
 <p>GPU memory organized as blocks that store key-value tensors computed during attention. BLIS simulates block allocation, prefix sharing, LRU eviction, and optional CPU offloading without actual GPU memory. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
 <h3 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h3>
-<p>The component that predicts GPU execution time for a batch step. Two modes: <em>Roofline</em> (default; analytical FLOPs/bandwidth estimation) and <em>Trained-Physics</em> (physics-informed basis functions with architecture-aware MoE scaling). See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a>, <a href="../roofline/">Roofline Estimation</a>, and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
+<p>The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: <a href="#blis-latency-kernel">blis-latency-kernel</a>, adapted to the <code>sim.LatencyModel</code> interface by <code>sim/kernelmodel</code>. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a> and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="llm-d">llm-d<a class="headerlink" href="#llm-d" title="Permanent link">&para;</a></h3>
 <p>An open-source LLM inference routing and serving framework that BLIS is designed to simulate and validate against. The default weighted routing profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) matches llm-d's production Endpoint Picker scoring pipeline, and several BLIS components directly mirror llm-d counterparts: <code>gaie-legacy</code> admission replicates <a href="#gaie-gateway-api-inference-extension">GAIE</a> behavior, <code>vllm-dp</code> routing replicates <code>DPLBAsyncMPClient</code>, and scorer names map to llm-d scorer identifiers. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
 <h3 id="maxmodellen">MaxModelLen<a class="headerlink" href="#maxmodellen" title="Permanent link">&para;</a></h3>
-<p>Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's <code>--max-model-len</code>. When set (&gt; 0), requests whose input alone fills the context window (<code>input &gt;= MaxModelLen</code>) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM <code>scheduler.py:773-774</code>: FormBatch clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - inputLen</code>, matching vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>) — <code>ProgressIndex</code> is <code>num_computed_tokens</code>, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. Set to 0 for unlimited. Auto-derived from <code>max_position_embeddings</code> in roofline and trained-physics modes, with <a href="#rope_scaling"><code>rope_scaling</code></a> factor application and KV-feasible capping. See <a href="../../reference/configuration/#simulation-control">Configuration Reference</a>.</p>
-<h3 id="mfu-model-flops-utilization">MFU (Model FLOPS Utilization)<a class="headerlink" href="#mfu-model-flops-utilization" title="Permanent link">&para;</a></h3>
-<p>The fraction of a GPU's theoretical peak TFLOPS actually achieved during model execution, accounting for kernel efficiency, memory-access patterns, and CUDA overhead. BLIS uses separate MFU values for the prefill phase (<code>mfuPrefill</code>, typically higher because prefill is compute-bound) and the decode phase (<code>mfuDecode</code>, lower because decode is memory-bandwidth-bound). Both are configured per GPU in <code>hardware_config.json</code>. In trained-physics mode, MFU-equivalent corrections are captured by the learned β₁–β₄ coefficients rather than explicit fractions. See <a href="../roofline/">Roofline Estimation</a>.</p>
+<p>Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's <code>--max-model-len</code> and is <strong>required</strong> in each scenario pool as <code>engine.max_model_len</code>. Requests whose input alone fills the context window (<code>input &gt;= MaxModelLen</code>) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM <code>scheduler.py:773-774</code>: FormBatch clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - inputLen</code>, matching vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>) — <code>ProgressIndex</code> is <code>num_computed_tokens</code>, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. See <a href="../../guide/latency-models/#scenario-structure">Latency Models Guide</a>.</p>
 <h3 id="moe-mixture-of-experts">MoE (Mixture of Experts)<a class="headerlink" href="#moe-mixture-of-experts" title="Permanent link">&para;</a></h3>
-<p>A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. BLIS distinguishes two MoE layouts: <em>uniform MoE</em> (every layer is a MoE layer, e.g., Mixtral-8x7B) and <em>interleaved MoE</em> (alternating MoE and dense layers, e.g., Scout). The trained-physics latency model applies a per-MoE-layer overhead term (β₈) only to interleaved architectures, auto-detected from <code>interleave_moe_layer_step</code> in the HuggingFace <code>config.json</code>. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
+<p>A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. blis-latency-kernel reads expert geometry (expert count, top-k) from the model graph in the catalog. A scenario's <code>dp &gt; 1</code> runs one replica per data-parallel rank; <code>enable_expert_parallel</code> is priced by the kernel. See <a href="../../guide/latency-models/#data-and-expert-parallelism-moe">Latency Models Guide</a>.</p>
 <h3 id="observe-replay-calibrate-pipeline">Observe / Replay / Calibrate Pipeline<a class="headerlink" href="#observe-replay-calibrate-pipeline" title="Permanent link">&para;</a></h3>
 <p>The end-to-end workflow of <code>blis observe</code> → <code>blis replay</code> → <code>blis calibrate</code> for validating simulator accuracy against real inference servers. Each stage is independently useful: observe collects latency baselines, replay tests simulator behavior on real traces, and calibrate compares results. See <a href="../../guide/observe-replay-calibrate/">Observe / Replay / Calibrate</a>.</p>
 <h3 id="oracle-knowledge-boundary-inv-9">Oracle Knowledge Boundary (INV-9)<a class="headerlink" href="#oracle-knowledge-boundary-inv-9" title="Permanent link">&para;</a></h3>
@@ -4141,17 +4041,14 @@
 <p>A routing scorer that directs requests to instances likely to have their prefix cached. Uses a lightweight router-side cache index (not the actual per-instance KV cache) to estimate cache hit probability per instance. Score range [0, 1]. See <a href="../architecture/#scorer-composition">Cluster Architecture: Scorer Composition</a>.</p>
 <h3 id="priority-policy">Priority Policy<a class="headerlink" href="#priority-policy" title="Permanent link">&para;</a></h3>
 <p>A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: <code>constant</code>, <code>slo-based</code>, <code>inverted-slo</code> (testing only). Note: despite its name, <code>slo-based</code> currently uses only request age (favoring older requests), not per-request SLO metadata. See <a href="../core-engine/#scheduling-policies">Core Engine: Scheduling</a>.</p>
-<h3 id="roofline-model">Roofline Model<a class="headerlink" href="#roofline-model" title="Permanent link">&para;</a></h3>
-<p>An analytical latency estimation technique that predicts step time as <code>max(FLOPs / peak_compute, bytes / peak_bandwidth)</code>. Requires only the model's HuggingFace <code>config.json</code> and GPU hardware specs. No training data needed. See <a href="../roofline/">Roofline Estimation</a>.</p>
-<h3 id="rope_scaling">rope_scaling<a class="headerlink" href="#rope_scaling" title="Permanent link">&para;</a></h3>
-<p>A field in a model's HuggingFace <code>config.json</code> that extends the effective context window beyond the base <code>max_position_embeddings</code> value by scaling the positional frequencies of RoPE (Rotary Position Embeddings). The object contains a <code>type</code> (or <code>rope_type</code>) field identifying the scaling method and a <code>factor</code> field specifying the multiplier.</p>
-<p>BLIS applies the scaling factor when auto-deriving <a href="#maxmodellen"><code>MaxModelLen</code></a> in roofline and trained-physics modes, following vLLM's blacklist approach: types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, and <code>mrope</code> apply the factor; types <code>su</code>, <code>longrope</code>, and <code>llama3</code> are excluded because they encode the full extended context length directly in <code>max_position_embeddings</code>. For <code>yarn</code>, <code>original_max_position_embeddings</code> is used as the base when present. Models whose <code>model_type</code> contains <code>gemma3</code> skip <code>rope_scaling</code> entirely — their <code>max_position_embeddings</code> is already pre-scaled. Override the auto-derived value with <code>--max-model-len</code>. See <a href="../../guide/latency-models/#roofline-mode-default">Latency Models Guide</a> and <a href="../../reference/configuration/#simulation-control">Configuration Reference</a>.</p>
 <h3 id="routing-policy">Routing Policy<a class="headerlink" href="#routing-policy" title="Permanent link">&para;</a></h3>
 <p>A cluster-level policy that selects which instance receives an admitted request. Simple policies (round-robin, least-loaded) use fixed rules. The weighted scoring policy composes multiple scorers with configurable weights. See <a href="../architecture/#routing-pipeline">Cluster Architecture: Routing Pipeline</a>.</p>
 <h3 id="routing-snapshot">Routing Snapshot<a class="headerlink" href="#routing-snapshot" title="Permanent link">&para;</a></h3>
 <p>A point-in-time view of instance state used for routing decisions. Contains queue depth, batch size, KV utilization, cache hit rate, and pending request count. Signals have different freshness tiers depending on how they're collected. See <a href="../architecture/#signal-freshness">Cluster Architecture: Signal Freshness</a>.</p>
+<h3 id="scenario">Scenario<a class="headerlink" href="#scenario" title="Permanent link">&para;</a></h3>
+<p>A blis-schemas YAML file of two documents, <code>Scenario</code> and <code>Deployment</code>, naming the model, cluster hardware/fabric/nodes, coefficient sets, engine version, and each pool's role, parallelism and engine settings. Passed to <code>blis run</code>/<code>blis replay</code> with <code>--scenario</code> and <code>--scenarios</code>. See <a href="../../guide/latency-models/#scenario-structure">Latency Models Guide</a>.</p>
 <h3 id="scheduling-delay">Scheduling Delay<a class="headerlink" href="#scheduling-delay" title="Permanent link">&para;</a></h3>
-<p>The elapsed time between a request's arrival and the moment it enters the running batch, reported as <code>scheduling_delay_ms</code> (per-request JSON) and <code>scheduling_delay_p99_ms</code> (aggregate). Includes the alpha queueing overhead (<code>alpha0 + alpha1 × inputLen</code>) plus wait queue residence time. Distinct from TTFT, which additionally includes prefill compute time. High scheduling delay with low preemption rate indicates queue saturation (add instances); low scheduling delay with high TTFT indicates compute saturation (reduce batch size or enable chunked prefill). See <a href="../../guide/results/#scheduling-delay">Metrics &amp; Results</a> and <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<p>The elapsed time between a request's arrival and the moment it enters the running batch, reported as <code>scheduling_delay_ms</code> (per-request JSON) and <code>scheduling_delay_p99_ms</code> (aggregate). Includes the host queueing overhead plus wait queue residence time. Distinct from TTFT, which additionally includes prefill compute time. High scheduling delay with low preemption rate indicates queue saturation (add instances); low scheduling delay with high TTFT indicates compute saturation (reduce batch size or enable chunked prefill). See <a href="../../guide/results/#scheduling-delay">Metrics &amp; Results</a> and <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="scorer">Scorer<a class="headerlink" href="#scorer" title="Permanent link">&para;</a></h3>
 <p>A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: <code>precise-prefix-cache</code>, <code>prefix-affinity</code>, <code>no-hit-lru</code>, <code>queue-depth</code>, <code>kv-utilization</code>, <code>load-balance</code>, <code>active-requests</code>, <code>running-requests</code>, <code>load-aware</code>. Most scorers produce scores in [0, 1]; <code>load-aware</code> uses [0, 0.5] per llm-d semantics. Scores are multiplied by weights and summed. See <a href="../architecture/#scorer-composition">Cluster Architecture: Scorer Composition</a>.</p>
 <h3 id="seed">Seed<a class="headerlink" href="#seed" title="Permanent link">&para;</a></h3>
@@ -4161,17 +4058,17 @@
 <h3 id="step">Step<a class="headerlink" href="#step" title="Permanent link">&para;</a></h3>
 <p>A single iteration of the inference engine. Each step processes one batch: prefill tokens for new/continuing requests and decode tokens for generating output. Step time is predicted by the latency model. See <a href="../core-engine/#step-phases">Core Engine: Step Phases</a>.</p>
 <h3 id="tensor-parallelism-tp">Tensor Parallelism (TP)<a class="headerlink" href="#tensor-parallelism-tp" title="Permanent link">&para;</a></h3>
-<p>A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements. Configured via <code>--tp</code>. Higher TP reduces per-request latency (fewer FLOPs per GPU, less KV memory per rank) but adds All-Reduce communication overhead per transformer layer (modeled by the β₄ coefficient in trained-physics mode). When an instance's TP group spans nodes (#1529), that All-Reduce is charged at a blended intra/inter-node bandwidth rather than the on-package rate (#1530) — see <a href="../../guide/latency-models/#inter-node-network-cost-trained-physics-only">Inter-Node Network Cost</a>. Increasing the instance count (replication) instead increases throughput without reducing per-request latency. For MoE models, BLIS models data parallelism (<code>--dp</code>, trained-physics only) as both a latency/KV term (#1419) and real placement: <code>--dp N</code> spawns N single-node engine replicas per <code>--num-instances</code>, on <code>blis run</code> (#1531) and <code>blis replay</code> (#1556). Expert parallelism (<code>--enable-expert-parallel</code>) shards routed-expert weights across the <code>TP·DP</code> EP group both when sizing KV-cache capacity (#1656) and in the trained-physics <strong>step time</strong> (#1548) — routed-expert <em>compute</em> is EP-mode-invariant, and the MoE-FFN collective becomes a dispatch/combine all-to-all instead of a TP all-reduce. Since #1548 it is supported alongside <code>--dp N</code> on both commands and reserves no GPUs beyond the ones DP placement already takes; the all-to-all backend is selectable per role (<code>--prefill-moe-comm-backend</code> / <code>--decode-moe-comm-backend</code>). See <a href="../../guide/latency-models/#tensor-parallelism-and-roofline">Latency Models Guide</a> and <a href="../roofline/">Roofline Estimation</a>.</p>
+<p>A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements at the cost of per-layer collective communication, which blis-latency-kernel prices. Stated in the scenario as a pool's <code>parallel.tp</code>. Increasing the instance count (replication) instead increases throughput without reducing per-request latency. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="tick">Tick<a class="headerlink" href="#tick" title="Permanent link">&para;</a></h3>
 <p>The fundamental time unit in BLIS, representing one microsecond. All timestamps, durations, and latencies are measured in ticks. The simulation clock advances in ticks.</p>
 <h3 id="tiered-kv-cache">Tiered KV Cache<a class="headerlink" href="#tiered-kv-cache" title="Permanent link">&para;</a></h3>
 <p>An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceeds a threshold, blocks are offloaded to CPU memory. On cache miss, blocks can be reloaded from CPU with a transfer latency penalty. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
 <h3 id="tpot-time-per-output-token">TPOT (Time Per Output Token)<a class="headerlink" href="#tpot-time-per-output-token" title="Permanent link">&para;</a></h3>
-<p>The mean inter-token latency across all decode steps for a request, computed as <code>mean(ITL)</code>. TPOT represents the steady-state token generation speed once prefill completes; lower TPOT means faster streaming throughput. Each ITL sample includes the step time plus the alpha2 output-processing overhead per token. Reported as the <code>itl_mean_ms</code> field in JSON output. See <a href="#itl-inter-token-latency">ITL</a> and <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<p>The mean inter-token latency across all decode steps for a request, computed as <code>mean(ITL)</code>. TPOT represents the steady-state token generation speed once prefill completes; lower TPOT means faster streaming throughput. Each ITL sample includes the step time plus the per-token output-processing overhead. Reported as the <code>itl_mean_ms</code> field in JSON output. See <a href="#itl-inter-token-latency">ITL</a> and <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="tracev2">TraceV2<a class="headerlink" href="#tracev2" title="Permanent link">&para;</a></h3>
 <p>The trace format used by the observe/replay/calibrate pipeline, consisting of two files: a header YAML file (recording model, server config, and observation metadata) and a data CSV file (recording per-request timing: arrival time, TTFT, E2E latency, token counts). See <a href="../../guide/observe-replay-calibrate/">Observe / Replay / Calibrate</a>.</p>
 <h3 id="ttft-time-to-first-token">TTFT (Time To First Token)<a class="headerlink" href="#ttft-time-to-first-token" title="Permanent link">&para;</a></h3>
-<p>Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and output processing overhead (alpha2). A key latency SLO metric for interactive applications. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<p>Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and per-token output processing overhead. A key latency SLO metric for interactive applications. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="warmup-requests">Warmup Requests<a class="headerlink" href="#warmup-requests" title="Permanent link">&para;</a></h3>
 <p>Initial requests dispatched by <code>blis observe</code> that are excluded from trace output (<code>--warmup-requests N</code>). Warmup requests allow the server to populate its KV cache and reach steady-state scheduling before measurement begins, avoiding cold-start artifacts in the recorded trace. See <a href="../../guide/observe-replay-calibrate/#blis-observe">Observe / Replay / Calibrate: blis observe</a>.</p>
 <h3 id="work-conserving">Work-Conserving<a class="headerlink" href="#work-conserving" title="Permanent link">&para;</a></h3>

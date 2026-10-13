@@ -14,7 +14,7 @@
         <link rel="prev" href="../architecture/">
       
       
-        <link rel="next" href="../roofline/">
+        <link rel="next" href="../../guide/">
       
       
         
@@ -657,8 +657,6 @@
       
         
       
-        
-      
     
     
     
@@ -1080,45 +1078,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Latency Models">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#roofline-model-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model (Default)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trained-physics-mode-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trained-Physics Mode (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alpha-overhead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Overhead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -1197,34 +1156,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -1428,7 +1359,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3455,45 +3386,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Latency Models">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#roofline-model-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Roofline Model (Default)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trained-physics-mode-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trained-Physics Mode (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alpha-overhead" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alpha Overhead
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -3591,7 +3483,7 @@
 <h1 id="core-engine">Core Engine<a class="headerlink" href="#core-engine" title="Permanent link">&para;</a></h1>
 <p>This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see <a href="../architecture/">Cluster Architecture</a>.</p>
 <blockquote>
-<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-19, plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family INV-L1-INV-L7, PD disaggregation INV-PD-<em> and pool/transfer INV-P2-</em>) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
+<p><strong>Canonical sources:</strong> System invariants (INV-1 through INV-19, plus INV-A, INV-A2, INV-W3, the LoRA family INV-L1-INV-L6, PD disaggregation INV-PD-<em> and pool/transfer INV-P2-</em>) are defined in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a>. If invariant descriptions here diverge, <code>invariants.md</code> is authoritative.</p>
 </blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:</p>
@@ -3615,7 +3507,7 @@
 <tr>
 <td><code>ArrivalEvent</code></td>
 <td>Request enters system</td>
-<td>Computes queueing delay (alpha overhead), schedules <code>QueuedEvent</code></td>
+<td>Computes queueing delay (host overhead priced by the kernel), schedules <code>QueuedEvent</code></td>
 </tr>
 <tr>
 <td><code>QueuedEvent</code></td>
@@ -3694,7 +3586,7 @@
 <p>Requests follow a linear state machine with one exception (preemption):</p>
 <pre class="mermaid"><code>stateDiagram-v2
     [*] --&gt; Arrival
-    Arrival --&gt; Queued : alpha queueing delay
+    Arrival --&gt; Queued : host queueing delay
     Arrival --&gt; DroppedUnservable : exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
@@ -3770,7 +3662,7 @@
 </tr>
 <tr>
 <td>Enqueue time</td>
-<td>After alpha queueing delay</td>
+<td>After host queueing delay</td>
 <td>Conceptual start of wait queue residence</td>
 </tr>
 <tr>
@@ -3801,10 +3693,10 @@
 <h3 id="dropped-requests">Dropped Requests<a class="headerlink" href="#dropped-requests" title="Permanent link">&para;</a></h3>
 <p>Requests are dropped as unservable at enqueue time (incrementing <code>DroppedUnservable</code>) via two guards:</p>
 <ol>
-<li><strong>MaxModelLen guard</strong> — when <code>--max-model-len</code> is set, requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (<code>MaxOutputLen &gt; 0</code>), the check is <code>input + budget &gt; maxModelLen</code>. Otherwise, input length alone is checked (vLLM defaults <code>max_tokens</code> to <code>max_model_len - seq_len</code>; the runtime stop in <code>processCompletions</code> handles output growth).</li>
+<li><strong>MaxModelLen guard</strong> — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (<code>MaxOutputLen &gt; 0</code>), the check is <code>input + budget &gt; maxModelLen</code>. Otherwise, input length alone is checked (vLLM defaults <code>max_tokens</code> to <code>max_model_len - seq_len</code>; the runtime stop in <code>processCompletions</code> handles output growth).</li>
 <li><strong>KV capacity guard</strong> — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</li>
 </ol>
-<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, when <code>--max-model-len</code> is set, a proactive cap in <code>FormBatch</code> clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code> (matching vLLM <code>scheduler.py:773-774</code>), a decode guard in <code>executeBatchStep</code> prevents phantom token generation when 0 tokens are allocated, and <code>processCompletions</code> force-completes any request whose <code>ProgressIndex</code> reaches <code>MaxModelLen - 1</code>. Output tokens per length-capped request: <code>MaxModelLen - len(InputTokens)</code>, matching vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>). <code>ProgressIndex</code> is BLIS's <code>num_computed_tokens</code>, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's <code>num_computed_tokens</code> lags <code>num_tokens</code> by the token the forward pass has just appended — so the <code>MaxModelLen - 1</code> boundary is reached with the final token already generated, and it is counted.</p>
+<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, a proactive cap in <code>FormBatch</code> clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code> (matching vLLM <code>scheduler.py:773-774</code>), a decode guard in <code>executeBatchStep</code> prevents phantom token generation when 0 tokens are allocated, and <code>processCompletions</code> force-completes any request whose <code>ProgressIndex</code> reaches <code>MaxModelLen - 1</code>. Output tokens per length-capped request: <code>MaxModelLen - len(InputTokens)</code>, matching vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>). <code>ProgressIndex</code> is BLIS's <code>num_computed_tokens</code>, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's <code>num_computed_tokens</code> lags <code>num_tokens</code> by the token the forward pass has just appended — so the <code>MaxModelLen - 1</code> boundary is reached with the final token already generated, and it is counted.</p>
 <h2 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h2>
 <p>BLIS models vLLM's continuous batching algorithm through the <code>VLLMBatchFormation</code> implementation.</p>
 <h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>
@@ -3817,26 +3709,26 @@ Process requests already in the running batch:
 Dequeue requests from the wait queue:
 - Compute cached prefix blocks (prefix caching reduces allocation needs)
 - Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (<code>--max-num-seqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
+- Stop dequeuing when: max batch size reached (<code>max_num_seqs</code>), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1</p>
 <h3 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Constraint</th>
-<th>Flag</th>
+<th>Source</th>
 <th>Effect</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Max batch size</td>
-<td><code>--max-num-seqs</code></td>
-<td>Limits number of concurrent requests in the running batch (deprecated alias: <code>--max-num-running-reqs</code>)</td>
+<td>scenario <code>max_num_seqs</code></td>
+<td>Limits number of concurrent requests in the running batch</td>
 </tr>
 <tr>
 <td>Token budget</td>
-<td><code>--max-num-batched-tokens</code></td>
-<td>Limits total new tokens across all running requests per step (deprecated alias: <code>--max-num-scheduled-tokens</code>)</td>
+<td>scenario <code>max_num_batched_tokens</code></td>
+<td>Limits total new tokens across all running requests per step</td>
 </tr>
 <tr>
 <td>Chunked prefill</td>
@@ -3853,7 +3745,7 @@ Dequeue requests from the wait queue:
 4. Retry allocation for the original request
 5. <strong>Circuit breaker:</strong> Stop if allocation still fails after exhausting the batch, or if the request itself is unservable</p>
 <h2 id="kv-cache-management">KV Cache Management<a class="headerlink" href="#kv-cache-management" title="Permanent link">&para;</a></h2>
-<p>The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds <code>--block-size-in-tokens</code> tokens (default: 16).</p>
+<p>The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds the scenario's <code>block_size</code> tokens; the block budget comes from blis-latency-kernel's memory methods, per data-parallel rank.</p>
 <h3 id="single-tier-cache">Single-Tier Cache<a class="headerlink" href="#single-tier-cache" title="Permanent link">&para;</a></h3>
 <p>The default KV cache operates entirely in GPU memory:</p>
 <ul>
@@ -3871,40 +3763,23 @@ Dequeue requests from the wait queue:
 <li><strong>CPU tier:</strong> Simple capacity store for offloaded blocks</li>
 <li><strong>Offload trigger:</strong> When GPU utilization exceeds <code>--kv-offload-threshold</code> (default: 0.9), blocks are offloaded to CPU</li>
 <li><strong>Reload:</strong> On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty</li>
-<li><strong>Transfer latency:</strong> Per reloaded block: <code>base_latency + ceil(block_size_tokens / bandwidth)</code>. Accumulated across all reloaded blocks. Non-blocking (added to step time).</li>
-<li><strong>Where transfer physics comes from:</strong> bandwidth and base latency are independently <strong>derived</strong> from the catalog <code>cpu_dram</code> storage device (#1819/#1841). <code>--kv-transfer-bandwidth</code> and <code>--kv-transfer-base-latency</code> independently override them; explicit base latency <code>0</code> disables the fixed cost. See <a href="../../guide/kv-cache/#tiered-caching-gpu--cpu-offload">Tiered Caching</a>.</li>
+<li><strong>Transfer latency:</strong> each reloaded block is charged a per-block reload time that blis-latency-kernel prices from the catalog <code>cpu_dram</code> device. Accumulated across all reloaded blocks; non-blocking (added to step time). See <a href="../../guide/kv-cache/#tiered-caching-gpu--cpu-offload">Tiered Caching</a>.</li>
 <li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
-<p>BLIS predicts GPU step time through two latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
-<h3 id="roofline-model-default">Roofline Model (Default)<a class="headerlink" href="#roofline-model-default" title="Permanent link">&para;</a></h3>
-<p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
-</code></pre></div>
+<p>Step time and host overheads come from <strong>blis-latency-kernel</strong>, through the
+<code>sim.LatencyModel</code> interface (adapter: <code>sim/kernelmodel</code>). The simulator decides when a step
+runs and which requests it holds; the kernel prices that batch from the model graph, chip and
+coefficients the scenario names. See the <a href="../../guide/latency-models/">Latency Models guide</a>.</p>
+<p>Host overheads are charged around the GPU step, never on it:</p>
 <ul>
-<li>Requires HuggingFace <code>config.json</code> (model architecture: layers, heads, hidden dim)</li>
-<li>Requires <code>hardware_config.json</code> (GPU specs: peak TFLOPS, peak bandwidth, MFU)</li>
-<li>Accounts for Tensor Parallelism, All-Reduce latency, and per-layer overheads</li>
-<li>No training data needed — works for any supported model immediately</li>
+<li><strong>Queueing time</strong> (tokenization, preprocessing) delays request enqueue but does not block
+  the server; the simulation clock is not advanced by it.</li>
+<li><strong>Output token processing time</strong> (detokenization, streaming) is added to per-request
+  ITL/TTFT metrics but does not block the next step.</li>
+<li><strong>Post-decode fixed overhead</strong> is charged once per request at completion.</li>
 </ul>
-<p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
-<h3 id="trained-physics-mode-recommended">Trained-Physics Mode (Recommended)<a class="headerlink" href="#trained-physics-mode-recommended" title="Permanent link">&para;</a></h3>
-<p>Applies learned correction factors to roofline basis functions with additional architecture-aware terms:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
-</code></pre></div>
-<ul>
-<li><strong>13 global coefficients</strong> (8-10 beta for roofline corrections + 3 alpha for CPU overhead)</li>
-<li><strong>Generalizes across architectures, workloads, and TP configurations</strong></li>
-<li>No per-model calibration needed</li>
-</ul>
-<p>See <a href="../../guide/latency-models/#trained-physics-mode">Latency Models Guide</a> for details.</p>
-<h3 id="alpha-overhead">Alpha Overhead<a class="headerlink" href="#alpha-overhead" title="Permanent link">&para;</a></h3>
-<p>Alpha overhead models non-GPU processing time:
-- <strong>Queueing time</strong> (<code>alpha0 + alpha1 * input_length</code>): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
-- <strong>Output token processing time</strong> (<code>alpha2</code>): Added to per-request ITL/TTFT metrics but does not block the next step.</p>
-<p>This is architecturally correct for vLLM, where CPU post-processing (tokenization, output serialization) runs concurrently with GPU execution.</p>
+<p>This matches vLLM, where CPU post-processing runs concurrently with GPU execution.</p>
 <h2 id="scheduling-policies">Scheduling Policies<a class="headerlink" href="#scheduling-policies" title="Permanent link">&para;</a></h2>
 <p>Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
 <table>
@@ -3952,19 +3827,19 @@ Dequeue requests from the wait queue:
 <tbody>
 <tr>
 <td><strong>TTFT</strong></td>
-<td>Time from arrival to first token: includes queueing delay, prefill step times, and output processing overhead (alpha2)</td>
+<td>Time from arrival to first token: includes queueing delay, prefill step times, and per-token output processing overhead</td>
 </tr>
 <tr>
 <td><strong>E2E</strong></td>
-<td><code>FirstTokenTime + sum(ITLs)</code>, where each ITL includes step time + alpha2</td>
+<td><code>FirstTokenTime + sum(ITLs)</code>, where each ITL includes step time + per-token output processing</td>
 </tr>
 <tr>
 <td><strong>ITL</strong></td>
-<td>Observed time between consecutive decode steps (includes alpha2 per token)</td>
+<td>Observed time between consecutive decode steps (includes per-token output processing)</td>
 </tr>
 <tr>
 <td><strong>Scheduling Delay</strong></td>
-<td>Time from request arrival to entering the running batch (includes alpha queueing overhead + wait queue residence)</td>
+<td>Time from request arrival to entering the running batch (includes host queueing overhead + wait queue residence)</td>
 </tr>
 </tbody>
 </table>
@@ -4061,13 +3936,13 @@ Dequeue requests from the wait queue:
         
         
           
-          <a href="../roofline/" class="md-footer__link md-footer__link--next" aria-label="Next: Roofline Estimation">
+          <a href="../../guide/" class="md-footer__link md-footer__link--next" aria-label="Next: User Guide">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Roofline Estimation
+                User Guide
               </div>
             </div>
             <div class="md-footer__button md-icon">

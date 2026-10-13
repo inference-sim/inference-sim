@@ -11,10 +11,6 @@
       
       
       
-        <link rel="prev" href="../core-engine/">
-      
-      
-        <link rel="next" href="../../guide/">
       
       
         
@@ -25,7 +21,7 @@
     
     
       
-        <title>Roofline Estimation - BLIS — Blackbox Inference Simulator</title>
+        <title>Ten questions that could invalidate this experiment - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -78,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#roofline-step-time-estimation-logic" class="md-skip">
+        <a href="#ten-questions-that-could-invalidate-this-experiment" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Roofline Estimation
+              Ten questions that could invalidate this experiment
             
           </span>
         </div>
@@ -268,13 +264,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
           
   
   
@@ -640,8 +634,6 @@
       
   
   
-    
-  
   
   
     
@@ -657,29 +649,26 @@
       
         
       
-        
-      
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../concepts/" class="md-nav__link ">
               
   
   
@@ -697,13 +686,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -723,7 +712,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../glossary/" class="md-nav__link">
+      <a href="../../concepts/glossary/" class="md-nav__link">
         
   
   
@@ -751,7 +740,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
+      <a href="../../concepts/architecture/" class="md-nav__link">
         
   
   
@@ -779,7 +768,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../core-engine/" class="md-nav__link">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
         
   
   
@@ -795,214 +784,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-why-roofline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Why Roofline?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-core-methodology-the-roofline-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Core Methodology: The Roofline Model
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-calculation-phases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Calculation Phases
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="3. Calculation Phases">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#a-flops-calculation-calculatetransformerflops" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A. FLOPs Calculation (calculateTransformerFlops)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#b-memory-access-calculatememoryaccessbytes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        B. Memory Access (calculateMemoryAccessBytes)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-execution-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Execution Pipeline
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-key-performance-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Key Performance Variables
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-onboarding-a-new-llmgpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Onboarding a new LLM/GPU
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="5. Onboarding a new LLM/GPU">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#automatic-recommended-latency-model-roofline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Automatic (recommended): --latency-model roofline
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#manual-your-own-catalog" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Manual: your own catalog
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-a-new-gpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Adding a new GPU
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1206,7 +987,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -2992,10 +2773,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-why-roofline" class="md-nav__link">
+  <a href="#answers-round-1-before-writing-the-adapter" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Why Roofline?
+        Answers, round 1 (before writing the adapter)
       
     </span>
   </a>
@@ -3003,10 +2784,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-core-methodology-the-roofline-model" class="md-nav__link">
+  <a href="#round-1-conclusion" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Core Methodology: The Roofline Model
+        Round-1 conclusion
       
     </span>
   </a>
@@ -3014,22 +2795,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-calculation-phases" class="md-nav__link">
+  <a href="#round-2-a-kernel-defect-found-by-integrating" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Calculation Phases
+        Round 2: a kernel defect found by integrating
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="3. Calculation Phases">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#round-2-measured-the-defects-blast-radius" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Round 2, measured: the defect's blast radius
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#round-3-ten-questions-on-correctness-and-on-reaching-sota" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Round 3: ten questions on correctness and on reaching SOTA
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Round 3: ten questions on correctness and on reaching SOTA">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#a-flops-calculation-calculatetransformerflops" class="md-nav__link">
+  <a href="#correctness" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A. FLOPs Calculation (calculateTransformerFlops)
+        Correctness
       
     </span>
   </a>
@@ -3037,10 +2840,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#b-memory-access-calculatememoryaccessbytes" class="md-nav__link">
+  <a href="#reaching-sota" class="md-nav__link">
     <span class="md-ellipsis">
       
-        B. Memory Access (calculateMemoryAccessBytes)
+        Reaching SOTA
       
     </span>
   </a>
@@ -3053,74 +2856,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-execution-pipeline" class="md-nav__link">
+  <a href="#round-3-answers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Execution Pipeline
+        Round 3 answers
       
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-key-performance-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Key Performance Variables
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-onboarding-a-new-llmgpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Onboarding a new LLM/GPU
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="5. Onboarding a new LLM/GPU">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#automatic-recommended-latency-model-roofline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Automatic (recommended): --latency-model roofline
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#manual-your-own-catalog" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Manual: your own catalog
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-a-new-gpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Adding a new GPU
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -3144,116 +2886,401 @@
   
 
 
-<h1 id="roofline-step-time-estimation-logic">Roofline Step Time Estimation Logic<a class="headerlink" href="#roofline-step-time-estimation-logic" title="Permanent link">&para;</a></h1>
-<p>This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose <code>config.json</code> is committed to the model catalog (the <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a> repository, located via <code>--catalog</code> / <code>BLIS_CATALOG</code>).</p>
-<div class="admonition tip">
-<p class="admonition-title">Trained-Physics: higher accuracy</p>
-<p>For higher accuracy, use <code>--latency-model trained-physics</code> which applies learned correction factors to these roofline basis functions with MoE support. See <a href="../../guide/latency-models/#trained-physics-mode">Trained-Physics Mode</a>.</p>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Scope: TP-only, quantized weight memory supported</p>
-<p>The roofline model accounts for tensor parallelism (TP) but is DP/EP-blind for step time. It does not merely ignore them: <code>--dp &gt; 1</code> and <code>--enable-expert-parallel</code> are <strong>rejected with a fatal error</strong> under <code>--latency-model roofline</code> (they require <code>trained-physics</code>), so a roofline run can never silently mis-model a data- or expert-parallel deployment. MoE DP-as-placement (<code>--dp N</code> → N engine replicas, #1531 on <code>blis run</code> / #1556 on <code>blis replay</code>) is therefore trained-physics-only too. (Expert parallelism affects the shared KV-capacity weight footprint — routed experts are sharded across the <code>TP·DP</code> EP group, #1656 — and, since #1548, trained-physics <strong>step time</strong> as well; roofline models neither EP step-time effect, which is why it rejects the flag rather than ignoring it.) Quantized weight precision is auto-detected from HuggingFace <code>quantization_config</code> (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>), or <code>torch_dtype</code> fallback, and is used for weight bandwidth and KV capacity calculations. Activation memory uses the compute dtype (<code>BytesPerParam</code> from <code>torch_dtype</code>); KV-cache storage precision is configured independently via <code>--kv-cache-dtype</code> (#1565).</p>
-</div>
-<h2 id="1-why-roofline">1. Why Roofline?<a class="headerlink" href="#1-why-roofline" title="Permanent link">&para;</a></h2>
-<p>Training latency models via coefficient calibration (see <a href="../../reference/configuration/#coefficient-calibration">Configuration: Coefficient Calibration</a>) requires ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (<code>config.json</code>) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in <code>hardware_config.json</code>. It allows BLIS to generalize across diverse LLMs, TP values and workloads, while preserving TTFT/ITL/E2E accuracy.</p>
-<h2 id="2-core-methodology-the-roofline-model">2. Core Methodology: The Roofline Model<a class="headerlink" href="#2-core-methodology-the-roofline-model" title="Permanent link">&para;</a></h2>
-<p>The simulator predicts execution time by identifying whether a phase (prefill/decode) is <strong>Compute-Bound</strong> or <strong>Memory-Bound</strong>. </p>
-<p>For each phase:</p>
-<div class="arithmatex">\[\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)\]</div>
-<p>As a result, overall step time is given by:</p>
-<div class="arithmatex">\[\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}\]</div>
-<hr />
-<h2 id="3-calculation-phases">3. Calculation Phases<a class="headerlink" href="#3-calculation-phases" title="Permanent link">&para;</a></h2>
-<h3 id="a-flops-calculation-calculatetransformerflops">A. FLOPs Calculation (<code>calculateTransformerFlops</code>)<a class="headerlink" href="#a-flops-calculation-calculatetransformerflops" title="Permanent link">&para;</a></h3>
-<p>We track two types of operations:
-* <strong>GEMM Ops:</strong> Matrix multiplications for QKV projections, Attention Output, and MLP (SwiGLU) layers. Includes <span class="arithmatex">\(QK^T\)</span> and <span class="arithmatex">\(AV\)</span> operations.
-* <strong>Vector Ops:</strong> Non-tensor core operations like Softmax, RoPE (rotary embeddings), and normalization.</p>
-<h3 id="b-memory-access-calculatememoryaccessbytes">B. Memory Access (<code>calculateMemoryAccessBytes</code>)<a class="headerlink" href="#b-memory-access-calculatememoryaccessbytes" title="Permanent link">&para;</a></h3>
-<p>We calculate the data movement between HBM (High Bandwidth Memory) and the processor:
-* <strong>Weights:</strong> Static model parameters loaded once per layer.
-* <strong>KV Cache Growth:</strong> Writing new Key/Value tokens to memory.
-* <strong>KV Cache Access:</strong> Reading the history (past tokens) for attention.</p>
-<hr />
-<h2 id="3-execution-pipeline">3. Execution Pipeline<a class="headerlink" href="#3-execution-pipeline" title="Permanent link">&para;</a></h2>
-<p>The final step time is the sum of independent phases and overheads:</p>
+<h1 id="ten-questions-that-could-invalidate-this-experiment">Ten questions that could invalidate this experiment<a class="headerlink" href="#ten-questions-that-could-invalidate-this-experiment" title="Permanent link">&para;</a></h1>
+<p>Asked before writing the adapter, answered by investigation rather than assumption.
+Each records what was checked and what the answer implies.</p>
 <ol>
-<li><strong>Prefill Phase:</strong> Calculated for the initial prompt processing chunk.</li>
-<li><strong>Decode Phase:</strong> Calculated for generating new tokens (usually memory-bound).</li>
-<li><strong>Communication Overhead:</strong> Not modeled. Tensor parallelism enters only as a sharding divisor on compute and memory traffic — there is no All-Reduce term, so TP communication is free in this backend at any <span class="arithmatex">\(TP\)</span>, within a node or across nodes. <code>--latency-model trained-physics</code> does model it (including a cross-node penalty, #1530); closing the gap here is tracked by <a href="https://github.com/inference-sim/inference-sim/issues/1663">#1663</a>.</li>
-<li><strong>Hardware Overheads:</strong> Static kernel launch times and layer-by-layer overhead constants.</li>
+<li>Does BLIS's scheduler actually produce a resident batch below the client concurrency?
+   If it does not, the thesis (scheduling explains the gap) is untestable here.</li>
+<li>Is BLIS's concurrency knob a closed-loop client level, or an arrival rate?</li>
+<li>What TPOT does BLIS report, and is it <code>client_observed</code> end-to-end as the snapshot is?</li>
+<li>Does BLIS model the engines the measurements came from (sglang, trtllm, vllm)?</li>
+<li>Can BLIS represent the 39 deployments' parallelism (tp/dp/moe_ep) faithfully?</li>
+<li>Does BLIS's own step loop already add costs the kernel also charges (double counting)?</li>
+<li>Is <code>StepTime</code>'s microsecond truncation large enough to bias a 447-point MAPE?</li>
+<li>Does BLIS need memory/KV-capacity answers the kernel must supply consistently?</li>
+<li>Are the 39 scenarios' models all present in BLIS's own catalog path?</li>
+<li>Does the comparison stay honest — same anchor, same metric — end to end?</li>
 </ol>
-<hr />
-<h2 id="4-key-performance-variables">4. Key Performance Variables<a class="headerlink" href="#4-key-performance-variables" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>MFU (Model Flops Utilization):</strong> Scaled TFLOPs efficiency factors for Prefill vs. Decode.</li>
-<li><strong>TP Factor:</strong> Divides compute and memory load across multiple GPUs.</li>
-<li><strong>Bandwidth Efficiency:</strong> Real-world effective bandwidth versus theoretical peak bandwidth.</li>
-</ul>
-<h2 id="5-onboarding-a-new-llmgpu">5. Onboarding a new LLM/GPU<a class="headerlink" href="#5-onboarding-a-new-llmgpu" title="Permanent link">&para;</a></h2>
-<h3 id="automatic-recommended-latency-model-roofline">Automatic (recommended): <code>--latency-model roofline</code><a class="headerlink" href="#automatic-recommended-latency-model-roofline" title="Permanent link">&para;</a></h3>
-<p>The simplest way to run roofline mode is with <code>--latency-model roofline</code>, which auto-resolves the model config:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--latency-model<span class="w"> </span>roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
-</code></pre></div>
-<p>The flag automatically:
-1. Reads the model's <code>config.json</code> from the catalog located by <code>--catalog</code> / <code>BLIS_CATALOG</code>, at <code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code>
-2. Refuses the run on miss, naming the catalog path the entry belongs at — no run-time fetch, and no run writes to the catalog (NS-6)</p>
-<p>A model runs if and only if it has a catalog entry. To add one, commit its <code>config.json</code> at
-<code>&lt;catalog&gt;/models/&lt;short-name&gt;/config.json</code> in your catalog checkout — <code>defaults.yaml</code> has no
-part in this (its per-model <code>hf_repo</code> mapping was removed in #1768, along with the run-time
-fetch it fed, #1733).</p>
-<h3 id="manual-your-own-catalog">Manual: your own catalog<a class="headerlink" href="#manual-your-own-catalog" title="Permanent link">&para;</a></h3>
-<p>Alternatively, point <code>--catalog</code> at a scratch directory holding your own config:</p>
-<ul>
-<li>Download the <code>config.json</code> for the LLM of your choice. <a href="https://huggingface.co/Qwen/Qwen3-14B/blob/main/config.json">This</a> is an example config.json for <code>Qwen/Qwen3-14B</code>. Place it at <code>&lt;catalog&gt;/models/qwen3-14b/config.json</code> and pass that <code>&lt;catalog&gt;</code> to <code>--catalog</code>.</li>
-</ul>
-<h3 id="adding-a-new-gpu">Adding a new GPU<a class="headerlink" href="#adding-a-new-gpu" title="Permanent link">&para;</a></h3>
-<ul>
-<li>Refer to NVIDIA datasheets for GPU specs (for example, <a href="https://www.nvidia.com/en-us/data-center/h100/">datasheet for H100</a>) and add an entry to <code>hardware_config.json</code>:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nt">"&lt;GPU_name&gt;"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">        </span><span class="nt">"TFlopsPeak"</span><span class="p">:</span><span class="w">  </span><span class="mf">989.5</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="nt">"BwPeakTBs"</span><span class="p">:</span><span class="w">   </span><span class="mf">3.35</span><span class="p">,</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">        </span><span class="nt">"mfuPrefill"</span><span class="p">:</span><span class="w">  </span><span class="mf">0.45</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">        </span><span class="nt">"mfuDecode"</span><span class="p">:</span><span class="w">   </span><span class="mf">0.30</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">        </span><span class="nt">"MemoryGiB"</span><span class="p">:</span><span class="w">   </span><span class="mf">80.0</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
-</code></pre></div>
+<h2 id="answers-round-1-before-writing-the-adapter">Answers, round 1 (before writing the adapter)<a class="headerlink" href="#answers-round-1-before-writing-the-adapter" title="Permanent link">&para;</a></h2>
+<p><strong>Q1. Does BLIS's scheduler produce a resident batch below the client concurrency?</strong>
+Yes, and this is what makes the experiment meaningful. <code>sim/batch_formation.go:250</code> gates
+admission on three things at once: <code>MaxNumSeqs</code>, a token budget, and KV capacity, with
+preemption when capacity runs out. So the resident batch is genuinely decoupled from the
+client level rather than tracking it. The kernel's 13.67% rests on assuming they are equal;
+BLIS can disagree with that assumption, which is the only reason wiring them together
+tests anything.</p>
+<p><strong>Q2. Closed loop or arrival rate?</strong>
+Closed loop is native. <code>sim/workload/spec.go:120</code> has a <code>concurrency</code> field, mutually
+exclusive with rate (<code>Validate()</code> rejects both). <code>sim/workload/synthesis.go:7</code> documents it
+as "number of concurrent sessions". This matches the snapshot, whose <code>concurrency</code> is a
+client level, and means the harness does not have to emulate a closed loop by hand.</p>
+<p><strong>Q3. Does BLIS report the same quantity as the snapshot's TPOT?</strong>
+Yes. <code>sim/simulator.go:1099</code>:
+<code>req.ITL = append(req.ITL, currStepAdvance + NumNewTokens*OutputTokenProcessingTime())</code>.
+That is per-decode-step inter-token latency including host detokenization — the
+client-observed inter-token time, which is what TPOT means. Both kernel terms reach it:
+<code>currStepAdvance</code> from <code>StepTime</code> and the host term from <code>OutputTokenOverhead</code>.
+<code>sim/metrics.go:321</code> converts ticks to ms for reporting.</p>
+<p><strong>Q4. Does BLIS model the engines the measurements came from?</strong>
+Partly, and this is the experiment's main external-validity limit. BLIS models vLLM
+(README, and the config fields mirror vLLM flags). The corpus is:</p>
 <table>
 <thead>
 <tr>
-<th>Field</th>
-<th>Description</th>
+<th>Framework</th>
+<th>Sweeps</th>
+<th>Points</th>
+<th>Share</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>TFlopsPeak</code></td>
-<td>Peak BF16 TFLOPS from GPU datasheet</td>
+<td>vllm</td>
+<td>46</td>
+<td>238</td>
+<td>53.2%</td>
 </tr>
 <tr>
-<td><code>BwPeakTBs</code></td>
-<td>Peak HBM bandwidth in TB/s from GPU datasheet</td>
+<td>sglang</td>
+<td>27</td>
+<td>155</td>
+<td>34.7%</td>
 </tr>
 <tr>
-<td><code>mfuPrefill</code></td>
-<td>Model FLOPS Utilization for prefill phase (compute-bound)</td>
-</tr>
-<tr>
-<td><code>mfuDecode</code></td>
-<td>Model FLOPS Utilization for decode phase (memory-bound)</td>
-</tr>
-<tr>
-<td><code>MemoryGiB</code></td>
-<td>GPU memory capacity in GiB. Used by <code>CalculateKVBlocks</code> to auto-derive <code>--total-kv-blocks</code> when roofline or trained-physics mode is active and the flag is not explicitly set.</td>
+<td>trt</td>
+<td>10</td>
+<td>54</td>
+<td>12.1%</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in <code>hardware_config.json</code>.</p>
-<p>Note: the file is parsed <strong>strictly</strong> (#1728) — an unrecognized key is a hard error naming the key and the GPU entry, rather than a field that silently reads 0. Spell the keys exactly as above (a case-only variant is also rejected, with the canonical spelling named). You may add <code>_comment</code> and <code>_comment_interconnect</code> strings to record where a calibration came from; both are ignored by the parser.</p>
-</blockquote>
+<p>So 46.8% of points were measured on an engine BLIS does not model. The comparison must
+report the vLLM subset separately from the whole, or it claims fidelity it does not have.
+This is a property of the corpus, not a fixable defect.</p>
+<p><strong>Q5. Can BLIS represent the 39 deployments' parallelism?</strong>
+Yes. <code>sim/config.go</code> carries <code>EnableExpertParallel</code> (mirroring vLLM
+<code>--enable-expert-parallel</code>), TP, DP, and an expert-parallel group DP width, with
+<code>EffectiveEPSize</code> as TP·DP. The scenario files state <code>tp_size</code>, <code>pp_size</code>,
+<code>attention_dp_size</code>, <code>moe_ep_size</code>, <code>moe_tp_size</code>; every one has a BLIS counterpart except
+<code>pp_size</code>, which is 1 in all 39 selected deployments, so nothing is lost.</p>
+<p><strong>Q7. Is microsecond truncation a material bias?</strong>
+Measured, not assumed. The smallest step in the corpus's regime is a 1-request decode at
+6849 us and an empty batch at 553 us; truncation is at most 1 us, so under 0.02% on the
+smallest real step. It is far below the 9.41% target and it is a truncation of the same
+quantity on both sides of a normalised ratio, so it largely cancels. Not a threat.</p>
+<p>Still open, to be answered by investigation below: Q6 (double counting), Q8 (memory
+consistency), Q9 (catalog coverage), Q10 (comparison honesty).</p>
+<p><strong>Q6. Does BLIS add costs the kernel also charges?</strong>
+No, for the deployments in this corpus. <code>sim/simulator.go:1063-1071</code> is the whole of it:
+<code>StepTime</code>, then <code>+= KVCache.ConsumePendingTransferLatency()</code>, then <code>max(1, ...)</code>. The
+transfer term is zero for a single-tier cache, which all 39 scenarios are (no offload
+tier). The floor only binds below 1 tick. So the step advance is the kernel's number and
+nothing else. Per-token and per-request host costs are added at <code>simulator.go:1099</code> and in
+<code>recordRequestCompletion</code> from the interface's own methods, which the adapter routes to the
+kernel -- charged once each, in the right place.</p>
+<p><strong>Q8. Does BLIS need memory answers, and can the kernel give them consistently?</strong>
+This is the one finding that changes the design. BLIS derives KV capacity through
+<code>latency.CalculateKVBlocks</code> (<code>sim/latency/kv_capacity.go:400</code>), called from <code>cmd/root.go</code>
+and <code>cmd/replay.go</code> -- entirely OUTSIDE the <code>sim.LatencyModel</code> seam. So registering the
+adapter at that seam would leave step time priced by the kernel while KV capacity, and
+therefore the resident batch, was still decided by the legacy path. Since the resident batch
+is precisely the quantity this experiment is about, that would invalidate the result.</p>
+<p>The kernel answers the same question directly and was built to:</p>
+<table>
+<thead>
+<tr>
+<th>Kernel method</th>
+<th>Answer on glm-5 / h200 / tp8</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FixedBytes().Total()</code></td>
+<td>678 GiB (node aggregate across 8 ranks)</td>
+</tr>
+<tr>
+<td><code>SequenceFixedBytes()</code></td>
+<td>0 (pure-attention model, no recurrent state)</td>
+</tr>
+<tr>
+<td><code>SequenceVariableBytes(1024)</code></td>
+<td>92,012,544 B = 87.75 MiB</td>
+</tr>
+<tr>
+<td><code>SequenceVariableBytes(8192)</code></td>
+<td>736,100,352 B = 702 MiB</td>
+</tr>
+</tbody>
+</table>
+<p>So KV capacity must ALSO come from the kernel for the claim "BLIS relies exclusively on the
+kernel" to be true. The harness derives <code>TotalKVBlocks</code> from the kernel's own memory
+methods rather than from <code>CalculateKVBlocks</code>, and a behavioural test asserts the legacy
+function is not consulted on a kernel run. The per-rank versus per-node convention of
+<code>FixedBytes</code> must be pinned by a test before it is divided by anything.</p>
+<p><strong>Q10. Does the comparison stay honest?</strong>
+The rule adopted: reproduce AISimulate's own published whole-snapshot shape error (10.05%)
+from its own per-point data, as <code>blis-latency-kernel/cmd/shape</code> does, and refuse to report
+any figure from a harness that cannot. This is the check that caught the metric-identity
+error already made once in this project, where a shape score was compared against an
+absolute MAPE and flattered the kernel by 2.4x. Both sides are normalised to their OWN
+anchor at the sweep's lowest concurrency.</p>
+<h2 id="round-1-conclusion">Round-1 conclusion<a class="headerlink" href="#round-1-conclusion" title="Permanent link">&para;</a></h2>
+<p>Two things changed as a result of asking:</p>
+<ol>
+<li>Q8 moved KV capacity into scope. Without it, "exclusive" would have been false in the
+   one place that matters most for this experiment.</li>
+<li>Q4 bounds the claim. 46.8% of points come from sglang or trtllm, which BLIS does not
+   model. The vLLM subset -- 46 sweeps, 238 points -- is the defensible comparison, and
+   the full 447 is reported alongside it as context rather than as the headline.</li>
+</ol>
+<h2 id="round-2-a-kernel-defect-found-by-integrating">Round 2: a kernel defect found by integrating<a class="headerlink" href="#round-2-a-kernel-defect-found-by-integrating" title="Permanent link">&para;</a></h2>
+<p>Deriving the KV budget from <code>FixedBytes()</code> (Q8's requirement) made five of the 39
+deployments report that they cannot serve a single request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>glm-5-h200-fp8-sglang-tp8: a 141.0 GiB device at utilization 0.90 gives a 126.9 GiB
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>budget, and the kernel reports 678.7 GiB of fixed occupancy per rank.
+</code></pre></div>
+<p>The interface documents <code>FixedBytes</code> as "per rank" (<code>blis-schemas/kernel/kernel.go</code>), and
+678.7 GiB per rank on a 141 GiB part is impossible. The breakdown shows it is almost all
+weights: 677.5 of 678.7 GiB.</p>
+<p><strong>The defect.</strong> <code>blis-latency-kernel/new.go:493</code> computes MoE expert weights as</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nx">weights</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">l</span><span class="p">.</span><span class="nx">ExpertWeightBytesPerExpert</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">k</span><span class="p">.</span><span class="nx">expertsPerRank</span>
+</code></pre></div>
+<p>with no division by <code>expertTensorShards</code>. The STEP-TIME path, <code>kernel.go:331</code>, gets this
+right:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nx">weightBytes</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="nx">l</span><span class="p">.</span><span class="nx">ExpertWeightBytesPerExpert</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">k</span><span class="p">.</span><span class="nx">expertTensorShards</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">...</span>
+</code></pre></div>
+<p><code>expertTensorShards</code> is 1 when expert parallelism is on (each rank holds whole experts) and
+<code>tp</code> when it is off (experts sliced across the tensor-parallel group) -- <code>new.go:274-277</code>,
+matching vLLM <code>fused_moe/config.py:1225</code>. So with EP off, <code>FixedBytes</code> overstates MoE
+weights by the tensor-parallel width.</p>
+<p><strong>Arithmetic, independent of the kernel.</strong> GLM-5 has 75 MoE layers, 256 experts, n=2048,
+k=6144, three matrices per expert, fp8 at 1 byte:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MoE expert weights, whole model</td>
+<td>675.0 GiB</td>
+</tr>
+<tr>
+<td>Divided by TP=8 (sliced experts)</td>
+<td>84.4 GiB</td>
+</tr>
+<tr>
+<td>Kernel's reported weights at TP=8</td>
+<td>677.5 GiB</td>
+</tr>
+<tr>
+<td>H200 budget at utilization 0.90</td>
+<td>126.9 GiB</td>
+</tr>
+</tbody>
+</table>
+<p>675.0 against a reported 677.5 (the remainder being dense layers, embeddings and the head)
+confirms the expert term is undivided. The correct 84.4 GiB fits the budget and leaves
+42.5 GiB for KV.</p>
+<p><strong>Which deployments are affected.</strong> All five with EP off and an MoE model where the
+overstatement pushes fixed occupancy past the device: the three glm-5 TP-8 and TP-4
+scenarios plus the two b300 ones. The other 34 either have small enough expert weights
+(gpt-oss at 53.5 GiB) or enough device memory to stay positive -- so their KV budgets are
+WRONG BUT NON-NEGATIVE, which is worse, because they would have produced a plausible number.</p>
+<p><strong>Scope of the error.</strong> It is confined to <code>FixedBytes</code>, so it does not affect the 13.67%
+shape result already reported: <code>cmd/shape</code> scores step time, and the step-time path divides
+correctly. It affects any memory or capacity answer, which is exactly what this experiment
+needs.</p>
+<p><strong>What this means for the goal.</strong> The fix belongs in <code>blis-latency-kernel/new.go</code>, which is
+outside this worktree. Per the instruction to keep all work inside the worktree and not to
+modify other repos, the fix is NOT applied there. The options are recorded here for
+decision rather than chosen unilaterally.</p>
+<h2 id="round-2-measured-the-defects-blast-radius">Round 2, measured: the defect's blast radius<a class="headerlink" href="#round-2-measured-the-defects-blast-radius" title="Permanent link">&para;</a></h2>
+<p>Every one of the 39 evaluation deployments was classified by deriving its KV budget:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Count</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Refused</td>
+<td>17</td>
+<td>Per-rank occupancy exceeds device memory; no budget derivable</td>
+</tr>
+<tr>
+<td>Suspect</td>
+<td>20</td>
+<td>Expert parallelism off, so expert bytes undivided; budget positive but too small</td>
+</tr>
+<tr>
+<td>Unaffected</td>
+<td>2</td>
+<td>Expert parallelism on, so <code>expertTensorShards</code> is legitimately 1</td>
+</tr>
+</tbody>
+</table>
+<p>The two unaffected deployments are exactly the two scenarios in the corpus carrying
+<code>enable_expert_parallel: true</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml   epw=4  fixed=28.3 GiB
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>minimax-m2.5-b300-fp4-vllm-tp2-ep4-dp2.yaml   epw=4  fixed=28.3 GiB
+</code></pre></div>
+<p>That correspondence is exact, with no exceptions in either direction, which confirms the
+diagnosis rather than merely being consistent with it: the error appears if and only if
+expert parallelism is off, which is precisely when <code>expertTensorShards</code> should be <code>tp</code> and
+the memory path uses 1.</p>
+<p><strong>Consequence for the goal.</strong> KV-driven admission cannot be exercised on 37 of 39
+deployments without the upstream fix. The resident batch would be bounded by <code>max_num_seqs</code>
+and the token budget alone. Since the thesis under test is that the resident batch explains
+the 13.67%-vs-9.41% gap, running the comparison with KV pressure disabled on 95% of the
+corpus would not test the thesis -- it would produce a number whose provenance nobody could
+defend to a reviewer.</p>
+<p>The goal's constraints say to keep all work in this worktree and not to modify any other
+repo, and the fix belongs in <code>blis-latency-kernel/new.go</code>. A one-line change there, plus a
+behavioural test, is the correct remedy. That decision is the user's, not this document's,
+and it is recorded here rather than taken.</p>
+<p>What is NOT blocked, and is being built regardless: the adapter, its tests, the closed-loop
+harness, and the comparison on the 2 unaffected deployments plus every deployment under
+<code>max_num_seqs</code>-only admission. That establishes the pipeline end to end and quantifies what
+KV pressure would add, so applying the upstream fix later is a one-line change followed by a
+re-run rather than new work.</p>
+<h2 id="round-3-ten-questions-on-correctness-and-on-reaching-sota">Round 3: ten questions on correctness and on reaching SOTA<a class="headerlink" href="#round-3-ten-questions-on-correctness-and-on-reaching-sota" title="Permanent link">&para;</a></h2>
+<p>Asked after the first scores, prompted by one flaw whose shape is worth naming: a
+justification that was TRUE in one measurement regime was carried unexamined into another
+where it is false. "max_num_seqs is a default, and a constant cancels in a ratio" holds for a
+ratio of two StepTime calls. It fails the moment a scheduler is in the loop, because
+max_num_seqs bounds the resident batch and the resident batch sets the curve's shape.</p>
+<p>Every question below is therefore of the form "what else did I carry across a regime change,
+and does it still hold?"</p>
+<h3 id="correctness">Correctness<a class="headerlink" href="#correctness" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Which values does this comparison supply that the snapshot does not state, and how much
+   does each move the score? (Answered by measurement, not judgement -- cmd/sensitivity.)</li>
+<li>Is <code>cache_dtype: fp8</code> an assumption that changes KV bytes per token, and therefore the
+   KV-bound resident batch, rather than a cosmetic label?</li>
+<li>Does <code>engine_version: "0.29.0"</code> select engine rules that differ from what the measured
+   runs used, and would a different pack change the collective backends or async scheduling?</li>
+<li>Does the adapter's <code>CachedTokens: 0</code> still hold? It assumed BLIS subtracts prefix-cache
+   hits before setting NumNewTokens. With prefix caching off this is vacuous; if a default
+   turned it on, the kernel would be told a hit it has already been charged for.</li>
+<li>Is <code>Overlap</code> the right band edge for a SIMULATED step, or does a real engine's step sit
+   between Overlap and NoOverlap in a way that a step-time ratio hid?</li>
+<li>Does the harness's zero think time match how the snapshot's client behaved, or does a
+   saturating loop overstate the offered load?</li>
+</ol>
+<h3 id="reaching-sota">Reaching SOTA<a class="headerlink" href="#reaching-sota" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Where is the remaining error concentrated after the dp fix -- is it a few arms, a
+   concurrency band, or spread evenly? A spread residual is a modelling gap; a concentrated
+   one is usually a specific wrong assumption.</li>
+<li>Is the residual the same SIGN everywhere? Systematic over-prediction points at one term;
+   mixed signs point at the scheduler or at the data.</li>
+<li>Can any part of the gap be closed by something CHECKABLE against vLLM's source or
+   NVIDIA's data, rather than by adjusting a number until the score improves?</li>
+<li>What is the floor this comparison can reach at all, given that AISimulate replays the
+    engine that produced the measurements and therefore knows the settings BLIS must guess?</li>
+</ol>
+<h2 id="round-3-answers">Round 3 answers<a class="headerlink" href="#round-3-answers" title="Permanent link">&para;</a></h2>
+<p><strong>Q1. How much does each unstated setting move the score?</strong> Measured, one at a time, on the
+213 monotone vLLM points:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>n</th>
+<th>MAPE</th>
+<th>delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>scenario values (baseline)</td>
+<td>213</td>
+<td>11.20%</td>
+<td>—</td>
+</tr>
+<tr>
+<td>max_num_seqs x2</td>
+<td>213</td>
+<td>11.05%</td>
+<td>-0.16</td>
+</tr>
+<tr>
+<td>max_num_seqs x4</td>
+<td>213</td>
+<td>11.03%</td>
+<td>-0.17</td>
+</tr>
+<tr>
+<td>max_num_seqs /2</td>
+<td>213</td>
+<td>11.56%</td>
+<td>+0.36</td>
+</tr>
+<tr>
+<td>token budget x2</td>
+<td>213</td>
+<td>11.24%</td>
+<td>+0.03</td>
+</tr>
+<tr>
+<td>token budget /2</td>
+<td>213</td>
+<td>11.22%</td>
+<td>+0.02</td>
+</tr>
+<tr>
+<td>admission: seqs only, no KV bound</td>
+<td>213</td>
+<td>11.21%</td>
+<td>+0.00</td>
+</tr>
+</tbody>
+</table>
+<p><strong>This overturns the conclusion recorded in RESULTS.md.</strong> I had written that part of the
+residual is attributable to the unstated engine settings and that the comparison therefore
+cannot be driven to AISimulate's figure by correct modelling. The sensitivity sweep says the
+opposite: quadrupling max_num_seqs moves the score by 0.17 points and halving it by 0.36,
+against a 4.5-point gap. Even removing the KV bound on admission entirely changes nothing to
+two decimal places.</p>
+<p>So the unstated settings are a footnote, not a ceiling. The resident batch in this corpus is
+set by the offered concurrency and the work per request, not by the caps -- which is why
+scaling the caps barely registers. The 4.5-point gap is a modelling gap, and it is mine to
+close. That correction matters more than the original claim: it would have excused the
+residual on a cause that measurement does not support.</p>
+<p>The dp fix remains a genuine bug fix for a different reason: those 3 points sat AT the cap,
+where the cap binds absolutely rather than marginally.</p>
+<p><strong>Q4. Does <code>CachedTokens: 0</code> still hold?</strong> Yes, but the justification was wrong and is
+corrected. BLIS implements prefix caching UNCONDITIONALLY (<code>sim/kv/cache.go</code>), not behind a
+flag, so the assumption cannot rest on caching being off. The real mechanism:
+<code>batch_formation</code> sets <code>numNewTokens = InputLen() - ProgressIndex</code>, and the cache-aware
+allocation path advances <code>ProgressIndex</code>, so a hit is excluded from <code>Scheduled</code> before the
+adapter sees it. Passing a cached count again would subtract the same tokens twice. A
+behavioural test pins that a half-computed prompt costs less than a cold one; it SKIPS on the
+double-subtraction half with a stated reason, because this kernel does not consume
+<code>CachedTokens</code> for that shape and the zero is harmless either way.</p>
+<p><strong>Q7/Q8. Where is the residual, and what sign?</strong> Concentrated and signed. After the dp fix
+the error is still worst on minimax-m2.5 (7 of the 10 worst sweeps) and grows monotonically
+with concurrency within an arm -- on <code>minimax-m2.5-b200-fp8-vllm-tp4</code> at 1k1k it runs 6.34%,
+15.23%, 22.11%, 32.41% across c=8..64, every point an OVER-prediction. A systematic,
+batch-growing over-prediction on one model points at a term that scales with batch on that
+model specifically, not at the scheduler and not at the data.</p>
+<p><strong>Q9. Is <code>ExpertsTouched</code> that term?</strong> No, rejected by arithmetic:
+<code>local * (1 - ((E-k)/E)^tokens)</code> is identical for minimax (E=256, k=8) and gpt-oss (E=128,
+k=4) at every batch size, because the two E/k ratios coincide. A minimax-specific error
+cannot come from a function that treats them identically.</p>
+<p><strong>Q10. What floor can this reach?</strong> Higher than I claimed. With the settings shown to be
+worth under half a point, there is no measured ceiling from the unstated-configuration
+argument. AISimulate's advantage on the vLLM subset is 6.68% against 10.72%, and nothing
+measured so far explains it away.</p>
+<p>Still open: Q2 (cache_dtype), Q3 (engine_version rules pack), Q5 (Overlap vs NoOverlap for a
+simulated step), Q6 (think time).</p>
 
 
 
@@ -3284,44 +3311,6 @@ fetch it fed, #1733).</p>
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../core-engine/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Core Engine">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Core Engine
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../../guide/" class="md-footer__link md-footer__link--next" aria-label="Next: User Guide">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                User Guide
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">

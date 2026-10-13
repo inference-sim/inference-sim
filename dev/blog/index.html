@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -2861,6 +2831,9 @@
   </header>
   <div class="md-post__content md-typeset">
     <h2 id="what-weve-learned-about-modeling-llm-latency"><a class="toclink" href="2026/08/06/what-weve-learned-about-modeling-llm-latency/">What We've Learned About Modeling LLM Latency</a></h2>
+<blockquote>
+<p><strong>Editor's note (2026-10):</strong> BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.</p>
+</blockquote>
 <p>The <a href="2026/04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">last post</a> covered how BLIS models the engine,
 data plane, and control plane to predict full-pipeline latency without touching a GPU. What it
 didn't answer is whether the predictions can be trusted.</p>
@@ -2924,6 +2897,9 @@ for llm-d. The rest of this post is how we get there, and where it still falls s
   </header>
   <div class="md-post__content md-typeset">
     <h2 id="the-physics-of-high-fidelity-distributed-inference-platform-simulation"><a class="toclink" href="2026/04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">The Physics of High-Fidelity Distributed Inference Platform Simulation</a></h2>
+<blockquote>
+<p><strong>Editor's note (2026-10):</strong> BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.</p>
+</blockquote>
 <p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
 <p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
 
@@ -2964,7 +2940,7 @@ for llm-d. The rest of this post is how we get there, and where it still falls s
           
           <li class="md-meta__item">
             
-              5 min read
+              6 min read
             
           </li>
         
@@ -2975,6 +2951,9 @@ for llm-d. The rest of this post is how we get there, and where it still falls s
   </header>
   <div class="md-post__content md-typeset">
     <h2 id="why-simulate-before-you-scale"><a class="toclink" href="2026/03/05/why-simulate-before-you-scale/">Why Simulate Before You Scale</a></h2>
+<blockquote>
+<p><strong>Editor's note (2026-10):</strong> BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.</p>
+</blockquote>
 <p>Deploying large language models in production is one of the most expensive infrastructure decisions an organization can make. A single high-end GPU costs upwards of $30,000, and a production cluster can run into millions per year. Yet most teams make their first scaling decisions based on rough estimates, vendor benchmarks, or — worst of all — trial and error on live hardware.</p>
 <p>What if you could test your deployment plan <em>before</em> spending a dollar on GPUs?</p>
 

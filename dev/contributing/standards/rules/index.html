@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3688,7 +3658,7 @@
 <hr />
 <h3 id="r10-strict-config-parsing">R10: Strict config parsing<a class="headerlink" href="#r10-strict-config-parsing" title="Permanent link">&para;</a></h3>
 <p>Use <code>yaml.KnownFields(true)</code> or equivalent strict parsing for all config loading — YAML <em>and</em> JSON. Typos in field names must cause parse errors, not silent acceptance of malformed config.</p>
-<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: <code>hardware_config.json</code> was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.</p>
+<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: the since-removed <code>hardware_config.json</code> was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.</p>
 <p><strong>Check:</strong> Every <code>yaml.Unmarshal</code> / <code>json.Unmarshal</code> or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — <code>sim/latency.rejectUnknownHardwareCalibKeys</code> names the offending key <em>and</em> the GPU entry, which <code>DisallowUnknownFields</code> cannot). Deliberately exempt: parsers for <strong>external payloads</strong> BLIS does not own (HuggingFace <code>config.json</code>, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.</p>
 <p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
 <hr />
@@ -3741,7 +3711,7 @@
 <p><strong>Enforced:</strong> Design review, scorer implementation review.</p>
 <hr />
 <h3 id="r18-cli-flag-precedence-over-defaults">R18: CLI flag precedence over defaults<a class="headerlink" href="#r18-cli-flag-precedence-over-defaults" title="Permanent link">&para;</a></h3>
-<p>When the CLI binary loads default values from <code>defaults.yaml</code>, it must not silently overwrite user-provided flag values. Always check <code>cmd.Flags().Changed("&lt;flag&gt;")</code> before applying a default. A user who explicitly passes <code>--total-kv-blocks 50</code> must get 50, not the model's default of 132,139.</p>
+<p>When the CLI binary loads default values from <code>defaults.yaml</code>, it must not silently overwrite user-provided flag values. Always check <code>cmd.Flags().Changed("&lt;flag&gt;")</code> before applying a default. A user who explicitly passes <code>--lora-load-base-latency-us 50</code> must get 50, not the <code>defaults.yaml</code> value.</p>
 <p><strong>Evidence:</strong> H9 hypothesis experiment — <code>GetCoefficients()</code> unconditionally overwrote <code>totalKVBlocks</code> with the model default, silently destroying the CLI flag value. The entire H9 Experiment 3 (cache capacity independence) produced invalid results. Bug #285, fix cbb0de7.</p>
 <p><strong>Check:</strong> For every assignment from <code>defaults.yaml</code> to a CLI-parsed variable, verify <code>cmd.Flags().Changed()</code> is checked first. Grep for <code>GetCoefficients</code> and <code>defaults.yaml</code> assignment patterns.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 6.</p>

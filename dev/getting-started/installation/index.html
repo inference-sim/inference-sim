@@ -670,6 +670,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenarios
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -796,8 +807,6 @@
       
         
           
-        
-      
         
       
         
@@ -933,34 +942,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1172,7 +1153,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3013,6 +2994,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenarios
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#verify-the-build" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3079,7 +3071,7 @@
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Go 1.21+</strong> — <a href="https://go.dev/dl/">Download Go</a></li>
+<li><strong>Go 1.24+</strong> — <a href="https://go.dev/dl/">Download Go</a></li>
 <li><strong>Git</strong> — for cloning the repository</li>
 </ul>
 <h2 id="build-from-source">Build from Source<a class="headerlink" href="#build-from-source" title="Permanent link">&para;</a></h2>
@@ -3103,7 +3095,7 @@ and no search path, so a run with neither <code>--catalog</code> nor <code>BLIS_
 both forms. Clone the authoritative <a href="https://github.com/inference-sim/blis-catalog"><code>blis-catalog</code></a>
 repository <strong>at the pinned release tag</strong> (see <a href="#catalog-compatibility">Catalog compatibility</a>
 below) and point BLIS at the clone root:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span><span class="m">0</span>.1.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span><span class="m">0</span>.2.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-catalog.git
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-catalog<span class="w">   </span><span class="c1"># or pass --catalog on every command</span>
 </code></pre></div>
 <h2 id="catalog-compatibility">Catalog compatibility<a class="headerlink" href="#catalog-compatibility" title="Permanent link">&para;</a></h2>
@@ -3114,7 +3106,7 @@ compatible version is stated; every other page's clone command pins the same tag
      line below and requires every documented blis-catalog clone to pin exactly it, so keep
      the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
 
-<p><strong>Compatible blis-catalog release: <code>0.1.1</code></strong> — <a href="https://github.com/inference-sim/blis-catalog/releases/tag/0.1.1">release notes</a>.</p>
+<p><strong>Compatible blis-catalog release: <code>0.2.1</code></strong> — <a href="https://github.com/inference-sim/blis-catalog/releases/tag/0.2.1">release notes</a>.</p>
 <p>Why pin at all: BLIS parses every catalog file strictly (<code>KnownFields(true)</code>), and strict
 parsing is one-way — an added or renamed key in a future catalog schema is a <strong>hard load
 error</strong>, not a silently ignored field. An unpinned clone therefore lets a catalog release
@@ -3123,25 +3115,52 @@ itself. Pinning also makes results attributable: two people running the document
 months apart read the same catalog. (<code>blis run --metrics-path</code> records the catalog's git
 revision and whether it was dirty — see <a href="../../guide/results/">Results</a>; a <code>--depth 1</code>
 tag clone still carries the revision, so that provenance is unaffected.)</p>
+<p>BLIS prices every run with <code>blis-latency-kernel</code>, which additionally reads a <a href="https://github.com/inference-sim/blis-registry"><code>blis-registry</code></a>
+clone for its fitted coefficients (<code>--registry</code>, required). <strong>Compatible blis-registry release:
+<code>v0.1.1</code></strong>, the release blis-latency-kernel <code>v0.1.0</code> (the version <code>go.mod</code> pins) is tested
+against; that pair is recorded in the kernel's own <code>testdata/upstream.lock</code>, and this
+repository's test suite holds its vendored catalog and registry to it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w"> </span>v0.1.1<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/inference-sim/blis-registry.git
+</code></pre></div>
 <p><strong>Upgrading to a newer catalog release</strong> is deliberately opt-in: clone the newer tag, run
 your workload against it, and if it works, bump the tag on the line above — the guard test
 then requires every documented clone command to match, so no page is left behind. Nothing
 stops you pointing <code>--catalog</code> at a <code>main</code> checkout or a scratch clone of your own; the pin
 is what the <em>documentation</em> promises, not a restriction the binary enforces.</p>
+<h2 id="scenarios">Scenarios<a class="headerlink" href="#scenarios" title="Permanent link">&para;</a></h2>
+<p>Every <code>blis run</code> and <code>blis replay</code> names a <strong>scenario</strong>: a
+<a href="https://github.com/inference-sim/blis-schemas"><code>blis-schemas</code></a> Scenario + Deployment YAML
+(two documents) that states the model, the cluster's hardware, fabric, nodes and GPUs per
+node, the coefficient sets that price it, the engine version, and each pool's role,
+parallelism and engine settings. <code>--scenarios &lt;dir&gt;</code> is any directory of scenario YAMLs and
+<code>--scenario &lt;file name&gt;</code> picks one in it. Two directories are ready to use:</p>
+<ul>
+<li>the kernel module's own fixtures, downloaded by <code>go build</code>, at
+  <code>$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate</code>;</li>
+<li><code>testdata/scenarios/</code> in this repository: <code>glm-5-h200-3p1d-ib.yaml</code> (P/D) and
+  <code>glm-5-h200-tp8-mtp3.yaml</code> (MTP speculative decoding; it drafts tokens, so a run must also
+  pass <code>--speculative-acceptance-rate</code>, e.g. <code>0.7</code>).</li>
+</ul>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">10</span><span class="w"> </span>--catalog<span class="w"> </span>blis-catalog
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenarios<span class="w"> </span><span class="k">$(</span>go<span class="w"> </span>env<span class="w"> </span>GOMODCACHE<span class="k">)</span>/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span>--catalog<span class="w"> </span>blis-catalog<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--num-requests<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
+<p><code>blis</code> carries the repository's <code>defaults.yaml</code> (the LoRA cost constants) compiled in, so it runs
+from any directory. A <code>defaults.yaml</code> in the working directory, or <code>--defaults-filepath &lt;file&gt;</code>,
+takes precedence over the compiled-in copy.</p>
 <p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>
 <p>To preview the documentation site locally:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>mkdocs<span class="w"> </span>serve
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>mkdocs<span class="w"> </span>serve
 </code></pre></div>
 <p>Then open <a href="http://localhost:8000">http://localhost:8000</a>.</p>
 <h2 id="optional-linter">Optional: Linter<a class="headerlink" href="#optional-linter" title="Permanent link">&para;</a></h2>
 <p>For contributors, install the linter used in CI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...
 </code></pre></div>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>

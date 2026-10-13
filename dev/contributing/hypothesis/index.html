@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -4145,7 +4115,7 @@
 - Is the experiment reproducible from <code>run.sh</code> alone? (ED-5)
 - If reusing calibration from a prior experiment, is the config diff documented? (ED-6)</p>
 <p><strong>Perspective 3 — Parameter Calibration:</strong>
-- Are parameters computed analytically from known coefficients (alpha/beta), not guessed?
+- Are parameters derived from the scenario and the kernel's pricing (e.g. a measured saturated throughput), not guessed?
 - Are capacity estimates matched to the actual workload mode (CLI defaults vs workload-spec YAML)?
 - Is the operating point correct for the intended effect? (e.g., near saturation for queueing effects, sub-saturation for baseline)</p>
 <p><strong>Perspective 4 — Control Completeness:</strong>
@@ -4154,7 +4124,7 @@
 - Is the baseline configuration clearly defined?</p>
 <p><strong>Perspective 5 — DES and Domain Fit:</strong>
 - Will the experiment create the conditions needed for the hypothesis to be testable?
-- Are there DES-specific subtleties (event ordering, clock granularity, alpha overhead) that could confound results?
+- Are there DES-specific subtleties (event ordering, clock granularity, host overheads) that could confound results?
 - Is the experiment duration sufficient? Is the warmup period adequate?</p>
 <p><strong>Cross-gate regression:</strong> If a later gate (Code Review, FINDINGS Review) discovers a design-level flaw (e.g., confounding variable, wrong operating point), the workflow loops back to Step 2 for re-design, re-convergence, and re-approval.</p>
 <hr />
@@ -4181,7 +4151,7 @@
 <p><strong>Harness requirements (mandatory):</strong>
 - <code>run.sh</code> MUST source <code>hypotheses/lib/harness.sh</code> and use <code>blis_run</code> for every simulation call
 - Every <code>blis_run</code> call MUST have an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)
-- If using <code>--total-kv-blocks</code>, call <code>preflight_kv_check</code> with max expected input tokens
+- For KV-constrained experiments, call <code>preflight_kv_check</code> with the KV budget the run reports and the max expected input tokens
 - <code>analyze.py</code> MUST import <code>analyze_helpers</code> and use <code>parse_blis_output</code> (handles timeouts gracefully)</p>
 <p><strong>Reference comment:</strong> If reusing calibration from a prior experiment, include <code># Reference: hypotheses/&lt;name&gt;/run.sh</code> with the branch and file path (e.g., <code># Reference: hypothesis-archive:hypotheses/h12-conservation/run.sh</code> for archived experiments, or the feature branch name for recent ones).</p>
 <hr />
@@ -4317,7 +4287,7 @@
 - Are alternative explanations adequately considered?</p>
 <p><strong>Reviewer 7 — DES Mechanism Expert:</strong>
 - Are there event-ordering subtleties that could explain the results differently?
-- Are assumptions about DES timing correct (alpha overhead, step quantization, clock granularity)?
+- Are assumptions about DES timing correct (host overheads, step quantization, clock granularity)?
 - Could the result be an artifact of the simulation architecture rather than the modeled system behavior?</p>
 <p><strong>Reviewer 8 — Reproducibility and Robustness:</strong>
 - Can <code>run.sh</code> reproduce the results from scratch on a clean checkout?
@@ -4423,7 +4393,7 @@
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>run.sh</code> sources <code>hypotheses/lib/harness.sh</code> and uses <code>blis_run</code> for every simulation call</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Every <code>blis_run</code> call has an appropriate timeout tier (<code>TIMEOUT_QUICK</code>/<code>TIMEOUT_STANDARD</code>/<code>TIMEOUT_EXTENDED</code>)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> KV safety pre-flight: if experiment uses <code>--total-kv-blocks</code>, call <code>preflight_kv_check</code> with max expected input tokens</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> KV safety pre-flight: for KV-constrained experiments, call <code>preflight_kv_check</code> with max expected input tokens</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>analyze.py</code> imports <code>analyze_helpers</code> and uses <code>parse_blis_output</code> (handles timeouts gracefully)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>run.sh</code> flags verified against <code>cmd/root.go</code> help text</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>analyze.py</code> regexes verified against actual output format strings in <code>cmd/root.go</code> and <code>sim/metrics_utils.go</code></li>

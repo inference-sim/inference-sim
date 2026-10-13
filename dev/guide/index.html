@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../concepts/roofline/">
+        <link rel="prev" href="../concepts/core-engine/">
       
       
         <link rel="next" href="routing/">
@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1026,7 +996,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -2877,8 +2847,8 @@
 <td>Controlling request processing order within each instance</td>
 </tr>
 <tr>
-<td><a href="latency-models/">Latency Models</a></td>
-<td>Choosing between roofline (default, analytical) and trained-physics (physics-informed) step time estimation</td>
+<td><a href="latency-models/">Latency Model</a></td>
+<td>blis-latency-kernel: what it prices, scenario structure, P/D, DP/EP, speculation, offload, LoRA</td>
 </tr>
 <tr>
 <td><a href="kv-cache/">KV Cache &amp; Memory</a></td>
@@ -2898,7 +2868,7 @@
 </tr>
 <tr>
 <td><a href="observe-replay-calibrate/">Observe / Replay / Calibrate</a></td>
-<td>Validating simulator accuracy against real inference servers</td>
+<td>Replaying trace workloads (<code>blis replay</code>); <code>observe</code>/<code>calibrate</code> are deprecated (#1901)</td>
 </tr>
 <tr>
 <td><a href="skills-and-plugins/">Skills &amp; Plugins</a></td>
@@ -2910,8 +2880,8 @@
 <p><strong>Capacity planning:</strong> <a href="../getting-started/quickstart/">Quick Start</a> → <a href="../getting-started/tutorial/">Tutorial</a> → <a href="cluster/">Cluster Simulation</a> → <a href="results/">Metrics &amp; Results</a></p>
 <p><strong>Routing optimization:</strong> <a href="routing/">Routing Policies</a> → <a href="cluster/">Cluster Simulation</a> → <a href="results/">Metrics &amp; Results</a></p>
 <p><strong>Memory tuning:</strong> <a href="kv-cache/">KV Cache &amp; Memory</a> → <a href="results/">Metrics &amp; Results</a></p>
-<p><strong>New model evaluation:</strong> <a href="latency-models/">Latency Models</a> → <a href="workloads/">Workload Specifications</a> → <a href="results/">Metrics &amp; Results</a></p>
-<p><strong>Calibration:</strong> <a href="latency-models/">Latency Models</a> → <a href="workloads/">Workload Specifications</a> → <a href="observe-replay-calibrate/">Observe / Replay / Calibrate</a> → <a href="results/">Metrics &amp; Results</a></p>
+<p><strong>New model evaluation:</strong> <a href="latency-models/">Latency Model</a> → <a href="workloads/">Workload Specifications</a> → <a href="results/">Metrics &amp; Results</a></p>
+<p><strong>Trace replay:</strong> <a href="latency-models/">Latency Model</a> → <a href="workloads/">Workload Specifications</a> → <a href="observe-replay-calibrate/">Observe / Replay / Calibrate</a> → <a href="results/">Metrics &amp; Results</a></p>
 
 
 
@@ -2947,7 +2917,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../concepts/roofline/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Roofline Estimation">
+          <a href="../concepts/core-engine/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Core Engine">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2957,7 +2927,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Roofline Estimation
+                Core Engine
               </div>
             </div>
           </a>

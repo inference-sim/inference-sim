@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3794,7 +3764,7 @@
 <ol>
 <li>Will including it significantly affect the accuracy of results for the target analysis questions?</li>
 <li>What level of accuracy is actually required for the analysis to be useful?</li>
-<li>Can the component's data requirements be satisfied (alpha/beta coefficients, hardware specs, workload traces)?</li>
+<li>Can the component's data requirements be satisfied (a blis-registry coefficient set, a catalog hardware/device entry, workload traces)?</li>
 <li>What is the cost of inclusion — code complexity, maintenance burden, configuration surface?</li>
 <li>What breaks if we omit it? (Sensitivity analysis — if removing it changes results by &lt;5%, defer it)</li>
 <li>What is the simplest version that answers the same questions? (Start coarse, refine only with evidence)</li>

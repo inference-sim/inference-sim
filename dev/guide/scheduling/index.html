@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1145,7 +1115,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3025,10 +2995,11 @@
 <h1 id="scheduling-priority">Scheduling &amp; Priority<a class="headerlink" href="#scheduling-priority" title="Permanent link">&para;</a></h1>
 <p>Routing decides <strong>which instance</strong> receives a request. Scheduling decides <strong>what order</strong> requests are processed within an instance. These are independent policy axes — you can combine any routing policy with any scheduler.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--scheduler<span class="w"> </span>priority-fcfs
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--scheduler<span class="w"> </span>priority-fcfs
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)</span>
 </code></pre></div>
 <h2 id="how-priority-works">How Priority Works<a class="headerlink" href="#how-priority-works" title="Permanent link">&para;</a></h2>
 <p>Request priority is <strong>static</strong> — set once when the request enters the instance, and never changed.</p>
@@ -3133,7 +3104,7 @@
 <li>On the next step, the scheduler reorders the full queue including the preempted request.</li>
 </ul>
 <p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With <code>priority-fcfs</code> and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.</p>
-<p>By default (<code>--preemption-policy fcfs</code>), the tail of the running batch is evicted. When <code>--preemption-policy priority</code> is set, the least-urgent running request is evicted — the one with the <strong>highest Priority value</strong> (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior (<code>scheduler.py:1086</code>).</p>
+<p>By default (<code>--preemption-policy fcfs</code>), the tail of the running batch is evicted. When <code>--preemption-policy priority</code> is set, the least-urgent running request is evicted — the one with the <strong>highest Priority value</strong> (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior (vLLM v0.31.0 <code>vllm/v1/core/sched/scheduler.py:765,777</code>). A scenario stating <code>engine.scheduling_policy: priority</code> selects both <code>priority-fcfs</code> queueing and <code>priority</code> preemption, as vLLM does (<code>fcfs</code> selects <code>fcfs</code> for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file (<a href="../results/#scenario-overrides">Scenario Overrides</a>).</p>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3228,13 +3199,13 @@
         
         
           
-          <a href="../latency-models/" class="md-footer__link md-footer__link--next" aria-label="Next: Latency Models">
+          <a href="../latency-models/" class="md-footer__link md-footer__link--next" aria-label="Next: Latency Kernel">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Latency Models
+                Latency Kernel
               </div>
             </div>
             <div class="md-footer__button md-icon">

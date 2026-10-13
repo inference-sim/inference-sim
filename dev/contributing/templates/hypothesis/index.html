@@ -655,8 +655,6 @@
       
         
       
-        
-      
     
     
     
@@ -784,34 +782,6 @@
     
   
     Core Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../concepts/roofline/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roofline Estimation
   
 
     
@@ -1023,7 +993,7 @@
   <span class="md-ellipsis">
     
   
-    Latency Models
+    Latency Kernel
   
 
     
@@ -3066,23 +3036,23 @@
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="c1">#</span>
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Example (basic):</span>
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="c1">#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="c1">#       --model "$MODEL" --num-instances 4 --seed 42 \</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="c1">#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 \</span>
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1">#       --workload-spec "$WORKLOAD_YAML" --log error</span>
 <a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="c1">#</span>
 <a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="c1"># Example (with stderr capture for robustness experiments):</span>
 <a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1">#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \</span>
 <a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="c1">#       --stderr "$RESULTS_DIR/config_a_stderr.txt" \</span>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1">#       --model "$MODEL" --num-instances 4 --seed 42 --log error</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1">#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error</span>
 <a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="c1">#</span>
 <a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="c1"># Example (with per-request JSON):</span>
 <a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="c1">#   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \</span>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="c1">#       --model "$MODEL" --num-instances 4 --seed 42 --log error \</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="c1">#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error \</span>
 <a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="c1">#       --metrics-path "$RESULTS_DIR/config_a_results.json"</span>
 <a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="c1">#</span>
 <a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="c1"># Example (robustness/stress — non-zero exit expected, use || true under set -e):</span>
 <a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="c1">#   blis_run $TIMEOUT_EXTENDED "$RESULTS_DIR/stress.txt" \</span>
 <a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="c1">#       --stderr "$RESULTS_DIR/stress_stderr.txt" \</span>
-<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1">#       --model "$MODEL" --num-instances 4 --seed 42 --log error || true</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1">#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error || true</span>
 <a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="c1">#</span>
 <a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="c1"># For KV-constrained experiments, add pre-flight check (advisory, never aborts):</span>
 <a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="c1">#   preflight_kv_check 800 16 512  # total_blocks, block_size (default: 16), max_input</span>
