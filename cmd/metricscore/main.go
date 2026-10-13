@@ -198,20 +198,15 @@ func main() {
 	// Every corpus gap: written out beside the score, and read DURING scoring to put each
 	// sweep in its tier (harness.Coverage.TierOf).
 	coverage := harness.AssessCoverage(c, base)
-	// The numpy seed-1..4 fixtures: each prefix-caching point's warm-up bracket is judged
-	// against the point's own draw spread over them.
-	draws, err := harness.LoadDrawFixtures()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	type pointBracket struct {
+	// For each point Run scored after the warm-up's state (request 0's prompt cached), the
+	// same main phase started cold, reported as information only.
+	type pointDifference struct {
 		sw   harness.Sweep
 		conc int
-		b    harness.WarmupBracket
+		d    harness.WarmupDifference
 	}
-	var brackets []pointBracket
-	bracketsIn := map[harness.Tier][]harness.WarmupBracket{}
+	var differences []pointDifference
+	differencesIn := map[harness.Tier][]harness.WarmupDifference{}
 	sweeps, points := 0, 0
 	ttftExcluded := 0
 
@@ -260,12 +255,11 @@ func main() {
 				continue
 			}
 			cfg := base
-			var anchorTPOT, anchorTTFT float64
-			per := map[harness.Metric][]float64{}
-			perMape := map[harness.Metric][]float64{}
-			measured := abs.For(sw)
-			for j, p := range sw.Points {
-				obs, err := harness.Run(sw, p.Concurrency, cfg)
+			// The observation Run returns is the one scored, for both errors below: on a
+			// prefix-caching point it is the main phase after the warm-up's state.
+			var obs []harness.Observation
+			for _, p := range sw.Points {
+				o, err := harness.Run(sw, p.Concurrency, cfg)
 				if err != nil {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: %v",
 						sw.Scenario, sw.Label, a.est, p.Concurrency, err))
@@ -273,58 +267,32 @@ func main() {
 					ok = false
 					break
 				}
-				if obs.MeanTPOTUs <= 0 || obs.MeanTTFTUs <= 0 {
+				if o.MeanTPOTUs <= 0 || o.MeanTTFTUs <= 0 {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: no measurement",
 						sw.Scenario, sw.Label, a.est, p.Concurrency))
 					coverage.Dropped(sw, p.Concurrency, "no measurement")
 					ok = false
 					break
 				}
-				// The warm-up bracket, for a point whose engine caches prefixes: the main
-				// phase again with request 0's prompt cached, and the point's draw spread.
-				// A failed bracket leaves the warm-up gap approximate and is reported.
-				if !obs.Settings.PrefixCachingDisabled {
-					b, err := harness.RunWarmupBracket(sw, p.Concurrency, cfg, obs, draws)
+				if o.Primed {
+					d, err := harness.RunWarmupDifference(sw, p.Concurrency, cfg, o)
 					if err != nil {
-						failures = append(failures, fmt.Sprintf("%s %s c=%d warm-up bracket: %v",
+						failures = append(failures, fmt.Sprintf("%s %s c=%d cold run (information only): %v",
 							sw.Scenario, sw.Label, p.Concurrency, err))
 					} else {
-						coverage.ApplyWarmupBracket(sw, p.Concurrency, b)
-						brackets = append(brackets, pointBracket{sw, p.Concurrency, b})
+						differences = append(differences, pointDifference{sw, p.Concurrency, d})
 					}
 				}
-				// mape at EVERY point including the anchor: it compares two absolute values
-				// and has no anchor to cancel.
-				if v, ok := measured.At(harness.MetricTPOT, p.Concurrency); ok {
-					perMape[harness.MetricTPOT] = append(perMape[harness.MetricTPOT],
-						(obs.MeanTPOTUs/v-1)*100)
-				}
-				if v, ok := measured.At(harness.MetricTTFT, p.Concurrency); ok && !spike[j] {
-					perMape[harness.MetricTTFT] = append(perMape[harness.MetricTTFT],
-						(obs.MeanTTFTUs/v-1)*100)
-				}
-				if j == 0 {
-					anchorTPOT, anchorTTFT = obs.MeanTPOTUs, obs.MeanTTFTUs
-					continue // the anchor's SHAPE error is zero by construction; excluded
-				}
-				mt, _, _ := p.MetricOf(harness.MetricTPOT)
-				tt, _, _ := p.MetricOf(harness.MetricTTFT)
-				if mt <= 0 || tt <= 0 {
-					detail := fmt.Sprintf("measured TPOT relative %v, TTFT relative %v", mt, tt)
-					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: %s",
-						sw.Scenario, sw.Label, a.name, p.Concurrency, detail))
-					coverage.BadMeasurement(sw, p.Concurrency, detail)
-					ok = false
-					break
-				}
-				per[harness.MetricTPOT] = append(per[harness.MetricTPOT],
-					(obs.MeanTPOTUs/anchorTPOT/mt-1)*100)
-				if !spike[j] {
-					per[harness.MetricTTFT] = append(per[harness.MetricTTFT],
-						(obs.MeanTTFTUs/anchorTTFT/tt-1)*100)
-				}
+				obs = append(obs, o)
 			}
 			if !ok {
+				break
+			}
+			per, perMape, bad := simulatedErrors(sw, obs, abs.For(sw), spike)
+			if bad != "" {
+				failures = append(failures, fmt.Sprintf("%s %s %s: %s", sw.Scenario, sw.Label, a.name, bad))
+				coverage.BadMeasurement(sw, 0, bad)
+				ok = false
 				break
 			}
 			sim[a.est] = per
@@ -395,9 +363,9 @@ func main() {
 		for _, t := range harness.AllTiers {
 			if sweepTier.In(t) {
 				sweepsIn[t]++
-				for _, pb := range brackets {
-					if pb.sw.Scenario == sw.Scenario && pb.sw.Label == sw.Label {
-						bracketsIn[t] = append(bracketsIn[t], pb.b)
+				for _, pd := range differences {
+					if pd.sw.Scenario == sw.Scenario && pd.sw.Label == sw.Label {
+						differencesIn[t] = append(differencesIn[t], pd.d)
 					}
 				}
 			}
@@ -483,17 +451,20 @@ func main() {
 	fmt.Println("  STRICT                every point has an engine log; every setting it passed is carried;")
 	fmt.Println("                        the admission settings and max_model_len were measured; expert")
 	fmt.Println("                        parallelism and gpu_memory_utilization measured or vLLM's unconditional")
-	fmt.Println("                        default; and no protocol gap, or only a warm-up gap whose measured")
-	fmt.Println("                        bracket is within the point's draw noise (bounded)")
+	fmt.Println("                        default; the sent prompt lengths verified equal to the targets; and")
+	fmt.Println("                        no other protocol gap")
 	fmt.Println("  MEASURED-OR-RESOLVED  as STRICT, but an unpassed admission setting may take the value vLLM")
 	fmt.Println("                        resolves by a rule this harness restates")
 	fmt.Println("  ALL (approximate)     every scoreable sweep; NOT the measured runs as they ran")
 	fmt.Println("Each table includes the stricter ones; within a table every arm scores the same points.")
-	fmt.Println("Warm-up bracket: the benchmark's drained warm-up leaves request 0's prompt cached on a")
-	fmt.Println("prefix-caching engine; the simulation starts empty (a). Each such point is also run with")
-	fmt.Println("that prompt cached (b); |b-a|/a is its warm-up uncertainty, judged against the point's")
-	fmt.Println("range over the numpy seed-0..4 draws. A prefix-caching-disabled point's bracket is zero:")
-	fmt.Println("nothing the warm-up leaves is read. Exact two-phase replay: blis-schemas#56, inference-sim#1926.")
+	fmt.Printf("Warm-up: the benchmark sends %d*CONC copies of request 0 and drains them before the\n",
+		harness.InferenceXWarmupsPerConcurrency)
+	fmt.Println("main phase. The only state that leaves which the simulator reads is the prefix cache,")
+	fmt.Println("so a point whose engine caches prefixes is scored on the main phase run after copies of")
+	fmt.Println("request 0 have completed (its prompt cached, the engine idle); a point with caching off")
+	fmt.Println("is scored on the main phase from an empty engine, which is then the same state. The")
+	fmt.Println("cold run of a prefix-caching point is reported below as information only. Exact")
+	fmt.Println("two-phase replay in the trace format: blis-schemas#56, inference-sim#1926.")
 	fmt.Println("Shape error divides each side by its own value at the sweep's lowest concurrency and")
 	fmt.Println("excludes that anchor; mape compares absolute latency at every point.")
 	fmt.Printf("\n%d sweeps, %d points for TPOT shape, over all tiers\n", sweeps, points)
@@ -556,10 +527,10 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\n=== Tier summary for %s, with the warm-up bracket (mean|e|; bracket |b-a|/a over the tier's\n"+
-		"    prefix-caching points; every other point's bracket is zero)\n", arms[0].name)
-	fmt.Printf("%-22s %5s %9s %9s %9s %9s %8s %15s %15s %8s\n", "tier", "n", "TPOT shp", "TPOT mape",
-		"TTFT shp", "TTFT mape", "warm pts", "TTFT med/max", "TPOT med/max", "bounded")
+	fmt.Printf("\n=== Tier summary for %s (mean|e|), with the information-only difference between\n"+
+		"    each prefix-caching point's scored (warm-up) and cold main phase, |scored-cold|/cold\n", arms[0].name)
+	fmt.Printf("%-22s %5s %9s %9s %9s %9s %8s %15s %15s\n", "tier", "n", "TPOT shp", "TPOT mape",
+		"TTFT shp", "TTFT mape", "warm pts", "TTFT med/max", "TPOT med/max")
 	for _, t := range harness.AllTiers {
 		cell := func(v []float64) string {
 			if len(v) == 0 {
@@ -567,27 +538,22 @@ func main() {
 			}
 			return fmt.Sprintf("%.2f%%", harness.MAPE2(harness.Abs(v)))
 		}
-		bs := harness.SummarizeBrackets(bracketsIn[t])
-		fmt.Printf("%-22s %5d %9s %9s %9s %9s %8d %6.3f/%6.3f%% %6.4f/%6.4f%% %8d\n", t,
+		ds := harness.SummarizeDifferences(differencesIn[t])
+		fmt.Printf("%-22s %5d %9s %9s %9s %9s %8d %6.3f/%6.3f%% %6.4f/%6.4f%%\n", t,
 			len(errs[t][0][harness.MetricTPOT]), cell(errs[t][0][harness.MetricTPOT]), cell(mapes[t][0][harness.MetricTPOT]),
 			cell(errs[t][0][harness.MetricTTFT]), cell(mapes[t][0][harness.MetricTTFT]),
-			bs.N, bs.MedianTTFT, bs.MaxTTFT, bs.MedianTPOT, bs.MaxTPOT, bs.Bounded)
+			ds.N, ds.MedianTTFT, ds.MaxTTFT, ds.MedianTPOT, ds.MaxTPOT)
 	}
 
-	if len(brackets) > 0 {
-		fmt.Printf("\n=== Warm-up bracket per prefix-caching point (a: empty engine, scored; b: request 0's\n" +
-			"    prompt cached; noise: range over numpy seeds 0..4, relative to a)\n")
-		fmt.Printf("%-44s %-5s %5s %12s %9s %8s %11s %9s %8s %s\n", "scenario", "label", "conc",
-			"TTFT a (us)", "dTTFT", "noise", "TPOT a (us)", "dTPOT", "noise", "")
-		for _, pb := range brackets {
-			b := pb.b
-			verdict := "approximate"
-			if b.Bounded {
-				verdict = "bounded"
-			}
-			fmt.Printf("%-44s %-5s %5d %12.0f %+8.3f%% %7.3f%% %11.1f %+8.4f%% %7.4f%% %s\n",
-				trunc(pb.sw.Scenario, 44), pb.sw.Label, pb.conc, b.Cold.MeanTTFTUs, b.DTTFTPct, b.NoiseTTFTPct,
-				b.Cold.MeanTPOTUs, b.DTPOTPct, b.NoiseTPOTPct, verdict)
+	if len(differences) > 0 {
+		fmt.Printf("\n=== Prefix-caching points: scored (after the warm-up's state) against cold (information only)\n")
+		fmt.Printf("%-44s %-5s %5s %12s %12s %9s %11s %11s %9s\n", "scenario", "label", "conc",
+			"TTFT (us)", "cold (us)", "diff", "TPOT (us)", "cold (us)", "diff")
+		for _, pd := range differences {
+			d := pd.d
+			fmt.Printf("%-44s %-5s %5d %12.0f %12.0f %+8.3f%% %11.1f %11.1f %+8.4f%%\n",
+				trunc(pd.sw.Scenario, 44), pd.sw.Label, pd.conc, d.Scored.MeanTTFTUs, d.Cold.MeanTTFTUs, d.DTTFTPct,
+				d.Scored.MeanTPOTUs, d.Cold.MeanTPOTUs, d.DTPOTPct)
 		}
 	}
 
@@ -701,4 +667,39 @@ func family(gpu string) string {
 		}
 	}
 	return g
+}
+
+// simulatedErrors is a simulated arm's per-point errors over one sweep, from the observations
+// harness.Run scored at each point in order: the absolute error at every point against the
+// measured absolute latency, and the shape error -- each side divided by its own value at the
+// sweep's lowest concurrency, that anchor excluded -- against the measured relatives. Both read
+// the same observation per point. TTFT skips the points in spike. A non-positive measured
+// relative makes the sweep unscorable and is returned as bad.
+func simulatedErrors(sw harness.Sweep, obs []harness.Observation, measured *harness.Absolutes,
+	spike map[int]bool) (shape, mape map[harness.Metric][]float64, bad string) {
+	shape, mape = map[harness.Metric][]float64{}, map[harness.Metric][]float64{}
+	var anchorTPOT, anchorTTFT float64
+	for j, p := range sw.Points[:len(obs)] {
+		o := obs[j]
+		if v, ok := measured.At(harness.MetricTPOT, p.Concurrency); ok {
+			mape[harness.MetricTPOT] = append(mape[harness.MetricTPOT], (o.MeanTPOTUs/v-1)*100)
+		}
+		if v, ok := measured.At(harness.MetricTTFT, p.Concurrency); ok && !spike[j] {
+			mape[harness.MetricTTFT] = append(mape[harness.MetricTTFT], (o.MeanTTFTUs/v-1)*100)
+		}
+		if j == 0 {
+			anchorTPOT, anchorTTFT = o.MeanTPOTUs, o.MeanTTFTUs
+			continue // the anchor's SHAPE error is zero by construction; excluded
+		}
+		mt, _, _ := p.MetricOf(harness.MetricTPOT)
+		tt, _, _ := p.MetricOf(harness.MetricTTFT)
+		if mt <= 0 || tt <= 0 {
+			return nil, nil, fmt.Sprintf("c=%d: measured TPOT relative %v, TTFT relative %v", p.Concurrency, mt, tt)
+		}
+		shape[harness.MetricTPOT] = append(shape[harness.MetricTPOT], (o.MeanTPOTUs/anchorTPOT/mt-1)*100)
+		if !spike[j] {
+			shape[harness.MetricTTFT] = append(shape[harness.MetricTTFT], (o.MeanTTFTUs/anchorTTFT/tt-1)*100)
+		}
+	}
+	return shape, mape, ""
 }

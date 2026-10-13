@@ -47,10 +47,10 @@ const (
 	inferencexRangeRatio = 0.8
 	// inferencexRequestsPerConcurrency is --num-prompts / --max-concurrency.
 	inferencexRequestsPerConcurrency = 10
-	// inferencexWarmupsPerConcurrency is --num-warmups / --max-concurrency. The warm-up phase
-	// is NOT simulated; see Run for why that is exact on prefix-caching-disabled points and
-	// flagged on the others.
-	inferencexWarmupsPerConcurrency = 2
+	// InferenceXWarmupsPerConcurrency is --num-warmups / --max-concurrency: the benchmark sends
+	// this many copies of request 0 per unit of concurrency before the main phase. Run
+	// reproduces the state they leave rather than replaying them; see Run.
+	InferenceXWarmupsPerConcurrency = 2
 )
 
 // PointLengths is the target length of every main-phase request of one point, in request

@@ -59,10 +59,6 @@ const (
 	// parallelism off; the version's gpu_memory_utilization) is what the run ran, and is not
 	// a gap at all.
 	GapResolved
-	// GapBounded is a protocol gap whose effect on the point was measured and found within the
-	// point's own noise (WarmupBracket.Bounded). It stays in the report, with its bound, and
-	// does not lower the tier.
-	GapBounded
 )
 
 // Gap is one sweep (Concurrency 0) or point that the score omits or approximates.
@@ -128,8 +124,6 @@ func (cv *Coverage) TierOf(sw Sweep) Tier {
 		}
 		var gt Tier
 		switch g.Kind {
-		case GapBounded:
-			continue
 		case GapUnscorable:
 			gt = TierUnscorable
 		case GapApproximate:
@@ -142,30 +136,6 @@ func (cv *Coverage) TierOf(sw Sweep) Tier {
 		}
 	}
 	return t
-}
-
-// warmupCause is the gap a prefix-caching point carries until its warm-up bracket is known.
-const warmupCause = "warm-up prefix-cache state not modelled (prefix caching enabled)"
-
-// ApplyWarmupBracket records a point's measured warm-up bracket on its warm-up gap: the
-// bracket and the point's noise are appended to the detail, and a bracket within the noise on
-// both metrics bounds the gap (GapBounded), so the point keeps its tier with the bound stated.
-// The exact two-phase protocol needs drain-gated phases in the trace format, tracked as
-// blis-schemas#56 and inference-sim#1926; until then the bracket is the stated uncertainty.
-func (cv *Coverage) ApplyWarmupBracket(sw Sweep, concurrency int, b WarmupBracket) {
-	for i := range cv.Gaps {
-		g := &cv.Gaps[i]
-		if g.Scenario != sw.Scenario || g.Label != sw.Label || g.Concurrency != concurrency || g.Cause != warmupCause {
-			continue
-		}
-		verdict := "exceeds the point's draw noise: approximate"
-		if b.Bounded {
-			g.Kind = GapBounded
-			verdict = "within the point's draw noise: bounded"
-		}
-		g.Detail += fmt.Sprintf("; bracket TTFT %+.3f%% TPOT %+.4f%%, draw noise TTFT %.3f%% TPOT %.4f%%, %s "+
-			"(exact protocol: blis-schemas#56, inference-sim#1926)", b.DTTFTPct, b.DTPOTPct, b.NoiseTTFTPct, b.NoiseTPOTPct, verdict)
-	}
 }
 
 // ResolvedSettings counts, per run setting, the points of a sweep that simulate it at vLLM's
@@ -181,28 +151,25 @@ func (cv *Coverage) ResolvedSettings(sw Sweep) map[string]int {
 	return out
 }
 
-// BracketStats summarises the warm-up brackets of the points in one table: how many, and the
-// median and largest magnitude of each metric's bracket.
-type BracketStats struct {
+// DifferenceStats summarises, over one table's prefix-caching points, the information-only
+// difference between the scored observation and the same main phase started cold: how many
+// points, and the median and largest magnitude per metric.
+type DifferenceStats struct {
 	N                   int
-	MedianTTFT, MaxTTFT float64 // |b - a| / a, percent
+	MedianTTFT, MaxTTFT float64 // |scored - cold| / cold, percent
 	MedianTPOT, MaxTPOT float64
-	Bounded             int
 }
 
-// SummarizeBrackets reduces a table's brackets to BracketStats.
-func SummarizeBrackets(bs []WarmupBracket) BracketStats {
-	st := BracketStats{N: len(bs)}
-	if len(bs) == 0 {
+// SummarizeDifferences reduces a table's warm-up differences to DifferenceStats.
+func SummarizeDifferences(ds []WarmupDifference) DifferenceStats {
+	st := DifferenceStats{N: len(ds)}
+	if len(ds) == 0 {
 		return st
 	}
 	var t, p []float64
-	for _, b := range bs {
-		t = append(t, math.Abs(b.DTTFTPct))
-		p = append(p, math.Abs(b.DTPOTPct))
-		if b.Bounded {
-			st.Bounded++
-		}
+	for _, d := range ds {
+		t = append(t, math.Abs(d.DTTFTPct))
+		p = append(p, math.Abs(d.DTPOTPct))
 	}
 	st.MedianTTFT, st.MedianTPOT = Median(t), Median(p)
 	for i := range t {
@@ -365,15 +332,6 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 					OwnerMeasurements, "")
 			}
 			cv.Gaps[len(cv.Gaps)-1].Setting = f.name
-		}
-		// The benchmark's warm-up sent 2*CONC copies of request 0 before the main phase.
-		// With prefix caching on, the measured main request 0 found its prompt cached; the
-		// simulation starts from an empty engine. See Run for why this is the only state the
-		// warm-up leaves.
-		if !pc.PrefixCachingDisabled {
-			cv.pointGap(sw, p.Concurrency, GapApproximate, warmupCause,
-				OwnerSim, fmt.Sprintf("the benchmark's %d warm-up copies of request 0 left its prompt cached for main request 0",
-					inferencexWarmupsPerConcurrency*p.Concurrency))
 		}
 		if ps == nil {
 			continue

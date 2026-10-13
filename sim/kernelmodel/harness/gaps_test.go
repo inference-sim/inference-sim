@@ -164,18 +164,20 @@ func TestATiersMembershipFollowsItsWorstGap(t *testing.T) {
 	}
 }
 
-// The warm-up's only lasting state is the prefix cache, so a point with prefix caching enabled
-// is flagged and one with it disabled is not.
-func TestAPrefixCachingPointCarriesTheWarmupGap(t *testing.T) {
+// The warm-up's only lasting state the simulator reads is the prefix cache, and Run reproduces
+// it on every prefix-caching point (the primed main phase), so no point carries a warm-up gap
+// whichever way its prefix caching is set.
+func TestNoPointCarriesAWarmupGap(t *testing.T) {
 	sw := committedSweep("vllm")
 	sw.Points = sw.Points[:1]
 	for _, enabled := range []bool{true, false} {
 		ps := &PointSettings{Passed: PassedSettings{EnablePrefixCaching: &enabled}}
 		set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 			ByConcurrency: map[string]*PointSettings{"4": ps}}}}
-		got := hasGap(gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set}), OwnerSim, "warm-up prefix-cache state")
-		if got != enabled {
-			t.Errorf("prefix caching %v: warm-up gap reported %v", enabled, got)
+		for _, g := range gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set}) {
+			if strings.Contains(g.Cause, "warm-up") {
+				t.Errorf("prefix caching %v: warm-up gap %+v", enabled, g)
+			}
 		}
 	}
 }
@@ -304,46 +306,5 @@ func TestWriteGapsNeverWritesStdout(t *testing.T) {
 	}
 	if raw, err := os.ReadFile(path); err != nil || !strings.Contains(string(raw), "a cause") {
 		t.Errorf("with a path the report was not written there: %v %q", err, raw)
-	}
-}
-
-// A measured warm-up bracket within the point's noise bounds the warm-up gap -- the point keeps
-// its tier, the bound in the report -- and one outside it leaves the point approximate.
-func TestAWarmupBracketWithinNoiseKeepsTheTier(t *testing.T) {
-	sw := committedSweep("vllm")
-	sw.Points = sw.Points[:1]
-	enabled := true
-	ps := &PointSettings{Passed: PassedSettings{EnablePrefixCaching: &enabled}}
-	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
-		ByConcurrency: map[string]*PointSettings{"4": ps}}}}
-	for _, tc := range []struct {
-		b    WarmupBracket
-		want bool // the warm-up gap still lowers the tier
-	}{
-		{WarmupBracket{DTTFTPct: -0.5, DTPOTPct: 0.001, NoiseTTFTPct: 2, NoiseTPOTPct: 0.1, Bounded: true}, false},
-		{WarmupBracket{DTTFTPct: -3, DTPOTPct: 0.001, NoiseTTFTPct: 2, NoiseTPOTPct: 0.1}, true},
-	} {
-		cv := AssessCoverage(&Corpus{Sweeps: []Sweep{sw}}, Config{Repos: testRepos(), EngineSettings: set})
-		before := cv.TierOf(sw)
-		cv.ApplyWarmupBracket(sw, 4, tc.b)
-		var g *Gap
-		for i := range cv.Gaps {
-			if cv.Gaps[i].Cause == warmupCause {
-				g = &cv.Gaps[i]
-			}
-		}
-		if g == nil || !strings.Contains(g.Detail, "blis-schemas#56") || !strings.Contains(g.Detail, "bracket TTFT") {
-			t.Fatalf("the warm-up gap does not state its bracket and the tracking issues: %+v", g)
-		}
-		if lowered := g.Kind != GapBounded; lowered != tc.want {
-			t.Errorf("bracket %+v: gap kind %v", tc.b, g.Kind)
-		}
-		if !tc.want && cv.TierOf(sw) > before {
-			t.Errorf("a bounded bracket lowered the tier from %v to %v", before, cv.TierOf(sw))
-		}
-	}
-	st := SummarizeBrackets([]WarmupBracket{{DTTFTPct: -1, DTPOTPct: 0.2, Bounded: true}, {DTTFTPct: 3, DTPOTPct: -0.1}})
-	if st.N != 2 || st.MaxTTFT != 3 || st.MedianTTFT != 2 || st.MaxTPOT != 0.2 || st.Bounded != 1 {
-		t.Errorf("SummarizeBrackets: %+v", st)
 	}
 }

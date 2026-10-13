@@ -172,6 +172,10 @@ type Observation struct {
 	// Settings is the configuration this point ran with and where each field came from, so
 	// a report can distinguish a measured setting from a resolved default.
 	Settings PointConfig
+
+	// Primed reports that the main phase ran after the warm-up's state -- request 0's prompt
+	// cached -- because the point's engine caches prefixes (see Run).
+	Primed bool
 }
 
 // Config carries what a run needs beyond the sweep itself.
@@ -204,8 +208,8 @@ type Config struct {
 	// before the settings were extracted, and is reported as such rather than assumed.
 	EngineSettings *EngineSettingSet
 
-	// primed runs the main phase with request 0's prompt cached (RunWarmupBracket's (b)).
-	primed bool
+	// cold starts a prefix-caching point's main phase from an empty engine (RunCold).
+	cold bool
 }
 
 var (
@@ -249,29 +253,34 @@ func scaled(v int64, factor float64) int64 {
 // carrying the point's engine settings and a trace of its requests -- and runs the same binary,
 // with the same flags, a user would.
 //
-// # Why the warm-up phase is not simulated, and where that is exact
+// # The warm-up
 //
 // The client sends 2*CONC copies of request 0 under its own semaphore of CONC, awaits all of
-// them, and only then starts the main phase; the warm-up requests are not in any metric. So
-// the main phase starts against an idle engine whose only memory of the warm-up is whatever
-// state outlives a drained request. In this simulator, on the configuration every point runs
+// them, and only then starts the main phase; the warm-up requests are in no metric. So the main
+// phase starts against an idle engine whose only memory of the warm-up is whatever state
+// outlives a drained request. In this simulator, on the configuration every point runs
 // (single-tier GPU KV cache, round-robin routing, FCFS scheduling, always-admit), that is:
 //
 //   - the KV cache's block-hash map, which keeps the hashes of released blocks
 //     (sim/kv/cache.go ReleaseKVBlocks). It is read for cross-request reuse only when prefix
-//     caching is enabled (sim/batch_formation.go: GetCachedBlocks is skipped when
-//     PrefixCachingDisabled); there is no offload tier to read it otherwise;
-//   - the round-robin router's counter (sim/routing.go), advanced by 2*CONC. Every scored
-//     deployment has dp 1 or 2, and 2*CONC is even, so each main request lands on the same
-//     replica it would from a fresh counter.
+//     caching is enabled (sim/batch_formation.go skips GetCachedBlocks when
+//     PrefixCachingDisabled); there is no offload tier to read it otherwise. The only main
+//     request whose prompt it holds is request 0: the others share no prefix with it;
+//   - the round-robin router's counter (sim/routing.go), advanced by the number of copies.
 //
-// The scheduler, batch formation and the kernel adapter carry no state between requests, and
-// no step price reads the clock. So where prefix caching is disabled -- every point whose run
-// passed --no-enable-prefix-caching -- the main phase from an empty engine is exactly the
-// main phase after the warm-up. Where it is enabled, the measured main request 0 found its
-// own prompt already cached by the warm-up, which an empty engine does not reproduce; those
-// points carry the gap "warm-up prefix-cache state not modelled" (gaps.go) and are kept out
-// of the strict tier rather than claimed exact.
+// The scheduler, batch formation and the kernel adapter carry no state between requests, no
+// step price reads the clock, and a drained engine holds no KV block.
+//
+// So where prefix caching is DISABLED, the main phase from an empty engine (mainPhase) is the
+// main phase after the warm-up, and Run scores it. Where it is ENABLED, Run scores the main phase
+// with request 0's prompt cached (primedPhase): dp copies of request 0 run to completion first,
+// one per replica, so every replica holds request 0's prompt and the router counter has moved by
+// a multiple of dp, and the main phase then starts on an idle engine. That is the drained
+// warm-up's state with dp copies in place of 2*CONC: the copies are token-for-token the same
+// prompt, so how many ran changes no block the main phase can read
+// (TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan). RunCold gives the empty-engine run of
+// such a point, as information only. The exact two-phase protocol, with drain-gated phases in
+// the trace format, is tracked as blis-schemas#56 and inference-sim#1926.
 func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err := RequireBlis(cfg.Blis); err != nil {
 		return Observation{}, err
@@ -312,8 +321,9 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	engine.MaxNumSeqs = int(scaled(int64(admit.MaxNumSeqs), cfg.MaxNumSeqsScale))
 	engine.MaxNumBatchedTokens = int(scaled(int64(admit.MaxNumBatchedTokens), cfg.TokenBudgetScale))
 
+	primed := !admit.PrefixCachingDisabled && !cfg.cold
 	run, ignore := mainPhase(pl), func(string) bool { return false }
-	if cfg.primed {
+	if primed {
 		copies := max(m.Deployment().DP, 1)
 		run = primedPhase(pl, copies)
 		ignore = func(id string) bool {
@@ -325,7 +335,7 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
-	if cfg.primed {
+	if primed {
 		if err := checkPrimed(out.Requests, len(pl.InputLens)); err != nil {
 			return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 		}
@@ -336,83 +346,78 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	}
 	obs.Preemptions = out.PreemptionCount
 	obs.Settings = admit
+	obs.Primed = primed
 	return obs, nil
 }
 
-// checkPrimed refuses a primed run in which a warm-up copy had not finished before the main
-// phase started, or in which the first main request did not start with the main phase: either
-// would make (b) something other than "the main phase, with request 0's prompt cached".
+// RunCold is Run with the main phase started from an empty engine whatever the point's prefix
+// caching -- for a prefix-caching point, the protocol WITHOUT the warm-up's cached prompt. It
+// is information only: no scorer scores it.
+func RunCold(sw Sweep, concurrency int, cfg Config) (Observation, error) {
+	cfg.cold = true
+	return Run(sw, concurrency, cfg)
+}
+
+// checkPrimed refuses a primed run that is not "the main phase after a drained warm-up":
+//
+//   - a warm-up copy that had not completed before the main phase started;
+//   - a first main request that did not start with the main phase;
+//   - a holder round (which keeps a copy's pool slot) that arrived before the last main
+//     request completed, so that something besides the main phase was in the engine.
 func checkPrimed(reqs []sim.RequestMetrics, n int) error {
 	const usPerS, usPerMs = 1e6, 1e3
+	var lastMainEnd, firstHolder float64
+	firstHolder = math.Inf(1)
 	for _, r := range reqs {
+		start, end := r.ArrivedAt*usPerS, r.ArrivedAt*usPerS+r.E2E*usPerMs
 		i, err := requestIndex(r.ID)
 		switch {
-		case err == nil && i >= n && r.RoundIndex == 0:
-			if end := r.ArrivedAt*usPerS + r.E2E*usPerMs; end >= float64(primeMainStartUs) {
+		case err != nil: // a holder round: "session_warmup-<j>_round_1_<k>"
+			firstHolder = math.Min(firstHolder, start)
+		case i >= n:
+			if end >= float64(primeMainStartUs) {
 				return fmt.Errorf("warm-up copy %s ended at %.0f us, not before the main phase at %d us",
 					r.ID, end, primeMainStartUs)
 			}
-		case err == nil && i == 0:
-			if math.Abs(r.ArrivedAt*usPerS-float64(primeMainStartUs)) > 1 {
+		default:
+			if i == 0 && math.Abs(start-float64(primeMainStartUs)) > 1 {
 				return fmt.Errorf("main request 0 arrived at %.0f us, not with the main phase at %d us",
-					r.ArrivedAt*usPerS, primeMainStartUs)
+					start, primeMainStartUs)
 			}
+			lastMainEnd = math.Max(lastMainEnd, end)
 		}
+	}
+	if firstHolder <= lastMainEnd {
+		return fmt.Errorf("a warm-up holder round arrived at %.0f us, before the main phase ended at %.0f us",
+			firstHolder, lastMainEnd)
 	}
 	return nil
 }
 
-// WarmupBracket is a prefix-caching point's warm-up uncertainty: the point's main phase run
-// (a) from an empty engine, as Run scores it, and (b) with request 0's prompt already cached --
-// the one state the benchmark's drained warm-up leaves that the simulator would read (see Run).
-// The measured run is (b); the score uses (a); the difference is what the unmodelled warm-up
-// can move.
-//
-// Noise is the point's own draw spread: the range (max - min) of the cold metric over the
-// numpy seed-0..4 length fixtures, relative to seed 0. The benchmark's seed-0 measurement is one
-// realisation of a client whose draw is random; a warm-up effect smaller than the spread of
-// that realisation is below the resolution the point's measurement carries. Bounded reports
-// that the bracket is within the noise on BOTH metrics; such a point keeps its tier, with the
-// bound stated (Coverage.BoundWarmup).
-type WarmupBracket struct {
-	Cold, Primed               Observation
-	DTTFTPct, DTPOTPct         float64 // 100 * (b - a) / a
-	NoiseTTFTPct, NoiseTPOTPct float64 // 100 * (max - min over seeds 0..4) / a
-	Bounded                    bool
+// WarmupDifference is, for a prefix-caching point, how far the scored observation (after the
+// warm-up: request 0's prompt cached) lies from the same main phase started from an empty
+// engine. Information only: it is reported, never used to score or to place a point in a tier.
+type WarmupDifference struct {
+	Scored, Cold       Observation
+	DTTFTPct, DTPOTPct float64 // 100 * (scored - cold) / cold
 }
 
-// RunWarmupBracket computes a point's bracket. cold is Run's observation of the point at the
-// benchmark's seed-0 lengths; seeds are the other draws' fixtures for the noise.
-func RunWarmupBracket(sw Sweep, concurrency int, cfg Config, cold Observation, seeds []*BenchmarkWorkloads) (WarmupBracket, error) {
-	b := WarmupBracket{Cold: cold}
-	pc := cfg
-	pc.primed = true
-	primed, err := Run(sw, concurrency, pc)
+// RunWarmupDifference runs a prefix-caching point cold and reports its difference from the
+// scored (primed) observation.
+func RunWarmupDifference(sw Sweep, concurrency int, cfg Config, scored Observation) (WarmupDifference, error) {
+	cold, err := RunCold(sw, concurrency, cfg)
 	if err != nil {
-		return b, fmt.Errorf("primed: %w", err)
+		return WarmupDifference{}, err
 	}
-	b.Primed = primed
-	b.DTTFTPct = 100 * (primed.MeanTTFTUs/cold.MeanTTFTUs - 1)
-	b.DTPOTPct = 100 * (primed.MeanTPOTUs/cold.MeanTPOTUs - 1)
-	loT, hiT, loP, hiP := cold.MeanTTFTUs, cold.MeanTTFTUs, cold.MeanTPOTUs, cold.MeanTPOTUs
-	for _, ws := range seeds {
-		c := cfg
-		c.Workloads = ws
-		o, err := Run(sw, concurrency, c)
-		if err != nil {
-			return b, fmt.Errorf("seed %d: %w", ws.Seed, err)
-		}
-		loT, hiT = math.Min(loT, o.MeanTTFTUs), math.Max(hiT, o.MeanTTFTUs)
-		loP, hiP = math.Min(loP, o.MeanTPOTUs), math.Max(hiP, o.MeanTPOTUs)
-	}
-	b.NoiseTTFTPct = 100 * (hiT - loT) / cold.MeanTTFTUs
-	b.NoiseTPOTPct = 100 * (hiP - loP) / cold.MeanTPOTUs
-	b.Bounded = len(seeds) > 0 && math.Abs(b.DTTFTPct) <= b.NoiseTTFTPct && math.Abs(b.DTPOTPct) <= b.NoiseTPOTPct
-	return b, nil
+	return WarmupDifference{
+		Scored: scored, Cold: cold,
+		DTTFTPct: 100 * (scored.MeanTTFTUs/cold.MeanTTFTUs - 1),
+		DTPOTPct: 100 * (scored.MeanTPOTUs/cold.MeanTPOTUs - 1),
+	}, nil
 }
 
-// LoadDrawFixtures loads the numpy seed-1..4 fixtures the warm-up bracket's noise and
-// cmd/sensitivity's draw sweep use.
+// LoadDrawFixtures loads the numpy seed-1..4 fixtures cmd/sensitivity's draw sweep uses: other
+// workloads from the same intervals, never repeated observations of the benchmark's seed 0.
 func LoadDrawFixtures() ([]*BenchmarkWorkloads, error) {
 	var out []*BenchmarkWorkloads
 	for seed := 1; seed <= 4; seed++ {

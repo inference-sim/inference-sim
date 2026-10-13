@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	kvcache "github.com/inference-sim/inference-sim/sim/kv"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -210,31 +211,175 @@ func TestThePrimedTraceCachesRequestZerosPromptAndNothingElse(t *testing.T) {
 	}
 }
 
-// End to end: with prefix caching on, the primed run's main request 0 is served from the
-// warm-up copy's cached prompt, so its first token comes sooner than in the cold run; the run
-// still completes the point's 10*CONC main requests, and the bracket reports both.
-func TestThePrimedRunServesRequestZeroFromTheCache(t *testing.T) {
+// prefixPoint is the committed scenario at concurrency 4 with its run's prefix caching set.
+func prefixPoint(t *testing.T, enabled bool) (Sweep, Config) {
+	t.Helper()
 	sw := committedSweep("vllm")
 	sw.Points = sw.Points[:1]
-	enabled := true
 	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 		ByConcurrency: map[string]*PointSettings{"4": {Passed: PassedSettings{EnablePrefixCaching: &enabled}}}}}}
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42, EngineSettings: set}
-	cold, err := Run(sw, 4, cfg)
+	return sw, Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42, EngineSettings: set}
+}
+
+// Run scores the faithful protocol: on a prefix-caching point the primed main phase -- main
+// request 0 served from the cached prompt, so its first token comes sooner than from an empty
+// engine -- and on a point with caching off the cold one, which is then the same thing. RunCold
+// is the information-only empty-engine run.
+func TestRunScoresThePrimedMainPhaseWhereThePrefixIsCached(t *testing.T) {
+	sw, cfg := prefixPoint(t, true)
+	scored, err := Run(sw, 4, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := RunWarmupBracket(sw, 4, cfg, cold, nil)
+	cold, err := RunCold(sw, 4, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Primed.Completed != 40 || b.Primed.MeanTTFTUs >= cold.MeanTTFTUs {
-		t.Errorf("primed run completed %d, mean TTFT %.0f us against the cold %.0f us; request 0's cached "+
-			"prompt should lower it", b.Primed.Completed, b.Primed.MeanTTFTUs, cold.MeanTTFTUs)
+	if !scored.Primed || cold.Primed || scored.Completed != 40 || cold.Completed != 40 {
+		t.Fatalf("scored primed=%v completed=%d, cold primed=%v completed=%d", scored.Primed, scored.Completed,
+			cold.Primed, cold.Completed)
 	}
-	if b.Bounded {
-		t.Error("a bracket with no noise draws cannot be bounded")
+	if scored.MeanTTFTUs >= cold.MeanTTFTUs {
+		t.Errorf("primed mean TTFT %.0f us is not below the cold %.0f us: request 0's cached prompt did not "+
+			"shorten its prefill", scored.MeanTTFTUs, cold.MeanTTFTUs)
 	}
-	t.Logf("cold TTFT %.0f us TPOT %.1f us; primed TTFT %.0f us (%+.2f%%) TPOT %.1f us (%+.3f%%)",
-		cold.MeanTTFTUs, cold.MeanTPOTUs, b.Primed.MeanTTFTUs, b.DTTFTPct, b.Primed.MeanTPOTUs, b.DTPOTPct)
+	d, err := RunWarmupDifference(sw, 4, cfg, scored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Scored != scored || d.Cold != cold || d.DTTFTPct >= 0 {
+		t.Errorf("the reported difference is not scored against cold: %+v", d)
+	}
+	t.Logf("scored (primed) TTFT %.0f us TPOT %.1f us; cold TTFT %.0f us (%+.2f%%) TPOT %.1f us (%+.3f%%)",
+		scored.MeanTTFTUs, scored.MeanTPOTUs, cold.MeanTTFTUs, d.DTTFTPct, cold.MeanTPOTUs, d.DTPOTPct)
+
+	off, cfgOff := prefixPoint(t, false)
+	a, err := Run(off, 4, cfgOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := RunCold(off, 4, cfgOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Primed || a != b {
+		t.Errorf("with prefix caching off Run must be the cold main phase: %+v against %+v", a, b)
+	}
+}
+
+// The primed main phase is the drained warm-up's state, not merely a state with request 0's
+// prompt cached: it must not matter how many copies of request 0 ran before it. The benchmark
+// runs 2*CONC copies; Run runs dp. Both leave every replica holding the same prompt, an idle
+// engine and a router counter a multiple of dp along, so the main phase is identical -- down to
+// the last microsecond -- whichever ran. A difference here would mean the primed trace leaves
+// some other state behind.
+func TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan(t *testing.T) {
+	sw, cfg := prefixPoint(t, true)
+	ws, err := cfg.workloads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := ws.At(1024, 1024, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := kernelmodel.Open(sw.Scenario, cfg.Repos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := m.Engine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := resolveAdmission(sw, 4, eng, m.Deployment(), cfg.EngineSettings)
+	if pc.PrefixCachingDisabled || m.Deployment().DP != 1 {
+		t.Fatalf("the reference point must cache prefixes on one replica: %+v dp=%d", pc, m.Deployment().DP)
+	}
+	ignore := func(id string) bool { i, err := requestIndex(id); return err != nil || i >= len(pl.InputLens) }
+	var obs []Observation
+	for _, copies := range []int{1, InferenceXWarmupsPerConcurrency * 4} {
+		out, err := runBlis(cfg, sw.Scenario, pc, primedPhase(pl, copies))
+		if err != nil {
+			t.Fatalf("%d copies: %v", copies, err)
+		}
+		if err := checkPrimed(out.Requests, len(pl.InputLens)); err != nil {
+			t.Fatalf("%d copies: %v", copies, err)
+		}
+		o, err := summarize(out.Requests, pl, ignore)
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs = append(obs, o)
+	}
+	if obs[0] != obs[1] {
+		t.Errorf("the main phase after 1 copy of request 0 (%+v) differs from after %d copies (%+v)",
+			obs[0], InferenceXWarmupsPerConcurrency*4, obs[1])
+	}
+}
+
+// What a drained warm-up leaves in the KV cache, on the KV cache itself: once a copy of request
+// 0 has run and released its blocks, no block is in use, request 0's prompt is readable in full
+// blocks, and no other main request's prompt finds anything.
+func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
+	ws, err := LoadBenchmarkWorkloads(DefaultWorkloadsPath(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := ws.At(1024, 1024, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := primedPhase(pl, 1)
+	r0, _, err := workload.LoadTraceV2SessionBlueprints(&workload.TraceV2{Header: *run.header, Records: run.records},
+		42, nil, 1<<62)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const block = 16
+	kv := kvcache.NewKVCacheState(4096, block)
+	copyOfZero := r0[0] // warm-up session 0's round 0
+	if !kv.AllocateKVBlocks(copyOfZero, 0, copyOfZero.InputLen(), nil) {
+		t.Fatal("could not allocate the copy's prompt")
+	}
+	kv.ReleaseKVBlocks(copyOfZero)
+	if kv.UsedBlocks() != 0 {
+		t.Errorf("%d blocks in use after the copy drained", kv.UsedBlocks())
+	}
+	main := r0[1:] // main requests 0..n-1, in order
+	if got, want := len(kv.GetCachedBlocks(main[0].InputTokens)), int(main[0].InputLen())/block; got != want {
+		t.Errorf("main request 0 finds %d cached blocks of its prompt, want all %d full blocks", got, want)
+	}
+	for i, r := range main[1:] {
+		if n := len(kv.GetCachedBlocks(r.InputTokens)); n != 0 {
+			t.Errorf("main request %d finds %d cached blocks; only request 0's prompt was cached", i+1, n)
+		}
+	}
+}
+
+// checkPrimed refuses each way a primed run could fail to be "the main phase after a drained
+// warm-up": a copy still running when the main phase starts, main request 0 not starting with
+// the main phase, or a holder round entering the engine before the main phase has finished.
+func TestCheckPrimedRefusesAnUndrainedWarmup(t *testing.T) {
+	const n = 2
+	T := float64(primeMainStartUs) / 1e6 // seconds, as arrived_at is reported
+	good := []sim.RequestMetrics{
+		{ID: "request_2", ArrivedAt: 0, E2E: 5000},                                     // the copy: ends at 5 s
+		{ID: "request_0", ArrivedAt: T, E2E: 3000},                                     // main 0
+		{ID: "request_1", ArrivedAt: T, E2E: 4000},                                     // main 1
+		{ID: "session_warmup-0_round_1_1", ArrivedAt: T + 3600, E2E: 1, RoundIndex: 1}, // holder
+	}
+	if err := checkPrimed(good, n); err != nil {
+		t.Fatalf("a drained warm-up is refused: %v", err)
+	}
+	for name, mutate := range map[string]func([]sim.RequestMetrics){
+		"a copy still running at the main-phase start": func(r []sim.RequestMetrics) { r[0].E2E = T*1e3 + 1 },
+		"main request 0 starting late":                 func(r []sim.RequestMetrics) { r[1].ArrivedAt = T + 1 },
+		"a holder round inside the main phase":         func(r []sim.RequestMetrics) { r[3].ArrivedAt = T + 2 },
+	} {
+		r := append([]sim.RequestMetrics(nil), good...)
+		mutate(r)
+		if checkPrimed(r, n) == nil {
+			t.Errorf("checkPrimed accepted %s", name)
+		}
+	}
 }

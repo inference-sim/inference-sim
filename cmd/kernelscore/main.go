@@ -135,15 +135,10 @@ func main() {
 	var failures []string
 	// Every corpus gap, beside the score rather than in it: see harness.Coverage.
 	coverage := harness.AssessCoverage(c, cfg)
-	// The warm-up bracket of each prefix-caching vLLM point, judged against its own draw
-	// spread over the numpy seed-1..4 fixtures; see harness.WarmupBracket.
-	draws, err := harness.LoadDrawFixtures()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	sweepBrackets := map[string][]harness.WarmupBracket{}
-	bracketsIn := map[harness.Tier][]harness.WarmupBracket{}
+	// For each point Run scored after the warm-up's state (request 0's prompt cached), the same
+	// main phase started cold, as information only; see harness.Run.
+	sweepDifferences := map[string][]harness.WarmupDifference{}
+	differencesIn := map[harness.Tier][]harness.WarmupDifference{}
 
 	for _, sw := range c.Sweeps {
 		if *framework != "" && sw.Framework != *framework {
@@ -157,12 +152,12 @@ func main() {
 		if coverage.TierOf(sw) == harness.TierUnscorable && sw.Framework == "vllm" {
 			continue
 		}
-		var mine, theirs []float64
-		var concOf []int
-		var anchor, theirAnchor float64
+		// The observation Run returns is the one scored: on a prefix-caching point, the main
+		// phase after the warm-up's state.
+		var obs []harness.Observation
 		bad := false
-		for i, p := range sw.Points {
-			obs, err := harness.Run(sw, p.Concurrency, cfg)
+		for _, p := range sw.Points {
+			o, err := harness.Run(sw, p.Concurrency, cfg)
 			if err != nil {
 				failures = append(failures,
 					fmt.Sprintf("%s %s c=%d: %v", sw.Scenario, sw.Label, p.Concurrency, err))
@@ -170,73 +165,52 @@ func main() {
 				bad = true
 				break
 			}
-			if obs.MeanTPOTUs <= 0 {
+			if o.MeanTPOTUs <= 0 {
 				failures = append(failures, fmt.Sprintf(
 					"%s %s c=%d: no time per output token observed from %d completions",
-					sw.Scenario, sw.Label, p.Concurrency, obs.Completed))
+					sw.Scenario, sw.Label, p.Concurrency, o.Completed))
 				coverage.Dropped(sw, p.Concurrency, "no time per output token observed")
 				bad = true
 				break
 			}
-			if sw.Framework == "vllm" && !obs.Settings.PrefixCachingDisabled {
-				b, err := harness.RunWarmupBracket(sw, p.Concurrency, cfg, obs, draws)
+			if o.Primed {
+				d, err := harness.RunWarmupDifference(sw, p.Concurrency, cfg, o)
 				if err != nil {
-					failures = append(failures, fmt.Sprintf("%s %s c=%d warm-up bracket: %v",
+					failures = append(failures, fmt.Sprintf("%s %s c=%d cold run (information only): %v",
 						sw.Scenario, sw.Label, p.Concurrency, err))
 				} else {
-					coverage.ApplyWarmupBracket(sw, p.Concurrency, b)
 					key := sw.Scenario + " " + sw.Label
-					sweepBrackets[key] = append(sweepBrackets[key], b)
+					sweepDifferences[key] = append(sweepDifferences[key], d)
 				}
 			}
-			if i == 0 {
-				anchor = obs.MeanTPOTUs
-				theirAnchor = p.AISimulateRelative
-				if theirAnchor <= 0 {
-					failures = append(failures, fmt.Sprintf(
-						"%s %s: AISimulate anchor is %v", sw.Scenario, sw.Label, theirAnchor))
-					coverage.BadMeasurement(sw, p.Concurrency,
-						fmt.Sprintf("AISimulate anchor %v", theirAnchor))
-					bad = true
-					break
-				}
-			}
-			predicted := obs.MeanTPOTUs / anchor
-			// SIGNED: positive means the model predicted a LARGER relative rise than was
-			// measured. The magnitude is recovered with harness.Abs at each aggregation, so
-			// every absolute figure is unchanged; the sign is retained because the direction
-			// of the error discriminates a miscalibrated coefficient (consistent sign) from
-			// a missing mechanism (sign that turns with batch size).
-			errMine := (predicted/p.MeasuredRelative - 1) * 100
-			errTheirs := ((p.AISimulateRelative/theirAnchor)/p.MeasuredRelative - 1) * 100
-			// The anchor is EXCLUDED from the mean, matching AISimulate's own definition
-			// (scripts/build_e2e_accuracy_overview.py: `for ... in points[1:]`). Its error
-			// is exactly zero by construction -- each side divided by itself -- so
-			// including it adds one free zero per sweep and dilutes every figure.
-			//
-			// This is not a stylistic choice. Applying the anchor-exclusive definition to
-			// AISimulate's own per-point data over its whole 1137-point snapshot reproduces
-			// the 10.05% tpot_shape_error_pct it publishes, on 878 comparisons, exact to two
-			// decimals. The anchor-inclusive variant gives 9.41% and cannot reproduce it.
-			// The published figure is the arbiter.
-			if i > 0 {
-				mine = append(mine, errMine)
-				theirs = append(theirs, errTheirs)
-				concOf = append(concOf, p.Concurrency)
-			}
-			if *verbose {
-				if i == 0 {
-					fmt.Printf("--- %s %s %s %s tp=%d\n", sw.Scenario, sw.Label,
-						sw.Framework, sw.Precision, sw.Parallelism["tp_size"])
-					fmt.Printf("%6s %10s %10s %8s %10s %8s %8s\n",
-						"conc", "measured", "blis", "error", "aisim", "error", "preempt")
+			obs = append(obs, o)
+		}
+		if bad {
+			continue
+		}
+		mine, theirs, concOf, predicted, why := tpotShapeErrors(sw, obs)
+		if why != "" {
+			failures = append(failures, fmt.Sprintf("%s %s: %s", sw.Scenario, sw.Label, why))
+			coverage.BadMeasurement(sw, sw.Points[0].Concurrency, why)
+			continue
+		}
+		if *verbose {
+			theirAnchor := sw.Points[0].AISimulateRelative
+			fmt.Printf("--- %s %s %s %s tp=%d\n", sw.Scenario, sw.Label,
+				sw.Framework, sw.Precision, sw.Parallelism["tp_size"])
+			fmt.Printf("%6s %10s %10s %8s %10s %8s %8s\n",
+				"conc", "measured", "blis", "error", "aisim", "error", "preempt")
+			for i, p := range sw.Points {
+				errMine, errTheirs := 0.0, 0.0
+				if i > 0 {
+					errMine, errTheirs = mine[i-1], theirs[i-1]
 				}
 				fmt.Printf("%6d %10.4f %10.4f %7.2f%% %10.4f %7.2f%% %8d\n",
-					p.Concurrency, p.MeasuredRelative, predicted, errMine,
-					p.AISimulateRelative/theirAnchor, errTheirs, obs.Preemptions)
+					p.Concurrency, p.MeasuredRelative, predicted[i], errMine,
+					p.AISimulateRelative/theirAnchor, errTheirs, obs[i].Preemptions)
 			}
 		}
-		if bad || len(mine) == 0 {
+		if len(mine) == 0 {
 			continue
 		}
 		rows = append(rows, row{sw, mine, theirs})
@@ -249,7 +223,7 @@ func main() {
 		st := coverage.TierOf(sw)
 		for _, t := range harness.AllTiers {
 			if st.In(t) {
-				bracketsIn[t] = append(bracketsIn[t], sweepBrackets[sw.Scenario+" "+sw.Label]...)
+				differencesIn[t] = append(differencesIn[t], sweepDifferences[sw.Scenario+" "+sw.Label]...)
 				tierMine[t] = append(tierMine[t], mine...)
 				tierTheirs[t] = append(tierTheirs[t], theirs...)
 			}
@@ -279,13 +253,13 @@ func main() {
 	fmt.Printf("%d sweeps, %d points\n\n", len(rows), len(allMine))
 	fmt.Printf("By tier, decided per sweep from the coverage gaps, the worst point deciding. STRICT:\n" +
 		"every setting the run passed carried, the admission settings and max_model_len measured,\n" +
-		"no protocol gap -- or only a warm-up gap whose bracket is within the point's draw noise.\n" +
+		"the sent prompt lengths verified equal to the targets, no other protocol gap.\n" +
 		"MEASURED-OR-RESOLVED: an unpassed admission setting may take vLLM's resolved value. ALL:\n" +
 		"every scored sweep, approximate. Each includes the stricter; both columns score the same\n" +
-		"points. A non-vLLM sweep is in no tier: it appears only below, as context. The warm-up\n" +
-		"bracket is |b-a|/a, b being the main phase with request 0's prompt cached, over the tier's\n" +
-		"prefix-caching points (every other point's is zero); exact two-phase replay is tracked as\n" +
-		"blis-schemas#56 and inference-sim#1926.\n\n")
+		"points. A non-vLLM sweep is in no tier: it appears only below, as context. A prefix-caching\n" +
+		"point is scored on the main phase after the warm-up's state (request 0's prompt cached);\n" +
+		"'warm' counts the tier's such points and dTPOT is |scored-cold|/cold, information only.\n" +
+		"Exact two-phase replay: blis-schemas#56, inference-sim#1926.\n\n")
 	fmt.Printf("%-22s %-30s %5s %8s %8s %8s %6s %17s\n", "tier", "model", "n", "MAPE", "median", "worst",
 		"warm", "dTPOT med/max")
 	for _, t := range harness.AllTiers {
@@ -298,9 +272,9 @@ func main() {
 				continue
 			}
 			a := harness.Abs(r.errs)
-			bs := harness.SummarizeBrackets(bracketsIn[t])
+			ds := harness.SummarizeDifferences(differencesIn[t])
 			fmt.Printf("%-22s %-30s %5d %7.2f%% %7.2f%% %7.2f%% %6d %7.4f/%7.4f%%\n", t, r.name, len(a),
-				harness.MAPE2(a), harness.Median(a), maxOf(a), bs.N, bs.MedianTPOT, bs.MaxTPOT)
+				harness.MAPE2(a), harness.Median(a), maxOf(a), ds.N, ds.MedianTPOT, ds.MaxTPOT)
 		}
 	}
 	fmt.Printf("\nEverything below is over every scored sweep (approximate; with no -framework,\n" +
@@ -450,3 +424,31 @@ func sortedKeys(m map[string][]float64) []string {
 }
 
 var _ = strings.TrimSpace
+
+// tpotShapeErrors is one sweep's signed TPOT shape errors, BLIS's from the observations
+// harness.Run scored at each point in order, AISimulate's from its published relatives: each
+// side divided by its own value at the lowest concurrency, that anchor excluded, matching
+// AISimulate's own definition (scripts/build_e2e_accuracy_overview.py, `points[1:]`). Applied to
+// AISimulate's own per-point data over its whole 1137-point snapshot that definition reproduces
+// the 10.05% tpot_shape_error_pct it publishes; the anchor-inclusive variant does not. SIGNED:
+// positive means a larger relative rise than was measured. predicted is BLIS's relative at every
+// point, the anchor's included. A non-positive AISimulate anchor is returned as why.
+func tpotShapeErrors(sw harness.Sweep, obs []harness.Observation) (mine, theirs []float64, concOf []int,
+	predicted []float64, why string) {
+	theirAnchor := sw.Points[0].AISimulateRelative
+	if theirAnchor <= 0 {
+		return nil, nil, nil, nil, fmt.Sprintf("AISimulate anchor is %v", theirAnchor)
+	}
+	anchor := obs[0].MeanTPOTUs
+	for i, p := range sw.Points[:len(obs)] {
+		rel := obs[i].MeanTPOTUs / anchor
+		predicted = append(predicted, rel)
+		if i == 0 {
+			continue
+		}
+		mine = append(mine, (rel/p.MeasuredRelative-1)*100)
+		theirs = append(theirs, ((p.AISimulateRelative/theirAnchor)/p.MeasuredRelative-1)*100)
+		concOf = append(concOf, p.Concurrency)
+	}
+	return mine, theirs, concOf, predicted, ""
+}
