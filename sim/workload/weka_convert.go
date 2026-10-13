@@ -2,6 +2,7 @@ package workload
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 
@@ -23,6 +24,37 @@ type WekaConvertOptions struct {
 	MaxThinkTimeUs int64
 	// MinRounds skips sessions with fewer usable main-agent turns (default 1).
 	MinRounds int
+	// DropSubagents converts a session containing type:"subagent" groups by dropping
+	// them (their wall-clock folds into the next main turn's think gap). Unset, such a
+	// session is refused (ErrWekaSubagentFanOut): the dropped child requests would put
+	// no load, overlap or KV state on the engine, so the replay would under-load it.
+	DropSubagents bool
+}
+
+// ErrWekaSubagentFanOut is returned for a session with sub-agent groups when
+// DropSubagents is unset: their nested, concurrent requests are not modelled yet
+// (#1477), and dropping them silently would under-represent the offered load.
+var ErrWekaSubagentFanOut = errors.New("weka session contains sub-agent fan-out, which is not modelled (#1477)")
+
+// CountWekaSubagents returns the number of type:"subagent" groups in one Weka session
+// and the nested requests they carry.
+func CountWekaSubagents(raw []byte) (groups, nested int, err error) {
+	var s struct {
+		Requests []struct {
+			Type     string            `json:"type"`
+			Requests []json.RawMessage `json:"requests"`
+		} `json:"requests"`
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0, 0, fmt.Errorf("parsing weka session: %w", err)
+	}
+	for _, r := range s.Requests {
+		if r.Type == "subagent" {
+			groups++
+			nested += len(r.Requests)
+		}
+	}
+	return groups, nested, nil
 }
 
 // wekaSession is one JSONL line (one proxy session). Unknown fields are ignored
@@ -35,7 +67,7 @@ type wekaSession struct {
 
 // wekaRequest is one entry in a session's requests[]: a main-agent request
 // (type "n" non-streaming / "s" streaming) or a sub-agent group (type
-// "subagent"), which this converter skips (deferred to PR-E, #1477).
+// "subagent"), which this converter refuses, or drops when asked to (#1477).
 type wekaRequest struct {
 	Type string  `json:"type"`     // "n", "s", or "subagent"
 	T    float64 `json:"t"`        // seconds since trace start (arrival)
@@ -52,7 +84,8 @@ type wekaRequest struct {
 
 // ConvertWekaSession converts one Weka JSONL session into ordered TraceRecords
 // with per-round input-token deltas. It filters requests[] to the linear
-// main-agent stream (skipping type:"subagent" groups), keeps main turns in
+// main-agent stream (type:"subagent" groups are refused, or dropped under
+// opts.DropSubagents), keeps main turns in
 // stream order (a linear agent conversation is inherently sequential, unlike
 // OTel's parallel spans — context accumulation depends on call order, not
 // timestamp order), and recomputes each round's pure client think time as
@@ -81,6 +114,15 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 	if s.ID == "" {
 		return nil, fmt.Errorf("no session id (\"id\") in weka session")
 	}
+	if !opts.DropSubagents {
+		if groups, nested, err := CountWekaSubagents(raw); err != nil {
+			return nil, err
+		} else if groups > 0 {
+			return nil, fmt.Errorf("%w: session %q has %d sub-agent group(s) carrying %d nested request(s); "+
+				"pass --drop-subagents to convert its main-agent stream only, under-loading the replay",
+				ErrWekaSubagentFanOut, s.ID, groups, nested)
+		}
+	}
 
 	// Filter to usable main-agent turns in stream order. `in`/`out` are read
 	// directly from the record (never derived from len(hash_ids)×64, which would
@@ -95,7 +137,7 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 	for i := range s.Requests {
 		r := &s.Requests[i]
 		if r.Type == "subagent" {
-			continue // sub-agent fan-out deferred to PR-E (#1477)
+			continue // opts.DropSubagents: refused above otherwise (#1477)
 		}
 		if r.In == nil || r.Out == nil {
 			// No ground-truth token counts → unusable. Real Weka main turns always

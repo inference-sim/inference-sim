@@ -450,8 +450,9 @@ as **JSONL** — one proxy session per line — so no Parquet explosion step is 
 
 ```bash
 # Convert (one session per JSONL line) to the same TraceV2 corpus format.
+# --drop-subagents: this dataset's sessions carry sub-agent groups (see below).
 blis convert weka --input traces.jsonl --trace-output corpus \
-  --context-growth accumulate --max-think-time 0
+  --context-growth accumulate --max-think-time 0 --drop-subagents
 
 # Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
@@ -463,9 +464,15 @@ blis replay --trace-header corpus.yaml --trace-data corpus.csv \
 Weka sessions grow to very long contexts; use a scenario whose pools' `max_model_len` covers
 them (a round longer than it is length-capped).
 
-The reader filters each session's `requests[]` to the **linear main-agent stream** —
-`type:"subagent"` groups are skipped (deferred to a later PR); their wall-clock is
-absorbed into the following main turn's think gap. Per-round **pure client think** is
+The reader converts each session's **linear main-agent stream**. Sub-agent fan-out —
+`type:"subagent"` groups, whose nested requests run concurrently with the main agent — is
+**not modelled yet** ([#1477](https://github.com/inference-sim/inference-sim/issues/1477)), so a
+session containing one is **refused** by default, naming the session and the work it carries.
+`--drop-subagents` converts such sessions anyway: the groups are dropped and their wall-clock is
+absorbed into the following main turn's think gap, which keeps the main agent's pacing but
+offers the engine none of the children's load, overlap or KV state — the replay
+**under-loads** the deployment, and the converter warns with the number of dropped groups and
+requests. Per-round **pure client think** is
 recomputed as `max(0, t_i − t_{i-1} − api_time_{i-1})` between consecutive main turns
 (carried in the `think_time_us` column, `--max-think-time` default `0` = uncapped,
 since Weka gaps are genuine away-from-keyboard times). The column is **non-lossy**
@@ -508,7 +515,7 @@ concurrency > 1:
 # Convert once, then replay with recorded arrivals AND reconstructed growing context.
 # The motivating shape is a large MLA MoE on H200; any scenario works, as long as its
 # max_model_len covers the corpus's longest context.
-blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate
+blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate --drop-subagents
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios <dir of scenario files> --registry $PWD/blis-registry \

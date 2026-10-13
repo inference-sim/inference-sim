@@ -1,6 +1,9 @@
 package workload
 
 import (
+	"errors"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -25,7 +28,7 @@ const wekaThreeTurnWithSubagent = `{
 // T1 — reader core: delta reconstruction, RoundIndex over main turns only,
 // sub-agent group excluded, Model routing-safety.
 func TestConvertWekaSession_DeltaReconstructionAndSubagentSkip(t *testing.T) {
-	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1})
+	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1, DropSubagents: true})
 	if err != nil {
 		t.Fatalf("ConvertWekaSession: %v", err)
 	}
@@ -87,7 +90,7 @@ func TestConvertWekaSession_DeltaReconstructionAndSubagentSkip(t *testing.T) {
 // spans and thus ABSORBS the sub-agent's wall-clock. It equals the recorded
 // think_time (5.0). Main turn 2: 10.0 − 6.0 − 2.0 = 2.0s == recorded 2.0.
 func TestConvertWekaSession_ThinkTimeRecompute(t *testing.T) {
-	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{MinRounds: 1})
+	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{MinRounds: 1, DropSubagents: true})
 	if err != nil {
 		t.Fatalf("ConvertWekaSession: %v", err)
 	}
@@ -199,14 +202,14 @@ func TestConvertWekaSession_ReadsInDirectlyNotHashIds(t *testing.T) {
 }
 
 // T7 — a session with fewer than MinRounds usable main turns is skipped
-// (nil,nil): both the all-subagent (0 usable main turns) case and a plain
-// below-min-rounds case. No panic, no records (BC-8).
+// (nil,nil): both the all-subagent (0 usable main turns, sub-agents dropped on
+// request) case and a plain below-min-rounds case. No panic, no records (BC-8).
 func TestConvertWekaSession_MinRoundsAndAllSubagentSkip(t *testing.T) {
 	// All-subagent session: 0 usable main turns → skipped even at MinRounds:1.
 	allSub := `{"id":"s","requests":[
 	  {"type":"subagent","t":0.0,"agent_id":"a","requests":[{"type":"n","t":0.1,"in":10,"out":2,"api_time":0.1}]}
 	]}`
-	recs, err := ConvertWekaSession([]byte(allSub), WekaConvertOptions{MinRounds: 1})
+	recs, err := ConvertWekaSession([]byte(allSub), WekaConvertOptions{MinRounds: 1, DropSubagents: true})
 	if err != nil {
 		t.Fatalf("all-subagent: %v", err)
 	}
@@ -260,5 +263,29 @@ func TestConvertWekaSession_NoSessionIDErrors(t *testing.T) {
 	j := `{"requests":[{"type":"n","t":0.0,"in":50,"out":5,"api_time":1.0}]}`
 	if _, err := ConvertWekaSession([]byte(j), WekaConvertOptions{MinRounds: 1}); err == nil {
 		t.Fatal("expected error for a weka session with no id, got nil")
+	}
+}
+
+// A session with sub-agent groups is refused unless the caller asks to drop them: their
+// nested, concurrent requests are not modelled (#1477), and dropping them silently would let a
+// replay succeed while offering the engine none of their load. The refusal names the session
+// and the dropped work, is distinguishable from a parse failure, and a session without
+// sub-agents converts identically either way.
+func TestConvertWekaSession_RefusesSubagentFanOutUnlessDropped(t *testing.T) {
+	for _, raw := range []string{wekaThreeTurnWithSubagent, `{"id":"s","requests":[
+	  {"type":"subagent","t":0.0,"agent_id":"a","requests":[{"type":"n","t":0.1,"in":10,"out":2,"api_time":0.1}]}]}`} {
+		recs, err := ConvertWekaSession([]byte(raw), WekaConvertOptions{MinRounds: 1})
+		if !errors.Is(err, ErrWekaSubagentFanOut) || recs != nil {
+			t.Fatalf("want ErrWekaSubagentFanOut and no records, got %d records, err %v", len(recs), err)
+		}
+		if !strings.Contains(err.Error(), "1 sub-agent group(s) carrying 1 nested request(s)") {
+			t.Errorf("the refusal must count the work it would drop: %v", err)
+		}
+	}
+	plain := `{"id":"p","requests":[{"type":"n","t":0.0,"in":50,"out":5,"api_time":1.0},{"type":"n","t":3.0,"in":80,"out":5,"api_time":1.0}]}`
+	a, errA := ConvertWekaSession([]byte(plain), WekaConvertOptions{MinRounds: 1})
+	b, errB := ConvertWekaSession([]byte(plain), WekaConvertOptions{MinRounds: 1, DropSubagents: true})
+	if errA != nil || errB != nil || !reflect.DeepEqual(a, b) {
+		t.Errorf("a session without sub-agents must convert identically with or without the drop option: %v %v", errA, errB)
 	}
 }

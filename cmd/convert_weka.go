@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,7 @@ var (
 	wekaContextGrowth string
 	wekaMaxThinkTime  time.Duration
 	wekaMinRounds     int
+	wekaDropSubagents bool
 )
 
 var convertWekaCmd = &cobra.Command{
@@ -54,6 +56,7 @@ token counts) rather than 'blis run' (distribution sampling).`,
 			ContextGrowth:  wekaContextGrowth,
 			MaxThinkTimeUs: wekaMaxThinkTime.Microseconds(),
 			MinRounds:      wekaMinRounds,
+			DropSubagents:  wekaDropSubagents,
 		}
 		if err := runConvertWeka(wekaInputPath, wekaTraceOutput, opts); err != nil {
 			logrus.Fatalf("Weka conversion failed: %v", err)
@@ -85,8 +88,17 @@ func runConvertWeka(inputPath, outPrefix string, opts workload.WekaConvertOption
 	var allRecords []workload.TraceRecord
 	nextID := 0
 	skipped := 0
+	droppedGroups, droppedNested := 0, 0
 	for _, in := range inputs {
 		recs, err := workload.ConvertWekaSession(in.raw, opts)
+		if errors.Is(err, workload.ErrWekaSubagentFanOut) {
+			return err // a refusal, not a parse failure: never skipped past
+		}
+		if opts.DropSubagents {
+			if groups, nested, cerr := workload.CountWekaSubagents(in.raw); cerr == nil {
+				droppedGroups, droppedNested = droppedGroups+groups, droppedNested+nested
+			}
+		}
 		if err != nil {
 			logrus.Warnf("skipping unparseable weka session %s: %v", in.name, err)
 			skipped++
@@ -104,6 +116,10 @@ func runConvertWeka(inputPath, outPrefix string, opts workload.WekaConvertOption
 		allRecords = append(allRecords, recs...)
 	}
 
+	if droppedGroups > 0 {
+		logrus.Warnf("--drop-subagents: dropped %d sub-agent group(s) carrying %d nested request(s); "+
+			"the replay offers none of their load, overlap or KV state (#1477)", droppedGroups, droppedNested)
+	}
 	if len(allRecords) == 0 {
 		return fmt.Errorf("no usable sessions found in %q (skipped %d)", inputPath, skipped)
 	}
@@ -132,6 +148,7 @@ func init() {
 	convertWekaCmd.Flags().StringVar(&wekaContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertWekaCmd.Flags().DurationVar(&wekaMaxThinkTime, "max-think-time", 0, "Cap on the recomputed per-round think gap; 0 = no cap (Weka gaps are genuine away-from-keyboard times)")
 	convertWekaCmd.Flags().IntVar(&wekaMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable main-agent turns")
+	convertWekaCmd.Flags().BoolVar(&wekaDropSubagents, "drop-subagents", false, "Convert sessions with sub-agent groups by dropping the groups (their nested requests then offer no load); by default such a session is refused, since sub-agent fan-out is not modelled (#1477)")
 	_ = convertWekaCmd.MarkFlagRequired("input")
 	_ = convertWekaCmd.MarkFlagRequired("trace-output")
 
