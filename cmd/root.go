@@ -54,39 +54,41 @@ const (
 var (
 	// Run settings: CLI flags, and the engine settings adoptKernelDeployment takes from the
 	// scenario and the kernel (KV blocks, block size, sequence/token caps, max_model_len)
-	seed                      int64              // Seed for random token generation
-	simulationHorizon         int64              // Total simulation time (in ticks)
-	logLevel                  string             // Log verbosity level
-	totalKVBlocks             int64              // KV blocks per rank, sized by the kernel
-	maxNumSeqs                int64              // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
-	maxNumBatchedTokens       int64              // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
-	noEnablePrefixCaching     bool               // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
-	blockSizeTokens           int64              // Number of tokens per KV block
-	defaultsFilePath          string             // Path to default constants: the LoRA cost coefficients
-	catalogPath               string             // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
-	resolvedCatalogRoot       string             // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
-	workloadType              string             // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
-	longPrefillTokenThreshold int64              // Max length of prefill beyond which chunked prefill is triggered
-	rate                      float64            // Requests arrival per second
-	numRequests               int                // Number of requests
-	concurrency               int                // Number of concurrent virtual users (closed-loop)
-	thinkTimeMs               int                // Think time between response and next request (ms)
-	prefixTokens              int                // Prefix Token Count
-	promptTokensMean          int                // Average Prompt Token Count
-	promptTokensStdev         int                // Stdev Prompt Token Count
-	promptTokensMin           int                // Min Prompt Token Count
-	promptTokensMax           int                // Max Prompt Token Count
-	outputTokensMean          int                // Average Output Token Count
-	outputTokensStdev         int                // Stdev Output Token Count
-	outputTokensMin           int                // Min Output Token Count
-	outputTokensMax           int                // Max Output Token Count
-	kernelScenario            string             // CLI --scenario: scenario file name (required)
-	kernelScenarioDir         string             // CLI --scenarios: directory of scenario files (required)
-	kernelRegistry            string             // CLI --registry: blis-registry clone root (required)
-	kernelDeploymentExperts   int                // routed expert count from the model graph; 0 for a dense model
-	kernelDeploymentTopK      int                // routed experts per token from the model graph; 0 for a dense model
-	kernelOpened              *kernelmodel.Model // the kernel adoptKernelDeployment opened; nil until it runs
-	maxModelLen               int64              // the scenario's engine.max_model_len: max total sequence length (input + output)
+	seed                      int64                  // Seed for random token generation
+	simulationHorizon         int64                  // Total simulation time (in ticks)
+	logLevel                  string                 // Log verbosity level
+	totalKVBlocks             int64                  // KV blocks per rank, sized by the kernel
+	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
+	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
+	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
+	blockSizeTokens           int64                  // Number of tokens per KV block
+	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
+	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
+	resolvedCatalogRoot       string                 // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
+	workloadType              string                 // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
+	longPrefillTokenThreshold int64                  // Max length of prefill beyond which chunked prefill is triggered
+	rate                      float64                // Requests arrival per second
+	numRequests               int                    // Number of requests
+	concurrency               int                    // Number of concurrent virtual users (closed-loop)
+	thinkTimeMs               int                    // Think time between response and next request (ms)
+	prefixTokens              int                    // Prefix Token Count
+	promptTokensMean          int                    // Average Prompt Token Count
+	promptTokensStdev         int                    // Stdev Prompt Token Count
+	promptTokensMin           int                    // Min Prompt Token Count
+	promptTokensMax           int                    // Max Prompt Token Count
+	outputTokensMean          int                    // Average Output Token Count
+	outputTokensStdev         int                    // Stdev Output Token Count
+	outputTokensMin           int                    // Min Output Token Count
+	outputTokensMax           int                    // Max Output Token Count
+	kernelScenario            string                 // CLI --scenario: scenario file name (required)
+	kernelScenarioDir         string                 // CLI --scenarios: directory of scenario files (required)
+	kernelRegistry            string                 // CLI --registry: blis-registry clone root (required)
+	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
+	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
+	kernelOpened              *kernelmodel.Model     // the kernel adoptKernelDeployment opened; nil until it runs
+	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
+	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
+	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
 	model                string // LLM name
 	gpu                  string // GPU type
@@ -513,14 +515,27 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
 			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
 	}
+	scenarioScheduler = stated
 	if !cmd.Flags().Changed("scheduler") {
 		scheduler = stated
 		return
 	}
-	if scheduler != stated {
-		logrus.Warnf("--scheduler %s overrides scenario %q's engine.scheduling_policy %s (BLIS %s)",
-			scheduler, kernelScenario, eng.SchedulingPolicy, stated)
+	recordSchedulerOverride("--scheduler")
+}
+
+// recordSchedulerOverride notes, when the run's scheduler differs from the one its scenario
+// states, that source chose it: warned on stderr and recorded in the results file
+// (scenarioOverrides), so a run that no longer reproduces its scenario says so in the file
+// that reports it, not only in a log line. No-op when the scenario states none.
+func recordSchedulerOverride(source string) {
+	if scenarioScheduler == "" || scheduler == scenarioScheduler {
+		return
 	}
+	logrus.Warnf("%s sets scheduler %s, overriding scenario %q's engine.scheduling_policy (BLIS %s); "+
+		"the results file records the override", source, scheduler, kernelScenario, scenarioScheduler)
+	scenarioOverrides = append(scenarioOverrides, sim.ScenarioOverride{
+		Setting: "scheduler", Scenario: scenarioScheduler, Run: scheduler, Source: source,
+	})
 }
 
 // adoptKernelDeployment resolves the deployment from the --scenario kernel scenario, and is
@@ -535,6 +550,8 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 // those gates refuse a run whose deployment nobody chose (NS-6), and here the scenario is
 // who chose it. The gates still execute, on these values.
 func adoptKernelDeployment(cmd *cobra.Command) {
+	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
+	scenarioScheduler, scenarioOverrides = "", nil
 	missing := []string{}
 	if kernelScenario == "" {
 		missing = append(missing, "--scenario")
@@ -794,6 +811,7 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
+			recordSchedulerOverride("--policy-config")
 		}
 		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
 			preemptionPolicy = bundle.Preemption.Policy
@@ -2074,7 +2092,7 @@ var runCmd = &cobra.Command{
 		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
 		// (INV-6). Same shared helper on the replay path (INV-13).
 		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
-			catalogProvenanceEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
+			resultsFileEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 

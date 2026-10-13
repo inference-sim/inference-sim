@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -133,11 +135,70 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 	// An explicit --scheduler that departs from the scenario is kept, and says so.
 	args := []string{"run", "--scenarios", priority, "--scenario", "variant.yaml", "--num-requests", "4", "--rate", "2"}
 	_, stderr, err := runKernelCLI(t, append(args, "--scheduler", "fcfs")...)
-	if err != nil || !strings.Contains(stderr, "overrides scenario") {
+	if err != nil || !strings.Contains(stderr, "overriding scenario") {
 		t.Errorf("--scheduler fcfs over a priority scenario: want a warning naming the override, got %v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if _, stderr, _ := runKernelCLI(t, append(args, "--scheduler", "priority-fcfs")...); strings.Contains(stderr, "overrides scenario") {
+	if _, stderr, _ := runKernelCLI(t, append(args, "--scheduler", "priority-fcfs")...); strings.Contains(stderr, "overriding scenario") {
 		t.Errorf("--scheduler restating the scenario's policy warned of an override:\n%s", lastLines(stderr, 3))
+	}
+}
+
+// A run that departs from its scenario says so in the results file, not only in a log line:
+// an explicit --scheduler, or a policy bundle's scheduler, that differs from the scenario's
+// engine.scheduling_policy is recorded under "overrides" in the --metrics-path file, with the
+// two values and what chose the run's. A run that follows its scenario records nothing, and the
+// block never reaches stdout (INV-6).
+func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
+	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
+		"      gpu_memory_utilization: 0.9\n      scheduling_policy: priority\n")
+	bundle := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(bundle, []byte("scheduler: sjf\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	type override struct{ Setting, Scenario, Run, Source string }
+	overridesOf := func(t *testing.T, extra ...string) ([]override, string) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "metrics.json")
+		args := append([]string{"run", "--scenarios", priority, "--scenario", "variant.yaml",
+			"--num-requests", "4", "--rate", "2", "--metrics-path", path}, extra...)
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", extra, err, lastLines(stderr, 3))
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var file struct {
+			Overrides []override `json:"overrides"`
+		}
+		if err := json.Unmarshal(raw, &file); err != nil {
+			t.Fatal(err)
+		}
+		return file.Overrides, stdout
+	}
+
+	for _, tt := range []struct {
+		name  string
+		extra []string
+		want  []override
+	}{
+		{"the scenario's own scheduler records nothing", nil, nil},
+		{"an explicit --scheduler equal to the scenario's records nothing", []string{"--scheduler", "priority-fcfs"}, nil},
+		{"an explicit --scheduler that differs is recorded", []string{"--scheduler", "sjf"},
+			[]override{{"scheduler", "priority-fcfs", "sjf", "--scheduler"}}},
+		{"a policy bundle's scheduler that differs is recorded", []string{"--policy-config", bundle},
+			[]override{{"scheduler", "priority-fcfs", "sjf", "--policy-config"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, stdout := overridesOf(t, tt.extra...)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("results file overrides %+v, want %+v", got, tt.want)
+			}
+			if strings.Contains(stdout, `"overrides"`) {
+				t.Error("the overrides block reached stdout; it is file-only (INV-6)")
+			}
+		})
 	}
 }

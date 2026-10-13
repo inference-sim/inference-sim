@@ -136,6 +136,21 @@ type MetricsOutput struct {
 	// omitempty, so a results file written without the option is byte-identical to
 	// a pre-feature build.
 	Catalog *CatalogProvenance `json:"catalog,omitempty"`
+
+	// Overrides lists every setting this run simulated differently from its scenario -- an
+	// explicit flag or policy bundle chose another value than the scenario's deployment
+	// states -- so a results file always says when it does not reproduce its scenario.
+	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
+	// scenario exactly.
+	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+}
+
+// ScenarioOverride is one setting a run took from somewhere other than its scenario.
+type ScenarioOverride struct {
+	Setting  string `json:"setting"`  // what was overridden, e.g. "scheduler"
+	Scenario string `json:"scenario"` // the value the scenario states (in BLIS's terms)
+	Run      string `json:"run"`      // the value the run simulated
+	Source   string `json:"source"`   // what chose it, e.g. "--scheduler" or "--policy-config"
 }
 
 // CatalogProvenance attributes a results file to the model catalog that produced it

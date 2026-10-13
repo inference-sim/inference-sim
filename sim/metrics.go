@@ -323,7 +323,8 @@ type EmitOption func(*emitOptions)
 
 // emitOptions is the resolved option set for one EmitOutput call.
 type emitOptions struct {
-	catalog *CatalogProvenance
+	catalog   *CatalogProvenance
+	overrides []ScenarioOverride
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -334,6 +335,14 @@ type emitOptions struct {
 // protects.
 func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
 	return func(o *emitOptions) { o.catalog = p }
+}
+
+// WithScenarioOverrides records the settings the run simulated differently from its
+// scenario in the --metrics-path file only, for the same reason as WithCatalogProvenance:
+// what a result describes belongs in the results file, and stdout is the byte-identical
+// channel INV-6 protects. An empty list leaves the block absent.
+func WithScenarioOverrides(o []ScenarioOverride) EmitOption {
+	return func(opts *emitOptions) { opts.overrides = o }
 }
 
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
@@ -374,6 +383,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// assignment cannot reach stdout or the caller's struct. Nil (no catalog
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
+		output.Overrides = resolvedOpts.overrides
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

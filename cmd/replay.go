@@ -695,7 +695,7 @@ Example:
 		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
 		// (INV-6).
 		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
-			catalogProvenanceEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
+			resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
