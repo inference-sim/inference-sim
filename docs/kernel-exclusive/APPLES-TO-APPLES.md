@@ -1,217 +1,265 @@
-# Is this an apples-to-apples comparison?
+# What the accuracy comparison reproduces, and what it does not
 
-Two things must match for the comparison to mean anything, and they were checked separately:
-the WORKLOAD (three of them, not two) and the ERROR DEFINITION (two of them).
+Each point the scorers simulate is one InferenceX benchmark run at one concurrency. Its ground
+truth is that run's `mean_ttft` and `mean_tpot` as SemiAnalysis's database dump records them
+(`inferencex_absolutes.json`, `db-dump/2026-09-28`). AISimulate's and AIC's predictions come from
+NVIDIA's artifact. BLIS's are simulated by `blis replay` on the point's main phase. This document
+says exactly what that replay reproduces, how each claim is checked, and what remains approximate.
 
-Both had a mismatch. Neither was visible from the corpus alone; both required reading
-AISimulate's and vLLM's source.
+## Sources
 
-## The three workloads
+Citations are `file:line@commit` in [SemiAnalysisAI/InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
+The measured runs are dated 2026-02-25 to 2026-08-07 (`source_run_date` in
+`inferencex_engine_settings.json`). In that window the client was
+`utils/bench_serving/benchmark_serving.py`, launched by `benchmarks/benchmark_lib.sh`
+`run_benchmark_serving`. (It moved to `inferencex-e2e/infx/bench_serving/` in `bee3405c`,
+2026-09-26.) Every commit that touched the client from `d053ae24` (2026-01-21, which added the
+warm-up) to `8b4dcfae` (2026-07-09) was read. None changed any line cited below other than moving
+it. Line numbers are at `08d7a9cd` (2026-06-11), and `d053ae24` and HEAD (`9fa76586`) agree.
 
-| # | Who | What it runs |
-|---|---|---|
-| 1 | The real benchmark | vLLM `benchmark_serving` against real GPUs; produced `mean_tpot` |
-| 2 | AISimulate's simulation | `randomized_synthetic_engine_replay` |
-| 3 | BLIS's simulation | this worktree's harness |
+| What | Where |
+|---|---|
+| seed | `benchmark_serving.py:808-809@08d7a9cd`: `random.seed(args.seed); np.random.seed(args.seed)`; `:1058`: `--seed` default `0` |
+| the launcher passes no `--seed`, `--random-prefix-len` or `--use-chat-template` for these recipes | `benchmarks/benchmark_lib.sh:352-371@f4a002ef`. The recipes (`gptoss_fp4_h200.sh`, `minimaxm2.5_fp8_h200.sh`, `kimik2.5_fp4_b200.sh`, `dsv4_fp4_b300_vllm.sh`, ...) pass `--backend vllm`, `--random-range-ratio "$RANDOM_RANGE_RATIO"`, `--num-prompts $((CONC*10))` and `--max-concurrency "$CONC"` |
+| range ratio | `RANDOM_RANGE_RATIO: 0.8` in the `.github/workflows/benchmark-tmpl.yml` job env at every run date (`:67@f267602f` ... `:153@8d7c906a`) |
+| one process per point | the workflow runs one job per `conc` (`benchmark-tmpl.yml`, `CONC: ${{ inputs.conc }}`), and each job runs the client once |
+| prefix draw | `benchmark_serving.py:217@08d7a9cd`: `np.random.randint(0, vocab_size, size=prefix_len)`, with `prefix_len` defaulting to 0 |
+| length draws | `:228-235@08d7a9cd`: `lower = int(seq_len * range_ratio)`, then `np.random.randint(lower, upper+1, size=num_prompts)`; `input_lens` first, then `output_lens` |
+| prompt construction | `:179-196@08d7a9cd` (parallel path) and `:298-320` (serial): token ids `(offsets[i] + i + j) % vocab_size`, then decode, re-encode, and pad or truncate up to 10 times |
+| warm-up | `:522-556@08d7a9cd`: `test_input` from `input_requests[0]`; `num_warmups` tasks of it under a semaphore of `max_concurrency`; `_ = await asyncio.gather(*warmup_tasks)` |
+| main phase | `:595-632@08d7a9cd`: a fresh `asyncio.Semaphore(max_concurrency)`; one task per request of `input_requests`, in order (`get_request` yields without waiting at `--request-rate inf`); `await asyncio.gather(*tasks)` |
+| timing | `backend_request_func.py:270-319@08d7a9cd` (the `vllm` backend is `async_request_openai_completions`): `st` is taken after the semaphore is acquired; `ttft` at the first content chunk; `latency = most_recent_timestamp - st`, i.e. to the LAST content chunk; `max_tokens = output_len` and `ignore_eos` are set |
+| metrics | `benchmark_serving.py:420-422, 468-474@08d7a9cd`: `tpot = (latency - ttft) / (output_len - 1)` for `output_len > 1`; `mean_ttft = mean(ttfts)` and `mean_tpot = mean(tpots)` over the successful main-phase requests |
 
-### What each actually does at the `1024:1024` label
+One assumption underlies the recipe-level rows: that each run used the `main` recipes of its date.
+The database dump records the run date, not the commit, and a workflow can be dispatched from
+another ref.
 
-**AISimulate (2)** is fully specified in source. `scripts/run_e2e_accuracy.py:230-236` sets
-`random_range_ratio: 0.8`, `random_seed: 0`, `request_count = concurrency * 10`. And
-`python/aisimulate/src/aisimulate/runner.py:1838-1852`:
+## The workload: the benchmark's seed-0 target vectors
 
-```python
-if random_range_ratio == 1.0:
-    return [upper] * count
-lower = int(upper * random_range_ratio)
-return [rng.randint(lower, upper) for _ in range(count)]
-```
-
-So ISL is uniform on **[819, 1024]** and OSL uniform on **[819, 1024]**, sampled
-independently per request. The label is an UPPER BOUND. Mean ISL is 922, about 10% below the
-label.
-
-**BLIS (3), as this harness ran it**, used `ConstantSampler` at exactly 1024 and 1024, and
-`max(24, 4 x concurrency)` requests. So: no variance, a 10% higher mean context, and a
-different request count. The label was read as a value.
-
-**The real benchmark (1)** IS specified, in SemiAnalysis's own repository, and this document
-previously said otherwise. The correction matters because it removes most of the gap it claimed.
-
-`SemiAnalysisAI/InferenceX`, `inferencex-e2e/benchmarks/single_node/srt_fixed_sequence.sh`, drives
-the measurement:
-
-```
-run_benchmark_serving --input-len "$ISL" --output-len "$OSL" \
-    --random-range-ratio "$RANDOM_RANGE_RATIO" \
-    --num-prompts "$((CONC * 10))" --max-concurrency "$CONC"
-```
-
-which `benchmarks/benchmark_lib.sh` turns into
+Nothing in `benchmark_serving.py` draws from numpy's global generator between `np.random.seed(0)`
+and the length draws; the only code that runs in between is the tokenizer load. A size-0 prefix
+draw consumes no generator state (checked with numpy 2.5.4: the state is unchanged). So each
+point's target lengths are
 
 ```
-python3 -m infx.bench_serving.benchmark_serving --dataset-name random \
-    --random-input-len $ISL --random-output-len $OSL --random-range-ratio $RATIO \
-    --num-prompts $((CONC*10)) --max-concurrency $CONC --request-rate inf \
-    --ignore-eos --num-warmups $((2*CONC)) --percentile-metrics 'ttft,tpot,itl,e2el'
+np.random.seed(0)
+input_lens  = np.random.randint(int(ISL*0.8), ISL+1, size=10*CONC)
+output_lens = np.random.randint(int(OSL*0.8), OSL+1, size=10*CONC)
 ```
 
-and whose sampler, `infx/bench_serving/benchmark_serving.py`, is
+`scripts/gen_inferencex_workloads.py` makes exactly these calls for every scored
+`(ISL, OSL, CONC)` and writes the vectors, in request order, to
+`testdata/inferencex-workloads/seed0.json`; its `--check` flag regenerates and diffs.
+`sim/kernelmodel/harness/fixture_test.go` recomputes every vector of every fixture with an
+independent Go implementation of MT19937 and numpy's legacy bounded `randint` (masked rejection on
+32-bit outputs). That implementation is itself checked against numpy over five ranges and three
+seeds, so the fixture is verified in CI without Python. The legacy `RandomState` stream is frozen
+by [NEP 19](https://numpy.org/neps/nep-0019-rng-policy.html), so the numpy version does not matter.
+No scored point uses a chat template, which would shorten its targets (next section but one).
 
-```python
-def sample_uniform(seq_len: int) -> list[int]:
-    lower = int(seq_len * range_ratio)
-    upper = seq_len
-    return np.random.randint(lower, upper + 1, size=num_prompts).tolist()
-```
+## The sent prompt lengths
 
-`RANDOM_RANGE_RATIO` is `0.8` in every recipe that sets it: of 466 recipe files in the live tree,
-50 set it and all 50 use 0.8.
+The client does not send the target length directly. It builds a prompt from token ids, decodes
+it to text, and re-encodes it until it reaches the target, then sends what it reached.
+`scripts/inferencex_prompt_lengths.py` reproduces that construction offline for every logged vLLM
+point:
 
-**What this document got wrong.** It previously asserted that vLLM's `--random-range-ratio` is
-SYMMETRIC -- `[len(1-r), len(1+r)]`, which is true of `vllm/benchmarks/datasets/utils.py` -- and
-concluded that AISimulate's one-sided interval therefore differs from the real benchmark under
-either reading. InferenceX does not use vLLM's client. It uses its own
-`infx.bench_serving.benchmark_serving`, whose sampler is one-sided and identical to AISimulate's
-`_sample_synthetic_lengths`. So the three workloads agree on the distribution, and the ~10%
-mean-context gap this document attributed to the baseline does not exist.
+- **Client version.** It uses the version live on the run's date. Before `1780296b` (2026-04-21),
+  the serial loop pads from the global numpy stream. From `1780296b`, padding comes from
+  `local_rng` and the parallel path's per-chunk `RandomState`, at `min(cpu_count, 8) = 8` workers;
+  the dump does not record the worker count.
+- **Tokenizer.** It uses the point's tokenizer at two pinned Hugging Face revisions: the one
+  current at the run date, and today's.
 
-### The protocol, now matched exactly
+It writes `testdata/inferencex-workloads/prompt-lengths.json`. That file records, per point, the
+largest `|sent - target|` and the tokens a server adds with `add_special_tokens=True` (the
+completions default). In its header it records every revision with the sha256 of every file read,
+and the numpy, transformers and tokenizers versions.
 
-| Property | InferenceX (real) | AISimulate | BLIS (this harness) |
-|---|---|---|---|
-| ISL, OSL interval at `1024:1024` | `[819, 1024]` inclusive | same | same |
-| Sampling | uniform, independent per request | same | same |
-| Measured requests per point | `10 x CONC` | `10 x CONC` | `10 x CONC` |
-| Warm-up requests per point | `2 x CONC`, discarded | not stated | `2 x CONC`, discarded |
-| Arrival | `--request-rate inf` + `--max-concurrency` | all at t=0, concurrency gates | all at t=0, concurrency gates |
-| Output length | `--ignore-eos`: exactly OSL | fixed | fixed |
-| Prefix reuse | none | `cached_prefix_tokens` 0 | none |
-| Draw sequence | NumPy RandomState | Python MT, seed 0 | Go RNG |
+| tokenizer repository | pinned revisions (role) | points | max \|sent - target\| | server-added tokens |
+|---|---|---|---|---|
+| `MiniMaxAI/MiniMax-M2.5` | `1248334b` (run dates 2026-03-01)<br>`f710177d` (run dates 2026-03-28, 2026-05-17, 2026-05-31, 2026-06-05; today) | 69 | 0 | 0 |
+| `deepseek-ai/DeepSeek-V4-Pro` | `b5968e91` (run dates 2026-07-12; today) | 28 | 0 | 0 |
+| `nvidia/Kimi-K2.5-NVFP4` | `0fd0a5e6` (run dates 2026-06-07, 2026-08-07; today) | 44 | 0 | 0 |
+| `nvidia/MiniMax-M2.5-NVFP4` | `b6220d65` (run dates 2026-06-04; today) | 26 | 0 | 0 |
+| `nvidia/MiniMax-M3-NVFP4` | `90146408` (run dates 2026-06-26, 2026-07-02, 2026-07-06, 2026-08-04; today) | 50 | 0 | 0 |
+| `openai/gpt-oss-120b` | `b5c939de` (run dates 2026-02-25, 2026-03-27, 2026-05-17, 2026-05-30, 2026-05-31; today) | 143 | 0 | 0 |
+| `meta-llama/Llama-3.1-70B-Instruct` | not checked: gated, and its runs have no engine log (no run date, no client version) | 0 | -- | -- |
 
-The warm-up was this harness's last real difference. It previously used `max(24, 4 x concurrency)`
-completions with the leading half discarded -- a criterion derived here from the shape of the
-transient. That converged, but it measured about `2 x concurrency` requests where the real harness
-measures `10 x`, and it discarded a fraction rather than a fixed phase. Matching the harness
-removes a difference that had to be argued for.
+Computed with numpy 2.2.6, transformers 4.57.1, tokenizers 0.22.2; 360 points, 7 pinned revisions. The run-date and today's revision of a repository are listed separately where they differ; where they hold byte-identical tokenizer files (every sha256 equal) the construction ran once.
 
-Effect: **10.39% to 10.41%** on the 192 vLLM points. The change is behaviour-neutral to two
-decimal places, which is the useful result -- it confirms the earlier criterion was converged, and
-it means no figure in this project rests on the harness's own choice of budget.
+A point is **verified** when every pinned revision gives zero on both counts. For a verified
+point, the sent prompt length is exactly the target the fixture replays.
+`TestThePromptLengthEvidenceIsPinnedAndReplayed` checks the file's provenance, and that every
+verified point's vectors are the replayed fixture's. `TestEveryMeasuredOrResolvedPointSentItsTarget`
+checks that every MEASURED-OR-RESOLVED point is verified.
 
-Three differences remain and are stated rather than hidden: the draw SEQUENCE differs, since
-matching NumPy's RandomState from Go would mean shipping precomputed length vectors; `1k1k` and
-`1k8k` have no recipe file in the live tree, so their ratio is confirmed only through the shared
-sampler and harness rather than from a recipe; and only 53.2% of the snapshot's points were
-measured under vLLM, the engine BLIS models.
+A point the file does not hold is not verified and carries the gap
+`sent prompt lengths not verified equal to the replayed targets`, which keeps it out of STRICT and
+MEASURED-OR-RESOLVED. That is every Llama-3.1-70B point: its runs captured no engine log, so it has
+no run date or client version, and its tokenizer is gated.
 
-### Consequence for BLIS
+Two assumptions remain. The client's transformers is taken to be v4 (the runs here use the version
+in the file's header). `backend_request_func._fix_tokenizer_for_sglang` exists because v5 rebuilds
+some tokenizers' pre-tokenizer, and it is a no-op on v4. And a run that served a local checkpoint
+path is taken to have the tokenizer of the Hugging Face repository of the same name.
 
-Matching AISimulate means adopting ITS workload: `random_range_ratio: 0.8` with AISimulate's
-one-sided interval, `request_count = concurrency * 10`, seeds 0 and 42. That is what makes the
-two SIMULATIONS comparable to each other against the same measurements.
+## The main phase: order, concurrency and count
 
-It is not merely a variance question. Variable OSL means requests retire at different times,
-so the resident batch churns continuously; constant OSL makes them finish in lockstep. The
-resident batch is the quantity this whole experiment is about.
+Each point runs
+`blis replay --session-mode closed-loop --concurrent-sessions CONC --total-sessions 10*CONC` on a
+TraceV2 whose record `i` is benchmark request `i`: a one-round session at exactly the fixture's
+lengths, with no prefix group and no deadline. The pool injects records `0..CONC-1` at t=0, and
+admits record `k`, in trace order, at the completion that frees a slot
+(`workload.BuildSessionPool`, `SessionPoolDriver.OnComplete`). That is the client's semaphore at
+`--request-rate inf`. There is no `--shuffle-corpus`, no clone (the total equals the trace length),
+and no think time.
 
-It also contaminates the attention finding. A 1.29x over-prediction measured while feeding
-1024-token contexts, when the baseline fed a 922-token mean, partly reflects the workload
-error rather than the coefficient. Re-fitting the coefficient on that basis would bake a
-harness bug into the registry as calibration -- the worst available outcome.
+`TestThePoolIsTheClientsSemaphore` checks this on the code `blis replay` runs, and
+`TestAReplayedPointIsTheBenchmarksMainPhase` checks it end to end through the binary.
 
-## The two error definitions
+**Output length.** The client sets `--ignore-eos` and `max_tokens = output_len`, so every request
+emits exactly its target. Each simulated request is given exactly that many output tokens, and the
+scorer refuses a run in which any request ran other lengths or fewer than `10*CONC` completed.
 
-AISimulate's is in `scripts/build_e2e_accuracy_overview.py:150-181`:
+**Metrics.** TTFT is the mean of BLIS's `ttft_ms` over the `10*CONC` main-phase requests. TPOT is
+the mean of BLIS's per-request `itl_ms` over the requests with more than one output token. The
+two line up with the client's as follows:
 
-```python
-_, anchor_measured, anchor_prediction = points[0]
-errors = []
-for _, measured, prediction in points[1:]:          # <-- ANCHOR EXCLUDED
-    measured_shape   = measured / anchor_measured
-    prediction_shape = prediction / anchor_prediction
-    errors.append(abs((prediction_shape - measured_shape) / measured_shape) * 100)
-```
+- BLIS's request clock starts when the pool admits the request, just as the client's `st` is taken
+  when its task acquires the semaphore.
+- `ttft_ms` runs to the emission of the first token.
+- `itl_ms` is the sum of the request's inter-token intervals divided by `output_len - 1`
+  (`sim/simulator.go`, `recordRequestCompletion`). That is the client's
+  `(latency - ttft) / (output_len - 1)`, because the client's `latency` stops at the last content
+  chunk.
+- BLIS's `e2e_ms` also includes `PostDecodeFixedOverhead` after the last token, so TPOT is not
+  derived from it.
+- Both means are taken over requests, not pooled over tokens.
 
-Pooled across topologies, then a plain mean over all comparisons. Points are sorted by
-concurrency, the anchor is the lowest, and a topology with fewer than 2 points is skipped.
+## The warm-up
 
-This harness computed the same ratio but averaged over `points[:]` -- INCLUDING the anchor.
-The anchor's error is exactly 0 by construction, since it is each side divided by itself. So
-every figure this project reported was diluted by one free zero per sweep:
+The client sends `2*CONC` copies of request 0, waits for all of them to finish, and only then
+starts the main phase. No warm-up request is in any metric. What matters is the state a drained
+warm-up leaves in the simulator. From the code paths every point runs (single-tier GPU KV cache,
+round-robin routing, FCFS, always-admit, no offload tier):
 
-| Subset | AISimulate's definition | This harness's definition |
-|---|---|---|
-| all 447 | 11.55% over 364 | 9.41% over 447 |
-| vLLM | 8.87% over 192 | 7.15% over 238 |
+- **KV cache.** It keeps released blocks' hashes (`sim/kv/cache.go`, `ReleaseKVBlocks`).
+  Cross-request reuse reads them only in `sim/batch_formation.go`, which skips `GetCachedBlocks`
+  when prefix caching is disabled. The other readers are the offload tiers and the weighted
+  router's prefix scorers, and these runs use neither. Request 0's prompt is the only main-phase
+  prompt the warm-up cached, because no other main prompt shares a block with it.
+- **Router.** The round-robin counter (`sim/routing.go`) advances by the number of copies.
+- **Everything else.** The FCFS scheduler, batch formation and the kernel adapter hold no
+  per-request state, no step price reads the clock, and a drained engine holds no KV block.
 
-The arithmetic confirms it: 8.87 x 192/238 = 7.16, which is the 7.15 reported.
+**With prefix caching disabled**, the warm-up leaves nothing the main phase reads. The point is
+scored on the main phase from an empty engine. This is every point whose run passed
+`--no-enable-prefix-caching`.
 
-**The definition is settled by reproduction, not by reading.** Applying AISimulate's
-definition to its own per-point data over the whole 1137-point snapshot gives **10.05%** on
-878 comparisons, against a published `tpot_shape_error_pct` of **10.05%**. Exact to two
-decimals. The anchor-inclusive variant cannot reproduce it.
+**With prefix caching enabled**, the point is scored on the main phase run **after** the warm-up's
+state, built with existing trace features only. The trace prepends `dp` warm-up sessions:
 
-So the 9.41% named as the target was itself the diluted figure. Under AISimulate's own
-definition its whole-snapshot shape error is 10.05%, and on the 447-point subset 11.55%.
+- Each session's round 0 is a copy of request 0 at t=0: its prompt as a shared prefix group, and
+  its output length.
+- Each session's round 1 is a one-token holder far in the future. It keeps the session's pool slot,
+  so a copy's completion admits no main request early.
+- Main request 0 is in the same prefix group, so its prompt is token-for-token the copy's.
+- Every main request is recorded at 10^4 s. The pool (`CONC + dp`) therefore starts the first
+  `CONC` together and in order, on an idle engine whose replicas each hold request 0's prompt. The
+  router counter has moved by `dp`, so every main request lands on the replica it would land on
+  from a fresh counter.
 
-## What must change
+This is the drained warm-up's state, with `dp` copies standing in for `2*CONC`. Three tests check
+that, rather than assume it:
 
-1. The harness must average over `points[1:]`, matching AISimulate.
-2. The BLIS workload must adopt AISimulate's: one-sided uniform at ratio 0.8,
-   `concurrency * 10` requests, seeds 0/42.
-3. Every number in RESULTS.md must be recomputed, and the old ones marked as superseded with
-   the reason.
-4. The attention over-prediction must be re-measured at the corrected context distribution
-   before any registry change is considered.
+- `TestCheckPrimedRefusesAnUndrainedWarmup`: the scorer refuses a run in which a copy had not
+  completed before the main phase, main request 0 did not start with it, or a holder round entered
+  the engine before the main phase ended.
+- `TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan`: one copy and the benchmark's `2*CONC`
+  copies give identical main-phase observations. So the copy count leaves no other state behind.
+- `TestADrainedCopyLeavesOnlyRequestZerosPromptReadable`: on the KV cache itself, a drained copy
+  leaves no block in use, request 0's prompt readable in full blocks, and no other main prompt
+  readable.
 
-Until 1 and 2 are done, no BLIS-vs-AISimulate figure from this worktree is apples to apples,
-including the ones already recorded.
+The empty-engine run of a prefix-caching point is printed beside it as information only and is
+never scored. A drain-gated two-phase trace format, which would replay the warm-up itself, is
+tracked as blis-schemas#56 and inference-sim#1926. What the warm-up does on real GPUs beyond the
+prefix cache (first-call compilation, allocator growth) is outside any simulator; the client
+discards the warm-up precisely so that none of it reaches the measured phase.
 
-## The guarantee, as executable checks
+## The run settings
 
-`sim/kernelmodel/harness/parity_test.go` holds the checks that fail when the comparison stops
-being apples to apples. Each was verified to fail on the defect it guards, and two of them
-were themselves wrong on the first attempt in ways worth recording.
+Each point's scenario variant carries what the measured engine was launched with, from its own
+engine-args log: `max_num_seqs`, `max_num_batched_tokens`, `block_size`, `enable_prefix_caching`,
+`max_model_len`, `gpu_memory_utilization` and `parallel.enable_expert_parallel`.
 
-**The error definition is settled by reproduction.** AISimulate's definition, applied to
-AISimulate's own per-point relatives over the whole 1137-point snapshot, must return the
-`tpot_shape_error_pct` it publishes. It does: **10.05% on 878 comparisons against a published
-10.05%**. The anchor-inclusive variant returns something else, so the check discriminates
-rather than merely passing.
+A setting the run did not pass takes vLLM's own default, and the coverage report says which:
 
-A first version of this check compared against the 447-point SCORED SUBSET and passed the
-WRONG definition. On that subset the anchor-inclusive figure (9.41%) happens to sit nearer the
-whole-snapshot 10.05% than the correct anchor-exclusive one (11.55%). That is a coincidence of
-subsetting, and comparing a subset figure to a whole-snapshot published number was never
-valid. The check now reads the full snapshot.
+- `enable_expert_parallel` and `gpu_memory_utilization` have unconditional defaults: expert
+  parallelism off, and memory utilisation 0.9 before vLLM v0.20.0 and 0.92 from it, chosen by the
+  engine version the log reports. An engine that was not passed them ran exactly these values, so
+  this is no gap.
+- `max_num_seqs`, `max_num_batched_tokens` and `block_size` resolve by rules this harness restates
+  (`vllm_defaults.go`, block size 16). These are reported as **resolved**.
 
-**The workload constants are asserted against literals restated from AISimulate's source**,
-not against the package constants the harness uses. A first version compared
-`w.RequestCount` to `concurrency * aisimulateRequestsPerUser` -- the same constant the code
-reads -- so changing the constant changed both sides and the check still passed. Verified by
-mutation: setting the ratio to 0.9 or the count to 4 cycles now fails.
+`max_cudagraph_capture_size`, passed on 298 of the 360 logged points, has no field in the
+blis-schemas deployment, so it cannot be simulated as passed. It is a gap on every such point.
 
-**The distribution reaching BLIS is verified end to end.** 400 generated requests span exactly
-[819, 1024] with mean 920.1 against an expected 921.5, through BLIS's `empirical` sampler.
+## What else is not reproduced
 
-## What is now matched, and what cannot be
+**The client's send gap.** The simulator admits the next request at the engine step that emitted
+the previous request's last token. The client sends it after the response stream closes and the
+asyncio semaphore wakes the next task. That interval is not modelled.
 
-| Property | Real measurement | AISimulate | BLIS (this harness) |
-|---|---|---|---|
-| ISL interval at the 1k label | unknown | [819, 1024] | [819, 1024] |
-| OSL interval at the 1k label | unknown | [819, 1024] | [819, 1024] |
-| Length sampling | unknown | uniform, independent per request | uniform, independent per request |
-| Requests per point | unknown | concurrency x 10 | concurrency x 10 |
-| Arrival | unknown | all at t=0, concurrency gates | all at t=0, concurrency gates |
-| Prefix reuse | unknown | none (`cached_prefix_tokens` 0) | none |
-| Draw sequence | unknown | Python MT, seed 0 | Go RNG, seed 42 |
-| Error definition | — | anchor excluded | anchor excluded |
+**Points with no engine log.** Llama-3.1-70B's runs captured no server log, so what they passed is
+unknown. Their settings are vLLM's resolution, their prefix caching is vLLM's default (on), and
+their sent lengths are unverified. They are scored only in the approximate tier.
 
-BLIS now matches AISimulate on every property the snapshot and AISimulate's source specify.
-The two remaining differences are stated rather than hidden: the draw SEQUENCE differs (the
-distribution does not), and the REAL benchmark's workload is unknown -- InferenceX records
-only `isl` and `osl` integers, and vLLM's own `range_ratio` is symmetric where AISimulate's is
-one-sided, so AISimulate's replay simulates a ~10% shorter mean context than the real runs
-under either reading. That is a property of the baseline and it bounds how closely any
-simulator can match these measurements.
+**Other engines.** sglang and TensorRT-LLM points are not simulated, because BLIS models vLLM.
+
+**Speculative decoding and chat templates.** No scored point uses either. Every scored vLLM sweep
+has `spec_method: none`. At the last `main` commit on or before each of the 16 run dates,
+`git grep -lE 'use-chat-template|--dsv4' <commit> -- benchmarks/single_node` finds the flag (or
+`--dsv4`, which implies it) only in these recipes, none of them a scored vLLM sweep:
+
+- speculative `*_mtp.sh` recipes;
+- agentic recipes;
+- `qwen3.5_fp8_b300.sh`;
+- from 2026-06-26, two `minimaxm3_*_mi355x_atom.sh`.
+
+## Tiers
+
+The coverage report (`-gaps`) is computed before scoring. Each sweep is put in a tier by its worst
+point. A sweep is scored whole or not at all, because its shape error divides every point by the
+anchor's simulation.
+
+| Tier | Contains |
+|---|---|
+| STRICT | Every point has an engine log, and every setting it passed is carried into the variant. The four admission settings and `max_model_len` were measured. Expert parallelism and `gpu_memory_utilization` were measured or are vLLM's unconditional default. The sent prompt lengths are verified equal to the targets. No other gap. |
+| MEASURED-OR-RESOLVED | As STRICT, except that an unpassed admission setting may take the value vLLM resolves by a rule this harness restates. |
+| ALL (approximate) | Every scoreable vLLM sweep. This includes sweeps with a setting not carried or not expressible, a scenario fallback, no engine log, or unverified sent lengths. |
+
+Each table includes the stricter tiers, and within a table every arm (BLIS, AISimulate, AIC) is
+scored on the same points. A figure labelled ALL is not a statement about the measured runs as they
+ran. `metricscore` prints each tier's N, the sweeps in the two strict tiers with the resolved
+settings that keep each out of STRICT, and the figures; `RESULTS.md` records them.
+
+## The error definition
+
+Shape error is AISimulate's own definition (`scripts/build_e2e_accuracy_overview.py:150-181`): each
+side is divided by its own value at the sweep's lowest concurrency, that anchor is excluded, and
+the errors are pooled over sweeps. Applied to AISimulate's own per-point data over the whole
+1,137-point snapshot, it returns the 10.05% `tpot_shape_error_pct` that AISimulate publishes; the
+anchor-inclusive variant does not (`TestAISimulatesPublishedShapeErrorIsReproducible`, in
+`parity_test.go`). mape compares absolute latency at every point against
+`inferencex_absolutes.json`. Both errors are computed from the same scored observation per point
+(`TestThePrimedObservationEntersBothErrors`, in `cmd/metricscore`).
+
+## The draw
+
+`cmd/sensitivity` re-scores the sweeps with the vectors numpy draws at seeds 1 to 4 from the same
+intervals. Those are other workloads, not repeated observations of the benchmark's seed 0. Their
+spread shows how far a figure scored against some other draw could move for that reason alone,
+which is the uncertainty that replaying the exact seed-0 vectors removes. They relax nothing.

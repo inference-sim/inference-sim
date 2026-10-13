@@ -44,6 +44,11 @@ export BLIS_MEASUREMENTS=/path/to/corpora
 go test -tags scoring ./sim/kernelmodel/...   # the tests that read the corpora
 ```
 
+On a laptop this takes about 35 s of wall time (34.6 s measured on a clean checkout of `e4d76827`),
+well inside `go test`'s default 10-minute timeout. Its slowest test,
+`TestNoScoredVLLMPointUsesAnInventedSetting` (about 18 s), checks every vLLM point's settings
+without simulating any.
+
 **NVIDIA's operator measurement tables** are large parquet collections in the
 `ai-dynamo/aisimulate` repository. The registry's fitting and validation scripts read them from a
 checkout of that repository; with `AISIMULATE` naming your checkout, pass
@@ -52,120 +57,60 @@ Figures that need them are marked below.
 
 ### Which revision each figure was scored at
 
-The tables below record what each command printed when the figure was published. Those
-figures were scored against pre-release revisions of the kernel and registry (the kernel at
-`bd743a6`, the registry at `640a27e`); the commands are unchanged, and re-running them at the
-tagged releases above gives the current figures. `docs/guide/latency-models.md` carries the
-headline re-scored at the tags.
+The headline tables in the next section were printed at commit `a5b9ac12`, at the tagged
+releases above. Figures in the historical sections below were scored against pre-release
+revisions of the kernel and registry (the kernel at `bd743a6`, the registry at `640a27e`) under
+the earlier protocol, and are kept as the record of what was measured then.
 
 ## The headline comparison
 
-Every scorer runs the `blis` binary for each point (`blis run`, exactly as a user would), so
-build it once and pass it with `-blis`:
+Every scorer runs the `blis` binary for each point -- `blis replay` on the point's InferenceX
+main phase, exactly as a user replays a trace -- so build it once and pass it with `-blis`:
 
 ```bash
 cd inference-sim
 go build -o blis main.go
-go run ./cmd/kernelscore -blis ./blis -framework vllm
+go run ./cmd/metricscore -blis ./blis -framework vllm -gaps gaps.txt
+go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured -gaps gaps-measured.txt
+go run ./cmd/kernelscore -blis ./blis -framework vllm -verbose
 ```
 
-Prints the table in `RESULTS.md`: 192 vLLM points, the monotone subset, the per-framework and
-per-chip-family splits, and the protocol it ran under. Add `-verbose` for every point.
+`metricscore` prints every arm (BLIS, AISimulate, AIC) on three tiers: STRICT,
+MEASURED-OR-RESOLVED and ALL (approximate). `APPLES-TO-APPLES.md` defines them. For each tier the
+output gives:
 
-Expected, at the commit this document ships with:
+- its N;
+- the sweeps of the two strict tiers, with the resolved settings that keep each out of STRICT;
+- every prefix-caching point's scored and cold run side by side (information only);
+- the per-chip, per-model and per-framework breakdowns over ALL.
 
-| Subset | n | BLIS | AISimulate |
-|---|---|---|---|
-| vLLM, all | 192 | 10.41% | 8.87% |
-| vLLM, monotone only | 171 | 9.92% | 8.32% |
-| Blackwell | 84 | 11.91% | 12.61% |
-| Hopper | 108 | 9.24% | 5.96% |
+`-gaps` writes the coverage report the tiers are decided from. Expected output, at `e4d76827`,
+against the vendored catalog and registry and the corpora of `db-dump/2026-09-28` (mean absolute
+error; BLIS / AISimulate / AIC):
 
-A run takes roughly forty minutes: 83 sweeps, each concurrency point a full closed-loop
-simulation of `12 x concurrency` requests.
+| tier | sweeps | n (TPOT shape / mape) | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
+|---|---|---|---|---|---|---|
+| STRICT | 0 | 0 | -- | -- | -- | -- |
+| MEASURED-OR-RESOLVED | 10 | 52 / 62 | 11.38 / 8.73 / 9.15 | 16.79 / 19.85 / 19.08 | 13.96 / 23.22 / 22.34 | 23.47 / 42.96 / 23.77 |
+| ALL (approximate) | 113 | 460 / 573 | 9.64 / 10.43 / 10.56 | 15.04 / 15.39 / 15.71 | 17.85 / 23.05 / 30.12 | 25.30 / 37.86 / 36.66 |
 
-Determinism: the seed is fixed (`-seed`, default 42) and a point is a pure function of its
-inputs, so two runs agree exactly. `TestARunIsDeterministicAtAFixedSeed` asserts it.
+(TTFT n is 456 / 569 in ALL: four measured TTFT excursions are excluded for every arm.) `-config-tier measured` restricts the run to the 68 sweeps with an engine log. Its ALL row is 292 / 360 points at 10.60 / 11.91 / 12.00 (TPOT shape), 13.67 / 19.72 / 19.88 (TPOT mape), 22.72 / 31.54 / 31.28 (TTFT shape) and 28.36 / 45.07 / 39.03 (TTFT mape). Its MEASURED-OR-RESOLVED row is the one above.
 
-The same command prints the signed and log-space reports. Expected:
+`kernelscore` prints the TPOT-shape table for BLIS and AISimulate on the same tiers (11.38% against 8.73% on the 52 MEASURED-OR-RESOLVED points, and 9.64% against 10.43% on all 460), followed by the monotone, per-chip, signed and log-space breakdowns over all 460.
 
-| model | n | mean | median | mean abs | over | p10 | p90 |
-|---|---|---|---|---|---|---|---|
-| BLIS + blis-latency-kernel | 192 | +2.71% | +0.78% | 10.41% | 53% | -11.61% | +19.60% |
-| AISimulate, same points | 192 | +5.39% | +4.02% | 8.87% | 71% | -6.83% | +19.77% |
+A full `metricscore -framework vllm` run took 51 minutes here, on a 10-core laptop alongside other jobs. It covers 113 sweeps: each concurrency point is a `blis replay` of `10 x concurrency` requests, and each of the 218 prefix-caching points is replayed twice (scored, and cold for information). The `-config-tier measured` run takes about 40 minutes.
 
-| model | n | mean log | sd log | bias | floor |
-|---|---|---|---|---|---|
-| BLIS + blis-latency-kernel | 192 | +0.0165 | 0.1442 | +1.67% | 10.23% |
-| AISimulate, same points | 192 | +0.0462 | 0.1122 | +4.73% | 7.73% |
+Determinism: a point is a pure function of its inputs, so two runs agree exactly
+(`TestARunIsDeterministicAtAFixedSeed`). The lengths are the fixed seed-0 vectors; the scorers'
+`-seed` is `blis replay`'s, which draws only the synthetic prompts' token IDs, and with no shared
+prefix a token ID moves no latency.
 
-plus the per-concurrency signed breakdown. The signed figures are the ones that killed the
-batch-composition hypothesis; see `RESULTS.md`.
+## Earlier comparisons (historical)
 
-## Four estimators on the Hopper subset (historical)
-
-> **Historical.** `cmd/estimatorscore`, the roofline and trained-physics backends, and the
-> `hardware_config.json` it read were removed when BLIS became kernel-exclusive, so the commands in
-> this section and its audit subsection no longer run. The figures are kept as the record of what
-> was measured at the revision listed above.
-
-```bash
-cd inference-sim
-go run ./cmd/estimatorscore
-```
-
-Scores blis-latency-kernel, AISimulate, roofline and trained-physics on the Hopper vLLM subset,
-with the KV budget, engine settings and host per-token cost taken from the kernel for every arm so
-that only the forward-pass model differs. Expected:
-
-| estimator | n | mean | median | mean abs | over |
-|---|---|---|---|---|---|
-| blis-latency-kernel | 104 | +1.71% | -0.46% | 8.87% | 44% |
-| AISimulate | 104 | +1.75% | +2.02% | 6.04% | 66% |
-| roofline | 104 | +161.54% | +135.30% | 161.54% | 100% |
-| trained-physics | 104 | -38.93% | -39.04% | 38.93% | 0% |
-
-Roughly twenty minutes: 24 sweeps x 3 arms. It also prints the per-scenario breakdown and the one
-point that could not be scored (`gpt-oss-120b-h100-fp4-vllm-tp2 1k8k` at concurrency 4 under
-trained-physics, which completes no requests within the horizon).
-
-`-hardware-config` and `-defaults` default to the repository's own `hardware_config.json` and
-`defaults.yaml`, so run it from the repository root.
-
-### The audit behind that table (historical)
-
-```bash
-go run ./cmd/estimatorscore -curves gpt-oss-120b-h200-fp4-vllm-tp4.yaml
-```
-
-A mean error cannot distinguish a bad model from a broken harness. This prints each arm's
-predicted curve, the absolute latencies that explain its shape, and the admission facts the arms
-must share. Expected:
-
-| concurrency | measured | kernel | roofline | trained-physics |
-|---|---|---|---|---|
-| 4 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
-| 8 | 1.1565 | 1.1329 | 1.7947 | 1.0027 |
-| 16 | 1.3275 | 1.3579 | 3.1124 | 1.0082 |
-| 32 | 1.8010 | 1.6830 | 4.9277 | 1.0191 |
-| 64 | 2.3641 | 2.0878 | 6.7031 | 1.0408 |
-
-with anchors of 3,336 us (kernel), 1,087 us (roofline) and 17,743 us (trained-physics), and an
-admission block reporting 817,357 KV blocks and `12 x concurrency` completions, `identical across
-arms: yes` at every point. A `NO` there means the comparison is contaminated and the table above
-is not a step-time comparison.
-
-### Checking the KV number itself (historical)
-
-> **Historical.** `latency.CalculateKVBlocks` was removed with the legacy backends; the KV budget now
-> comes only from the kernel.
-
-The arms sharing one KV budget does not make that budget correct. Deriving it a second way, through
-`latency.CalculateKVBlocks`, is what found **inference-sim#1852**: the two paths agree to within
-1.8% on `minimax-m2.5` (fp8) and disagree by 1.60x on `gpt-oss-120b` (mxfp4), because the legacy
-path does not recognise mxfp4 and sizes those weights at bf16 -- 217 GiB against the config's own
-54.3 GiB. At tp=2 it returns an error instead of a block count. The kernel is the correct side, and
-no scoring path calls `CalculateKVBlocks`, so no figure here is affected.
+The four-estimator Hopper comparison and its audit, recorded in `RESULTS.md`, were produced by
+`cmd/estimatorscore` against the roofline and trained-physics backends. Both backends and that
+command were removed when BLIS became kernel-exclusive, so those figures cannot be re-run here;
+`git log` holds the revision that produced them.
 
 ## The kernel's own scores, without the simulator
 
@@ -264,29 +209,59 @@ own definition -- anchor excluded, each side normalised to its own anchor -- ove
 It also requires the anchor-INCLUSIVE variant to fail to reproduce it, so the test discriminates
 between the two definitions rather than passing on either.
 
-## Reproducing the workload claim
+## Reproducing the workload and protocol claims
+
+The per-request target lengths are a committed fixture. To regenerate it from InferenceX's own
+calls (numpy required; `-I` keeps the interpreter from importing anything beside the script), and
+to check the committed files against a fresh generation:
 
 ```bash
-go test ./sim/kernelmodel/harness/ -run "TestTheWorkloadMatches|TestTheLengthPDF" -v
+python -I scripts/gen_inferencex_workloads.py --corpus "$BLIS_MEASUREMENTS"/aisimulate_e2e.json
+python -I scripts/gen_inferencex_workloads.py --check --corpus "$BLIS_MEASUREMENTS"/aisimulate_e2e.json
+for s in 1 2 3 4; do
+  python -I scripts/gen_inferencex_workloads.py --corpus "$BLIS_MEASUREMENTS"/aisimulate_e2e.json \
+    --seed $s --out testdata/inferencex-workloads/seed$s.json
+done
 ```
 
-Asserts the sampling interval, the measured request count and the warm-up count against literals
-restated from InferenceX's source, not against the package constants the code uses -- a first
-version compared a constant to itself and a mutation of it survived.
-
-To check the claim against SemiAnalysis directly:
+`--check` prints `29 points match`. The same vectors are recomputed in Go, without Python:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/SemiAnalysisAI/InferenceX/main/inferencex-e2e/benchmarks/single_node/srt_fixed_sequence.sh
-curl -sL https://raw.githubusercontent.com/SemiAnalysisAI/InferenceX/main/inferencex-e2e/infx/bench_serving/benchmark_serving.py | sed -n '263,266p'
-gh api repos/SemiAnalysisAI/InferenceX/git/trees/main?recursive=1 \
-  --jq '.tree[].path' | grep 'srt-slurm-recipes.*yaml$' | while read p; do
-    curl -sL "https://raw.githubusercontent.com/SemiAnalysisAI/InferenceX/main/$p" \
-      | grep -oE "RANDOM_RANGE_RATIO: *'?[0-9.]+'?"
-  done | sort | uniq -c
+go test ./sim/kernelmodel/harness/ -run 'TestTheGoGenerator|TestTheFixtures|TestTheLoaderRefuses' -v
+go test ./sim/kernelmodel/harness/ -run 'TestThePoolIsTheClientsSemaphore|TestAReplayedPoint|TestSummarize' -v
 ```
 
-The last prints `50 RANDOM_RANGE_RATIO: '0.8'` -- every recipe that sets it uses 0.8.
+The first line checks an independent MT19937 and numpy-legacy `randint` against numpy's own
+output, then every vector of every fixture against it. The second checks the concurrency gate on
+the code `blis replay` runs, one point end to end through the binary, and the metric definitions.
+
+To check the source claims against SemiAnalysis directly, with a clone of
+`SemiAnalysisAI/InferenceX`:
+
+```bash
+git show 08d7a9cd:utils/bench_serving/benchmark_serving.py | sed -n '217p;228,235p;522,556p;595,632p;808,809p;1058p'
+git show 08d7a9cd:utils/bench_serving/backend_request_func.py | sed -n '270p;319p'
+git show f4a002ef:benchmarks/benchmark_lib.sh | sed -n '352,371p'
+git show f4a002ef:.github/workflows/benchmark-tmpl.yml | grep -n RANDOM_RANGE_RATIO
+for d in 2026-02-25 2026-03-01 2026-03-27 2026-03-28 2026-05-17 2026-05-30 2026-05-31 2026-06-04 \
+         2026-06-05 2026-06-07 2026-06-26 2026-07-02 2026-07-06 2026-07-12 2026-08-04 2026-08-07; do
+  c=$(git rev-list -1 --before=${d}T23:59:59 main)
+  echo "$d: $(git grep -lE 'use-chat-template|--dsv4' $c -- benchmarks/single_node \
+    | grep -vE '_mtp\.sh$|/agentic/' | tr '\n' ' ')"
+done
+```
+
+The loop prints, per run date, the non-speculative recipes that pass a chat template: only
+`qwen3.5_fp8_b300.sh` and, from 2026-06-26, two `minimaxm3_*_mi355x_atom.sh`; none is a scored
+vLLM sweep.
+
+and with numpy, that seed 0 gives the fixture's first `1024:1024` inputs and that a size-0 draw
+leaves the generator untouched:
+
+```bash
+python -I -c "import numpy as np; np.random.seed(0); print(np.random.randint(819, 1025, size=5))"
+# [ 991  866  936 1011  886]
+```
 
 ## The test suites
 
@@ -335,9 +310,11 @@ cd inference-sim
 go run ./cmd/sensitivity -blis ./blis -framework vllm
 ```
 
-Varies each engine setting the snapshot does NOT publish and reports the effect. Against a gap of
-about 1.5 points, every one is worth under half a point: `max_num_seqs` x4 moves the score -0.17,
-halved +0.36, the token budget under 0.05 either way, and removing the KV bound on admission
-0.00. (That last row is no longer computed: `blis run` sizes the KV pool from the kernel with no
-override, so the scorer prints it as `n/a` rather than simulate a deployment no one could run.) That is the evidence for the claim that the residual is a modelling gap rather than a
-consequence of unstated configuration.
+Scores the monotone vLLM sweeps (TPOT shape, anchor excluded) under the scored configuration,
+then varies one engine setting at a time -- `max_num_seqs` x2, x4 and /2, the token budget x2 and
+/2 -- and then re-scores with the numpy seed-1..4 length fixtures, other workloads drawn from the
+same intervals.
+
+A setting the runs passed is measured, so these rows bound only how much the score would move had
+it been mis-stated; no value is chosen from them. The draw rows are other workloads, not repeated
+observations of the benchmark's seed 0, and relax nothing.
