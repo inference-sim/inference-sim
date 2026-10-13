@@ -10,15 +10,19 @@ package cmd
 // Rows run in parallel: each is a set of `blis` subprocesses (runKernelCLI), sharing no state.
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // capScenario is the colocated scenario most rows run on: four 8-GPU nodes at TP4, so up to
@@ -220,6 +224,9 @@ func runArgs(base []string, extra ...string) []string {
 type capRequest struct {
 	SLOClass  string  `json:"slo_class"`
 	TenantID  string  `json:"tenant_id"`
+	SessionID string  `json:"session_id"`
+	Round     int     `json:"round_index"`
+	Prompt    int     `json:"num_prefill_tokens"`
 	HandledBy string  `json:"handled_by"`
 	TTFT      float64 `json:"ttft_ms"`
 	E2E       float64 `json:"e2e_ms"`
@@ -579,5 +586,201 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 				"turn away the first arrivals", warm.anomalies["Rejected Requests (Routing)"],
 				cold.anomalies["Rejected Requests (Routing)"])
 		}
+	})
+}
+
+// capRawCLI runs `blis args...` exactly as given (no repository flags appended), for the
+// commands that take neither a scenario nor a registry: convert and compose.
+func capRawCLI(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
+	cmd.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(args, "\x1f"))
+	var out, errBuf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errBuf
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("blis %s: %v\n%s", strings.Join(args, " "), err, lastLines(errBuf.String(), 5))
+	}
+	return out.String()
+}
+
+// capVariant writes the kernel module's scenario file, edited by each old->new pair, into a fresh
+// directory as variant.yaml.
+func capVariant(t *testing.T, file string, edits ...string) string {
+	t.Helper()
+	scenarios, _, _ := kernelRepos(t)
+	body := readFile(t, filepath.Join(scenarios, file))
+	for i := 0; i+1 < len(edits); i += 2 {
+		if !strings.Contains(body, edits[i]) {
+			t.Fatalf("%s has no %q to edit", file, edits[i])
+		}
+		body = strings.Replace(body, edits[i], edits[i+1], 1)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// pdBase is the committed 3P1D scenario's topology, with dir/file naming the scenario.
+func pdBase(dir, file string) []string {
+	return []string{"--scenarios", dir, "--scenario", file, "--pd-decider", "always", "--num-instances", "4",
+		"--prefill-instances", "3", "--decode-instances", "1", "--seed", "11", "--horizon", "900000000"}
+}
+
+// wekaSessions writes n sub-agent-free weka sessions of three growing rounds each.
+func wekaSessions(t *testing.T, n int) string {
+	t.Helper()
+	var lines []string
+	for s := 0; s < n; s++ {
+		lines = append(lines, fmt.Sprintf(`{"id":"sess-%d","models":["m"],"requests":[`+
+			`{"type":"n","t":0.0,"in":%d,"out":40,"api_time":1.0},`+
+			`{"type":"n","t":4.0,"in":%d,"out":30,"api_time":1.0},`+
+			`{"type":"n","t":9.0,"in":%d,"out":20,"api_time":1.0}]}`, s, 2000+s*50, 2600+s*50, 3200+s*50))
+	}
+	return capFile(t, "weka.jsonl", strings.Join(lines, "\n")+"\n")
+}
+
+// TestCapabilityMatrix_Compositions is the multi-feature compositions a review asked to see
+// run together: each conserves its requests and keeps every feature's effect.
+func TestCapabilityMatrix_Compositions(t *testing.T) {
+	t.Run("P/D + MTP + pools with unequal engines", func(t *testing.T) {
+		t.Parallel()
+		const draft = "      speculative:\n        method: mtp\n        num_spec_tokens: 3\n"
+		// The decode pool runs a smaller engine than the prefill pool: fewer sequences and
+		// less of its memory for KV. Both draft (speculation must agree across a handoff).
+		variant := func(decodeSeqs string) string {
+			return writeScenarioVariant(t,
+				"      gpu_memory_utilization: 0.9\n  - role: decode", "      gpu_memory_utilization: 0.9\n"+draft+"  - role: decode",
+				"      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+				"      max_num_seqs: "+decodeSeqs+"\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n"+draft+"\npd_transfer")
+		}
+		wide, narrow := variant("256"), variant("4")
+		load := burst(24, 12, 1500, 128)
+		e2e := func(dir, acceptance string, replay bool) float64 {
+			args := with(pdBase(dir, "variant.yaml"), "--speculative-acceptance-rate", acceptance)
+			var o capOut
+			if replay {
+				o = capRunReplay(t, args, load, []string{})
+			} else {
+				o = capRun(t, runArgs(args, load...)...)
+			}
+			o.conserves(t, 24)
+			if o.pd["Disaggregated Requests"] != "24" {
+				t.Fatalf("%s pools, acceptance %s: %q of 24 requests disaggregated", dir, acceptance, o.pd["Disaggregated Requests"])
+			}
+			return o.num("e2e_mean_ms")
+		}
+		none, full := e2e(wide, "0.0", true), e2e(wide, "1.0", false)
+		if full >= none {
+			t.Errorf("accepting every draft left mean E2E at %.1f ms against %.1f with none; the decode pool is not speculating", full, none)
+		}
+		if capped := e2e(narrow, "0.0", false); capped <= none {
+			t.Errorf("a decode pool admitting 4 sequences gave mean E2E %.1f ms, no more than %.1f at 256; "+
+				"the decode pool's own engine must bind", capped, none)
+		}
+	})
+
+	t.Run("MoE DP/EP: expert parallelism changes the price of a dp=2 deployment", func(t *testing.T) {
+		t.Parallel()
+		// Per-rank sizing, replicas = instances x dp, node-pool placement and run/replay parity
+		// of DP-as-placement are proven by TestRunCmd_MoEDPPlacement_EachReplicaIsSizedPerRank,
+		// TestRunCmd_MoEDPPlacement_NodePools_NxM, TestINV13_RunReplayParity_MoEDPPlacement and,
+		// under P/D, TestRunCmd_KernelBackend_DisaggregatedDataParallel.
+		off := capVariant(t, dpScenario, "enable_expert_parallel: true", "enable_expert_parallel: false")
+		args := burst(40, 10, 512, 256)
+		ep := capRun(t, runArgs(append([]string{"--scenario", dpScenario, "--num-instances", "1", "--seed", "3"}, args...))...)
+		noEP := capRun(t, runArgs(append([]string{"--scenarios", off, "--scenario", "variant.yaml", "--num-instances", "1", "--seed", "3"}, args...))...)
+		ep.conserves(t, 40)
+		noEP.conserves(t, 40)
+		if len(ep.instances) != 2 || len(noEP.instances) != 2 {
+			t.Fatalf("one logical instance at dp 2 must run 2 replicas: %d and %d", len(ep.instances), len(noEP.instances))
+		}
+		if ep.num("e2e_mean_ms") == noEP.num("e2e_mean_ms") {
+			t.Errorf("expert parallelism on and off priced the run identically (mean E2E %.1f ms)", ep.num("e2e_mean_ms"))
+		}
+	})
+
+	t.Run("converted agentic replay: weka and otel sessions, prefix-aware against round-robin routing", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		weka := filepath.Join(dir, "weka")
+		if err := runConvertWeka(wekaSessions(t, 8), weka, workload.WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1}); err != nil {
+			t.Fatal(err)
+		}
+		replay := func(prefix string, routing ...string) (capOut, []capRequest) {
+			return capRunRows(t, append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv",
+				"--session-mode", "closed-loop"}, with(colocated(4), routing...)...)...)
+		}
+		rr, rrRows := replay(weka, "--routing-policy", "round-robin")
+		pa, paRows := replay(weka, "--routing-policy", "weighted", "--routing-scorers", "precise-prefix-cache:1")
+		rr.conserves(t, 24)
+		pa.conserves(t, 24)
+		spread := func(rows []capRequest) int { // sessions served by more than one instance
+			inst := map[string]map[string]bool{}
+			for _, r := range rows {
+				if inst[r.SessionID] == nil {
+					inst[r.SessionID] = map[string]bool{}
+				}
+				inst[r.SessionID][r.HandledBy] = true
+			}
+			n := 0
+			for _, s := range inst {
+				if len(s) > 1 {
+					n++
+				}
+			}
+			return n
+		}
+		if spread(paRows) >= spread(rrRows) || spread(rrRows) == 0 {
+			t.Errorf("sessions split across instances: %d under the prefix scorer, %d under round-robin; "+
+				"a session's growing prefix must keep it on its instance", spread(paRows), spread(rrRows))
+		}
+		if pa.num("ttft_mean_ms") >= rr.num("ttft_mean_ms") {
+			t.Errorf("keeping sessions on their cached prefix did not shorten mean TTFT: %.1f against %.1f ms",
+				pa.num("ttft_mean_ms"), rr.num("ttft_mean_ms"))
+		}
+
+		otelIn := capFile(t, "otel.jsonl", strings.Join([]string{
+			`{"spans":[{"span_id":"a","name":"chat m","start_time":"2026-01-01T00:00:00.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":1000,"gen_ai.usage.output_tokens":20},"trace_id":"s1"},` +
+				`{"span_id":"b","name":"chat m","start_time":"2026-01-01T00:00:05.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":1500,"gen_ai.usage.output_tokens":20},"trace_id":"s1"}]}`,
+			`{"spans":[{"span_id":"c","name":"chat m","start_time":"2026-01-01T00:00:00.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":800,"gen_ai.usage.output_tokens":30},"trace_id":"s2"},` +
+				`{"span_id":"d","name":"chat m","start_time":"2026-01-01T00:00:03.000000+00:00","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":1200,"gen_ai.usage.output_tokens":30},"trace_id":"s2"}]}`,
+		}, "\n")+"\n")
+		otel := filepath.Join(dir, "otel")
+		if err := runConvertOtel(otelIn, otel, workload.OTelConvertOptions{ContextGrowth: "accumulate", MaxThinkTimeUs: 15_000_000, MinRounds: 1}); err != nil {
+			t.Fatal(err)
+		}
+		o, rows := replay(otel)
+		o.conserves(t, 4)
+		if len(rows) != 4 {
+			t.Errorf("%d request rows for 2 sessions x 2 rounds", len(rows))
+		}
+		// accumulate replay carries each round's prompt and answer into the next round's
+		// prompt. (The exact reconstruction -- round 1's prompt equal to the recorded 1500 and
+		// 1200 -- is one token short per round: the session manager carries output-1 tokens
+		// forward, a defect recorded as a known gap rather than asserted here.)
+		prompt := map[string]map[int]int{}
+		for _, r := range rows {
+			if prompt[r.SessionID] == nil {
+				prompt[r.SessionID] = map[int]int{}
+			}
+			prompt[r.SessionID][r.Round] = r.Prompt
+		}
+		for sid, rounds := range prompt {
+			if rounds[1] <= rounds[0] {
+				t.Errorf("session %s: round 1's prompt (%d tokens) did not grow past round 0's (%d)", sid, rounds[1], rounds[0])
+			}
+		}
+	})
+
+	t.Run("autoscaler with node pools: runs and conserves (its analyzer is inert, #1916)", func(t *testing.T) {
+		t.Parallel()
+		bundle := capFile(t, "autoscale.yaml", "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n"+
+			"    gpu_memory_gib: 141\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
+			"autoscaler:\n  interval_us: 1000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
+			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
+		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
+		o.conserves(t, 60)
 	})
 }
