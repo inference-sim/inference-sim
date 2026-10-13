@@ -4,8 +4,8 @@ package cmd
 // through the real CLI on the kernel with the vendored catalog and registry, each asserting
 // conservation plus a feature-specific effect -- the feature on against the feature off moving
 // the expected quantity in the expected direction -- so a feature that is accepted but inert
-// fails. Rows already proven by a dedicated test name it instead of repeating it
-// (capabilityProvenElsewhere); docs/... and the PR body map each claim to a row here or there.
+// fails. A row whose law a dedicated test already proves names that test instead of repeating
+// it.
 //
 // Rows run in parallel: each is a set of `blis` subprocesses (runKernelCLI), sharing no state.
 
@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -226,6 +227,7 @@ type capRequest struct {
 	TenantID  string  `json:"tenant_id"`
 	SessionID string  `json:"session_id"`
 	Round     int     `json:"round_index"`
+	ArrivedAt float64 `json:"arrived_at"` // seconds
 	Prompt    int     `json:"num_prefill_tokens"`
 	HandledBy string  `json:"handled_by"`
 	TTFT      float64 `json:"ttft_ms"`
@@ -782,5 +784,292 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
 		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
 		o.conserves(t, 60)
+	})
+}
+
+// inferencePerfSpec is an inference-perf style spec: one 5 s stage at 4 req/s over two
+// 800-token system prompts, three users each, asking 200-token questions.
+const inferencePerfSpec = "version: \"2\"\nseed: 7\ninference_perf:\n  stages:\n    - {rate: 4, duration: 5}\n" +
+	"  shared_prefix:\n    num_unique_system_prompts: 2\n    num_users_per_system_prompt: 3\n" +
+	"    system_prompt_len: 800\n    question_len: 200\n    output_len: 32\n"
+
+// capSpecBody writes a workload spec from its full YAML body.
+func capSpecBody(t *testing.T, body string) string { return capFile(t, "spec.yaml", body) }
+
+// meanPrompt is the mean prompt length the run injected.
+func (o capOut) meanPrompt() float64 { return o.num("total_input_tokens") / o.num("injected_requests") }
+
+// TestCapabilityMatrix_Workloads is section 5 of the PR: each workload source runs on the
+// kernel, conserves its requests, replays byte-identically where INV-13 applies, and shapes
+// the traffic the way it says.
+func TestCapabilityMatrix_Workloads(t *testing.T) {
+	t.Run("catalog preset: lengths come from the preset", func(t *testing.T) {
+		t.Parallel()
+		o := capRunReplay(t, colocated(1), []string{"--workload", "chatbot", "--rate", "10", "--num-requests", "40"}, nil)
+		o.conserves(t, 40)
+		// chatbot.yaml states a 256-token mean prompt (stdev 100, clipped to [2, 800]); the
+		// distribution default is 512.
+		if m := o.meanPrompt(); m < 200 || m > 320 {
+			t.Errorf("the chatbot preset's mean prompt is %.0f tokens, want near its stated 256", m)
+		}
+	})
+
+	t.Run("arrival processes: each replays, and burstier arrivals lengthen the TTFT tail", func(t *testing.T) {
+		t.Parallel()
+		p99 := map[string]float64{}
+		for name, arrival := range map[string]string{
+			"constant": "{process: constant}", "poisson": "{process: poisson}",
+			"gamma": "{process: gamma, cv: 4.0}", "weibull": "{process: weibull, cv: 2.0}",
+		} {
+			spec := capSpecBody(t, "version: \"2\"\nseed: 7\naggregate_rate: 8\nnum_requests: 80\nclients:\n"+
+				strings.Replace(capClient("c", "standard", 1, 1500, 128, ""), "{process: poisson}", arrival, 1))
+			o := capRunReplay(t, colocated(1), []string{"--workload-spec", spec}, nil)
+			o.conserves(t, 80)
+			p99[name] = o.num("ttft_p99_ms")
+		}
+		if p99["gamma"] <= p99["constant"] {
+			t.Errorf("TTFT p99 %.0f ms under gamma cv=4 arrivals, %.0f under constant; bursts must queue",
+				p99["gamma"], p99["constant"])
+		}
+	})
+
+	t.Run("length distributions: each replays and injects its own mean", func(t *testing.T) {
+		t.Parallel()
+		for _, tt := range []struct {
+			dist     string
+			mean     float64
+			tolerate float64
+		}{
+			{"{type: constant, params: {value: 800}}", 800, 0},
+			{"{type: gaussian, params: {mean: 800, std_dev: 200, min: 100, max: 2000}}", 800, 0.15},
+			{"{type: exponential, params: {mean: 800}}", 800, 0.3},
+			{"{type: empirical, params: {\"600\": 0.5, \"1000\": 0.5}}", 800, 0.15},
+			{"{type: lognormal, params: {mu: 6.5, sigma: 0.3}}", 696, 0.15}, // exp(mu + sigma^2/2)
+			{"{type: pareto_lognormal, params: {alpha: 1.5, xm: 50, mu: 6.5, sigma: 0.5, mix_weight: 0.3}}", 0, 0},
+		} {
+			client := "  - id: c\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n" +
+				"    arrival: {process: poisson}\n    input_distribution: " + tt.dist + "\n" +
+				"    output_distribution: {type: constant, params: {value: 32}}\n"
+			spec := capSpecBody(t, "version: \"2\"\nseed: 7\naggregate_rate: 4\nnum_requests: 60\nclients:\n"+client)
+			o := capRunReplay(t, colocated(1), []string{"--workload-spec", spec}, nil)
+			o.conserves(t, 60)
+			if tt.mean > 0 {
+				if m := o.meanPrompt(); m < tt.mean*(1-tt.tolerate)-1e-9 || m > tt.mean*(1+tt.tolerate)+1e-9 {
+					t.Errorf("%s: mean prompt %.0f tokens, want %.0f within %.0f%%", tt.dist, m, tt.mean, 100*tt.tolerate)
+				}
+			} else if o.meanPrompt() <= 0 {
+				t.Errorf("%s injected no prompt tokens", tt.dist)
+			}
+		}
+	})
+
+	t.Run("cohorts: populations with diurnal and spike lifecycles replay, and a spike adds load", func(t *testing.T) {
+		t.Parallel()
+		cohort := func(id, lifecycle string) string {
+			return "  - id: " + id + "\n    population: 4\n    tenant_id: " + id + "\n    slo_class: standard\n    rate_fraction: 0.5\n" +
+				"    arrival: {process: poisson}\n" +
+				"    input_distribution: {type: constant, params: {value: 1000}}\n" +
+				"    output_distribution: {type: constant, params: {value: 64}}\n" + lifecycle
+		}
+		spec := func(cohorts ...string) string {
+			return capSpecBody(t, "version: \"2\"\nseed: 7\naggregate_rate: 4\nhorizon: 20000000\ncohorts:\n"+strings.Join(cohorts, ""))
+		}
+		args := with(colocated(1)[:len(colocated(1))-2], "--horizon", "20000000")
+		daily := "    diurnal: {peak_hour: 12, peak_to_trough_ratio: 3}\n"
+		// A spike cohort is active only inside its window: every one of its arrivals falls in it.
+		base := capRunReplay(t, args, []string{"--workload-spec", spec(cohort("users", daily))}, nil)
+		base.conserves(t, int(base.num("injected_requests")))
+		mixed := spec(cohort("users", daily), cohort("burst", "    spike: {start_time_us: 5000000, duration_us: 5000000}\n"))
+		spiked := capRunReplay(t, args, []string{"--workload-spec", mixed}, nil)
+		spiked.conserves(t, int(spiked.num("injected_requests")))
+		_, rows := capRunRows(t, runArgs(args, "--workload-spec", mixed)...)
+		inWindow, outside := 0, 0
+		for _, r := range rows {
+			if r.TenantID != "burst" {
+				continue
+			}
+			if r.ArrivedAt >= 5 && r.ArrivedAt < 10 {
+				inWindow++
+			} else {
+				outside++
+			}
+		}
+		if inWindow == 0 || outside != 0 {
+			t.Errorf("the spike cohort sent %d requests inside its 5-10 s window and %d outside it", inWindow, outside)
+		}
+	})
+
+	t.Run("multi-turn: closed-loop and open-loop sessions run every round, deterministically", func(t *testing.T) {
+		t.Parallel()
+		session := func(closed bool) string {
+			return capSpecBody(t, fmt.Sprintf("version: \"2\"\nseed: 7\ncategory: reasoning\naggregate_rate: 2\nnum_requests: 6\nclients:\n"+
+				"  - id: chat\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n    closed_loop: %t\n"+
+				"    arrival: {process: poisson}\n"+
+				"    input_distribution: {type: constant, params: {value: 500}}\n"+
+				"    output_distribution: {type: constant, params: {value: 50}}\n"+
+				"    reasoning:\n      reason_ratio_distribution: {type: constant, params: {value: 0}}\n"+
+				"      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate}\n", closed))
+		}
+		for _, closed := range []bool{true, false} {
+			args := runArgs(colocated(1), "--workload-spec", session(closed))
+			a, b := capRun(t, args...), capRun(t, args...)
+			if a.stdout != b.stdout {
+				t.Errorf("closed_loop %t: two runs at one seed differ (INV-6)", closed)
+			}
+			if a.num("completed_requests") < 6 || int(a.num("completed_requests"))%3 != 0 {
+				t.Errorf("closed_loop %t: %v requests completed; want whole 3-round sessions", closed, a.num("completed_requests"))
+			}
+			a.conserves(t, int(a.num("injected_requests")))
+			// accumulate: later rounds carry earlier prompts, so the mean prompt exceeds round 0's.
+			if a.meanPrompt() <= 500 {
+				t.Errorf("closed_loop %t: mean prompt %.0f tokens; accumulated rounds must exceed round 0's 500", closed, a.meanPrompt())
+			}
+		}
+	})
+
+	t.Run("concurrency and think time: replays, and thinking lowers throughput", func(t *testing.T) {
+		t.Parallel()
+		users := func(think string) []string { // burst's lengths, with closed-loop users instead of a rate
+			b := burst(40, 1, 1000, 64)
+			return append(append(b[:2:2], b[4:]...), "--concurrency", "4", "--think-time-ms", think)
+		}
+		busy := capRunReplay(t, colocated(1), users("0"), nil)
+		idle := capRunReplay(t, colocated(1), users("2000"), nil)
+		busy.conserves(t, 40)
+		idle.conserves(t, 40)
+		if idle.num("responses_per_sec") >= busy.num("responses_per_sec") {
+			t.Errorf("4 users with 2 s think time served %.2f req/s, without it %.2f", idle.num("responses_per_sec"),
+				busy.num("responses_per_sec"))
+		}
+		// Each user sends 10 requests and thinks 2 s between consecutive ones, so the run spans
+		// at least 9 think times.
+		if d := idle.num("vllm_estimated_duration_s"); d < 18 {
+			t.Errorf("4 users x 10 requests with 2 s think time finished in %.1f s; 9 think times alone take 18 s", d)
+		}
+	})
+
+	t.Run("prefix groups, tenants and goodput SLOs: each is honoured and replays", func(t *testing.T) {
+		t.Parallel()
+		hit := func(o capOut) float64 {
+			for _, line := range strings.Split(o.stdout, "\n") {
+				if v, ok := strings.CutPrefix(line, "Cache Hit Rate: "); ok {
+					f, _ := strconv.ParseFloat(v, 64)
+					return f
+				}
+			}
+			return 0 // printed only when nonzero
+		}
+		shared := capRunReplay(t, colocated(2), []string{"--workload-spec", capSpec(t, 4, 40,
+			capClient("a", "standard", 1, 1500, 64, "    prefix_group: g\n    prefix_length: 1200\n"))}, nil)
+		private := capRunReplay(t, colocated(2), []string{"--workload-spec", capSpec(t, 4, 40,
+			capClient("a", "standard", 1, 1500, 64, ""))}, nil)
+		if hit(shared) <= hit(private) {
+			t.Errorf("a 1200-token shared prefix gave cache hit rate %.3f, none gave %.3f", hit(shared), hit(private))
+		}
+		// tenants: the per-tenant section accounts for every request.
+		o := capRun(t, runArgs(colocated(2), "--workload-spec", tenantMix(t, "standard"))...)
+		total := 0
+		for _, line := range strings.Split(o.stdout, "\n") {
+			if _, rest, ok := strings.Cut(line, ": requests="); ok {
+				n, _ := strconv.Atoi(strings.SplitN(rest, ",", 2)[0])
+				total += n
+			}
+		}
+		if total != 120 {
+			t.Errorf("per-tenant metrics account for %d of 120 requests", total)
+		}
+		// goodput: a TTFT target the run misses scores zero attainment, one it meets scores one.
+		attain := func(target string) float64 {
+			o := capRun(t, runArgs(colocated(2), "--workload-spec", classMix(t), "--slo-ttft", "critical="+target)...)
+			var cluster struct {
+				PerClass map[string]struct {
+					Attainment float64 `json:"slo_attainment"`
+				} `json:"per_class"`
+			}
+			for _, raw := range extractJSONObjects(o.stdout) {
+				if strings.Contains(raw, `"instance_id": "cluster"`) {
+					_ = json.Unmarshal([]byte(raw), &cluster)
+				}
+			}
+			return cluster.PerClass["critical"].Attainment
+		}
+		if tight, loose := attain("1ms"), attain("600s"); tight != 0 || loose != 1 {
+			t.Errorf("critical TTFT attainment %.2f at 1 ms and %.2f at 600 s; want 0 and 1", tight, loose)
+		}
+	})
+
+	t.Run("inference-perf spec: stages and shared prefixes run and replay", func(t *testing.T) {
+		t.Parallel()
+		spec := capSpecBody(t, inferencePerfSpec)
+		o := capRunReplay(t, colocated(1), []string{"--workload-spec", spec}, nil)
+		o.conserves(t, int(o.num("injected_requests")))
+		// One 5 s stage at 4 req/s, every prompt the 800-token system prompt plus a 200-token question.
+		if n := o.num("injected_requests"); n < 10 || n > 30 {
+			t.Errorf("a 5 s stage at 4 req/s injected %v requests", n)
+		}
+		if o.meanPrompt() != 1000 {
+			t.Errorf("mean prompt %.1f tokens; every request is the 800-token system prompt plus a 200-token question", o.meanPrompt())
+		}
+	})
+
+	t.Run("convert preset, inference-perf and servegen: the converted spec runs and replays", func(t *testing.T) {
+		t.Parallel()
+		_, catalog, _ := kernelRepos(t)
+		preset := capFile(t, "preset.yaml", capRawCLI(t, "convert", "preset", "--name", "chatbot", "--rate", "10",
+			"--num-requests", "30", "--catalog", catalog))
+		o := capRunReplay(t, colocated(1), []string{"--workload-spec", preset}, nil)
+		o.conserves(t, 30)
+
+		ip := capFile(t, "ip.yaml", inferencePerfSpec)
+		converted := capFile(t, "ip-v2.yaml", capRawCLI(t, "convert", "inference-perf", "--spec", ip))
+		// The converted spec does not carry the stage's 5 s duration (the native spec stops at
+		// 20 requests; the converted one runs to the horizon -- a convert-fidelity gap beside
+		// #1915), so the horizon here is the stage's end.
+		stage := with(colocated(1)[:len(colocated(1))-2], "--horizon", "5000000")
+		o = capRunReplay(t, stage, []string{"--workload-spec", converted}, nil)
+		o.conserves(t, int(o.num("injected_requests")))
+		if n := o.num("injected_requests"); n < 10 || n > 30 || o.meanPrompt() != 1000 {
+			t.Errorf("converted inference-perf spec: %v requests in its 5 s stage at 4 req/s, mean prompt %.1f "+
+				"(want 800 + 200)", n, o.meanPrompt())
+		}
+
+		// A ServeGen directory: three chunks in each of the first three midnight windows, every
+		// request 500 prompt and 40 output tokens by its dataset PDF.
+		dir := t.TempDir()
+		for i := 0; i < 9; i++ {
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("chunk-%d-trace.csv", i)),
+				[]byte(fmt.Sprintf("%d,%f,0.8,Weibull,1.5,0.02\n", (i/3)*600, 5.0+float64(i)*0.1)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("chunk-%d-dataset.json", i)),
+				[]byte(`{"0": {"input_tokens": "{500: 1.0}", "output_tokens": "{40: 1.0}"}}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// The converted spec spans the 30-minute period; bound it to 40 requests.
+		sg := capFile(t, "sg.yaml", strings.Replace(capRawCLI(t, "convert", "servegen", "--path", dir, "--time", "midnight"),
+			"\nseed: 42\n", "\nseed: 42\nnum_requests: 40\n", 1))
+		o = capRunReplay(t, colocated(1), []string{"--workload-spec", sg}, nil)
+		o.conserves(t, 40)
+		if math.Abs(o.meanPrompt()-500) > 1 || math.Abs(o.num("total_output_tokens")-40*o.num("completed_requests")) > o.num("completed_requests") {
+			t.Errorf("servegen: mean prompt %.1f and %v output tokens over %v requests; the dataset states 500 and 40",
+				o.meanPrompt(), o.num("total_output_tokens"), o.num("completed_requests"))
+		}
+	})
+
+	t.Run("compose: the merged spec serves both sources", func(t *testing.T) {
+		t.Parallel()
+		a := capSpec(t, 4, 20, capClient("chat", "critical", 1, 500, 64, ""))
+		b := capSpec(t, 2, 10, capClient("batch", "batch", 1, 3000, 32, ""))
+		merged := capFile(t, "merged.yaml", capRawCLI(t, "compose", "--from", a, "--from", b))
+		// compose drops num_requests (#1906), so the horizon bounds the run.
+		args := with(colocated(1)[:len(colocated(1))-2], "--horizon", "10000000")
+		o, rows := capRunRows(t, runArgs(args, "--workload-spec", merged)...)
+		o.conserves(t, int(o.num("injected_requests")))
+		_, n := meanTTFTBy(rows, bySLOClass)
+		if n["critical"] == 0 || n["batch"] == 0 {
+			t.Errorf("the composed spec served %v; both sources must contribute", n)
+		}
+		capRunReplay(t, args, []string{"--workload-spec", merged}, nil)
 	})
 }
