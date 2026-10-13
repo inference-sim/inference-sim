@@ -91,6 +91,17 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 		t.Errorf("%d no-log and %d not-measured gaps, want %d and 6 settings x %d points",
 			noLog, absent, len(sw.Points), len(sw.Points))
 	}
+	// The listing of what keeps a sweep out of STRICT counts the resolved settings per point:
+	// the four admission settings, resolved by vLLM's rules on every point.
+	rs := AssessCoverage(&Corpus{Sweeps: []Sweep{sw}}, Config{Repos: testRepos()}).ResolvedSettings(sw)
+	for _, k := range []string{"max_num_seqs", "max_num_batched_tokens", "block_size", "enable_prefix_caching"} {
+		if rs[k] != len(sw.Points) {
+			t.Errorf("ResolvedSettings[%s] = %d, want %d: %v", k, rs[k], len(sw.Points), rs)
+		}
+	}
+	if len(rs) != 4 {
+		t.Errorf("ResolvedSettings lists %v; only the four admission settings resolve here", rs)
+	}
 
 	var ps PointSettings
 	if err := json.Unmarshal([]byte(`{"passed":{"max_num_seqs":8,"max_num_batched_tokens":8192,

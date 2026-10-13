@@ -77,6 +77,9 @@ type Gap struct {
 	Owner  string
 	Detail string
 	Kind   GapKind
+	// Setting names the run setting a provenance gap is about ("max_num_seqs", ...), or is
+	// empty for any other gap.
+	Setting string
 }
 
 // Tier is how close a sweep's simulation is to its measured runs, from the gaps on its points.
@@ -163,6 +166,19 @@ func (cv *Coverage) ApplyWarmupBracket(sw Sweep, concurrency int, b WarmupBracke
 		g.Detail += fmt.Sprintf("; bracket TTFT %+.3f%% TPOT %+.4f%%, draw noise TTFT %.3f%% TPOT %.4f%%, %s "+
 			"(exact protocol: blis-schemas#56, inference-sim#1926)", b.DTTFTPct, b.DTPOTPct, b.NoiseTTFTPct, b.NoiseTPOTPct, verdict)
 	}
+}
+
+// ResolvedSettings counts, per run setting, the points of a sweep that simulate it at vLLM's
+// resolved value rather than a measured one -- what keeps a MEASURED-OR-RESOLVED sweep out of
+// STRICT.
+func (cv *Coverage) ResolvedSettings(sw Sweep) map[string]int {
+	out := map[string]int{}
+	for _, g := range cv.Gaps {
+		if g.Scenario == sw.Scenario && g.Label == sw.Label && g.Kind == GapResolved && g.Setting != "" {
+			out[g.Setting]++
+		}
+	}
+	return out
 }
 
 // BracketStats summarises the warm-up brackets of the points in one table: how many, and the
@@ -332,6 +348,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 			{"enable_expert_parallel", pc.EPFrom}} {
 			switch f.from {
 			case SourceMeasured:
+				continue
 			case SourceResolved:
 				// Expert parallelism and memory utilisation resolve to a default vLLM applies
 				// unconditionally (off; 0.9 or 0.92 by the logged engine version), so a run that
@@ -347,6 +364,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 				cv.pointGap(sw, p.Concurrency, GapApproximate, "measured setting absent: "+f.name+" (scenario value used)",
 					OwnerMeasurements, "")
 			}
+			cv.Gaps[len(cv.Gaps)-1].Setting = f.name
 		}
 		// The benchmark's warm-up sent 2*CONC copies of request 0 before the main phase.
 		// With prefix caching on, the measured main request 0 found its prompt cached; the

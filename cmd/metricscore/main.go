@@ -176,6 +176,13 @@ func main() {
 	errs := map[harness.Tier][]map[harness.Metric][]float64{}
 	mapes := map[harness.Tier][]map[harness.Metric][]float64{}
 	sweepsIn := map[harness.Tier]int{}
+	// The sweeps of the two strict tables, in scoring order, for the listing that says why
+	// each is where it is.
+	type tierSweep struct {
+		sw   harness.Sweep
+		tier harness.Tier
+	}
+	var strictSweeps []tierSweep
 	for _, t := range harness.AllTiers {
 		errs[t] = make([]map[harness.Metric][]float64, len(arms))
 		mapes[t] = make([]map[harness.Metric][]float64, len(arms))
@@ -382,6 +389,9 @@ func main() {
 			sweepTier = harness.TierApproximate
 		}
 		sweeps++
+		if sweepTier.In(harness.TierMeasuredOrResolved) {
+			strictSweeps = append(strictSweeps, tierSweep{sw, sweepTier})
+		}
 		for _, t := range harness.AllTiers {
 			if sweepTier.In(t) {
 				sweepsIn[t]++
@@ -497,6 +507,28 @@ func main() {
 			"  from 2x to 10x selects the same four points. TPOT keeps them: those sweeps'\n"+
 			"  TPOT curves are sound, and excluding the sweeps would discard 11 good points to\n"+
 			"  remove 4 bad ones.\n", ttftExcluded, harness.DefaultTTFTSpikeFactor)
+	}
+
+	fmt.Printf("\n=== Sweeps in STRICT and MEASURED-OR-RESOLVED, and why each is not stricter\n")
+	if len(strictSweeps) == 0 {
+		fmt.Println("  none")
+	}
+	for _, ts := range strictSweeps {
+		why := "nothing: every setting measured and carried"
+		if rs := coverage.ResolvedSettings(ts.sw); len(rs) > 0 {
+			names := make([]string, 0, len(rs))
+			for k := range rs {
+				names = append(names, k)
+			}
+			sort.Strings(names)
+			parts := make([]string, len(names))
+			for i, k := range names {
+				parts[i] = fmt.Sprintf("%s (%d pts)", k, rs[k])
+			}
+			why = "resolved, not measured: " + strings.Join(parts, ", ")
+		}
+		fmt.Printf("  %-22s %-44s %-5s %2d points  %s\n", ts.tier, trunc(ts.sw.Scenario, 44), ts.sw.Label,
+			len(ts.sw.Points), why)
 	}
 
 	for _, m := range harness.AllMetrics {
