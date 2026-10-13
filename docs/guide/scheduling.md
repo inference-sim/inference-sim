@@ -85,7 +85,7 @@ BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request
 
 This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With `priority-fcfs` and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.
 
-By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (`scheduler.py:1086`).
+By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). A scenario stating `engine.scheduling_policy: priority` selects both `priority-fcfs` queueing and `priority` preemption, as vLLM does (`fcfs` selects `fcfs` for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file ([Scenario Overrides](results.md#scenario-overrides)).
 
 ## When to Use Which
 

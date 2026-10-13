@@ -37,6 +37,12 @@ type PoolOverrides struct {
 	// own kernel, since pools of different widths hold different bytes per block.
 	KVOffload               *sim.KVOffloadConfig
 	KVTransferTicksPerBlock *int64
+
+	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
+	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
+	// its queue order and its preemption victim.
+	Scheduler        string
+	PreemptionPolicy string
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -73,7 +79,8 @@ func (o PoolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" &&
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
-		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
+		o.Scheduler == "" && o.PreemptionPolicy == ""
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -115,6 +122,12 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	}
 	if overrides.KVTransferTicksPerBlock != nil {
 		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
+	}
+	if overrides.Scheduler != "" {
+		resolved.Scheduler = overrides.Scheduler
+	}
+	if overrides.PreemptionPolicy != "" {
+		resolved.PreemptionPolicy = overrides.PreemptionPolicy
 	}
 
 	return resolved

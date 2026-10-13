@@ -87,6 +87,10 @@ var (
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
 	kernelOpened              *kernelmodel.Model     // the kernel adoptKernelDeployment opened; nil until it runs
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
+	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
+	schedulerSource           string                 // what chose the scheduler: "--scheduler", "--policy-config", "" = the scenario
+	preemptionSource          string                 // likewise for the preemption policy
+	scenarioDisaggregated     bool                   // the scenario states prefill and decode pools (each pool records its own overrides)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
@@ -506,35 +510,69 @@ func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
 // the default. An explicit --scheduler that differs is a deliberate policy experiment and is
 // kept, with a warning that the simulated engine no longer matches the scenario.
 func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
-	eng, err := m.Engine()
-	if err != nil || eng.SchedulingPolicy == "" {
+	stated, ok := statedSchedulingPolicy(m)
+	if !ok {
 		return
 	}
-	stated, ok := map[string]string{"fcfs": "fcfs", "priority": "priority-fcfs"}[eng.SchedulingPolicy]
+	scenarioScheduler, scenarioPreemption = stated.scheduler, stated.preemption
+	if cmd.Flags().Changed("scheduler") {
+		schedulerSource = "--scheduler"
+		recordPolicyOverride("scheduler", "", scenarioScheduler, scheduler, schedulerSource)
+	} else {
+		scheduler = stated.scheduler
+	}
+	if cmd.Flags().Changed("preemption-policy") {
+		preemptionSource = "--preemption-policy"
+		recordPolicyOverride("preemption_policy", "", scenarioPreemption, preemptionPolicy, preemptionSource)
+	} else {
+		preemptionPolicy = stated.preemption
+	}
+}
+
+// enginePolicy is a vLLM scheduling_policy in BLIS's terms: it decides both the waiting
+// queue's order and which running request is preempted under KV pressure (vLLM v0.31.0
+// v1/core/sched/scheduler.py: the preemption victim is chosen by priority when the policy is
+// PRIORITY, else the last-scheduled request).
+type enginePolicy struct{ scheduler, preemption string }
+
+// statedSchedulingPolicy reads a pool's engine.scheduling_policy: fcfs is FCFS queueing and
+// tail-of-batch preemption; priority is priority-fcfs queueing (lowest priority value first,
+// then arrival) and priority preemption. Unstated returns false; any other value is refused.
+func statedSchedulingPolicy(m *kernelmodel.Model) (enginePolicy, bool) {
+	eng, err := m.Engine()
+	if err != nil || eng.SchedulingPolicy == "" {
+		return enginePolicy{}, false
+	}
+	p, ok := map[string]enginePolicy{
+		"fcfs":     {scheduler: "fcfs", preemption: "fcfs"},
+		"priority": {scheduler: "priority-fcfs", preemption: "priority"},
+	}[eng.SchedulingPolicy]
 	if !ok {
 		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
 			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
 	}
-	scenarioScheduler = stated
-	if !cmd.Flags().Changed("scheduler") {
-		scheduler = stated
-		return
-	}
-	recordSchedulerOverride("--scheduler")
+	return p, true
 }
 
-// recordSchedulerOverride notes, when the run's scheduler differs from the one its scenario
-// states, that source chose it: warned on stderr and recorded in the results file
-// (scenarioOverrides), so a run that no longer reproduces its scenario says so in the file
-// that reports it, not only in a log line. No-op when the scenario states none.
-func recordSchedulerOverride(source string) {
-	if scenarioScheduler == "" || scheduler == scenarioScheduler {
+// recordPolicyOverride notes, when the policy a run simulates for setting differs from the one
+// its scenario states (scope names a pool, "" = the run), that source chose it: warned on
+// stderr and recorded in the results file (scenarioOverrides), so a run that no longer
+// reproduces its scenario says so in the file that reports it, not only in a log line. No-op
+// when the scenario states none or the two agree.
+func recordPolicyOverride(setting, scope, stated, run, source string) {
+	// A disaggregated run records its overrides per pool (poolOverridesOf), where each pool's
+	// own stated policy is known; a run-level record would repeat the first pool's.
+	if stated == "" || run == stated || (scope == "" && scenarioDisaggregated) {
 		return
 	}
-	logrus.Warnf("%s sets scheduler %s, overriding scenario %q's engine.scheduling_policy (BLIS %s); "+
-		"the results file records the override", source, scheduler, kernelScenario, scenarioScheduler)
+	name := setting
+	if scope != "" {
+		name = setting + " (" + scope + " pool)"
+	}
+	logrus.Warnf("%s sets %s %s, overriding scenario %q's engine.scheduling_policy (BLIS %s); "+
+		"the results file records the override", source, name, run, kernelScenario, stated)
 	scenarioOverrides = append(scenarioOverrides, sim.ScenarioOverride{
-		Setting: "scheduler", Scenario: scenarioScheduler, Run: scheduler, Source: source,
+		Setting: name, Scenario: stated, Run: run, Source: source,
 	})
 }
 
@@ -551,7 +589,8 @@ func recordSchedulerOverride(source string) {
 // who chose it. The gates still execute, on these values.
 func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
-	scenarioScheduler, scenarioOverrides = "", nil
+	scenarioScheduler, scenarioPreemption, scenarioOverrides = "", "", nil
+	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
 	missing := []string{}
 	if kernelScenario == "" {
 		missing = append(missing, "--scenario")
@@ -587,6 +626,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 			"read yet (#1910); describe the tiers with --kv-offload-config and remove the block "+
 			"from the scenario", kernelScenario)
 	}
+	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
 			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
@@ -811,10 +851,13 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
-			recordSchedulerOverride("--policy-config")
+			schedulerSource = "--policy-config"
+			recordPolicyOverride("scheduler", "", scenarioScheduler, scheduler, schedulerSource)
 		}
 		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
 			preemptionPolicy = bundle.Preemption.Policy
+			preemptionSource = "--policy-config"
+			recordPolicyOverride("preemption_policy", "", scenarioPreemption, preemptionPolicy, preemptionSource)
 		}
 	}
 

@@ -143,10 +143,25 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	seqs, toks := int64(s.MaxNumSeqs), int64(s.MaxNumBatchedTokens)
 	noCache := s.PrefixCachingDisabled
 	ml := int64(s.MaxModelLen)
-	return cluster.PoolOverrides{
+	o := cluster.PoolOverrides{
 		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
 	}
+	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
+	// one for the run, which then applies to every pool and is recorded where it departs.
+	if stated, ok := statedSchedulingPolicy(m); ok {
+		if schedulerSource != "" {
+			recordPolicyOverride("scheduler", string(m.Role()), stated.scheduler, scheduler, schedulerSource)
+		} else {
+			o.Scheduler = stated.scheduler
+		}
+		if preemptionSource != "" {
+			recordPolicyOverride("preemption_policy", string(m.Role()), stated.preemption, preemptionPolicy, preemptionSource)
+		} else {
+			o.PreemptionPolicy = stated.preemption
+		}
+	}
+	return o
 }
 
 // requireWindowFits refuses an engine whose stated window one request could not fit in, as

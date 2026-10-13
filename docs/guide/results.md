@@ -60,10 +60,13 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 ### Scenario Overrides
 
 A run reproduces its scenario unless a flag or a policy bundle chooses another value for a
-setting the scenario states. Today that is the instance scheduler: an explicit `--scheduler`,
-or a `--policy-config` bundle's `scheduler`, that differs from the scenario's
-`engine.scheduling_policy` (vLLM `priority` is BLIS `priority-fcfs`). The override is kept,
-since exploring a policy against a fixed deployment is the point, and the results file says so:
+setting the scenario states. Today those are the two settings vLLM's
+`engine.scheduling_policy` decides: the waiting queue's order and the preemption victim
+(vLLM `fcfs` is BLIS `--scheduler fcfs` with `--preemption-policy fcfs`; vLLM `priority` is
+`--scheduler priority-fcfs` with `--preemption-policy priority`). An explicit `--scheduler` or
+`--preemption-policy`, or a `--policy-config` bundle's `scheduler` or `preemption.policy`, that
+differs from the scenario is kept, since exploring a policy against a fixed deployment is the
+point, and the results file says so:
 
 ```json
 {
@@ -72,6 +75,10 @@ since exploring a policy against a fixed deployment is the point, and the result
   ]
 }
 ```
+
+In a prefill/decode deployment each pool runs its own engine's policy, so a run-level choice
+is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill pool)"` or
+`"preemption_policy (decode pool)"`.
 
 A warning on stderr says the same. Like `catalog`, the block is file-only.
 
