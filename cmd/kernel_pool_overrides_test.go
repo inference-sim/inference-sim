@@ -13,15 +13,17 @@ import (
 // latency model is that pool's model, the KV budget is that pool's SettingsReserving answer at
 // the run's LoRA reservation, and TP, max_num_seqs and max_num_batched_tokens are that pool's.
 // The variant's pools differ in every one of the sized fields (prefill admits 128 sequences
-// and 16384 batched tokens, decode 256 and 8192, and decode caches in bf16 where prefill
-// caches in fp8), so overrides that swapped the pools, or sized both from one, would fail.
+// and 16384 batched tokens, decode 256 and 8192, and decode runs at gpu_memory_utilization 0.8
+// where prefill runs at 0.9), so overrides that swapped the pools, or sized both from one, would fail.
 func TestKernelPools_Overrides_AreEachPoolsOwnEngine(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	dir := writeScenarioVariant(t,
 		"      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n",
 		"      max_num_batched_tokens: 16384\n      max_num_seqs: 128\n",
 		"      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
+		// The pools must cache in one format (a handoff moves KV between them), so the
+		// decode pool's KV budget differs through its memory utilisation instead.
+		"      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n\npd_transfer")
 	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
 		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {

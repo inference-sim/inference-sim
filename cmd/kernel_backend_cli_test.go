@@ -775,6 +775,11 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"pools drafting differently", "one speculative configuration applies to the run",
 			pd(writeScenarioVariant(t, "      gpu_memory_utilization: 0.9\n\npd_transfer",
 				"      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 2\n\npd_transfer"), topology...)},
+		// The decode pool caching bf16 behind an fp8 prefill pool: the handoff would move pages
+		// the decode engine does not hold.
+		{"pools caching KV in different formats", "caches KV as cache_dtype",
+			pd(writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+				"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer"), topology...)},
 		{"pools with no fabric between them", "cluster.fabric",
 			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
 		{"a per-role MoE comm flag", "unknown flag: --decode-moe-comm-backend",

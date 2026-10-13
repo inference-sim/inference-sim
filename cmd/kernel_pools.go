@@ -77,6 +77,11 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"the decode pool in %d; a P/D handoff moves whole blocks, so the pools must agree",
 			kernelScenario, ps.BlockSize, ds.BlockSize)
 	}
+	// The handoff moves the prefill pool's KV representation into the decode pool's blocks, and
+	// is priced from the prefill pool's bytes: pools caching in different formats would move
+	// pages the decode engine does not hold, with no conversion modelled. So the cache formats,
+	// recurrent state included, must agree.
+	requireSameKVCacheFormat(p.prefill, p.decode)
 	// DP-as-placement expands every pool by one replica factor (the scenario's dp), so
 	// per-pool widths that differ cannot be expressed as a placement.
 	if ps.DataParallel != ds.DataParallel {
@@ -94,6 +99,31 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
 	}
 	return p
+}
+
+// requireSameKVCacheFormat refuses a disaggregated scenario whose pools state different KV
+// cache formats: the attention cache dtype and, for recurrent layers, the state dtypes and
+// cache mode. An unstated field is the engine default, so it agrees only with another unstated
+// one (the two pools share the model, whose default resolves alike).
+func requireSameKVCacheFormat(prefill, decode *kernelmodel.Model) {
+	pe, perr := prefill.Engine()
+	de, derr := decode.Engine()
+	if perr != nil || derr != nil {
+		logrus.Fatalf("scenario %q: prefill pool: %v; decode pool: %v", kernelScenario, perr, derr)
+	}
+	for _, f := range []struct{ name, prefill, decode string }{
+		{"cache_dtype", pe.CacheDType, de.CacheDType},
+		{"mamba_cache_dtype", pe.MambaCacheDType, de.MambaCacheDType},
+		{"mamba_ssm_cache_dtype", pe.MambaSSMCacheDType, de.MambaSSMCacheDType},
+		{"mamba_cache_mode", pe.MambaCacheMode, de.MambaCacheMode},
+	} {
+		if f.prefill != f.decode {
+			logrus.Fatalf("scenario %q caches KV as %s %q in the prefill pool and %q in the "+
+				"decode pool; a P/D handoff moves the prefill pool's cache into the decode pool's "+
+				"blocks, and no conversion between formats is modelled, so the pools must agree",
+				kernelScenario, f.name, f.prefill, f.decode)
+		}
+	}
 }
 
 // overrides is each role's engine, from its own pool's kernel.
