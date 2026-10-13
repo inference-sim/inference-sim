@@ -1853,8 +1853,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// the TTFT/E2E/scheduling-delay distributions (INV-PD-6). `served` folds that
 		// requirement into the projection gate below. A decode sub-request that emitted a
 		// first token and THEN timed out mid-generation WITHOUT an intervening preemption
-		// keeps a non-empty ITL, so it is still served and keeps its entries (the user did
-		// receive that token).
+		// keeps a non-empty ITL, so it is still served: it keeps its TTFT, scheduling delay
+		// and request row (the user did receive that token), but gets no E2E or completion
+		// stamp, since it did not complete (the E2E block below).
 		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
 		served := completed && servedFirstToken
 
@@ -1897,17 +1898,10 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		//     simulator.go) must NOT be added or E2E double-counts the pre-decode wait.
 		//     Discriminate on FirstTokenTime != 0 and use decodeOwnE2E directly.
 		//
-		// On the primary path this is the E2E-analog of the TTFT fix below and
-		// guarantees INV-5 by construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep,
-		// so E2E ≥ TTFT. (The fallback branch below inherits the pre-#1513
-		// parent.CompletionTime-based value; INV-5 there is not guaranteed by
-		// construction — e.g. a decode sub-request that emits a first token and then
-		// times out mid-generation takes the TTFT primary path but the E2E fallback,
-		// so a deadline landing inside the post-first-token OTPT window can leave
-		// TTFT slightly above E2E. This is unchanged from main and orthogonal to both
-		// the short-output under-count fixed in #1513 and the no-token exclusion fixed
-		// in #1511 — that request DID serve a token, so it legitimately keeps its
-		// TTFT/E2E entries; the residual TTFT>E2E micro-edge is a separate concern.)
+		// This is the E2E-analog of the TTFT fix below and guarantees INV-5 by
+		// construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep, so E2E ≥ TTFT. Only a
+		// decode sub-request that completed has an own E2E, so only a completed parent
+		// gets one.
 		//
 		// The previous formula (parent.CompletionTime − ArrivalTime) under-counted:
 		// parent.CompletionTime was then stamped on the CLUSTER clock at the
@@ -1944,25 +1938,18 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					parentE2E = e2e
 					haveParentE2E = true
 				}
-			} else {
-				// Fallback: this parent served a first token (guaranteed by `served`) but
-				// its decode sub-request has no recorded own E2E — e.g. it emitted the first
-				// token and THEN timed out mid-generation, so recordRequestCompletion never
-				// ran. Use the parent.CompletionTime-based value (cluster clock), matching
-				// the pre-#1513 behavior for this edge case (no regression). The no-token
-				// terminal outcomes (decode-side drops, timeout-while-queued) never reach
-				// here — `served` excludes them (issue #1511).
-				e2e := parent.CompletionTime - parent.ArrivalTime
-				if e2e < 0 {
-					// INV-3/INV-5 violation: completion before arrival. Should never occur
-					// after the clusterTime fix in EnqueueDecodeSubRequest.
-					logrus.Errorf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
-						pid, parent.CompletionTime, parent.ArrivalTime)
-				} else {
-					parentE2E = float64(e2e)
-					haveParentE2E = true
-				}
+			} else if hasDecodeOwnE2E {
+				// A completed decode sub-request is always scheduled first, so it has a
+				// scheduling delay; without one the span cannot be reconstructed.
+				logrus.Errorf("[cluster] projectPDMetrics: completed decode sub-request %s has no scheduling delay; no E2E for %s",
+					dec, pid)
 			}
+			// A decode sub-request with no own E2E did not complete: it emitted a first
+			// token and then timed out mid-generation (recordRequestCompletion never ran).
+			// Like a non-P/D request timed out mid-generation (simulator.go records E2E only
+			// on completion), it keeps its TTFT -- the user did receive that token -- but no
+			// E2E, completion time or completion index: it is a timeout (TimedOutRequests),
+			// not a completion, and its deadline is not an end-to-end latency.
 			if haveParentE2E {
 				m.RequestE2Es[pid] = parentE2E
 			}
@@ -2108,9 +2095,8 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// This adjusts only the METRIC, not the lifecycle field parent.CompletionTime,
 		// which is intentionally left untouched: it drives session follow-up arrival
 		// scheduling (sessionCallback in detectDecodeCompletions) and phase-causality
-		// checks (INV-10). When the E2E fallback is taken (decode-side metrics
-		// unavailable), parentE2E already derives from parent.CompletionTime, so this
-		// reduces to the pre-#1513 value for those edge cases.
+		// checks (INV-10). A parent with no E2E (it timed out mid-generation) gets no
+		// completion time either, as in the non-P/D path.
 		delete(m.RequestCompletionTimes, pfx)
 		delete(m.RequestCompletionTimes, dec)
 		if served && haveParentE2E {

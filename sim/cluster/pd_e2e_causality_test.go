@@ -464,9 +464,10 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 			wantEntry: false,
 		},
 		{
-			// FALLBACK: decode own E2E present but scheduling delay absent (defensive:
-			// both are required for the primary path) ⇒ CompletionTime-based value.
-			name: "fallback: missing decode scheduling delay",
+			// DEFENSIVE: decode own E2E present but scheduling delay absent (unreachable: a
+			// completed decode sub-request was scheduled) ⇒ the span cannot be
+			// reconstructed, so no entry rather than a CompletionTime-based guess.
+			name: "missing decode scheduling delay ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
 				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
@@ -475,7 +476,24 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeE2E: true, decodeOwnE2E: 301,
 			setDelay:  false,
-			wantEntry: true, wantE2E: 5000, wantCompletion: 5000,
+			wantEntry: false,
+		},
+		{
+			// TIMEOUT AFTER FIRST TOKEN: the decode sub-request served a token, then timed
+			// out mid-generation, so it never recorded its own E2E. It did not complete, so
+			// it gets no E2E -- its deadline is not an end-to-end latency -- exactly as a
+			// non-P/D request timed out mid-generation (simulator.go records E2E only on
+			// completion). Before, it took parent.CompletionTime - ArrivalTime (5000 here).
+			name: "timeout after first token ⇒ no entry",
+			parent: &ParentRequest{
+				ID: "p6", PrefillSubReqID: "p6_prefill", DecodeSubReqID: "p6_decode",
+				OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
+				DecodeInstanceID: "inst-0",
+				DecodeSubReq:     &sim.Request{State: sim.StateTimedOut, FirstTokenTime: 0, ITL: []int64{300}},
+			},
+			setDecodeE2E: false,
+			setDelay:     true, decodeDelay: 151,
+			wantEntry: false,
 		},
 		{
 			// NEGATIVE GUARD: a negative reconstructed E2E (only reachable via a
@@ -548,14 +566,17 @@ func TestPDParentE2E_ProjectionBranches(t *testing.T) {
 // for issue #1511. A PD-disaggregated parent that reaches a terminal CompletionTime
 // but emitted NO token — the three no-token outcomes of the drop/timeout taxonomy —
 // must contribute NO per-request metric entry (INV-PD-6): it is represented only by
-// the drop/timeout counters. A parent whose decode sub-request emitted ≥1 token
-// (successful decode, or a timeout AFTER the first token) keeps its entries.
+// the drop/timeout counters. A parent whose decode sub-request emitted ≥1 token keeps
+// its first-token entries (TTFT, scheduling delay, request row); only one that also
+// completed has an E2E and a completion time -- a timeout AFTER the first token is still
+// a timeout, as on the non-P/D path.
 //
 // Discriminator: parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0.
 //
-//	| outcome                       | DecodeSubReq | ITL | served token | parent entries |
-//	| successful decode             | non-nil      | ≥1  | yes          | present        |
-//	| timeout AFTER first token     | non-nil      | ≥1  | yes          | present        |
+//	| outcome                       | DecodeSubReq | ITL | served token | parent entries       |
+//	| successful decode             | non-nil      | ≥1  | yes          | present              |
+//	| timeout AFTER first token     | non-nil      | ≥1  | yes          | present but no E2E/  |
+//	|                               |              |     |              | completion time      |
 //	| drop at transfer start        | nil          | —   | no           | ABSENT         |
 //	| drop at transfer complete     | nil          | —   | no           | ABSENT         |
 //	| timeout WHILE queued          | non-nil      | 0   | no           | ABSENT         |
@@ -572,6 +593,7 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 		parent        *ParentRequest
 		setDecodeMaps bool // seed decode-side own E2E / scheduling delay / ITL (served path)
 		wantEntries   bool // whether parent-keyed latency entries are expected
+		timedOut      bool // served a token but did not complete: no E2E or completion time
 	}{
 		{
 			name: "successful decode: served a token",
@@ -591,9 +613,9 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 				DecodeInstanceID: "inst-0",
 				DecodeSubReq:     &sim.Request{FirstTokenTime: 0, ITL: []int64{300}},
 			},
-			// No decode own-E2E (timed out, never recorded completion): E2E takes the
-			// CompletionTime-based fallback, TTFT the primary path. Still served → kept.
-			setDecodeMaps: false, wantEntries: true,
+			// No decode own-E2E (timed out, never recorded completion): TTFT takes the
+			// primary path and the row is kept, but there is no E2E or completion time.
+			setDecodeMaps: false, wantEntries: true, timedOut: true,
 		},
 		{
 			name: "drop at transfer start: nil DecodeSubReq",
@@ -660,7 +682,12 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 			_, hasReq := m.Requests[pid]
 			_, hasITL := m.RequestITLs[pid]
 
-			if tc.wantEntries {
+			if tc.timedOut {
+				if !hasTTFT || !hasReq || !hasDelay || hasE2E || hasCompletion {
+					t.Errorf("timed-out served parent %s: want TTFT, row and delay but no E2E or completion, "+
+						"got TTFT=%v req=%v delay=%v E2E=%v completion=%v", pid, hasTTFT, hasReq, hasDelay, hasE2E, hasCompletion)
+				}
+			} else if tc.wantEntries {
 				if !hasTTFT || !hasE2E || !hasCompletion || !hasReq || !hasDelay {
 					t.Errorf("served parent %s: expected latency entries, got TTFT=%v E2E=%v completion=%v req=%v delay=%v",
 						pid, hasTTFT, hasE2E, hasCompletion, hasReq, hasDelay)

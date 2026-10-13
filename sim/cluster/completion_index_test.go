@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -39,6 +40,16 @@ func recordCompletions(cs *ClusterSimulator) *[]completionEvent {
 // completionIndexOf writes the run's metrics file and returns each request's completion_index.
 func completionIndexOf(t *testing.T, cs *ClusterSimulator) map[string]int {
 	t.Helper()
+	idx := map[string]int{}
+	for _, r := range requestRowsOf(t, cs) {
+		idx[r.ID] = r.CompletionIndex
+	}
+	return idx
+}
+
+// requestRowsOf writes the run's metrics file and returns its per-request rows.
+func requestRowsOf(t *testing.T, cs *ClusterSimulator) []sim.RequestMetrics {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "metrics.json")
 	m := cs.AggregatedMetrics()
 	devnull, err := os.Open(os.DevNull)
@@ -61,11 +72,7 @@ func completionIndexOf(t *testing.T, cs *ClusterSimulator) map[string]int {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)
 	}
-	idx := map[string]int{}
-	for _, r := range out.Requests {
-		idx[r.ID] = r.CompletionIndex
-	}
-	return idx
+	return out.Requests
 }
 
 // sameShapeRequests is n requests arriving together in waves of three, with IDs that sort
@@ -151,5 +158,66 @@ func TestCompletionIndex_ADisaggregatedParentIsOrderedByItsDecode(t *testing.T) 
 		if got := idx[pid]; got != i+1 {
 			t.Errorf("parent %s completed %d-th through decode, completion_index %d", pid, i+1, got)
 		}
+	}
+}
+
+// A request is a completion or a timeout, never both, on either path: a row has an E2E exactly
+// when it has a completion_index, the indices are 1..completed, and a request that emitted a
+// first token and then timed out mid-generation keeps its TTFT but has neither -- a P/D parent
+// included, whose deadline once stood in for its E2E. Non-vacuity: on both paths some requests
+// complete, some time out mid-generation, and the run counts its timeouts.
+func TestCompletionIndex_ATimeoutMidGenerationIsNotACompletion(t *testing.T) {
+	requests := func() []*sim.Request {
+		var reqs []*sim.Request
+		for i := 0; i < 24; i++ {
+			reqs = append(reqs, &sim.Request{
+				ID: fmt.Sprintf("r%02d", i), ArrivalTime: int64(i) * 2000,
+				InputTokens: make([]sim.TokenID, 64), OutputTokens: make([]sim.TokenID, 40),
+				State: sim.StateQueued, MaxOutputLen: 40,
+				// Deadlines from before the first token to after the last.
+				Deadline: int64(i)*2000 + int64(i+1)*4000,
+			})
+		}
+		return reqs
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  DeploymentConfig
+	}{
+		{"colocated", newTestDeploymentConfig(2)},
+		{"prefill/decode", newTestDisaggDeploymentConfig(2, 1, 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := NewClusterSimulator(tc.cfg, NewSliceRequestSource(requests()), nil)
+			mustRun(t, cs)
+			m := cs.AggregatedMetrics()
+			var indices []int
+			midGeneration := 0
+			for _, r := range requestRowsOf(t, cs) {
+				if (r.E2E > 0) != (r.CompletionIndex > 0) {
+					t.Errorf("%s: e2e_ms %.3f with completion_index %d; a row is a completion or not",
+						r.ID, r.E2E, r.CompletionIndex)
+				}
+				if r.CompletionIndex > 0 {
+					indices = append(indices, r.CompletionIndex)
+				}
+				if r.TTFT > 0 && r.E2E == 0 {
+					midGeneration++
+				}
+			}
+			sort.Ints(indices)
+			for i, got := range indices {
+				if got != i+1 {
+					t.Fatalf("completion indices %v are not 1..%d", indices, len(indices))
+				}
+			}
+			if len(indices) != m.CompletedRequests {
+				t.Errorf("%d rows carry a completion_index; the run completed %d", len(indices), m.CompletedRequests)
+			}
+			if m.CompletedRequests == 0 || midGeneration == 0 || m.TimedOutRequests < midGeneration {
+				t.Fatalf("fixture lost its point: %d completed, %d timed out mid-generation, %d timeouts counted",
+					m.CompletedRequests, midGeneration, m.TimedOutRequests)
+			}
+		})
 	}
 }
