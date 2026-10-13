@@ -293,7 +293,8 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		// warm-up leaves.
 		if !pc.PrefixCachingDisabled {
 			cv.pointGap(sw, p.Concurrency, GapApproximate, "warm-up prefix-cache state not modelled (prefix caching enabled)",
-				OwnerSim, "main request 0 would hit its own warm-up copies' cached prompt")
+				OwnerSim, fmt.Sprintf("the benchmark's %d warm-up copies of request 0 left its prompt cached for main request 0",
+					inferencexWarmupsPerConcurrency*p.Concurrency))
 		}
 		if ps == nil {
 			continue
