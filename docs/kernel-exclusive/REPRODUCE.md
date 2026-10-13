@@ -315,6 +315,16 @@ then varies one engine setting at a time -- `max_num_seqs` x2, x4 and /2, the to
 /2 -- and then re-scores with the numpy seed-1..4 length fixtures, other workloads drawn from the
 same intervals.
 
+Expected draw rows at `e4d76827`, over 425 points:
+
+| numpy seed | TPOT shape | TTFT shape |
+|---|---|---|
+| 0 (the benchmark's) | 8.60% | 17.64% |
+| 1 | 8.60% | 17.81% |
+| 2 | 8.58% | 18.01% |
+| 3 | 8.58% | 17.79% |
+| 4 | 8.56% | 17.92% |
+
 A setting the runs passed is measured, so these rows bound only how much the score would move had
 it been mis-stated; no value is chosen from them. The draw rows are other workloads, not repeated
 observations of the benchmark's seed 0, and relax nothing.

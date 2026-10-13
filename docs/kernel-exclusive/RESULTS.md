@@ -125,6 +125,12 @@ MEASURED-OR-RESOLVED.
   points, 7 pinned revisions). It gives `|sent - target|` = 0 and no server-added token at every
   logged point, including every MEASURED-OR-RESOLVED point. The Llama points are unverified (no
   log, gated tokenizer) and stay in ALL.
+- **The draw.** The 425 monotone vLLM points were re-scored with the vectors numpy draws at seeds
+  1 to 4 from the same intervals (`cmd/sensitivity`'s draw rows, at `e4d76827`). Those are other
+  workloads, not repeated observations of the benchmark's seed 0. BLIS's TPOT shape error spans
+  8.56% to 8.60% across the five draws, a range of 0.04 points. Its TTFT shape error spans 17.64%
+  to 18.01%, a range of 0.38 points. A figure scored against any draw other than the benchmark's
+  own could move by that much for that reason alone; replaying the seed-0 vectors removes it.
 
 ---
 
