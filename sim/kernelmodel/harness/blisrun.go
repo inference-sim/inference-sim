@@ -1,7 +1,11 @@
 package harness
 
 // blisrun.go is the harness's only route to a simulation: it writes the point as files and
-// runs `blis run` on them, the way any user would (#1902).
+// runs `blis replay` on them, the way any user replays a trace (#1902).
+//
+// Replay rather than `blis run`, because the benchmark's workload is a fixed list of requests
+// with known lengths in a known order, and a TraceV2 states exactly that. `blis run` would
+// re-sample the lengths with BLIS's own generator.
 
 import (
 	"bytes"
@@ -93,30 +97,66 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 	pool.Parallel.EnableExpertParallel = pc.EnableExpertParallel
 }
 
-// blisArgs is the `blis run` command line for one point, given the variant scenario's file
-// name and directory, the workload spec and the metrics file. dp is not on it: `blis run`
-// reads the scenario's data-parallel width and places that many per-rank replicas itself.
-func blisArgs(cfg Config, scenarioName, scenarioDir, specPath, metricsPath string) []string {
+// blisArgs is the `blis replay` command line for one point: the variant scenario's file name
+// and directory, the point's trace, and the metrics file. dp is not on it: the command reads
+// the scenario's data-parallel width and places that many per-rank replicas itself.
+//
+// The pool flags are the benchmark's concurrency gate. With --concurrent-sessions CONC every
+// trace record is a one-round session, the first CONC start at t=0, and each later one is
+// admitted, in trace order, when a session completes (workload.BuildSessionPool and
+// SessionPoolDriver.OnComplete) -- the semaphore of CONC the client holds its 10*CONC tasks
+// under. --total-sessions equals the trace length, so no session is cloned, and
+// --shuffle-corpus is absent, so the order is the trace's. No --think-time-ms: a pooled
+// session is admitted at the completion tick, which is the client's zero-wait behaviour at
+// --request-rate inf. No per-request deadline: the trace states none (deadline_us 0), as the
+// client sets no timeout on a request.
+func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath string, requests, concurrency int) []string {
 	return []string{
-		"run",
+		"replay",
 		"--scenario", scenarioName,
 		"--scenarios", scenarioDir,
 		"--catalog", cfg.Repos.Catalog,
 		"--registry", cfg.Repos.Registry,
-		"--workload-spec", specPath,
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--session-mode", "closed-loop",
+		"--concurrent-sessions", strconv.Itoa(concurrency),
+		"--total-sessions", strconv.Itoa(requests),
 		"--seed", strconv.FormatInt(cfg.Seed, 10),
 		"--metrics-path", metricsPath,
-		// No client deadline: the measured benchmark's client waits for every response, so a
-		// request cut off by blis run's default 300 s deadline would score a point the
-		// benchmark never saw.
-		"--timeout", "-1",
 		"--log", "error",
 	}
 }
 
-// runBlis runs one point through `blis run` in a fresh temporary directory and returns the
+// pointTrace is one point's main phase as a TraceV2: request i of the benchmark is record i,
+// a one-round session asking for exactly the fixture's target lengths. Nothing else is
+// stated -- no prefix group (the benchmark's random prompts share none), no deadline, no
+// arrival time beyond 0 (the pool, not the trace, decides when each one starts).
+func pointTrace(pl PointLengths) (*workload.TraceHeader, []workload.TraceRecord) {
+	header := &workload.TraceHeader{
+		Version:  3,
+		TimeUnit: "microseconds",
+		Mode:     "generated",
+	}
+	records := make([]workload.TraceRecord, len(pl.InputLens))
+	for i := range pl.InputLens {
+		records[i] = workload.TraceRecord{
+			RequestID:    i,
+			ClientID:     "inferencex-benchmark-serving",
+			SessionID:    "main-" + strconv.Itoa(i),
+			RoundIndex:   0,
+			Streaming:    true,
+			InputTokens:  pl.InputLens[i],
+			OutputTokens: pl.OutputLens[i],
+			Status:       "ok",
+		}
+	}
+	return header, records
+}
+
+// runBlis runs one point through `blis replay` in a fresh temporary directory and returns the
 // --metrics-path output.
-func runBlis(cfg Config, scenarioName string, pc PointConfig, spec *workload.WorkloadSpec) (*sim.MetricsOutput, error) {
+func runBlis(cfg Config, scenarioName string, pc PointConfig, pl PointLengths) (*sim.MetricsOutput, error) {
 	dir, err := os.MkdirTemp("", "blis-harness-")
 	if err != nil {
 		return nil, err
@@ -127,18 +167,16 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, spec *workload.Wor
 		filepath.Join(dir, scenarioName), pc); err != nil {
 		return nil, err
 	}
-	specYAML, err := yaml.Marshal(spec)
-	if err != nil {
-		return nil, fmt.Errorf("encoding workload spec: %w", err)
-	}
-	specPath := filepath.Join(dir, "workload.yaml")
-	if err := os.WriteFile(specPath, specYAML, 0o644); err != nil {
+	header, records := pointTrace(pl)
+	headerPath, dataPath := filepath.Join(dir, "trace.yaml"), filepath.Join(dir, "trace.csv")
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 		return nil, err
 	}
 	metricsPath := filepath.Join(dir, "metrics.json")
 
-	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, specPath, metricsPath)...)
-	// From the repository root, as a user runs it: `blis run` reads its bundled defaults.yaml
+	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath,
+		len(records), pl.Concurrency)...)
+	// From the repository root, as a user runs it: the command reads its bundled defaults.yaml
 	// relative to the working directory, and scorer tests run from their package directory.
 	cmd.Dir = repoRoot()
 	var stderr bytes.Buffer
@@ -146,25 +184,25 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, spec *workload.Wor
 	// stdout is the run's deterministic summary; everything the harness reads is in the
 	// metrics file, so stdout is discarded.
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("blis run: %w: %s", err, lastLines(stderr.String(), 10))
+		return nil, fmt.Errorf("blis replay: %w: %s", err, lastLines(stderr.String(), 10))
 	}
 	raw, err := os.ReadFile(metricsPath)
 	if err != nil {
-		return nil, fmt.Errorf("blis run wrote no metrics file: %w", err)
+		return nil, fmt.Errorf("blis replay wrote no metrics file: %w", err)
 	}
 	var out sim.MetricsOutput
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("blis run metrics file: %w", err)
+		return nil, fmt.Errorf("blis replay metrics file: %w", err)
 	}
 	// The measured point completed every request it sent, so the simulated one must too: an
 	// average over the survivors of a run that timed out, dropped or never finished requests
 	// describes a different, easier point (the slowest requests are the ones lost).
-	if out.CompletedRequests != out.InjectedRequests || out.TimedOutRequests > 0 ||
-		out.DroppedUnservable > 0 || out.LengthCappedRequests > 0 {
-		return nil, fmt.Errorf("blis run completed %d of %d request(s) (%d timed out, %d dropped "+
-			"as unservable, %d length-capped, %d queued, %d running at the end)",
-			out.CompletedRequests, out.InjectedRequests, out.TimedOutRequests, out.DroppedUnservable,
-			out.LengthCappedRequests, out.StillQueued, out.StillRunning)
+	if out.InjectedRequests != len(records) || out.CompletedRequests != len(records) ||
+		out.TimedOutRequests > 0 || out.DroppedUnservable > 0 || out.LengthCappedRequests > 0 {
+		return nil, fmt.Errorf("blis replay completed %d of %d injected request(s), %d sent (%d timed out, "+
+			"%d dropped as unservable, %d length-capped, %d queued, %d running at the end)",
+			out.CompletedRequests, out.InjectedRequests, len(records), out.TimedOutRequests,
+			out.DroppedUnservable, out.LengthCappedRequests, out.StillQueued, out.StillRunning)
 	}
 	return &out, nil
 }

@@ -8,14 +8,16 @@
 // prediction at the same points. Absolute latencies are not disclosed, which is why the
 // published quantity is a ratio.
 //
-// BLIS produces the same quantity: mean inter-token latency at a fixed deployment, divided
-// by its own value at the sweep's lowest concurrency. Both sides are therefore normalised to
+// BLIS produces the same quantity: the benchmark client's mean TPOT over the point's
+// main-phase requests (harness.Run), divided by its own value at the sweep's lowest
+// concurrency. Both sides are therefore normalised to
 // their OWN anchor, which is the only way the two are the same measurement. Charging
 // AISimulate an un-anchored error would compare a shape against a shape-plus-level; that
 // mistake was made once in this project and flattered the kernel by 2.4x.
 //
-// The deployment comes from the same scenario file the sweep names, and the workload from
-// the sweep's own ISL:OSL and concurrency. Nothing is fitted.
+// The deployment comes from the same scenario file the sweep names, with the settings the
+// measured run passed written into it, and the workload is the benchmark's own main phase at
+// the sweep's ISL:OSL and concurrency. Nothing is fitted.
 //
 // # The check that keeps this honest
 //
@@ -51,8 +53,9 @@ func main() {
 		kernelmodel.DefaultScenarios(), "scenario directory")
 	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
 	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
-	sessions := flag.Int("sessions", 0, "floor on requests per point; 0 uses the harness's own budget")
-	warmup := flag.Float64("warmup", 0, "override the warm-up as a fraction; 0 uses 2 x concurrency")
+	settings := flag.String("engine-settings",
+		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
+		"the settings each measured run was launched with; configures each point as the run was")
 	seed := flag.Int64("seed", 42, "")
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
 	verbose := flag.Bool("verbose", false, "print every point")
@@ -63,7 +66,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath}); err != nil {
+	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
@@ -73,14 +76,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	eset, err := harness.LoadEngineSettings(*settings)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	cfg := harness.Config{
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Blis:             *blis,
-		SessionsPerPoint: *sessions,
-		WarmupFraction:   *warmup,
-		Seed:             *seed,
+		Blis:           *blis,
+		Seed:           *seed,
+		EngineSettings: eset,
 	}
 
 	fmt.Println("BLIS concurrency response, latency from blis-latency-kernel only")
@@ -89,15 +96,14 @@ func main() {
 	if *framework != "" {
 		fmt.Printf("restricted to framework %q\n", *framework)
 	}
-	fmt.Printf("workload: the protocol InferenceX measured with, which AISimulate's replay\n")
-	fmt.Printf("  also matches. At an isl:osl label both lengths are sampled uniformly and\n")
-	fmt.Printf("  independently on [int(label*0.8), label] INCLUSIVE -- the label is an upper\n")
-	fmt.Printf("  bound, not a value. Each point runs 2*concurrency warm-up requests, which\n")
-	fmt.Printf("  are discarded, then 10*concurrency measured ones.\n")
-	fmt.Printf("  Sources: InferenceX srt_fixed_sequence.sh (--random-range-ratio 0.8,\n")
-	fmt.Printf("  --num-warmups 2*CONC, --num-prompts CONC*10) and bench_serving\n")
-	fmt.Printf("  sample_uniform (lower = int(seq_len*ratio), randint(lower, upper+1));\n")
-	fmt.Printf("  AISimulate run_e2e_accuracy.py and runner.py agree on ratio and count.\n")
+	fmt.Printf("protocol: each point is the InferenceX benchmark client's MAIN phase, replayed\n")
+	fmt.Printf("  by blis replay: the 10*CONC target lengths numpy drew at seed 0 (a fixed\n")
+	fmt.Printf("  fixture, not re-sampled), in request order, the first CONC at t=0 and each\n")
+	fmt.Printf("  next when one completes, exactly the target output length (--ignore-eos);\n")
+	fmt.Printf("  TPOT is calculate_metrics's mean over those requests. The warm-up is not\n")
+	fmt.Printf("  simulated: exact where prefix caching is off, a flagged gap where it is on.\n")
+	fmt.Printf("  Not reproduced: the tokenizer-retry length mismatch; settings blis-schemas\n")
+	fmt.Printf("  cannot express. See docs/kernel-exclusive/APPLES-TO-APPLES.md.\n")
 	fmt.Printf("error: anchor EXCLUDED, matching build_e2e_accuracy_overview.py. Both sides\n")
 	fmt.Printf("  are normalised to their own lowest concurrency. Verified by reproduction:\n")
 	fmt.Printf("  this definition on AISimulate's own data returns its published %.2f%%.\n",
@@ -111,6 +117,9 @@ func main() {
 	}
 	var rows []row
 	var allMine, allTheirs []float64
+	// Per tier, from the coverage gaps: see harness.Tier. Each table includes the stricter.
+	tierMine := map[harness.Tier][]float64{}
+	tierTheirs := map[harness.Tier][]float64{}
 	// The monotone subset, scored alongside the whole. See Sweep.MonotoneMeasurement for
 	// why the split is a property of the measurement and why it raises the bar rather than
 	// lowering it.
@@ -133,6 +142,11 @@ func main() {
 		if len(sw.Points) < 2 {
 			continue
 		}
+		// A sweep-level gap means the simulation would not be the measured deployment; it is
+		// kept out of every table. Decided before any point runs.
+		if coverage.TierOf(sw) == harness.TierUnscorable && sw.Framework == "vllm" {
+			continue
+		}
 		var mine, theirs []float64
 		var concOf []int
 		var anchor, theirAnchor float64
@@ -146,16 +160,16 @@ func main() {
 				bad = true
 				break
 			}
-			if obs.MeanITLUs <= 0 {
+			if obs.MeanTPOTUs <= 0 {
 				failures = append(failures, fmt.Sprintf(
-					"%s %s c=%d: no inter-token latency observed from %d completions",
+					"%s %s c=%d: no time per output token observed from %d completions",
 					sw.Scenario, sw.Label, p.Concurrency, obs.Completed))
 				coverage.Dropped(sw, p.Concurrency, "no inter-token latency observed")
 				bad = true
 				break
 			}
 			if i == 0 {
-				anchor = obs.MeanITLUs
+				anchor = obs.MeanTPOTUs
 				theirAnchor = p.AISimulateRelative
 				if theirAnchor <= 0 {
 					failures = append(failures, fmt.Sprintf(
@@ -166,7 +180,7 @@ func main() {
 					break
 				}
 			}
-			predicted := obs.MeanITLUs / anchor
+			predicted := obs.MeanTPOTUs / anchor
 			// SIGNED: positive means the model predicted a LARGER relative rise than was
 			// measured. The magnitude is recovered with harness.Abs at each aggregation, so
 			// every absolute figure is unchanged; the sign is retained because the direction
@@ -211,6 +225,13 @@ func main() {
 		}
 		allMine = append(allMine, mine...)
 		allTheirs = append(allTheirs, theirs...)
+		st := coverage.TierOf(sw)
+		for _, t := range harness.AllTiers {
+			if st.In(t) {
+				tierMine[t] = append(tierMine[t], mine...)
+				tierTheirs[t] = append(tierTheirs[t], theirs...)
+			}
+		}
 		if sw.MonotoneMeasurement() {
 			monoMine = append(monoMine, mine...)
 			monoTheirs = append(monoTheirs, theirs...)
@@ -234,6 +255,28 @@ func main() {
 	}
 
 	fmt.Printf("%d sweeps, %d points\n\n", len(rows), len(allMine))
+	fmt.Printf("By tier, decided per sweep from the coverage gaps before scoring. STRICT: every\n" +
+		"setting measured and carried, no protocol gap. MEASURED-OR-RESOLVED: a setting the run\n" +
+		"did not pass may take vLLM's default. ALL: every scored sweep, approximate. Each\n" +
+		"includes the stricter; both columns score the same points. A non-vLLM sweep is in no\n" +
+		"tier: it appears only below, as context.\n\n")
+	fmt.Printf("%-22s %-30s %5s %8s %8s %8s\n", "tier", "model", "n", "MAPE", "median", "worst")
+	for _, t := range harness.AllTiers {
+		for _, r := range []struct {
+			name string
+			errs []float64
+		}{{"BLIS + blis-latency-kernel", tierMine[t]}, {"AISimulate (same points)", tierTheirs[t]}} {
+			if len(r.errs) == 0 {
+				fmt.Printf("%-22s %-30s %5d %8s\n", t, r.name, 0, "--")
+				continue
+			}
+			a := harness.Abs(r.errs)
+			fmt.Printf("%-22s %-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", t, r.name, len(a),
+				harness.MAPE2(a), harness.Median(a), maxOf(a))
+		}
+	}
+	fmt.Printf("\nEverything below is over every scored sweep (approximate; with no -framework,\n" +
+		"non-vLLM sweeps too).\n\n")
 	fmt.Printf("%-30s %5s %8s %8s %8s\n", "model", "n", "MAPE", "median", "worst")
 	fmt.Printf("%-30s %5d %7.2f%% %7.2f%% %7.2f%%\n", "BLIS + blis-latency-kernel",
 		len(allMine), harness.MAPE2(harness.Abs(allMine)), harness.Median(harness.Abs(allMine)), maxOf(harness.Abs(allMine)))

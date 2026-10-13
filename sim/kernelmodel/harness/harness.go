@@ -1,37 +1,39 @@
-// Package harness runs BLIS closed-loop simulations against the AISimulate evaluation
-// corpus, with the latency model supplied exclusively by blis-latency-kernel.
+// Package harness runs BLIS against the InferenceX measurements AISimulate's end-to-end
+// accuracy corpus is scored on, with the latency model supplied exclusively by
+// blis-latency-kernel.
 //
-// # What makes this apples-to-apples
+// # What is reproduced
 //
-// The corpus states the deployment and the workload; this package reproduces both rather
-// than choosing anything. Its fields come from the snapshot:
+// Each measured point is one run of InferenceX's benchmark client (benchmark_serving.py) at
+// one concurrency. This package reproduces that run's MAIN phase exactly as the client drove
+// it, and computes the client's own metrics from it:
 //
-//	latency_scope      client_observed   -> the score reads per-request ITL, not step time
-//	measurement_scope  end_to_end        -> a full request lifecycle through the simulator
-//	workload           <isl>:<osl>       -> fixed input and output lengths per sweep
-//	concurrency        N                 -> a fixed pool of N closed-loop sessions
-//	serving            aggregated        -> one pool, no disaggregation
-//	spec_method        none              -> speculation off
-//	parallelism        tp/pp/dp/ep       -> from the scenario file the sweep names
+//	workload     the 10*CONC target input/output lengths numpy drew at seed 0, in request
+//	             order (workload.go; testdata/inferencex-workloads/seed0.json)
+//	gating       a semaphore of CONC at --request-rate inf: the first CONC start at once,
+//	             each later one when a slot frees, in order (blis replay pool mode)
+//	output       --ignore-eos: exactly the target output length
+//	deployment   the sweep's scenario, with every run setting the measured engine was
+//	             launched with written into it (enginesettings.go)
+//	TTFT, TPOT   calculate_metrics's definitions over the main-phase requests only
 //
-// Concurrency is a CLIENT level, so it is driven as a closed loop: N sessions in flight, a
-// new request admitted when one finishes. A WorkloadSpec concurrency client does this inside
-// `blis run`, so the resident batch is decided by BLIS's admission control rather than
-// assumed equal to N. That decoupling is the entire
-// point: blis-latency-kernel's 13.67% shape error against this corpus comes from assuming
-// resident batch equals concurrency, and here it does not have to.
+// The warm-up phase is not simulated; Run says why that is exact where prefix caching is off
+// and is a flagged gap where it is on. What is NOT reproduced is listed in
+// docs/kernel-exclusive/APPLES-TO-APPLES.md and in the coverage report (gaps.go).
 //
 // # It does not simulate
 //
-// Every point is simulated by the `blis` binary (Config.Blis), invoked as `blis run` with the
-// point's scenario and workload spec, exactly as a user would run it (#1902). This package
-// only states the point and reads back the --metrics-path file; see Run.
+// Every point is simulated by the `blis` binary (Config.Blis), invoked as `blis replay` on a
+// trace of the point's requests and a scenario carrying its settings, exactly as a user would
+// replay a trace (#1902). This package only states the point and reads back the
+// --metrics-path file; see Run.
 //
 // # What it deliberately does not do
 //
 // It does not tune. No coefficient, no engine setting and no scheduler parameter is fitted
 // to reduce error against the corpus. Every value either comes from the scenario file, from
-// the snapshot, or is a BLIS default recorded in Conditions.
+// the measured run, from vLLM's own default for a setting the run did not pass, or from the
+// benchmark client's source.
 package harness
 
 import (
@@ -42,10 +44,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
@@ -150,24 +152,22 @@ func LoadCorpus(path string) (*Corpus, error) {
 	return &c, nil
 }
 
-// Observation is what one (sweep, concurrency) point produced: the mean ITL in microseconds
-// and the counts a reader needs to interpret it.
+// Observation is what one (sweep, concurrency) point produced, as InferenceX's client
+// computes it from the same requests, and the counts a reader needs to interpret it.
 type Observation struct {
-	MeanITLUs float64
-	// MeanTTFTUs is the mean time to first token over EVERY measured completion -- deliberately
-	// not the post-warm-up subset MeanITLUs uses. See summarize for why the cut belongs to one
-	// metric and not the other.
-	MeanTTFTUs   float64
-	MeasuredTTFT int
-	Completed    int
-	// Preemptions is the run's preemption_count, as `blis run` reports it.
+	// MeanTPOTUs is calculate_metrics's mean_tpot: the mean over main-phase requests with more
+	// than one output token of (latency - ttft) / (output_len - 1), in microseconds.
+	MeanTPOTUs float64
+	// MeanTTFTUs is calculate_metrics's mean_ttft: the mean time to first token over every
+	// main-phase request.
+	MeanTTFTUs float64
+	// Completed is how many main-phase requests completed: always 10 x concurrency, because
+	// Run refuses anything else.
+	Completed int
+	// TPOTRequests is how many of them entered the TPOT mean (output length above one).
+	TPOTRequests int
+	// Preemptions is the run's preemption_count, as `blis replay` reports it.
 	Preemptions int64
-
-	// WarmupDiscarded is how many leading completions were dropped, and Measured how many
-	// contributed to MeanITLUs. Reported so a reader can see the mean was not taken over a
-	// transient, and so a run that discarded everything is visible rather than silent.
-	WarmupDiscarded int
-	Measured        int
 
 	// Settings is the configuration this point ran with and where each field came from, so
 	// a report can distinguish a measured setting from a resolved default.
@@ -179,12 +179,17 @@ type Config struct {
 	Repos kernelmodel.Repos
 	// Blis is the path of the `blis` binary every point is simulated with. Required: the
 	// harness does not simulate anything itself (#1902) -- it writes the point's scenario and
-	// workload and runs `blis run` on them the way any user would.
+	// trace and runs `blis replay` on them the way any user would.
 	Blis string
-	// SessionsPerPoint is how many requests each concurrency level completes before the
-	// run stops. Larger is steadier and slower; the value is recorded in the report.
-	SessionsPerPoint int
-	Seed             int64
+	// Seed is `blis replay`'s --seed. It draws the token IDs of the synthetic prompts, and
+	// nothing else a point reads: the lengths come from Workloads, and with no shared prefix
+	// a token ID changes no latency.
+	Seed int64
+
+	// Workloads holds every point's target length vectors. Nil uses the committed seed-0
+	// fixture -- the benchmark's own draw. cmd/sensitivity passes the seed-1..4 fixtures to
+	// show how much the score moves with the draw that exact reproduction removes.
+	Workloads *BenchmarkWorkloads
 
 	// MaxNumSeqsScale and TokenBudgetScale multiply the point's resolved caps. They exist
 	// for cmd/sensitivity, which measures how much the score depends on settings the
@@ -194,52 +199,27 @@ type Config struct {
 	MaxNumSeqsScale  float64
 	TokenBudgetScale float64
 
-	// LengthRangeRatio overrides the prompt-length sampling interval, as a FRACTION of
-	// the labelled length. It exists because the replayed workload and the measured one
-	// are not the same distribution, and which one to replay is a question the data
-	// cannot settle.
-	//
-	// AISimulate's replay draws one-sided, [ratio*len, len], so at the default 0.8 the
-	// mean prompt is 0.9*len. vLLM's own benchmark client draws SYMMETRICALLY,
-	// [floor(len*(1-r)), ceil(len*(1+r))], with r defaulting to "0.0"
-	// (vllm/benchmarks/datasets/datasets.py:1944 and datasets/utils.py:72-74) -- so a run
-	// that passed no --random-range-ratio used CONSTANT lengths of exactly len, with a
-	// mean 11% longer than what is replayed here.
-	//
-	// InferenceX's rows carry isl and osl as plain integers with no ratio, dataset name
-	// or seed, and the engine-settings extraction finds no ratio either, so neither
-	// reading can be confirmed from the data. This knob makes the alternative testable
-	// rather than asserted. A value of 0 keeps AISimulate's default; 1.0 means constant
-	// lengths, which is vLLM's documented default behaviour.
-	//
-	// Like the two scales above, this is a sensitivity control. Picking whichever value
-	// scores best would be fitting to the evaluation set.
-	LengthRangeRatio float64
-
 	// EngineSettings carries the settings each measured run was launched with. When nil,
 	// every point falls back to the scenario's values -- which is what this experiment did
 	// before the settings were extracted, and is reported as such rather than assumed.
 	EngineSettings *EngineSettingSet
+}
 
-	// WarmupFraction is the leading fraction of completed requests whose inter-token
-	// latency is discarded before the mean is taken.
-	//
-	// A closed-loop pool does not start at its steady state: at t=0 all N users submit at
-	// once, so the first requests see a resident batch that is still filling and a KV cache
-	// that is still cold. Pooling their ITL with the steady-state ones makes the reported
-	// mean depend on how many requests the run completed, which is a property of the
-	// harness rather than of the deployment. Measured before this existed: the same score
-	// read 9.92%, 11.20%, 9.89%, 10.72% and 10.64% at 20, 30, 40, 60 and 100 sessions per
-	// point -- a 1.3-point swing with no trend, which is transient contamination.
-	//
-	// Zero disables it. The default used by cmd/kernelscore is stated there.
-	WarmupFraction float64
+var (
+	defaultWorkloadsOnce sync.Once
+	defaultWorkloads     *BenchmarkWorkloads
+	defaultWorkloadsErr  error
+)
 
-	// ThinkTimeUs is per-round client think time. Zero -- the default and what every
-	// scoring run uses -- models a saturating client that re-submits the instant its
-	// previous request finishes, which is what a closed-loop concurrency sweep measures.
-	// Non-zero exists so cmd/sensitivity can show whether the assumption is load-bearing.
-	ThinkTimeUs int64
+// workloads is cfg's fixture, or the committed seed-0 one.
+func (cfg Config) workloads() (*BenchmarkWorkloads, error) {
+	if cfg.Workloads != nil {
+		return cfg.Workloads, nil
+	}
+	defaultWorkloadsOnce.Do(func() {
+		defaultWorkloads, defaultWorkloadsErr = LoadBenchmarkWorkloads(DefaultWorkloadsPath(0))
+	})
+	return defaultWorkloads, defaultWorkloadsErr
 }
 
 // scaled applies a sensitivity multiplier, with zero meaning "unchanged".
@@ -254,18 +234,41 @@ func scaled(v int64, factor float64) int64 {
 	return out
 }
 
-// Run drives one point by running `blis run` on it.
+// Run drives one point by running `blis replay` on it.
 //
 // # Why the harness does not simulate
 //
 // An earlier revision built a single-instance simulator in-process, scaled max_num_seqs and the
 // token budget by dp, and priced each step through a rank-splitting wrapper -- a second model
-// of data parallelism beside the one `blis run` ships (DP-as-placement: dp independent
-// per-rank replicas behind the router). The two disagreed (#1902), and the score measured the
-// harness's model rather than the simulator's. So the harness now states the point -- a
-// scenario carrying the point's engine settings and a workload spec -- and runs the same
-// binary, with the same flags, a user would. Whatever `blis run` does with dp, KV sizing,
-// admission and routing is what is scored.
+// of data parallelism beside the one the CLI ships (DP-as-placement: dp independent per-rank
+// replicas behind the router). The two disagreed (#1902), and the score measured the
+// harness's model rather than the simulator's. So the harness states the point -- a scenario
+// carrying the point's engine settings and a trace of its requests -- and runs the same binary,
+// with the same flags, a user would.
+//
+// # Why the warm-up phase is not simulated, and where that is exact
+//
+// The client sends 2*CONC copies of request 0 under its own semaphore of CONC, awaits all of
+// them, and only then starts the main phase; the warm-up requests are not in any metric. So
+// the main phase starts against an idle engine whose only memory of the warm-up is whatever
+// state outlives a drained request. In this simulator, on the configuration every point runs
+// (single-tier GPU KV cache, round-robin routing, FCFS scheduling, always-admit), that is:
+//
+//   - the KV cache's block-hash map, which keeps the hashes of released blocks
+//     (sim/kv/cache.go ReleaseKVBlocks). It is read for cross-request reuse only when prefix
+//     caching is enabled (sim/batch_formation.go: GetCachedBlocks is skipped when
+//     PrefixCachingDisabled); there is no offload tier to read it otherwise;
+//   - the round-robin router's counter (sim/routing.go), advanced by 2*CONC. Every scored
+//     deployment has dp 1 or 2, and 2*CONC is even, so each main request lands on the same
+//     replica it would from a fresh counter.
+//
+// The scheduler, batch formation and the kernel adapter carry no state between requests, and
+// no step price reads the clock. So where prefix caching is disabled -- every point whose run
+// passed --no-enable-prefix-caching -- the main phase from an empty engine is exactly the
+// main phase after the warm-up. Where it is enabled, the measured main request 0 found its
+// own prompt already cached by the warm-up, which an empty engine does not reproduce; those
+// points carry the gap "warm-up prefix-cache state not modelled" (gaps.go) and are kept out
+// of the strict tier rather than claimed exact.
 func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err := RequireBlis(cfg.Blis); err != nil {
 		return Observation{}, err
@@ -273,6 +276,14 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	isl, osl, err := sw.ISLOSL()
 	if err != nil {
 		return Observation{}, err
+	}
+	ws, err := cfg.workloads()
+	if err != nil {
+		return Observation{}, err
+	}
+	pl, err := ws.At(isl, osl, concurrency)
+	if err != nil {
+		return Observation{}, fmt.Errorf("%s: %w", sw.Scenario, err)
 	}
 	m, err := kernelmodel.Open(sw.Scenario, cfg.Repos)
 	if err != nil {
@@ -283,58 +294,26 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		return Observation{}, err
 	}
 
-	// The workload the REAL harness drives, from its own source constants, which AISimulate's
-	// replay also matches. See workload.go for the citations and for why the distribution is
-	// matched rather than the individual draws.
-	//
-	// The request budget is the real harness's too: InferenceX runs `--num-warmups
-	// $((2 * CONC))` and then measures `--num-prompts $((CONC * 10))`, so a point is
-	// 12 x concurrency requests of which the leading 2 x concurrency are discarded.
-	// SessionsPerPoint survives only as a floor.
-	w := AISimulateWorkload(isl, osl, concurrency)
-	// Applied to the INPUT length only. Output-length variance is what makes requests
-	// retire at different times, so the resident batch churns rather than finishing in
-	// lockstep; removing it changes the queueing regime rather than the prompt shape,
-	// and a first version of this knob that flattened both took TTFT's shape error from
-	// 16.22% to 53.73%.
-	if cfg.LengthRangeRatio > 0 {
-		w.ISLLow = int(float64(isl) * cfg.LengthRangeRatio)
-	}
-	warmup := w.WarmupCount
-	total := w.WarmupCount + w.RequestCount
-	if floor := cfg.SessionsPerPoint; floor > total {
-		total = floor
-	}
-	spec := pointWorkload(w, concurrency, total, cfg)
-	if err := spec.Validate(); err != nil {
-		return Observation{}, fmt.Errorf("workload spec: %w", err)
-	}
-
-	// The settings that decide admission, each taken from the strongest source available for
-	// THIS point and reported so a reader knows which was used:
+	// The run settings, each taken from the strongest source available for THIS point and
+	// reported so a reader knows which was used:
 	//
 	//   measured  the run's own command line, from its engine log
-	//   resolved  vLLM's device-memory resolution, for a setting the run did not pass
-	//   scenario  the value in the scenario file, when no measurement exists at all
+	//   resolved  vLLM's own default, for a setting the run did not pass
+	//   scenario  the value in the scenario file, when neither exists
 	//
-	// The ordering matters because the settings are not uniform. Across the 238 scored
-	// points the runs passed max_num_seqs equal to the client concurrency on 92, a fixed
-	// value on 69, and nothing on 77, so neither a single value nor a single rule is right
-	// anywhere near everywhere.
-	//
-	// They are PER RANK -- one vLLM EngineCore's caps -- because that is what the engine was
-	// launched with and what `blis run` reads from a scenario: a dp > 1 deployment runs as
-	// dp replicas, each with these caps. Nothing here multiplies by dp.
+	// They are PER RANK -- one vLLM EngineCore's settings -- because that is what the engine
+	// was launched with and what `blis replay` reads from a scenario: a dp > 1 deployment runs
+	// as dp replicas, each with these. Nothing here multiplies by dp.
 	admit := resolveAdmission(sw, concurrency, eng, m.Deployment(), cfg.EngineSettings)
 	engine := admit
 	engine.MaxNumSeqs = int(scaled(int64(admit.MaxNumSeqs), cfg.MaxNumSeqsScale))
 	engine.MaxNumBatchedTokens = int(scaled(int64(admit.MaxNumBatchedTokens), cfg.TokenBudgetScale))
 
-	out, err := runBlis(cfg, sw.Scenario, engine, spec)
+	out, err := runBlis(cfg, sw.Scenario, engine, pl)
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
-	obs, err := summarize(out.Requests, warmup, cfg.WarmupFraction)
+	obs, err := summarize(out.Requests, pl)
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
@@ -343,136 +322,83 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	return obs, nil
 }
 
-// pointWorkload is the point's workload as a BLIS WorkloadSpec, which `blis run` expands with
-// its own generator. Three reasons it is a spec rather than hand-built requests, all about
-// fidelity:
+// summarize reduces a finished run's per-request metrics to InferenceX's two means, after
+// checking that the run simulated exactly the point's requests.
 //
-//   - A Concurrency client is BLIS's native closed-loop primitive: N seed requests plus
-//     unlimited-round session blueprints, a follow-up per completion, holding N users in
-//     flight. That is what the snapshot's concurrency means, and it leaves the RESIDENT batch
-//     to BLIS's admission control rather than fixing it at N.
-//   - Concurrency and RateFraction are mutually exclusive in BLIS and Validate() enforces
-//     it, so that invariant is checked rather than assumed.
-//   - Every other knob (prefix sharing, multimodal, reasoning, LoRA, network, lifecycle,
-//     SLO) is left at its zero value, so the spec records exactly what this comparison
-//     does and does not exercise.
+// # The metric definitions, and how BLIS's fields map onto them
 //
-// Lengths are discrete uniform over AISimulate's one-sided interval, expressed through BLIS's
-// existing `empirical` sampler. The label is an upper bound: at "1024:1024" the interval is
-// [819, 1024] on both axes. An earlier version used a constant at the label, which drove a
-// mean context about 10% longer than the baseline's and removed the length variance entirely
-// -- and variance matters here beyond its mean, because variable output lengths make requests
-// retire at different times, so the resident batch churns instead of finishing in lockstep.
-func pointWorkload(w Workload, concurrency, total int, cfg Config) *workload.WorkloadSpec {
-	return &workload.WorkloadSpec{
-		Version:  "v1",
-		Seed:     cfg.Seed,
-		Category: "language", // plain text generation: the snapshot states no multimodal or reasoning workload
-		Clients: []workload.ClientSpec{{
-			ID:          "closed-loop",
-			Concurrency: concurrency,
-			// Zero think time by default: the snapshot's replay sets no request rate or
-			// arrival interval, so every arrival is at t=0 and concurrency alone gates
-			// execution -- a saturating client. Varied only by cmd/sensitivity.
-			ThinkTimeUs: cfg.ThinkTimeUs,
-			// RateFraction stays 0, which is what makes this a concurrency client.
-			InputDist: workload.DistSpec{
-				Type: "empirical", Params: pdfParams(uniformPDF(w.ISLLow, w.ISLHigh)),
-			},
-			OutputDist: workload.DistSpec{
-				Type: "empirical", Params: pdfParams(uniformPDF(w.OSLLow, w.OSLHigh)),
-			},
-			// No shared prefix: a prefix-cache hit would change the work per request, and
-			// AISimulate's spec sets cached_prefix_tokens to zero.
-			PrefixLength: 0,
-			Streaming:    true,
-		}},
-		NumRequests: int64(total),
+// calculate_metrics in benchmark_serving.py, over the main-phase outputs:
+//
+//	mean_ttft = mean(ttft)                                   over successful requests
+//	mean_tpot = mean((latency - ttft) / (output_len - 1))    over those with output_len > 1
+//
+// where the client's ttft is the time from sending the request to its first content chunk,
+// and latency the time from sending it to its LAST content chunk (most_recent_timestamp - st;
+// the usage-only chunk and [DONE] that follow do not move it).
+//
+// BLIS's request clock starts when the pool admits the request, which is when the client
+// would send it. Its ttft_ms (FirstTokenTime) runs to the first token's emission, including
+// tokenization and output processing. Its e2e_ms is FirstTokenTime + every inter-token
+// interval + PostDecodeFixedOverhead -- the fixed completion work AFTER the last token, which
+// the client's latency does not include. So the client's (latency - ttft) is BLIS's sum of
+// inter-token intervals, and BLIS's per-request itl_ms is exactly that sum over
+// (output_len - 1) for a request that completed normally (sim/simulator.go
+// recordRequestCompletion). TPOT is therefore read from itl_ms, not derived from e2e_ms,
+// which would add PostDecodeFixedOverhead / (output_len - 1) to every request.
+//
+// Both means are over requests, not pooled over tokens, as the client's are.
+//
+// `blis replay` reports per-request latencies in milliseconds; they are converted back to
+// microseconds (the simulator's tick) here. The round trip is exact to within one float64 ulp,
+// far below anything the score prints.
+func summarize(reqs []sim.RequestMetrics, pl PointLengths) (Observation, error) {
+	n := len(pl.InputLens)
+	seen := make([]bool, n)
+	const usPerMs = 1e3
+	var ttftSum, tpotSum float64
+	var tpotN, completed int
+	for _, r := range reqs {
+		if r.CompletionIndex == 0 {
+			continue
+		}
+		i, err := requestIndex(r.ID)
+		if err != nil || i < 0 || i >= n || seen[i] {
+			return Observation{}, fmt.Errorf("completed request %q is not one of the point's %d "+
+				"main-phase requests, or completed twice", r.ID, n)
+		}
+		seen[i] = true
+		// The trace states each request's lengths; a mismatch would mean the simulation ran
+		// a different workload from the fixture.
+		if r.NumPrefillTokens != pl.InputLens[i] || r.NumDecodeTokens != pl.OutputLens[i] {
+			return Observation{}, fmt.Errorf("request %d ran %d input and %d output tokens; the "+
+				"benchmark's targets are %d and %d", i, r.NumPrefillTokens, r.NumDecodeTokens,
+				pl.InputLens[i], pl.OutputLens[i])
+		}
+		completed++
+		ttftSum += r.TTFT * usPerMs
+		if r.NumDecodeTokens > 1 {
+			tpotSum += r.ITL * usPerMs
+			tpotN++
+		}
 	}
+	if completed != n {
+		return Observation{}, fmt.Errorf("completed %d of the point's %d main-phase requests", completed, n)
+	}
+	obs := Observation{Completed: completed, TPOTRequests: tpotN, MeanTTFTUs: ttftSum / float64(completed)}
+	if tpotN > 0 {
+		obs.MeanTPOTUs = tpotSum / float64(tpotN)
+	}
+	return obs, nil
 }
 
-// summarize reduces a finished run's per-request metrics to the observation the score needs.
-//
-// The mean is taken over the per-request mean inter-token latencies of the requests that
-// completed AFTER the warm-up prefix, in completion order (completion_index). Two reasons it
-// is per request rather than over a pooled ITL: a pooled mean weights a long request more
-// heavily than a short one, and only a per-request view can drop a warm-up prefix at all.
-//
-// `blis run` reports per-request latencies in milliseconds; they are converted back to
-// microseconds (the simulator's tick) here. The round trip µs -> ms -> µs is exact to within
-// one float64 ulp, far below anything the score prints.
-func summarize(reqs []sim.RequestMetrics, warmupCount int, warmupFraction float64) (Observation, error) {
-	var order []sim.RequestMetrics
-	for _, r := range reqs {
-		if r.CompletionIndex > 0 {
-			order = append(order, r)
-		}
+// requestIndex recovers the trace record index from the request ID `blis replay` assigns a
+// one-round session's request, "request_<request_id>" (workload.LoadTraceV2SessionBlueprints).
+func requestIndex(id string) (int, error) {
+	const prefix = "request_"
+	if !strings.HasPrefix(id, prefix) {
+		return 0, fmt.Errorf("request id %q has no %q prefix", id, prefix)
 	}
-	sort.Slice(order, func(i, j int) bool { return order[i].CompletionIndex < order[j].CompletionIndex })
-	obs := Observation{Completed: len(order)}
-	// The real harness's fixed warm-up phase. WarmupFraction overrides it for
-	// cmd/sensitivity, which varies it to show the score does not turn on the choice.
-	cut := warmupCount
-	if warmupFraction > 0 && warmupFraction < 1 {
-		cut = int(float64(len(order)) * warmupFraction)
-	}
-	// A run that completed no more requests than its warm-up has no steady state to measure;
-	// averaging the transient instead would score a different quantity, so it is refused.
-	if cut >= len(order) {
-		return Observation{}, fmt.Errorf("completed %d request(s), not more than the %d-request "+
-			"warm-up, so there is no post-warm-up completion to measure", len(order), cut)
-	}
-	const usPerMs = 1e3
-	var sum float64
-	var n int
-	var ttftSum float64
-	var ttftN int
-	for _, r := range order[cut:] {
-		if itl := r.ITL * usPerMs; itl > 0 {
-			sum += itl
-			n++
-		}
-	}
-	// TTFT is averaged over EVERY measured completion, not over order[cut:].
-	//
-	// The warm-up cut and the metric it serves are not the same question. Time per output token
-	// is a steady-state quantity: a closed-loop pool starts with a filling batch and a cold
-	// cache, so pooling the transient into a TPOT mean makes the figure depend on how many
-	// requests the run completed. Time to FIRST token is the opposite -- the transient is the
-	// phenomenon. When N requests are launched at once against an empty queue, a 920-token
-	// prompt against an 8192-token budget admits 8 prefills per step, so the 64th request waits
-	// 8 waves and its TTFT is 8 prefills deep. Discarding the first 2N completions discards
-	// exactly that queueing.
-	//
-	// This is what the real harness measures, not a preference. InferenceX's benchmark_serving.py
-	// awaits its warm-up requests and throws them away entirely (`_ = await
-	// asyncio.gather(warmup_tasks)`), then starts the MEASURED phase against an empty queue and,
-	// at --request-rate inf, launches all 10*concurrency of them at once ("Infinite request_rate
-	// disables waiting"). The start-up transient is inside the measured set on their side, so
-	// removing it on ours compares two different quantities.
-	//
-	// Measured on gpt-oss-120b-h200-fp4-vllm-tp4 1k1k, TTFT relatives across concurrency 4 to 64:
-	// 1.000 1.032 1.098 1.212 1.337 with the cut applied, 1.000 1.115 1.343 1.699 2.325 without,
-	// against a measurement of 1.000 1.131 (spike) 1.865 2.871. The cut, not the model, was the
-	// reason the TTFT curve was flat.
-	for _, r := range order {
-		// Counted independently of the ITL branch: a request that emitted exactly one token has
-		// a TTFT and no inter-token interval, so requiring both would silently drop it.
-		if t := r.TTFT * usPerMs; t > 0 {
-			ttftSum += t
-			ttftN++
-		}
-	}
-	if n > 0 {
-		obs.MeanITLUs = sum / float64(n)
-	}
-	if ttftN > 0 {
-		obs.MeanTTFTUs = ttftSum / float64(ttftN)
-	}
-	obs.MeasuredTTFT = ttftN
-	obs.WarmupDiscarded = cut
-	obs.Measured = n
-	return obs, nil
+	return strconv.Atoi(strings.TrimPrefix(id, prefix))
 }
 
 // MAPE is the mean absolute percentage error of predicted against measured.

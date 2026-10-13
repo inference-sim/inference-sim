@@ -69,8 +69,10 @@ func main() {
 	}
 	write([]string{
 		"scenario", "model", "gpu", "label", "concurrency",
-		"meas_tpot_us", "pred_tpot_us", "meas_ttft_us", "pred_ttft_us",
+		"meas_tpot_us", "pred_tpot_us", "meas_ttft_us", "pred_ttft_us", "tier",
 	})
+	// The tier each sweep scores in, from the same coverage gaps cmd/metricscore uses.
+	coverage := harness.AssessCoverage(c, cfg)
 	var total, noAbs, noTPOT, noTTFT, runErr, emitted int
 	for _, sw := range c.Sweeps {
 		if *tier != "" {
@@ -110,7 +112,7 @@ func main() {
 				}
 				continue
 			}
-			if o.MeanITLUs <= 0 || o.MeanTTFTUs <= 0 {
+			if o.MeanTPOTUs <= 0 || o.MeanTTFTUs <= 0 {
 				runErr++
 				fmt.Fprintf(os.Stderr, "no latency observed (%s c=%d)\n", sw.Scenario, p.Concurrency)
 				continue
@@ -120,9 +122,10 @@ func main() {
 				sw.Scenario, sw.Model, sw.GPU, sw.Label,
 				strconv.Itoa(p.Concurrency),
 				strconv.FormatFloat(mt, 'f', 3, 64),
-				strconv.FormatFloat(o.MeanITLUs, 'f', 3, 64),
+				strconv.FormatFloat(o.MeanTPOTUs, 'f', 3, 64),
 				strconv.FormatFloat(mf, 'f', 3, 64),
 				strconv.FormatFloat(o.MeanTTFTUs, 'f', 3, 64),
+				coverage.TierOf(sw).String(),
 			})
 		}
 	}
@@ -134,7 +137,7 @@ func main() {
 	fmt.Fprintf(os.Stderr,
 		"points=%d emitted=%d skipped: no_absolutes=%d no_tpot=%d no_ttft=%d run_error=%d\n",
 		total, emitted, noAbs, noTPOT, noTTFT, runErr)
-	if err := harness.AssessCoverage(c, cfg).WriteGaps(*gaps); err != nil {
+	if err := coverage.WriteGaps(*gaps); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

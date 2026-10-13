@@ -9,7 +9,7 @@ package harness
 // scenario, the catalog, the registry or the extracted engine settings; none is a list of
 // known-missing things, so the report shrinks by itself as those repositories grow.
 //
-// It never runs a simulation. Points that fail inside `blis run` are added by the scorer
+// It never runs a simulation. Points that fail inside `blis replay` are added by the scorer
 // that ran them (Dropped).
 //
 // The gaps also decide each sweep's tier (TierOf), which the scorers use DURING scoring to
@@ -160,7 +160,7 @@ func (cv *Coverage) pointGap(sw Sweep, conc int, kind GapKind, cause, owner, det
 }
 
 // Dropped records a sweep the scorer could not score because one of its points failed --
-// `blis run` refused or errored, the run did not complete every request it was sent (a
+// `blis replay` refused or errored, the run did not complete every request it was sent (a
 // timeout, a drop, a length cap), or it observed nothing. A scorer takes a sweep whole or
 // not at all, so the gap covers every point of the sweep; the failing point and its reason
 // are the detail.
@@ -168,7 +168,7 @@ func (cv *Coverage) Dropped(sw Sweep, conc int, reason string) {
 	if i := strings.LastIndex(reason, "\n"); i >= 0 {
 		reason = strings.TrimSpace(reason[i+1:])
 	}
-	cv.sweepGap(sw, "sweep dropped: a point failed in blis run", OwnerSim,
+	cv.sweepGap(sw, "sweep dropped: a point failed in blis replay", OwnerSim,
 		fmt.Sprintf("c=%d: %s", conc, reason))
 }
 

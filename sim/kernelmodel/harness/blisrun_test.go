@@ -74,24 +74,28 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 	}
 }
 
-// The command line is the one a user types: it names no data-parallel width (blis run
+// The command line is a user's `blis replay` in pool mode: CONC concurrent one-round sessions,
+// every trace record replayed once and in order. It names no data-parallel width (the command
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
-func TestTheCommandLineIsAUsersBlisRun(t *testing.T) {
+func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	cfg := Config{Repos: testRepos(), Seed: 7}
-	args := blisArgs(cfg, "s.yaml", "/d", "/d/w.yaml", "/d/m.json")
-	if args[0] != "run" {
-		t.Fatalf("first argument %q, want run", args[0])
+	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", 40, 4)
+	if args[0] != "replay" {
+		t.Fatalf("first argument %q, want replay", args[0])
 	}
 	line := strings.Join(args, " ")
-	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--workload-spec /d/w.yaml",
-		"--metrics-path /d/m.json", "--seed 7", "--catalog " + cfg.Repos.Catalog, "--registry " + cfg.Repos.Registry} {
+	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--trace-header /d/t.yaml",
+		"--trace-data /d/t.csv", "--session-mode closed-loop", "--concurrent-sessions 4",
+		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7",
+		"--catalog " + cfg.Repos.Catalog, "--registry " + cfg.Repos.Registry} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q lacks %q", line, want)
 		}
 	}
-	for _, banned := range []string{"--dp", "--num-instances", "--max-num-running-reqs", "--max-num-scheduled-tokens", "--total-kv-blocks"} {
+	for _, banned := range []string{"--dp", "--num-instances", "--max-num-running-reqs", "--max-num-scheduled-tokens",
+		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon"} {
 		if strings.Contains(line, banned) {
-			t.Errorf("%q passes %s; the scenario is the only source of the deployment", line, banned)
+			t.Errorf("%q passes %s; the scenario and the trace are the only sources of the point", line, banned)
 		}
 	}
 }
@@ -120,30 +124,37 @@ func TestAMissingBlisBinaryIsRefused(t *testing.T) {
 	}
 }
 
-// summarize reads completion order from completion_index, not from the order the metrics file
-// lists requests in (it lists them by arrival), and averages only completed requests.
-func TestSummarizeCutsTheWarmupByCompletionIndex(t *testing.T) {
-	// Listed out of completion order; "never" did not complete and must not count.
+// summarize computes the client's two means over exactly the point's requests: TTFT over all of
+// them, TPOT from each request's own inter-token mean (never e2e, which carries the completion
+// overhead after the last token), and it refuses a run that is missing a request, ran an extra
+// one, or ran a request at lengths other than the fixture's.
+func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
+	pl := PointLengths{ISL: 4, OSL: 4, Concurrency: 1, InputLens: []int{4, 3}, OutputLens: []int{4, 1}}
 	reqs := []sim.RequestMetrics{
-		{ID: "late", CompletionIndex: 3, ITL: 3, TTFT: 30},
-		{ID: "never", ITL: 1000, TTFT: 1000},
-		{ID: "first", CompletionIndex: 1, ITL: 1, TTFT: 10},
-		{ID: "mid", CompletionIndex: 2, ITL: 2, TTFT: 20},
+		// Listed out of order; e2e deliberately inconsistent with ITL so a TPOT taken from
+		// e2e would differ.
+		{ID: "request_1", CompletionIndex: 2, NumPrefillTokens: 3, NumDecodeTokens: 1, TTFT: 30, E2E: 30},
+		{ID: "request_0", CompletionIndex: 1, NumPrefillTokens: 4, NumDecodeTokens: 4, TTFT: 10, ITL: 2, E2E: 99},
 	}
-	obs, err := summarize(reqs, 1, 0)
+	obs, err := summarize(reqs, pl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if obs.Completed != 3 || obs.WarmupDiscarded != 1 || obs.Measured != 2 {
-		t.Fatalf("completed %d, discarded %d, measured %d; want 3, 1, 2",
-			obs.Completed, obs.WarmupDiscarded, obs.Measured)
+	// ms in the file, us out. TTFT over both requests; TPOT over the one with output > 1.
+	if obs.Completed != 2 || obs.MeanTTFTUs != 20000 || obs.TPOTRequests != 1 || obs.MeanTPOTUs != 2000 {
+		t.Errorf("got %+v; want 2 completed, TTFT 20000 us, TPOT 2000 us over 1 request", obs)
 	}
-	// ms in the file, µs out: the post-warm-up ITL mean is (2+3)/2 ms.
-	if obs.MeanITLUs != 2500 {
-		t.Errorf("mean ITL %v us, want 2500 (the cut must drop the FIRST completion)", obs.MeanITLUs)
-	}
-	// TTFT keeps every completion.
-	if obs.MeanTTFTUs != 20000 || obs.MeasuredTTFT != 3 {
-		t.Errorf("mean TTFT %v us over %d, want 20000 over 3", obs.MeanTTFTUs, obs.MeasuredTTFT)
+
+	for name, bad := range map[string][]sim.RequestMetrics{
+		"a missing request": reqs[1:],
+		"an unknown request": append([]sim.RequestMetrics{{ID: "request_7", CompletionIndex: 3,
+			NumPrefillTokens: 4, NumDecodeTokens: 4}}, reqs...),
+		"a request at other lengths": {reqs[0], {ID: "request_0", CompletionIndex: 1, NumPrefillTokens: 5,
+			NumDecodeTokens: 4}},
+		"an uncompleted request": {reqs[0], {ID: "request_0", NumPrefillTokens: 4, NumDecodeTokens: 4}},
+	} {
+		if _, err := summarize(bad, pl); err == nil {
+			t.Errorf("summarize accepted %s", name)
+		}
 	}
 }

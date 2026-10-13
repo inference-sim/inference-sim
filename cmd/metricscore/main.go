@@ -1,4 +1,6 @@
-// Command metricscore scores every available estimator on every available metric.
+// Command metricscore scores every available estimator on every available metric, on three
+// tiers of points: STRICT, MEASURED-OR-RESOLVED and ALL (approximate), decided per sweep from
+// the coverage gaps (harness.Coverage.TierOf) before any point is scored.
 //
 // # What is comparable
 //
@@ -22,7 +24,8 @@
 // ai-dynamo/aisimulate for both, AIC being the analytic configurator path since absorbed into the
 // simulator. They are reported side by side as modes, not as rival baselines.
 //
-// blis-latency-kernel is BLIS's latency backend, simulated per point by exec'ing -blis.
+// blis-latency-kernel is BLIS's latency backend, simulated per point by exec'ing -blis as
+// `blis replay` on the point's InferenceX main phase (harness.Run).
 //
 // Usage:
 //
@@ -68,9 +71,9 @@ func main() {
 		"restrict to one framework; empty scores every framework, which only the published "+
 			"arms can do (BLIS models vLLM)")
 	tier := flag.String("config-tier", "",
-		"restrict to points whose engine configuration is \"measured\" (the run's own command "+
-			"line) or \"resolved\" (vLLM's defaults, no log captured). Empty includes both, "+
-			"which mixes two kinds of evidence in one average")
+		"restrict to sweeps whose first point has an engine log (\"measured\") or has none "+
+			"(\"resolved\"). Empty keeps both. Independent of the STRICT / MEASURED-OR-RESOLVED / "+
+			"ALL tables, which are always printed and decided per sweep from the coverage gaps")
 	// A corpus measured directly against InferenceX carries no published prediction: an
 	// artifact prediction is keyed per (model, gpu, precision, framework, workload, tp,
 	// concurrency), and a direct corpus separates deployments the artifact never did --
@@ -80,13 +83,6 @@ func main() {
 	// sweep and discard the kernel's own points with it.
 	simulatedOnly := flag.Bool("simulated-only", false,
 		"score only the simulated arms; for a corpus with no published predictions")
-	lengthRatio := flag.Float64("length-range-ratio", 0,
-		"override the prompt-length sampling interval as a fraction of the labelled "+
-			"length: 0 keeps AISimulate's one-sided 0.8 (mean 0.9x len), 1.0 gives "+
-			"constant lengths, which is what vLLM's client does when no "+
-			"--random-range-ratio is passed. Applies to the INPUT length only: output "+
-			"variance sets the queueing regime, not the prompt shape. A sensitivity "+
-			"control, not a tuning knob.")
 	seed := flag.Int64("seed", 42, "")
 	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
 	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
@@ -124,10 +120,9 @@ func main() {
 		Repos: kernelmodel.Repos{
 			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
 		},
-		Blis:             *blis,
-		Seed:             *seed,
-		LengthRangeRatio: *lengthRatio,
-		EngineSettings:   eset,
+		Blis:           *blis,
+		Seed:           *seed,
+		EngineSettings: eset,
 	}
 
 	// With no framework restriction the corpus spans sglang and trtllm, which BLIS does not
@@ -174,17 +169,27 @@ func main() {
 	// is the fingerprint -- so pred_relative/measured_relative = pred(c)/meas(c), a true absolute
 	// ratio with the unknown anchor cancelled. BLIS instead produces absolute microseconds, which
 	// are scored against the measured absolute curves loaded from -absolutes.
-	errs := make([]map[harness.Metric][]float64, len(arms))
-	mapes := make([]map[harness.Metric][]float64, len(arms))
-	for i := range errs {
-		errs[i] = map[harness.Metric][]float64{}
-		mapes[i] = map[harness.Metric][]float64{}
+	//
+	// Both are kept per TIER (harness.AllTiers), from the coverage gaps of the sweep: a sweep
+	// contributes to every table at least as loose as its own tier, and every arm is scored on
+	// exactly the same sweeps within a table.
+	errs := map[harness.Tier][]map[harness.Metric][]float64{}
+	mapes := map[harness.Tier][]map[harness.Metric][]float64{}
+	sweepsIn := map[harness.Tier]int{}
+	for _, t := range harness.AllTiers {
+		errs[t] = make([]map[harness.Metric][]float64, len(arms))
+		mapes[t] = make([]map[harness.Metric][]float64, len(arms))
+		for i := range arms {
+			errs[t][i] = map[harness.Metric][]float64{}
+			mapes[t][i] = map[harness.Metric][]float64{}
+		}
 	}
 	byChip := map[string]map[int]map[harness.Metric][]float64{}
 	byFramework := map[string]map[int]map[harness.Metric][]float64{}
 	byModel := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
-	// Every corpus gap, beside the score rather than in it: see harness.Coverage.
+	// Every corpus gap: written out beside the score, and read DURING scoring to put each
+	// sweep in its tier (harness.Coverage.TierOf).
 	coverage := harness.AssessCoverage(c, base)
 	sweeps, points := 0, 0
 	ttftExcluded := 0
@@ -204,6 +209,14 @@ func main() {
 			if (*tier == "measured") != measured {
 				continue
 			}
+		}
+
+		// A sweep-level gap (a missing artifact, a parallelism mismatch, an engine BLIS does
+		// not model) means the simulation would not be the measured deployment, so the sweep
+		// is kept out of every table rather than labelled approximate. Decided before any
+		// point runs.
+		if !publishedOnly && coverage.TierOf(sw) == harness.TierUnscorable {
+			continue
 		}
 
 		// Points whose MEASURED TTFT is an isolated artefact, excluded from TTFT for EVERY arm
@@ -226,7 +239,7 @@ func main() {
 				continue
 			}
 			cfg := base
-			var anchorITL, anchorTTFT float64
+			var anchorTPOT, anchorTTFT float64
 			per := map[harness.Metric][]float64{}
 			perMape := map[harness.Metric][]float64{}
 			measured := abs.For(sw)
@@ -239,7 +252,7 @@ func main() {
 					ok = false
 					break
 				}
-				if obs.MeanITLUs <= 0 || obs.MeanTTFTUs <= 0 {
+				if obs.MeanTPOTUs <= 0 || obs.MeanTTFTUs <= 0 {
 					failures = append(failures, fmt.Sprintf("%s %s %s c=%d: no measurement",
 						sw.Scenario, sw.Label, a.est, p.Concurrency))
 					coverage.Dropped(sw, p.Concurrency, "no measurement")
@@ -250,14 +263,14 @@ func main() {
 				// and has no anchor to cancel.
 				if v, ok := measured.At(harness.MetricTPOT, p.Concurrency); ok {
 					perMape[harness.MetricTPOT] = append(perMape[harness.MetricTPOT],
-						(obs.MeanITLUs/v-1)*100)
+						(obs.MeanTPOTUs/v-1)*100)
 				}
 				if v, ok := measured.At(harness.MetricTTFT, p.Concurrency); ok && !spike[j] {
 					perMape[harness.MetricTTFT] = append(perMape[harness.MetricTTFT],
 						(obs.MeanTTFTUs/v-1)*100)
 				}
 				if j == 0 {
-					anchorITL, anchorTTFT = obs.MeanITLUs, obs.MeanTTFTUs
+					anchorTPOT, anchorTTFT = obs.MeanTPOTUs, obs.MeanTTFTUs
 					continue // the anchor's SHAPE error is zero by construction; excluded
 				}
 				mt, _, _ := p.MetricOf(harness.MetricTPOT)
@@ -271,7 +284,7 @@ func main() {
 					break
 				}
 				per[harness.MetricTPOT] = append(per[harness.MetricTPOT],
-					(obs.MeanITLUs/anchorITL/mt-1)*100)
+					(obs.MeanTPOTUs/anchorTPOT/mt-1)*100)
 				if !spike[j] {
 					per[harness.MetricTTFT] = append(per[harness.MetricTTFT],
 						(obs.MeanTTFTUs/anchorTTFT/tt-1)*100)
@@ -335,7 +348,18 @@ func main() {
 			continue
 		}
 
+		sweepTier := coverage.TierOf(sw)
+		if publishedOnly {
+			// The published arms need no configuration from us, so every sweep they can be
+			// scored on is one table.
+			sweepTier = harness.TierApproximate
+		}
 		sweeps++
+		for _, t := range harness.AllTiers {
+			if sweepTier.In(t) {
+				sweepsIn[t]++
+			}
+		}
 		// Count from whichever arm is present: in published-only mode there is no simulated
 		// arm, and the published arms carry the same point set.
 		if n := len(sim[harness.EstimatorKernel][harness.MetricTPOT]); n > 0 {
@@ -351,9 +375,14 @@ func main() {
 				srcMape = simMape[a.est]
 			}
 			for _, m := range harness.AllMetrics {
-				errs[ai][m] = append(errs[ai][m], src[m]...)
-				if srcMape != nil {
-					mapes[ai][m] = append(mapes[ai][m], srcMape[m]...)
+				for _, t := range harness.AllTiers {
+					if !sweepTier.In(t) {
+						continue
+					}
+					errs[t][ai][m] = append(errs[t][ai][m], src[m]...)
+					if srcMape != nil {
+						mapes[t][ai][m] = append(mapes[t][ai][m], srcMape[m]...)
+					}
 				}
 				if byChip[chip] == nil {
 					byChip[chip] = map[int]map[harness.Metric][]float64{}
@@ -394,16 +423,31 @@ func main() {
 		title = "every chip and every framework; published arms only"
 	}
 	if *tier != "" {
-		title += "; " + *tier + "-configuration points only"
+		title += "; " + *tier + "-configuration sweeps only"
 	}
-	fmt.Printf("Shape error by metric, framework %s, %s\n", *framework, title)
+	fmt.Printf("Accuracy by metric, framework %s, %s\n", *framework, title)
 	fmt.Printf("corpus: %s\n", c.Source)
 	fmt.Printf("ground truth: %s\n\n", c.MeasurementSource)
-	fmt.Println("Shape error only. The artifact ships no absolute latency -- every point carries")
-	fmt.Println("tpot_relative and ttft_relative and nothing else -- so a mean ABSOLUTE percentage")
-	fmt.Println("error cannot be computed against it by anyone. Each side is normalised to its own")
-	fmt.Println("value at the sweep's lowest concurrency, and that anchor is excluded.")
-	fmt.Printf("\n%d sweeps, %d points for TPOT\n", sweeps, points)
+	fmt.Println("Protocol: each point is the InferenceX benchmark client's MAIN phase, replayed by")
+	fmt.Println("`blis replay`: the 10*CONC target lengths numpy drew at seed 0, in request order, at a")
+	fmt.Println("concurrency gate of CONC, exactly the target output length; TTFT and TPOT are")
+	fmt.Println("calculate_metrics's means over those requests. Not reproduced: the tokenizer-retry")
+	fmt.Println("difference between target and sent prompt length, the warm-up's prefix-cache state on")
+	fmt.Println("points with prefix caching enabled, run settings blis-schemas cannot express. See")
+	fmt.Println("docs/kernel-exclusive/APPLES-TO-APPLES.md.")
+	fmt.Println()
+	fmt.Println("Tiers, decided per sweep from the coverage gaps (-gaps) before any point is scored:")
+	fmt.Println("  STRICT                every point has an engine log, every setting it passed is carried,")
+	fmt.Println("                        every setting the simulation decides was measured, no protocol gap")
+	fmt.Println("  MEASURED-OR-RESOLVED  as STRICT, but a setting the run did not pass may take vLLM's default")
+	fmt.Println("  ALL (approximate)     every scoreable sweep; NOT the measured runs as they ran")
+	fmt.Println("Each table includes the stricter ones; within a table every arm scores the same points.")
+	fmt.Println("Shape error divides each side by its own value at the sweep's lowest concurrency and")
+	fmt.Println("excludes that anchor; mape compares absolute latency at every point.")
+	fmt.Printf("\n%d sweeps, %d points for TPOT shape, over all tiers\n", sweeps, points)
+	for _, t := range harness.AllTiers {
+		fmt.Printf("  %-22s %3d sweeps\n", t, sweepsIn[t])
+	}
 	if ttftExcluded > 0 {
 		fmt.Printf("%d point(s) excluded from TTFT for EVERY arm: the measured TTFT is an\n"+
 			"  isolated excursion more than %.0fx both neighbours. Over the 281 interior points\n"+
@@ -415,30 +459,30 @@ func main() {
 	}
 
 	for _, m := range harness.AllMetrics {
-		fmt.Printf("\n=== %s shape error (level divided out; curvature only)\n", m)
-		fmt.Printf("%-24s %5s %9s %9s %9s %7s %9s %9s\n",
-			"estimator", "n", "mean", "median", "mean|e|", "over", "p10", "p90")
-		for ai, a := range arms {
-			st := harness.Signed(errs[ai][m])
-			fmt.Printf("%-24s %5d %+8.2f%% %+8.2f%% %8.2f%% %6.0f%% %+8.2f%% %+8.2f%%\n",
-				a.name, st.N, st.Mean, st.Median, st.MeanAbs, 100*st.FractionOver, st.P10, st.P90)
-		}
-		fmt.Printf("\n=== %s mape (level AND curvature)\n", m)
-		fmt.Printf("%-24s %5s %9s %9s %9s %7s\n",
-			"estimator", "n", "mean", "median", "mean|e|", "over")
-		for ai, a := range arms {
-			v := mapes[ai][m]
-			if len(v) == 0 {
-				fmt.Printf("%-24s %5s %9s %9s %9s %7s   not computable: needs the measured "+
-					"anchor latency, which the artifact does not ship\n", a.name, "--", "--", "--", "--", "--")
-				continue
+		for _, kind := range []string{"shape error (level divided out; curvature only)", "mape (level AND curvature)"} {
+			src := errs
+			if strings.HasPrefix(kind, "mape") {
+				src = mapes
 			}
-			st := harness.Signed(v)
-			fmt.Printf("%-24s %5d %+8.2f%% %+8.2f%% %8.2f%% %6.0f%%\n",
-				a.name, st.N, st.Mean, st.Median, st.MeanAbs, 100*st.FractionOver)
+			fmt.Printf("\n=== %s %s\n", m, kind)
+			fmt.Printf("%-22s %-24s %5s %9s %9s %9s %7s %9s %9s\n",
+				"tier", "estimator", "n", "mean", "median", "mean|e|", "over", "p10", "p90")
+			for _, t := range harness.AllTiers {
+				for ai, a := range arms {
+					v := src[t][ai][m]
+					if len(v) == 0 {
+						fmt.Printf("%-22s %-24s %5d %9s\n", t, a.name, 0, "--")
+						continue
+					}
+					st := harness.Signed(v)
+					fmt.Printf("%-22s %-24s %5d %+8.2f%% %+8.2f%% %8.2f%% %6.0f%% %+8.2f%% %+8.2f%%\n",
+						t, a.name, st.N, st.Mean, st.Median, st.MeanAbs, 100*st.FractionOver, st.P10, st.P90)
+				}
+			}
 		}
 	}
 
+	fmt.Printf("\nThe breakdowns below are over ALL scoreable sweeps (approximate), the widest table.\n")
 	fmt.Printf("\n=== By chip family (mean|e|)\n")
 	chips := make([]string, 0, len(byChip))
 	for k := range byChip {

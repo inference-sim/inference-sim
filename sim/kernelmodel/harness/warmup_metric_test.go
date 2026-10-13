@@ -1,56 +1,10 @@
 package harness
 
 import (
-	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
-
-// The warm-up cut must apply to TPOT and NOT to TTFT.
-//
-// A closed-loop pool launches N requests at once against an empty queue, so early completions
-// see a filling batch (bad for a steady-state TPOT mean) and deep prefill queueing (which IS
-// the TTFT phenomenon). Overriding the cut must therefore move the ITL mean and leave the TTFT
-// mean untouched. If both move, the cut has leaked into TTFT and the TTFT curve will flatten.
-func TestWarmupCutAppliesToITLNotTTFT(t *testing.T) {
-	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sw := testSweep(t)
-	// Concurrency 64: deep enough that the start-up transient is several prefill waves.
-	const conc = 64
-	base := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42}
-
-	withCut, err := Run(sw, conc, base)
-	if err != nil {
-		t.Fatalf("default: %v", err)
-	}
-	noCut := base
-	noCut.WarmupFraction = 0.001 // discard essentially nothing
-	without, err := Run(sw, conc, noCut)
-	if err != nil {
-		t.Fatalf("override: %v", err)
-	}
-	_ = c
-
-	if withCut.MeanITLUs == without.MeanITLUs {
-		t.Errorf("the warm-up cut should change the ITL mean; both gave %.4f", withCut.MeanITLUs)
-	}
-	if math.Abs(withCut.MeanTTFTUs-without.MeanTTFTUs) > 1e-9 {
-		t.Errorf("the warm-up cut must NOT change the TTFT mean: %.4f with, %.4f without -- "+
-			"TTFT is averaged over every measured completion because the start-up transient is "+
-			"the phenomenon it measures",
-			withCut.MeanTTFTUs, without.MeanTTFTUs)
-	}
-	// And the counts must say so plainly.
-	if withCut.MeasuredTTFT <= withCut.Measured {
-		t.Errorf("TTFT should cover MORE completions than ITL (%d vs %d): it does not drop the "+
-			"warm-up prefix", withCut.MeasuredTTFT, withCut.Measured)
-	}
-}
 
 // TTFT must RISE with concurrency. A model whose TTFT does not move while its own step time
 // doubles is not queueing requests at all, and that is the bug this guards.
@@ -91,7 +45,7 @@ func TestTTFTRisesWithConcurrency(t *testing.T) {
 		t.Fatalf("c=64: %v", err)
 	}
 	ttftRise := hi.MeanTTFTUs / lo.MeanTTFTUs
-	itlRise := hi.MeanITLUs / lo.MeanITLUs
+	itlRise := hi.MeanTPOTUs / lo.MeanTPOTUs
 
 	// A sixteen-fold concurrency rise must move the first token. The bound is deliberately
 	// loose -- see the comment above -- because a fixed per-request admission cost compresses

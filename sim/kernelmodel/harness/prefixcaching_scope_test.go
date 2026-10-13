@@ -29,67 +29,49 @@ func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	}
 }
 
-// This corpus cannot exercise prefix caching, and that must be stated rather than assumed.
+// The benchmark's main-phase requests share no prompt prefix, and neither do the requests
+// `blis replay` builds from the point's trace -- so with prefix caching enabled no MAIN request
+// is served from another main request's cache, in the benchmark or in the simulation.
 //
-// The harness sets PrefixLength to 0 because AISimulate's own spec sets
-// cached_prefix_tokens to zero, and the generator then draws independent tokens per request.
-// So no request shares a leading block with another, and disabling reuse changes nothing on
-// these points -- correctly, not because the gate is broken.
+// The benchmark side, from benchmark_serving.py: request i's prompt is the token ids
+// (offsets[i] + i + j) % vocab for j < input_lens[i], offsets drawn at random per request, with
+// no shared prefix at --random-prefix-len 0. The simulation side is checked here: the trace
+// carries no prefix group, and the token ids replay generates for one-round sessions share no
+// leading block.
 //
-// The consequence is worth pinning: a future change that gives the workload a shared prefix
-// WOULD make the setting matter, and this test is where that becomes visible. Without it, a
-// reader could conclude from an unchanged score that the feature does not work.
-func TestThisCorpusHasNoSharedPrefixToCache(t *testing.T) {
-	w := AISimulateWorkload(1024, 1024, 16)
-	spec := &workload.WorkloadSpec{
-		Version: "v1", Seed: 42, Category: "language",
-		Clients: []workload.ClientSpec{{
-			ID: "closed-loop", Concurrency: 16,
-			InputDist: workload.DistSpec{
-				Type: "empirical", Params: pdfParams(uniformPDF(w.ISLLow, w.ISLHigh))},
-			OutputDist: workload.DistSpec{
-				Type: "empirical", Params: pdfParams(uniformPDF(w.OSLLow, w.OSLHigh))},
-			PrefixLength: 0,
-			Streaming:    true,
-		}},
-		NumRequests: 64,
-	}
-	if err := spec.Validate(); err != nil {
-		t.Fatalf("spec: %v", err)
-	}
-	wl, err := workload.GenerateWorkload(spec, 1<<62, 64)
+// What this does NOT cover is the warm-up: its 2*CONC copies of request 0 do leave request 0's
+// prompt cached for the main phase. That is the gap the coverage report flags on every point
+// with prefix caching enabled.
+func TestThePointsRequestsShareNoPrefixToCache(t *testing.T) {
+	ws, err := LoadBenchmarkWorkloads(DefaultWorkloadsPath(0))
 	if err != nil {
-		t.Fatalf("generate: %v", err)
+		t.Fatal(err)
 	}
-	if len(wl.Requests) < 2 {
-		t.Skip("need at least two requests")
+	pl, err := ws.At(1024, 1024, 16)
+	if err != nil {
+		t.Fatal(err)
 	}
-
+	header, records := pointTrace(pl)
+	for _, r := range records {
+		if r.PrefixGroup != "" || r.PrefixLength != 0 {
+			t.Fatalf("record %d states prefix group %q of %d tokens", r.RequestID, r.PrefixGroup, r.PrefixLength)
+		}
+	}
+	reqs, _, err := workload.LoadTraceV2SessionBlueprints(&workload.TraceV2{Header: *header, Records: records},
+		42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	const blockSize = 16
-	worst := 0
-	for i := 1; i < len(wl.Requests) && i < 16; i++ {
-		a, b := wl.Requests[0].InputTokens, wl.Requests[i].InputTokens
-		shared := 0
-		for off := 0; off+blockSize <= len(a) && off+blockSize <= len(b); off += blockSize {
-			same := true
-			for j := 0; j < blockSize; j++ {
-				if a[off+j] != b[off+j] {
-					same = false
-					break
-				}
-			}
-			if !same {
-				break
-			}
-			shared++
+	for i := 1; i < len(reqs); i++ {
+		a, b := reqs[0].InputTokens, reqs[i].InputTokens
+		same := len(a) >= blockSize && len(b) >= blockSize
+		for j := 0; same && j < blockSize; j++ {
+			same = a[j] == b[j]
 		}
-		if shared > worst {
-			worst = shared
+		if same {
+			t.Errorf("requests 0 and %d share their first %d-token block; the simulated main phase "+
+				"would hit the prefix cache where the benchmark's does not", i, blockSize)
 		}
-	}
-	if worst != 0 {
-		t.Errorf("requests share up to %d leading block(s); this corpus now DOES exercise "+
-			"prefix caching, so the scores depend on enable_prefix_caching and the "+
-			"per-deployment setting must be carried", worst)
 	}
 }
