@@ -53,7 +53,10 @@ const (
 	// to resolve it, a point with no engine log at all, or a protocol state not modelled.
 	GapApproximate
 	// GapResolved is a setting the run did not pass, simulated at the value vLLM itself
-	// resolves for it -- not a measurement, but not a guess either.
+	// resolves for it by a rule this harness restates (the batch caps, the block size) --
+	// not a measurement, but not a guess either. An unconditional vLLM default (expert
+	// parallelism off; the version's gpu_memory_utilization) is what the run ran, and is not
+	// a gap at all.
 	GapResolved
 )
 
@@ -76,8 +79,10 @@ type Tier int
 
 const (
 	// TierStrict: every point has an engine log, every setting the run passed is carried into
-	// the simulation, every setting it decides was measured rather than resolved, and no
-	// protocol gap is flagged. The comparison these points support is the benchmark's run
+	// the simulation, the four admission settings (max_num_seqs, max_num_batched_tokens,
+	// block_size, enable_prefix_caching) and max_model_len were measured rather than resolved,
+	// expert parallelism and gpu_memory_utilization were measured or are vLLM's unconditional
+	// default, and no protocol gap is flagged. The comparison these points support is the benchmark's run
 	// against its own reproduction.
 	TierStrict Tier = iota
 	// TierMeasuredOrResolved: as strict, except that a setting the run did not pass is
@@ -267,6 +272,14 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 			switch f.from {
 			case SourceMeasured:
 			case SourceResolved:
+				// Expert parallelism and memory utilisation resolve to a default vLLM applies
+				// unconditionally (off; 0.9 or 0.92 by the logged engine version), so a run that
+				// passed neither RAN that value: carried exactly, not approximated. The batch
+				// caps and block size resolve through rules (device memory, attention backend)
+				// this harness restates rather than reads from the run, so they stay a gap.
+				if f.name == "enable_expert_parallel" || f.name == "gpu_memory_utilization" {
+					continue
+				}
 				cv.pointGap(sw, p.Concurrency, GapResolved, "measured setting absent: "+f.name+" (resolved value used)",
 					OwnerMeasurements, "")
 			default:

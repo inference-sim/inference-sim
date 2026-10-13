@@ -69,10 +69,12 @@ func TestANonVLLMSweepIsAGap(t *testing.T) {
 	}
 }
 
-// With no engine-settings record, every point says it has no log and none of its seven run
-// settings is measured. With a record, every setting the run passed is carried into the
-// variant -- so none is a gap -- except one blis-schemas cannot express, and a setting it did
-// not pass is reported as resolved.
+// With no engine-settings record, every point says it has no log and every run setting is
+// reported unmeasured except expert parallelism, whose unconditional vLLM default is what the
+// run ran. With a record, every setting the run passed is carried into the variant -- so none
+// is a gap -- except one blis-schemas cannot express; an unpassed batch cap is reported as
+// resolved; an unpassed expert-parallel or memory-utilisation setting takes vLLM's
+// unconditional default and is not a gap.
 func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	sw := committedSweep("vllm")
 	gaps := gapsFor(t, sw, Config{Repos: testRepos()})
@@ -85,8 +87,8 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 			absent++
 		}
 	}
-	if noLog != len(sw.Points) || absent != 7*len(sw.Points) {
-		t.Errorf("%d no-log and %d not-measured gaps, want %d and 7 settings x %d points",
+	if noLog != len(sw.Points) || absent != 6*len(sw.Points) {
+		t.Errorf("%d no-log and %d not-measured gaps, want %d and 6 settings x %d points",
 			noLog, absent, len(sw.Points), len(sw.Points))
 	}
 
@@ -103,9 +105,10 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	if !hasGap(gaps, OwnerSchemas, "run setting blis-schemas cannot express: max_cudagraph_capture_size") {
 		t.Errorf("gaps lack max_cudagraph_capture_size: %+v", gaps)
 	}
-	// Expert parallelism was not passed: vLLM's default, reported as resolved.
-	if !hasGap(gaps, OwnerMeasurements, "measured setting absent: enable_expert_parallel (resolved") {
-		t.Errorf("gaps lack the resolved expert-parallel setting: %+v", gaps)
+	// Expert parallelism was not passed: vLLM's unconditional default, not a gap. The batch
+	// caps were passed here, so only an unpassed one would be a resolved gap.
+	if hasGap(gaps, OwnerMeasurements, "measured setting absent: enable_expert_parallel") {
+		t.Errorf("an unpassed expert-parallel setting is reported as a gap: %+v", gaps)
 	}
 	// Every passed setting the schema can express is carried, including max_model_len and a
 	// gpu_memory_utilization the committed scenario states differently; prefix caching is off,
@@ -116,7 +119,7 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 		}
 		if strings.HasPrefix(g.Cause, "run setting not carried") || strings.HasPrefix(g.Cause, "warm-up") ||
 			strings.Contains(g.Cause, "max_num_seqs") || strings.Contains(g.Cause, "max_model_len") ||
-			strings.Contains(g.Cause, "gpu_memory_utilization") {
+			strings.Contains(g.Cause, "gpu_memory_utilization") || strings.Contains(g.Cause, "enable_expert_parallel") {
 			t.Errorf("unexpected gap %+v", g)
 		}
 	}
