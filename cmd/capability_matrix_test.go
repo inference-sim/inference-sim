@@ -504,6 +504,22 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		}
 	})
 
+	t.Run("chunked prefill/a lower chunk threshold spreads one long prefill over more steps", func(t *testing.T) {
+		t.Parallel()
+		// One 20000-token prompt alone: each smaller chunk adds a step and its fixed cost, so
+		// TTFT rises monotonically as the threshold falls (0 = no per-request threshold).
+		var prev float64
+		for i, threshold := range []string{"0", "2048", "512"} {
+			o := capRun(t, runArgs(colocated(1), with(burst(1, 1, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
+			o.conserves(t, 1)
+			if ttft := o.num("ttft_mean_ms"); i > 0 && ttft <= prev {
+				t.Errorf("chunk threshold %s gave TTFT %.1f ms, no more than %.1f at the previous threshold", threshold, ttft, prev)
+			} else {
+				prev = ttft
+			}
+		}
+	})
+
 	t.Run("P/D deciders/always and never, and the prefix threshold at both ends", func(t *testing.T) {
 		t.Parallel()
 		pd := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--num-instances", "4",
