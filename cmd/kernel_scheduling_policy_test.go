@@ -146,17 +146,11 @@ func TestRunCmd_PrioritySchedulingPolicyPreemptsTheLeastUrgent(t *testing.T) {
 // batch ones; stating priority on the prefill pool instead -- the pools swapped -- does not
 // separate them. A run that applied one pool's policy to both, or swapped them, fails.
 func TestRunCmd_EachPDPoolRunsItsOwnSchedulingPolicy(t *testing.T) {
-	variant := func(prefillPolicy, decodePolicy string) string {
-		return writeScenarioVariant(t,
-			"      gpu_memory_utilization: 0.9\n  - role: decode",
-			"      gpu_memory_utilization: 0.9\n      scheduling_policy: "+prefillPolicy+"\n  - role: decode",
-			"      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-			"      max_num_seqs: 2\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n      scheduling_policy: "+decodePolicy+"\n\npd_transfer")
-	}
 	run := func(dir string) map[string]float64 {
-		return meanE2EByClass(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--pd-decider", "always",
-			"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "11",
-			"--workload-spec", mixedPriorityWorkload(t, 80, 512, 128))
+		return meanE2EByClass(t, pdPolicyRunArgs(t, dir)...)
+	}
+	variant := func(prefillPolicy, decodePolicy string) string {
+		return pdPolicyVariant(t, prefillPolicy, decodePolicy)
 	}
 	decodePriority := run(variant("fcfs", "priority"))
 	prefillPriority := run(variant("priority", "fcfs"))
@@ -257,5 +251,61 @@ func TestRunCmd_PDSchedulerOverrideIsRecordedPerPool(t *testing.T) {
 		file.Overrides[0].Scenario != "priority-fcfs" || file.Overrides[0].Run != "fcfs" ||
 		file.Overrides[0].Source != "--scheduler" {
 		t.Errorf("want one record, the prefill pool's priority-fcfs -> fcfs from --scheduler; got %+v", file.Overrides)
+	}
+}
+
+// pdPolicyLine is the scenario line stating policy, or nothing for "" (the field omitted).
+func pdPolicyLine(policy string) string {
+	if policy == "" {
+		return ""
+	}
+	return "      scheduling_policy: " + policy + "\n"
+}
+
+// pdPolicyVariant writes the 3P1D fixture with each pool stating the given policy ("" omits
+// the field) and a decode pool that admits 2 sequences, so the decode pool is the bottleneck.
+func pdPolicyVariant(t *testing.T, prefillPolicy, decodePolicy string) string {
+	t.Helper()
+	return writeScenarioVariant(t,
+		"      gpu_memory_utilization: 0.9\n  - role: decode",
+		"      gpu_memory_utilization: 0.9\n"+pdPolicyLine(prefillPolicy)+"  - role: decode",
+		"      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+		"      max_num_seqs: 2\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n"+
+			pdPolicyLine(decodePolicy)+"\npd_transfer")
+}
+
+// pdPolicyRunArgs is a 3P1D mixed-priority run of the scenario in dir.
+func pdPolicyRunArgs(t *testing.T, dir string) []string {
+	return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--pd-decider", "always",
+		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "11",
+		"--workload-spec", mixedPriorityWorkload(t, 80, 512, 128)}
+}
+
+// A pool that omits engine.scheduling_policy runs vLLM's default, fcfs -- never the other
+// pool's stated policy. Metamorphic: omitting the field is byte-identical to stating fcfs, in
+// either pool, whatever the other pool states. The asymmetric case (prefill priority, decode
+// omitted) is the one a run-level default would get wrong: it would hand the decode pool the
+// prefill pool's priority. Non-vacuity: decode priority differs from decode fcfs here.
+func TestRunCmd_AnOmittedPoolPolicyIsVLLMsDefaultNotTheOtherPools(t *testing.T) {
+	stdout := func(prefill, decode string) string {
+		out, stderr, err := runKernelCLI(t, pdPolicyRunArgs(t, pdPolicyVariant(t, prefill, decode))...)
+		if err != nil {
+			t.Fatalf("prefill %q decode %q: %v\n%s", prefill, decode, err, lastLines(stderr, 3))
+		}
+		return out
+	}
+	for _, tt := range []struct{ name, omittedP, omittedD, statedP, statedD string }{
+		{"decode omitted behind a priority prefill pool", "priority", "", "priority", "fcfs"},
+		{"prefill omitted in front of a priority decode pool", "", "priority", "fcfs", "priority"},
+		{"both omitted", "", "", "fcfs", "fcfs"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if stdout(tt.omittedP, tt.omittedD) != stdout(tt.statedP, tt.statedD) {
+				t.Errorf("omitting the field differs from stating vLLM's default fcfs")
+			}
+		})
+	}
+	if stdout("priority", "priority") == stdout("priority", "fcfs") {
+		t.Fatal("the decode pool's policy changes nothing here; the case does not distinguish an inherited policy")
 	}
 }

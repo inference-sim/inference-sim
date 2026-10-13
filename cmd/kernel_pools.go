@@ -149,17 +149,16 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	}
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
 	// one for the run, which then applies to every pool and is recorded where it departs.
-	if stated, ok := statedSchedulingPolicy(m); ok {
-		if schedulerSource != "" {
-			recordPolicyOverride("scheduler", string(m.Role()), stated.scheduler, scheduler, schedulerSource)
-		} else {
-			o.Scheduler = stated.scheduler
-		}
-		if preemptionSource != "" {
-			recordPolicyOverride("preemption_policy", string(m.Role()), stated.preemption, preemptionPolicy, preemptionSource)
-		} else {
-			o.PreemptionPolicy = stated.preemption
-		}
+	stated := enginePolicyOf(m)
+	if schedulerSource != "" {
+		recordPolicyOverride("scheduler", string(m.Role()), stated.scheduler, scheduler, schedulerSource)
+	} else {
+		o.Scheduler = stated.scheduler
+	}
+	if preemptionSource != "" {
+		recordPolicyOverride("preemption_policy", string(m.Role()), stated.preemption, preemptionPolicy, preemptionSource)
+	} else {
+		o.PreemptionPolicy = stated.preemption
 	}
 	return o
 }

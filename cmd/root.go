@@ -510,10 +510,7 @@ func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
 // the default. An explicit --scheduler that differs is a deliberate policy experiment and is
 // kept, with a warning that the simulated engine no longer matches the scenario.
 func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
-	stated, ok := statedSchedulingPolicy(m)
-	if !ok {
-		return
-	}
+	stated := enginePolicyOf(m)
 	scenarioScheduler, scenarioPreemption = stated.scheduler, stated.preemption
 	if cmd.Flags().Changed("scheduler") {
 		schedulerSource = "--scheduler"
@@ -535,30 +532,36 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 // PRIORITY, else the last-scheduled request).
 type enginePolicy struct{ scheduler, preemption string }
 
-// statedSchedulingPolicy reads a pool's engine.scheduling_policy: fcfs is FCFS queueing and
+// enginePolicyOf resolves a pool's engine.scheduling_policy: fcfs is FCFS queueing and
 // tail-of-batch preemption; priority is priority-fcfs queueing (lowest priority value first,
-// then arrival) and priority preemption. Unstated returns false; any other value is refused.
-func statedSchedulingPolicy(m *kernelmodel.Model) (enginePolicy, bool) {
+// then arrival) and priority preemption. Each pool resolves on its own, and an unstated
+// policy is vLLM's default, fcfs (v0.31.0 vllm/config/scheduler.py:160) -- never another
+// pool's. Any other value is refused.
+func enginePolicyOf(m *kernelmodel.Model) enginePolicy {
 	eng, err := m.Engine()
-	if err != nil || eng.SchedulingPolicy == "" {
-		return enginePolicy{}, false
+	if err != nil {
+		logrus.Fatalf("scenario %q: reading the %s pool's engine: %v", kernelScenario, m.Role(), err)
+	}
+	policy := eng.SchedulingPolicy
+	if policy == "" {
+		policy = "fcfs"
 	}
 	p, ok := map[string]enginePolicy{
 		"fcfs":     {scheduler: "fcfs", preemption: "fcfs"},
 		"priority": {scheduler: "priority-fcfs", preemption: "priority"},
-	}[eng.SchedulingPolicy]
+	}[policy]
 	if !ok {
 		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
 			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
 	}
-	return p, true
+	return p
 }
 
 // recordPolicyOverride notes, when the policy a run simulates for setting differs from the one
 // its scenario states (scope names a pool, "" = the run), that source chose it: warned on
 // stderr and recorded in the results file (scenarioOverrides), so a run that no longer
 // reproduces its scenario says so in the file that reports it, not only in a log line. No-op
-// when the scenario states none or the two agree.
+// when the two agree; a pool that states no policy runs vLLM's default, fcfs (enginePolicyOf).
 func recordPolicyOverride(setting, scope, stated, run, source string) {
 	// A disaggregated run records its overrides per pool (poolOverridesOf), where each pool's
 	// own stated policy is known; a run-level record would repeat the first pool's.
