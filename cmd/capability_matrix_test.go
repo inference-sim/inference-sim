@@ -615,9 +615,10 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 			return cluster.Saturation
 		}
 		light, heavy := label("1"), label("60")
-		// backlog-drift is not held to this law: on this fixture it labels the overload STABLE
-		// (and a light 120-request run OVERLOADED in two of three seeds), a detector defect
-		// recorded as a known gap rather than asserted here.
+		// backlog-drift is not held to this law, because it fails it: through this overload's
+		// whole arrival phase its in-flight count grows from 59 to 569 while its running slope
+		// stays 0 and every event reads STABLE, and a light 120-request run (1-5 in flight)
+		// reads OVERLOADED in two of three seeds -- a detector defect, recorded as a known gap.
 		for _, d := range []string{"composite", "threshold", "peak-rate"} {
 			if light[d] != "STABLE" || heavy[d] == "STABLE" || heavy[d] == "" {
 				t.Errorf("%s labels a light load %q and a 12x overload %q", d, light[d], heavy[d])
@@ -812,8 +813,8 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		}
 		// accumulate replay carries each round's prompt and answer into the next round's
 		// prompt. (The exact reconstruction -- round 1's prompt equal to the recorded 1500 and
-		// 1200 -- is one token short per round: the session manager carries output-1 tokens
-		// forward, a defect recorded as a known gap rather than asserted here.)
+		// 1200 -- is one token short per round, #1893: the session manager carries output-1
+		// tokens forward. Asserted here once that is fixed.)
 		prompt := map[string]map[int]int{}
 		for _, r := range rows {
 			if prompt[r.SessionID] == nil {
