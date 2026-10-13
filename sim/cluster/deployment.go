@@ -78,12 +78,6 @@ type DeploymentConfig struct {
 
 	// PD KV transfer configuration (PR2).
 	//
-	// PDTransferContention enables the fair-share bandwidth contention model (INV-P2-2). It
-	// divides a bandwidth term the simulator composed itself, and the simulator no longer
-	// composes one -- the handoff is priced by PDTransferTime -- so NewClusterSimulator
-	// refuses it for any PD deployment.
-	PDTransferContention bool
-
 	// PDTransferTime prices moving one request's KV from a prefill instance to a decode
 	// instance, in ticks, for the token capacity of the KV blocks being moved. The latency
 	// backend owns the transfer price (blis-latency-kernel's PDTransferTime reads the fabric

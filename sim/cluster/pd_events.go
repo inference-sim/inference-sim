@@ -210,8 +210,8 @@ func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator) {
 	})
 }
 
-// scheduleTransferCompletion performs the contention-tracking, duration
-// calculation, and KVTransferCompletedEvent scheduling half of the
+// scheduleTransferCompletion performs the duration calculation and
+// KVTransferCompletedEvent scheduling half of the
 // transfer-start pipeline. Factored out of Execute so that narrow unit
 // tests can exercise the duration formula without constructing full
 // decode-side reservation fixtures. Production callers always reach
@@ -221,20 +221,10 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	cs.transfersInitiated++
 	parentReq.TransferStartTime = startTime
 
-	// Contention bookkeeping (INV-P2-2, dormant: NewClusterSimulator refuses
-	// PDTransferContention alongside the PDTransferTime pricer). Counts include this transfer.
-	if cs.config.PDTransferContention {
-		cs.activeTransfers++
-		if cs.activeTransfers > cs.peakConcurrentTransfers {
-			cs.peakConcurrentTransfers = cs.activeTransfers
-		}
-		cs.transferDepthSum += int64(cs.activeTransfers)
-		cs.transferStartCount++
-	}
-
 	// The latency backend prices the handoff (NewClusterSimulator refuses a PD deployment
-	// without one). The KV moves in whole blocks, so the token count priced is the blocks'
-	// capacity.
+	// without one), each one as if alone on the fabric: concurrent handoffs do not share
+	// bandwidth (INV-P2-2 not modelled yet, #1922). The KV moves in whole blocks, so the token
+	// count priced is the blocks' capacity.
 	numBlocks := parentReq.NumKVBlocks
 	duration := max(1, cs.config.PDTransferTime(numBlocks*cs.config.BlockSizeTokens,
 		parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
@@ -273,15 +263,14 @@ func (e *KVTransferCompletedEvent) Priority() int    { return 6 }
 // zero-duration "completion" so INV-PD-3 (initiated == completed) holds
 // across the reservation-failed drop. In that case bookkeeping was
 // already done at transfer-start time (droppedAtDecodeKV++,
-// CompletionTime stamped, no contention increment), so this branch only
+// CompletionTime stamped), so this branch only
 // bumps transfersCompleted and returns without touching KV or state.
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 
 	// Degenerate completion for drop-at-transfer-start (issue #1343).
-	// dropAtStart did not call scheduleTransferCompletion, so activeTransfers
-	// was never incremented for this transfer and must not be decremented
-	// here. TransferCompleteTime intentionally stays 0 — downstream code
+	// dropAtStart did not call scheduleTransferCompletion, so there is no
+	// transfer to complete. TransferCompleteTime intentionally stays 0 — downstream code
 	// uses "TransferCompleteTime == 0 && TransferStartTime > 0" to
 	// distinguish a start-drop from a completed (or late-dropped) transfer.
 	if e.parentReq.DecodeSubReq == nil {
@@ -289,21 +278,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	}
 	decodeSubReq := e.parentReq.DecodeSubReq
 	e.parentReq.TransferCompleteTime = e.time
-
-	// Contention decrement with negative guard (INV-P2-2).
-	// activeTransfers going negative is a hard bookkeeping bug (unlike inFlightRequests,
-	// which is warn-only because it recovers from delta mis-accounting). Here we set
-	// contentionBookkeepingCorrupted so Run() returns an error — contention metrics are
-	// meaningless once the counter is corrupted.
-	if cs.config.PDTransferContention {
-		cs.activeTransfers--
-		if cs.activeTransfers < 0 {
-			logrus.Errorf("[cluster] activeTransfers went negative (%d) for %s — resetting to 0; contention bookkeeping corrupted",
-				cs.activeTransfers, e.parentReq.ID)
-			cs.activeTransfers = 0
-			cs.contentionBookkeepingCorrupted = true
-		}
-	}
 
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",

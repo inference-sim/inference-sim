@@ -170,7 +170,6 @@ var (
 	decodeInstances        int    // Number of instances dedicated to decode
 	prefillDecodeInstances int    // Number of shared-role instances (both prefill and decode), issue #1276
 	pdDecider              string // Disaggregation decider name
-	pdTransferContention   bool   // Fair-share contention model; no flag sets it, dormant while the kernel prices the handoff (INV-P2-2)
 	pdPrefixThreshold      int    // Non-cached token threshold for prefix-threshold decider
 	prefillRoutingScorers  string // Scorer weights for prefill pool routing
 	decodeRoutingScorers   string // Scorer weights for decode pool routing
@@ -1874,7 +1873,6 @@ var runCmd = &cobra.Command{
 			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
-			PDTransferContention:            pdTransferContention,
 			PDTransferTime:                  pdTransferTime,
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
@@ -2104,11 +2102,6 @@ var runCmd = &cobra.Command{
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
 		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
-		if rawMetrics.PD != nil && config.PDTransferContention {
-			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
-			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
-		}
-
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
@@ -2193,7 +2186,7 @@ var runCmd = &cobra.Command{
 		printSessionMetrics(os.Stdout, sessionMetrics)
 
 		// Print PD disaggregation metrics if disaggregation was active (PR4)
-		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
+		printPDMetrics(os.Stdout, rawMetrics.PD)
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
@@ -2334,9 +2327,8 @@ func printSessionMetrics(w io.Writer, sm *cluster.SessionMetrics) {
 }
 
 // printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
-// No-op when pd is nil (disaggregation inactive). When contentionEnabled, also prints
-// peak concurrent transfers and mean transfer queue depth.
-func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) {
+// No-op when pd is nil (disaggregation inactive).
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	if pd == nil {
 		return
 	}
@@ -2357,10 +2349,6 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) 
 	if pd.TransferDuration.Count > 0 {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
-	}
-	if contentionEnabled {
-		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
-		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.4f\n", pd.MeanTransferQueueDepth)
 	}
 }
 

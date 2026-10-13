@@ -87,15 +87,6 @@ type ClusterSimulator struct {
 	encodeDecider           sim.EncodeDecider
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
-	// Transfer contention state (DeploymentConfig.PDTransferContention, INV-P2-2). Dormant
-	// while the kernel prices the handoff: no CLI flag sets it and NewClusterSimulator refuses
-	// it with a PDTransferTime pricer, so these stay zero.
-	activeTransfers                int
-	peakConcurrentTransfers        int
-	transferDepthSum               int64
-	transferStartCount             int64
-	contentionBookkeepingCorrupted bool
-
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
 
@@ -215,18 +206,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.PDTransferTime: " +
 				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
 		}
-		if config.PDTransferContention {
-			panic("ClusterSimulator: PDTransferContention cannot be combined with an injected PDTransferTime " +
-				"(the fair-share divisor would scale terms of a price the simulator did not compose)")
-		}
 	}
-
-	// PDTransferContention without PD disaggregation has nothing to contend. With prefill or
-	// shared instances it was already refused above (the handoff is priced by PDTransferTime),
-	// so the contention model is dormant (INV-P2-2) and this guard covers the remainder.
-	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
-		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
-	}
+	// Concurrent handoffs are priced independently: overlapping transfers do not share fabric
+	// bandwidth. Per-link contention is not modelled yet (INV-P2-2, #1922).
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
@@ -869,9 +851,7 @@ func (c *ClusterSimulator) Run() error {
 				if c.inFlightRequests[instID] < 0 {
 					// Warn-and-clamp: inFlightRequests is a best-effort routing signal
 					// (INV-7); it recovers from delta mis-accounting and does not corrupt
-					// deterministic metrics. Contrast with activeTransfers (contention
-					// subsystem) which uses a hard error because contention metrics are
-					// meaningless once the counter is wrong.
+					// deterministic metrics.
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
 					c.inFlightRequests[instID] = 0
@@ -989,15 +969,6 @@ func (c *ClusterSimulator) Run() error {
 	// user-facing distributions reflect the full request lifecycle.
 	c.projectPDMetrics()
 
-	// Post-simulation contention bookkeeping checks (INV-P2-2)
-	if c.contentionBookkeepingCorrupted {
-		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
-	}
-	if c.config.PDTransferContention && c.activeTransfers != 0 {
-		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0), initiated=%d completed=%d — contention metrics (PeakConcurrentTransfers, MeanTransferQueueDepth) may be inflated if horizon cut off in-flight transfers",
-			c.activeTransfers, c.transfersInitiated, c.transfersCompleted)
-	}
-
 	// Flow control: log gateway queue state at simulation end
 	if c.flowControlEnabled && c.gatewayQueue.Len() > 0 {
 		logrus.Warnf("[cluster] %d requests remain in gateway queue at simulation end", c.gatewayQueue.Len())
@@ -1101,7 +1072,6 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		GatewayQueueShed:  gatewayQueueShed,
 		GatewayEvicted:    c.gatewayEvicted,
 		GatewayExpired:    c.gatewayExpired,
-		ActivePDTransfers: c.activeTransfers,
 		ActiveInstances:   activeCount,
 		TotalInstances:    len(c.instances),
 		IsFinal:           isFinal,
@@ -1721,32 +1691,6 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 		result[string(inst.ID())] = inst.Metrics()
 	}
 	return result
-}
-
-// PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
-// Returns 0 when PDTransferContention is off, which it always is while the kernel prices
-// the handoff (INV-P2-2 dormant).
-func (c *ClusterSimulator) PeakConcurrentTransfers() int {
-	return c.peakConcurrentTransfers
-}
-
-// MeanTransferQueueDepth returns the mean number of active concurrent transfers sampled at each
-// transfer initiation event (arrival-weighted mean, not a time-average). Specifically:
-//
-//	sum(activeTransfers at each start event) / count(start events)
-//
-// The activeTransfers count is taken post-increment, so it includes the initiating transfer
-// itself. For example, with fully sequential transfers the mean is exactly 1.0.
-//
-// This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
-// how many transfers were in flight at the moment each new transfer began, including the new one.
-// Returns 0 when PDTransferContention is off (always, while the kernel prices the handoff;
-// INV-P2-2 dormant) or no transfers occurred.
-func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
-	if c.transferStartCount == 0 {
-		return 0
-	}
-	return float64(c.transferDepthSum) / float64(c.transferStartCount)
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.

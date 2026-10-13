@@ -1524,7 +1524,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origDecodeInstances := decodeInstances
 	origSharedInstances := prefillDecodeInstances
 	origPDDecider := pdDecider
-	origPDTransferContention := pdTransferContention
 	origPDPrefixThreshold := pdPrefixThreshold
 	origPrefillScorers := prefillRoutingScorers
 	origDecodeScorers := decodeRoutingScorers
@@ -1533,7 +1532,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		decodeInstances = origDecodeInstances
 		prefillDecodeInstances = origSharedInstances
 		pdDecider = origPDDecider
-		pdTransferContention = origPDTransferContention
 		pdPrefixThreshold = origPDPrefixThreshold
 		prefillRoutingScorers = origPrefillScorers
 		decodeRoutingScorers = origDecodeScorers
@@ -1670,7 +1668,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	decodeInstances = 1
 	prefillDecodeInstances = 0
 	pdDecider = "always"
-	pdTransferContention = false
 	pdPrefixThreshold = 0
 	prefillRoutingScorers = ""
 	decodeRoutingScorers = ""

@@ -545,7 +545,6 @@ Example:
 			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
-			PDTransferContention:            pdTransferContention,
 			PDTransferTime:                  pdTransferTime,
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
@@ -723,11 +722,6 @@ Example:
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
 		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
-		if rawMetrics.PD != nil && config.PDTransferContention {
-			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
-			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
-		}
-
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
@@ -785,7 +779,7 @@ Example:
 		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
 		printSessionMetrics(os.Stdout, sessionMetrics)
 
-		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
+		printPDMetrics(os.Stdout, rawMetrics.PD)
 
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())

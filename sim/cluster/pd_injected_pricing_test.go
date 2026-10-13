@@ -133,17 +133,3 @@ func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
 		t.Errorf("a decode pool capped at max_num_seqs=1 batched %d requests", *dLargest)
 	}
 }
-
-// The fair-share contention divisor cannot be applied to a price the simulator did not
-// compose, so the combination is refused at construction rather than silently mis-scaled.
-func TestPDTransfer_ContentionIsRefusedWithAnInjectedPrice(t *testing.T) {
-	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 10 }
-	cfg.PDTransferContention = true
-	defer func() {
-		if recover() == nil {
-			t.Error("contention with an injected price was accepted")
-		}
-	}()
-	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-}

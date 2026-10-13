@@ -113,46 +113,18 @@ func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
 	}
 }
 
-// TestPrintPDMetrics_ContentionEnabled verifies that when contentionEnabled=true,
-// printPDMetrics emits Peak Concurrent Transfers and Mean Transfer Queue Depth lines.
-func TestPrintPDMetrics_ContentionEnabled(t *testing.T) {
-	pd := &cluster.PDMetrics{
-		DisaggregatedCount:      3,
-		PeakConcurrentTransfers: 2,
-		MeanTransferQueueDepth:  1.5,
-		LoadImbalanceRatio:      1.0,
-	}
+// TestPrintPDMetrics_PrintsThePDSection verifies the PD section's header and standard fields,
+// and that it reports no transfer-contention figures: contention is not modelled (INV-P2-2,
+// #1922), so a figure for it would describe nothing the run simulated.
+func TestPrintPDMetrics_PrintsThePDSection(t *testing.T) {
+	pd := &cluster.PDMetrics{DisaggregatedCount: 3, LoadImbalanceRatio: 1.0}
 
 	var buf bytes.Buffer
-
-	// WHEN contention is enabled
-	printPDMetrics(&buf, pd, true)
+	printPDMetrics(&buf, pd)
 	out := buf.String()
 
-	// THEN contention metrics must appear
-	assert.Contains(t, out, "Peak Concurrent Transfers: 2", "Peak Concurrent Transfers must be printed when contentionEnabled=true")
-	assert.Contains(t, out, "Mean Transfer Queue Depth: 1.5000", "Mean Transfer Queue Depth must be printed when contentionEnabled=true")
-}
-
-// TestPrintPDMetrics_ContentionDisabled verifies that when contentionEnabled=false,
-// printPDMetrics does NOT emit contention-specific lines.
-func TestPrintPDMetrics_ContentionDisabled(t *testing.T) {
-	pd := &cluster.PDMetrics{
-		DisaggregatedCount:      3,
-		PeakConcurrentTransfers: 0,
-		MeanTransferQueueDepth:  0,
-		LoadImbalanceRatio:      1.0,
-	}
-
-	var buf bytes.Buffer
-
-	// WHEN contention is disabled
-	printPDMetrics(&buf, pd, false)
-	out := buf.String()
-
-	// THEN contention metrics must NOT appear
-	assert.NotContains(t, out, "Peak Concurrent Transfers", "Peak Concurrent Transfers must not be printed when contentionEnabled=false")
-	assert.NotContains(t, out, "Mean Transfer Queue Depth", "Mean Transfer Queue Depth must not be printed when contentionEnabled=false")
+	assert.NotContains(t, out, "Peak Concurrent Transfers", "no contention figure while contention is not modelled")
+	assert.NotContains(t, out, "Mean Transfer Queue Depth", "no contention figure while contention is not modelled")
 	// But the header and standard PD fields must still appear
 	assert.Contains(t, out, "=== PD Metrics ===", "PD Metrics header must always appear")
 	assert.Contains(t, out, "Disaggregated Requests: 3", "Disaggregated Requests must always appear")
@@ -162,7 +134,7 @@ func TestPrintPDMetrics_ContentionDisabled(t *testing.T) {
 // when pd is nil, printPDMetrics must return without writing any output.
 func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	var buf bytes.Buffer
-	printPDMetrics(&buf, nil, true)
+	printPDMetrics(&buf, nil)
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
 

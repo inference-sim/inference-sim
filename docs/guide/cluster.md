@@ -69,7 +69,9 @@ Refused: a P/D topology over a colocated scenario; a disaggregated scenario with
 `--prefill-instances`/`--decode-instances`; prefill and decode pools that differ in block size,
 `dp` or draft configuration; shared (`--prefill-decode-instances`) or encode instances.
 KV offload works with P/D: each pool sizes the same tiers by its own bytes per block and prices
-them with its own kernel.
+them with its own kernel. Concurrent handoffs do not yet share fabric bandwidth: each is priced as
+if alone, which is optimistic when a shared link (e.g. the decode node's NIC in xP1D) runs close to
+saturation (#1922).
 
 ### Node pools and multi-node placement
 
