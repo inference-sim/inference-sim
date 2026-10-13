@@ -138,6 +138,10 @@ func (cv *Coverage) TierOf(sw Sweep) Tier {
 	return t
 }
 
+// promptLengthCause is the gap of a point whose sent prompt lengths are not verified to be its
+// targets (PromptLengthEvidence.Verified).
+const promptLengthCause = "sent prompt lengths not verified equal to the replayed targets (tokenizer retry)"
+
 // ResolvedSettings counts, per run setting, the points of a sweep that simulate it at vLLM's
 // resolved value rather than a measured one -- what keeps a MEASURED-OR-RESOLVED sweep out of
 // STRICT.
@@ -295,9 +299,16 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 	}
 
 	// Per point: where each run setting came from, every setting the run passed that the
-	// simulation does not state, and the protocol state the simulation does not reproduce.
+	// simulation does not state, and whether the prompt lengths the client sent are verified to
+	// be the targets the simulation replays.
 	rec := cfg.EngineSettings.For(sw)
+	evidence, evidenceErr := cfg.promptLengths()
 	for _, p := range sw.Points {
+		if evidenceErr != nil {
+			cv.pointGap(sw, p.Concurrency, GapApproximate, promptLengthCause, OwnerSim, evidenceErr.Error())
+		} else if ok, why := evidence.Verified(sw, p.Concurrency); !ok {
+			cv.pointGap(sw, p.Concurrency, GapApproximate, promptLengthCause, OwnerSim, why)
+		}
 		pc := resolveAdmission(sw, p.Concurrency, eng, d, cfg.EngineSettings)
 		ps := rec.At(p.Concurrency)
 		if ps == nil {

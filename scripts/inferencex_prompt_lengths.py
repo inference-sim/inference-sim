@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Reproduce InferenceX's random-prompt construction offline and measure, per scored point, how
-far the prompt length the benchmark client SENT differs from its numpy TARGET.
+"""Reproduce InferenceX's random-prompt construction offline, at pinned tokenizer revisions, and
+record per scored point how far the prompt length the benchmark client SENT lies from its numpy
+TARGET -- the evidence testdata/inferencex-workloads/prompt-lengths.json carries.
 
 The client (SemiAnalysisAI/InferenceX utils/bench_serving/benchmark_serving.py) builds request
 i's prompt from token ids (offsets[i] + i + j) % vocab_size, decodes it to text, and re-encodes
 it up to ten times -- padding with random ids when short, truncating when long -- to land on the
-target; it then records len(encode(prompt, add_special_tokens=False)) and the difference
-("mismatch"). Two client versions are live over the measured runs' dates:
+target; it then records len(encode(prompt, add_special_tokens=False)). Two client versions are
+live over the measured runs' dates:
 
   before 1780296b (2026-04-21)  serial loop; padding from the GLOBAL np.random stream after
                                 `offsets` (1780296b^ lines 118-150)
@@ -16,22 +17,31 @@ target; it then records len(encode(prompt, add_special_tokens=False)) and the di
                                 from RandomState(local_rng.randint(0, 2**31)) in chunk order
                                 (08d7a9cd lines 162-196, 238-290)
 
-The server then tokenizes the prompt TEXT itself; with add_special_tokens=True (the completions
-default) it may add a BOS. Both differences are reported per point.
+The server then tokenizes the prompt TEXT itself; the tokens add_special_tokens=True adds (the
+completions default) are recorded too.
 
-Requirements: numpy, transformers, tokenizers (and tiktoken for Kimi). Tokenizer files are
-downloaded from Hugging Face into $HF_HOME, which must be set and must lie OUTSIDE this
-repository. Run with `python -I`. Kimi-K2.5's tokenizer is custom code (tokenization_kimi.py)
-and needs trust_remote_code; read it before running. Gated models (Llama) are skipped.
+Tokenizers are pinned: for every point, the Hugging Face revision of its tokenizer repo current
+at the point's run date, and the repo's revision today. Every tokenizer file of every revision
+used is recorded by sha256. Revisions whose tokenizer files are byte-identical produce identical
+prompts, so the construction runs once per distinct file set.
+
+Requirements: numpy, transformers, tokenizers, huggingface_hub (and tiktoken for Kimi). Tokenizer
+files are downloaded into $HF_HOME, which must be set and must lie OUTSIDE this repository. Run
+with `python -I`. Kimi-K2.5's tokenizer is custom code (tokenization_kimi.py) and needs
+trust_remote_code; read it before running. Points with no engine log (Llama-3.1-70B, whose
+tokenizer is also gated) have no run date or known client version and are not recorded.
 
 Usage:
     export HF_HOME=~/.cache/blis-check/tokenizers/hf
     python -I scripts/inferencex_prompt_lengths.py \\
         --corpus "$BLIS_MEASUREMENTS"/aisimulate_e2e.json \\
-        --engine-settings "$BLIS_MEASUREMENTS"/inferencex_engine_settings.json [--model minimax-m2.5]
+        --engine-settings "$BLIS_MEASUREMENTS"/inferencex_engine_settings.json \\
+        --out testdata/inferencex-workloads/prompt-lengths.json
 """
 
 import argparse
+import datetime
+import hashlib
 import json
 import logging
 import os
@@ -43,18 +53,24 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLIENT_PARALLEL_FROM = "2026-04-21"  # 1780296b, "Multiprocess Parallel Random Data Generation"
 RANGE_RATIO = 0.8
 LABELS = {"1k1k": (1024, 1024), "1k8k": (1024, 8192), "8k1k": (8192, 1024)}
+TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt", "tiktoken.model",
+                   "tokenization_kimi.py", "tool_declaration_ts.py", "special_tokens_map.json", "added_tokens.json"]
+LOADER_FILES = ["config.json"]  # read by AutoTokenizer to resolve the class; hashed, not compared
+TRUST_REMOTE_CODE = {"nvidia/Kimi-K2.5-NVFP4"}
 
-# The checkpoint each scored model was served from (engine-args `model`), and the public HF repo
-# whose tokenizer files are that checkpoint's. The NVFP4 repos' tokenizer files are byte-identical
-# to their base models' (checked by sha256 when this table was written).
-TOKENIZERS = {
-    "gpt-oss-120b": ("openai/gpt-oss-120b", False),
-    "minimax-m2.5": ("MiniMaxAI/MiniMax-M2.5", False),
-    "minimax-m3": ("nvidia/MiniMax-M3-NVFP4", False),
-    "kimi-k2.5": ("nvidia/Kimi-K2.5-NVFP4", True),  # tokenization_kimi.TikTokenTokenizer
-    "deepseek-v4-pro": ("deepseek-ai/DeepSeek-V4-Pro", False),
-    "llama-3.1-70b-instruct": ("meta-llama/Llama-3.1-70B-Instruct", False),  # gated
-}
+
+def repo_for(served_model):
+    """The public tokenizer repo of the checkpoint a run served (engine-args `model`). A local
+    path is taken to be a copy of the repo of the same name."""
+    name = served_model.rstrip("/").split("/")[-1]
+    return {
+        "gpt-oss-120b": "openai/gpt-oss-120b",
+        "MiniMax-M2.5": "MiniMaxAI/MiniMax-M2.5",
+        "MiniMax-M2.5-NVFP4": "nvidia/MiniMax-M2.5-NVFP4",
+        "MiniMax-M3-NVFP4": "nvidia/MiniMax-M3-NVFP4",
+        "Kimi-K2.5-NVFP4": "nvidia/Kimi-K2.5-NVFP4",
+        "DeepSeek-V4-Pro": "deepseek-ai/DeepSeek-V4-Pro",
+    }.get(name)
 
 
 def prompts(tok, isl, osl, conc, path, workers):
@@ -98,73 +114,126 @@ def prompts(tok, isl, osl, conc, path, workers):
     return rows
 
 
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--corpus", required=True)
-    ap.add_argument("--engine-settings", required=True, help="supplies each sweep's run date")
-    ap.add_argument("--model", action="append", help="restrict to these models (repeatable)")
+    ap.add_argument("--engine-settings", required=True, help="supplies each point's run date and served model")
     ap.add_argument("--workers", type=int, default=8, help="the client's min(cpu_count, 8); not recorded")
-    ap.add_argument("--out", help="write the per-point report as JSON here")
+    ap.add_argument("--out", required=True, help="the evidence file to write")
     args = ap.parse_args()
 
     hf = os.environ.get("HF_HOME")
     if not hf or os.path.abspath(hf).startswith(REPO + os.sep):
         sys.exit("set HF_HOME to a directory outside this repository; tokenizer files are downloaded there")
-    from huggingface_hub import snapshot_download
+    import huggingface_hub
+    import tokenizers
+    import transformers
+    from huggingface_hub import HfApi, snapshot_download
     from transformers import AutoTokenizer
 
-    # Kimi's tokenizer logs a warning on every encode() that passes add_special_tokens.
-    logging.disable(logging.WARNING)
+    logging.disable(logging.WARNING)  # Kimi's tokenizer warns on every encode() with kwargs
+    api = HfApi()
 
     corpus = json.load(open(args.corpus))
-    dates = {(s["scenario"], s["label"]): s["source_run_date"]
-             for s in json.load(open(args.engine_settings))["settings"]}
-    points, undated = {}, set()
+    settings = {(s["scenario"], s["label"]): s for s in json.load(open(args.engine_settings))["settings"]}
+    points = []
     for sw in corpus["sweeps"]:
-        if sw["framework"] != "vllm" or (args.model and sw["model"] not in args.model):
-            continue
-        date = dates.get((sw["scenario"], sw["label"]))
-        if date is None:
-            undated.add(sw["model"])
+        rec = settings.get((sw["scenario"], sw["label"]))
+        if sw["framework"] != "vllm" or rec is None:
             continue
         isl, osl = LABELS[sw["label"]]
-        path = "serial-global" if date < CLIENT_PARALLEL_FROM else "parallel"
+        date = rec["source_run_date"]
         for p in sw["points"]:
-            points.setdefault((sw["model"], isl, osl, p["concurrency"], path), []).append(
-                f'{sw["scenario"]} {sw["label"]}')
+            ps = rec["by_concurrency"].get(str(p["concurrency"]))
+            if ps is None:
+                continue
+            repo = repo_for(ps["passed"]["model"])
+            if repo is None:
+                sys.exit(f'no tokenizer repo known for served model {ps["passed"]["model"]}')
+            points.append({"scenario": sw["scenario"], "label": sw["label"], "concurrency": p["concurrency"],
+                           "served_model": ps["passed"]["model"], "repo": repo, "run_date": date, "isl": isl,
+                           "osl": osl, "client_path": "serial-global" if date < CLIENT_PARALLEL_FROM else "parallel"})
 
-    for model in sorted(undated - {m for m, *_ in points}):
-        print(f"{model}: no engine-args log, so no run date and no known client version; skipped")
-    toks, report = {}, []
-    for (model, isl, osl, conc, path), sweeps in sorted(points.items()):
-        if model not in toks:
-            repo, trust = TOKENIZERS[model]
-            try:
-                d = snapshot_download(repo, allow_patterns=["*.json", "*.model", "*.tiktoken", "tokenization_*.py",
-                                                            "tool_declaration_ts.py", "merges.txt", "vocab.*"])
-                toks[model] = (AutoTokenizer.from_pretrained(d, trust_remote_code=trust), repo, os.path.basename(d))
-            except Exception as e:  # gated or unavailable: reported, never guessed
-                toks[model] = (None, repo, f"{type(e).__name__}")
-        tok, repo, rev = toks[model]
-        if tok is None:
-            print(f"{model}: {repo} unavailable ({rev}); skipped")
-            continue
-        rows = prompts(tok, isl, osl, conc, path, args.workers)
-        mm = [s - t for t, s, _ in rows]
-        bos = sorted({v - s for _, s, v in rows})
-        rel = [abs(s - t) / t for t, s, _ in rows]
-        r = {"model": model, "tokenizer": f"{repo}@{rev}", "isl": isl, "osl": osl, "concurrency": conc,
-             "client_path": path, "workers": args.workers, "requests": len(rows),
-             "max_abs_mismatch": max(map(abs, mm)), "mean_mismatch": sum(mm) / len(mm),
-             "mean_abs_rel": sum(rel) / len(rel), "max_abs_rel": max(rel),
-             "requests_mismatched": sum(1 for x in mm if x), "server_added_tokens": bos, "sweeps": sweeps}
-        report.append(r)
-        print(f'{model:24s} {isl}:{osl} c={conc:<4d} {path:13s} n={len(rows):<5d} max|mismatch|={r["max_abs_mismatch"]} '
-              f'mean={r["mean_mismatch"]:+.3f} mean|mismatch|/target={100 * r["mean_abs_rel"]:.4f}% '
-              f'server+{bos}', flush=True)
-    if args.out:
-        with open(args.out, "w") as f:
-            json.dump(report, f, indent=1)
+    # Pin the revisions: the one current at each run date, and today's.
+    commits = {r: api.list_repo_commits(r) for r in sorted({p["repo"] for p in points})}
+    revisions = {}  # (repo, sha) -> record
+
+    def revision(repo, sha, created, role):
+        key = (repo, sha)
+        if key not in revisions:
+            d = snapshot_download(repo, revision=sha, allow_patterns=TOKENIZER_FILES + LOADER_FILES)
+            files = {f: sha256(os.path.join(d, f)) for f in TOKENIZER_FILES + LOADER_FILES
+                     if os.path.exists(os.path.join(d, f))}
+            revisions[key] = {"repo": repo, "revision": sha, "committed": created, "roles": [], "dir": d,
+                              "files": files}
+        if role not in revisions[key]["roles"]:
+            revisions[key]["roles"].append(role)
+        return key
+
+    for p in points:
+        cs = commits[p["repo"]]
+        today = cs[0]
+        end = datetime.datetime.fromisoformat(p["run_date"] + "T23:59:59+00:00")
+        at = next((c for c in cs if c.created_at <= end), None)
+        p["revisions"] = []
+        if at is None:
+            p["revisions"].append(None)  # the repo did not exist at the run date
+        else:
+            p["revisions"].append(revision(p["repo"], at.commit_id, at.created_at.isoformat(), "run-date " + p["run_date"]))
+        p["revisions"].append(revision(p["repo"], today.commit_id, today.created_at.isoformat(), "today"))
+
+    # One construction per distinct tokenizer file set and point shape.
+    loaded, results = {}, {}
+    for p in points:
+        out = []
+        for key in p["revisions"]:
+            if key is None:
+                out.append(None)
+                continue
+            rev = revisions[key]
+            content = tuple(sorted((f, h) for f, h in rev["files"].items() if f in TOKENIZER_FILES))
+            if content not in loaded:
+                loaded[content] = AutoTokenizer.from_pretrained(rev["dir"], trust_remote_code=rev["repo"] in TRUST_REMOTE_CODE)
+            rk = (content, p["isl"], p["osl"], p["concurrency"], p["client_path"])
+            if rk not in results:
+                rows = prompts(loaded[content], p["isl"], p["osl"], p["concurrency"], p["client_path"], args.workers)
+                mm = [s - t for t, s, _ in rows]
+                results[rk] = {"requests": len(rows), "max_abs_mismatch": max(map(abs, mm)),
+                               "mean_mismatch": sum(mm) / len(mm), "requests_mismatched": sum(1 for x in mm if x),
+                               "server_added_tokens": sorted({v - s for _, s, v in rows})}
+                print(f'{p["repo"]:30s} {key[1][:8]} {p["isl"]}:{p["osl"]} c={p["concurrency"]:<4d} {p["client_path"]:13s} '
+                      f'max|mismatch|={results[rk]["max_abs_mismatch"]} server+{results[rk]["server_added_tokens"]}', flush=True)
+            out.append({"revision": key[1], **results[rk]})
+        p["evidence"] = out
+
+    doc = {
+        "what": "per scored point, the InferenceX client's sent prompt length against its numpy target, from "
+                "reproducing the client's prompt construction with the point's tokenizer at pinned revisions",
+        "generator": "scripts/inferencex_prompt_lengths.py",
+        "client": {"source": "SemiAnalysisAI/InferenceX utils/bench_serving/benchmark_serving.py",
+                   "serial-global": "before 1780296b (2026-04-21)", "parallel": "from 1780296b",
+                   "workers": args.workers},
+        "environment": {"numpy": np.__version__, "transformers": transformers.__version__,
+                        "tokenizers": tokenizers.__version__, "huggingface_hub": huggingface_hub.__version__},
+        "revisions": [{k: v for k, v in r.items() if k != "dir"} for _, r in sorted(revisions.items())],
+        "points": [{**{k: v for k, v in p.items() if k not in ("revisions", "evidence")},
+                    "evidence": p["evidence"],
+                    "max_abs_mismatch": max((e["max_abs_mismatch"] for e in p["evidence"] if e), default=None),
+                    "server_added_tokens": sorted({t for e in p["evidence"] if e for t in e["server_added_tokens"]})}
+                   for p in points],
+    }
+    with open(args.out, "w") as f:
+        json.dump(doc, f, indent=1)
+        f.write("\n")
+    print(f"wrote {args.out}: {len(points)} points, {len(revisions)} revisions, {len(results)} constructions")
     return 0
 
 

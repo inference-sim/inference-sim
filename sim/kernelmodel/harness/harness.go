@@ -208,6 +208,10 @@ type Config struct {
 	// before the settings were extracted, and is reported as such rather than assumed.
 	EngineSettings *EngineSettingSet
 
+	// PromptLengths is the evidence that each point's sent prompt lengths are the targets the
+	// fixture replays (promptlengths.go). Nil uses the committed file.
+	PromptLengths *PromptLengthEvidence
+
 	// cold starts a prefix-caching point's main phase from an empty engine (RunCold).
 	cold bool
 }
