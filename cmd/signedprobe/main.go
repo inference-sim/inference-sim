@@ -69,9 +69,11 @@ func main() {
 	}
 	write([]string{
 		"scenario", "model", "gpu", "label", "concurrency",
-		"meas_tpot_us", "pred_tpot_us", "meas_ttft_us", "pred_ttft_us", "tier",
+		"meas_tpot_us", "pred_tpot_us", "meas_ttft_us", "pred_ttft_us", "tier_unbracketed",
 	})
-	// The tier each sweep scores in, from the same coverage gaps cmd/metricscore uses.
+	// The tier each sweep scores in, from the same coverage gaps cmd/metricscore uses -- before
+	// any warm-up bracket: this probe runs none, so a prefix-caching point reads approximate
+	// here even where cmd/metricscore bounds its bracket and keeps it in a stricter tier.
 	coverage := harness.AssessCoverage(c, cfg)
 	var total, noAbs, noTPOT, noTTFT, runErr, emitted int
 	for _, sw := range c.Sweeps {
