@@ -102,8 +102,9 @@ func main() {
 	fmt.Printf("  next when one completes, exactly the target output length (--ignore-eos);\n")
 	fmt.Printf("  TPOT is calculate_metrics's mean over those requests. The warm-up is not\n")
 	fmt.Printf("  simulated: exact where prefix caching is off, a flagged gap where it is on.\n")
-	fmt.Printf("  Not reproduced: the tokenizer-retry length mismatch; settings blis-schemas\n")
-	fmt.Printf("  cannot express. See docs/kernel-exclusive/APPLES-TO-APPLES.md.\n")
+	fmt.Printf("  Not reproduced: settings blis-schemas cannot express. The tokenizer-retry\n")
+	fmt.Printf("  length mismatch was measured as zero on every logged point\n")
+	fmt.Printf("  (scripts/inferencex_prompt_lengths.py). See docs/kernel-exclusive/APPLES-TO-APPLES.md.\n")
 	fmt.Printf("error: anchor EXCLUDED, matching build_e2e_accuracy_overview.py. Both sides\n")
 	fmt.Printf("  are normalised to their own lowest concurrency. Verified by reproduction:\n")
 	fmt.Printf("  this definition on AISimulate's own data returns its published %.2f%%.\n",
