@@ -42,10 +42,11 @@ func RequireBlis(path string) error {
 	return nil
 }
 
-// writeScenarioVariant writes the scenario file src to dst with its single pool's admission
-// settings replaced by pc's: max_num_seqs, max_num_batched_tokens, block_size and
-// enable_prefix_caching. Everything else -- model, hardware, parallelism, quantization, the
-// remaining engine knobs -- is carried over as the committed file states it.
+// writeScenarioVariant writes the scenario file src to dst with its single pool's run settings
+// replaced by pc's: max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching,
+// max_model_len, gpu_memory_utilization and parallel.enable_expert_parallel. Everything else --
+// model, hardware, parallel widths, quantization, the remaining engine knobs -- is carried
+// over as the committed file states it.
 //
 // The file is decoded and re-encoded through the blis-schemas types (via the kernel's own
 // loader) rather than edited as text, so the variant is a well-formed Scenario + Deployment
@@ -61,7 +62,7 @@ func writeScenarioVariant(src, dst string, pc PointConfig) error {
 	if len(dep.Pools) != 1 {
 		return fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
 	}
-	applyPointConfig(&dep.Pools[0].Engine, pc)
+	applyPointConfig(&dep.Pools[0], pc)
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -77,15 +78,19 @@ func writeScenarioVariant(src, dst string, pc PointConfig) error {
 	return os.WriteFile(dst, buf.Bytes(), 0o644)
 }
 
-// applyPointConfig writes the admission settings onto an engine. Prefix caching is written
+// applyPointConfig writes the point's run settings onto a pool. Prefix caching is written
 // explicitly in both directions, so the variant states the point's resolved value rather than
 // leaving it to the tri-state's default.
-func applyPointConfig(e *deployment.Engine, pc PointConfig) {
+func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
+	e := &pool.Engine
 	e.MaxNumSeqs = pc.MaxNumSeqs
 	e.MaxNumBatchedTokens = pc.MaxNumBatchedTokens
 	e.BlockSize = pc.BlockSize
 	enabled := !pc.PrefixCachingDisabled
 	e.EnablePrefixCaching = &enabled
+	e.MaxModelLen = pc.MaxModelLen
+	e.GPUMemoryUtilization = pc.GPUMemoryUtilization
+	pool.Parallel.EnableExpertParallel = pc.EnableExpertParallel
 }
 
 // blisArgs is the `blis run` command line for one point, given the variant scenario's file

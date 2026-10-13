@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -35,6 +36,7 @@ type PassedSettings struct {
 	BlockSize            *int     `json:"block_size"`
 	EnablePrefixCaching  *bool    `json:"enable_prefix_caching"`
 	GPUMemoryUtilization *float64 `json:"gpu_memory_utilization"`
+	EnableExpertParallel *bool    `json:"enable_expert_parallel"`
 }
 
 // ResolvedSettings is what the engine reported after resolving, which is a measurement of the
@@ -163,16 +165,28 @@ const (
 
 // PointConfig is the resolved configuration one point runs with, with the provenance of each
 // field it decides.
+//
+// The first four decide admission directly. The last three decide it through the KV pool and
+// the window (gpu_memory_utilization sizes the pool, max_model_len bounds a request and must
+// fit the pool) or set step time (expert parallelism changes which GEMM a routed layer runs).
+// Every one is written into the point's scenario variant, so a run setting the engine was
+// launched with is the setting it is simulated with (#1920).
 type PointConfig struct {
 	MaxNumSeqs            int
 	MaxNumBatchedTokens   int
 	BlockSize             int
 	PrefixCachingDisabled bool
+	MaxModelLen           int
+	GPUMemoryUtilization  float64
+	EnableExpertParallel  bool
 
 	SeqsFrom   SettingSource
 	TokensFrom SettingSource
 	BlockFrom  SettingSource
 	PrefixFrom SettingSource
+	WindowFrom SettingSource
+	MemoryFrom SettingSource
+	EPFrom     SettingSource
 
 	// MeasuredGPUKVTokens is the KV pool the engine reported, in tokens, or zero when no
 	// measurement exists. Recorded for comparison against the kernel's derived budget; it
@@ -180,6 +194,33 @@ type PointConfig struct {
 	// unattributable.
 	MeasuredGPUKVTokens int
 	EngineVersion       string
+}
+
+// vLLM's CacheConfig.gpu_memory_utilization default, which changed in v0.20.0
+// (vllm-project/vllm 96a85c5750, #38284, "Enable CUDAGraph memory profiling by default"):
+// Field(default=0.9) in vllm/config/cache.py at v0.15.0 through v0.20.0rc1, Field(default=0.92)
+// from v0.20.0. The measured runs report engine versions on both sides of it.
+const (
+	vllmGPUMemUtilBefore020 = 0.9
+	vllmGPUMemUtilFrom020   = 0.92
+)
+
+// vllmDefaultGPUMemUtil is the default an engine of this version resolved, or false when the
+// version is unknown or unparseable -- then no default is claimed.
+func vllmDefaultGPUMemUtil(version string) (float64, bool) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, false
+	}
+	major, err1 := strconv.Atoi(parts[0])
+	minor, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	if major > 0 || minor >= 20 {
+		return vllmGPUMemUtilFrom020, true
+	}
+	return vllmGPUMemUtilBefore020, true
 }
 
 // resolveAdmission picks each setting from the strongest source available for this point.
@@ -197,10 +238,16 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		// The scenario's own setting, so a sweep with no measurement and no vLLM resolution
 		// (a non-vLLM engine) runs what its scenario states rather than caching by default.
 		PrefixCachingDisabled: dep.PrefixCachingDisabled,
+		MaxModelLen:           eng.MaxModelLen,
+		GPUMemoryUtilization:  eng.GPUMemoryUtilization,
+		EnableExpertParallel:  dep.ExpertParallel,
 		SeqsFrom:              SourceScenario,
 		TokensFrom:            SourceScenario,
 		BlockFrom:             SourceScenario,
 		PrefixFrom:            SourceScenario,
+		WindowFrom:            SourceScenario,
+		MemoryFrom:            SourceScenario,
+		EPFrom:                SourceScenario,
 	}
 	// vLLM's resolution, which applies to any setting the run did not pass -- whether the
 	// run passed SOME settings and not others, or carries no log at all. It is gated on the
@@ -208,6 +255,11 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 	// would substitute one engine's behaviour for another's.
 	vllm := sw.Framework == "vllm"
 	fallback := kernelmodel.ResolveVLLMBatchDefaults(dep.DeviceMemoryGiB, dep.Hardware)
+	p := set.For(sw).At(concurrency)
+	version := ""
+	if p != nil {
+		version = p.Resolved.EngineVersion
+	}
 
 	// What a setting falls back to when the run did not pass it. Factored out because it
 	// applies in two places that are easy to let drift: a point with a log that omits one
@@ -228,9 +280,19 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		a.BlockFrom = SourceResolved
 		// vLLM caches unless told not to.
 		a.PrefixCachingDisabled, a.PrefixFrom = false, SourceResolved
+		// ParallelConfig.enable_expert_parallel defaults to False (vllm/config/parallel.py,
+		// unchanged from v0.11.0 through v0.31.0), so a run that did not pass it ran
+		// without expert parallelism whatever the scenario file states.
+		a.EnableExpertParallel, a.EPFrom = false, SourceResolved
+		// gpu_memory_utilization's default depends on the engine version, which only a
+		// log records; without one the scenario's value stands and says so.
+		if v, ok := vllmDefaultGPUMemUtil(version); ok {
+			a.GPUMemoryUtilization, a.MemoryFrom = v, SourceResolved
+		}
+		// max_model_len unpassed resolves from the model's max_position_embeddings, which
+		// no document this harness reads carries, so the scenario's window stands.
 	}
 
-	p := set.For(sw).At(concurrency)
 	if p == nil {
 		// No log for this point at all. Llama-3.1-70B is the case: no row for it in the
 		// InferenceX dump carries a server_log_id, under either framework, so its settings
@@ -267,6 +329,15 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 	}
 	if v := p.Passed.EnablePrefixCaching; v != nil {
 		a.PrefixCachingDisabled, a.PrefixFrom = !*v, SourceMeasured
+	}
+	if v := p.Passed.MaxModelLen; v != nil {
+		a.MaxModelLen, a.WindowFrom = *v, SourceMeasured
+	}
+	if v := p.Passed.GPUMemoryUtilization; v != nil {
+		a.GPUMemoryUtilization, a.MemoryFrom = *v, SourceMeasured
+	}
+	if v := p.Passed.EnableExpertParallel; v != nil {
+		a.EnableExpertParallel, a.EPFrom = *v, SourceMeasured
 	}
 	return a
 }

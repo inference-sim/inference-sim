@@ -69,45 +69,99 @@ func TestANonVLLMSweepIsAGap(t *testing.T) {
 	}
 }
 
-// With no engine-settings record, every admission setting of every point is reported as not
-// measured; a setting the run passed is checked against the schema and the scenario.
+// With no engine-settings record, every point says it has no log and none of its seven run
+// settings is measured. With a record, every setting the run passed is carried into the
+// variant -- so none is a gap -- except one blis-schemas cannot express, and a setting it did
+// not pass is reported as resolved.
 func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	sw := committedSweep("vllm")
 	gaps := gapsFor(t, sw, Config{Repos: testRepos()})
-	n := 0
+	noLog, absent := 0, 0
 	for _, g := range gaps {
-		if g.Owner == OwnerMeasurements {
-			n++
+		switch {
+		case strings.HasPrefix(g.Cause, "no engine-args log"):
+			noLog++
+		case strings.HasPrefix(g.Cause, "measured setting absent"):
+			absent++
 		}
 	}
-	if n != 4*len(sw.Points) {
-		t.Errorf("%d not-measured gaps, want 4 settings x %d points", n, len(sw.Points))
+	if noLog != len(sw.Points) || absent != 7*len(sw.Points) {
+		t.Errorf("%d no-log and %d not-measured gaps, want %d and 7 settings x %d points",
+			noLog, absent, len(sw.Points), len(sw.Points))
 	}
 
 	var ps PointSettings
 	if err := json.Unmarshal([]byte(`{"passed":{"max_num_seqs":8,"max_num_batched_tokens":8192,
 		"block_size":16,"enable_prefix_caching":false,"max_model_len":2304,
-		"gpu_memory_utilization":0.9,"max_cudagraph_capture_size":2048},"resolved":{}}`), &ps); err != nil {
+		"gpu_memory_utilization":0.95,"max_cudagraph_capture_size":2048},"resolved":{"engine_version":"0.22.0"}}`), &ps); err != nil {
 		t.Fatal(err)
 	}
 	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 		ByConcurrency: map[string]*PointSettings{"4": &ps}}}}
 	gaps = gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set})
-	// max_model_len is a schema field the scenario states differently: not carried.
-	if !hasGap(gaps, OwnerSim, "run setting not carried into the simulation: max_model_len") {
-		t.Errorf("gaps lack max_model_len: %+v", gaps)
-	}
 	// The schema has no field for the capture size.
 	if !hasGap(gaps, OwnerSchemas, "run setting blis-schemas cannot express: max_cudagraph_capture_size") {
 		t.Errorf("gaps lack max_cudagraph_capture_size: %+v", gaps)
 	}
-	// gpu_memory_utilization matches the scenario's 0.9, and the four applied settings are
-	// carried, so none of them is a gap.
-	for _, k := range []string{"gpu_memory_utilization", "max_num_seqs)", ": max_num_seqs"} {
-		for _, g := range gaps {
-			if g.Concurrency == 4 && strings.Contains(g.Cause, k) {
-				t.Errorf("unexpected gap %+v", g)
-			}
+	// Expert parallelism was not passed: vLLM's default, reported as resolved.
+	if !hasGap(gaps, OwnerMeasurements, "measured setting absent: enable_expert_parallel (resolved") {
+		t.Errorf("gaps lack the resolved expert-parallel setting: %+v", gaps)
+	}
+	// Every passed setting the schema can express is carried, including max_model_len and a
+	// gpu_memory_utilization the committed scenario states differently; prefix caching is off,
+	// so the warm-up leaves nothing the main phase can read.
+	for _, g := range gaps {
+		if g.Concurrency != 4 {
+			continue
+		}
+		if strings.HasPrefix(g.Cause, "run setting not carried") || strings.HasPrefix(g.Cause, "warm-up") ||
+			strings.Contains(g.Cause, "max_num_seqs") || strings.Contains(g.Cause, "max_model_len") ||
+			strings.Contains(g.Cause, "gpu_memory_utilization") {
+			t.Errorf("unexpected gap %+v", g)
+		}
+	}
+}
+
+// A sweep's tier is the worst over its points' gaps: no gap is strict, a resolved setting is
+// measured-or-resolved, anything else approximate, a sweep-level exclusion unscorable. Each
+// table includes the stricter tiers.
+func TestATiersMembershipFollowsItsWorstGap(t *testing.T) {
+	sw := Sweep{Scenario: "s", Label: "l", Points: []Point{{Concurrency: 1}, {Concurrency: 2}}}
+	other := Sweep{Scenario: "s", Label: "other"}
+	for _, tc := range []struct {
+		kinds []GapKind
+		want  Tier
+	}{
+		{nil, TierStrict},
+		{[]GapKind{GapResolved}, TierMeasuredOrResolved},
+		{[]GapKind{GapResolved, GapApproximate}, TierApproximate},
+		{[]GapKind{GapApproximate, GapUnscorable, GapResolved}, TierUnscorable},
+	} {
+		cv := &Coverage{Gaps: []Gap{{Scenario: other.Scenario, Label: other.Label, Kind: GapUnscorable}}}
+		for i, k := range tc.kinds {
+			cv.Gaps = append(cv.Gaps, Gap{Scenario: sw.Scenario, Label: sw.Label, Concurrency: i + 1, Kind: k})
+		}
+		if got := cv.TierOf(sw); got != tc.want {
+			t.Errorf("gaps %v: tier %v, want %v", tc.kinds, got, tc.want)
+		}
+	}
+	if !TierStrict.In(TierApproximate) || TierApproximate.In(TierStrict) || TierUnscorable.In(TierApproximate) {
+		t.Error("a table must include exactly the tiers at least as strict as its own")
+	}
+}
+
+// The warm-up's only lasting state is the prefix cache, so a point with prefix caching enabled
+// is flagged and one with it disabled is not.
+func TestAPrefixCachingPointCarriesTheWarmupGap(t *testing.T) {
+	sw := committedSweep("vllm")
+	sw.Points = sw.Points[:1]
+	for _, enabled := range []bool{true, false} {
+		ps := &PointSettings{Passed: PassedSettings{EnablePrefixCaching: &enabled}}
+		set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
+			ByConcurrency: map[string]*PointSettings{"4": ps}}}}
+		got := hasGap(gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set}), OwnerSim, "warm-up prefix-cache state")
+		if got != enabled {
+			t.Errorf("prefix caching %v: warm-up gap reported %v", enabled, got)
 		}
 	}
 }

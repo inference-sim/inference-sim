@@ -3,6 +3,7 @@ package harness
 import (
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
 )
 
@@ -237,5 +238,56 @@ func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	if obs.Settings.SeqsFrom != SourceScenario {
 		t.Errorf("an sglang sweep should report %q, got %q -- vLLM's device-memory "+
 			"resolution is not sglang's", SourceScenario, obs.Settings.SeqsFrom)
+	}
+}
+
+// The three run settings added for #1920 follow the same order as the admission four: a value
+// the run passed wins and reads "measured"; an unpassed one takes vLLM's own default where one
+// is defined (expert parallelism off; gpu_memory_utilization 0.9 before v0.20.0 and 0.92 from
+// it) and reads "resolved"; with no default the scenario's value stands and says so.
+func TestTheWindowMemoryAndExpertParallelSettingsResolveLikeTheOthers(t *testing.T) {
+	sw := committedSweep("vllm")
+	m, err := kernelmodel.Open(sw.Scenario, testRepos())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := m.Engine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(ps *PointSettings) PointConfig {
+		set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
+			ByConcurrency: map[string]*PointSettings{"4": ps}}}}
+		return resolveAdmission(sw, 4, eng, m.Deployment(), set)
+	}
+	ml, gmu, ep := 2304, 0.95, true
+	got := at(&PointSettings{Passed: PassedSettings{MaxModelLen: &ml, GPUMemoryUtilization: &gmu,
+		EnableExpertParallel: &ep}, Resolved: ResolvedSettings{EngineVersion: "0.22.0"}})
+	if got.MaxModelLen != ml || got.GPUMemoryUtilization != gmu || !got.EnableExpertParallel ||
+		got.WindowFrom != SourceMeasured || got.MemoryFrom != SourceMeasured || got.EPFrom != SourceMeasured {
+		t.Errorf("passed settings not taken as measured: %+v", got)
+	}
+	for _, tc := range []struct {
+		version string
+		want    float64
+		from    SettingSource
+	}{
+		{"0.15.1", 0.9, SourceResolved}, {"0.18.0", 0.9, SourceResolved}, {"0.19.1", 0.9, SourceResolved},
+		{"0.20.0", 0.92, SourceResolved}, {"0.25.0", 0.92, SourceResolved},
+		{"", eng.GPUMemoryUtilization, SourceScenario},
+	} {
+		got := at(&PointSettings{Resolved: ResolvedSettings{EngineVersion: tc.version}})
+		if got.GPUMemoryUtilization != tc.want || got.MemoryFrom != tc.from {
+			t.Errorf("engine %q: gpu_memory_utilization %v (%s), want %v (%s)", tc.version,
+				got.GPUMemoryUtilization, got.MemoryFrom, tc.want, tc.from)
+		}
+		if got.EnableExpertParallel || got.EPFrom != SourceResolved {
+			t.Errorf("engine %q: unpassed expert parallelism %v (%s), want vLLM's default false (resolved)",
+				tc.version, got.EnableExpertParallel, got.EPFrom)
+		}
+		if got.MaxModelLen != eng.MaxModelLen || got.WindowFrom != SourceScenario {
+			t.Errorf("engine %q: unpassed max_model_len %d (%s), want the scenario's %d", tc.version,
+				got.MaxModelLen, got.WindowFrom, eng.MaxModelLen)
+		}
 	}
 }

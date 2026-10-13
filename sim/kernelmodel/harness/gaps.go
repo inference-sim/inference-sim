@@ -11,6 +11,9 @@ package harness
 //
 // It never runs a simulation. Points that fail inside `blis run` are added by the scorer
 // that ran them (Dropped).
+//
+// The gaps also decide each sweep's tier (TierOf), which the scorers use DURING scoring to
+// report every arm on the strict, measured-or-resolved and all-points sets separately.
 
 import (
 	"encoding/json"
@@ -38,6 +41,22 @@ const (
 	OwnerMeasurements = "measurements (InferenceX engine-settings extraction)"
 )
 
+// GapKind says what a gap does to a point's place in the tiered report (Tier).
+type GapKind int
+
+const (
+	// GapUnscorable keeps the point out of every table: the engine is not vLLM, an artifact
+	// is missing, or the simulation failed.
+	GapUnscorable GapKind = iota
+	// GapApproximate leaves the point scoreable but not as the measured run: a run setting
+	// that is not carried or not expressible, a setting with no measurement and no vLLM rule
+	// to resolve it, a point with no engine log at all, or a protocol state not modelled.
+	GapApproximate
+	// GapResolved is a setting the run did not pass, simulated at the value vLLM itself
+	// resolves for it -- not a measurement, but not a guess either.
+	GapResolved
+)
+
 // Gap is one sweep (Concurrency 0) or point that the score omits or approximates.
 type Gap struct {
 	Scenario    string
@@ -49,18 +68,74 @@ type Gap struct {
 	Cause  string
 	Owner  string
 	Detail string
+	Kind   GapKind
 }
+
+// Tier is how close a sweep's simulation is to its measured runs, from the gaps on its points.
+type Tier int
+
+const (
+	// TierStrict: every point has an engine log, every setting the run passed is carried into
+	// the simulation, every setting it decides was measured rather than resolved, and no
+	// protocol gap is flagged. The comparison these points support is the benchmark's run
+	// against its own reproduction.
+	TierStrict Tier = iota
+	// TierMeasuredOrResolved: as strict, except that a setting the run did not pass is
+	// simulated at vLLM's own default for it.
+	TierMeasuredOrResolved
+	// TierApproximate: scoreable, but at least one point is not simulated as it ran.
+	TierApproximate
+	// TierUnscorable: not scored at all.
+	TierUnscorable
+)
+
+// AllTiers is the reporting order of the scoreable tiers. Each includes the ones before it.
+var AllTiers = []Tier{TierStrict, TierMeasuredOrResolved, TierApproximate}
+
+func (t Tier) String() string {
+	switch t {
+	case TierStrict:
+		return "STRICT"
+	case TierMeasuredOrResolved:
+		return "MEASURED-OR-RESOLVED"
+	case TierApproximate:
+		return "ALL (approximate)"
+	}
+	return "UNSCORABLE"
+}
+
+// TierOf is the tier of a whole sweep: the worst over its points, because a sweep is scored
+// whole -- its shape error divides every point by the anchor's simulation, so an approximate
+// anchor makes every point approximate. A sweep with no gap is strict.
+func (cv *Coverage) TierOf(sw Sweep) Tier {
+	t := TierStrict
+	for _, g := range cv.Gaps {
+		if g.Scenario != sw.Scenario || g.Label != sw.Label {
+			continue
+		}
+		var gt Tier
+		switch g.Kind {
+		case GapUnscorable:
+			gt = TierUnscorable
+		case GapApproximate:
+			gt = TierApproximate
+		case GapResolved:
+			gt = TierMeasuredOrResolved
+		}
+		if gt > t {
+			t = gt
+		}
+	}
+	return t
+}
+
+// In reports whether a sweep of tier t belongs in the table for tier want: each table
+// includes the stricter ones.
+func (t Tier) In(want Tier) bool { return t != TierUnscorable && t <= want }
 
 // Coverage is the gap report for one corpus.
 type Coverage struct {
 	Gaps []Gap
-}
-
-// appliedSettings are the measured engine settings the harness writes into a point's scenario
-// (applyPointConfig). A passed setting outside this set is simulated at the scenario's value.
-var appliedSettings = map[string]bool{
-	"max_num_seqs": true, "max_num_batched_tokens": true, "block_size": true,
-	"enable_prefix_caching": true,
 }
 
 // AssessCoverage walks every sweep and point of the corpus and records each gap. cfg supplies
@@ -73,14 +148,15 @@ func AssessCoverage(c *Corpus, cfg Config) *Coverage {
 	return cv
 }
 
+// sweepGap records a gap that keeps a whole sweep out of the score.
 func (cv *Coverage) sweepGap(sw Sweep, cause, owner, detail string) {
 	cv.Gaps = append(cv.Gaps, Gap{Scenario: sw.Scenario, Label: sw.Label, Points: len(sw.Points),
-		Cause: cause, Owner: owner, Detail: detail})
+		Cause: cause, Owner: owner, Detail: detail, Kind: GapUnscorable})
 }
 
-func (cv *Coverage) pointGap(sw Sweep, conc int, cause, owner, detail string) {
+func (cv *Coverage) pointGap(sw Sweep, conc int, kind GapKind, cause, owner, detail string) {
 	cv.Gaps = append(cv.Gaps, Gap{Scenario: sw.Scenario, Label: sw.Label, Concurrency: conc, Points: 1,
-		Cause: cause, Owner: owner, Detail: detail})
+		Cause: cause, Owner: owner, Detail: detail, Kind: kind})
 }
 
 // Dropped records a sweep the scorer could not score because one of its points failed --
@@ -169,25 +245,50 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		return // no vLLM args line exists for another engine, so there is nothing per point to compare
 	}
 
-	// Per point: where each admission setting came from, and every setting the run passed
-	// that the simulation does not carry.
+	// Per point: where each run setting came from, every setting the run passed that the
+	// simulation does not state, and the protocol state the simulation does not reproduce.
 	rec := cfg.EngineSettings.For(sw)
 	for _, p := range sw.Points {
 		pc := resolveAdmission(sw, p.Concurrency, eng, d, cfg.EngineSettings)
+		ps := rec.At(p.Concurrency)
+		if ps == nil {
+			// No engine-args log: what the run passed is unknown, so even settings resolved
+			// by vLLM's rules may not be what it ran.
+			cv.pointGap(sw, p.Concurrency, GapApproximate, "no engine-args log for the point: its passed settings are unknown",
+				OwnerMeasurements, "")
+		}
 		for _, f := range []struct {
 			name string
 			from SettingSource
 		}{{"max_num_seqs", pc.SeqsFrom}, {"max_num_batched_tokens", pc.TokensFrom},
-			{"block_size", pc.BlockFrom}, {"enable_prefix_caching", pc.PrefixFrom}} {
-			if f.from != SourceMeasured {
-				cv.pointGap(sw, p.Concurrency, "measured setting absent: "+f.name+" ("+string(f.from)+" value used)",
+			{"block_size", pc.BlockFrom}, {"enable_prefix_caching", pc.PrefixFrom},
+			{"max_model_len", pc.WindowFrom}, {"gpu_memory_utilization", pc.MemoryFrom},
+			{"enable_expert_parallel", pc.EPFrom}} {
+			switch f.from {
+			case SourceMeasured:
+			case SourceResolved:
+				cv.pointGap(sw, p.Concurrency, GapResolved, "measured setting absent: "+f.name+" (resolved value used)",
+					OwnerMeasurements, "")
+			default:
+				cv.pointGap(sw, p.Concurrency, GapApproximate, "measured setting absent: "+f.name+" (scenario value used)",
 					OwnerMeasurements, "")
 			}
 		}
-		ps := rec.At(p.Concurrency)
+		// The benchmark's warm-up sent 2*CONC copies of request 0 before the main phase.
+		// With prefix caching on, the measured main request 0 found its prompt cached; the
+		// simulation starts from an empty engine. See Run for why this is the only state the
+		// warm-up leaves.
+		if !pc.PrefixCachingDisabled {
+			cv.pointGap(sw, p.Concurrency, GapApproximate, "warm-up prefix-cache state not modelled (prefix caching enabled)",
+				OwnerSim, "main request 0 would hit its own warm-up copies' cached prompt")
+		}
 		if ps == nil {
 			continue
 		}
+		// Compare against the VARIANT the point runs, not the committed scenario: a setting
+		// is carried exactly when the variant states the value the run passed.
+		variant := pool
+		applyPointConfig(&variant, pc)
 		keys := make([]string, 0, len(ps.PassedRaw))
 		for k := range ps.PassedRaw {
 			keys = append(keys, k)
@@ -196,18 +297,18 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		for _, k := range keys {
 			// "model" names the served checkpoint; the scenario's model identity is what
 			// the catalog checks above already cover.
-			if appliedSettings[k] || k == "model" {
+			if k == "model" {
 				continue
 			}
 			passed := decodeAny(ps.PassedRaw[k])
-			stated, known := schemaValue(pool, k)
+			stated, known := schemaValue(variant, k)
 			switch {
 			case !known:
-				cv.pointGap(sw, p.Concurrency, "run setting blis-schemas cannot express: "+k, OwnerSchemas,
+				cv.pointGap(sw, p.Concurrency, GapApproximate, "run setting blis-schemas cannot express: "+k, OwnerSchemas,
 					fmt.Sprintf("run passed %v", passed))
 			case !reflect.DeepEqual(passed, stated):
-				cv.pointGap(sw, p.Concurrency, "run setting not carried into the simulation: "+k, OwnerSim,
-					fmt.Sprintf("run passed %v, scenario states %v", passed, describe(stated)))
+				cv.pointGap(sw, p.Concurrency, GapApproximate, "run setting not carried into the simulation: "+k, OwnerSim,
+					fmt.Sprintf("run passed %v, simulation states %v", passed, describe(stated)))
 			}
 		}
 	}

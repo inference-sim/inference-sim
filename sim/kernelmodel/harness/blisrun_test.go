@@ -13,15 +13,17 @@ import (
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
-// The variant scenario a point runs carries the point's resolved admission settings and
-// nothing else changed: the kernel and `blis run` both read the engine from it, so a setting
-// lost on the way would be simulated at the committed value while reported as measured.
+// The variant scenario a point runs carries the point's resolved run settings and nothing
+// else changed: the kernel and `blis replay` both read the engine from it, so a setting lost
+// on the way would be simulated at the committed value while reported as measured.
 func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
 	for _, pc := range []PointConfig{
-		{MaxNumSeqs: 37, MaxNumBatchedTokens: 4097, BlockSize: 32, PrefixCachingDisabled: true},
-		{MaxNumSeqs: 1024, MaxNumBatchedTokens: 16384, BlockSize: 16, PrefixCachingDisabled: false},
+		{MaxNumSeqs: 37, MaxNumBatchedTokens: 4097, BlockSize: 32, PrefixCachingDisabled: true,
+			MaxModelLen: 2304, GPUMemoryUtilization: 0.95, EnableExpertParallel: true},
+		{MaxNumSeqs: 1024, MaxNumBatchedTokens: 16384, BlockSize: 16, PrefixCachingDisabled: false,
+			MaxModelLen: 9472, GPUMemoryUtilization: 0.9, EnableExpertParallel: false},
 	} {
 		dst := filepath.Join(t.TempDir(), name)
 		if err := writeScenarioVariant(src, dst, pc); err != nil {
@@ -38,16 +40,18 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 		e := gotDep.Pools[0].Engine
 		if e.MaxNumSeqs != pc.MaxNumSeqs || e.MaxNumBatchedTokens != pc.MaxNumBatchedTokens ||
 			e.BlockSize != pc.BlockSize || e.EnablePrefixCaching == nil ||
-			*e.EnablePrefixCaching == pc.PrefixCachingDisabled {
-			t.Errorf("variant engine %+v does not carry %+v", e, pc)
+			*e.EnablePrefixCaching == pc.PrefixCachingDisabled || e.MaxModelLen != pc.MaxModelLen ||
+			e.GPUMemoryUtilization != pc.GPUMemoryUtilization ||
+			gotDep.Pools[0].Parallel.EnableExpertParallel != pc.EnableExpertParallel {
+			t.Errorf("variant pool %+v does not carry %+v", gotDep.Pools[0], pc)
 		}
 		// Everything else is the committed file's.
-		applyPointConfig(&wantDep.Pools[0].Engine, pc)
+		applyPointConfig(&wantDep.Pools[0], pc)
 		if !reflect.DeepEqual(gotSc, wantSc) || !reflect.DeepEqual(gotDep, wantDep) {
-			t.Errorf("the variant changed more than the admission settings:\n got %+v %+v\nwant %+v %+v",
+			t.Errorf("the variant changed more than the run settings:\n got %+v %+v\nwant %+v %+v",
 				gotSc, gotDep, wantSc, wantDep)
 		}
-		// And the kernel reads the same settings back, which is what `blis run` sizes from.
+		// And the kernel reads the same settings back, which is what `blis replay` sizes from.
 		r := testRepos()
 		r.Scenarios = filepath.Dir(dst)
 		m, err := kernelmodel.Open(name, r)
@@ -59,8 +63,13 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 		if s.MaxNumSeqs != pc.MaxNumSeqs || s.MaxNumBatchedTokens != pc.MaxNumBatchedTokens ||
-			s.BlockSize != pc.BlockSize || s.PrefixCachingDisabled != pc.PrefixCachingDisabled {
+			s.BlockSize != pc.BlockSize || s.PrefixCachingDisabled != pc.PrefixCachingDisabled ||
+			s.MaxModelLen != pc.MaxModelLen {
 			t.Errorf("kernel settings %+v, want %+v", s, pc)
+		}
+		if d := m.Deployment(); d.GPUMemUtil != pc.GPUMemoryUtilization || d.ExpertParallel != pc.EnableExpertParallel {
+			t.Errorf("kernel deployment memory utilisation %v and expert parallelism %v, want %v and %v",
+				d.GPUMemUtil, d.ExpertParallel, pc.GPUMemoryUtilization, pc.EnableExpertParallel)
 		}
 	}
 }
