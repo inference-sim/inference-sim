@@ -236,7 +236,9 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// OffloadCache.ReleaseKVBlocks delegates to the GPU tier alone (kv/offload_chain.go)
 	// and ClearDeferred leaves in-flight CPU slots to complete (kv/offload_deferral.go).
 	// So the remaining deferrals are polled at the wake, at a tick where admission could
-	// not have happened sooner anyway.
+	// not have happened sooner anyway. Pinned by
+	// TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission: dropping the stale wake here
+	// instead of leaving it strands the sibling deferral.
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
 		pbe := &StepEvent{time: e.time}

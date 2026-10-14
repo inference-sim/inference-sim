@@ -131,6 +131,51 @@ func TestIdleWake_ArrivalPreemptsWake(t *testing.T) {
 	}
 }
 
+// TimeoutEvent is the one idle-scheduling site that keeps the pre-#1886
+// `stepEvent == nil` guard instead of calling scheduleStepBy (sim/event.go explains why:
+// a step at the timeout tick re-creates the #1096 same-deadline cascade). So a queued
+// request timing out during an all-deferred wait leaves the pending wake where it is, and
+// the question is whether that can push a sibling deferral's admission later than the
+// pre-#1886 1-tick crawl would have.
+//
+// It cannot, and the law is stated as a comparison rather than a constant: the same run
+// with and without a mid-wait timeout must admit the surviving request on the same tick.
+// A times out at 500,000 while the wake sits at its own ready tick 1,000,000; that wake is
+// now stale, costing one empty poll there, and B is still admitted at 2,000,000.
+func TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission(t *testing.T) {
+	const (
+		readyA = int64(1_000_000)
+		readyB = int64(2_000_000)
+	)
+	ready := map[string]int64{"A": readyA, "B": readyB}
+
+	control := newTimedDeferKV(ready)
+	runIdleWake(t, control, arriving("A", 0), arriving("B", 0))
+
+	timeout := newTimedDeferKV(ready)
+	a := arriving("A", 0)
+	a.Deadline = 500_000 // mid-wait, before A's own fetch lands
+	ts := runIdleWake(t, timeout, a, arriving("B", 0))
+
+	if got := ts.Metrics.TimedOutRequests; got != 1 {
+		t.Fatalf("A must time out during the wait, otherwise this tests nothing: timedOut=%d", got)
+	}
+	if got := timeout.admitAt["B"]; got != control.admitAt["B"] {
+		t.Errorf("B was admitted at %d with A timing out mid-wait but %d without: a timeout during an "+
+			"idle wait must not move admission (INV-8)", got, control.admitAt["B"])
+	}
+	if got := timeout.admitAt["B"]; got != readyB {
+		t.Errorf("B must still be admitted at its own completion tick %d, got %d", readyB, got)
+	}
+	if got := ts.Metrics.CompletedRequests; got != 1 {
+		t.Errorf("B must complete and A must not (INV-1): completed=%d", got)
+	}
+	// The stale wake is one empty poll, not a crawl back to the 1-tick cadence.
+	if ts.stepCount > 100 {
+		t.Errorf("a timeout during the wait must not restart per-tick stepping: %d steps", ts.stepCount)
+	}
+}
+
 // A store with deferrals but no known wake (NextDeferralWake ok=false) keeps the
 // original 1-tick re-poll, so stores that do not report wakes are unchanged.
 func TestIdleWake_NoWakeKeepsRepoll(t *testing.T) {
