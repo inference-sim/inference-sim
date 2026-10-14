@@ -20,14 +20,16 @@ import (
 //
 // #1902 acceptance -> where each criterion is pinned (reproducible):
 //   1. "a dp=1 step's price is unchanged / dp=1 points byte-identical" -- DP placement is a no-op
-//      at dp=1: cmd.TestPlanDPPlacement (dp=1 no-op), cmd.TestRunCmd_MoEDP1_ByteIdentical (INV-6),
-//      cmd.TestINV13_RunReplayParity_MoEDPPlacement (INV-13).
+//      at dp=1: cmd.TestPlanDPPlacement (dp=1 no-op, no instance expansion) and
+//      cmd.TestRunCmd_MoEDP1_ByteIdentical (INV-6, a dp=1 MoE run is deterministic).
 //   2. "a step over 2N identical requests costs what one rank's step over N costs (metamorphic)" --
 //      this is the COMPOSITION of two already-committed facts, not a single test:
 //        - the replay path sizes and spawns each rank independently (replica count, per-rank KV
-//          with explicit dp^2 double-count rejection, request conservation):
+//          with explicit dp^2 double-count rejection, request conservation), and that dp=2
+//          placement is byte-reproducible run->replay (INV-13):
 //          cmd.TestRunCmd_MoEDPPlacement_SpawnsReplicas, cmd.TestApplyDPPlacement,
-//          cmd.dp_kv_per_rank_test.go (TestRunCmd_MoEDPPlacement_EachReplicaIsSizedPerRank);
+//          cmd.dp_kv_per_rank_test.go (TestRunCmd_MoEDPPlacement_EachReplicaIsSizedPerRank),
+//          cmd.TestINV13_RunReplayParity_MoEDPPlacement;
 //        - the kernel scales the routed-expert term by the DP width (the source, moeDPFunnel,
 //          returns float64(k.layout.DP)), exercised directionally -- with a near-cancellation
 //          against the falling local-expert share -- by blis-latency-kernel methods_test.go
@@ -102,18 +104,16 @@ func TestDPMoEAggregateStepCostsMoreThanOneRank(t *testing.T) {
 		perRank := m.StepTime(identicalDecodeBatch(tc.n, tc.promptLen))
 		aggregate := m.StepTime(identicalDecodeBatch(2*tc.n, tc.promptLen))
 
-		// #1902 criterion 3: a rank's price never exceeds the aggregate's.
-		if perRank > aggregate {
-			t.Errorf("n=%d L=%d: one rank priced %d ticks, above the aggregate's %d; a rank must "+
-				"never exceed the aggregate", tc.n, tc.promptLen, perRank, aggregate)
-		}
-		// Over-pricing direction: the aggregate (2N) is strictly dearer than one rank (N), so
-		// pricing the aggregate as one rank (the #1902 bug) strictly over-prices, while the merged
-		// per-rank path pays `perRank`.
+		// The strict inequality establishes both #1902 properties at once: a rank's price never
+		// exceeds the aggregate's (criterion 3), and the aggregate is strictly dearer than one rank
+		// (the over-pricing direction). Pricing the aggregate (2N) as one rank -- the #1902 bug --
+		// would carry no penalty only if these were equal; the merged per-rank path pays the
+		// smaller `perRank`.
 		if perRank >= aggregate {
-			t.Errorf("n=%d L=%d: one rank (%d ticks) was not cheaper than the aggregate (%d ticks); "+
-				"if these were equal, pricing the aggregate as one rank would carry no penalty, "+
-				"which is the #1902 over-pricing", tc.n, tc.promptLen, perRank, aggregate)
+			t.Errorf("n=%d L=%d: one rank (%d ticks) was not strictly cheaper than the aggregate "+
+				"(%d ticks); the aggregate must cost strictly more than one rank -- so a rank never "+
+				"exceeds it (criterion 3) and pricing the aggregate as one rank (the #1902 bug) "+
+				"carries a penalty", tc.n, tc.promptLen, perRank, aggregate)
 		}
 	}
 }
