@@ -19,9 +19,12 @@ import (
 // requests as if it were one rank's batch.
 //
 // #1902 acceptance -> where each criterion is pinned (reproducible):
-//   1. "a dp=1 step's price is unchanged / dp=1 points byte-identical" -- DP placement is a no-op
-//      at dp=1: cmd.TestPlanDPPlacement (dp=1 no-op, no instance expansion) and
-//      cmd.TestRunCmd_MoEDP1_ByteIdentical (INV-6, a dp=1 MoE run is deterministic).
+//   1. "a dp=1 step's price is unchanged / dp=1 points byte-identical" -- the "unchanged across the
+//      fix" half is superseded with criterion 4 (there is no pre-#1851 scorer to diff against; see
+//      point 4). What is committed is that DP placement is a NO-OP at dp=1 (one logical instance =
+//      one engine, no expansion -- cmd.TestPlanDPPlacement) and that a dp=1 MoE run is byte-identical
+//      run-to-run (cmd.TestRunCmd_MoEDP1_ByteIdentical, INV-6 determinism -- NOT a before/after
+//      comparison), so dp=1 points are unaffected by the DP-placement machinery.
 //   2. "a step over 2N identical requests costs what one rank's step over N costs (metamorphic)" --
 //      this is the COMPOSITION of two already-committed facts, not a single test:
 //        - the replay path sizes and spawns each rank independently (replica count, per-rank KV
@@ -67,6 +70,23 @@ func identicalDecodeBatch(n int, promptLen int64) []*sim.Request {
 	return batch
 }
 
+// identicalPrefillBatch returns n byte-identical chunked-prefill requests: each starts at the
+// beginning of a long prompt (ProgressIndex 0) and schedules `sched` tokens of it. A batch
+// schedules n*sched tokens, so callers keep n*sched (and 2*n*sched) well below the capture ceiling.
+// Covering prefill as well as decode guards the over-pricing direction in the TTFT (prefill) regime
+// too, not only the TPOT (decode) regime.
+func identicalPrefillBatch(n int, promptLen int64, sched int) []*sim.Request {
+	batch := make([]*sim.Request, n)
+	for i := range batch {
+		batch[i] = &sim.Request{
+			InputTokens:   make([]sim.TokenID, promptLen),
+			ProgressIndex: 0,
+			NumNewTokens:  sched,
+		}
+	}
+	return batch
+}
+
 // TestDPMoEAggregateStepCostsMoreThanOneRank pins #1902 criterion 3 and the over-pricing DIRECTION
 // on the exact dp=2 MoE deployment #1902 was about, through the adapter StepTime the scorer calls.
 // The pre-#1851 harness handed the kernel every rank's requests at once (the AGGREGATE, 2N) as one
@@ -93,16 +113,22 @@ func TestDPMoEAggregateStepCostsMoreThanOneRank(t *testing.T) {
 			dpPricingScenario, m.DataParallelWidth(), dep.MoE, dep.ExpertParallel)
 	}
 
+	// Both regimes the scorer measures: decode (TPOT) and chunked prefill (TTFT). All scheduled-token
+	// totals (n and 2n) stay far below the capture ceiling: decodes schedule 1 token each (<=32);
+	// the prefill cases schedule n*sched tokens (<=256).
 	for _, tc := range []struct {
-		n         int
-		promptLen int64
+		name  string
+		n     int
+		batch func(n int) []*sim.Request
 	}{
-		{4, 512},
-		{8, 1024},
-		{16, 2048},
+		{"decode L=512", 4, func(n int) []*sim.Request { return identicalDecodeBatch(n, 512) }},
+		{"decode L=1024", 8, func(n int) []*sim.Request { return identicalDecodeBatch(n, 1024) }},
+		{"decode L=2048", 16, func(n int) []*sim.Request { return identicalDecodeBatch(n, 2048) }},
+		{"prefill 64-tok chunks", 2, func(n int) []*sim.Request { return identicalPrefillBatch(n, 4096, 64) }},
+		{"prefill 32-tok chunks", 4, func(n int) []*sim.Request { return identicalPrefillBatch(n, 2048, 32) }},
 	} {
-		perRank := m.StepTime(identicalDecodeBatch(tc.n, tc.promptLen))
-		aggregate := m.StepTime(identicalDecodeBatch(2*tc.n, tc.promptLen))
+		perRank := m.StepTime(tc.batch(tc.n))
+		aggregate := m.StepTime(tc.batch(2 * tc.n))
 
 		// The strict inequality establishes both #1902 properties at once: a rank's price never
 		// exceeds the aggregate's (criterion 3), and the aggregate is strictly dearer than one rank
@@ -110,10 +136,10 @@ func TestDPMoEAggregateStepCostsMoreThanOneRank(t *testing.T) {
 		// would carry no penalty only if these were equal; the merged per-rank path pays the
 		// smaller `perRank`.
 		if perRank >= aggregate {
-			t.Errorf("n=%d L=%d: one rank (%d ticks) was not strictly cheaper than the aggregate "+
-				"(%d ticks); the aggregate must cost strictly more than one rank -- so a rank never "+
-				"exceeds it (criterion 3) and pricing the aggregate as one rank (the #1902 bug) "+
-				"carries a penalty", tc.n, tc.promptLen, perRank, aggregate)
+			t.Errorf("%s: one rank (n=%d, %d ticks) was not strictly cheaper than the aggregate "+
+				"(n=%d, %d ticks); the aggregate must cost strictly more than one rank -- so a rank "+
+				"never exceeds it (criterion 3) and pricing the aggregate as one rank (the #1902 bug) "+
+				"carries a penalty", tc.name, tc.n, perRank, 2*tc.n, aggregate)
 		}
 	}
 }
