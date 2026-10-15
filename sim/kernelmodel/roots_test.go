@@ -92,12 +92,31 @@ func TestRequireReposNamesEachMissingRootAndHowToSetIt(t *testing.T) {
 // A copy of another release builds kernels too, and a renamed chip or a refitted
 // coefficient would then show up as a score that moved for no stated reason. Bumping the
 // kernel in go.mod moves the lock, and this fails until the copies are re-vendored.
+// An entry in testdata/upstream-prerelease.lock stands in for the kernel's while a pinned
+// kernel pre-release lags the unreleased upstreams it was developed against; it must name
+// the same repository and a different commit, so it cannot outlive the kernel's catching up.
 func TestTheVendoredCatalogAndRegistryAreTheLockedReleases(t *testing.T) {
 	t.Setenv(catalogEnv, "")
 	t.Setenv(registryEnv, "")
 	locked, err := LockedUpstreams()
 	if err != nil {
 		t.Fatal(err)
+	}
+	pre, err := PrereleaseUpstreams()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for dest, p := range pre {
+		k, ok := locked[dest]
+		switch {
+		case !ok:
+			t.Errorf("upstream-prerelease.lock names %s, which blis-latency-kernel's lock does not", dest)
+		case p.Repository != k.Repository:
+			t.Errorf("upstream-prerelease.lock: %s is %s, the kernel locks %s", dest, p.Repository, k.Repository)
+		case p.Commit == k.Commit:
+			t.Errorf("upstream-prerelease.lock restates the kernel's %s lock (%s); delete the line", dest, k.Commit)
+		}
+		locked[dest] = p
 	}
 	for _, c := range []struct{ dest, root string }{
 		{"catalog", DefaultCatalog()},

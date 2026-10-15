@@ -644,6 +644,47 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/gemm/vllm/0.25.0/gemm_perf.parquet (NVIDIA H100 80GB HBM3), 36,408 fp8_block rows over 74 token counts, kernel FlashInfer (M<32) / DeepGEMM (M>=32) block-scaled dispatch", role: primary}
       rationale: >
         The token count at which the ramp reaches half its asymptote, so it sets how fast a widening batch approaches peak. Fitted jointly with gemm_eps_max_fp8_block on the same envelope; residual 0.0422.
+  - gemm_eps_max_w4a16_mxfp4_grouped:
+      value: 0.282
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        Asymptotic fraction of this part's dense BF16 peak (989.5 TFLOPS) that vLLM's Marlin MXFP4 W4A16 grouped GEMM reaches. On SM90 v0.31.0 runs MXFP4 routed experts on Marlin (Mxfp4MoEMethod's TRTLLM and DeepGEMM backends, and the compressed-tensors CutlassExpertsMxfp4, all require SM100+). Marlin dequantizes the four-bit weights in registers and multiplies against BF16 activations with mma.sync, so its rate is a fraction of the BF16 peak, not of an FP8 or FP4 one. Fitted with gemm_m_half_w4a16_mxfp4_grouped under the kernel's routed-expert composition -- the SM half, over the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp; fitted at tp = ep = 1), summed with the distinct experts' stored weight bytes (0.53125 B/weight, E8M0 scales included) at BwPeak x hbm_derate -- so the ramp is what remains once the kernel's own memory half is charged. Geometric error 1.140x (signed 1.039); held out on vLLM's int4 Marlin MoE (hidden 7168, inter 2048, top-8 of 384, group 128; 27 token counts) at 1.161x, signed 1.068. THE SAME KERNEL AS ON H200, ON THE SAME DIE: at the same 27 token counts this part's latency is 0.98-1.06x h200's, against the 1.43x a kernel bound on its weight read would show at 3.35 against 4.8 TB/s. So the ramp differs from h200's (0.245 / 26) because the memory half charged here is larger at this part's lower BwPeak, and the ramp carries what it leaves -- not because the compute is faster; the pair holds only with this part's own memory half. COUPLED TO THE CONSUMER'S ROUTED TERM, as checked against blis-latency-kernel#44 (483f6aa): compute and memory SUMMED; the ramp evaluated at the step's token count; compute at the BF16 peak; memory as ExpertsTouched experts' stored bytes at BwPeak x hbm_derate; imbalance and SM derate 1 (balanced rows, no concurrent fetch); FLOPs the rank's own (#44 divides routed FLOPs by tp on this ramp). #44 also scales routed FLOPs and bytes by Marlin's round-up of inter / tp to a multiple of 128 (V4.1 at TP8: 288 -> 384); fitted at tp 1, where that pad is 1, the fit has not checked it -- it is the consumer's addition. A change to any of those -- sum versus max, the ramp's argument, the byte count -- needs a refit. The bytes are blis-schemas v0.3.0's StoredBytes for MXFP4 (0.5 + 1/32), which #44 charges; a consumer charging payload only (0.5, blis-latency-kernel main e9cf217) would need 0.278 / 17. vLLM's Python side changed since 0.25.0 too: #48144 sets the M used for Marlin's block-size choice to ceil(M x local / global experts) under EP -- inert at ep 1, where this is fitted, but the 0.25.0 rows at ep > 1 may not describe v0.31.0 wherever it changes the chosen block size. Applies to the routed-expert term only; a dense MXFP4 linear runs a different Marlin kernel and is not measured. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_m_half_w4a16_mxfp4_grouped:
+      value: 15
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_eps_max_w8a16_mxfp8:
+      value: 1.0
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/gemm/vllm/0.25.0/gemm_perf.parquet via gemm_eps_max_bf16 (cuBLAS BF16 envelope)", role: upper_bound}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/kernels/linear/mxfp8/marlin.py MarlinMxfp8LinearKernel", role: supporting}
+      rationale: >
+        ASSUMED: this part's measured BF16 GEMM asymptote, as an UPPER BOUND. On SM90 vLLM v0.31.0 runs every MXFP8 dense linear through MarlinMxfp8LinearKernel (W8A16; the FlashInfer MXFP8 kernels ahead of it require SM100): FP8 weights dequantized in registers, BF16 activations, mma.sync. Its compute rate is therefore a fraction of the BF16 peak, and the measured cuBLAS BF16 envelope (1.0 of peak) bounds it above. No sweep measures dense Marlin on any part, so the fraction it reaches is unknown; the same Marlin MMA core in its grouped (MoE) form reaches 0.282 (gemm_eps_max_w4a16_mxfp4_grouped); if dense Marlin reaches what the grouped form does, the bound is loose by about 3.5x at prefill-sized M. At decode-sized M the kernel's HBM term -- the FP8 weight read -- dominates, and this term barely enters. DIRECTION: optimistic for compute-bound GEMMs. TO REPLACE IT: an h100 GEMM sweep with MarlinMxfp8LinearKernel forced (AISimulate's vLLM GEMM collector has no Marlin path). Read by no consumer until blis-latency-kernel selects a ramp by weight format and chip (blis-latency-kernel#34).
+  - gemm_m_half_w8a16_mxfp8:
+      value: 170
+      units: tokens
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/gemm/vllm/0.25.0/gemm_perf.parquet via gemm_m_half_bf16", role: primary}
+      rationale: >
+        ASSUMED: this part's measured cuBLAS BF16 knee (gemm_m_half_bf16), paired with gemm_eps_max_w8a16_mxfp8 so the two describe one ramp rather than an asymptote from one kernel and a knee from another. The knee is where a GEMM stops being operand-starved; Marlin's grouped form measures 15 tokens on this part (gemm_m_half_w4a16_mxfp4_grouped), against 170 here, so the dense Marlin knee is unmeasured within that range. DIRECTION: NOT a bound. A knee above Marlin's own lowers the ramp at mid M, so this half is likely pessimistic there while the asymptote is optimistic at large M; the two partly offset and neither direction is established. At decode M the kernel's HBM term -- the FP8 weight read -- dominates either way. TO REPLACE IT: the same MarlinMxfp8LinearKernel sweep as the asymptote; both come from one fit.
   - moe_routing_imbalance_median:
       value: 0.998
       units: dimensionless
@@ -674,6 +715,17 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml", role: primary}
       rationale: >
         64 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+  - host_gather_rate_uva:
+      value: 57764.0
+      units: bytes_per_us
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml pcie_bw (host_link_bandwidth)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/common/engram.py _engram_lookup_kernel, ParallelEngramEmbedding", role: supporting}
+      rationale: >
+        ASSUMED: an UPPER BOUND on the useful-byte rate of DeepSeek-V4.1's engram lookup when the tables are in pinned host memory (EngramConfig.cpu_offload, the v0.31.0 default) and read through UVA. Derived as host_link_bandwidth (64 GB/s, AISimulate's 'pcie 5.0' figure: the raw rate per direction) x 128/130 (PCIe 5.0's 128b/130b line code, leaving 63.0 GB/s) x 264/288: a row is 264 useful bytes -- 256 FP8 values in one table at a 256 B stride (two whole 128 B lines) and 8 UE8M0 scales in a separate table, which cost at least one 32 B sector -- so at least 288 B cross the link per row. Per token and engram layer a rank reads cdiv(24, shards) rows. WHAT THE BOUND IGNORES, each making the real rate LOWER: PCIe transaction-layer overhead; GPU address translation for random rows over a table of 384 million rows, ~101 GB per layer before TP sharding (vLLM's own comment: 'The table dwarfs TLB reach'); the latency-bound regime at decode batch sizes, where 24 rows are a few kilobytes and a per-launch round trip dominates -- no floor is stated because none is measured; and host-side contention when every GPU of a node gathers from one host's memory. The lookup runs on a side stream at half the SMs, so how much of it a step exposes is a composition question, not this rate's. TO REPLACE IT: time ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an H100 host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read by no consumer until the schema can state a host-resident gather (blis-schemas#48, blis-latency-kernel#38).
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
