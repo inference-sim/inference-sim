@@ -230,7 +230,7 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, the speculative acceptance flags (`--speculative-acceptance-rate`/`-length` and the selectors; a run's `--workload` preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
 
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from

@@ -702,14 +702,15 @@ func e2eMean(t *testing.T, stdout string) float64 {
 	return v
 }
 
-// Speculation comes from the scenario: a scenario that drafts tokens requires the acceptance
-// rate (a property of the workload, not the deployment) and is refused naming the scenario
-// without it; with it, accepting more of each draft never makes requests slower -- every step
+// Speculation comes from the scenario: a scenario that drafts tokens needs an acceptance (a
+// property of the workload, not the deployment) and, with no layer stating one -- the vendored
+// registry has no acceptance profiles -- is refused naming the scenario's draft (#1939); with it, accepting more of each draft never makes requests slower -- every step
 // pays the same verify width and advances further.
 func TestRunCmd_KernelBackend_SpeculationFromTheScenario(t *testing.T) {
 	base := []string{"run", "--scenarios", pdScenarios, "--scenario", "glm-5-h200-tp8-mtp3.yaml",
 		"--num-requests", "24", "--rate", "6", "--seed", "2"}
-	if _, stderr, err := runKernelCLI(t, base...); err == nil || !strings.Contains(stderr, "drafts 3 tokens") {
+	if _, stderr, err := runKernelCLI(t, base...); err == nil || !strings.Contains(stderr, "drafts 3 ") ||
+		!strings.Contains(stderr, "its acceptance does not resolve") {
 		t.Fatalf("a drafting scenario without an acceptance rate was not refused naming it: %v\n%s", err, stderr)
 	}
 	var prev, first float64

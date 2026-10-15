@@ -124,5 +124,6 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 	return []sim.EmitOption{
 		sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot)),
 		sim.WithScenarioOverrides(scenarioOverrides),
+		sim.WithAcceptance(acceptanceRecord),
 	}
 }

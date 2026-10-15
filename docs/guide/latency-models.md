@@ -142,8 +142,34 @@ kernel. A dense model with `dp > 1` is refused.
 ## Speculative Decoding / MTP (#1528)
 
 A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` tokens per
-step. Pass `--speculative-acceptance-rate α` (required when the scenario drafts): BLIS does
-not predict acceptance, since it runs no draft model.
+step. BLIS does not predict acceptance, since it runs no draft model: it resolves it (below).
+
+### Speculative acceptance (#1939)
+
+The acceptance length AL (tokens per verification step, counting the bonus token, in
+`[1, K+1]`; rate `α = (AL − 1)/K`) is resolved by blis-schemas' `acceptance.Resolve` from the
+highest layer that states it, lowest to highest:
+
+1. **Registry profile** -- `<registry>/acceptance/*.yaml`, keyed by (model, method, K,
+   thinking, category). The workload's `category` and `thinking` select it, or
+   `--speculative-category` and `--speculative-thinking`, which override the workload's.
+2. **Workload** -- the simulated workload's own `acceptance` value (a catalog preset's, or the
+   scenario's trace or replay binding's).
+3. **Scenario** -- the scenario's `acceptance` pin: an inline value, or `profiles: <set>` to
+   use that registry set in place of the default.
+4. **CLI** -- `--speculative-acceptance-length AL` or `--speculative-acceptance-rate α`
+   (mutually exclusive).
+
+Changing the deployment's K selects that K's profile, so a K sweep with no override takes a
+different AL at each K. Nothing falls back silently: an unmatched category, a missing thinking
+mode, a value stated for another K or an AL outside `[1, K+1]` is refused, unless
+`--speculative-fallback-category` (or the pin's `fallback_category`) names a category to use,
+which is then recorded. The `--metrics-path` file records
+`acceptance: {length, rate, source_layer, entry}`, the length and rate being those the run
+advanced requests by and `entry` the profile set, key, provenance, any fallback, the hardware a
+profile was measured on when it is not the run's, and the per-position rates (vLLM's
+minimum-variance schedule when the source states none). A run that does not speculate records
+none.
 
 - **Method: the engine release's list.** `method` is checked against the rules pack of the
   scenario's `engine_version` (blis-schemas `rules.Pack.SpeculativeMethods`), not a list in

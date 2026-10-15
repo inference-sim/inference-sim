@@ -237,8 +237,8 @@ func TestCatalogProvenance_NoCatalogResolved_OmitsBlock(t *testing.T) {
 
 // TestCatalogProvenanceEmitOptions_FileOnly pins that the shared emit-option helper is a
 // no-op without an output file path (provenance is file-only, so a stdout-only run must
-// not pay for a git subprocess) and supplies its options -- catalog provenance and the
-// scenario overrides -- when a file is written.
+// not pay for a git subprocess) and supplies its options -- catalog provenance, the
+// scenario overrides and the resolved acceptance (#1939) -- when a file is written.
 func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 	catalogRoot, _ := newGitCatalog(t)
 
@@ -246,8 +246,8 @@ func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 		t.Errorf("no output file path must yield no emit options, got %d", len(opts))
 	}
 	opts := resultsFileEmitOptions(filepath.Join(t.TempDir(), "metrics.json"), catalogRoot)
-	if len(opts) != 2 {
-		t.Fatalf("an output file path must yield the catalog-provenance and scenario-override options, got %d", len(opts))
+	if len(opts) != 3 {
+		t.Fatalf("an output file path must yield the catalog-provenance, scenario-override and acceptance options, got %d", len(opts))
 	}
 	// The option must carry a populated provenance, not a nil one.
 	m := sim.NewMetrics()

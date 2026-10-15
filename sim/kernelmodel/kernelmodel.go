@@ -61,8 +61,10 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-schemas/spec/workload"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -537,19 +539,26 @@ type Deployment struct {
 }
 
 // Shape is what a scenario's deployment states beyond any one pool, read without building a
-// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy.
+// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy;
+// and what its Scenario states that no kernel prices: its acceptance pin and its workload
+// binding, which the simulator's speculative acceptance resolves from (#1939).
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+
+	Model           string
+	Acceptance      *acceptance.Pin
+	WorkloadBinding *workload.Binding
 }
 
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	sc, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return Shape{}, err
 	}
-	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
 	}

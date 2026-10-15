@@ -66,6 +66,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
 | [INV-K3](#inv-k3-every-resident-sequence-holds-its-fixed-blocks) Every resident sequence holds its fixed blocks | Subsystem | KV cache |
 | [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
+| [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -472,6 +473,14 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Enforced:** `sim/simulator.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
 
 **Verification:** `TestRejectedDraftsDoNotAdvanceComputed` (`sim/kernelmodel`; a real DSpark simulation at α = 0.502); `TestSpecDecode_OutputTokenConservation` (`sim`).
+
+#### INV-K5: The Recorded Acceptance Is the Simulated One
+
+**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
+
+**Enforced:** `cmd/speculative_acceptance.go` (`resolveAcceptance`, `acceptanceRecordOf`), `cmd/root.go` `resolveSpeculativeConfig`.
+
+**Verification:** `TestAcceptancePrecedence`, `TestAcceptanceKSweepPicksTheProfileAtEachK`, `TestAcceptanceRefusals`, `TestAcceptanceIsAbsentWithoutSpeculation`, `TestAcceptanceRunReplayParity` (`cmd`).
 
 #### Retired latency-model invariants
 
