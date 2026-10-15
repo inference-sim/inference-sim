@@ -1936,6 +1936,9 @@ var runCmd = &cobra.Command{
 		// round-trips through the trace header (INV-13). Only when offload is enabled.
 		if kvOffloadCfg.IsEnabled() {
 			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
+			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
+				logrus.Fatalf("%v", err)
+			}
 		}
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and

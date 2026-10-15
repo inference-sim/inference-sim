@@ -372,6 +372,9 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	}
 	switch {
 	case scenarioOffload != nil && kvOffloadConfigPath != "":
+		// blis-schemas' Offload cannot state the chunk width (proposed field:
+		// offload.blocks_per_chunk), so the scenario leaves it unstated and the flag's applies.
+		fromScenario.BlockSize, fromScenario.BlocksPerChunk = fromFlag.BlockSize, fromFlag.BlocksPerChunk
 		if diff := offloadConfigDiff(fromScenario, fromFlag); diff != "" {
 			logrus.Fatalf("--kv-offload-config %q disagrees with scenario %q's offload block (%s); the "+
 				"scenario is the deployment, so the flag may only restate it -- drop the flag, or "+

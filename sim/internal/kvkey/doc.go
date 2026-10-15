@@ -17,10 +17,10 @@
 //
 //   - Block stride — the granularity at which GPU/CPU tiers and the router index
 //     key blocks. Produced by hash.ComputeBlockHashes / hash.HashBlock.
-//   - Chunk stride — the granularity at which transfer/offload tiers key chunks
-//     (a group of blocks_per_chunk blocks). Produced by DeriveChunkKeys with
-//     tokensPerChunk = tokensPerBlock * blocks_per_chunk. This mirrors vLLM,
-//     which derives offload keys per chunk, NOT per block (BC-K4).
+//   - Chunk stride — one key per group of blocks_per_chunk blocks, produced by
+//     DeriveChunkKeys with tokensPerChunk = tokensPerBlock * blocks_per_chunk (BC-K4).
+//     The offload tiers key a chunk by its last block's hash instead, as vLLM v0.31.0
+//     does (INV-K6), so their keyspace stays the block-stride one.
 //
 // # Contracts
 //

@@ -5,7 +5,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
-	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // H3 kv_deferral (#1591): step-boundary re-poll for secondary-tier (disk/object
@@ -86,7 +85,7 @@ type fetchClass struct {
 	tier int              // fetchSecondary: the holding tier; else -1
 }
 
-// classifyFetch walks the uncached tail [startBlock, n) exactly like
+// classifyFetch walks the uncached tail in offload chunks exactly like
 // consultAndReload but WITHOUT mutating anything, and reports whether a NEW request
 // must defer. It skips GPU-resident and CPU-ready (reloadable) blocks — those
 // extend the cached prefix synchronously at admission — and stops at the first:
@@ -99,30 +98,23 @@ func (o *OffloadCache) classifyFetch(tokens []sim.TokenID, startBlock int64, pre
 	if o.station == nil || len(o.secondary) == 0 {
 		return none // CPU-only offload never defers (no secondary tier to fetch from)
 	}
-	bs := o.gpu.BlockSize()
-	n := util.Len64(tokens) / bs
-	if startBlock >= n {
+	tail, ok := o.tailOf(tokens, startBlock, prevHash)
+	if !ok {
 		return none
 	}
-	tailKeys := kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:], int(bs))
-	for i := startBlock; i < n; i++ {
-		key := tailKeys[i-startBlock]
-		if _, inGPU := o.gpu.HashToBlock[string(key)]; inGPU {
-			continue // already on GPU
-		}
-		switch o.cpu.lookup(key) {
-		case cpuHit:
-			continue // CPU-ready: reloadable at admission, not a fetch
-		case cpuHitPending:
-			return fetchClass{kind: fetchPending, run: []kvkey.BlockKey{key}, tier: -1}
-		case cpuMiss:
-			if run, tier, ok := o.gatherSecondaryRun(tailKeys, int(i-startBlock)); ok {
-				return fetchClass{kind: fetchSecondary, run: run, tier: tier}
-			}
-			return none // genuine miss: recompute from here (no benefit to defer)
+	// GPU-resident and CPU-ready (reloadable) chunks extend the cached prefix synchronously
+	// at admission; the chunk that ends that run decides.
+	chunks, stop := o.cpuRun(tail)
+	c := tail.firstChunk + chunks
+	switch stop {
+	case cpuHitPending:
+		return fetchClass{kind: fetchPending, run: []kvkey.BlockKey{tail.key(c)}, tier: -1}
+	case cpuMiss:
+		if run, tier, ok := o.gatherSecondaryRun(tail, c); ok {
+			return fetchClass{kind: fetchSecondary, run: run, tier: tier}
 		}
 	}
-	return none
+	return none // whole prefix cached/reloadable, or a genuine miss (recompute from here)
 }
 
 // allKnown reports whether every key's secondary existence is already resolved
