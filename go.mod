@@ -6,7 +6,7 @@ toolchain go1.24.4
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-latency-kernel v0.2.0
+	github.com/inference-sim/blis-latency-kernel v0.2.1-0.20261015060036-dd1fd672694c
 	github.com/inference-sim/blis-schemas v0.3.1-0.20261015043604-323204d809fa
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
@@ -22,8 +22,3 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )
-
-// TODO(#1941): development pin to the blis-latency-kernel worktree on
-// dsv41/h100-capacity-fidelity (SequenceAdmissionBytes, blis-latency-kernel#46); the final PR
-// pins the pushed kernel pseudo-version instead.
-replace github.com/inference-sim/blis-latency-kernel => ../blis-latency-kernel
