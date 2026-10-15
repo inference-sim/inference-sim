@@ -2631,7 +2631,7 @@
   ],
   "catalog": {
     "path": "testdata/catalog",
-    "revision": "21d390128c898382ea2544877fab1f8afc3bb078",
+    "revision": "fe40a198bb71ff0574764381ca0c3cd6d296ccb1",
     "dirty": false
   }
 }

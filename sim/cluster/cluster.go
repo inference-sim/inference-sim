@@ -653,7 +653,7 @@ func (c *ClusterSimulator) Run() error {
 			if len(c.clusterEvents) == 0 {
 				return fmt.Errorf("gateway holds %d request(s) and no event can release them", c.gateway.Pending())
 			}
-			if c.clock-lastProgress > gatewayStallLimitUs {
+			if c.clock-lastProgress > gatewayStallLimitUs && c.clock > c.gatewayHeldUntil() {
 				return fmt.Errorf("gateway holds %d request(s) and nothing but its own timers has happened for %d µs of simulated time",
 					c.gateway.Pending(), gatewayStallLimitUs)
 			}
@@ -879,6 +879,15 @@ func (c *ClusterSimulator) maybeFastForward() {
 	}
 }
 
+// gatewayHeldUntil is the latest time the gateway's own timers can still release a request it
+// holds (0 when it does not say).
+func (c *ClusterSimulator) gatewayHeldUntil() int64 {
+	if h, ok := c.gateway.(GatewayHoldHorizon); ok {
+		return h.HeldUntil()
+	}
+	return 0
+}
+
 // gatewayStallLimitUs bounds how long a run continues on router timers alone while the gateway
 // holds requests and nothing else can happen: one simulated hour.
 const gatewayStallLimitUs = int64(3600 * 1e6)
@@ -981,8 +990,10 @@ func (c *ClusterSimulator) completedRequestsTotal() int {
 	return total
 }
 
+// timedOutRequestsTotal counts timeouts in the instances and client deadlines that passed while
+// the gateway held the request (INV-1's timed_out term).
 func (c *ClusterSimulator) timedOutRequestsTotal() int {
-	total := 0
+	total := c.gatewayTimedOut
 	for _, inst := range c.instances {
 		total += inst.Metrics().TimedOutRequests
 	}

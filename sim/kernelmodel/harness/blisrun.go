@@ -190,12 +190,10 @@ func mainPhase(pl PointLengths) replayRun {
 //
 // The pool is CONC + copies, so the first CONC main requests start together at
 // primeMainStartUs, in trace order, exactly as the cold main phase starts at 0, and each later
-// one is admitted at a main completion. copies is the deployment's dp width: round-robin
-// routing puts copy j on replica j and then main request i on replica (copies + i) mod dp =
-// i mod dp in a round-robin placement; the harness's router places by requests in flight
-// (vllm-dp-lb.epp.yaml), so each copy goes to a replica not yet holding one, every replica
-// ends up holding request 0's prompt, and the main phase starts on idle replicas as in the
-// cold run.
+// one is admitted at a main completion. copies is the deployment's dp width: the harness's
+// router places by requests in flight (vllm-dp-lb.epp.yaml), so each copy goes to a replica not
+// yet holding one, every replica ends up holding request 0's prompt, and the main phase starts
+// on idle replicas as in the cold run.
 const (
 	primeMainStartUs = int64(10_000_000_000)    // 10^4 s: after any single warm-up copy completes
 	primeHoldUs      = int64(1_000_000_000_000) // 10^6 s: after any main phase completes

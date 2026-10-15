@@ -25,6 +25,22 @@ func TestRun_StuckGatewayIsAnError(t *testing.T) {
 	}
 }
 
+// TestRun_StallWaitsForTheGatewaysOwnTimers: while the gateway says its own timers (a client
+// deadline, a queue-wait budget) can still release a held request, a run with nothing else
+// happening is not declared stuck after the one-hour limit; past that time it is.
+func TestRun_StallWaitsForTheGatewaysOwnTimers(t *testing.T) {
+	const until = 2 * 3600 * 1_000_000 // two hours
+	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(newTestRequests(1)), nil)
+	cs.SetGateway(&fakeGateway{swallow: true, tickUs: 60_000_000, heldUntil: until})
+	err := cs.Run()
+	if err == nil || !strings.Contains(err.Error(), "gateway holds 1 request(s)") {
+		t.Fatalf("Run() = %v, want the stuck-run error once the gateway's timers are past", err)
+	}
+	if cs.Clock() <= until {
+		t.Fatalf("declared stuck at %d, before the gateway's horizon %d", cs.Clock(), int64(until))
+	}
+}
+
 // TestRun_GatewayAbortEndsTheRun: an outcome the gateway cannot account for ends the run with
 // that error.
 func TestRun_GatewayAbortEndsTheRun(t *testing.T) {

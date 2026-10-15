@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"sort"
@@ -44,6 +45,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/epp/controller"
 	"github.com/llm-d/llm-d-router/pkg/epp/datalayer"
+	fcregistry "github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/registry"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkrc "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
 	"github.com/llm-d/llm-d-router/pkg/epp/handlers"
@@ -123,8 +125,14 @@ type Gateway struct {
 	eppOpts *runserver.Options
 	emb     *runner.Embedded
 	canon   *promptCanon
+	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
+	rawConfig []byte
+	// maxQueueTTL is the longest queue-wait budget of any flow-control band (0: none, or flow
+	// control off; -1: some band waits without bound).
+	maxQueueTTL int64
 	// observe, set only by tests, sees each scrape ("scrape", endpoint), each request the router
-	// receives ("request", ID) and the usage of each completed response ("usage", "ID tokens").
+	// receives ("request", ID), each dispatch ("dispatch", "ID <context error>") and the usage of
+	// each completed response ("usage", "ID tokens").
 	observe func(kind, detail string)
 	server  *handlers.StreamingServer
 	pool    *datalayer.EndpointPool
@@ -160,11 +168,14 @@ type flight struct {
 	prompt []uint32 // the prompt as the router sees it (promptCanon)
 	// stopDeadline cancels the client-deadline event (nil without a deadline).
 	stopDeadline func()
-	held         bool // counted in Pending: arrived and neither dispatched nor rejected
-	dispatched   bool
-	headersOut   bool
-	firstOut     bool
-	done         bool
+	// decided is set when the Director has returned its decision; finishRequest acts on it at the
+	// same instant, so a client deadline at that instant no longer cancels the request.
+	decided    bool
+	held       bool // counted in Pending: arrived and neither dispatched nor rejected
+	dispatched bool
+	headersOut bool
+	firstOut   bool
+	done       bool
 }
 
 // Seed is the seed the router runs with. It is valid once the router has started.
@@ -235,6 +246,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	for _, inst := range host.Instances() {
 		podLabels = append(podLabels, g.podLabels(inst.ID(), host.PoolRole(inst.ID())))
 	}
+	g.rawConfig = config
 	if err := checkRawConfig(config, podLabels); err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
@@ -297,6 +309,14 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 			}
 		}
 	}
+	if emb.FlowControlEnabled() && emb.Config != nil && emb.Config.FlowControlConfig != nil &&
+		emb.Config.FlowControlConfig.UsageLimitPolicy != nil &&
+		emb.Config.FlowControlConfig.UsageLimitPolicy.TypedName().Type == "soft-reflective-ceiling-policy" {
+		// Its duty cycle counts dispatch cycles while the pool is in its alternating regime, which
+		// an idle pool can be in (stale metrics count as saturated), so idle cycles cannot be skipped.
+		g.skipIdle = false
+	}
+	g.maxQueueTTL = maxQueueTTL(emb)
 	g.server = handlers.NewStreamingServer(emb.Datastore, emb.Director, emb.Parsers, 0)
 	g.server.SetResponders(nil)
 
@@ -393,6 +413,13 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 	}
 	ep, ok := g.endpoints[inst.ID()]
 	if !ok {
+		if !g.rt.warm {
+			// A pod that appears during the run (autoscaling, lifecycle) passes the startup checks
+			// too: its labels may select an engine mapping, and its role may make the deployment P/D.
+			if err := g.checkLatePod(inst); err != nil {
+				g.host.Abort(err)
+			}
+		}
 		ep = g.newEndpoint(inst)
 	}
 	ready := inst.IsRoutable()
@@ -531,8 +558,8 @@ func (g *Gateway) OnArrival(req *sim.Request) {
 // clientDeadline ends a request whose client deadline passed before the router dispatched it.
 func (g *Gateway) clientDeadline(f *flight) {
 	f.stopDeadline = nil
-	if f.dispatched || f.done {
-		return
+	if f.dispatched || f.done || f.decided {
+		return // decided: dispatched or rejected at this instant; a dispatched request's deadline is the engine's
 	}
 	if f.ctx == nil { // still on its way to the router (gateway latency)
 		f.held = false
@@ -585,6 +612,7 @@ func (g *Gateway) handleRequest(f *flight) {
 	}
 	g.rt.Go(func() {
 		_, err := g.emb.Director.HandleRequest(f.ctx, reqCtx, parsed.Body)
+		f.decided = true
 		// Rule G: the router never calls back into the cluster synchronously.
 		g.host.Schedule(g.host.Now(), PriorityRequest, false, func() { g.finishRequest(f, err) })
 	})
@@ -625,6 +653,9 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 	if f.stopDeadline != nil {
 		f.stopDeadline()
 		f.stopDeadline = nil
+	}
+	if g.observe != nil {
+		g.observe("dispatch", fmt.Sprintf("%s %v", f.req.ID, f.ctx.Err()))
 	}
 	g.host.Dispatch(f.req, p)
 }
@@ -916,4 +947,65 @@ func completionBody(model, id string, u usage) []byte {
 		"usage":   u,
 	})
 	return b
+}
+
+// expirySweepUs is how often flow control sweeps its queues for expired requests (1 s).
+const expirySweepUs = 1_000_000
+
+func maxQueueTTL(emb *runner.Embedded) int64 {
+	if !emb.FlowControlEnabled() || emb.Config == nil || emb.Config.FlowControlConfig == nil || emb.Config.FlowControlConfig.Registry == nil {
+		return 0
+	}
+	reg := emb.Config.FlowControlConfig.Registry
+	bands := []*fcregistry.PriorityBandConfig{reg.DefaultPriorityBand, reg.DefaultNegativePriorityBand}
+	for _, b := range reg.PriorityBands {
+		bands = append(bands, b)
+	}
+	var longest int64
+	for _, b := range bands {
+		if b == nil || b.DefaultRequestTTL == nil {
+			continue
+		}
+		if *b.DefaultRequestTTL == 0 {
+			return -1
+		}
+		longest = max(longest, toMicros(*b.DefaultRequestTTL))
+	}
+	return longest
+}
+
+// HeldUntil is the latest time at which a request the router holds can still be released by its
+// own timers: its client deadline, or its flow-control queue-wait budget plus one expiry sweep.
+// Past it, a run in which nothing else happens cannot make progress. It implements
+// cluster.GatewayHoldHorizon.
+func (g *Gateway) HeldUntil() int64 {
+	var until int64
+	for _, f := range g.flights {
+		if !f.held {
+			continue
+		}
+		release := int64(math.MaxInt64)
+		if f.req.Deadline > 0 {
+			release = f.req.Deadline
+		}
+		if g.maxQueueTTL > 0 {
+			release = min(release, f.req.GatewayEnqueueTime+g.maxQueueTTL+expirySweepUs)
+		}
+		if release != math.MaxInt64 {
+			until = max(until, release)
+		}
+	}
+	return until
+}
+
+// checkLatePod applies the startup checks to a pod that appears during the run.
+func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
+	labels := g.podLabels(inst.ID(), g.host.PoolRole(inst.ID()))
+	if err := checkRawConfig(g.rawConfig, []map[string]string{labels}); err != nil {
+		return fmt.Errorf("instance %s, added during the run: the router configuration cannot be simulated faithfully: %w", inst.ID(), err)
+	}
+	if err := validateTopology(g.emb, g.host); err != nil {
+		return fmt.Errorf("instance %s, added during the run: %w", inst.ID(), err)
+	}
+	return nil
 }

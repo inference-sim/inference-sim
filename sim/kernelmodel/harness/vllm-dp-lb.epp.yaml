@@ -3,6 +3,10 @@
 # rank with the fewest requests in flight. BLIS simulates each rank as its own replica behind the
 # llm-d router, so the harness configures the router to place the same way: score endpoints by
 # requests in flight, pick the best.
+#
+# Not modeled: newer vLLM releases also weight a rank's waiting requests more heavily once its
+# KV-cache usage passes 50%. That term is version-dependent and is left out; it only matters
+# for points whose ranks run under KV pressure.
 apiVersion: llm-d.ai/v1
 kind: EndpointPickerConfig
 plugins:

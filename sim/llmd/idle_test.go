@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -24,7 +25,7 @@ func TestFastForwardIdle_IsExact(t *testing.T) {
 		}
 		return reqs
 	}
-	for name, cfg := range map[string]string{"default": "", "flow-control": softCeilingConfig} {
+	for name, cfg := range map[string]string{"default": "", "flow-control": globalStrictConfig} {
 		t.Run(name, func(t *testing.T) {
 			run := func(neverSkip bool) (map[string]string, map[string]float64, map[string]float64) {
 				reqs := burstsWithGaps()
@@ -66,6 +67,18 @@ func TestFastForwardIdle_IsExact(t *testing.T) {
 // give the routing, dispatch times and latencies of ticking through every gap: an idle pool is
 // below the alternating regime, so the skipped cycles leave the counter unchanged.
 func TestFastForwardIdle_IsExactWithStatefulUsageLimit(t *testing.T) {
+	for name, extra := range map[string][]string{
+		"fresh metrics": nil,
+		// Metrics older than the utilization detector's 200 ms staleness count as saturated, so
+		// with staggered scrapes an idle pool sits in the policy's alternating regime (review
+		// 6200849987).
+		"stale while idle": {"--refresh-metrics-interval=500ms"},
+	} {
+		t.Run(name, func(t *testing.T) { checkStatefulUsageLimitExact(t, extra) })
+	}
+}
+
+func checkStatefulUsageLimitExact(t *testing.T, extraFlags []string) {
 	run := func(neverSkip bool) (map[string]string, map[string]float64) {
 		var reqs []*sim.Request
 		for b, start := range []int64{0, 40_000_000, 130_000_000} {
@@ -80,15 +93,19 @@ func TestFastForwardIdle_IsExactWithStatefulUsageLimit(t *testing.T) {
 		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
 		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
 		gw := New(Options{
-			Model:     "test-model",
-			EPPFlags:  []string{"--pool-name=vllm", "--allow-experimental-plugins", "--config-text=" + softCeilingConfig},
-			Manifests: []byte(poolManifests),
-			PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
+			Model:        "test-model",
+			EPPFlags:     append([]string{"--pool-name=vllm", "--allow-experimental-plugins", "--config-text=" + softCeilingConfig}, extraFlags...),
+			Manifests:    []byte(poolManifests),
+			PodLabels:    func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
+			ScrapeJitter: 400 * time.Millisecond,
 		})
 		gw.neverSkipIdle = neverSkip
 		cs.SetGateway(gw)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
+		}
+		if gw.skipIdle {
+			t.Fatal("the idle fast-forward stayed on with soft-reflective-ceiling-policy")
 		}
 		placed := map[string]string{}
 		held := 0

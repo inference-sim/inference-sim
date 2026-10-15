@@ -68,15 +68,15 @@ func digestTiedTenants(t *testing.T, h io.Writer) {
 	if err := cs.Run(); err != nil {
 		t.Fatalf("tied tenants: Run: %v", err)
 	}
-	held := 0
+	held := map[string]int{}
 	for _, r := range reqs {
 		if r.GatewayDispatchTime > r.ArrivalTime {
-			held++
+			held[r.SLOClass]++
 		}
 		_, _ = fmt.Fprintf(h, "tt %s %s %d\n", r.ID, r.AssignedInstance, r.GatewayDispatchTime)
 	}
-	if held == 0 {
-		t.Fatal("tied tenants: no request waited in flow control, so fairness never broke a tie")
+	if held["critical"] == 0 || held["sheddable"] == 0 {
+		t.Fatalf("tied tenants: held per band %v; both bands must queue for fairness to break ties in each", held)
 	}
 }
 

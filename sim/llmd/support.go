@@ -261,7 +261,7 @@ func checkRawConfig(config []byte, podLabels []map[string]string) error {
 		name := cmp.Or(p.Name, p.Type)
 		switch p.Type {
 		case "token-producer":
-			if v, _ := p.Parameters["vllm"].(map[string]any); v != nil && v["endpointDiscovery"] != nil {
+			if v, _ := p.Parameters["vllm"].(map[string]any); v != nil && enabled(v["endpointDiscovery"]) {
 				return fmt.Errorf("plugin %q discovers render endpoints (vllm.endpointDiscovery), probing pods on its own "+
 					"schedule outside the simulation; give its vLLM backend a fixed url, or use the estimate backend", name)
 			}
@@ -280,6 +280,21 @@ func checkRawConfig(config []byte, podLabels []map[string]string) error {
 		return checkExtractor("core-metrics-extractor", nil, podLabels)
 	}
 	return nil
+}
+
+// enabled reports whether a configuration value switches a feature on: true, or a non-empty
+// block of settings.
+func enabled(v any) bool {
+	switch v := v.(type) {
+	case bool:
+		return v
+	case map[string]any:
+		return len(v) > 0
+	case nil:
+		return false
+	default:
+		return true
+	}
 }
 
 func checkExtractor(name string, params map[string]any, podLabels []map[string]string) error {
@@ -401,7 +416,7 @@ var inertEPPFlags = map[string]bool{
 	"refresh-prometheus-metrics-interval": true, "tracing": true, "health-checking": true, "enable-pprof": true,
 	"cert-path": true, "enable-cert-reload": true, "enable-grpc-stream-metrics": true, "fairness-id-metric-label-limit": true,
 	"secure-serving": true, "tls-min-version": true, "metrics-endpoint-auth": true, "metrics-client-ca-file": true,
-	"metrics-cert-dir": true,
+	"metrics-cert-dir": true, "tls-cipher-suites": true,
 }
 
 // legacyMetricFlags name the engine series the router reads when its configuration does not.

@@ -1,6 +1,7 @@
 package llmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -252,11 +253,16 @@ func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+globalStrictConfig)})
 	cs.SetGateway(gw)
+	var final sim.ProgressSnapshot
+	cs.SetProgressHook(progressFunc(func(s sim.ProgressSnapshot) { final = s }), 1_000_000)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	res := runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}
 	assertConservation(t, res, len(reqs))
+	if final.TotalTimedOut != res.metrics.TimedOutRequests {
+		t.Errorf("final progress snapshot: %d timed out, aggregated metrics %d", final.TotalTimedOut, res.metrics.TimedOutRequests)
+	}
 	if cs.GatewayExpired() != 0 || cs.GatewayQueueRejected() != 0 {
 		t.Errorf("client deadlines counted as router outcomes: expired %d, rejected %d", cs.GatewayExpired(), cs.GatewayQueueRejected())
 	}
@@ -276,4 +282,56 @@ func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
 		t.Errorf("timed_out_requests %d < %d requests whose deadline passed in the gateway", res.metrics.TimedOutRequests, timedOutInGateway)
 	}
 	t.Logf("%d timed out in the gateway, %d timed out in total", timedOutInGateway, res.metrics.TimedOutRequests)
+}
+
+type progressFunc func(sim.ProgressSnapshot)
+
+func (f progressFunc) OnProgress(s sim.ProgressSnapshot) { f(s) }
+
+// TestHeldUntil: the latest time the router's own timers can release a held request: its client
+// deadline, or its queue-wait budget plus one expiry sweep, whichever comes first; requests with
+// neither, and requests no longer held, do not count.
+func TestHeldUntil(t *testing.T) {
+	g := &Gateway{flights: map[string]*flight{}, maxQueueTTL: 60_000_000}
+	add := func(id string, held bool, enqueue, deadline int64) {
+		g.flights[id] = &flight{req: &sim.Request{ID: id, GatewayEnqueueTime: enqueue, Deadline: deadline}, held: held}
+	}
+	add("ttl-first", true, 1_000_000, 7_200_000_000)   // TTL at 61 s + sweep
+	add("deadline-first", true, 2_000_000, 10_000_000) // deadline at 10 s
+	add("dispatched", false, 0, 9_000_000_000)
+	if got, want := g.HeldUntil(), int64(1_000_000+60_000_000+expirySweepUs); got != want {
+		t.Errorf("HeldUntil = %d, want %d", got, want)
+	}
+	g.maxQueueTTL = -1 // a band without a budget: only deadlines release
+	if got, want := g.HeldUntil(), int64(7_200_000_000); got != want {
+		t.Errorf("unbounded TTL: HeldUntil = %d, want %d", got, want)
+	}
+}
+
+// TestClientDeadline_SameInstantAsTheDecision: when a request's client deadline falls at the
+// instant the Director decides it, the decision stands: the request is dispatched with its
+// context live (response hooks see a live request), never cancelled after the decision.
+func TestClientDeadline_SameInstantAsTheDecision(t *testing.T) {
+	reqs := testRequests(5, 3, 1000, 0)
+	for _, r := range reqs {
+		r.Deadline = r.ArrivalTime // due the instant the router decides
+	}
+	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model"})
+	dispatched := 0
+	gw.observe = func(kind, detail string) {
+		if kind == "dispatch" {
+			dispatched++
+			if !strings.HasSuffix(detail, " <nil>") {
+				t.Errorf("dispatched with a cancelled context: %s", detail)
+			}
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if dispatched != len(reqs) {
+		t.Fatalf("%d of %d dispatched", dispatched, len(reqs))
+	}
 }

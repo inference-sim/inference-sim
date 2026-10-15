@@ -209,6 +209,9 @@ func TestCheckRawConfig_EngineLabelsAndEndpointDiscovery(t *testing.T) {
 	if err := checkRawConfig([]byte("plugins:\n- type: metrics-data-source\n  parameters:\n    path: /stats\n"), nil); err == nil {
 		t.Errorf("a metrics path other than /metrics must be refused")
 	}
+	if err := checkRawConfig([]byte("plugins:\n- type: token-producer\n  parameters:\n    vllm:\n      url: http://x\n      endpointDiscovery: false\n"), nil); err != nil {
+		t.Errorf("endpointDiscovery: false must run: %v", err)
+	}
 	fixed := "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      url: http://localhost:8000\n"
 	if err := checkRawConfig([]byte(fixed), nil); err != nil {
 		t.Errorf("token-producer with a fixed url must run: %v", err)
@@ -259,5 +262,27 @@ func TestUnsupportedPluginIsRefusedBeforeItsConstructorRuns(t *testing.T) {
 	}
 	if ran {
 		t.Fatal("the unsupported plugin's constructor ran before the refusal")
+	}
+}
+
+// TestLatePodIsChecked: a pod that appears during the run (an autoscaled role, say) gets the
+// startup checks: an engine label selecting an unpublished mapping is an error.
+func TestLatePodIsChecked(t *testing.T) {
+	engine := "vllm"
+	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
+	gw := New(Options{Model: "test-model", PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string {
+		return map[string]string{"llm-d.ai/engine-type": engine}
+	}})
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	inst := cs.Instances()[0]
+	if err := gw.checkLatePod(inst); err != nil {
+		t.Fatalf("a vllm pod must pass: %v", err)
+	}
+	engine = "sglang" // the next pod of this role would carry the sglang label
+	if err := gw.checkLatePod(inst); err == nil || !strings.Contains(err.Error(), "sglang") {
+		t.Fatalf("want a late sglang pod refused, got %v", err)
 	}
 }

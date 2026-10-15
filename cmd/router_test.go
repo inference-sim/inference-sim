@@ -387,6 +387,17 @@ func TestINV13_RunReplayParity_PrefixSharingWorkload(t *testing.T) {
 	if replayOut != runOut {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
+	// Non-vacuity: on this workload the default router's placement depends on prompt content
+	// (its prefix-cache scorer), so a content-blind configuration routes differently.
+	loadOnly, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon,
+		"--epp-config", "../examples/llm-d/load-only.yaml")
+	if err != nil {
+		t.Fatalf("load-only run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if loadOnly == runOut {
+		t.Error("the default and load-only configurations route this workload identically; the parity check does not exercise content-sensitive routing")
+	}
 }
 
 // TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved: --pod-labels accepts role-scoped

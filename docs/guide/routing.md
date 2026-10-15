@@ -88,8 +88,9 @@ certificate, gRPC and metrics-endpoint flags, `--emit-endpoint-scores`), are acc
 effect in a simulation; a run that sets one says so on stderr. The legacy metric-name flags
 (`--total-queued-requests-metric`, ...) must name a series the simulated engines publish.
 
-**Router logs.** The router's errors go to stderr at every BLIS log level; its informational
-messages appear with `--log debug` or `--log trace`.
+**Router logs.** The router's errors go to stderr as BLIS errors, so they show at every `--log`
+level except `fatal` and `panic`; its informational messages appear with `--log debug` or
+`--log trace`.
 
 **One instance.** A single-instance cluster also runs the router: it can only pick that
 instance, but its admission and flow control still apply. With the default configuration it

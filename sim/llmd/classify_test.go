@@ -2,6 +2,7 @@ package llmd
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
@@ -42,5 +43,27 @@ func TestClassify_AllowList(t *testing.T) {
 				t.Errorf("classify = (%v, %v), want (%v, %v)", got, ok, tc.want, tc.ok)
 			}
 		})
+	}
+}
+
+// TestUnclassifiableOutcomeAbortsTheRunThroughTheRouter: an outcome classify does not know,
+// arriving through the embedded router's reject path, ends the run with an error that names it.
+func TestUnclassifiableOutcomeAbortsTheRunThroughTheRouter(t *testing.T) {
+	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(5, 1, 1000, 0)), nil)
+	gw := New(Options{Model: "test-model"})
+	injected := false
+	gw.observe = func(kind, detail string) {
+		if kind == "request" && !injected {
+			injected = true
+			f := gw.flights[detail]
+			f.held = false
+			gw.pending--
+			gw.reject(f, errcommon.Error{Code: errcommon.Internal, Msg: "injected internal error"})
+		}
+	}
+	cs.SetGateway(gw)
+	err := cs.Run()
+	if err == nil || !strings.Contains(err.Error(), "cannot classify") || !strings.Contains(err.Error(), "injected internal error") {
+		t.Fatalf("Run() = %v, want the unclassifiable outcome to abort the run", err)
 	}
 }

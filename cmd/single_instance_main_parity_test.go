@@ -18,7 +18,8 @@ import (
 // 0d092d4e). The router can only pick the one instance, and with the default configuration it
 // admits every request on arrival, so nothing a user reads may change.
 //
-// Regenerate (only when main's own single-instance output changes, e.g. a kernel release):
+// Regenerate with scripts/regen-main-single-goldens.sh (only when main's own single-instance output
+// changes, e.g. a kernel release); by hand:
 //
 //	blis run --scenario <s> --scenarios <kernel testdata/aisimulate> --catalog testdata/catalog \
 //	  --registry testdata/registry --defaults-filepath defaults.yaml --num-instances 1 --rate 10 \

@@ -109,6 +109,13 @@ type GatewayHost interface {
 	Abort(err error)
 }
 
+// GatewayHoldHorizon is implemented by a gateway whose held requests can be released by its own
+// timers (client deadlines, queue-wait budgets). HeldUntil is the latest time any of them can
+// still be released that way; until then a run waiting only on those timers is not stuck.
+type GatewayHoldHorizon interface {
+	HeldUntil() int64
+}
+
 // newDefaultGateway, when set, supplies the gateway of a cluster that has none at Run. Only this
 // package's tests set it (a small fake); production code always installs the llm-d router.
 var newDefaultGateway func() Gateway
@@ -389,7 +396,8 @@ func (cs *ClusterSimulator) recordRejection(req *sim.Request, why Rejection, rea
 	if why == RejectedAdmission || why == RejectedGatewayExpired {
 		cs.recordShed(req)
 	}
-	if cs.trace != nil {
+	// A client that gave up is not an admission decision, so it leaves no admission record.
+	if cs.trace != nil && why != RejectedClientTimeout {
 		cs.trace.RecordAdmission(trace.AdmissionRecord{RequestID: req.ID, Clock: cs.clock, Admitted: false, Reason: reason})
 	}
 }

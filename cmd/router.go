@@ -308,8 +308,8 @@ func routerLogger() logr.Logger {
 	return logr.New(&routerLogSink{verbosity: verbosity})
 }
 
-// routerLogSink writes the router's errors to stderr at every log level (a router error is never
-// silent) and its informational messages at BLIS's debug and trace levels.
+// routerLogSink writes the router's errors to stderr as errors (shown at every --log level but
+// fatal and panic) and its informational messages at BLIS's debug and trace levels.
 type routerLogSink struct {
 	verbosity int
 	name      string
@@ -324,7 +324,7 @@ func (s *routerLogSink) Info(_ int, msg string, kv ...any) {
 }
 
 func (s *routerLogSink) Error(err error, msg string, kv ...any) {
-	logrus.Warn(s.format(msg, err, kv))
+	logrus.Error(s.format(msg, err, kv))
 }
 
 func (s *routerLogSink) WithValues(kv ...any) logr.LogSink {

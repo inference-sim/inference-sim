@@ -30,7 +30,11 @@ type fakeGateway struct {
 	tickUs  int64
 	// abortWith, when set, aborts the run on the first arrival.
 	abortWith error
+	// heldUntil, when set, is reported through GatewayHoldHorizon.
+	heldUntil int64
 }
+
+func (g *fakeGateway) HeldUntil() int64 { return g.heldUntil }
 
 func init() {
 	newDefaultGateway = func() Gateway { return &fakeGateway{disaggregate: true} }
