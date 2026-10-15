@@ -24,14 +24,14 @@ func plugin(in *EPPIngest, name string) EPPPluginRecord {
 	return EPPPluginRecord{}
 }
 
-// Every fixture — curvebender's three routers and six llm-d guide configs —
+// Every fixture — the three deployed routers and six llm-d guide configs —
 // ingests under each llm-d version that serves its apiVersion (v1 exists only
 // after v0.10.0: apix/config/v1 is absent at the v0.10.0 tag).
 func TestEPPConfig_AllFixturesIngest(t *testing.T) {
 	cb, _ := filepath.Glob("testdata/epp/*.yaml")
 	guides, _ := filepath.Glob("testdata/epp/llm-d-guides/*.yaml")
 	if len(cb) != 3 || len(guides) != 6 {
-		t.Fatalf("fixtures: %d curvebender, %d guides", len(cb), len(guides))
+		t.Fatalf("fixtures: %d deployed, %d guides", len(cb), len(guides))
 	}
 	for _, f := range cb {
 		mustIngest(t, f, EPPVersionMain)
@@ -45,7 +45,7 @@ func TestEPPConfig_AllFixturesIngest(t *testing.T) {
 	}
 }
 
-func TestEPPConfig_CurvebenderOptimizedBaseline(t *testing.T) {
+func TestEPPConfig_DeployedOptimizedBaseline(t *testing.T) {
 	for _, v := range []EPPVersion{EPPVersionMain, EPPVersionV0_10_0} {
 		in := mustIngest(t, "testdata/epp/optimized-baseline-cpu-tier.yaml", v)
 		if in.Disaggregated || len(in.Scorers) != 2 || in.Scorers[0].Name != "token-load" || in.Scorers[1].Name != "prefix-cache" ||
@@ -87,7 +87,7 @@ func TestEPPConfig_CurvebenderOptimizedBaseline(t *testing.T) {
 	}
 }
 
-func TestEPPConfig_CurvebenderPreciseGPU(t *testing.T) {
+func TestEPPConfig_DeployedPreciseGPU(t *testing.T) {
 	for _, v := range []EPPVersion{EPPVersionMain, EPPVersionV0_10_0} {
 		in := mustIngest(t, "testdata/epp/precise-gpu.yaml", v)
 		p := in.Pipeline.Producers[0]
@@ -107,7 +107,7 @@ func TestEPPConfig_CurvebenderPreciseGPU(t *testing.T) {
 	}
 }
 
-func TestEPPConfig_CurvebenderPD(t *testing.T) {
+func TestEPPConfig_DeployedPD(t *testing.T) {
 	in := mustIngest(t, "testdata/epp/pd-1p1d.yaml", EPPVersionMain)
 	if !in.Disaggregated || in.PDDecider != "always" {
 		t.Fatalf("P/D: disagg=%v decider=%q", in.Disaggregated, in.PDDecider)

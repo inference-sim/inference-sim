@@ -642,7 +642,7 @@ func TestLLMDPrefixPDDecider_LLMDParity(t *testing.T) {
 
 // --- invariants, properties, metamorphic relations ---
 
-// eppPolicy builds a weighted policy with the curvebender filter chain and scorers
+// eppPolicy builds a weighted policy with the deployed routers' filter chain and scorers
 // over a match pipeline.
 func eppPolicy(v EPPVersion, match map[string]int, weights [2]float64, guard ConcurrencyDetectorConfig, threshold float64) *WeightedScoring {
 	p := matchPipeline(v, match)
@@ -866,7 +866,7 @@ func TestRoutingPipeline_DeferredPreRequestAndSingleProduce(t *testing.T) {
 	}
 }
 
-// A CPU-tier approx producer is llm-d's router-side LRU in both curvebender forms —
+// A CPU-tier approx producer is llm-d's router-side LRU in both deployed forms —
 // autoTune (GPU-sized: CacheNumBlocks) and lruCapacityPerServer 30659 — credited at
 // PreRequest; it ignores the CPU tier unless the BLIS opt-in marks it CPUTier.
 func TestApproxProducer_CPUTierFormsAreLRUUnlessOptedIn(t *testing.T) {

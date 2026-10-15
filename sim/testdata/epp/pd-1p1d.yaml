@@ -1,5 +1,5 @@
 # EXTRACTED VERBATIM by scripts/extract_router_profiles.py -- do not edit.
-# source: curvebender-tools@7e4bf4ffa45c091ae3b0870dd8af35536440ee3d:deployments/deepseek-v4.1-flash/scc-h200/router/router-pd.yaml ConfigMap data[pd-plugins.yaml]
+# source: an internal DeepSeek-V4.1 H200 llm-d deployment, P/D router ConfigMap data[pd-plugins.yaml]
 # sha256(extracted text): ce091919d3da1df4cac6df3655999a46f43381d2e8133a84a66d298f32df609c
 apiVersion: llm-d.ai/v1alpha1
 kind: EndpointPickerConfig

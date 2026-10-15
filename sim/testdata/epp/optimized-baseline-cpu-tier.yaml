@@ -1,5 +1,5 @@
 # EXTRACTED VERBATIM by scripts/extract_router_profiles.py -- do not edit.
-# source: curvebender-tools@7e4bf4ffa45c091ae3b0870dd8af35536440ee3d:deployments/deepseek-v4.1-flash/roce-h100/router/router.yaml ConfigMap data[agentic-serving-gpu-cpu-plugins.yaml]
+# source: an internal DeepSeek-V4.1 H100 llm-d deployment, router ConfigMap data[agentic-serving-gpu-cpu-plugins.yaml]
 # sha256(extracted text): 02d426d63ce4c4a9a4452b4b478eb5de5a24c1aaffbbfa97380326b2be3e042b
 apiVersion: llm-d.ai/v1alpha1
 kind: EndpointPickerConfig

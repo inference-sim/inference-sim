@@ -1,6 +1,6 @@
 # DeepSeek-V4.1-Flash on one 8-GPU H200 node under plain tensor parallelism, drafting five tokens
 # a step with DSpark, at a 1,048,576-token context and gpu_memory_utilization 0.80: the
-# deployment curvebender measured with vLLM v0.31.0, whose log reports 61.18 GiB of KV cache and
+# deployment our calibration runs measured with vLLM v0.31.0, whose log reports 61.18 GiB of KV cache and
 # "GPU KV cache size: 28,706,997 tokens" (blis-latency-kernel#46). It pins BLIS's admission
 # capacity to the engine's own figure (#1941).
 #

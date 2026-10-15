@@ -1,5 +1,5 @@
 // Differential conformance harness against llm-d-router v0.10.0 (the EPP image
-// curvebender deploys). A separate module so the inference-sim main module gains
+// our calibration deployments run). A separate module so the inference-sim main module gains
 // no dependency on llm-d-router.
 module github.com/inference-sim/inference-sim/test/llmd-conformance/v0_10_0
 
