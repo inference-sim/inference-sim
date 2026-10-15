@@ -122,6 +122,9 @@ type Simulator struct {
 	prefixCachingDisabled     bool
 	stepEvent                 Event
 	stepCount                 int
+	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
+	// independent engine.
+	lockstep *LockstepGroup
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -505,10 +508,20 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // the last request from RunningBatch.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		step := &StepEvent{time: time}
-		sim.stepEvent = step
-		sim.Schedule(step)
+		sim.scheduleStepAt(time)
 	}
+}
+
+// scheduleStepAt arms this instance's next step at time t. A data-parallel rank in a
+// lockstep group (#1909) asks its group instead, which steps every rank together.
+func (sim *Simulator) scheduleStepAt(t int64) {
+	if sim.lockstep != nil {
+		sim.lockstep.wake(t)
+		return
+	}
+	step := &StepEvent{time: t}
+	sim.stepEvent = step
+	sim.Schedule(step)
 }
 
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
@@ -682,9 +695,7 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 		if clusterTime > stepTime {
 			stepTime = clusterTime
 		}
-		step := &StepEvent{time: stepTime}
-		sim.stepEvent = step
-		sim.Schedule(step)
+		sim.scheduleStepAt(stepTime)
 	}
 }
 
@@ -1075,13 +1086,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Note: scheduled may be empty when all requests are idle (e.g., after
 	// Phase 1 preemption cascade). The LatencyModel contract requires StepTime to
 	// handle an empty batch (return >= 1), and the max(1, ...) floor below guarantees INV-3.
-	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
-	for _, req := range sim.RunningBatch.Requests {
-		if req.NumNewTokens > 0 {
-			scheduled = append(scheduled, req)
-		}
-	}
-	currStepAdvance := sim.latencyModel.StepTime(scheduled)
+	currStepAdvance := sim.latencyModel.StepTime(sim.scheduledRequests())
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
@@ -1090,6 +1095,25 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// All LatencyModel implementations must return >= 1 per interface contract;
 	// this floor catches violations that would cause infinite livelock.
 	currStepAdvance = max(1, currStepAdvance)
+	sim.advanceBatch(now, currStepAdvance)
+	return currStepAdvance
+}
+
+// scheduledRequests is the running batch's members FormBatch allocated tokens to this
+// step: the requests the forward pass runs.
+func (sim *Simulator) scheduledRequests() []*Request {
+	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
+	for _, req := range sim.RunningBatch.Requests {
+		if req.NumNewTokens > 0 {
+			scheduled = append(scheduled, req)
+		}
+	}
+	return scheduled
+}
+
+// advanceBatch applies one step of currStepAdvance ticks to the running batch: progress,
+// ITL, TTFT and the KV usage observation.
+func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -1140,8 +1164,6 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 
 	// Record KV cache usage observations after execution
 	sim.recordKVUsageMetrics(currStepAdvance)
-
-	return currStepAdvance
 }
 
 // processCompletions handles Phase 3: identifies completed requests, performs state
@@ -1281,9 +1303,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		sim.RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
 		//
-		pbe := StepEvent{time: now + currStepAdvance}
-		sim.Schedule(&pbe)
-		sim.stepEvent = &pbe
+		sim.scheduleStepAt(now + currStepAdvance)
 	} else {
 		sim.RunningBatch = nil
 		sim.stepEvent = nil
@@ -1303,9 +1323,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one
 		// step per tick for the whole load. Inert when no LoRA (loadingAdapter == "").
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
-			pbe := StepEvent{time: now + currStepAdvance}
-			sim.Schedule(&pbe)
-			sim.stepEvent = &pbe
+			sim.scheduleStepAt(now + currStepAdvance)
 		}
 	}
 }

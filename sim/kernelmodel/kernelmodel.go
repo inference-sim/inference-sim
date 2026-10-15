@@ -88,6 +88,8 @@ type Model struct {
 	// specTokens is the pool's draft length (engine.speculative.num_spec_tokens), 0 when it
 	// does not speculate. See batchOf.
 	specTokens int
+	// pad is how a lockstep data-parallel step pads this pool's ranks (#1909).
+	pad dpPadding
 
 	// Host costs are invariant per kernel, so they are converted to ticks once. StepTime
 	// is called once per simulated step; a Duration-to-ticks division per call is wasted.
@@ -228,6 +230,7 @@ func newModel(k kernel.Kernel, id identity) *Model {
 		decodeThreshold:  max(DecodeThreshold, 1+spec),
 		smBudget:         id.smCount,
 		specTokens:       spec,
+		pad:              dpPaddingOf(k, spec),
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
 	}
