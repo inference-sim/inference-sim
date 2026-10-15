@@ -17,6 +17,26 @@ type KVStore interface {
 	MirrorToCPU(batch []*Request) // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
 }
 
+// PrefixCacheCounts are a KV store's cumulative prefix-cache tallies, in blocks. HitBlocks
+// over LookupBlocks is exactly the store's CacheHitRate, and ThrashEvents over
+// ThrashOpportunities its KVThrashingRate; CPUHitBlocks counts blocks reloaded from the CPU
+// tier (zero for a single-tier store). The counts, not the rates, are what aggregate across
+// instances (#1904).
+type PrefixCacheCounts struct {
+	HitBlocks           int64
+	LookupBlocks        int64
+	CPUHitBlocks        int64
+	ThrashEvents        int64
+	ThrashOpportunities int64
+}
+
+// PrefixCacheCounter is the optional capability a KVStore implements to report the counts
+// behind its rates. Every production store implements it; an instance whose store does not
+// contributes no lookups to the cluster hit rate.
+type PrefixCacheCounter interface {
+	PrefixCacheCounts() PrefixCacheCounts
+}
+
 // DeferrableKVStore is the optional capability a KVStore implements when it can
 // defer a new prefill admission that needs KV blocks resident only on a secondary
 // (disk/object-store) offload tier, and re-poll it at each scheduler step instead

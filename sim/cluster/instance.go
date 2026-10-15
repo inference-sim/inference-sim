@@ -10,6 +10,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
+	"github.com/sirupsen/logrus"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -157,6 +158,20 @@ func (i *InstanceSimulator) Finalize() {
 	// Capture KV metrics at finalization for CollectRawMetrics
 	i.sim.Metrics.CacheHitRate = i.sim.KVCache.CacheHitRate()
 	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+	// The counts behind the rates, in tokens, so the cluster aggregate weights each
+	// instance by the prompt tokens it looked up (#1904).
+	if c, ok := i.sim.KVCache.(sim.PrefixCacheCounter); ok {
+		counts := c.PrefixCacheCounts()
+		bs := i.sim.KVCache.BlockSize()
+		i.sim.Metrics.PrefixCacheHitTokens = counts.HitBlocks * bs
+		i.sim.Metrics.PrefixCacheLookupTokens = counts.LookupBlocks * bs
+		i.sim.Metrics.CPUTierHitTokens = counts.CPUHitBlocks * bs
+		i.sim.Metrics.KVThrashEvents = counts.ThrashEvents
+		i.sim.Metrics.KVThrashOpportunities = counts.ThrashOpportunities
+	} else {
+		logrus.Warnf("instance %s: KV store %T reports no prefix-cache counts; it contributes "+
+			"no lookups to the cluster cache_hit_rate", i.id, i.sim.KVCache)
+	}
 }
 
 // QueueDepth returns the number of requests in the wait queue.

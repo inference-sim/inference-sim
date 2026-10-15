@@ -301,6 +301,18 @@ func (o *OffloadCache) KVThrashingRate() float64 {
 	return float64(o.promotionsFailed) / float64(attempts)
 }
 
+// PrefixCacheCounts implements sim.PrefixCacheCounter: the tallies behind CacheHitRate and
+// KVThrashingRate, plus the blocks reloaded from the CPU tier.
+func (o *OffloadCache) PrefixCacheCounts() sim.PrefixCacheCounts {
+	return sim.PrefixCacheCounts{
+		HitBlocks:           o.gpu.CacheHits,
+		LookupBlocks:        o.gpu.CacheHits + o.gpu.CacheMisses + o.offloadMissCount,
+		CPUHitBlocks:        o.reloadCount,
+		ThrashEvents:        o.promotionsFailed,
+		ThrashOpportunities: o.promotionsFired + o.promotionsFailed,
+	}
+}
+
 // SetClock advances the offload clock and applies transfer completions. It is the
 // ONLY point completions are applied (never reading the station's internal
 // pendingCompleted mid-step), and it runs at the top of each step before batch

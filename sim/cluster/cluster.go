@@ -1764,14 +1764,21 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.DroppedUnservable += m.DroppedUnservable
 		merged.LengthCappedRequests += m.LengthCappedRequests
 		merged.TimedOutRequests += m.TimedOutRequests
-		merged.CacheHitRate += m.CacheHitRate
-		merged.KVThrashingRate += m.KVThrashingRate
+		merged.PrefixCacheHitTokens += m.PrefixCacheHitTokens
+		merged.PrefixCacheLookupTokens += m.PrefixCacheLookupTokens
+		merged.CPUTierHitTokens += m.CPUTierHitTokens
+		merged.KVThrashEvents += m.KVThrashEvents
+		merged.KVThrashOpportunities += m.KVThrashOpportunities
 		merged.StillQueued += m.StillQueued
 		merged.StillRunning += m.StillRunning
 	}
-	if n := len(c.instances); n > 0 {
-		merged.CacheHitRate /= float64(n)
-		merged.KVThrashingRate /= float64(n)
+	// Hits over lookups summed across instances, not a mean of per-instance rates, so an
+	// idle or decode-only instance does not dilute the cluster figure (#1904).
+	if merged.PrefixCacheLookupTokens > 0 {
+		merged.CacheHitRate = float64(merged.PrefixCacheHitTokens) / float64(merged.PrefixCacheLookupTokens)
+	}
+	if merged.KVThrashOpportunities > 0 {
+		merged.KVThrashingRate = float64(merged.KVThrashEvents) / float64(merged.KVThrashOpportunities)
 	}
 
 	// T042: apply warm-up TTFT factor to requests served during warm-up (Phase 1A, R23).
