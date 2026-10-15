@@ -209,7 +209,7 @@ the ranks. BLIS therefore steps the group's ranks together:
   request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
   divided by it, stop at its last real event.
 
-**How requests reach ranks: `--dp-load-balancing`.** vLLM v0.31.0's serve flags choose
+**How requests reach ranks: `parallel.data_parallel_load_balancing` (or `--dp-load-balancing`, which may only restate a mode the scenario states).** vLLM v0.31.0's serve flags choose
 (`vllm/engine/arg_utils.py:536-538, 1225-1242`; `EngineCoreClient.make_async_mp_client`,
 `vllm/v1/engine/core_client.py:155-166`), and lockstep is the same in every mode:
 
