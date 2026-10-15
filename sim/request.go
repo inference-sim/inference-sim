@@ -90,6 +90,8 @@ type Request struct {
 	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
 	PrefixLength    int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
 	Streaming       bool    // Whether client expects streaming response
+	// Agentic identifies a request of an agentic session-tree replay (#1937); nil otherwise.
+	Agentic *AgenticTag
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).

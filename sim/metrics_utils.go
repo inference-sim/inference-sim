@@ -29,6 +29,9 @@ type RequestMetrics struct {
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
 	Phase             Phase   `json:"phase,omitempty"`                  // #1938: benchmark phase; "" = measured
+	// Agentic is the request's agentic-replay tag (#1937), shared with the Request, so its
+	// Outcome reads as the request ended. Absent for every other workload.
+	Agentic *AgenticTag `json:"agentic,omitempty"`
 	// OutputTokens is the count the request emitted (aiperf's OSL), set at completion. It
 	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
 	OutputTokens int `json:"output_tokens,omitempty"`
@@ -68,6 +71,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		SessionID:        req.SessionID,
 		RoundIndex:       req.RoundIndex,
 		Phase:            req.Phase,
+		Agentic:          req.Agentic,
 	}
 	// Flow control: compute gateway queue delay when timestamps are set (#882)
 	if req.GatewayDispatchTime > 0 && req.GatewayEnqueueTime > 0 {

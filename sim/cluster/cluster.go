@@ -149,6 +149,9 @@ type ClusterSimulator struct {
 	// non-decreasing ArrivalTime order the cluster enqueues them.
 	// fireArrivalHook() panics on a regression.
 	arrivalHook         func(*sim.Request)
+	// arrivalGate, when set, decides at each arrival whether the client sends it
+	// (arrival_gate.go). Nil for every workload but the agentic replay.
+	arrivalGate ArrivalGate
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
