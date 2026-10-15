@@ -112,8 +112,10 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 		ByConcurrency: map[string]*PointSettings{"4": &ps}}}}
 	gaps = gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set})
-	// The schema has no field for the capture size.
-	if !hasGap(gaps, OwnerSchemas, "run setting blis-schemas cannot express: max_cudagraph_capture_size") {
+	// The schema states the capture size since blis-schemas#72, and the harness does not yet
+	// carry it into the variant, so it is a gap BLIS owns.
+	const captureGap = "run setting not carried into the simulation: max_cudagraph_capture_size"
+	if !hasGap(gaps, OwnerSim, captureGap) {
 		t.Errorf("gaps lack max_cudagraph_capture_size: %+v", gaps)
 	}
 	// Expert parallelism was not passed: vLLM's unconditional default, not a gap. The batch
@@ -125,7 +127,7 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	// gpu_memory_utilization the committed scenario states differently; prefix caching is off,
 	// so the warm-up leaves nothing the main phase can read.
 	for _, g := range gaps {
-		if g.Concurrency != 4 {
+		if g.Concurrency != 4 || g.Cause == captureGap {
 			continue
 		}
 		if strings.HasPrefix(g.Cause, "run setting not carried") || strings.HasPrefix(g.Cause, "warm-up") ||

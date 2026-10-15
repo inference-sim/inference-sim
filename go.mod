@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.2.0
-	github.com/inference-sim/blis-schemas v0.3.0
+	github.com/inference-sim/blis-schemas v0.3.1-0.20261015030426-1a9978ea32ad
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.7.0
@@ -24,10 +24,10 @@ require (
 )
 
 // TODO(#1939): development pin to a local checkout of blis-schemas dsv41/acceptance-profile
-// (148d08e). The final PR pins the pushed schemas PR branch commit instead.
+// (d4c35bc). The final PR pins the pushed schemas PR branch commit instead.
 replace github.com/inference-sim/blis-schemas => ../blis-schemas-accept-pin
 
 // TODO(#1941): development pin to a local checkout of blis-latency-kernel
-// dsv41/h100-capacity-fidelity (da85be7, blis-latency-kernel#46) for SequenceAdmissionBytes.
+// dsv41/h100-capacity-fidelity (4918440; SequenceAdmissionBytes from blis-latency-kernel#46) for SequenceAdmissionBytes.
 // The final PR pins the pushed kernel branch commit instead.
 replace github.com/inference-sim/blis-latency-kernel => ../blis-latency-kernel-accept-pin
