@@ -515,7 +515,14 @@ blis replay --agentic-scenario inferencex-agentx-mvp \
   --metrics-path out.json
 ```
 
-or `--workload-spec <file>` with a blis-schemas replay descriptor (`replay:`), which the
+`examples/agentx-dsv41-flash-h100-2x-tp8-dspark5.yaml` is a two-replica DeepSeek-V4.1-Flash
+H100 deployment to run it on. A sweep over concurrencies can add `--corpus-cache <dir>`:
+the first run writes a binary snapshot of the parsed corpus (keyed by the corpus digest,
+the max-context filter, chain splitting and the build), later runs load it in well under a
+second instead of re-parsing the JSON, and a missing, damaged or mismatched snapshot is
+ignored, logged and rewritten -- output is byte-identical either way.
+
+The workload can also be given as `--workload-spec <file>` with a blis-schemas replay descriptor (`replay:`), which the
 flags override; the descriptor is validated as aiperf's scenario validator validates the
 scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
 refused). The corpus is streamed once and refused on a digest mismatch.

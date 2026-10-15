@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -32,6 +35,7 @@ var (
 	agxBenchmarkDur     time.Duration
 	agxGracePeriod      string
 	agxMaxContextLength string
+	agxCorpusCache      string
 )
 
 func registerAgentXReplayFlags(c *cobra.Command) {
@@ -42,6 +46,7 @@ func registerAgentXReplayFlags(c *cobra.Command) {
 	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests)")
 	c.Flags().DurationVar(&agxBenchmarkDur, "benchmark-duration", 0, "With --agentic-scenario: the profiling sending window (at least 900s; scenario default 1800s)")
 	c.Flags().StringVar(&agxGracePeriod, "grace-period", "", `With --agentic-scenario: how long requests in flight at the end of the window may finish before they are cancelled without a record (a duration or "inf"; default 30s)`)
+	c.Flags().StringVar(&agxCorpusCache, "corpus-cache", "", "With --agentic-scenario: a directory for parsed-corpus snapshots, keyed by the corpus sha256, the max-context filter, chain splitting and this build. A run that finds a valid snapshot skips the JSON parse; a missing, damaged or mismatched one is ignored (and logged) and rewritten. Output is identical with or without it")
 	c.Flags().StringVar(&agxMaxContextLength, "max-context-length", "", `With --agentic-scenario: drop every trace whose peak prompt + max(output, 1) exceeds this ("max_model_len" = the deployment's resolved max_model_len, or a token count; default no filter)`)
 }
 
@@ -177,7 +182,22 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		logrus.Fatalf("%v", err)
 	}
 	t0 := time.Now()
-	corpus, err := simworkload.LoadAgentXCorpus(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents())
+	var corpus *simworkload.AgentXCorpus
+	if agxCorpusCache == "" {
+		corpus, err = simworkload.LoadAgentXCorpus(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents())
+	} else {
+		var res simworkload.AgentXCacheResult
+		corpus, res, err = simworkload.LoadAgentXCorpusCached(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents(), agxCorpusCache, agentXBuildKey())
+		switch {
+		case res.Hit:
+			logrus.Infof("agentic replay: corpus snapshot %s", res.Path)
+		case res.Ignored != "":
+			logrus.Warnf("agentic replay: ignoring corpus snapshot %s (%s); parsed the corpus afresh", res.Path, res.Ignored)
+		}
+		if res.WriteErr != nil {
+			logrus.Warnf("agentic replay: could not write corpus snapshot %s: %v", res.Path, res.WriteErr)
+		}
+	}
 	if err != nil {
 		logrus.Fatalf("agentic replay corpus: %v", err)
 	}
@@ -218,6 +238,25 @@ func (a *agentXRun) emitOptions(m *sim.Metrics) []sim.EmitOption {
 	ps, pe := a.driver.Window()
 	m.MeasuredWindow = &sim.MeasuredWindow{StartUs: ps, EndUs: pe}
 	return []sim.EmitOption{sim.WithAgentic(a.summary())}
+}
+
+// agentXBuildKey identifies this build for the corpus cache: the digest of the running
+// executable, so a snapshot written by any other build -- including an uncommitted edit
+// with the same VCS revision -- is never used.
+func agentXBuildKey() string {
+	exe, err := os.Executable()
+	if err == nil {
+		var f *os.File
+		if f, err = os.Open(exe); err == nil {
+			defer func() { _ = f.Close() }()
+			h := sha256.New()
+			if _, err = io.Copy(h, f); err == nil {
+				return hex.EncodeToString(h.Sum(nil))
+			}
+		}
+	}
+	// Unknown build: a key no other process shares, so the cache is never reused.
+	return fmt.Sprintf("unknown-%d-%d", os.Getpid(), time.Now().UnixNano())
 }
 
 // summary is the results file's agentic block.

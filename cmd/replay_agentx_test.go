@@ -40,7 +40,7 @@ func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 		restore.restore()
 		replaySessionMode, replayMetricsPath = origSession, origMetrics
 		agxScenarioFlag, agxWorkloadSpec, agxCorpusPath, agxCorpusSHA256 = "", "", "", ""
-		agxConcurrency, agxBenchmarkDur, agxGracePeriod, agxMaxContextLength = 0, 0, "", ""
+		agxConcurrency, agxBenchmarkDur, agxGracePeriod, agxMaxContextLength, agxCorpusCache = 0, 0, "", "", ""
 	}()
 	catalogDir := setupKernelTestFixtures(t)
 	metrics := filepath.Join(t.TempDir(), "m.json")
@@ -216,5 +216,31 @@ func TestReplayAgentX_WorkloadSpecWithFlagOverrides(t *testing.T) {
 		if m.Agentic.Lanes != tc.lanes || m.Agentic.MaxContextLength <= 0 {
 			t.Errorf("%v: %d lanes (want %d), max_context_length %d", tc.args, m.Agentic.Lanes, tc.lanes, m.Agentic.MaxContextLength)
 		}
+	}
+}
+
+// TestReplayAgentX_CorpusCacheIsInvisible: a run that writes the corpus snapshot and a run
+// that reads it are byte-identical, on stdout and in the results file, to a run without the
+// cache (INV-6), and a damaged snapshot is ignored and rewritten.
+func TestReplayAgentX_CorpusCacheIsInvisible(t *testing.T) {
+	dir := t.TempDir()
+	base, fbase := runAgentXReplay(t, "--concurrency", "2")
+	miss, fmiss := runAgentXReplay(t, "--concurrency", "2", "--corpus-cache", dir)
+	snaps, _ := filepath.Glob(filepath.Join(dir, "agentx-corpus-*.bin"))
+	if len(snaps) != 1 {
+		t.Fatalf("snapshots written: %v", snaps)
+	}
+	hit, fhit := runAgentXReplay(t, "--concurrency", "2", "--corpus-cache", dir)
+	if err := os.WriteFile(snaps[0], []byte("damaged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dmg, fdmg := runAgentXReplay(t, "--concurrency", "2", "--corpus-cache", dir)
+	for name, out := range map[string][2][]byte{"miss": {miss, fmiss}, "hit": {hit, fhit}, "damaged": {dmg, fdmg}} {
+		if !bytes.Equal(out[0], base) || !bytes.Equal(out[1], fbase) {
+			t.Errorf("%s: output differs from an uncached run", name)
+		}
+	}
+	if b, _ := os.ReadFile(snaps[0]); bytes.Equal(b, []byte("damaged")) {
+		t.Error("the damaged snapshot was not rewritten")
 	}
 }
