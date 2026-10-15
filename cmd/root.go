@@ -1130,6 +1130,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// setting -- block size, sequence and token caps, max_model_len, prefix caching, cache
 	// dtype, speculation -- is the scenario's, and the KV budget is the kernel's.
 	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	registerFrontendFlags(cmd)
 
 	// The deployment: a blis-schemas scenario (model, hardware, fabric, pools, engines)
 	// priced by blis-latency-kernel with the coefficient sets it names.
@@ -1972,6 +1973,7 @@ var runCmd = &cobra.Command{
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
+				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.
 				LatencyModel: lr.KernelModel,

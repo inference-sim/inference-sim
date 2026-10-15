@@ -143,6 +143,8 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
+| `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
+| `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
 | `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 ## Latency Model

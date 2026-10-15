@@ -42,13 +42,17 @@ func (e *ArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
-	// Trigger queued event with processing delay
-	queued_delay := sim.latencyModel.QueueingTime(e.Request) // coming from alpha model
+	// The admission overhead (render + tokenize) runs on the endpoint's render stage when
+	// one is configured, so it queues behind earlier requests (INV-R1).
+	render := sim.latencyModel.QueueingTime(e.Request)
+	queuedAt := e.time + render
+	if sim.renderer != nil {
+		queuedAt = sim.renderer.Admit(e.time, render)
+	}
 	sim.Schedule(&QueuedEvent{
-		time:    e.time + queued_delay,
+		time:    queuedAt,
 		Request: e.Request,
 	})
-
 }
 
 // QueuedEvent represents the queue of a new inference request into the system.

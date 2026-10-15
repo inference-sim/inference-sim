@@ -85,6 +85,10 @@ type SimConfig struct {
 	// explicitly if ever needed.
 	SpeculativeConfig
 
+	// Frontend is the API-server render stage (INV-R1). Its zero value is inert: a request's
+	// admission overhead (LatencyModel.QueueingTime) is then an uncontended per-request delay.
+	Frontend FrontendConfig
+
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
 	// Shared with admission: same overrides flow from policy bundle slo_priorities.
@@ -153,6 +157,9 @@ type Simulator struct {
 	sloMap         *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
 	latencyModel   LatencyModel
+	// renderer is the endpoint's render stage (INV-R1), shared by the ranks of an internal-balancer
+	// DP replica; nil when FrontendConfig is inert.
+	renderer *Renderer
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
@@ -242,6 +249,17 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.scheduler = NewScheduler(cfg.Scheduler)
+
+	if err := cfg.Frontend.Validate(); err != nil {
+		return nil, fmt.Errorf("NewSimulator: %w", err)
+	}
+	if cfg.Frontend.Enabled() {
+		r, err := NewRenderer(max(cfg.Frontend.APIServerCount, 1), cfg.Frontend.RendererNumWorkers)
+		if err != nil {
+			return nil, err
+		}
+		s.renderer = r
+	}
 
 	// Defense-in-depth: reject a non-positive adapter capacity here rather than
 	// letting it reach newResidentSet as a panic. cmd/ validates via LoRAConfig.Validate,
