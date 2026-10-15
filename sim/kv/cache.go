@@ -398,19 +398,46 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	return true
 }
 
-// chargeSequenceIfRoom charges a request the fixed per-sequence blocks it does not yet hold
-// and tops up its slot reservation for endIndex, or reports false, charging nothing, when the
-// free list cannot supply them. For an offload tier that admits a request by committing
-// reloaded blocks alone, without AllocateKVBlocks.
-func (kvc *KVCacheState) chargeSequenceIfRoom(reqID string, endIndex int64) bool {
+// sequenceFits reports whether an allocation of a request up to endIndex, claiming
+// cachedBlocks on a first allocation, finds every block it needs on the free list: its
+// token blocks not already held or claimable in use, its fixed per-sequence blocks (#1941)
+// and its slot reservation (#1627), counted as AllocateKVBlocks' own pre-check counts them.
+// The offload tiers ask it before they reload anything, so a refusal leaves no side effect
+// (vLLM's allocate_slots likewise refuses before it touches a block). Always true when the
+// store charges neither term, which keeps those runs byte-identical.
+func (kvc *KVCacheState) sequenceFits(reqID string, endIndex int64, cachedBlocks []int64) bool {
+	fixedNeed := kvc.fixedBlocksNeeded(reqID)
+	if fixedNeed == 0 && !kvc.Speculative.Enabled {
+		return true
+	}
+	held := util.Len64(kvc.RequestMap[reqID])
+	var claimed, claimedFromFree int64
+	if held == 0 {
+		claimed = util.Len64(cachedBlocks)
+		for _, id := range cachedBlocks {
+			if !kvc.Blocks[id].InUse {
+				claimedFromFree++
+			}
+		}
+	}
+	tokenBlocks := max((endIndex+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-held-claimed, 0)
+	need := claimedFromFree + fixedNeed + kvc.slotBlocksFromFree(reqID, endIndex, held+claimed, tokenBlocks)
+	return need <= kvc.countFreeBlocks()
+}
+
+// chargeSequence charges a request the fixed per-sequence blocks it does not yet hold and
+// tops up its slot reservation for endIndex, for an offload tier that admits or extends a
+// request by committing reloaded blocks alone, without AllocateKVBlocks. The tier checked
+// sequenceFits before reloading, so the free list holds them; a shortfall is an INV-4 bug.
+func (kvc *KVCacheState) chargeSequence(reqID string, endIndex int64) {
 	need := kvc.fixedBlocksNeeded(reqID)
 	slots := kvc.slotBlocksFromFree(reqID, endIndex, util.Len64(kvc.RequestMap[reqID]), 0)
 	if need+slots > kvc.countFreeBlocks() {
-		return false
+		panic(fmt.Sprintf("charging req %s %d fixed + %d slot blocks with %d free after sequenceFits passed: INV-4 violation",
+			reqID, need, slots, kvc.countFreeBlocks()))
 	}
 	kvc.chargeFixedBlocks(reqID, need)
 	kvc.reserveSlots(reqID, endIndex)
-	return true
 }
 
 // fixedBlocksNeeded is how many fixed per-sequence blocks a request still has to be charged:
@@ -433,6 +460,9 @@ func (kvc *KVCacheState) slotTarget(endIndex int64) int64 {
 		return 0
 	}
 	slots := endIndex + kvc.Speculative.LookaheadTokens
+	if m := kvc.Speculative.MaxModelLen; m > 0 {
+		slots = min(slots, max(m, endIndex)) // min(... + lookahead, max_model_len), kv_cache_manager.py:536-538
+	}
 	return (slots + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 }
 

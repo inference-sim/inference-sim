@@ -291,3 +291,24 @@ func TestLookaheadTokensFollowVLLMsNumLookaheadTokens(t *testing.T) {
 		t.Errorf("a non-speculating config reserves %+v; it must reserve nothing", got)
 	}
 }
+
+// Review I3: a P/D decode sub-request admitted near max_model_len schedules no more of its
+// verify width than the window leaves, as the running path does (scheduler.py:686-692).
+func TestSpecDecode_ADecodeSubRequestsVerifyWidthStopsAtMaxModelLen(t *testing.T) {
+	const k, maxModelLen = 5, 20
+	kv := MustNewKVCacheState(100, 4)
+	r := &Request{ID: "d", InputTokens: make([]TokenID, 17), OutputTokens: make([]TokenID, 8),
+		State: StateQueued, IsDecodeSubRequest: true}
+	if !kv.AllocateKVBlocks(r, 0, 17, nil) {
+		t.Fatal("setup refused")
+	}
+	r.ProgressIndex = 17
+	wq := &WaitQueue{}
+	wq.Enqueue(r)
+	NewBatchFormation("").FormBatch(BatchContext{RunningBatch: &Batch{}, WaitQ: wq, KVCache: kv,
+		MaxNumBatchedTokens: 100, MaxNumSeqs: 4, MaxModelLen: maxModelLen, ComputedTokens: map[string]int64{},
+		DecodeTokensPerStep: func(*Request) int64 { return 1 }, SpecVerifyWidth: k + 1})
+	if want := int64(maxModelLen - 1 - 17); r.scheduledTokens != want {
+		t.Errorf("scheduled %d tokens at progress 17 of a %d-token window, want %d", r.scheduledTokens, maxModelLen, want)
+	}
+}

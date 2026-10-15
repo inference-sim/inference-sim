@@ -298,3 +298,101 @@ func TestReusingAStaleHashedBlockKeepsTheLiveMapping(t *testing.T) {
 	}
 	assertBlockConservation(t, kvc)
 }
+
+// freeListIDs is the GPU free list, head first.
+func freeListIDs(kvc *KVCacheState) []int64 {
+	var ids []int64
+	for b := kvc.FreeHead; b != nil; b = b.NextFree {
+		ids = append(ids, b.ID)
+	}
+	return ids
+}
+
+// cpuResidentPrompt puts an 8-token prompt's two blocks on the legacy CPU tier and evicts
+// them from the GPU, so admitting it means a CPU->GPU reload.
+func cpuResidentPrompt(t *testing.T, tiered *TieredKVCache, gpu *KVCacheState) []sim.TokenID {
+	t.Helper()
+	prompt := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8}
+	r := &sim.Request{ID: "seed", InputTokens: prompt}
+	if !tiered.AllocateKVBlocks(r, 0, 8, nil) {
+		t.Fatal("seed refused")
+	}
+	for _, id := range gpu.RequestMap["seed"] {
+		tiered.cpu.store(gpu.Blocks[id].Hash, append([]sim.TokenID(nil), gpu.Blocks[id].Tokens...))
+	}
+	tiered.ReleaseKVBlocks(r)
+	for _, b := range gpu.Blocks { // the GPU copies are gone
+		gpu.dropHash(b)
+	}
+	return prompt
+}
+
+// Review I1: an admission refused for want of its fixed blocks (#1941) is refused before the
+// CPU tier is consulted, as vLLM's allocate_slots refuses before it touches a block: no
+// reload, no transfer latency, no cache hit, the free list as it was.
+func TestARefusedReloadAdmissionHasNoSideEffects(t *testing.T) {
+	gpu := NewKVCacheState(6, 4)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
+	prompt := cpuResidentPrompt(t, tiered, gpu)
+	gpu.SequenceFixedBlocks = 5 // 2 token blocks + 5 fixed > 6
+
+	free, latency, hits, cpuHits := freeListIDs(gpu), tiered.PendingTransferLatency(), gpu.CacheHits, tiered.cpuHitCount
+	req := &sim.Request{ID: "r", InputTokens: append([]sim.TokenID(nil), prompt...)}
+	if tiered.AllocateKVBlocks(req, 0, 8, nil) {
+		t.Fatal("admitted a sequence whose fixed blocks do not fit")
+	}
+	if got := freeListIDs(gpu); fmt.Sprint(got) != fmt.Sprint(free) {
+		t.Errorf("free list reordered: %v -> %v", free, got)
+	}
+	if tiered.PendingTransferLatency() != latency || gpu.CacheHits != hits || tiered.cpuHitCount != cpuHits {
+		t.Errorf("side effects: latency %d->%d, cache hits %d->%d, cpu hits %d->%d", latency,
+			tiered.PendingTransferLatency(), hits, gpu.CacheHits, cpuHits, tiered.cpuHitCount)
+	}
+	if len(gpu.RequestMap) != 0 || len(gpu.FixedBlocks) != 0 {
+		t.Errorf("the refused request holds blocks: %v %v", gpu.RequestMap, gpu.FixedBlocks)
+	}
+	assertBlockConservation(t, gpu)
+}
+
+// Review I2: a reload that covers a request's whole allocation still charges its fixed
+// blocks and its speculative slots -- for a new request and for a running one -- as vLLM
+// passes num_lookahead_tokens to every allocate_slots (scheduler.py:745-751, 1214).
+func TestAFullyReloadedAllocationHoldsItsSlotsAndFixedBlocks(t *testing.T) {
+	gpu := NewKVCacheState(32, 4)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
+	prompt := cpuResidentPrompt(t, tiered, gpu)
+	gpu.SequenceFixedBlocks = 2
+	gpu.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: 5}
+	reloadsBefore := tiered.cpuHitCount
+
+	req := &sim.Request{ID: "r", InputTokens: append([]sim.TokenID(nil), prompt...)}
+	if !tiered.AllocateKVBlocks(req, 0, 8, nil) {
+		t.Fatal("refused")
+	}
+	if tiered.cpuHitCount-reloadsBefore != 2 {
+		t.Fatalf("expected the whole prompt reloaded from CPU, %d blocks were", tiered.cpuHitCount-reloadsBefore)
+	}
+	// 8 tokens + 5 lookahead = 13 slots = 4 blocks: 2 reloaded token blocks + 2 spare, + 2 fixed.
+	if got := held(gpu, "r"); got != 4+2 {
+		t.Errorf("a fully reloaded admission holds %d blocks, want 4 slot blocks + 2 fixed", got)
+	}
+	assertBlockConservation(t, gpu)
+}
+
+// Review I3: the slot reservation never reaches past max_model_len, as vLLM caps
+// num_tokens_need_slot = min(computed + new + lookahead, max_model_len)
+// (kv_cache_manager.py:536-538 at v0.31.0).
+func TestSpeculativeSlotsStopAtMaxModelLen(t *testing.T) {
+	for _, tt := range []struct {
+		maxModelLen, want int64
+	}{{0, 4}, {10, 3}, {13, 4}} { // 8 tokens + 5 lookahead = 13 slots
+		kvc := NewKVCacheState(32, 4)
+		kvc.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: 5, MaxModelLen: tt.maxModelLen}
+		if !kvc.AllocateKVBlocks(promptRequest("r", 8), 0, 8, nil) {
+			t.Fatal("refused")
+		}
+		if got := held(kvc, "r"); got != tt.want {
+			t.Errorf("max_model_len %d: holds %d blocks, want %d", tt.maxModelLen, got, tt.want)
+		}
+	}
+}

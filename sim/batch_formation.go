@@ -356,7 +356,13 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			// never below the advance.
 			scheduled := decodeTokens
 			if ctx.SpecVerifyWidth > 0 {
-				scheduled = max(decodeTokens, min(ctx.SpecVerifyWidth, tokenBudget))
+				w := min(ctx.SpecVerifyWidth, tokenBudget)
+				if ctx.MaxModelLen > 0 {
+					// As Phase 1: num_new_tokens <= max_model_len - num_computed - 1
+					// (scheduler.py:686-692 at v0.31.0).
+					w = min(w, max(ctx.MaxModelLen-1-next.ProgressIndex, 0))
+				}
+				scheduled = max(decodeTokens, w)
 			}
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+scheduled, nil); !ok {
 				break

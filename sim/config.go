@@ -49,6 +49,9 @@ type KVSpeculation struct {
 	// LookaheadTokens is vLLM's VllmConfig.num_lookahead_tokens (see
 	// SpeculativeConfig.LookaheadTokens).
 	LookaheadTokens int64
+	// MaxModelLen caps the slots a request holds, as vLLM caps num_tokens_need_slot at
+	// max_model_len (kv_cache_manager.py:536-538 at v0.31.0); 0 is uncapped.
+	MaxModelLen int64
 }
 
 // KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the

@@ -55,6 +55,7 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// The KV slot reservation is the speculative config's (#1627), never set apart from it.
 	kvCfg := cfg.KVCacheConfig
 	kvCfg.Speculative = cfg.KV()
+	kvCfg.Speculative.MaxModelLen = cfg.MaxModelLen
 	kvStore := kv.NewKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// wrap the latency model with it so the per-step compute overhead applies
