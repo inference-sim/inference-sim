@@ -93,15 +93,23 @@ func (c *ClusterSimulator) HeldPrefillKVTokens(id string) int64 {
 }
 
 // expireLeaseOfVanishedDecode schedules the release of parent's held KV for when NIXL's lease
-// runs out after its decode side vanished at now: the later of the request's first deadline
-// (prefill completion + lease) and the extension the decode side's last heartbeat granted, at
-// most now (2/3 of a lease, base_worker.py:563-567).
+// runs out after a decode engine that had the request vanished at now: the later of the
+// request's first deadline (prefill completion + lease) and the extension its last heartbeat
+// granted. Heartbeats go out every lease/6 and extend to 2/3 of a lease from then
+// (nixl/base_scheduler.py:87, base_worker.py:563-567, 3084-3096), so the last one came at most
+// lease/6 before now and the true expiry lies in [now + lease/2, now + 2/3 lease] -- 15 s to
+// 20 s after the vanish at the default 30 s lease. BLIS takes the upper end, a heartbeat at the
+// vanish itself.
 func (c *ClusterSimulator) expireLeaseOfVanishedDecode(parent *ParentRequest, now int64) {
+	lease := c.pdKVLeaseUs()
+	c.expirePrefillLease(parent, max(parent.PrefillCompleteTime+lease, now+lease*2/3))
+}
+
+// expirePrefillLease schedules the release of parent's held prefill KV at expiry.
+func (c *ClusterSimulator) expirePrefillLease(parent *ParentRequest, expiry int64) {
 	if _, held := c.prefillHolds[parent.ID]; !held {
 		return
 	}
-	lease := c.pdKVLeaseUs()
-	expiry := max(parent.PrefillCompleteTime+lease, now+lease*2/3)
 	heap.Push(&c.clusterEvents, clusterEventEntry{
 		event: &PrefillKVLeaseExpiredEvent{time: expiry, parentReq: parent},
 		seqID: c.nextSeqID(),

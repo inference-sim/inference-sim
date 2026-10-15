@@ -560,13 +560,43 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 #### INV-PD-7: Prefill KV Hold
 
-**Statement:** With `DeploymentConfig.PDPrefillKVHold` (every kernel P/D run: a NIXL handoff), a finished prefill sub-request's KV blocks stay allocated on its prefill instance from prefill completion until (a) the decode side's pull completes (`KVTransferCompletedEvent`), (b) at once, when the decode side never took the request (drop at transfer start), or (c) at lease expiry, `max(prefill_complete + lease, vanish + 2/3·lease)`, when the decode instance became unroutable mid-pull. The held KV is a subset of what the prefill instance has allocated, equal to it when nothing else is queued or running there, never exceeds its capacity, and is fully released by the end of an unbounded run.
+**Statement:** With `DeploymentConfig.PDPrefillKVHold` (every kernel P/D run: a NIXL handoff), a finished prefill sub-request's KV blocks stay allocated on its prefill instance from prefill completion until one of these:
 
-**Source:** vLLM v0.31.0 `nixl/pull_scheduler.py:247-266` (`request_finished` returns `delay_free_blocks` with a lease deadline), `:219-232` (a decode-side abort before the pull notifies the prefill side to free), `nixl/base_worker.py:2902-3031` (`finished_sending` frees on pull completion), `:3056-3096` and `base_scheduler.py:81-87`, `base_worker.py:563-567` (30 s lease, renewed by the decode side's heartbeats to 2/3 of a lease, so it expires only after the decode side has gone).
+- **(a)** The decode side's pull completes (`KVTransferCompletedEvent`).
+- **(b)** The decode engine aborts a request it had received: its prompt can never fit the decode KV, so the decode side rejects it. The blocks are freed at once.
+- **(c)** The decode engine never received the request (decode instance missing or unroutable at transfer start). No notice comes and no heartbeat renews the lease, so the blocks are freed at `prefill_complete + lease`.
+- **(d)** The decode engine had the request and vanished: unroutable mid-pull, or while the request waited for decode KV. The blocks are freed at `max(prefill_complete + lease, vanish + 2/3·lease)`.
 
-**Verification:** `sim/cluster/pd_kv_hold_test.go` — `TestPrefillKVHold_HeldFromPrefillEndUntilThePullCompletes`, `TestPrefillKVHold_HeldBlocksGateTheNextPrefill` (the hold costs capacity), `TestPrefillKVHold_DropAtTransferStartFreesAtOnce`, `TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry` (both lease terms), `TestPrefillKVHold_AmpleCapacityChangesNoLatency` (metamorphic), `TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity` (rapid: subset/equality/capacity/no leak/INV-1).
+In case (d), heartbeats go out every `lease/6` and each extends the lease to `2/3·lease` from its send. So the true expiry lies in `[vanish + lease/2, vanish + 2/3·lease]`, which is 15–20 s after the vanish at vLLM's 30 s default; BLIS takes the upper end.
 
-**Evidence:** `sim.Request.RetainKVOnFinish` makes `processCompletions` skip the release; `ClusterSimulator.startPrefillHold`/`releasePrefillHold` (`sim/cluster/pd_kv_hold.go`) count each held block once across the holds that share it.
+A prompt that fits the decode KV but finds it full waits in the decode engine's FCFS queue (head-of-line, as vLLM's waiting queue), not dropped, and its prefill KV stays held meanwhile. Decode-side timeouts of a waiting request are not modelled.
+
+The held KV is a subset of what the prefill instance has allocated, equal to it when nothing else is queued or running there. It never exceeds the instance's capacity, and it is fully released by the end of an unbounded run.
+
+**Source:** vLLM v0.31.0:
+
+- `nixl/pull_scheduler.py:247-266`: `request_finished` returns `delay_free_blocks` with a lease deadline.
+- `:213-232`: an abort on the decode side before the pull, with `do_remote_prefill` still set, notifies the prefill side to free; a request the decode engine never saw sends nothing.
+- `nixl/base_worker.py:2902-3031`: `finished_sending` frees on pull completion.
+- `:3056-3096`, `base_scheduler.py:81-87` and `base_worker.py:563-567`: the 30 s lease, heartbeats every `lease//6`, each extending to `2/3·lease`.
+- `sched/scheduler.py`: the waiting queue stops at the first request it cannot allocate.
+
+**Verification:**
+
+- `sim/cluster/pd_kv_hold_test.go`:
+  - `TestPrefillKVHold_HeldFromPrefillEndUntilThePullCompletes`;
+  - `TestPrefillKVHold_HeldBlocksGateTheNextPrefill` (the hold costs capacity);
+  - `TestPrefillKVHold_DropAtTransferStartFreesAtOnce` (case b);
+  - `TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry` (case d, both terms);
+  - `TestPrefillKVHold_AmpleCapacityChangesNoLatency` (metamorphic);
+  - `TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity` (rapid: subset, equality, capacity, no leak, INV-1).
+- `sim/cluster/pd_decode_kv_wait_test.go`:
+  - `TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops`;
+  - `TestPDDecodeKVWait_HeadOfLineBlocks`;
+  - `TestPDDecodeKVWait_DecodeThatNeverHadTheRequestLeavesTheLease` (case c);
+  - `TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters` (case d, from the queue).
+
+**Evidence:** `sim.Request.RetainKVOnFinish` makes `processCompletions` skip the release. `ClusterSimulator.startPrefillHold` and `releasePrefillHold` (`sim/cluster/pd_kv_hold.go`) count each held block once across the holds that share it. `serveDecodeKVWaiters` (`sim/cluster/pd_events.go`) runs the decode KV queue.
 
 #### INV-PD-8: Decode-Side Load Path
 

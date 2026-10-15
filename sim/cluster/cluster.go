@@ -91,6 +91,8 @@ type ClusterSimulator struct {
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
 	// heldKVPeakTokens is each instance's peak of distinct held tokens.
 	prefillHolds     map[string][]int64
+	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
+	decodeKVWaiters map[string][]decodeKVWaiter
 	heldBlockRefs    map[string]map[int64]int
 	heldKVPeakTokens map[string]int64
 	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
@@ -311,6 +313,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
+		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
 		if config.PDTransferContention {
 			cs.pdLinks = kvtransfer.NewLinkArbiter()
 			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
@@ -923,6 +926,7 @@ func (c *ClusterSimulator) Run() error {
 				}
 				if role.Has(PoolRoleDecode) {
 					c.detectDecodeCompletions(inst)
+					c.serveDecodeKVWaiters(inst, c.clock)
 				}
 			}
 		}
