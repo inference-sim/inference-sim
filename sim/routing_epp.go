@@ -72,7 +72,7 @@ const (
 	// uses UnknownOutputTokens without an outlen-bucket attribute
 	// (main:…/token_estimator.go:46, :90-115). BLIS requests carry no bucket header.
 	inflightDefaultOutputRatio    = 1.5
-	inflightUnknownOutputEstimate   = 1000
+	inflightUnknownOutputEstimate = 1000
 	tokenLoadDefaultThreshold     = 4194304   // scorer/tokenload/token_load.go:35
 	prefixScorerDefaultScaleToken = 8192      // main:scheduling/scorer/prefix/plugin.go:68
 	noHitLRUDefaultSize           = 1024      // main:scheduling/scorer/nohitlru/no_hit_lru.go:39
