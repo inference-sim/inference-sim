@@ -153,6 +153,10 @@ type Request struct {
 	// Request construction site needs updating. Reset to 0 on preemption (alongside
 	// ProgressIndex) and at completion.
 	specDecodeCarry float64
+
+	// preemptions counts how often batch formation preempted this request; a re-admission
+	// after preemption is not a new prefix-cache query (PrefixLookup).
+	preemptions int
 }
 
 // This method returns a human-readable string representation of a Request.

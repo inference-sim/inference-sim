@@ -625,6 +625,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if r.Deadline > 0 && r.Deadline <= sim.Clock {
 		r.State = StateTimedOut
 		sim.Metrics.TimedOutRequests++
+		sim.Metrics.RecordTimeout(r)
 		if sim.OnRequestDone != nil {
 			for _, next := range sim.OnRequestDone(r, sim.Clock) {
 				sim.InjectArrival(next)
@@ -825,11 +826,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	}
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
-	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock, max(outputTokens, 0))
+	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock, max(outputTokens, 0), postDecodeOverhead)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
-	if !req.Phase.Measured() {
-		sim.Metrics.UnmeasuredStepIntervals = append(sim.Metrics.UnmeasuredStepIntervals, req.ITL...)
-	}
+	sim.Metrics.StepOwners = append(sim.Metrics.StepOwners,
+		StepOwner{CompletionUs: lat + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
 	req.specDecodeCarry = 0
@@ -922,6 +922,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 			Request: s.Request,
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
+		sim.Metrics.recordPrefixLookup(s.Request, s.Lookup)
 		sim.recordAdapterResidency(s.Request)
 	}
 

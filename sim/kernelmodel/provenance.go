@@ -27,9 +27,8 @@ type ruleReport struct {
 }
 
 // reportRules lists the rules of the scenario's engine release that are not enforced, and
-// runs the whole pack report-only so the file states what they find. Every finding of a
-// run that was not refused is, by construction, one nobody acted on. A release with no pack
-// reports blis-schemas' own engine-version-known finding.
+// runs the whole pack report-only so the file states what those skipped rules find. A
+// release with no pack reports blis-schemas' own engine-version-known finding.
 func reportRules(in latencykernel.Inputs) ruleReport {
 	var r ruleReport
 	if pack, ok := in.Rules.(*rules.Pack); ok && pack != nil {
@@ -40,12 +39,26 @@ func reportRules(in latencykernel.Inputs) ruleReport {
 		}
 	}
 	problems := rules.Apply(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model})
+	var all []sim.RuleFinding
 	for _, p := range problems.All() {
-		r.findings = append(r.findings, sim.RuleFinding{
+		all = append(all, sim.RuleFinding{
 			Rule: p.Rule, Severity: string(p.Severity), Path: p.Path, Message: p.Message,
 		})
 	}
+	r.findings = skippedFindings(all)
 	return r
+}
+
+// skippedFindings keeps the findings of rules no one enforces: it drops field-level findings
+// (no rule) and those of the rules a run is refused on.
+func skippedFindings(all []sim.RuleFinding) []sim.RuleFinding {
+	var out []sim.RuleFinding
+	for _, f := range all {
+		if f.Rule != "" && !enforcedRules[f.Rule] {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // evidencer is blis-latency-kernel's Evidence summary, which the concrete kernel carries
@@ -76,8 +89,10 @@ func (m *Model) Provenance() sim.KernelPoolProvenance {
 		}
 	}
 	p.Total = len(origins)
+	p.EvidenceSource = sim.EvidenceFromProvenance
 	if e, ok := m.k.(evidencer); ok {
 		p.Evidenced, p.Total, _ = e.Evidence()
+		p.EvidenceSource = sim.EvidenceFromKernel
 	}
 	sort.Strings(p.SkippedRules)
 	return p

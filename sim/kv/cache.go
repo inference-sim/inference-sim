@@ -458,11 +458,6 @@ func (kvc *KVCacheState) CacheHitRate() float64 {
 	return float64(kvc.CacheHits) / float64(total)
 }
 
-// PrefixCacheCounts implements sim.PrefixCacheCounter: the tallies behind CacheHitRate.
-func (kvc *KVCacheState) PrefixCacheCounts() sim.PrefixCacheCounts {
-	return sim.PrefixCacheCounts{HitBlocks: kvc.CacheHits, LookupBlocks: kvc.CacheHits + kvc.CacheMisses}
-}
-
 // PendingTransferLatency returns 0 for single-tier cache (no transfers).
 func (kvc *KVCacheState) PendingTransferLatency() int64 { return 0 }
 

@@ -65,6 +65,23 @@ type BatchContext struct {
 // ScheduledRequest carries metadata about a newly scheduled request.
 type ScheduledRequest struct {
 	Request *Request
+	// Lookup is the prefix-cache lookup of a new prefill admission, zero for a decode
+	// admission and for a request re-admitted after preemption (see PrefixLookup).
+	Lookup PrefixLookup
+}
+
+// PrefixLookup is one admission's prefix-cache lookup in prompt tokens, as vLLM v0.31.0
+// counts it: recorded when a new request is admitted, not when a lookup is attempted
+// (vllm/v1/core/sched/scheduler.py:1252-1256 "Record at admission so unscheduled lookups are
+// not counted"), with queries = the request's tokens and hits = its locally computed prefix
+// (vllm/v1/core/kv_cache_manager.py:253-262). A previously preempted request is kept out of
+// these counts, as PrefixCacheStats keeps it in separate preempted_* fields
+// (vllm/v1/metrics/stats.py:132-143). CPUHitTokens is the prefix the offload tier supplies
+// beyond the GPU hit, vLLM's external computed tokens.
+type PrefixLookup struct {
+	QueryTokens  int64
+	HitTokens    int64
+	CPUHitTokens int64
 }
 
 // PreemptedRequest carries metadata about a preempted request.
@@ -407,9 +424,15 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = ctx.StepCount
 
-		result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{
-			Request: next,
-		})
+		scheduled := ScheduledRequest{Request: next}
+		if next.preemptions == 0 && !ctx.PrefixCachingDisabled {
+			scheduled.Lookup = PrefixLookup{
+				QueryTokens:  next.InputLen(),
+				HitTokens:    startIndex,
+				CPUHitTokens: computedStart - startIndex,
+			}
+		}
+		result.NewlyScheduled = append(result.NewlyScheduled, scheduled)
 
 		// numNewTokens is the uncached remainder only (the reloaded prefix was folded into
 		// computedStart above), so it is both the billed prefill work (the StepTime input)
@@ -514,6 +537,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// truth the statement does not yet name.
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
+			preemptedRequest.preemptions++
 			preemptedRequest.ITL = nil
 			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
 			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)

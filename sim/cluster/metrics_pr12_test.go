@@ -82,9 +82,9 @@ func TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt(t *testing.T) {
 		t.Errorf("cluster cache_hit_rate with 3 idle instances = %v, want the one-instance %v",
 			four.CacheHitRate, one.CacheHitRate)
 	}
-	if four.PrefixCacheLookupTokens != one.PrefixCacheLookupTokens {
+	if four.PrefixCacheQueryTokens != one.PrefixCacheQueryTokens {
 		t.Errorf("lookup tokens %d, want %d: idle instances must add none",
-			four.PrefixCacheLookupTokens, one.PrefixCacheLookupTokens)
+			four.PrefixCacheQueryTokens, one.PrefixCacheQueryTokens)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestAggregateCacheHitRate_IsTokenWeighted(t *testing.T) {
 	for _, inst := range cs.Instances() {
 		m := inst.Metrics()
 		hits += m.PrefixCacheHitTokens
-		lookups += m.PrefixCacheLookupTokens
+		lookups += m.PrefixCacheQueryTokens
 	}
 	if lookups == 0 {
 		t.Fatal("no lookups recorded")
@@ -109,5 +109,39 @@ func TestAggregateCacheHitRate_IsTokenWeighted(t *testing.T) {
 	agg := cs.AggregatedMetrics()
 	if want := float64(hits) / float64(lookups); agg.CacheHitRate != want {
 		t.Errorf("cluster cache_hit_rate = %v, want summed hits/lookups %v", agg.CacheHitRate, want)
+	}
+}
+
+// #1904's P/D case: decode instances never look a prefix up (a decode sub-request arrives
+// with its KV), so they add no queries, the cluster rate is the prefill pool's, and adding
+// decode instances leaves it unchanged. The store's own tally would count each decode
+// block allocation as a miss and dilute it.
+func TestAggregateCacheHitRate_TheDecodePoolDoesNotDiluteIt(t *testing.T) {
+	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 20_000)
+	run := func(decode int) (*ClusterSimulator, float64) {
+		cs := NewClusterSimulator(newTestDisaggDeploymentConfig(2+decode, 2, decode),
+			NewSliceRequestSource(copyRequests(requests)), nil)
+		mustRun(t, cs)
+		return cs, cs.AggregatedMetrics().CacheHitRate
+	}
+	cs, one := run(1)
+	var hits, queries int64
+	for _, inst := range cs.Instances() {
+		m := inst.Metrics()
+		if cs.PoolMembership()[string(inst.ID())].Has(PoolRolePrefill) {
+			hits += m.PrefixCacheHitTokens
+			queries += m.PrefixCacheQueryTokens
+		} else if m.PrefixCacheQueryTokens != 0 {
+			t.Errorf("decode instance %s recorded %d query tokens", inst.ID(), m.PrefixCacheQueryTokens)
+		}
+	}
+	if queries == 0 || hits == 0 {
+		t.Fatal("the prefill pool hit nothing; the comparison would be vacuous")
+	}
+	if want := float64(hits) / float64(queries); one != want {
+		t.Errorf("cluster rate %v, want the prefill pool's %v", one, want)
+	}
+	if _, three := run(3); three != one {
+		t.Errorf("three decode instances moved the cluster rate from %v to %v", one, three)
 	}
 }

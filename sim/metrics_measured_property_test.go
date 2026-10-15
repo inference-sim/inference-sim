@@ -16,6 +16,7 @@ type genRow struct {
 	osl                int
 	gatewayMs          float64
 	steps              []int64
+	lookup             PrefixLookup
 }
 
 func drawRows(rt *rapid.T) []genRow {
@@ -29,6 +30,9 @@ func drawRows(rt *rapid.T) []genRow {
 			osl:       rapid.IntRange(0, 60).Draw(rt, "osl"),
 			gatewayMs: float64(rapid.IntRange(0, 50).Draw(rt, "gateway")),
 		}
+		q := rapid.Int64Range(0, 4096).Draw(rt, "query")
+		hit := rapid.Int64Range(0, q).Draw(rt, "hit")
+		r.lookup = PrefixLookup{QueryTokens: q, HitTokens: hit, CPUHitTokens: rapid.Int64Range(0, q-hit).Draw(rt, "cpuHit")}
 		if rapid.IntRange(0, 4).Draw(rt, "completed") > 0 {
 			r.e2e = r.ttft + rapid.Int64Range(0, 10_000_000).Draw(rt, "decode")
 			for k := 0; k < min(max(r.osl-1, 0), 5); k++ {
@@ -48,14 +52,13 @@ func metricsOf(rows []genRow) *Metrics {
 		m.Requests[id] = RequestMetrics{ID: id, ArrivedAt: float64(r.arrival) / 1e6, Phase: r.phase,
 			OutputTokens: r.osl, GatewayQueueDelay: r.gatewayMs}
 		m.RequestTTFTs[id] = float64(r.ttft)
+		m.recordPrefixLookup(&Request{ID: id, Phase: r.phase}, r.lookup)
 		if r.e2e > 0 {
 			m.RequestE2Es[id] = float64(r.e2e)
 			m.RequestCompletionTimes[id] = float64(r.arrival + r.e2e)
 			m.CompletedRequests++
 			m.AllITLs = append(m.AllITLs, r.steps...)
-			if !r.phase.Measured() {
-				m.UnmeasuredStepIntervals = append(m.UnmeasuredStepIntervals, r.steps...)
-			}
+			m.StepOwners = append(m.StepOwners, StepOwner{CompletionUs: r.arrival + r.e2e, Steps: len(r.steps), Phase: r.phase})
 		}
 	}
 	return m
@@ -185,8 +188,9 @@ func extremeITL(m *Metrics, q float64) float64 {
 	return CalculatePercentile(itls, q)
 }
 
-// Metamorphic: adding warm-up requests -- with their own steps -- changes no measured
-// aggregate. This is the windowing law: only the phase decides what is measured.
+// Metamorphic: adding warm-up requests -- with their own steps and prefix-cache lookups --
+// changes no measured aggregate, cache_hit_rate and cpu_tier_hit_rate included. This is the
+// windowing law: only the phase decides what is measured.
 func TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		rows := drawRows(rt)
@@ -196,8 +200,20 @@ func TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured(t *testing.T) 
 		}
 		a, la := metricsOf(rows).buildMeasured()
 		b, lb := metricsOf(append(append([]genRow{}, rows...), extra...)).buildMeasured()
+		if extraQueries(extra) > 0 && metricsOf(rows).PrefixCacheQueryTokens ==
+			metricsOf(append(append([]genRow{}, rows...), extra...)).PrefixCacheQueryTokens {
+			rt.Fatal("the warm-up lookups did not reach the whole-run counts; the law would be vacuous")
+		}
 		if a != b || la != lb {
 			rt.Fatalf("warm-up requests moved the measured aggregates:\n%+v %+v\n%+v %+v", a, la, b, lb)
 		}
 	})
+}
+
+func extraQueries(rows []genRow) int64 {
+	var q int64
+	for _, r := range rows {
+		q += r.lookup.QueryTokens
+	}
+	return q
 }

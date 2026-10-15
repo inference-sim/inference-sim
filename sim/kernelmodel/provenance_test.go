@@ -7,6 +7,8 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/vocab"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // A pool's provenance restates the kernel's own records without losing or inventing one
@@ -72,7 +74,29 @@ func TestProvenanceRestatesTheKernelsEvidence(t *testing.T) {
 			t.Errorf("enforced rule %s reported as skipped", name)
 		}
 	}
+	if p.EvidenceSource != sim.EvidenceFromKernel {
+		t.Errorf("evidence_source %q: blis-latency-kernel reports Evidence", p.EvidenceSource)
+	}
+	for _, f := range p.SkippedRuleFindings {
+		if f.Rule == "" || enforcedRules[f.Rule] || !slices.Contains(p.SkippedRules, f.Rule) {
+			t.Errorf("finding %+v is not from a skipped rule", f)
+		}
+	}
 	if !slices.Contains(p.SkippedRules, "quantization-known") {
 		t.Error("quantization-known is applied by no one, yet not reported as skipped")
+	}
+}
+
+// skipped_rule_findings reports only what the skipped rules find: a field-level finding and
+// an enforced rule's finding (the model half of speculative-method-known can fire on a run
+// that is not refused) are left out.
+func TestSkippedFindingsKeepOnlyTheSkippedRules(t *testing.T) {
+	got := skippedFindings([]sim.RuleFinding{
+		{Rule: "", Message: "field"},
+		{Rule: "speculative-method-known", Message: "model.speculator.method"},
+		{Rule: "quantization-known", Message: "kept"},
+	})
+	if len(got) != 1 || got[0].Rule != "quantization-known" {
+		t.Errorf("skippedFindings = %+v, want only quantization-known", got)
 	}
 }

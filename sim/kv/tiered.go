@@ -514,16 +514,9 @@ func (t *TieredKVCache) KVThrashingRate() float64 {
 	return float64(t.cpu.evictionCount) / float64(t.mirrorCount)
 }
 
-// PrefixCacheCounts implements sim.PrefixCacheCounter: the tallies behind CacheHitRate and
-// KVThrashingRate, plus the blocks reloaded from the CPU tier.
-func (t *TieredKVCache) PrefixCacheCounts() sim.PrefixCacheCounts {
-	return sim.PrefixCacheCounts{
-		HitBlocks:           t.gpu.CacheHits,
-		LookupBlocks:        t.gpu.CacheHits + t.gpu.CacheMisses + t.cpuMissCount,
-		CPUHitBlocks:        t.cpuHitCount,
-		ThrashEvents:        t.cpu.evictionCount,
-		ThrashOpportunities: t.mirrorCount,
-	}
+// ThrashCounts implements sim.ThrashCounter: the counts behind KVThrashingRate.
+func (t *TieredKVCache) ThrashCounts() sim.ThrashCounts {
+	return sim.ThrashCounts{Events: t.cpu.evictionCount, Opportunities: t.mirrorCount}
 }
 
 // SetClock is a no-op in vLLM v1 model (thrashing detection removed).

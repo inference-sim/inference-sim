@@ -281,7 +281,7 @@ Example:
 			if calibrateSimMetrics == "" {
 				logrus.Warnf("calibrate: trace header carries an observed KV hit-rate (source=%s, %.4f) but --sim-metrics was not provided; skipping the hit-rate comparison. Produce it with `blis replay --metrics-path <file>` and pass --sim-metrics <file>.", obs.Source, obs.HitRate)
 			} else {
-				simHR, hrErr := loadSimCacheHitRate(calibrateSimMetrics)
+				simHR, hrErr := loadSimCacheHitRate(calibrateSimMetrics, obs.Source)
 				if hrErr != nil {
 					logrus.Fatalf("%v", hrErr)
 				}
@@ -574,7 +574,8 @@ Example:
 
 // loadBLISAggregate reads a BLIS MetricsOutput JSON file (from blis run/replay
 // --metrics-path) and distills the aggregate TTFT + output throughput needed for
-// the DT comparison. Output throughput = total_output_tokens / estimated duration.
+// the DT comparison: whole-run TTFT and output throughput = total_output_tokens / estimated
+// duration.
 func loadBLISAggregate(path string) workload.BLISAggregate {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -587,8 +588,15 @@ func loadBLISAggregate(path string) workload.BLISAggregate {
 	if m.VllmDurationSec <= 0 {
 		logrus.Fatalf("sim metrics %s: vllm_estimated_duration_s must be > 0 to compute throughput, got %v", path, m.VllmDurationSec)
 	}
+	// Whole-run TTFT, to match the whole-run throughput beside it: the file's top-level
+	// ttft_mean_ms is the measured window's (#1938), and whole_run keeps the figure stdout
+	// prints. A file written before whole_run existed carries the whole-run value at top level.
+	ttft := m.TTFTMeanMs
+	if m.WholeRun != nil {
+		ttft = m.WholeRun.TTFTMeanMs
+	}
 	return workload.BLISAggregate{
-		TTFTMs:           m.TTFTMeanMs,
+		TTFTMs:           ttft,
 		OutputThroughput: float64(m.TotalOutputTokens) / m.VllmDurationSec,
 	}
 }
@@ -598,7 +606,11 @@ func loadBLISAggregate(path string) workload.BLISAggregate {
 // with nil error means the file parsed but carries no cache_hit_rate (e.g. produced
 // without --metrics-path, or by a pre-feature binary) — the caller warns and skips
 // the hit-rate comparison rather than fabricating a value.
-func loadSimCacheHitRate(path string) (*float64, error) {
+//
+// cache_hit_rate is the GPU prefix cache's own rate (hits vLLM computes locally, #1904). A
+// tiered observation counts blocks either tier served, so against one the CPU tier's share
+// (cpu_tier_hit_rate) is added: the two partition the prompt tokens queried.
+func loadSimCacheHitRate(path, observedSource string) (*float64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read --sim-metrics %s: %w", path, err)
@@ -606,6 +618,10 @@ func loadSimCacheHitRate(path string) (*float64, error) {
 	var m sim.MetricsOutput
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parse --sim-metrics %s: %w", path, err)
+	}
+	if m.CacheHitRate != nil && m.MeasuredMetrics != nil && observedSource == workload.ObservedKVSourceTiered {
+		both := *m.CacheHitRate + m.CPUTierHitRate
+		return &both, nil
 	}
 	return m.CacheHitRate, nil
 }

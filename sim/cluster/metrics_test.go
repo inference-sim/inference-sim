@@ -658,9 +658,17 @@ func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
 			t.Errorf("%s: phase %q, want %q", id, rm.Phase, phases[id])
 		}
 	}
-	// 4 warm-up requests x 7 decode steps each (8 output tokens, the first from prefill).
-	if got := len(agg.UnmeasuredStepIntervals); got != 4*7 {
-		t.Errorf("%d unmeasured step intervals, want 28", got)
+	// The step owners partition AllITLs: 4 warm-up requests x 7 decode steps each (8 output
+	// tokens, the first from prefill), and the profile requests' steps.
+	warm, total := 0, 0
+	for _, o := range agg.StepOwners {
+		total += o.Steps
+		if o.Phase == sim.PhaseWarmup {
+			warm += o.Steps
+		}
+	}
+	if warm != 4*7 || total != len(agg.AllITLs) {
+		t.Errorf("owners hold %d warm-up steps (want 28) and %d in all (AllITLs has %d)", warm, total, len(agg.AllITLs))
 	}
 	samples := agg.InFlightSamples
 	if len(samples) == 0 || samples[len(samples)-1].Count != 0 {

@@ -12,10 +12,14 @@ import (
 const PercentileMethodNumpyLinear = "numpy_linear"
 
 // MeasuredWindow fixes the measured window's bounds in ticks: aiperf's profiling phase
-// start and completion, the throughput denominator (aiperf records_manager.py:1437-1442,
-// metric_dicts.py:217-238). A replay that runs a warm-up or a grace period sets it on the
-// aggregate Metrics before EmitOutput; a completion after EndUs is outside the window. Zero
-// EndUs leaves the end derived (the last measured completion).
+// start and completion. aiperf divides output tokens by the export context's window
+// (metrics/metric_dicts.py:217-238 observation_duration), which records_manager.py:1437-1442
+// sets to the profiling phase's start_ns and requests_end_ns, the phase's complete_at
+// (timing/phase/progress_tracker.py:225). A replay that runs a warm-up or a grace period
+// sets it on the aggregate Metrics before EmitOutput, and the file says so
+// (measured_window_source "explicit"); a completion after EndUs is outside the window. Unset,
+// the window is derived from the measured requests (first arrival to last completion) and
+// labelled "derived". Zero EndUs derives only the end.
 type MeasuredWindow struct {
 	StartUs int64
 	EndUs   int64
@@ -27,6 +31,20 @@ type InFlightSample struct {
 	AtUs  int64
 	Count int
 }
+
+// StepOwner attributes the next Steps entries of Metrics.AllITLs to one completed request:
+// its phase and completion time, which decide whether its steps are in step_interval_*.
+type StepOwner struct {
+	CompletionUs int64
+	Steps        int
+	Phase        Phase
+}
+
+// The values of measured_window_source.
+const (
+	WindowSourceExplicit = "explicit"
+	WindowSourceDerived  = "derived"
+)
 
 // MeasuredMetrics are the aiperf-defined aggregates of the --metrics-path file (#1938,
 // #1904), over the requests in the measured window: those whose Phase is measured that
@@ -62,17 +80,23 @@ type MeasuredMetrics struct {
 	StepIntervalP90Ms  float64 `json:"step_interval_p90_ms"`
 	StepIntervalP99Ms  float64 `json:"step_interval_p99_ms"`
 
-	// Σ OSL / measured window (aiperf output_token_throughput_metrics.py:40-42).
+	// Σ OSL / measured window (aiperf output_token_throughput_metrics.py:40-42), and where
+	// the window came from (WindowSourceExplicit or WindowSourceDerived; see MeasuredWindow).
 	OutputThroughputTokS float64 `json:"output_throughput_tok_s"`
 	MeasuredWindowS      float64 `json:"measured_window_s"`
+	MeasuredWindowSource string  `json:"measured_window_source"`
 
 	// Counts in the window. The measured completions have their own key: completed_requests
-	// stays the run-wide count INV-1 conserves in the file as on stdout.
+	// stays the run-wide count INV-1 conserves in the file as on stdout. Cancelled: in flight
+	// when the window closed, or completed after its explicit end. Failed: timed out (aiperf
+	// records a timeout as an error), dropped, rejected or shed.
 	MeasuredCompletedRequests int `json:"measured_completed_requests"`
 	CancelledRequests         int `json:"cancelled_requests"`
 	ContextOverflowRequests   int `json:"context_overflow_requests"`
 	FailedRequests            int `json:"failed_requests"`
 
+	// Prompt tokens the offload tier supplied over prompt tokens queried, measured
+	// requests' admissions only (cache_hit_rate in the file is the same population).
 	CPUTierHitRate float64 `json:"cpu_tier_hit_rate"`
 
 	GatewayQueueDelayMeanMs float64 `json:"gateway_queue_delay_mean_ms"`
@@ -89,6 +113,22 @@ type MeasuredMetrics struct {
 type measuredLatencies struct {
 	ttftMean, ttftP90, ttftP95, ttftP99 float64
 	e2eMean, e2eP90, e2eP95, e2eP99     float64
+	cacheHitRate                        float64
+}
+
+// WholeRunLatency keeps, in the --metrics-path file, the whole-run figures stdout prints for
+// the keys the file restates over the measured window, for a consumer of the old meaning
+// (blis calibrate compares whole-run TTFT and throughput).
+type WholeRunLatency struct {
+	TTFTMeanMs   float64 `json:"ttft_mean_ms"`
+	TTFTP90Ms    float64 `json:"ttft_p90_ms"`
+	TTFTP95Ms    float64 `json:"ttft_p95_ms"`
+	TTFTP99Ms    float64 `json:"ttft_p99_ms"`
+	E2EMeanMs    float64 `json:"e2e_mean_ms"`
+	E2EP90Ms     float64 `json:"e2e_p90_ms"`
+	E2EP95Ms     float64 `json:"e2e_p95_ms"`
+	E2EP99Ms     float64 `json:"e2e_p99_ms"`
+	CacheHitRate float64 `json:"cache_hit_rate"`
 }
 
 // Measured returns the measured-window aggregates EmitOutput writes into the --metrics-path
@@ -108,12 +148,17 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		startUs = w.StartUs
 		endUs = w.EndUs
 	}
+	out.MeasuredWindowSource = WindowSourceDerived
+	if m.MeasuredWindow != nil {
+		out.MeasuredWindowSource = WindowSourceExplicit
+	}
 	inWindow := func(completionUs int64) bool {
 		return m.MeasuredWindow == nil || m.MeasuredWindow.EndUs <= 0 || completionUs <= m.MeasuredWindow.EndUs
 	}
 
 	var ttfts, e2es, itls, gateway []float64
 	var perUserSum float64
+	perUserCount := 0
 	var outputTokens int64
 	for _, id := range sortedRequestIDs(m.Requests) {
 		rm := m.Requests[id]
@@ -122,14 +167,26 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		}
 		e2e := m.RequestE2Es[id]
 		completionUs := int64(m.RequestCompletionTimes[id])
+		if rm.timedOut && e2e <= 0 {
+			continue // failed_requests (RecordTimeout)
+		}
 		if e2e <= 0 || !inWindow(completionUs) {
-			out.CancelledRequests++ // timed out, or still in flight when the window closed
+			out.CancelledRequests++ // in flight when the window closed, or completed after it
 			continue
 		}
 		out.MeasuredCompletedRequests++
 		ttft := m.RequestTTFTs[id]
+		// aiperf's request latency ends at the last content chunk
+		// (metrics/types/request_latency_metric.py:38-49). vLLM v0.31.0 queues the final
+		// token's RequestOutput (v1/engine/output_processor.py:745) before it frees the request
+		// and records its finished stats (:759, :766), and the chat stream yields that token's
+		// chunk with finish_reason (entrypoints/openai/chat_completion/serving.py:737, :828)
+		// before the usage chunk and [DONE] (:891, :931). The completion overhead E2E carries
+		// (the kernel's host_completion: finish bookkeeping, serialization, teardown) follows
+		// the last chunk, so it is left out.
+		latency := e2e - float64(rm.completionOverheadTicks)
 		ttfts = append(ttfts, ttft)
-		e2es = append(e2es, e2e)
+		e2es = append(e2es, latency)
 		gateway = append(gateway, rm.GatewayQueueDelay*1e3) // ms -> ticks, as the helpers expect
 		outputTokens += int64(rm.OutputTokens)
 		if m.MeasuredWindow == nil {
@@ -140,14 +197,17 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		}
 		// aiperf inter_token_latency_metric.py:48-55: (latency - TTFT) / (OSL - 1), OSL >= 2.
 		if rm.OutputTokens >= 2 {
-			itl := (e2e - ttft) / float64(rm.OutputTokens-1)
+			itl := (latency - ttft) / float64(rm.OutputTokens-1)
 			itls = append(itls, itl)
-			// aiperf output_token_throughput_metrics.py:74-78: 1/ITL, skipping ITL == 0.
+			// aiperf output_token_throughput_metrics.py:74-77 raises NoMetricValue for ITL == 0,
+			// so such a record has no per-user value: it leaves the sum and the count.
 			if itl > 0 {
 				perUserSum += 1e6 / itl
+				perUserCount++
 			}
 		}
 	}
+	out.CancelledRequests += m.MeasuredPipelineCancellations
 	out.ContextOverflowRequests = m.MeasuredContextOverflows
 	out.FailedRequests = m.MeasuredFailures
 
@@ -172,11 +232,11 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.RequestITLP99Ms = CalculatePercentile(itls, 99)
 	out.InteractivityP50 = reciprocalPerSecond(out.RequestITLP50Ms)
 	out.InteractivityP90 = reciprocalPerSecond(out.RequestITLP90Ms)
-	if len(itls) > 0 {
-		out.OutputTokPerUserMean = perUserSum / float64(len(itls))
+	if perUserCount > 0 {
+		out.OutputTokPerUserMean = perUserSum / float64(perUserCount)
 	}
 
-	steps := measuredStepIntervals(m.AllITLs, m.UnmeasuredStepIntervals)
+	steps := measuredStepIntervals(m.AllITLs, m.StepOwners, inWindow)
 	out.StepIntervalMeanMs = CalculateMean(steps)
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
@@ -190,18 +250,26 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		out.InFlightRequestsMean, out.InFlightRequestsMax = inFlightOver(m.InFlightSamples, startUs, endUs)
 	}
 
-	if m.PrefixCacheLookupTokens > 0 {
-		out.CPUTierHitRate = float64(m.CPUTierHitTokens) / float64(m.PrefixCacheLookupTokens)
+	if q := m.MeasuredPrefixCacheQueryTokens; q > 0 {
+		lat.cacheHitRate = float64(m.MeasuredPrefixCacheHitTokens) / float64(q)
+		out.CPUTierHitRate = float64(m.MeasuredCPUTierHitTokens) / float64(q)
 	}
 	out.KVCapacityTokensPerReplica = m.KVCapacityTokensPerReplica
 	return out, lat
 }
 
 // applyMeasured writes the measured-window values into the keys MetricsOutput already
-// carries, for the --metrics-path file.
-func (o *MetricsOutput) applyMeasured(lat measuredLatencies) {
+// carries, for the --metrics-path file, keeping the whole-run values under whole_run.
+// cacheHitRate is the whole run's prompt-lookup rate.
+func (o *MetricsOutput) applyMeasured(lat measuredLatencies, cacheHitRate float64) {
+	o.WholeRun = &WholeRunLatency{
+		TTFTMeanMs: o.TTFTMeanMs, TTFTP90Ms: o.TTFTP90Ms, TTFTP95Ms: o.TTFTP95Ms, TTFTP99Ms: o.TTFTP99Ms,
+		E2EMeanMs: o.E2EMeanMs, E2EP90Ms: o.E2EP90Ms, E2EP95Ms: o.E2EP95Ms, E2EP99Ms: o.E2EP99Ms,
+		CacheHitRate: cacheHitRate,
+	}
 	o.TTFTMeanMs, o.TTFTP90Ms, o.TTFTP95Ms, o.TTFTP99Ms = lat.ttftMean, lat.ttftP90, lat.ttftP95, lat.ttftP99
 	o.E2EMeanMs, o.E2EP90Ms, o.E2EP95Ms, o.E2EP99Ms = lat.e2eMean, lat.e2eP90, lat.e2eP95, lat.e2eP99
+	o.CacheHitRate = &lat.cacheHitRate
 }
 
 // reciprocalPerSecond is 1000 / ms, the rate of one event every ms milliseconds, or 0 for a
@@ -213,26 +281,19 @@ func reciprocalPerSecond(ms float64) float64 {
 	return 1000 / ms
 }
 
-// measuredStepIntervals returns all minus the multiset unmeasured, sorted. Both are step
-// intervals in ticks; unmeasured is a sub-multiset of all.
-func measuredStepIntervals(all, unmeasured []int64) []int64 {
-	out := slices.Clone(all)
-	slices.Sort(out)
-	if len(unmeasured) == 0 {
-		return out
-	}
-	drop := slices.Clone(unmeasured)
-	slices.Sort(drop)
-	kept := out[:0]
-	j := 0
-	for _, v := range out {
-		if j < len(drop) && drop[j] == v {
-			j++
-			continue
+// measuredStepIntervals returns, sorted, the AllITLs entries of the measured requests whose
+// completion is in the window, walking all in step with its owners.
+func measuredStepIntervals(all []int64, owners []StepOwner, inWindow func(int64) bool) []int64 {
+	var out []int64
+	at := 0
+	for _, o := range owners {
+		if o.Phase.Measured() && inWindow(o.CompletionUs) {
+			out = append(out, all[at:at+o.Steps]...)
 		}
-		kept = append(kept, v)
+		at += o.Steps
 	}
-	return kept
+	slices.Sort(out)
+	return out
 }
 
 // inFlightOver returns the time-weighted mean and the maximum of the in-flight step

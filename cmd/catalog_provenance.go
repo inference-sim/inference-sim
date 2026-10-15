@@ -132,7 +132,8 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 }
 
 // kernelProvenance is each opened pool's kernel evidence (#1942), keyed by pool role: the
-// colocated pool, or the prefill and decode pools of a disaggregated run.
+// colocated pool, or the prefill and decode pools of a disaggregated run; empty when no
+// kernel was opened.
 func kernelProvenance(colocated *kernelmodel.Model, pd *kernelPools) map[string]sim.KernelPoolProvenance {
 	out := map[string]sim.KernelPoolProvenance{}
 	if pd != nil {
@@ -140,9 +141,6 @@ func kernelProvenance(colocated *kernelmodel.Model, pd *kernelPools) map[string]
 		out[string(pd.decode.Role())] = pd.decode.Provenance()
 	} else if colocated != nil {
 		out[string(colocated.Role())] = colocated.Provenance()
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
@@ -181,15 +179,25 @@ func versionsFrom(info *debug.BuildInfo) *sim.BuildVersions {
 		v.BLIS += "+" + revision + dirty
 	}
 	for _, dep := range info.Deps {
-		if dep.Replace != nil {
-			dep = dep.Replace
-		}
-		switch dep.Path {
+		switch dep.Path { // the module's own path; a replacement keeps it here
 		case "github.com/inference-sim/blis-latency-kernel":
-			v.Kernel = dep.Version
+			v.Kernel = depVersion(dep)
 		case "github.com/inference-sim/blis-schemas":
-			v.Schemas = dep.Version
+			v.Schemas = depVersion(dep)
 		}
 	}
 	return v
+}
+
+// depVersion is the version a dependency was built at: its replacement's when replaced by
+// another module version, "replace:<dir>" when replaced by a filesystem directory (which has
+// no version), else its own.
+func depVersion(dep *debug.Module) string {
+	if r := dep.Replace; r != nil {
+		if r.Version != "" {
+			return r.Version
+		}
+		return "replace:" + r.Path
+	}
+	return dep.Version
 }

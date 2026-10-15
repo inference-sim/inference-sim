@@ -40,9 +40,16 @@ func measuredFixture() *Metrics {
 	add("c1", PhaseProfile, 3_000_000, 50_000, 0, 0, 0)
 	add("w1", PhaseWarmup, 0, 10, 5_000_000, 100, 9)
 	m.AllITLs = []int64{10_000, 20_000, 30_000, 20_000, 40_000}
-	m.UnmeasuredStepIntervals = []int64{40_000, 20_000} // w1's steps
+	m.StepOwners = []StepOwner{
+		{CompletionUs: 1_100_000, Steps: 1, Phase: PhaseProfile}, // r1
+		{CompletionUs: 1_700_000, Steps: 1, Phase: PhaseProfile}, // r2
+		{CompletionUs: 4_400_000, Steps: 1, Phase: PhaseUnset},   // r4
+		{CompletionUs: 5_000_000, Steps: 2, Phase: PhaseWarmup},  // w1
+	}
 	m.MeasuredContextOverflows, m.MeasuredFailures = 2, 1
-	m.PrefixCacheLookupTokens, m.PrefixCacheHitTokens, m.CPUTierHitTokens = 1000, 600, 250
+	m.MeasuredPrefixCacheQueryTokens, m.MeasuredPrefixCacheHitTokens, m.MeasuredCPUTierHitTokens = 1000, 600, 250
+	m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens, m.CPUTierHitTokens = 2000, 1500, 250 // warm-up hits too
+	m.CacheHitRate = m.PromptCacheHitRate()
 	m.KVCapacityTokensPerReplica = 12345
 	m.InFlightSamples = []InFlightSample{{0, 1}, {1_000_000, 3}, {2_000_000, 2}, {5_000_000, 0}}
 	return m
@@ -97,6 +104,10 @@ func TestBuildMeasured_PinsTheAiperfDefinitions(t *testing.T) {
 		t.Errorf("in_flight_requests_max = %d, want 3", out.InFlightRequestsMax)
 	}
 	near(t, "cpu_tier_hit_rate", out.CPUTierHitRate, 0.25)
+	near(t, "measured cache_hit_rate", lat.cacheHitRate, 0.6) // the warm-up's lookups excluded
+	if out.MeasuredWindowSource != "derived" {
+		t.Errorf("measured_window_source = %q, want derived", out.MeasuredWindowSource)
+	}
 	if out.KVCapacityTokensPerReplica != 12345 || out.PercentileMethod != "numpy_linear" {
 		t.Errorf("kv capacity %d, percentile method %q", out.KVCapacityTokensPerReplica, out.PercentileMethod)
 	}
@@ -117,7 +128,11 @@ func TestBuildMeasured_AnExplicitWindowBoundsTheMeasuredSet(t *testing.T) {
 	near(t, "measured_window_s", out.MeasuredWindowS, 1.5)
 	near(t, "output_throughput_tok_s", out.OutputThroughputTokS, (11+21+1)/1.5)
 	near(t, "e2e mean", lat.e2eMean, (1100+1200+300)/3.0)
-	near(t, "request_itl_p50", out.RequestITLP50Ms, 75) // [50 100]
+	near(t, "request_itl_p50", out.RequestITLP50Ms, 75)       // [50 100]
+	near(t, "step_interval_mean", out.StepIntervalMeanMs, 15) // r4's step completed after the end
+	if out.MeasuredWindowSource != "explicit" {
+		t.Errorf("measured_window_source = %q, want explicit", out.MeasuredWindowSource)
+	}
 	near(t, "in_flight_requests_mean", out.InFlightRequestsMean, (1*0.5+3*1.0)/1.5)
 	if out.InFlightRequestsMax != 3 {
 		t.Errorf("in_flight_requests_max = %d, want 3", out.InFlightRequestsMax)
@@ -132,14 +147,20 @@ func TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured(t *testing.T) 
 	delete(m.RequestE2Es, "w1")
 	delete(m.RequestTTFTs, "w1")
 	m.CompletedRequests--
-	m.AllITLs = []int64{10_000, 20_000, 30_000}
-	m.UnmeasuredStepIntervals = nil
+	m.AllITLs = m.AllITLs[:3]
+	m.StepOwners = m.StepOwners[:3]
 	legacy := m.BuildOutput("cluster")
 	out, lat := m.buildMeasured()
 	near(t, "step_interval_mean vs itl_mean", out.StepIntervalMeanMs, legacy.ITLMeanMs)
 	near(t, "step_interval_p90 vs itl_p90", out.StepIntervalP90Ms, legacy.ITLP90Ms)
 	near(t, "e2e mean vs legacy", lat.e2eMean, legacy.E2EMeanMs)
 	near(t, "e2e p99 vs legacy", lat.e2eP99, legacy.E2EP99Ms)
+	// TTFT equals the legacy figure only once the legacy population is the same: legacy TTFT
+	// also counts a request that emitted a first token and did not complete (c1).
+	near(t, "ttft p90 vs legacy without c1", ttftP90Without(m, "c1"), lat.ttftP90)
+	if legacy.TTFTP90Ms == lat.ttftP90 {
+		t.Error("c1's first token must move the legacy TTFT, or the population note is untested")
+	}
 }
 
 // CalculatePercentile is numpy's "linear" method, the one aiperf uses
@@ -202,4 +223,82 @@ func TestEmitOutput_MeasuredAggregatesAreFileOnly(t *testing.T) {
 	if got := int(file["measured_completed_requests"].(float64)); got != 4 {
 		t.Errorf("file measured_completed_requests = %d, want 4", got)
 	}
+}
+
+// ttftP90Without is the legacy TTFT p90 with one request's entry removed.
+func ttftP90Without(m *Metrics, id string) float64 {
+	c := *m
+	c.RequestTTFTs = map[string]float64{}
+	for k, v := range m.RequestTTFTs {
+		if k != id {
+			c.RequestTTFTs[k] = v
+		}
+	}
+	c.CompletedRequests = len(m.RequestE2Es)
+	return c.BuildOutput("cluster").TTFTP90Ms
+}
+
+// Window bounds are inclusive: a completion exactly at EndUs is in the window, one tick later
+// is not.
+func TestBuildMeasured_TheWindowEndIsInclusive(t *testing.T) {
+	for _, c := range []struct {
+		end       int64
+		completed int
+	}{{4_400_000, 4}, {4_399_999, 3}} {
+		m := measuredFixture()
+		m.MeasuredWindow = &MeasuredWindow{StartUs: 0, EndUs: c.end}
+		if got := m.Measured().MeasuredCompletedRequests; got != c.completed {
+			t.Errorf("EndUs %d: %d completed, want %d (r4 completes at 4400000)", c.end, got, c.completed)
+		}
+	}
+}
+
+// aiperf's per-user throughput has no value for a record whose ITL is zero
+// (output_token_throughput_metrics.py:74-77), so such a request leaves both the sum and the
+// count: the mean over the others is unchanged.
+func TestBuildMeasured_PerUserMeanSkipsZeroITLRecords(t *testing.T) {
+	m := measuredFixture()
+	m.Requests["z"] = RequestMetrics{ID: "z", Phase: PhaseProfile, OutputTokens: 4}
+	m.RequestTTFTs["z"], m.RequestE2Es["z"], m.RequestCompletionTimes["z"] = 200_000, 200_000, 3_000_000
+	near(t, "output_tok_per_user_mean", m.Measured().OutputTokPerUserMean, (10+20+2)/3.0)
+}
+
+// A timed-out measured request is a failed record (aiperf counts a timeout as an error), not a
+// cancelled one, and is counted once.
+func TestBuildMeasured_ATimeoutIsAFailureNotACancellation(t *testing.T) {
+	m := measuredFixture()
+	m.RecordTimeout(&Request{ID: "c1", Phase: PhaseProfile})
+	out := m.Measured()
+	if out.CancelledRequests != 0 || out.FailedRequests != 2 {
+		t.Errorf("cancelled %d failed %d, want 0 and 2 (c1 timed out)", out.CancelledRequests, out.FailedRequests)
+	}
+}
+
+// aiperf's request latency ends at the last streamed token, and vLLM emits that token before
+// the finish bookkeeping the latency model's completion overhead prices. So with a non-zero
+// overhead, E2E (stdout) carries it while the file's latency and request ITL do not:
+// request_itl is the sum of the step intervals over OSL - 1 (#1938, H1).
+func TestMeasured_LatencyEndsAtTheLastTokenNotAtTheCompletionOverhead(t *testing.T) {
+	const overhead = 50_000
+	cfg := newTestSimConfig()
+	s, err := NewSimulator(cfg, MustNewKVStoreFromConfig(cfg.KVCacheConfig), &fixedOverheadModel{overhead: overhead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &Request{ID: "r", InputTokens: make([]TokenID, 32), OutputTokens: make([]TokenID, 11), State: StateQueued}
+	injectRequests(s, []*Request{req})
+	s.Run()
+	m := s.Metrics
+	if m.CompletedRequests != 1 {
+		t.Fatalf("%d completed", m.CompletedRequests)
+	}
+	var steps int64
+	for _, v := range m.AllITLs {
+		steps += v
+	}
+	out, lat := m.buildMeasured()
+	near(t, "request_itl_mean_ms", out.RequestITLMeanMs, float64(steps)/10/1000)
+	lastToken := float64(req.FirstTokenTime + steps)
+	near(t, "file e2e mean", lat.e2eMean, lastToken/1000)
+	near(t, "stdout e2e mean", m.BuildOutput("cluster").E2EMeanMs, (lastToken+overhead)/1000)
 }

@@ -301,16 +301,9 @@ func (o *OffloadCache) KVThrashingRate() float64 {
 	return float64(o.promotionsFailed) / float64(attempts)
 }
 
-// PrefixCacheCounts implements sim.PrefixCacheCounter: the tallies behind CacheHitRate and
-// KVThrashingRate, plus the blocks reloaded from the CPU tier.
-func (o *OffloadCache) PrefixCacheCounts() sim.PrefixCacheCounts {
-	return sim.PrefixCacheCounts{
-		HitBlocks:           o.gpu.CacheHits,
-		LookupBlocks:        o.gpu.CacheHits + o.gpu.CacheMisses + o.offloadMissCount,
-		CPUHitBlocks:        o.reloadCount,
-		ThrashEvents:        o.promotionsFailed,
-		ThrashOpportunities: o.promotionsFired + o.promotionsFailed,
-	}
+// ThrashCounts implements sim.ThrashCounter: the counts behind KVThrashingRate.
+func (o *OffloadCache) ThrashCounts() sim.ThrashCounts {
+	return sim.ThrashCounts{Events: o.promotionsFailed, Opportunities: o.promotionsFired + o.promotionsFailed}
 }
 
 // SetClock advances the offload clock and applies transfer completions. It is the

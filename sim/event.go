@@ -175,6 +175,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// statement does not yet enumerate; this is not the only site that sets it.
 	e.Request.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++
+	sim.Metrics.RecordTimeout(e.Request)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,

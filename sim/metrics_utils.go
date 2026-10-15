@@ -51,6 +51,13 @@ type RequestMetrics struct {
 	// them. Unexported, so never serialized.
 	completionSeq   int
 	completionClock int64
+	// completionOverheadTicks is the fixed host time the latency model charged after the
+	// request's last streamed token (PostDecodeFixedOverhead), part of E2E but not of
+	// aiperf's request latency, which ends at the last content chunk (#1938). timedOut marks
+	// a request cancelled by its client timeout. Both survive the merge and the P/D
+	// projection (WithCompletionOf) like the completion stamp.
+	completionOverheadTicks int64
+	timedOut                bool
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -157,9 +164,14 @@ type MetricsOutput struct {
 	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
 	*MeasuredMetrics
 
+	// WholeRun keeps the whole-run values of the keys the file restates over the measured
+	// window (ttft_*, e2e_*, cache_hit_rate). File-only.
+	WholeRun *WholeRunLatency `json:"whole_run,omitempty"`
+
 	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
-	// (#1942). File-only (WithKernelProvenance).
-	KernelProvenance map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
+	// (#1942), {} when no kernel priced the run. File-only (WithKernelProvenance); a pointer
+	// so stdout omits it while the file can state an empty map.
+	KernelProvenance *map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
 
 	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
 	*BuildVersions
@@ -184,6 +196,9 @@ type KernelPoolProvenance struct {
 	MethodCounts map[vocab.Method]int `json:"method_counts"`
 	Evidenced    int                  `json:"evidenced"`
 	Total        int                  `json:"total"`
+	// EvidenceSource says where Evidenced came from: the kernel's Evidence(), or, for a
+	// kernel that does not report it, nothing (Evidenced is 0 and Total counts the entries).
+	EvidenceSource string `json:"evidence_source"`
 	// NotEvidenced are the registry entries whose method is neither evidenced nor
 	// not_charged: copied from another scope (a fallback) or assumed.
 	NotEvidenced []kernel.CoefficientOrigin `json:"fallback_or_assumed"`
@@ -194,6 +209,12 @@ type KernelPoolProvenance struct {
 	SkippedRules        []string      `json:"skipped_rules"`
 	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
 }
+
+// The values of KernelPoolProvenance.EvidenceSource.
+const (
+	EvidenceFromKernel     = "kernel"
+	EvidenceFromProvenance = "provenance_entries"
+)
 
 // RuleFinding is one finding of a blis-schemas release rule.
 type RuleFinding struct {

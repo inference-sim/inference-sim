@@ -90,10 +90,10 @@ func TestAggregateCacheHitRateLiesWithinTheInstanceRates(t *testing.T) {
 		lo, hi, seen := 1.0, 0.0, false
 		for _, inst := range cs.Instances() {
 			m := inst.Metrics()
-			if m.PrefixCacheLookupTokens == 0 {
+			if m.PrefixCacheQueryTokens == 0 {
 				continue
 			}
-			rate := float64(m.PrefixCacheHitTokens) / float64(m.PrefixCacheLookupTokens)
+			rate := float64(m.PrefixCacheHitTokens) / float64(m.PrefixCacheQueryTokens)
 			lo, hi, seen = min(lo, rate), max(hi, rate), true
 		}
 		agg := cs.AggregatedMetrics().CacheHitRate
@@ -128,6 +128,76 @@ func TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing(t *testing.T) {
 		}
 		if more != one {
 			rt.Fatalf("#1904: idle instances moved the cluster hit rate from %v to %v", one, more)
+		}
+	})
+}
+
+// INV-M1 over disaggregated runs: a parent request ends in exactly one measured bucket
+// however its prefill and decode sub-requests end -- completed, timed out on either pool,
+// dropped at enqueue or at decode KV, or still in the pipeline at the horizon -- and the
+// engine-side in-flight count never exceeds the parents sent (a parent is never counted on
+// both pools at once).
+func TestMeasuredAccountingClosesOverDisaggregatedRuns(t *testing.T) {
+	seen := map[string]bool{}
+	defer func() {
+		for _, path := range []string{"timeout", "drop", "decode-kv drop", "pipeline at horizon"} {
+			if !seen[path] {
+				t.Errorf("no draw exercised the %s path", path)
+			}
+		}
+	}()
+	rapid.Check(t, func(rt *rapid.T) {
+		n := rapid.IntRange(1, 25).Draw(rt, "n")
+		var requests []*sim.Request
+		for i := 0; i < n; i++ {
+			in := rapid.IntRange(16, 600).Draw(rt, "input")
+			r := &sim.Request{
+				ID:           fmt.Sprintf("request_%d", i),
+				InputTokens:  make([]sim.TokenID, in),
+				OutputTokens: make([]sim.TokenID, rapid.IntRange(1, 30).Draw(rt, "output")),
+				State:        sim.StateQueued,
+				ArrivalTime:  int64(i) * rapid.Int64Range(100, 20_000).Draw(rt, "gap"),
+				Phase:        rapid.SampledFrom([]sim.Phase{sim.PhaseUnset, sim.PhaseWarmup, sim.PhaseProfile}).Draw(rt, "phase"),
+			}
+			for j := range r.InputTokens {
+				r.InputTokens[j] = sim.TokenID(i*1000 + j)
+			}
+			if rapid.Bool().Draw(rt, "deadline") {
+				r.Deadline = r.ArrivalTime + rapid.Int64Range(1, 80_000).Draw(rt, "timeout")
+			}
+			requests = append(requests, r)
+		}
+		config := newTestDisaggDeploymentConfig(4, 2, 2)
+		config.Horizon = rapid.Int64Range(5_000, 3_000_000).Draw(rt, "horizon")
+		config.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 400)
+		if rapid.Bool().Draw(rt, "tightKV") { // decode-side KV drops
+			config.KVCacheConfig = sim.NewKVCacheConfig(int64(rapid.IntRange(26, 60).Draw(rt, "blocks")), 16, 0, 0, 0, 0)
+		}
+		measured := 0
+		for _, r := range requests {
+			if r.Phase.Measured() && r.ArrivalTime <= config.Horizon {
+				measured++
+			}
+		}
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		if err := cs.Run(); err != nil {
+			rt.Fatal(err)
+		}
+		agg := cs.AggregatedMetrics()
+		seen["timeout"] = seen["timeout"] || agg.TimedOutRequests > 0
+		seen["drop"] = seen["drop"] || agg.DroppedUnservable > cs.droppedAtDecodeKV
+		seen["decode-kv drop"] = seen["decode-kv drop"] || cs.droppedAtDecodeKV > 0
+		seen["pipeline at horizon"] = seen["pipeline at horizon"] || agg.MeasuredPipelineCancellations > 0
+		mm := agg.Measured()
+		if got := mm.MeasuredCompletedRequests + mm.CancelledRequests + mm.ContextOverflowRequests +
+			mm.FailedRequests; got != measured {
+			rt.Fatalf("INV-M1 (P/D): completed %d + cancelled %d + overflow %d + failed %d = %d, %d measured sent",
+				mm.MeasuredCompletedRequests, mm.CancelledRequests, mm.ContextOverflowRequests, mm.FailedRequests, got, measured)
+		}
+		for _, s := range agg.InFlightSamples {
+			if s.Count > n {
+				rt.Fatalf("in-flight count %d exceeds the %d parents sent", s.Count, n)
+			}
 		}
 	})
 }

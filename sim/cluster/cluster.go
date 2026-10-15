@@ -1802,12 +1802,15 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.DroppedUnservable += m.DroppedUnservable
 		merged.LengthCappedRequests += m.LengthCappedRequests
 		merged.TimedOutRequests += m.TimedOutRequests
+		merged.PrefixCacheQueryTokens += m.PrefixCacheQueryTokens
 		merged.PrefixCacheHitTokens += m.PrefixCacheHitTokens
-		merged.PrefixCacheLookupTokens += m.PrefixCacheLookupTokens
 		merged.CPUTierHitTokens += m.CPUTierHitTokens
+		merged.MeasuredPrefixCacheQueryTokens += m.MeasuredPrefixCacheQueryTokens
+		merged.MeasuredPrefixCacheHitTokens += m.MeasuredPrefixCacheHitTokens
+		merged.MeasuredCPUTierHitTokens += m.MeasuredCPUTierHitTokens
 		merged.KVThrashEvents += m.KVThrashEvents
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
-		merged.UnmeasuredStepIntervals = append(merged.UnmeasuredStepIntervals, m.UnmeasuredStepIntervals...)
+		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
 		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
@@ -1817,11 +1820,9 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 			merged.KVCapacityTokensPerReplica = kv
 		}
 	}
-	// Hits over lookups summed across instances, not a mean of per-instance rates, so an
-	// idle or decode-only instance does not dilute the cluster figure (#1904).
-	if merged.PrefixCacheLookupTokens > 0 {
-		merged.CacheHitRate = float64(merged.PrefixCacheHitTokens) / float64(merged.PrefixCacheLookupTokens)
-	}
+	// Prompt hits over prompt queries summed across instances, not a mean of per-instance
+	// rates, so an idle or decode-only instance does not dilute the cluster figure (#1904).
+	merged.CacheHitRate = merged.PromptCacheHitRate()
 	if merged.KVThrashOpportunities > 0 {
 		merged.KVThrashingRate = float64(merged.KVThrashEvents) / float64(merged.KVThrashOpportunities)
 	}
@@ -2117,8 +2118,18 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
 		decodeEntry := m.Requests[dec]
+		_, prefillRow := m.Requests[pfx]
+		_, decodeRow := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
+		// A parent that leaves no row and reached no terminal outcome -- one that would
+		// have been counted already, as a timeout (RecordTimeout) or a drop (RecordUnserved,
+		// recordUnserved) -- was still in the pipeline at the horizon: queued, running or in
+		// KV transfer. It is cancelled in the measured window (INV-M1).
+		if !served && (prefillRow || decodeRow) && !pdParentTerminal(parent) &&
+			parent.OriginalRequest != nil && parent.OriginalRequest.Phase.Measured() {
+			m.MeasuredPipelineCancellations++
+		}
 		if served {
 			if parent.OriginalRequest == nil {
 				panic(fmt.Sprintf("projectPDMetrics: parent %s has nil OriginalRequest", pid))
@@ -2157,6 +2168,19 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			m.RequestCompletionTimes[pid] = float64(parent.ArrivalTime) + parentE2E
 		}
 	}
+}
+
+// pdParentTerminal reports whether a disaggregated parent reached an outcome its sub-requests
+// already accounted for: a timeout on either pool, or a decode-side drop (the parent is
+// stamped complete with no decode sub-request).
+func pdParentTerminal(parent *ParentRequest) bool {
+	if parent.PrefillSubReq != nil && parent.PrefillSubReq.State == sim.StateTimedOut {
+		return true
+	}
+	if parent.DecodeSubReq != nil && parent.DecodeSubReq.State == sim.StateTimedOut {
+		return true
+	}
+	return parent.CompletionTime > 0 && parent.DecodeSubReq == nil
 }
 
 // executeStandardRouting performs non-disaggregated routing: select a target over
