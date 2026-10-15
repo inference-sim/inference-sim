@@ -121,6 +121,10 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
+	// busyUntil is when the last executed step ends (its start plus its duration). A step
+	// that empties the running batch leaves stepEvent nil at that step's START, so an
+	// arrival during the step must not start the next one before this (idleStepTime).
+	busyUntil int64
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
@@ -505,7 +509,7 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // the last request from RunningBatch.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		step := &StepEvent{time: time}
+		step := &StepEvent{time: sim.idleStepTime(time)}
 		sim.stepEvent = step
 		sim.Schedule(step)
 	}
@@ -682,11 +686,17 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 		if clusterTime > stepTime {
 			stepTime = clusterTime
 		}
-		step := &StepEvent{time: stepTime}
+		step := &StepEvent{time: sim.idleStepTime(stepTime)}
 		sim.stepEvent = step
 		sim.Schedule(step)
 	}
 }
+
+// idleStepTime is the earliest a step triggered at t by new work on an idle instance may
+// start: t, or the end of the step still executing when the batch it ran emptied. The engine
+// runs one forward pass at a time, so work arriving during a step waits for it to end, as it
+// does whenever the batch is not empty (scheduleNextStep).
+func (sim *Simulator) idleStepTime(t int64) int64 { return max(t, sim.busyUntil) }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
@@ -843,6 +853,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	sim.busyUntil = now + currStepAdvance
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
 	// Runs after execution (new full blocks exist) and before completions
 	// (completing requests' blocks are still in-use and can be mirrored).

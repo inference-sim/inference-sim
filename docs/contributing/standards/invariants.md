@@ -199,6 +199,8 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
+**One forward pass at a time.** Work-conserving never means overlapping: a step triggered by new work on an idle instance (an arrival, a timeout, an injected decode sub-request, `ScheduleStepIfIdle`) starts no earlier than the end of the step still executing (`Simulator.idleStepTime`). A step whose requests all finish empties the batch at the step's start, so before this clause an arrival during it began the next step at once; a P/D prefill pool, whose every sub-request finishes in its one prefill step, ran its steps in parallel. Verified by `sim/step_busy_test.go` — `TestStep_NoStepStartsBeforeThePreviousEnds` (rapid).
+
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
 
 ### INV-13: Run/Replay Parity
