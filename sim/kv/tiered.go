@@ -240,6 +240,11 @@ func (t *TieredKVCache) accumulateTransferLatency() {
 }
 
 func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before the CPU
+	// tier is consulted, so the refusal reloads, charges and reorders nothing.
+	if !t.gpu.sequenceFits(req, startIndex, endIndex, cachedBlocks) {
+		return false
+	}
 	// BC-D3.3 (#1586): consult the CPU offload tier on EVERY request, before GPU
 	// allocation — mirroring vLLM's offload connector (get_num_new_matched_tokens on
 	// the normal waiting-queue path, with no reference to GPU pressure). Previously the
@@ -295,6 +300,10 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 					// New request: commit all cached blocks from block 0.
 					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
+				// Its bounded state (#1941) and slots (#1627), on every allocation as vLLM
+				// passes num_lookahead_tokens to every allocate_slots
+				// (scheduler.py:745-751, 1214 at v0.31.0); room was checked before the reload.
+				t.gpu.chargeSequence(req.ID, startIndex, endIndex)
 				return true
 			}
 			// Partial improvement: commit reloaded prefix blocks before allocating tail.
@@ -316,7 +325,17 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 				// New request: commit all reloaded blocks from block 0.
 				t.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+			if t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached) {
+				return true
+			}
+			// The tail did not fit. A request that stays queued must not keep the reloaded
+			// prefix it was committed: it would hold blocks no running request can free, and
+			// a pool that tight livelocks. Undo the commit; the reloaded blocks go back to the
+			// free list with their hashes, still a hit for the retry.
+			if !running {
+				t.gpu.ReleaseKVBlocks(req)
+			}
+			return false
 		}
 		// Reload produced no prefix hit beyond startIndex — allocate with the
 		// caller's original params (any space freed by the reload still helps).
@@ -385,10 +404,7 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		// (cache.go lazy deletion). Without this, HashToBlock retains a stale
 		// entry mapping the old hash to this block's ID even though the block
 		// is about to be overwritten with different content.
-		if gpuBlk.Hash != "" {
-			delete(t.gpu.HashToBlock, gpuBlk.Hash)
-			gpuBlk.Hash = ""
-		}
+		t.gpu.dropHash(gpuBlk)
 
 		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
 		gpuBlk.Hash = h

@@ -413,8 +413,8 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionFCFS}
 
 	// WHEN preemption evicts victim to make room for newcomer
-	var budget int64 = 10000
-	bf.preemptForTokens(newReq, 16, &result, ctx, &budget, 0)
+	budget := &stepBudget{tokens: 10000, input: 10000}
+	bf.preemptForTokens(newReq, 16, &result, ctx, budget, 0)
 
 	// THEN ComputedTokens should NOT contain the preempted request's entry
 	if _, exists := computedTokens[victim.ID]; exists {

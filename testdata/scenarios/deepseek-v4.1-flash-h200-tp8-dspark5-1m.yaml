@@ -1,0 +1,44 @@
+# DeepSeek-V4.1-Flash on one 8-GPU H200 node under plain tensor parallelism, drafting five tokens
+# a step with DSpark, at a 1,048,576-token context and gpu_memory_utilization 0.80: the
+# deployment curvebender measured with vLLM v0.31.0, whose log reports 61.18 GiB of KV cache and
+# "GPU KV cache size: 28,706,997 tokens" (blis-latency-kernel#46). It pins BLIS's admission
+# capacity to the engine's own figure (#1941).
+#
+# Expert parallelism is off, as measured. V4.1's sparse backends take a 64-token block on SM90,
+# and fp8 is served as the packed fp8_ds_mla record. max_num_seqs is vLLM's served default on
+# this part; BLIS sizes the scheduler from the scenario.
+kind: Scenario
+name: deepseek-v4.1-flash-h200-tp8-dspark5-1m
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v4.1-flash-h200-tp8-dspark5-1m
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      block_size: 64
+      cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+      max_model_len: 1048576
+      gpu_memory_utilization: 0.8
+      engram_config:
+        cpu_offload: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 5

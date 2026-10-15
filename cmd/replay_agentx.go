@@ -177,6 +177,10 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	// The replay is the simulated workload, so its acceptance terms are the workload layer
+	// (#1939); resolveSpeculativeConfig runs after this.
+	terms := spec.AcceptanceTerms()
+	workloadAcceptance = &terms
 	limit, _, err := spec.MaxContextLength.Resolve(int(maxModelLen))
 	if err != nil {
 		logrus.Fatalf("%v", err)

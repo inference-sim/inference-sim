@@ -428,6 +428,7 @@ type emitOptions struct {
 	agentic    any
 	pd         *PDOutput
 	epp        *EPPProvenance
+	acceptance *AcceptanceRecord
 }
 
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
@@ -473,6 +474,13 @@ func WithPD(pd *PDOutput) EmitOption {
 	return func(opts *emitOptions) { opts.pd = pd }
 }
 
+// WithAcceptance records a speculating run's resolved acceptance (#1939) in the
+// --metrics-path file only, as WithCatalogProvenance records the catalog. Nil leaves the block
+// absent.
+func WithAcceptance(a *AcceptanceRecord) EmitOption {
+	return func(opts *emitOptions) { opts.acceptance = a }
+}
+
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
 // optional file (when outputFilePath != ""). The file variant additionally
 // embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
@@ -511,6 +519,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.Acceptance = resolvedOpts.acceptance
 		output.EPP = resolvedOpts.epp
 		output.Agentic = resolvedOpts.agentic
 		output.PD = resolvedOpts.pd

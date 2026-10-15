@@ -91,7 +91,8 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
   `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`;
 - `testdata/scenarios/` in this repository: `glm-5-h200-3p1d-ib.yaml` (P/D) and
   `glm-5-h200-tp8-mtp3.yaml` (MTP speculative decoding; it drafts tokens, so a run must also
-  pass `--speculative-acceptance-rate`, e.g. `0.7`).
+  state its acceptance -- `--speculative-acceptance-rate`, e.g. `0.7`, or select a registry
+  profile; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)).
 
 ## Verify the Build
 
