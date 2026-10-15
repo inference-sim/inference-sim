@@ -135,7 +135,6 @@ type ConformanceLedger struct {
 	t       *InFlightLoadTracker
 	streams map[string]*Request // request ID → client stream request
 	inst    map[string]string   // request ID → stream (decode/primary) endpoint
-	n       int
 }
 
 // NewConformanceLedger starts an empty ledger.
