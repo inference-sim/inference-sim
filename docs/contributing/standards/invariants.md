@@ -61,6 +61,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-19](#inv-19-scale-decisions-carry-a-non-zero-delta) Scale decisions carry a non-zero delta | Subsystem | autoscaling |
 | [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
 | [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
+| [INV-AX1 … INV-AX4](#agentic-replay) Agentic replay: conservation, dependency causality, lane bound, sending window | Subsystem | agentic replay |
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
 | [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
@@ -529,6 +530,87 @@ TTFT population), `TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
 **Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil. Issue #1657 — a speculative-decoding step advanced `ProgressIndex` PAST the completion boundary, so `OnComplete` read `actualOutputLen > len(OutputTokens)` and cancelled an entire valid closed-loop session as accounting corruption. The fix caps the granted token count at the completion boundary in `FormBatch` (generation time), keeping the over-cap branch a genuine corruption detector. The `budget_exhausted` state is reached when the shared follow-up budget (set via `SetFollowUpBudget` for `--concurrency` mode) is depleted — the session's unlimited-rounds flag would otherwise continue generating follow-ups, but the global cap takes precedence.
 
 **Hypothesis family:** Structural model — session lifecycle completeness.
+
+### Agentic replay
+
+These bind `blis replay --agentic-scenario inferencex-agentx-mvp` (#1937; driver
+`sim/workload/agentx_replay.go`), which reproduces aiperf 0.12.0's session-tree replay. They
+hold for any corpus, concurrency, window, grace period and service times; the behaviour they
+constrain is aiperf's (the code cites its source), and `TestAgentXRuntimeMatchesAiperf`
+checks it send for send against aiperf's own runtime.
+
+#### INV-AX1: Agentic Request Conservation
+
+**Statement:** every request the replay sends is injected into the cluster exactly once and
+ends exactly once, with one outcome:
+
+| outcome | how it ends | the stream then |
+|---|---|---|
+| `completed` | a response (non-P/D, or a P/D parent's completion, reported by ID) | continues |
+| `error` | a client timeout (aiperf's 6 h default); a cluster refusal -- admission or routing rejection, flow-control rejection or shed, gateway TTL expiry, in-flight eviction, P/D decode-KV drop (`SetUnservedHook`); an engine refusal other than context length | continues (aiperf records an error and dispatches the next turn) |
+| `context_overflow` | the engine refuses the prompt, or prompt plus output budget, past max_model_len | stops (non-final turn: trajectory death; a root's tree drains and recycles) |
+| `cancelled` | still in flight -- queued, running, in transfer or in the gateway queue -- when the run stops at the end of the grace period | -- (aiperf keeps no record) |
+
+A request the cluster re-injects while in flight (a REDIRECT drain) is the same request, not
+a new one. A superseded send (a timer the idle cap moved, a send held behind a barrier, a
+timer cancelled at the window end) is refused by the arrival gate before admission and is
+never a request, so INV-1 holds over the sent requests unchanged. At the end, the replay's
+in-flight count equals the cancelled count, which equals what the cluster still holds. No
+profiling request ends after the grace end, and the profiling phase completes no earlier
+than the window end (and, as aiperf's does, 10 s after the grace end when requests were
+cancelled while branch work was pending).
+
+**Enforced:** `AgentXReplay.Gate` (one confirmed send per dispatch; redirects pass),
+`OnComplete` / `OnUnserved` (one outcome, matched by request ID), `Finish` (the cancelled
+outcome); `ClusterSimulator.gateArrival` before `injectedByClass`, `notifyUnserved` in
+`recordUnserved`.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora` (rapid, harness, with random
+timeouts, refusals and overflows, and a coverage check that every outcome occurs); through
+the real cluster, `TestAgentXThroughPDDisaggregation`, `TestAgentXThroughFlowControlTTL`,
+`TestAgentXThroughAdmissionRejection`, `TestAgentXThroughRedirectDrain`,
+`TestAgentXContextOverflowEndsTheStream` (sim/cluster) and
+`TestReplayAgentX_DeterministicConservingAndTagged` (cmd).
+
+#### INV-AX2: Dependency Causality
+
+**Statement:** a profiling send of turn k of a stream instance happens only after (a) the
+same instance's turn k-1 completed (sends of one instance are consecutive turns, one in
+flight at a time); (b) every recorded replay-barrier predecessor of the turn in its tree
+completed, or was completed history at the lane's t*; and (c) for a root turn gated by
+SPAWN_JOIN, every child instance of the gating branches sent its final turn and it
+completed. A stream instance sends each turn at most once.
+
+**Enforced:** `submit` / `barrierReady` (barrier), `maybeSuspend` / `childDone` (joins),
+`dispatchNext` (closed loop).
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`,
+`TestAgentXServiceTimesDoNotReorderAStream` (rapid); hand-computed timelines in
+`agentx_replay_test.go`.
+
+#### INV-AX3: Lane Bound
+
+**Statement:** each lane holds at most one session tree at a time: a lane's next tree sends
+its first request no earlier than the last completion of the tree before it (the tree's root
+and every descendant drained), so at most C trees are live, while requests in flight may
+exceed C (subagents take no lane).
+
+**Enforced:** `maybeDrain` (aiperf's SessionTreeRegistry) is the only path that recycles a
+lane.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`.
+
+#### INV-AX4: Sending Window
+
+**Statement:** warm-up requests are sent with max_tokens 1 and only before the profiling
+phase starts (the warm-up's last return); profiling requests are sent only in
+[profile start, profile start + duration); every request carries `Phase` `warmup` or
+`profile` (`grace` once it completes after the window end).
+
+**Enforced:** `canSend`, `closeWindow`.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`;
+`TestAgentXClosedLoopWarmupAndRecycle`.
 
 ### Latency model
 

@@ -70,18 +70,21 @@ Example:
 		}
 		logrus.SetLevel(level)
 
-		// Validate required inputs (BC-6, BC-8)
-		if traceHeaderPath == "" {
-			logrus.Fatalf("--trace-header is required")
-		}
-		if traceDataPath == "" {
-			logrus.Fatalf("--trace-data is required")
-		}
-		if _, statErr := os.Stat(traceHeaderPath); os.IsNotExist(statErr) {
-			logrus.Fatalf("--trace-header file not found: %s", traceHeaderPath)
-		}
-		if _, statErr := os.Stat(traceDataPath); os.IsNotExist(statErr) {
-			logrus.Fatalf("--trace-data file not found: %s", traceDataPath)
+		// Validate required inputs (BC-6, BC-8). An agentic replay (#1937) reads its
+		// corpus instead of a TraceV2 file.
+		if !agentXRequested() {
+			if traceHeaderPath == "" {
+				logrus.Fatalf("--trace-header is required")
+			}
+			if traceDataPath == "" {
+				logrus.Fatalf("--trace-data is required")
+			}
+			if _, statErr := os.Stat(traceHeaderPath); os.IsNotExist(statErr) {
+				logrus.Fatalf("--trace-header file not found: %s", traceHeaderPath)
+			}
+			if _, statErr := os.Stat(traceDataPath); os.IsNotExist(statErr) {
+				logrus.Fatalf("--trace-data file not found: %s", traceDataPath)
+			}
 		}
 		// Same as runCmd: the deployment and the engine knobs come
 		// from the scenario and the kernel, resolved before any gate reads them.
@@ -90,12 +93,22 @@ Example:
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
-		// Load trace (BC-1)
-		traceData, err := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
-		if err != nil {
-			logrus.Fatalf("Failed to load trace: %v", err)
+		// Load trace (BC-1). An agentic replay builds its driver from the corpus instead
+		// and carries an empty generated-mode header through the shared path below.
+		var agx *agentXRun
+		var agxInitial []*sim.Request
+		var traceData *workload.TraceV2
+		if agentXRequested() {
+			agx, agxInitial = buildAgentXRun(cmd)
+			traceData = &workload.TraceV2{Header: workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}}
+			replaySessionMode = "agentic"
+		} else {
+			traceData, err = workload.LoadTraceV2(traceHeaderPath, traceDataPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load trace: %v", err)
+			}
+			logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 		}
-		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 
 		// #1530: refuse a trace whose source run had a multi-node fleet. Cross-node
 		// collective traffic is charged to step time, but replay cannot reconstruct a
@@ -118,7 +131,7 @@ Example:
 		// the growing accumulate-delta input reconstructed like "closed-loop". It is the
 		// only faithful replay mode for a high-concurrency agentic corpus — see the guards
 		// and request-building branch below.
-		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" {
+		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" && agx == nil {
 			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
 		if replayThinkTimeMs < 0 {
@@ -223,6 +236,10 @@ Example:
 		var sessionMgr *workload.SessionManager
 		var poolDriver *workload.SessionPoolDriver
 		switch replaySessionMode {
+		case "agentic":
+			// The agentic driver issues every request itself (#1937): the warm-up's
+			// initial sends now, the rest as follow-ups and gated sends.
+			requests = agxInitial
 		case "closed-loop":
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
@@ -302,8 +319,8 @@ Example:
 		if cmd.Flags().Changed("horizon") {
 			replayHorizon = simulationHorizon
 		}
-		if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
-			replayHorizon = math.MaxInt64 // self-draining pool; cluster horizon unbounded
+		if (replayConcurrentSessions > 0 || agx != nil) && !cmd.Flags().Changed("horizon") {
+			replayHorizon = math.MaxInt64 // self-draining pool / agentic replay sets its own end
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
@@ -597,6 +614,8 @@ Example:
 		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		switch {
+		case agx != nil:
+			onRequestDone = agx.driver.OnComplete
 		case poolDriver != nil:
 			baseCb := poolDriver.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
@@ -613,6 +632,11 @@ Example:
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+		if agx != nil {
+			cs.SetArrivalGate(agx.driver.Gate)
+			cs.SetUnservedHook(agx.driver.OnUnserved)
+			agx.driver.BindHorizon(cs.SetHorizon)
+		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
 		// report path fails fast (#1516 single detector, #1519 bank).
@@ -623,6 +647,11 @@ Example:
 
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
+		}
+		if agx != nil {
+			agx.driver.Finish(cs.Clock())
+			ps, pe := agx.driver.Window()
+			logrus.Infof("agentic replay: profiling %s -> %s, %+v", fmtUs(ps), fmtUs(pe), agx.driver.Stats())
 		}
 		if poolDriver != nil {
 			// KNOWN LIMITATION (follow-up): under an explicit --horizon hard cap that
@@ -656,7 +685,7 @@ Example:
 		// emitted on the aggregate below (#1517).
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), cs.Horizon(), totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
@@ -694,8 +723,9 @@ Example:
 		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
 		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
 		// (INV-6).
+		// An agentic replay (#1937) adds the measured window and its agentic block.
 		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
-			resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
+			append(resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot), agx.emitOptions(aggregated)...)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -886,6 +916,7 @@ func init() {
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
+	registerAgentXReplayFlags(replayCmd)
 
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace), "closed-loop" (load-adaptive follow-ups via SessionManager), or "fixed-accumulate" (recorded arrivals + reconstructed accumulate-delta inputs; faithful replay of high-concurrency agentic corpora, #1692)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")

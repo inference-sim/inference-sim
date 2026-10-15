@@ -425,6 +425,7 @@ type emitOptions struct {
 	overrides  []ScenarioOverride
 	provenance map[string]KernelPoolProvenance
 	versions   *BuildVersions
+	agentic    any
 }
 
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
@@ -495,6 +496,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.Agentic = resolvedOpts.agentic
 		if resolvedOpts.provenance != nil {
 			output.KernelProvenance = &resolvedOpts.provenance
 		}

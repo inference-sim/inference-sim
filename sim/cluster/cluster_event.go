@@ -130,6 +130,9 @@ func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 // decision so that drops and timeouts count against goodput (issue #1409, BC-5).
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
+	if !cs.gateArrival(e.request, e.time) {
+		return
+	}
 	cs.injectedByClass[e.request.SLOClass]++
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	// Fire the arrival hook (issue #1440): trace exporters see each fresh
