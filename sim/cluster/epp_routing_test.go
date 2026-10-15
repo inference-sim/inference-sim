@@ -269,8 +269,8 @@ func TestEPP_FlagScorersBuildDefaultPipeline(t *testing.T) {
 // v0.10.0's concurrency guard does not fail open: with no flow-control gate and a
 // tiny maxConcurrency, saturated endpoints are filtered out and requests are
 // rejected at routing, as llm-d fails them. Every request is still accounted for
-// (INV-1), the in-flight ledger drains, and each rejection is reported to the
-// session driver (recordUnserved). main fails open and rejects nothing.
+// (INV-1), the in-flight ledger drains, and each rejection reaches the unserved
+// hook (recordUnserved), as the agentx branch's other refusals do. main fails open and rejects nothing.
 func TestEPP_ConcurrencyGuardRejections(t *testing.T) {
 	const cfgYAML = `apiVersion: llm-d.ai/v1alpha1
 kind: EndpointPickerConfig
@@ -299,19 +299,15 @@ schedulingProfiles:
 				r.ArrivalTime = int64(i) // a burst: far more arrivals than 2 × maxConcurrency
 			}
 			unserved := 0
-			cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), func(r *sim.Request, _ int64) []*sim.Request {
-				if r.State != sim.StateCompleted {
-					unserved++
-				}
-				return nil
-			})
+			cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+			cs.SetUnservedHook(func(*sim.Request, int64) []*sim.Request { unserved++; return nil })
 			mustRun(t, cs)
 			assertClusterINV1Conservation(t, cs, len(reqs), cs.RejectedRequests(), string(tc.v))
 			if got := cs.RoutingRejections() > 0; got != tc.rejecting {
 				t.Errorf("routing rejections %d, rejecting=%v", cs.RoutingRejections(), tc.rejecting)
 			}
-			if tc.rejecting && unserved < cs.RoutingRejections() {
-				t.Errorf("session driver told of %d unserved requests, %d rejected", unserved, cs.RoutingRejections())
+			if unserved != cs.RoutingRejections() {
+				t.Errorf("unserved hook told of %d requests, %d rejected at routing", unserved, cs.RoutingRejections())
 			}
 			for _, inst := range cs.instances {
 				if got := cs.inFlightLoadTrackers[0].Tokens(string(inst.ID())); got != 0 {
