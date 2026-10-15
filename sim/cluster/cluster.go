@@ -150,6 +150,9 @@ type ClusterSimulator struct {
 	// non-decreasing ArrivalTime order the cluster enqueues them.
 	// fireArrivalHook() panics on a regression.
 	arrivalHook         func(*sim.Request)
+	// unservedHook, when set, is told of every request the cluster refuses or drops
+	// (unserved_hook.go). Nil for every workload but the agentic replay.
+	unservedHook func(req *sim.Request, now int64) []*sim.Request
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
