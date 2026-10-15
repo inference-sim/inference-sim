@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"fmt"
+	"math"
 	"testing"
 )
 
@@ -211,5 +213,38 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	}
 	if !runningIDs["bg-req"] {
 		t.Error("bg-req should still be running (background=10 with override, more urgent than batch=-1)")
+	}
+}
+
+// A request re-admitted after preemption is not a new prefix-cache query: vLLM keeps it in
+// PrefixCacheStats' preempted_* fields, out of the hit rate (vllm/v1/metrics/stats.py:132-143).
+// So the queried tokens are each request's prompt once, however often KV pressure preempts.
+func TestPrefixLookups_APreemptedReadmissionIsNotANewQuery(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		KVCacheConfig:       NewKVCacheConfig(20, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+	}
+	s := mustNewSimulator(t, cfg)
+	var prompts int64
+	var requests []*Request
+	for i := 0; i < 4; i++ {
+		r := &Request{ID: fmt.Sprintf("r%d", i), InputTokens: make([]TokenID, 32),
+			OutputTokens: make([]TokenID, 100), State: StateQueued, ArrivalTime: int64(i)}
+		for j := range r.InputTokens {
+			r.InputTokens[j] = TokenID(i*100 + j)
+		}
+		prompts += r.InputLen()
+		requests = append(requests, r)
+	}
+	injectRequests(s, requests)
+	s.Run()
+	if s.Metrics.PreemptionCount == 0 || s.Metrics.CompletedRequests != 4 {
+		t.Fatalf("preemptions %d, completed %d: the fixture must preempt and then finish",
+			s.Metrics.PreemptionCount, s.Metrics.CompletedRequests)
+	}
+	if got := s.Metrics.PrefixCacheQueryTokens; got != prompts {
+		t.Errorf("queried %d prompt tokens, want each prompt once (%d)", got, prompts)
 	}
 }

@@ -86,6 +86,7 @@ var (
 	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
 	kernelOpened              *kernelmodel.Model     // the kernel adoptKernelDeployment opened; nil until it runs
+	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
 	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
 	schedulerSource           string                 // what chose the scheduler: "--scheduler", "--policy-config", "" = the scenario

@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // Catalog provenance (#1732, R1 task S5 of tracker #1727).
@@ -124,5 +126,78 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 	return []sim.EmitOption{
 		sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot)),
 		sim.WithScenarioOverrides(scenarioOverrides),
+		sim.WithKernelProvenance(kernelProvenance(kernelOpened, kernelPDOpened)),
+		sim.WithBuildVersions(buildVersions()),
 	}
+}
+
+// kernelProvenance is each opened pool's kernel evidence (#1942), keyed by pool role: the
+// colocated pool, or the prefill and decode pools of a disaggregated run; empty when no
+// kernel was opened.
+func kernelProvenance(colocated *kernelmodel.Model, pd *kernelPools) map[string]sim.KernelPoolProvenance {
+	out := map[string]sim.KernelPoolProvenance{}
+	if pd != nil {
+		out[string(pd.prefill.Role())] = pd.prefill.Provenance()
+		out[string(pd.decode.Role())] = pd.decode.Provenance()
+	} else if colocated != nil {
+		out[string(colocated.Role())] = colocated.Provenance()
+	}
+	return out
+}
+
+// buildVersions reads the BLIS, blis-latency-kernel and blis-schemas versions from the
+// binary's build information; see versionsFrom.
+func buildVersions() *sim.BuildVersions {
+	info, _ := debug.ReadBuildInfo()
+	return versionsFrom(info)
+}
+
+// versionsFrom extracts the build pins from build information. A local build's main module
+// is "(devel)"; its VCS revision, when the toolchain stamped one, is appended so the file
+// still names the commit. A version the build information does not carry (a test binary
+// lists no dependencies) is "unknown", never guessed.
+func versionsFrom(info *debug.BuildInfo) *sim.BuildVersions {
+	v := &sim.BuildVersions{BLIS: "unknown", Kernel: "unknown", Schemas: "unknown"}
+	if info == nil {
+		return v
+	}
+	if info.Main.Version != "" {
+		v.BLIS = info.Main.Version // empty when built from a file list (go build main.go)
+	}
+	var revision, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if revision != "" {
+		v.BLIS += "+" + revision + dirty
+	}
+	for _, dep := range info.Deps {
+		switch dep.Path { // the module's own path; a replacement keeps it here
+		case "github.com/inference-sim/blis-latency-kernel":
+			v.Kernel = depVersion(dep)
+		case "github.com/inference-sim/blis-schemas":
+			v.Schemas = depVersion(dep)
+		}
+	}
+	return v
+}
+
+// depVersion is the version a dependency was built at: its replacement's when replaced by
+// another module version, "replace:<dir>" when replaced by a filesystem directory (which has
+// no version), else its own.
+func depVersion(dep *debug.Module) string {
+	if r := dep.Replace; r != nil {
+		if r.Version != "" {
+			return r.Version
+		}
+		return "replace:" + r.Path
+	}
+	return dep.Version
 }

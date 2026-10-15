@@ -557,6 +557,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
 		sim.Metrics.DroppedUnservable++
+		sim.Metrics.RecordUnserved(r, false)
 		delete(sim.Metrics.Requests, r.ID)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
 		if sim.OnRequestDone != nil {
@@ -573,6 +574,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
+			sim.Metrics.RecordUnserved(r, true)
 			delete(sim.Metrics.Requests, r.ID)
 			if sim.OnRequestDone != nil {
 				for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -587,6 +589,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
 				sim.Metrics.DroppedUnservable++
+				sim.Metrics.RecordUnserved(r, true)
 				delete(sim.Metrics.Requests, r.ID)
 				if sim.OnRequestDone != nil {
 					for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -604,6 +607,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
 		sim.Metrics.DroppedUnservable++
+		sim.Metrics.RecordUnserved(r, false)
 		delete(sim.Metrics.Requests, r.ID)
 		if sim.OnRequestDone != nil {
 			for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -621,6 +625,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if r.Deadline > 0 && r.Deadline <= sim.Clock {
 		r.State = StateTimedOut
 		sim.Metrics.TimedOutRequests++
+		sim.Metrics.RecordTimeout(r)
 		if sim.OnRequestDone != nil {
 			for _, next := range sim.OnRequestDone(r, sim.Clock) {
 				sim.InjectArrival(next)
@@ -821,8 +826,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	}
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
-	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock)
+	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock, max(outputTokens, 0), postDecodeOverhead)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
+	sim.Metrics.StepOwners = append(sim.Metrics.StepOwners,
+		StepOwner{CompletionUs: lat + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
 	req.specDecodeCarry = 0
@@ -915,6 +922,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 			Request: s.Request,
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
+		sim.Metrics.recordPrefixLookup(s.Request, s.Lookup)
 		sim.recordAdapterResidency(s.Request)
 	}
 

@@ -17,6 +17,19 @@ type KVStore interface {
 	MirrorToCPU(batch []*Request) // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
 }
 
+// ThrashCounts are the numerator and denominator of a KV store's KVThrashingRate. The
+// counts, not the rate, aggregate across instances (#1904).
+type ThrashCounts struct {
+	Events        int64
+	Opportunities int64
+}
+
+// ThrashCounter is the optional capability a KVStore implements to report ThrashCounts.
+// Both offload stores implement it; the single-tier store, which never thrashes, does not.
+type ThrashCounter interface {
+	ThrashCounts() ThrashCounts
+}
+
 // DeferrableKVStore is the optional capability a KVStore implements when it can
 // defer a new prefill admission that needs KV blocks resident only on a secondary
 // (disk/object-store) offload tier, and re-poll it at each scheduler step instead

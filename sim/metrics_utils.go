@@ -3,6 +3,9 @@ package sim
 
 import (
 	"math"
+
+	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/vocab"
 )
 
 type IntOrFloat64 interface {
@@ -28,6 +31,10 @@ type RequestMetrics struct {
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
+	Phase             Phase   `json:"phase,omitempty"`                  // #1938: benchmark phase; "" = measured
+	// OutputTokens is the count the request emitted (aiperf's OSL), set at completion. It
+	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
+	OutputTokens int `json:"output_tokens,omitempty"`
 
 	// CompletionIndex is this request's 1-based position in the run's completion order,
 	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
@@ -44,6 +51,13 @@ type RequestMetrics struct {
 	// them. Unexported, so never serialized.
 	completionSeq   int
 	completionClock int64
+	// completionOverheadTicks is the fixed host time the latency model charged after the
+	// request's last streamed token (PostDecodeFixedOverhead), part of E2E but not of
+	// aiperf's request latency, which ends at the last content chunk (#1938). timedOut marks
+	// a request cancelled by its client timeout. Both survive the merge and the P/D
+	// projection (WithCompletionOf) like the completion stamp.
+	completionOverheadTicks int64
+	timedOut                bool
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -63,6 +77,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		LengthCapped:     req.LengthCapped,
 		SessionID:        req.SessionID,
 		RoundIndex:       req.RoundIndex,
+		Phase:            req.Phase,
 	}
 	// Flow control: compute gateway queue delay when timestamps are set (#882)
 	if req.GatewayDispatchTime > 0 && req.GatewayEnqueueTime > 0 {
@@ -143,6 +158,70 @@ type MetricsOutput struct {
 	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
 	// scenario exactly.
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+
+	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
+	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
+	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
+	*MeasuredMetrics
+
+	// WholeRun keeps the whole-run values of the keys the file restates over the measured
+	// window (ttft_*, e2e_*, cache_hit_rate). File-only.
+	WholeRun *WholeRunLatency `json:"whole_run,omitempty"`
+
+	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
+	// (#1942), {} when no kernel priced the run. File-only (WithKernelProvenance); a pointer
+	// so stdout omits it while the file can state an empty map.
+	KernelProvenance *map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
+
+	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
+	*BuildVersions
+}
+
+// BuildVersions are the module versions a results file was produced by: BLIS itself and the
+// blis-latency-kernel and blis-schemas releases it was built against.
+type BuildVersions struct {
+	BLIS    string `json:"blis_version"`
+	Kernel  string `json:"kernel_version"`
+	Schemas string `json:"schemas_version"`
+}
+
+// KernelPoolProvenance is the evidence behind one pool's kernel (#1942): how many of the
+// coefficients it priced with rest on each evidence method, the registry entries that rest on
+// none (copied from another scope, or assumed), the assumptions the kernel made itself, and
+// the release rules no one applied to the scenario. Entries are blis-latency-kernel's own
+// kernel.CoefficientOrigin records, so their keys are that type's field names.
+type KernelPoolProvenance struct {
+	// MethodCounts counts the Provenance entries by evidence method; Evidenced and Total are
+	// the kernel's Evidence() figures.
+	MethodCounts map[vocab.Method]int `json:"method_counts"`
+	Evidenced    int                  `json:"evidenced"`
+	Total        int                  `json:"total"`
+	// EvidenceSource says where Evidenced came from: the kernel's Evidence(), or, for a
+	// kernel that does not report it, nothing (Evidenced is 0 and Total counts the entries).
+	EvidenceSource string `json:"evidence_source"`
+	// NotEvidenced are the registry entries whose method is neither evidenced nor
+	// not_charged: copied from another scope (a fallback) or assumed.
+	NotEvidenced []kernel.CoefficientOrigin `json:"fallback_or_assumed"`
+	// Assumptions are the values the kernel supplied itself (Set == KernelAssumptionSet).
+	Assumptions []kernel.CoefficientOrigin `json:"assumptions"`
+	// SkippedRules are the scenario's release rules that neither the kernel nor BLIS
+	// enforces, and SkippedRuleFindings what they report on this scenario.
+	SkippedRules        []string      `json:"skipped_rules"`
+	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+}
+
+// The values of KernelPoolProvenance.EvidenceSource.
+const (
+	EvidenceFromKernel     = "kernel"
+	EvidenceFromProvenance = "provenance_entries"
+)
+
+// RuleFinding is one finding of a blis-schemas release rule.
+type RuleFinding struct {
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"`
+	Path     string `json:"path,omitempty"`
+	Message  string `json:"message"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.

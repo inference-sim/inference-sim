@@ -514,6 +514,11 @@ func (t *TieredKVCache) KVThrashingRate() float64 {
 	return float64(t.cpu.evictionCount) / float64(t.mirrorCount)
 }
 
+// ThrashCounts implements sim.ThrashCounter: the counts behind KVThrashingRate.
+func (t *TieredKVCache) ThrashCounts() sim.ThrashCounts {
+	return sim.ThrashCounts{Events: t.cpu.evictionCount, Opportunities: t.mirrorCount}
+}
+
 // SetClock is a no-op in vLLM v1 model (thrashing detection removed).
 func (t *TieredKVCache) SetClock(_ int64) {}
 

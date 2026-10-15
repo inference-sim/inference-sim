@@ -155,8 +155,17 @@ func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessN
 func (i *InstanceSimulator) Finalize() {
 	i.sim.Finalize()
 	// Capture KV metrics at finalization for CollectRawMetrics
-	i.sim.Metrics.CacheHitRate = i.sim.KVCache.CacheHitRate()
 	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+	// The thrash counts behind the rate, so the cluster aggregate weights each instance
+	// by its opportunities (#1904). The hit rate is the instance's prompt-token lookups
+	// (Metrics.recordPrefixLookup), the quantity vLLM's prefix-cache stats count, rather
+	// than the store's block tally, which also counts decode growth.
+	if c, ok := i.sim.KVCache.(sim.ThrashCounter); ok {
+		counts := c.ThrashCounts()
+		i.sim.Metrics.KVThrashEvents = counts.Events
+		i.sim.Metrics.KVThrashOpportunities = counts.Opportunities
+	}
+	i.sim.Metrics.CacheHitRate = i.sim.Metrics.PromptCacheHitRate()
 }
 
 // QueueDepth returns the number of requests in the wait queue.

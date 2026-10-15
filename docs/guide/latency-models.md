@@ -167,8 +167,10 @@ not predict acceptance, since it runs no draft model.
 Progress stops at the completion boundary: the final step is granted only the tokens the
 request still needs, as vLLM trims the accepted tail once `check_stop` fires. A request's
 output-token count, and a closed-loop `accumulate` session's context growth, are therefore
-identical to a `K=0` run. Under speculation raw ITL percentiles are per verification step;
-use TPOT for per-token latency.
+identical to a `K=0` run. Under speculation the `itl_*` and `step_interval_*` percentiles are
+per verification step; the `--metrics-path` file's `request_itl_*` (aiperf's per-token ITL) and
+`interactivity_*` are per token, about the step interval over `1 + α·K` (see
+[Metrics & Results](results.md#measured-window-aggregates-metrics-path-file)).
 
 **Known limitation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)).**
 KV and token-budget occupancy are accounted by the accepted count `g`, not the speculative

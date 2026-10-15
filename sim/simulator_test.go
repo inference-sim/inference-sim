@@ -1484,6 +1484,41 @@ func TestEnqueueRequest_MaxModelLen_Exceeded_Dropped(t *testing.T) {
 	}
 }
 
+// Context-overflow drops (prompt, or prompt plus budget, past MaxModelLen) count toward the
+// measured window's context_overflow_requests and
+// any other drop (here a negative output budget) toward failed_requests (#1938), while a warm-up request's drop
+// counts toward neither; DroppedUnservable counts all four.
+func TestEnqueueRequest_UnservedDropsAreCountedByPhase(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 512),
+	}
+	sim := mustNewSimulator(t, cfg)
+	for _, req := range []*Request{
+		{ID: "overflow", InputTokens: make([]TokenID, 600), OutputTokens: make([]TokenID, 1), Phase: PhaseProfile},
+		{ID: "overflow-budget", InputTokens: make([]TokenID, 300), OutputTokens: make([]TokenID, 1), MaxOutputLen: 300},
+		{ID: "budget", InputTokens: make([]TokenID, 100), OutputTokens: make([]TokenID, 1), MaxOutputLen: -1},
+		{ID: "warm", InputTokens: make([]TokenID, 600), OutputTokens: make([]TokenID, 1), Phase: PhaseWarmup},
+	} {
+		req.State = StateQueued
+		sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+		sim.EnqueueRequest(req)
+	}
+	if got := sim.Metrics.DroppedUnservable; got != 4 {
+		t.Fatalf("DroppedUnservable = %d, want 4", got)
+	}
+	if got := sim.Metrics.MeasuredContextOverflows; got != 2 {
+		t.Errorf("MeasuredContextOverflows = %d, want 2 (the warm-up drop is unmeasured)", got)
+	}
+	if got := sim.Metrics.MeasuredFailures; got != 1 {
+		t.Errorf("MeasuredFailures = %d, want 1 (the negative-budget drop)", got)
+	}
+}
+
 // BC-3: MaxModelLen=0 falls through to KV check only
 func TestEnqueueRequest_MaxModelLen_Zero_FallsThroughToKV(t *testing.T) {
 	cfg := SimConfig{

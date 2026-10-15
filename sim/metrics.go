@@ -61,6 +61,46 @@ type Metrics struct {
 	AdapterLoadCounts     map[string]int64
 	AdapterEvictionCounts map[string]int64
 
+	// Prompt-token prefix-cache lookups (#1904), recorded at admission as vLLM counts them
+	// (PrefixLookup): the whole run's, and the measured requests' (#1938). Summed across
+	// instances, so the cluster CacheHitRate is hits over queries rather than a mean of
+	// per-instance rates. CPUTierHitTokens is the prompt prefix the offload tier supplied.
+	// KVThrashEvents/KVThrashOpportunities are the counts behind KVThrashingRate, summed
+	// the same way.
+	PrefixCacheQueryTokens         int64
+	PrefixCacheHitTokens           int64
+	CPUTierHitTokens               int64
+	MeasuredPrefixCacheQueryTokens int64
+	MeasuredPrefixCacheHitTokens   int64
+	MeasuredCPUTierHitTokens       int64
+	KVThrashEvents                 int64
+	KVThrashOpportunities          int64
+
+	// Measured-window inputs of the --metrics-path aggregates (#1938); see
+	// metrics_measured.go. MeasuredWindow, when set, fixes the window's bounds (aiperf's
+	// profiling phase start and completion); nil derives them from the measured requests.
+	MeasuredWindow *MeasuredWindow
+	// StepOwners attributes the AllITLs series to requests, in append order: owner i holds
+	// the next Steps entries, from a request of Phase completing at CompletionUs. It lets
+	// step_interval_* keep only measured requests completing in the window. AllITLs is
+	// therefore never reordered in place.
+	StepOwners []StepOwner
+	// MeasuredContextOverflows and MeasuredFailures count measured requests that were never
+	// served (RecordUnserved).
+	MeasuredContextOverflows int
+	MeasuredFailures         int
+	// MeasuredPipelineCancellations counts measured disaggregated parents still in the P/D
+	// pipeline at the horizon, which the projection leaves without a row; they are
+	// cancelled_requests.
+	MeasuredPipelineCancellations int
+	// InFlightSamples is the cluster's engine-side in-flight request count (dispatched, not
+	// yet completed, summed over instances) as a step function: each sample holds from its
+	// time until the next. Set by the cluster on the aggregate; empty per instance.
+	InFlightSamples []InFlightSample
+	// KVCapacityTokensPerReplica is the smallest instance's GPU KV pool in tokens. Set by
+	// the cluster on the aggregate.
+	KVCapacityTokensPerReplica int64
+
 	// completions counts completions on this instance, so each completed request's
 	// Requests entry carries its per-instance completion sequence (see
 	// recordCompletionOrder and RequestMetrics.CompletionIndex).
@@ -68,10 +108,11 @@ type Metrics struct {
 }
 
 // recordCompletionOrder stamps a completed request's Requests entry with this instance's
-// next completion sequence number and the simulation clock at which the completion was
-// processed. Called once per completion, in completion order, from recordRequestCompletion.
-// A request with no Requests entry is left alone (nothing would carry the stamp).
-func (m *Metrics) recordCompletionOrder(id string, clock int64) {
+// next completion sequence number, the simulation clock at which the completion was
+// processed, the output tokens it emitted and the completion overhead its E2E includes. Called once per completion, in completion
+// order, from recordRequestCompletion. A request with no Requests entry is left alone
+// (nothing would carry the stamp).
+func (m *Metrics) recordCompletionOrder(id string, clock int64, outputTokens int, overheadTicks int64) {
 	rm, ok := m.Requests[id]
 	if !ok {
 		return
@@ -79,15 +120,72 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64) {
 	m.completions++
 	rm.completionSeq = m.completions
 	rm.completionClock = clock
+	rm.OutputTokens = outputTokens
+	rm.completionOverheadTicks = overheadTicks
 	m.Requests[id] = rm
 }
 
-// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number and
-// clock), for an entry that stands for src's completion under another id -- a disaggregated
-// parent completes when its decode sub-request does.
+// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number,
+// clock, emitted output tokens, completion overhead and timeout mark), for an entry that stands for src's completion under
+// another id -- a disaggregated parent completes when its decode sub-request does.
 func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
 	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
+	rm.OutputTokens = src.OutputTokens
+	rm.completionOverheadTicks, rm.timedOut = src.completionOverheadTicks, src.timedOut
 	return rm
+}
+
+// recordPrefixLookup adds one admission's prefix-cache lookup to the whole-run counts and,
+// for a measured request, to the measured window's.
+func (m *Metrics) recordPrefixLookup(req *Request, l PrefixLookup) {
+	if l.QueryTokens == 0 {
+		return
+	}
+	m.PrefixCacheQueryTokens += l.QueryTokens
+	m.PrefixCacheHitTokens += l.HitTokens
+	m.CPUTierHitTokens += l.CPUHitTokens
+	if req.Phase.Measured() {
+		m.MeasuredPrefixCacheQueryTokens += l.QueryTokens
+		m.MeasuredPrefixCacheHitTokens += l.HitTokens
+		m.MeasuredCPUTierHitTokens += l.CPUHitTokens
+	}
+}
+
+// PromptCacheHitRate is prefix-cache hit tokens over query tokens, 0 before any lookup.
+func (m *Metrics) PromptCacheHitRate() float64 {
+	if m.PrefixCacheQueryTokens == 0 {
+		return 0
+	}
+	return float64(m.PrefixCacheHitTokens) / float64(m.PrefixCacheQueryTokens)
+}
+
+// RecordTimeout marks a request its client timeout cancelled. aiperf records a timed-out
+// request as an error, so a measured one counts toward failed_requests (#1938), and its row
+// is marked so it is not also counted as cancelled.
+func (m *Metrics) RecordTimeout(req *Request) {
+	if rm, ok := m.Requests[req.ID]; ok {
+		rm.timedOut = true
+		m.Requests[req.ID] = rm
+	}
+	if req.Phase.Measured() {
+		m.MeasuredFailures++
+	}
+}
+
+// RecordUnserved counts a request that left without being served -- dropped at enqueue,
+// rejected at admission or routing, shed from the gateway queue -- toward the measured
+// window's context_overflow_requests or failed_requests (#1938) when its phase is measured.
+// Callers keep their own run-wide counters (DroppedUnservable, RejectedRequests, ...); this
+// is the phase-aware tally beside them.
+func (m *Metrics) RecordUnserved(req *Request, contextOverflow bool) {
+	if !req.Phase.Measured() {
+		return
+	}
+	if contextOverflow {
+		m.MeasuredContextOverflows++
+	} else {
+		m.MeasuredFailures++
+	}
 }
 
 // assignCompletionIndices numbers the completed requests in rs 1..n in the order the
@@ -197,12 +295,12 @@ func (m *Metrics) BuildOutput(instanceID string) MetricsOutput {
 		output.E2EP95Ms = CalculatePercentile(sortedE2Es, 95)
 		output.E2EP99Ms = CalculatePercentile(sortedE2Es, 99)
 
-		// --- ITL Calculations ---
-		slices.Sort(m.AllITLs)
-		output.ITLMeanMs = CalculateMean(m.AllITLs)
-		output.ITLP90Ms = CalculatePercentile(m.AllITLs, 90)
-		output.ITLP95Ms = CalculatePercentile(m.AllITLs, 95)
-		output.ITLP99Ms = CalculatePercentile(m.AllITLs, 99)
+		// --- ITL Calculations --- (a sorted copy: AllITLs stays aligned with StepOwners)
+		sortedITLs := slices.Sorted(slices.Values(m.AllITLs))
+		output.ITLMeanMs = CalculateMean(sortedITLs)
+		output.ITLP90Ms = CalculatePercentile(sortedITLs, 90)
+		output.ITLP95Ms = CalculatePercentile(sortedITLs, 95)
+		output.ITLP99Ms = CalculatePercentile(sortedITLs, 99)
 
 		// --- P99 Scheduling Delay ---
 		sortedSchedulingDelays := make([]float64, 0, len(m.RequestSchedulingDelays))
@@ -323,8 +421,22 @@ type EmitOption func(*emitOptions)
 
 // emitOptions is the resolved option set for one EmitOutput call.
 type emitOptions struct {
-	catalog   *CatalogProvenance
-	overrides []ScenarioOverride
+	catalog    *CatalogProvenance
+	overrides  []ScenarioOverride
+	provenance map[string]KernelPoolProvenance
+	versions   *BuildVersions
+}
+
+// WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
+// file only, keyed by pool role. A nil map leaves the block absent; an empty one writes {}.
+func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
+	return func(o *emitOptions) { o.provenance = p }
+}
+
+// WithBuildVersions records the build's module versions in the --metrics-path file only:
+// two builds of one commit can differ in them, so they stay off stdout (INV-6).
+func WithBuildVersions(v *BuildVersions) EmitOption {
+	return func(o *emitOptions) { o.versions = v }
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -376,7 +488,6 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// reads this as the simulator's hit rate. run and replay of the same trace
 		// produce identical values (INV-13).
 		hitRate := m.CacheHitRate
-		output.CacheHitRate = &hitRate
 
 		// Catalog provenance (#1732): same file-only discipline as cache_hit_rate above
 		// — the stdout marshal has already run, and `output` is a value copy, so this
@@ -384,6 +495,19 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		if resolvedOpts.provenance != nil {
+			output.KernelProvenance = &resolvedOpts.provenance
+		}
+		output.BuildVersions = resolvedOpts.versions
+
+		// Measured-window aggregates (#1938): file-only for the same reason. The latency
+		// families stdout already reports (ttft_*, e2e_*) take their measured-window values
+		// here, so the file states one definition per key. The legacy per-step itl_* keys and
+		// the run-wide counts (completed_requests, INV-1) are kept as they are;
+		// step_interval_* restates itl_* over the measured window.
+		measured, lat := m.buildMeasured()
+		output.MeasuredMetrics = &measured
+		output.applyMeasured(lat, hitRate)
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

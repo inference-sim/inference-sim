@@ -37,6 +37,22 @@ const (
 	StateWaitingForRemoteKVs RequestState = "waiting_for_remote_kvs"
 )
 
+// Phase is a request's benchmark phase, after aiperf's benchmark_phase record tag. Only
+// PhaseWarmup is excluded from the measured window; profile and grace requests (sent in
+// the profiling phase, completing before or after its sending window closes) count, as
+// aiperf counts every valid profiling record (AGENTX_MVP_SPEC §5.3).
+type Phase string
+
+const (
+	PhaseUnset   Phase = ""
+	PhaseWarmup  Phase = "warmup"
+	PhaseProfile Phase = "profile"
+	PhaseGrace   Phase = "grace"
+)
+
+// Measured reports whether a request of this phase counts in the measured aggregates.
+func (p Phase) Measured() bool { return p != PhaseWarmup }
+
 type Request struct {
 	ID string // Unique identifier for the request
 
@@ -124,6 +140,12 @@ type Request struct {
 	GatewayEnqueueTime  int64 // microseconds: when request entered the gateway queue
 	GatewayDispatchTime int64 // microseconds: when request was dispatched from the gateway queue
 
+	// Phase is the benchmark phase the request was sent in (#1938). The zero value means
+	// the request is in the measured window, so a workload that sets no phase is measured
+	// whole. A replay with a warm-up sets PhaseWarmup on the requests the measured
+	// aggregates of the --metrics-path file must exclude.
+	Phase Phase
+
 	// specDecodeCarry accumulates the fractional part of the mean accepted-token
 	// count (1+α·K) across decode steps for speculative decoding / MTP (#1528).
 	// Unexported: owned and mutated only by Simulator.commitDecodeTokens; the zero
@@ -131,6 +153,10 @@ type Request struct {
 	// Request construction site needs updating. Reset to 0 on preemption (alongside
 	// ProgressIndex) and at completion.
 	specDecodeCarry float64
+
+	// preemptions counts how often batch formation preempted this request; a re-admission
+	// after preemption is not a new prefix-cache query (PrefixLookup).
+	preemptions int
 }
 
 // This method returns a human-readable string representation of a Request.

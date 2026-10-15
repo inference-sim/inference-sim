@@ -64,6 +64,10 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
 | [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
+| [INV-M1](#inv-m1-measured-window-accounting-closes) Measured-window accounting closes | Subsystem | metrics output |
+| [INV-M2](#inv-m2-derived-aggregates-are-exactly-their-definitions) Derived aggregates are exactly their definitions | Subsystem | metrics output |
+| [INV-M3](#inv-m3-cluster-cache-hit-rate-is-prompt-lookup-weighted) Cluster cache hit rate is prompt-lookup-weighted | Subsystem | metrics output / KV cache |
+| [INV-M4](#inv-m4-only-the-phase-decides-what-is-measured) Only the phase decides what is measured | Subsystem | metrics output |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -366,6 +370,95 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Enforced:** `sim/prefix_cache_index.go:131` — `evictOldest` panics on a nil tail, and its message already said *"(invariant violation)"* before the invariant had an ID. The two nil-node guards in `pushHead` (`:139`) and `removeNode` (`:155`) are the same family.
 
 **Verification:** `sim/prefix_cache_index_invariant_test.go` — `TestINV18_ListAndLookupStayConsistent` walks the list forward and backward after each of a long sequence of `RecordBlocks` calls that crosses capacity repeatedly, asserting the walked node set equals the `lookup` key set, the head/tail terminals are correct in both directions, and the `tail == nil ⟺ len(lookup) == 0` biconditional holds at every step (including the empty cache, the one-entry cache, and the at-capacity cache). The biconditional is checked in **both** directions: a nil tail with a non-empty map is the panic case, while a non-nil tail with an empty map is the mirror leak — an orphaned node the map can no longer reach, which degrades routing without ever reaching the panic. `TestINV18_EvictOldestPanicsOnInconsistentState` asserts the guard itself fires on a hand-built inconsistent cache, so the entry's "eviction at capacity can never fail" clause does not rest on dead code.
+
+### Metrics output
+
+These bind the measured-window aggregates of the `--metrics-path` file (`sim/metrics_measured.go`,
+#1938) and the cluster cache hit rate (#1904). The definitions mirror aiperf 0.12.0; the
+code comments cite the aiperf lines.
+
+#### INV-M1: Measured-Window Accounting Closes
+
+**Statement:** every request whose `Phase` is measured (not `warmup`) and that was sent before
+the horizon ends in exactly one of `measured_completed_requests`; `cancelled_requests` (in
+flight when the window closed -- queued, running, or in the P/D pipeline including KV transfer
+-- or completed after an explicit `MeasuredWindow.EndUs`); `context_overflow_requests` (prompt,
+or prompt plus output budget, past `MaxModelLen`); and `failed_requests` (a client timeout,
+which aiperf records as an error; any other drop; admission or routing rejection; gateway shed,
+eviction or expiry; decode-KV drop). It holds for colocated and disaggregated runs. The one
+open term is a request still in the gateway queue at the horizon. `completed_requests` stays
+the run-wide INV-1 term.
+
+**Enforced:** `Metrics.RecordUnserved` beside every instance drop counter, `Metrics.RecordTimeout`
+beside every timeout counter (it also marks the row so it is not cancelled too),
+`ClusterSimulator.recordUnserved` beside every cluster rejection, shed and decode-KV drop, and
+`projectPDMetrics`, which counts a measured parent still in the pipeline at the horizon
+(`MeasuredPipelineCancellations`) when it removes its rows.
+
+**Verification:** `TestMeasuredAccountingClosesOverClusterRuns` and
+`TestMeasuredAccountingClosesOverDisaggregatedRuns` (rapid, over random phases, deadlines,
+oversized prompts, token-bucket admission, tight decode KV and horizons; each run asserts it
+exercised the paths it claims); `TestBuildMeasured_InvariantsHoldOverRandomRequestSets`;
+`TestEnqueueRequest_UnservedDropsAreCountedByPhase`; `TestBuildMeasured_ATimeoutIsAFailureNotACancellation`.
+
+#### INV-M2: Derived Aggregates Are Exactly Their Definitions
+
+**Statement:** a request's aiperf latency is `FirstTokenTime + ΣITL`, the time of its last
+streamed token. vLLM v0.31.0 queues the final token's output (`v1/engine/output_processor.py:745`)
+before it frees the request (`:759`) and records finish stats (`:766`), and the chat stream
+yields that chunk (`entrypoints/openai/chat_completion/serving.py:828`) before usage and
+`[DONE]`, so the latency model's completion overhead, which E2E carries, is not in it.
+`request_itl = (latency − ttft)/(osl − 1)` over `osl ≥ 2`; `interactivity_pNN == 1000 /
+request_itl_pNN_ms` exactly; `output_tok_per_user_mean` averages `1000/request_itl` over records
+with a non-zero ITL only; `output_throughput_tok_s × measured_window_s` equals the measured output
+tokens; every `*_pNN` is numpy-linear over one value per measured request. Under time scaling by
+`s` the latency statistics and the window scale by `s` and the rates by `1/s`. Duplicating every
+request keeps every mean and the extreme percentiles and doubles counts and throughput; interior
+linear percentiles are not invariant under duplication (`[0,1]` p90 0.9, `[0,0,1,1]` p90 1.0).
+
+**Verification:** `TestBuildMeasured_PinsTheAiperfDefinitions`, `TestCalculatePercentile_MatchesNumpyLinear`,
+`TestMeasured_LatencyEndsAtTheLastTokenNotAtTheCompletionOverhead` (non-zero completion overhead),
+`TestBuildMeasured_PerUserMeanSkipsZeroITLRecords`, `TestBuildMeasured_TheWindowEndIsInclusive`,
+`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`, `TestBuildMeasured_ScalingTimeScalesLatenciesAndInvertsRates`,
+`TestBuildMeasured_DuplicatingEveryRequestKeepsMeansAndExtremes`, and
+`TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength`.
+
+#### INV-M3: Cluster Cache Hit Rate Is Prompt-Lookup-Weighted
+
+**Statement:** `cache_hit_rate` is summed prompt-token prefix hits over summed prompt-token
+queries, recorded per admission as vLLM v0.31.0 counts them (`v1/core/sched/scheduler.py:1252-1256`,
+`v1/core/kv_cache_manager.py:253-262`): a new request's prompt is queried once, a re-admission
+after preemption is not counted (`v1/metrics/stats.py:132-143`), and decode growth and decode-pool
+admissions query nothing. It is the GPU prefix cache's local rate; `cpu_tier_hit_rate` is the
+offload tier's share of the same queried tokens. So the cluster rate lies within the rates of the
+instances that queried anything, and adding idle or decode-only instances leaves it unchanged.
+`KVThrashingRate` aggregates its own counts the same way.
+
+**Enforced:** `FormBatch` records `ScheduledRequest.Lookup` on a new prefill admission;
+`Metrics.recordPrefixLookup`; `aggregateMetrics` divides the sums.
+
+**Verification:** `TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt`,
+`TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing` (rapid),
+`TestAggregateCacheHitRateLiesWithinTheInstanceRates` (rapid),
+`TestAggregateCacheHitRate_IsTokenWeighted`, `TestAggregateCacheHitRate_TheDecodePoolDoesNotDiluteIt`,
+`TestPrefixLookups_APreemptedReadmissionIsNotANewQuery`.
+
+**Evidence:** #1904: four instances with three idle reported 0.2181 where the busy instance's
+rate was 0.8723.
+
+#### INV-M4: Only the Phase Decides What Is Measured
+
+**Statement:** adding warm-up requests (with their decode steps and prefix-cache lookups) to a
+run's records changes no measured aggregate, `cache_hit_rate` and `cpu_tier_hit_rate` included.
+With no phase set and no explicit window the measured set is every completed request:
+`step_interval_*` equals the legacy `itl_*`, and `e2e_*` equals stdout's when the completion
+overhead is zero. The file's `ttft_*` population is completed measured requests; stdout's (kept
+under `whole_run`) also counts a request that emitted a first token and did not complete, so the
+two agree only when there is none.
+
+**Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid, with
+lookups), `TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured` (step series, E2E and the
+TTFT population), `TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
 
 ### Autoscaling
 

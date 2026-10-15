@@ -45,10 +45,16 @@ type ClusterSimulator struct {
 	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass       map[string]int64
-	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
-	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
-	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
+	injectedByClass  map[string]int64
+	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
+	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	// inFlightSamples is the step function of the in-flight total across instances, one
+	// sample per change, and measuredUnserved the measured-phase requests the cluster itself
+	// never served (rejected, shed, dropped at decode KV). Both feed the --metrics-path
+	// measured-window aggregates (#1938).
+	inFlightSamples       []sim.InFlightSample
+	measuredUnserved      int
 	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil unless --in-flight-eviction set)
 	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
 	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
@@ -897,6 +903,7 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
+		c.recordInFlight()
 		c.maybeDeliverProgressSnapshot(false)
 	}
 
@@ -1693,6 +1700,37 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 	return result
 }
 
+// recordInFlight appends a sample when the cluster-wide in-flight total has changed since
+// the last one. Called once per processed event, so the samples are a step function of
+// time (#1938).
+func (c *ClusterSimulator) recordInFlight() {
+	total := 0
+	for _, n := range c.inFlightRequests {
+		total += n
+	}
+	if k := len(c.inFlightSamples); k > 0 {
+		last := &c.inFlightSamples[k-1]
+		if last.Count == total {
+			return
+		}
+		if last.AtUs == c.clock {
+			last.Count = total
+			return
+		}
+	} else if total == 0 {
+		return
+	}
+	c.inFlightSamples = append(c.inFlightSamples, sim.InFlightSample{AtUs: c.clock, Count: total})
+}
+
+// recordUnserved counts a request the cluster itself never served toward the measured
+// window's failed_requests, when its phase is measured (#1938).
+func (c *ClusterSimulator) recordUnserved(req *sim.Request) {
+	if req != nil && req.Phase.Measured() {
+		c.measuredUnserved++
+	}
+}
+
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
 func mergeFloat64Map(dst, src map[string]float64, mapName string) {
 	for k, v := range src {
@@ -1764,15 +1802,32 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.DroppedUnservable += m.DroppedUnservable
 		merged.LengthCappedRequests += m.LengthCappedRequests
 		merged.TimedOutRequests += m.TimedOutRequests
-		merged.CacheHitRate += m.CacheHitRate
-		merged.KVThrashingRate += m.KVThrashingRate
+		merged.PrefixCacheQueryTokens += m.PrefixCacheQueryTokens
+		merged.PrefixCacheHitTokens += m.PrefixCacheHitTokens
+		merged.CPUTierHitTokens += m.CPUTierHitTokens
+		merged.MeasuredPrefixCacheQueryTokens += m.MeasuredPrefixCacheQueryTokens
+		merged.MeasuredPrefixCacheHitTokens += m.MeasuredPrefixCacheHitTokens
+		merged.MeasuredCPUTierHitTokens += m.MeasuredCPUTierHitTokens
+		merged.KVThrashEvents += m.KVThrashEvents
+		merged.KVThrashOpportunities += m.KVThrashOpportunities
+		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
+		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
+		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
 		merged.StillRunning += m.StillRunning
+		if kv := inst.TotalKvCapacityTokens(); kv > 0 &&
+			(merged.KVCapacityTokensPerReplica == 0 || kv < merged.KVCapacityTokensPerReplica) {
+			merged.KVCapacityTokensPerReplica = kv
+		}
 	}
-	if n := len(c.instances); n > 0 {
-		merged.CacheHitRate /= float64(n)
-		merged.KVThrashingRate /= float64(n)
+	// Prompt hits over prompt queries summed across instances, not a mean of per-instance
+	// rates, so an idle or decode-only instance does not dilute the cluster figure (#1904).
+	merged.CacheHitRate = merged.PromptCacheHitRate()
+	if merged.KVThrashOpportunities > 0 {
+		merged.KVThrashingRate = float64(merged.KVThrashEvents) / float64(merged.KVThrashOpportunities)
 	}
+	merged.MeasuredFailures += c.measuredUnserved
+	merged.InFlightSamples = c.inFlightSamples
 
 	// T042: apply warm-up TTFT factor to requests served during warm-up (Phase 1A, R23).
 	// C4 (known simplification): The penalty is applied post-hoc to recorded TTFTs rather than
@@ -2063,8 +2118,18 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
 		decodeEntry := m.Requests[dec]
+		_, prefillRow := m.Requests[pfx]
+		_, decodeRow := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
+		// A parent that leaves no row and reached no terminal outcome -- one that would
+		// have been counted already, as a timeout (RecordTimeout) or a drop (RecordUnserved,
+		// recordUnserved) -- was still in the pipeline at the horizon: queued, running or in
+		// KV transfer. It is cancelled in the measured window (INV-M1).
+		if !served && (prefillRow || decodeRow) && !pdParentTerminal(parent) &&
+			parent.OriginalRequest != nil && parent.OriginalRequest.Phase.Measured() {
+			m.MeasuredPipelineCancellations++
+		}
 		if served {
 			if parent.OriginalRequest == nil {
 				panic(fmt.Sprintf("projectPDMetrics: parent %s has nil OriginalRequest", pid))
@@ -2105,6 +2170,19 @@ func (c *ClusterSimulator) projectPDMetrics() {
 	}
 }
 
+// pdParentTerminal reports whether a disaggregated parent reached an outcome its sub-requests
+// already accounted for: a timeout on either pool, or a decode-side drop (the parent is
+// stamped complete with no decode sub-request).
+func pdParentTerminal(parent *ParentRequest) bool {
+	if parent.PrefillSubReq != nil && parent.PrefillSubReq.State == sim.StateTimedOut {
+		return true
+	}
+	if parent.DecodeSubReq != nil && parent.DecodeSubReq.State == sim.StateTimedOut {
+		return true
+	}
+	return parent.CompletionTime > 0 && parent.DecodeSubReq == nil
+}
+
 // executeStandardRouting performs non-disaggregated routing: select a target over
 // all routable instances, record the decision, increment in-flight/tenant counters,
 // record warm-up, and inject the request into the target instance. Used when pool
@@ -2122,6 +2200,7 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 	if len(state.Snapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", req.ID, req.Model)
 		cs.routingRejections++
+		cs.recordUnserved(req)
 		return
 	}
 
@@ -2193,6 +2272,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", req.ID)
 		cs.routingRejections++
+		cs.recordUnserved(req)
 		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
@@ -2258,6 +2338,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		if len(encodeSnapshots) == 0 {
 			logrus.Warnf("[cluster] req %s: no routable instances in encode pool — request rejected at encode routing", req.ID)
 			cs.encodeRoutingRejections++
+			cs.recordUnserved(req)
 			return
 		}
 		encodeState := &sim.RouterState{Snapshots: encodeSnapshots, Clock: cs.clock}
@@ -2347,6 +2428,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		TenantID:     req.TenantID,
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
+		Phase:        req.Phase,
 	}
 	parent.PrefillSubReq = prefillSubReq
 
