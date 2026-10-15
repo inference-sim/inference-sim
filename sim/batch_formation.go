@@ -377,9 +377,22 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// without tracking which request produced them. When prefix caching is disabled,
 		// skip that lookup entirely so a new admission is billed from the start of its
 		// prompt instead of receiving credit for another request's cached blocks.
+		//
+		// The hit is capped at InputLen - 1 tokens, in whole blocks: a prompt that hits in
+		// full must still compute its last token for logits, so its last block is computed
+		// again (vLLM v0.31.0 KVCacheManager.get_computed_blocks,
+		// vllm/v1/core/kv_cache_manager.py:289-295, max_cache_hit_length =
+		// request.num_tokens - 1). Without the cap a block-aligned prompt that hits in full --
+		// a request resumed after preemption, or a first admission over another's prefix --
+		// is admitted with no work, claims none of its cached blocks and runs holding no KV
+		// (#1943).
+		maxHitBlocks := max(next.InputLen()-1, 0) / ctx.KVCache.BlockSize()
 		var cachedBlocks []int64
 		if !ctx.PrefixCachingDisabled {
 			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+			if util.Len64(cachedBlocks) > maxHitBlocks {
+				cachedBlocks = cachedBlocks[:maxHitBlocks]
+			}
 		}
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 
@@ -400,7 +413,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		computedStart := startIndex
 		if reloadReporter != nil {
 			if reloadableEnd, ok := reloadReporter.ReloadablePrefixEnd(next, startIndex); ok && reloadableEnd > computedStart {
-				computedStart = reloadableEnd
+				// A reload covering the whole prompt still leaves its last token to compute:
+				// vLLM sets a loaded request's num_computed_tokens to num_tokens - 1 when the
+				// load covered all of it (Scheduler._update_waiting_for_remote_kv,
+				// vllm/v1/core/sched/scheduler.py:3095-3096 at v0.31.0), recomputing one token
+				// rather than the GPU hit's whole block (#1943).
+				computedStart = min(reloadableEnd, max(next.InputLen()-1, 0))
 			}
 		}
 

@@ -160,11 +160,7 @@ func TestSpecDecode_ReservationPropertiesAroundSaturation(t *testing.T) {
 		want := 0
 		maxTokens := 0
 		for i := range shapes {
-			// A prompt of whole blocks is left out: a preempted one re-admits as a full prefix
-			// hit with no token to compute, and BLIS then runs it without claiming its cached
-			// blocks (a pre-existing gap; vLLM always recomputes the last prompt token), which
-			// the hold check below would report.
-			in := rapid.IntRange(1, 48).Filter(func(n int) bool { return n%4 != 0 }).Draw(rt, "in")
+			in := rapid.IntRange(1, 48).Draw(rt, "in")
 			shapes[i] = reqShape{in, rapid.IntRange(1, 48).Draw(rt, "out")}
 			want += shapes[i].out
 			maxTokens = max(maxTokens, shapes[i].in+shapes[i].out)
