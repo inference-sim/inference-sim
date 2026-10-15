@@ -114,3 +114,47 @@ func assertConservation(t *testing.T, res runResult, total int) {
 	}
 }
 
+
+// boundedQueueConfig caps flow control at 10 queued requests with a 150 ms queue-wait budget,
+// so an overload both rejects at capacity and expires queued requests.
+const boundedQueueConfig = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: queue-scorer
+- type: max-score-picker
+- type: single-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+  - pluginRef: max-score-picker
+flowControl:
+  maxRequests: 10
+  defaultRequestTTL: 150ms
+`
+
+func TestFlowControl_INV1_UnderCapacityRejectionAndTTLExpiry(t *testing.T) {
+	reqs := testRequests(300, 5, 200, 0) // 5000 req/s on 2 small instances
+	dep := testDeployment(2)
+	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--config-text="+boundedQueueConfig)})
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	res := runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}
+	assertConservation(t, res, len(reqs))
+	if cs.GatewayQueueRejected() == 0 {
+		t.Errorf("no capacity rejection under a 10-request queue cap at 5000 req/s")
+	}
+	if cs.GatewayExpired() == 0 {
+		t.Errorf("no TTL expiry under a 150 ms queue-wait budget at 5000 req/s")
+	}
+	t.Logf("completed %d, rejected %d, expired %d", res.metrics.CompletedRequests, cs.GatewayQueueRejected(), cs.GatewayExpired())
+	if live := gw.LiveCoroutines(); live != 0 {
+		t.Errorf("%d router coroutines alive after Stop", live)
+	}
+}
