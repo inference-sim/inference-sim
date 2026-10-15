@@ -214,6 +214,25 @@ metrics and fitness scoring.
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the engineering standards, development workflow,
 and guides for adding components.
 
+## Citation
+
+If you use BLIS in your research, please cite our paper (accepted at ACM SIGMETRICS,
+to appear). Preprint: [arXiv:2610.14255](https://arxiv.org/abs/2610.14255).
+
+```bibtex
+@article{guhathakurta2026blis,
+  title     = {Simulate Before You Scale: High-Fidelity LLM Inference Planning Without GPUs},
+  author    = {Guhathakurta, Dipanwita and Toslali, Mert and Parthasarathy, Srinivasan and Chen, Jing and Kalantar, Michael and Masluk, Nicholas A. and Ramani, Vishakha and Tantawi, Asser and Oliveira, Fabio},
+  journal   = {Proc. ACM Meas. Anal. Comput. Syst.},
+  publisher = {Association for Computing Machinery},
+  year      = {2026},
+  note      = {To appear},
+  eprint    = {2610.14255},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.PF}
+}
+```
+
 ## License
 
 Apache License, Version 2.0. See [LICENSE](./LICENSE).
