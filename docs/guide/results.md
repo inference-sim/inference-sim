@@ -84,6 +84,16 @@ The legacy `itl_*` keys are **unchanged on both channels** for backward compatib
 remain per verification step under speculative decoding — and `completed_requests` stays the
 run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
 
+**Comparing a hit rate with aiperf 0.12.0.** Compare aiperf's `server_metrics_export.json`
+`vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with
+`whole_run.cache_hit_rate`, not with the measured-window `cache_hit_rate`. aiperf takes that
+total as last-profiling-scrape minus the scrape before the first PROFILING-tagged scrape
+(`server_metrics/accumulator.py:190-194, 387-401`), and in 0.12.0 a scrape at warmup start
+already carries the PROFILING tag. So the baseline precedes warmup, and the exported total
+counts warmup plus profiling. Real 0.12.0 exports confirm it: the profiling total equals the
+warmup total plus the post-start slices at every level. Under agentx replay the warmup prefills
+are cold, so that figure runs several points below the profiling window's own.
+
 ### Kernel Provenance
 
 `kernel_provenance` is keyed by pool role (`colocated`, or `prefill` and `decode`), #1942:
