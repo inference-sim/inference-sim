@@ -47,6 +47,7 @@ type AgentXReplay struct {
 	instances []*agxInstance
 	laneInst  []*agxInstance // the tree currently holding each lane's slot
 	nextReqID int64
+	streams   int
 	out       []*sim.Request
 	nowUs     int64
 
@@ -157,6 +158,7 @@ type agxInstance struct {
 }
 
 type agxStream struct {
+	id      int // run-wide instance number
 	inst    *agxInstance
 	conv    int32
 	child   bool
@@ -240,10 +242,15 @@ func (x *AgentXReplay) newInstance(lane int, tr *AgentXTrace) *agxInstance {
 		future:      map[int32]*agxJoin{},
 		overlapDone: map[int32]bool{},
 	}
-	in.root = &agxStream{inst: in, conv: 0}
+	in.root = x.newStream(in, 0, false)
 	x.instances = append(x.instances, in)
 	x.stats.TreesStarted++
 	return in
+}
+
+func (x *AgentXReplay) newStream(in *agxInstance, conv int32, child bool) *agxStream {
+	x.streams++
+	return &agxStream{id: x.streams - 1, inst: in, conv: conv, child: child}
 }
 
 // Lanes reports how many lanes were built (fewer than C only if the pool had too few
@@ -331,7 +338,7 @@ func (x *AgentXReplay) streamForState(in *agxInstance, st agxState) *agxStream {
 			return s
 		}
 	}
-	s := &agxStream{inst: in, conv: st.conv, child: true}
+	s := x.newStream(in, st.conv, true)
 	in.childStreams = append(in.childStreams, s)
 	return s
 }
@@ -652,7 +659,8 @@ func (x *AgentXReplay) spawn(in *agxInstance, branches []int32, originMs float64
 			origin = originMs
 		}
 		for _, c := range br.children {
-			s := &agxStream{inst: in, conv: c, child: true, tracked: true}
+			s := x.newStream(in, c, true)
+			s.tracked = true
 			if !br.background && br.joinTurn >= 0 {
 				s.gates = []agxGateRef{{br.joinTurn, b}}
 				j := x.futureJoin(in, br.joinTurn)
@@ -1071,7 +1079,7 @@ func (x *AgentXReplay) fillRequest(d *agxDispatch, req *sim.Request, now int64) 
 	}
 	req.Agentic = &sim.AgenticTag{
 		Lane: in.lane, Tree: in.id, TraceID: tr.ID, Stream: tr.convs[s.conv].sessionID,
-		Kind: kind, Turn: int(d.turn),
+		Kind: kind, StreamInstance: s.id, Turn: int(d.turn),
 	}
 }
 

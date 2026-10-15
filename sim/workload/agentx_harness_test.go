@@ -68,7 +68,14 @@ func (h *agxHarness) push(at int64, arrive bool, r *sim.Request) {
 	heap.Push(&h.events, agxEv{at, h.seq, arrive, r})
 }
 
-func runAgentX(t *testing.T, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64) *agxHarness {
+// agxTB is what the harness needs of a *testing.T or *rapid.T.
+type agxTB interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+}
+
+func runAgentX(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64) *agxHarness {
 	t.Helper()
 	x, err := NewAgentXReplay(c, cfg)
 	if err != nil {

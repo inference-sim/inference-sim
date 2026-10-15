@@ -18,6 +18,10 @@ type AgenticTag struct {
 	Stream string `json:"stream"`
 	// Kind is "root", "subagent" or "flat" (a flattened worker chain split off the root).
 	Kind string `json:"kind"`
+	// StreamInstance numbers the stream's instance within the run. A stream normally has
+	// one instance per tree; aiperf can start a second one when a snapshot seeds a child
+	// whose spawning turn is then sent again (a branch that starts at exactly t*).
+	StreamInstance int `json:"stream_instance"`
 	// Turn is the turn index within the stream.
 	Turn int `json:"turn"`
 	// Outcome is how the request ended: "completed"; "error" (a client timeout, which aiperf
