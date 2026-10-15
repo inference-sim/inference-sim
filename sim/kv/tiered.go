@@ -292,6 +292,12 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 				} else {
 					// New request: commit all cached blocks from block 0.
 					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
+					if !t.gpu.chargeFixedBlocksIfRoom(req.ID) {
+						// No room for its fixed per-sequence blocks (#1941): undo the commit,
+						// which returns the reloaded blocks to the free list with their hashes.
+						t.gpu.ReleaseKVBlocks(req)
+						return false
+					}
 				}
 				return true
 			}

@@ -58,6 +58,7 @@ var (
 	simulationHorizon         int64                  // Total simulation time (in ticks)
 	logLevel                  string                 // Log verbosity level
 	totalKVBlocks             int64                  // KV blocks per rank, sized by the kernel
+	sequenceFixedBlocks       int64                  // blocks each resident sequence holds whatever its length, from the kernel (#1941)
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
@@ -671,6 +672,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// pages and pool. Per data-parallel RANK: a dp>1 MoE deployment runs one replica per rank
 	// (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
 	totalKVBlocks = settings.KVBlocks
+	sequenceFixedBlocks = settings.SequenceFixedBlocks
 	blockSizeTokens = int64(settings.BlockSize)
 	maxNumSeqs = int64(settings.MaxNumSeqs)
 	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
@@ -687,6 +689,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		tensorParallelism, dataParallelism, enableExpertParallel,
 		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, settings.MaxModelLenFrom,
 		!noEnablePrefixCaching, numSpeculativeTokens)
+	logSequenceFixedCharge("first pool", settings)
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel
@@ -1903,7 +1906,8 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
+					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
+					sim.WithSequenceFixedBlocks(sequenceFixedBlocks)),
 				BatchConfig: batchConfigFromCLI(),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism

@@ -64,6 +64,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
 | [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
+| [INV-K3](#inv-k3-every-resident-sequence-holds-its-fixed-blocks) Every resident sequence holds its fixed blocks | Subsystem | KV cache |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -285,6 +286,14 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
 
 **Additional evidence (hardening wave):** Two KV conservation bugs discovered in March 2026: (1) Issue #492, fix #502 — prefill capacity pre-check over-estimated by up to 1 block (partial last-block fill not accounted for), causing false allocation failures that triggered unnecessary preemptions. (2) Issue #501, fix #506 — TieredKVCache CPU→GPU reload could produce an inverted range (`newStart >= endIndex`), causing a slice-bounds panic in block allocation. Both bugs directly affected the allocation/deallocation balance that INV-4 protects. (See also #519 in INV-8 — the range-loop livelock primarily violated the work-conserving property, not block-level conservation.)
+
+#### INV-K3: Every Resident Sequence Holds Its Fixed Blocks
+
+**Statement:** A request that holds any KV blocks also holds exactly `SequenceFixedBlocks` blocks for its fixed per-sequence state, `ceil(SequenceFixedBytes / PerBlockBytes)` of the kernel's pool (window rings, compressor and indexer state, bounded recurrent state; #1941). They are charged at its first allocation, in the same check-then-act pre-check as its tokens, and freed with it, so INV-4 holds with them and a pool of `N` blocks admits at most `floor(N / (P + F))` sequences of `P` blocks. A model whose kernel reports no fixed per-sequence bytes charges nothing, and its output is byte-identical to a build without the term.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (pre-check and charge), `ReleaseKVBlocks`; the offload tiers' reload-only admission (`chargeFixedBlocksIfRoom`). The block count is `sim/kernelmodel` `KVBudget.SequenceFixedBlocks`.
+
+**Verification:** `TestSequenceFixedBlocks_LowerTheAdmissionCeilingByTheFixedTerm` (rapid), `TestSequenceFixedBlocks_ChargedOnceAndFreedWithTheSequence`, `TestSequenceFixedBlocks_RefusalIsSideEffectFree`, `TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed` (`sim/kv`); `TestTheBudgetChargesTheKernelsPerSequenceFixedBytesInWholeBlocks`, `TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling` (`sim/kernelmodel`).
 
 ### Batch formation
 

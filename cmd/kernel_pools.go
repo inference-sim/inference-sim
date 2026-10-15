@@ -143,9 +143,12 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	seqs, toks := int64(s.MaxNumSeqs), int64(s.MaxNumBatchedTokens)
 	noCache := s.PrefixCachingDisabled
 	ml := int64(s.MaxModelLen)
+	fixed := s.SequenceFixedBlocks
+	logSequenceFixedCharge(string(m.Role())+" pool", s)
 	o := cluster.PoolOverrides{
 		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
+		SequenceFixedBlocks: &fixed,
 	}
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
 	// one for the run, which then applies to every pool and is recorded where it departs.
@@ -161,6 +164,21 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 		o.PreemptionPolicy = stated.preemption
 	}
 	return o
+}
+
+// logSequenceFixedCharge reports the per-sequence fixed term of an engine's KV capacity
+// (#1941): what each resident sequence holds whatever its length, and what it costs the pool
+// at max_num_seqs. Silent for a model with no such caches, whose capacity it does not touch.
+func logSequenceFixedCharge(what string, s kernelmodel.Settings) {
+	if s.SequenceFixedBlocks == 0 {
+		return
+	}
+	atCap := min(int64(s.MaxNumSeqs)*s.SequenceFixedBlocks, s.KVBlocks)
+	logrus.Infof("KV capacity (%s): each resident sequence holds %d bytes of fixed state per rank "+
+		"(window rings, compressor/indexer/recurrent state), charged as %d blocks of %d bytes on "+
+		"admission; at max_num_seqs %d that is %d of %d blocks (%.1f%%)",
+		what, s.SequenceFixedBytes, s.SequenceFixedBlocks, s.KVBytesPerBlock, s.MaxNumSeqs,
+		atCap, s.KVBlocks, 100*float64(atCap)/float64(s.KVBlocks))
 }
 
 // requireWindowFits refuses an engine whose window one request could not fit in, as vLLM does

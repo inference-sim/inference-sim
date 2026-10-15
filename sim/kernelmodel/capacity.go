@@ -16,7 +16,7 @@
 // and multiplied by dp for an MoE model, because vLLM runs dp independent EngineCores each
 // with a full KV budget and splits requests disjointly across them.
 //
-// The kernel supplies both inputs:
+// The kernel supplies the inputs:
 //
 //   - FixedBytes() is per-rank occupancy independent of the request set: weights, the
 //     engine's workspace, communicator buffers, graph capture. Subtracting it from the
@@ -24,6 +24,10 @@
 //   - SequenceVariableBytes(blockSize) is the per-sequence KV cost of one page, already
 //     page-quantized and already divided by tensor-parallel width down to the engine's
 //     one-KV-head floor.
+//   - SequenceFixedBytes() is what every resident sequence holds whatever its length: window
+//     rings, compressor and indexer state, bounded recurrent state. The budget charges it per
+//     admitted sequence, in whole blocks of PerBlockBytes, rather than out of the pool up
+//     front, because how many sequences are resident is the scheduler's to decide (#1941).
 package kernelmodel
 
 import (
@@ -57,6 +61,12 @@ type KVBudget struct {
 	PerBlockBytes int64
 	// DPScaled records whether the MoE DP multiplication applied.
 	DPScaled bool
+
+	// SequenceFixedBytes is the kernel's per-sequence occupancy that does not grow with
+	// context, and SequenceFixedBlocks the whole blocks of PerBlockBytes it takes from the pool
+	// for each resident sequence. Both are zero for a model with no such caches.
+	SequenceFixedBytes  int64
+	SequenceFixedBlocks int64
 }
 
 // KVBudget derives the block budget for this model's deployment.
@@ -146,16 +156,30 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		scaled = true
 	}
 
+	seqFixed := m.k.SequenceFixedBytes()
+	if seqFixed < 0 {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: per-sequence fixed occupancy resolved to %d bytes", seqFixed)
+	}
+	seqFixedBlocks := (seqFixed + perBlock - 1) / perBlock
+	if seqFixedBlocks >= perRank {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: one sequence's fixed occupancy (%d bytes, %d blocks) does not fit a "+
+				"rank's %d-block KV pool", seqFixed, seqFixedBlocks, perRank)
+	}
+
 	return KVBudget{
-		TotalBlocks:      blocks,
-		PerRankBlocks:    perRank,
-		BlockSize:        blockSize,
-		DeviceBytes:      deviceBytes,
-		BudgetBytes:      budget,
-		FixedBytes:       fixed,
-		AllocatableBytes: allocatable,
-		PerBlockBytes:    perBlock,
-		DPScaled:         scaled,
+		TotalBlocks:         blocks,
+		PerRankBlocks:       perRank,
+		BlockSize:           blockSize,
+		DeviceBytes:         deviceBytes,
+		BudgetBytes:         budget,
+		FixedBytes:          fixed,
+		AllocatableBytes:    allocatable,
+		PerBlockBytes:       perBlock,
+		DPScaled:            scaled,
+		SequenceFixedBytes:  seqFixed,
+		SequenceFixedBlocks: seqFixedBlocks,
 	}, nil
 }
 

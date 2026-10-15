@@ -24,6 +24,12 @@ type KVCacheConfig struct {
 	// TierTime) supplies the charge rather than a bandwidth to compose one from. Set via
 	// WithKVTransferTicksPerBlock.
 	KVTransferTicksPerBlock int64
+
+	// SequenceFixedBlocks is what every resident sequence takes from the GPU pool whatever
+	// its length: the latency kernel's per-sequence fixed bytes (window rings, compressor and
+	// indexer state, bounded recurrent state) in whole blocks (#1941). Charged when a sequence
+	// is admitted and freed with it; 0 charges nothing. Set via WithSequenceFixedBlocks.
+	SequenceFixedBlocks int64
 }
 
 // KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
@@ -42,6 +48,12 @@ func WithKVOffload(o KVOffloadConfig) KVCacheOption {
 // WithKVTransferTicksPerBlock sets the legacy CPU tier's whole per-block reload charge.
 func WithKVTransferTicksPerBlock(ticks int64) KVCacheOption {
 	return func(c *KVCacheConfig) { c.KVTransferTicksPerBlock = ticks }
+}
+
+// WithSequenceFixedBlocks sets the blocks each resident sequence is charged whatever its
+// length (#1941).
+func WithSequenceFixedBlocks(blocks int64) KVCacheOption {
+	return func(c *KVCacheConfig) { c.SequenceFixedBlocks = blocks }
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
@@ -71,6 +83,10 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+	if cfg.SequenceFixedBlocks < 0 || cfg.SequenceFixedBlocks >= totalKVBlocks {
+		panic(fmt.Sprintf("NewKVCacheConfig: SequenceFixedBlocks must be in [0, %d), got %d",
+			totalKVBlocks, cfg.SequenceFixedBlocks))
 	}
 	if cfg.KVTransferTicksPerBlock < 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: KVTransferTicksPerBlock must be >= 0, got %d", cfg.KVTransferTicksPerBlock))

@@ -512,7 +512,8 @@ Example:
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
+					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
+					sim.WithSequenceFixedBlocks(sequenceFixedBlocks)),
 				BatchConfig: batchConfigFromCLI(),
 				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
 				// per-replica DP — 1 when the plan is active (each replica is one rank),

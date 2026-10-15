@@ -176,6 +176,17 @@ footprint. vLLM reserves `K` lookahead KV slots per running request per step and
 about `K+1` of `max_num_batched_tokens`, so above KV saturation BLIS over-predicts batch size
 and under-predicts preemption. Below saturation the two agree.
 
+## Per-sequence fixed memory (#1941)
+
+The KV pool is sized from the kernel's per-token bytes, and every resident sequence is also
+charged the kernel's `SequenceFixedBytes`: what it holds whatever its length -- window rings,
+compressor and indexer state, bounded recurrent state. The charge is whole pool blocks,
+`ceil(SequenceFixedBytes / bytes per block)`, taken when the sequence is admitted and freed
+with it, so a sequence is admitted only when both its tokens and its fixed term fit. For
+DeepSeek-V4.1-Flash on h100 tp8 that is about 5.0 MB (43 blocks) a sequence per rank. The
+startup log reports the term and its share of the pool at `max_num_seqs`; a model with no such
+caches is charged nothing.
+
 ## KV offload
 
 `--kv-offload-config` tiers must each name a catalog `device_class`; the kernel prices every

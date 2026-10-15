@@ -19,6 +19,10 @@ type Settings struct {
 	// KVBytesPerBlock is the kernel's per-sequence KV cost of one block, already
 	// page-quantized and sharded by the parallel layout.
 	KVBytesPerBlock int64
+	// SequenceFixedBlocks is what each resident sequence takes from the pool whatever its
+	// length (KVBudget.SequenceFixedBlocks), and SequenceFixedBytes the bytes it rounds up.
+	SequenceFixedBlocks int64
+	SequenceFixedBytes  int64
 
 	BlockSize           int
 	MaxNumSeqs          int
@@ -58,6 +62,8 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 		KVBlocks:              b.PerRankBlocks,
 		AggregateKVBlocks:     b.TotalBlocks,
 		KVBytesPerBlock:       b.PerBlockBytes,
+		SequenceFixedBlocks:   b.SequenceFixedBlocks,
+		SequenceFixedBytes:    b.SequenceFixedBytes,
 		BlockSize:             e.BlockSize,
 		MaxNumSeqs:            e.MaxNumSeqs,
 		MaxNumBatchedTokens:   e.MaxNumBatchedTokens,

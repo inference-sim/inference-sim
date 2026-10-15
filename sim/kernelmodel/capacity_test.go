@@ -4,6 +4,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	"pgregory.net/rapid"
 )
 
 // A KV budget must be derived from the kernel's own memory answers, and it must be
@@ -142,4 +145,89 @@ func evaluationScenarios(t *testing.T) []string {
 		t.Fatal("no scenario files found, so this test would pass vacuously")
 	}
 	return out
+}
+
+// #1941: the budget charges each resident sequence the kernel's per-sequence fixed bytes in
+// whole blocks of its per-block bytes -- the smallest block count that holds them -- and
+// charges nothing for a model with no bounded per-sequence caches. DeepSeek-V4.1-Flash's
+// window rings and compressor/indexer state (about 5 MB a sequence per rank on h100 tp8)
+// is the case that motivated it; Llama has none.
+func TestTheBudgetChargesTheKernelsPerSequenceFixedBytesInWholeBlocks(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	for _, tt := range []struct {
+		scenario string
+		charged  bool
+	}{
+		{dspark, true},
+		{"llama-3.1-70b-instruct-h200-tp4-4node.yaml", false},
+	} {
+		m, err := Open(tt.scenario, r)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.scenario, err)
+		}
+		b, err := m.KVBudget()
+		if err != nil {
+			t.Fatalf("%s: %v", tt.scenario, err)
+		}
+		fixed := m.Kernel().SequenceFixedBytes()
+		if b.SequenceFixedBytes != fixed {
+			t.Errorf("%s: budget reports %d fixed bytes a sequence, the kernel %d", tt.scenario, b.SequenceFixedBytes, fixed)
+		}
+		if got := b.SequenceFixedBlocks * b.PerBlockBytes; got < fixed || (b.SequenceFixedBlocks > 0 && got-b.PerBlockBytes >= fixed) {
+			t.Errorf("%s: %d blocks of %d bytes is not the smallest whole-block cover of %d bytes",
+				tt.scenario, b.SequenceFixedBlocks, b.PerBlockBytes, fixed)
+		}
+		if (b.SequenceFixedBlocks > 0) != tt.charged {
+			t.Errorf("%s: %d fixed blocks a sequence; charged = %t, want %t",
+				tt.scenario, b.SequenceFixedBlocks, b.SequenceFixedBlocks > 0, tt.charged)
+		}
+		s, err := m.Settings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.SequenceFixedBlocks != b.SequenceFixedBlocks {
+			t.Errorf("%s: Settings carries %d fixed blocks, the budget %d", tt.scenario, s.SequenceFixedBlocks, b.SequenceFixedBlocks)
+		}
+	}
+}
+
+// Metamorphic (#1941): more memory never admits fewer sequences. Raising
+// gpu_memory_utilization grows the pool while the per-sequence fixed term stays put, so the
+// number of whole sequences of any length the pool holds -- blocks / (prompt blocks + fixed
+// blocks) -- never falls.
+func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	in, err := latencykernel.OpenInputs(dspark, r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budgetAt := func(util float64) KVBudget {
+		in.Deployment.Pools[0].Engine.GPUMemoryUtilization = util
+		m, err := fromInputs(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := m.KVBudget()
+		if err != nil {
+			t.Fatalf("utilization %v: %v", util, err)
+		}
+		return b
+	}
+	rapid.Check(t, func(rt *rapid.T) {
+		lo := rapid.Float64Range(0.75, 0.95).Draw(rt, "lo")
+		hi := rapid.Float64Range(lo, 0.95).Draw(rt, "hi")
+		promptBlocks := rapid.Int64Range(1, 4096).Draw(rt, "promptBlocks")
+		a, b := budgetAt(lo), budgetAt(hi)
+		if a.SequenceFixedBlocks != b.SequenceFixedBlocks {
+			rt.Fatalf("the fixed term moved with utilization: %d at %v, %d at %v",
+				a.SequenceFixedBlocks, lo, b.SequenceFixedBlocks, hi)
+		}
+		ceil := func(x KVBudget) int64 { return x.PerRankBlocks / (promptBlocks + x.SequenceFixedBlocks) }
+		if ceil(b) < ceil(a) {
+			rt.Fatalf("utilization %v holds %d sequences of %d blocks, %v holds only %d",
+				lo, ceil(a), promptBlocks, hi, ceil(b))
+		}
+	})
 }

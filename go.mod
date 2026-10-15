@@ -22,3 +22,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )
+
+// TODO(#1939): development pin to a local checkout of blis-schemas dsv41/acceptance-profile
+// (148d08e). The final PR pins the pushed schemas PR branch commit instead.
+replace github.com/inference-sim/blis-schemas => ../blis-schemas-accept-pin
