@@ -95,3 +95,25 @@ func (sim *Simulator) AdapterCapacity() int {
 	}
 	return sim.adapterCapacity
 }
+
+// SetKVEventSink makes the engine publish its prefix cache's KV events, as vLLM does: at the end
+// of every step that changed the set of cached block hashes, sink receives that step's events, in
+// order, with the time the step ends. A KV cache that cannot record events publishes none.
+func (sim *Simulator) SetKVEventSink(sink func(at int64, events []KVEvent)) {
+	src, ok := sim.KVCache.(KVEventSource)
+	if !ok {
+		return
+	}
+	src.EnableKVEvents()
+	sim.kvEventSink = sink
+}
+
+// publishKVEvents hands the events of the step that ends at time at to the sink.
+func (sim *Simulator) publishKVEvents(at int64) {
+	if sim.kvEventSink == nil {
+		return
+	}
+	if events := sim.KVCache.(KVEventSource).TakeKVEvents(); len(events) > 0 {
+		sim.kvEventSink(at, events)
+	}
+}

@@ -79,6 +79,7 @@ Two BLIS knobs model the environment, not routing:
 |---|---|---|
 | `--gateway-latency` | 0 µs | Time from a request's arrival to the router's first look at it: the network and proxy hops before the Endpoint Picker. |
 | `--epp-scrape-jitter` | 0 µs | Upper bound of a seeded phase offset for each endpoint's metrics collection. At 0 every endpoint is scraped in phase. |
+| `--kv-event-delay` | 0 µs | Time from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them: the event transport and the router's processing. At 0 the router has every event of the steps that have ended. |
 
 The router itself takes zero simulated time to decide.
 
@@ -123,6 +124,14 @@ Everything the router reads comes from the simulated engines, with real engine s
   vLLM. Endpoints present at the start of a run have been scraped before the first request
   arrives; their periodic scrapes then keep their `--epp-scrape-jitter` phase. Endpoints that
   appear later (autoscaling, lifecycle) start cold, as on discovery.
+- **KV-cache events.** With a `precise-prefix-cache-producer` in the configuration, each engine
+  publishes vLLM's KV events: a stored block when a block hash enters its prefix cache (a full
+  prefill or decode block, or one reloaded from a CPU tier) and a removed block when one leaves,
+  at the end of the step, as vLLM does. The router receives them `--kv-event-delay` later, in
+  order per engine, and ingests them synchronously (no ZMQ subscriber). The events carry the
+  blocks' tokens as the router saw them, so the router's index holds, per pod, exactly the
+  blocks the engine can serve from its cache. A terminated instance's blocks are cleared.
+  Speculative indexing (`speculativeIndexing`) expires its entries on simulated time.
 - **Prompt rendering.** The `token-producer` plugin's vLLM backend calls a render endpoint; the
   simulated model server answers it with the request's token IDs.
 - **Responses.** The router sees the response headers when the engine accepts a streaming
@@ -205,7 +214,7 @@ and every signal it consumes is produced by the simulated engines.
 | Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter` |
 | Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware` |
 | P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
-| Data producers | `approx-prefix-cache-producer`, `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
+| Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
 | Admission | `probabilistic-admitter` |
 | Saturation detectors | `utilization-detector`, `concurrency-detector`, `max-saturation-detector` |
 | Flow control | `global-strict-fairness-policy`, `round-robin-fairness-policy`, `fcfs-ordering-policy`, `edf-ordering-policy`, `slo-deadline-ordering-policy`, `static-usage-limit-policy`, `strict-band-selection-policy`, `priority-holdback-policy`, `soft-reflective-ceiling-policy` |
@@ -224,7 +233,6 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 
 | What | Why |
 |---|---|
-| `precise-prefix-cache-producer` | It consumes vLLM KV-cache events, which the simulated engines do not publish yet. |
 | `burst-prefix-cache-producer` | It blocks a request on a sealing timer the hosting runtime does not model. |
 | `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, `prefix-cache-affinity-filter` | They call or consume an external latency-predictor service. |
 | `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
@@ -240,6 +248,8 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | Prefill and decode pools with a configuration that has no `disagg-profile-handler` | The router would serve every request from one flat pool; pass a disaggregating configuration (for example `examples/llm-d/pd.yaml`). |
 | An encode pool | BLIS does not place encode work where the router directs it (`x-llm-d-encoder-hosts-ports`). |
 | A `token-producer` whose vLLM backend discovers endpoints (`vllm.endpointDiscovery`) | It probes pods for model limits on its own schedule, outside the simulation. Use a fixed `url`, or the estimate backend. |
+| A `precise-prefix-cache-producer` whose `tokenProcessorConfig.blockSizeTokens` (default 16) is not the engines' KV block size | Its keys would never match the engines' blocks. |
+| A `precise-prefix-cache-producer` with a Redis or cost-aware index, or non-vLLM `kvEventsConfig.engineType`; with LoRA adapters in the deployment | Redis is an external service; the cost-aware index's lookups have no fixed order; the engines publish vLLM's events and their prefix caches do not key blocks by adapter. |
 | A `core-metrics-extractor` that, for some pod, reads an engine other than vLLM (by `defaultEngine` or the pod's engine label, `llm-d.ai/engine-type` by default), or a vLLM mapping naming series the engines do not publish; a `metrics-data-source` path other than `/metrics` | The simulated engines publish vLLM's series at `/metrics`; anything else would read nothing. |
 
 Also outside the model: conditional decode (`Prefer: if-available`), and the P/D sidecar's
@@ -255,7 +265,7 @@ to an llm-d configuration or is dropped.
 |---|---|
 | `--routing-policy weighted --routing-scorers ...` | A scheduling profile with the matching scorers and weights, and `max-score-picker`. |
 | scorer `prefix-affinity` | `approx-prefix-cache-producer` + `prefix-cache-scorer` |
-| scorer `precise-prefix-cache` | `precise-prefix-cache-producer` + `prefix-cache-scorer`, refused until the engines publish KV events |
+| scorer `precise-prefix-cache` | `precise-prefix-cache-producer` + `prefix-cache-scorer` (with a `token-producer`), indexing the engines' KV events |
 | scorers `queue-depth`, `kv-utilization`, `active-requests`, `running-requests`, `load-aware`, `no-hit-lru` | `queue-scorer`, `kv-cache-utilization-scorer`, `active-request-scorer`, `running-requests-size-scorer`, `load-aware-scorer`, `no-hit-lru-scorer` |
 | `--lora-scorer-weight` | `lora-affinity-scorer` in the profile |
 | `--routing-policy round-robin`, `least-loaded`, `always-busiest`; scorers `load-balance`, `vllm-dp` | Dropped: the llm-d router has no such policy. The nearest configurations are `random-picker`, and `queue-scorer` or `load-aware-scorer` with `max-score-picker`. |
@@ -275,7 +285,7 @@ to an llm-d configuration or is dropped.
 | `--encode-decider` | The disaggregation handler's encode decider; multimodal deciders are refused |
 | `--admission-latency`, `--routing-latency` | `--gateway-latency` |
 | `--snapshot-refresh-interval` | The EPP flag `--refresh-metrics-interval`: staleness now comes from the scrape itself |
-| `--cache-signal-delay` | Dropped with the precise prefix cache, until KV events are simulated |
+| `--cache-signal-delay` | `--kv-event-delay`: a fixed delay from an engine publishing its KV events to the router ingesting them (the old flag refreshed a snapshot of every cache at most every 50 ms) |
 | `examples/epp-*.yaml` | The llm-d configurations themselves (`deploy/config/` in llm-d-router) |
 
 ## Further reading

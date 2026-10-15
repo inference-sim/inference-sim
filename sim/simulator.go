@@ -163,7 +163,9 @@ type Simulator struct {
 	OnFirstToken func(req *Request, at int64)
 
 	// engineMetrics is the state this engine publishes on its metrics endpoint.
-	engineMetrics   engineMetricsLog
+	engineMetrics engineMetricsLog
+	// kvEventSink receives the KV events of each step (SetKVEventSink); nil publishes none.
+	kvEventSink     func(at int64, events []KVEvent)
 	adapterCapacity int
 
 	progressHook               ProgressHook
@@ -861,6 +863,7 @@ func (sim *Simulator) Step(now int64) {
 	remaining := sim.processCompletions(now, currStepAdvance)
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
 	sim.publishEngineMetrics(now + currStepAdvance)
+	sim.publishKVEvents(now + currStepAdvance)
 }
 
 // scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,

@@ -5,6 +5,7 @@
 package kv
 
 import (
+	"sort"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
@@ -46,6 +47,55 @@ type KVCacheState struct {
 	FreeBlockCnt    int64              // Direct count of blocks in free list (vLLM parity)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
+	// events records changes to HashToBlock's key set once EnableKVEvents is called (nil: off).
+	events *[]sim.KVEvent
+}
+
+// EnableKVEvents implements sim.KVEventSource.
+func (kvc *KVCacheState) EnableKVEvents() {
+	if kvc.events == nil {
+		kvc.events = &[]sim.KVEvent{}
+	}
+}
+
+// TakeKVEvents implements sim.KVEventSource.
+func (kvc *KVCacheState) TakeKVEvents() []sim.KVEvent {
+	if kvc.events == nil || len(*kvc.events) == 0 {
+		return nil
+	}
+	out := *kvc.events
+	*kvc.events = nil
+	return out
+}
+
+// CachedBlockHashes implements sim.KVEventSource.
+func (kvc *KVCacheState) CachedBlockHashes() []string {
+	out := make([]string, 0, len(kvc.HashToBlock))
+	for h := range kvc.HashToBlock {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// storeHash maps h to block id. A hash that was not in the map is a stored block (KVEvent); an
+// overwrite of a present hash changes no key, so it publishes nothing.
+func (kvc *KVCacheState) storeHash(parent, h string, id int64, tokens []sim.TokenID) {
+	_, had := kvc.HashToBlock[h]
+	kvc.HashToBlock[h] = id
+	if !had && kvc.events != nil {
+		*kvc.events = append(*kvc.events, sim.KVEvent{Hash: h, Parent: parent, Tokens: append([]sim.TokenID(nil), tokens...)})
+	}
+}
+
+// dropHash removes h from the map; removing a present hash is a removed block (KVEvent).
+func (kvc *KVCacheState) dropHash(h string) {
+	if _, had := kvc.HashToBlock[h]; had {
+		delete(kvc.HashToBlock, h)
+		if kvc.events != nil {
+			*kvc.events = append(*kvc.events, sim.KVEvent{Removed: true, Hash: h})
+		}
+	}
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -301,7 +351,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				}
 				h := hash.HashBlock(prevHash, latestBlk.Tokens)
 				latestBlk.Hash = h
-				kvc.HashToBlock[h] = latestBlk.ID
+				kvc.storeHash(prevHash, h, latestBlk.ID, latestBlk.Tokens)
 			}
 		} else {
 			// latest block is full or request is coming in for the first time.
@@ -332,7 +382,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
 				if blk.Hash != "" {
-					delete(kvc.HashToBlock, blk.Hash)
+					kvc.dropHash(blk.Hash)
 					blk.Hash = ""
 				}
 
@@ -355,7 +405,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					// participate in prefix caching (input sequences only).
 					h := hash.HashBlock(prevHash, blk.Tokens)
 					blk.Hash = h
-					kvc.HashToBlock[h] = blk.ID
+					kvc.storeHash(prevHash, h, blk.ID, blk.Tokens)
 					prevHash = h
 				}
 				// allocated is the block IDs allocated for this request

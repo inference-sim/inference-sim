@@ -2,10 +2,9 @@ package llmd
 
 import (
 	"container/list"
-	"encoding/binary"
-	"hash/fnv"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // promptCanon gives each simulated prompt the token values the router sees.
@@ -15,7 +14,8 @@ import (
 // placeholder values, while the router reads the prompt's content (its prefix-cache hashes, its
 // size). So the router is shown canonical values instead: the prompt is cut into KV blocks (the
 // last one possibly partial), each block is identified by its prefix chain (the block's tokens and
-// every block before it), and every chain gets fixed canonical tokens the first time it is seen.
+// every block before it, hashed as the engines' prefix caches hash it), and every chain gets fixed
+// canonical tokens the first time it is seen.
 // Two prompts therefore present equal tokens exactly where they share a chain of whole blocks,
 // as the engines' prefix caches see them, and a run and its replay present identical prompts.
 // A router block size that is a multiple of the engine's block size hashes the canonical prompt
@@ -29,19 +29,19 @@ type promptCanon struct {
 	blockSize int
 	capacity  int
 	next      uint64 // canonical id of the next new chain
-	ids       map[uint64]*list.Element
+	ids       map[string]*list.Element
 	lru       *list.List
 }
 
 type chainEntry struct {
-	key uint64
+	key string
 	id  uint64
 }
 
 func newPromptCanon(seed int64, blockSize, capacity int) *promptCanon {
 	return &promptCanon{
 		seed: uint64(seed), blockSize: max(blockSize, 1), capacity: max(capacity, 1),
-		ids: map[uint64]*list.Element{}, lru: list.New(),
+		ids: map[string]*list.Element{}, lru: list.New(),
 	}
 }
 
@@ -49,19 +49,12 @@ func newPromptCanon(seed int64, blockSize, capacity int) *promptCanon {
 // called once per request, in the order requests reach the router.
 func (c *promptCanon) canonical(prompt []sim.TokenID) []uint32 {
 	out := make([]uint32, len(prompt))
-	var chain uint64
-	var buf [8]byte
-	h := fnv.New64a()
+	chain := ""
 	for start := 0; start < len(prompt); start += c.blockSize {
 		end := min(start+c.blockSize, len(prompt))
-		h.Reset()
-		binary.LittleEndian.PutUint64(buf[:], chain)
-		_, _ = h.Write(buf[:])
-		for _, t := range prompt[start:end] {
-			binary.LittleEndian.PutUint32(buf[:4], uint32(t))
-			_, _ = h.Write(buf[:4])
-		}
-		chain = h.Sum64()
+		// The engines' prefix caches key a block the same way (sim/internal/hash), so a KV event's
+		// block hash names the chain the router was shown (canonicalBlock).
+		chain = hash.HashBlock(chain, prompt[start:end])
 		id := c.chainID(chain)
 		for i := start; i < end; i++ {
 			out[i] = c.token(id, i-start)
@@ -70,7 +63,19 @@ func (c *promptCanon) canonical(prompt []sim.TokenID) []uint32 {
 	return out
 }
 
-func (c *promptCanon) chainID(key uint64) uint64 {
+// canonicalBlock returns the router's tokens for the n-token block an engine's prefix cache keys
+// as blockHash: the tokens the router was shown for that block, or new canonical tokens for a block
+// no prompt contained (one an engine filled while decoding).
+func (c *promptCanon) canonicalBlock(blockHash string, n int) []uint32 {
+	id := c.chainID(blockHash)
+	out := make([]uint32, n)
+	for i := range out {
+		out[i] = c.token(id, i)
+	}
+	return out
+}
+
+func (c *promptCanon) chainID(key string) uint64 {
 	if e, ok := c.ids[key]; ok {
 		c.lru.MoveToFront(e)
 		return e.Value.(chainEntry).id

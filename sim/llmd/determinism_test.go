@@ -42,6 +42,7 @@ func routingDigest(t *testing.T) string {
 	}
 	digestTiedTenants(t, h)
 	digestPD(t, h)
+	digestPrecise(t, h)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
@@ -146,5 +147,16 @@ func TestDeterminism_AcrossProcesses(t *testing.T) {
 func TestDeterminism_SameProcessRepeat(t *testing.T) {
 	if a, b := routingDigest(t), routingDigest(t); a != b {
 		t.Fatalf("two identical simulations in one process differ: %s vs %s", a, b)
+	}
+}
+
+// digestPrecise digests a run routed by the precise prefix cache, fed by the engines' KV events.
+func digestPrecise(t *testing.T, h io.Writer) {
+	dep := testDeployment(3)
+	dep.KVCacheConfig = sim.NewKVCacheConfig(150, 16, 0, 0, 0, 0)
+	run := runPrecise(t, dep, prefixGroups(5, 8, 256, 10000), preciseConfig("    speculativeIndexing: true\n"), Options{KVEventDelayUs: 2000})
+	m := run.cs.AggregatedMetrics()
+	for _, r := range run.reqs {
+		_, _ = fmt.Fprintf(h, "pp %s %s %d %v\n", r.ID, r.AssignedInstance, r.GatewayDispatchTime, m.RequestTTFTs[r.ID])
 	}
 }

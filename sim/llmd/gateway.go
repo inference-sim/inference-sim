@@ -48,6 +48,7 @@ import (
 	fcregistry "github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/registry"
 	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkrc "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache"
 	"github.com/llm-d/llm-d-router/pkg/epp/handlers"
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
 	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
@@ -87,6 +88,9 @@ type Options struct {
 	GatewayLatencyUs int64
 	// ScrapeJitter bounds the seeded phase offset of each endpoint's metrics collection.
 	ScrapeJitter time.Duration
+	// KVEventDelayUs is the time from an engine publishing its KV events (at the end of a step)
+	// to the router's precise-prefix-cache-producer ingesting them.
+	KVEventDelayUs int64
 	// Seed, when set, seeds the router's random streams and its prompt canonicalization. Unset,
 	// the seed is derived from the run seed. A replay passes the seed its trace recorded.
 	Seed *int64
@@ -125,6 +129,8 @@ type Gateway struct {
 	eppOpts *runserver.Options
 	emb     *runner.Embedded
 	canon   *promptCanon
+	// kvIngest are the configuration's precise-prefix-cache-producers, which receive KV events.
+	kvIngest []*preciseprefixcache.Producer
 	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
 	rawConfig []byte
 	// maxQueueTTL is the longest queue-wait budget of any flow-control band (0: none, or flow
@@ -156,6 +162,8 @@ type endpoint struct {
 	ip    string
 	port  int
 	ready bool
+	// cleared is set once the router has been told the instance's prefix cache is gone.
+	cleared bool
 }
 
 // flight is one request between its arrival and the end of its response.
@@ -247,7 +255,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		podLabels = append(podLabels, g.podLabels(inst.ID(), host.PoolRole(inst.ID())))
 	}
 	g.rawConfig = config
-	if err := checkRawConfig(config, podLabels); err != nil {
+	if err := checkRawConfig(config, podLabels, int(host.BlockSizeTokens())); err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
 
@@ -292,6 +300,16 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	// A backstop: every plugin the configuration holds, by any path, is a supported type.
 	if err := validateEmbedded(emb.Config, emb.Handle); err != nil {
 		return err
+	}
+	g.kvIngest = kvIngesters(emb.Handle)
+	if len(g.kvIngest) > 0 {
+		for _, inst := range host.Instances() {
+			if inst.AdapterCapacity() > 0 {
+				return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
+					"keys blocks by LoRA adapter, but the simulated engines' prefix caches do not, so their KV events " +
+					"cannot name the adapter a block belongs to")
+			}
+		}
 	}
 	if err := validateTopology(emb, host); err != nil {
 		return err
@@ -422,6 +440,10 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 		}
 		ep = g.newEndpoint(inst)
 	}
+	if inst.State == sim.InstanceStateTerminated && !ep.cleared {
+		ep.cleared = true
+		g.clearKVEvents(ep) // its prefix cache is gone with it
+	}
 	ready := inst.IsRoutable()
 	if ok && ready == ep.ready {
 		return
@@ -473,6 +495,7 @@ func (g *Gateway) newEndpoint(inst *cluster.InstanceSimulator) *endpoint {
 		Status:     corev1.PodStatus{PodIP: ip, HostIP: ip, Phase: corev1.PodRunning},
 	}
 	ep := &endpoint{inst: inst, pod: pod, ip: ip, port: port}
+	g.subscribeKVEvents(inst)
 	g.endpoints[inst.ID()] = ep
 	g.byIP[ip] = inst.ID()
 	return ep
@@ -1001,7 +1024,7 @@ func (g *Gateway) HeldUntil() int64 {
 // checkLatePod applies the startup checks to a pod that appears during the run.
 func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 	labels := g.podLabels(inst.ID(), g.host.PoolRole(inst.ID()))
-	if err := checkRawConfig(g.rawConfig, []map[string]string{labels}); err != nil {
+	if err := checkRawConfig(g.rawConfig, []map[string]string{labels}, int(g.host.BlockSizeTokens())); err != nil {
 		return fmt.Errorf("instance %s, added during the run: the router configuration cannot be simulated faithfully: %w", inst.ID(), err)
 	}
 	if err := validateTopology(g.emb, g.host); err != nil {

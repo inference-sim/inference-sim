@@ -261,7 +261,7 @@ func TestRunAndReplay_BLISRoutingFlagsRemoved(t *testing.T) {
 				t.Errorf("%s still registers --%s", c.Name(), name)
 			}
 		}
-		for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter"} {
+		for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
 			if c.Flags().Lookup(name) == nil {
 				t.Errorf("%s must register the router input --%s", c.Name(), name)
 			}
@@ -421,5 +421,34 @@ func TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "--pod-labels") {
 			t.Errorf("--pod-labels %s: want a fatal refusal, got err=%v\n%s", bad, err, out)
 		}
+	}
+}
+
+// TestINV13_RunReplayParity_PrecisePrefix: a four-instance run routed by the precise prefix cache
+// (KV events from the engines, delivered with a delay, speculative indexing on), replayed with no
+// router flags, reproduces the run byte for byte; the delay is recorded in the header.
+func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	horizon := "9223372036854775807"
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon,
+		"--epp-config", "testdata/epp/precise.yaml", "--kv-event-delay", "3000", "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
+	}
+	header, err := os.ReadFile(prefix + ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(header), "kv_event_delay_us: 3000") {
+		t.Errorf("trace header does not record the KV event delay")
+	}
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if replayOut != runOut {
+		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }

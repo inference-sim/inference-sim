@@ -39,7 +39,7 @@ func TestCheckMetricSpecs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := checkRawConfig([]byte(tc.config), nil)
+			err := checkRawConfig([]byte(tc.config), nil, 16)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
@@ -53,7 +53,7 @@ func TestCheckMetricSpecs(t *testing.T) {
 	}
 }
 
-func TestUnsupportedPluginIsRefusedWithItsReason(t *testing.T) {
+func TestPrecisePrefixWithAnotherBlockSizeIsRefused(t *testing.T) {
 	// llm-d's deploy/config/epp-precise-prefix-cache-config.yaml
 	config := `# Sample EPP config: split precise-prefix-cache pipeline
 #   token-producer -> precise-prefix-cache-producer -> prefix-cache-scorer
@@ -105,11 +105,11 @@ schedulingProfiles:
 `
 	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
 	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
-	// The CLI exits on a refusal; the refused plugin's own constructor may have started
-	// goroutines (its kv-events worker pool) that only process exit ends.
+	// It cuts block keys every 64 tokens; the test engines' blocks are 16 tokens, so the KV events
+	// they publish could never match a request's keys.
 	err := cs.Run()
-	if err == nil || !strings.Contains(err.Error(), "KV-cache events") {
-		t.Fatalf("want precise-prefix-cache-producer refused for its KV-event dependency, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "KV block size is 16") {
+		t.Fatalf("want precise-prefix-cache-producer refused for its block size, got %v", err)
 	}
 }
 
@@ -192,28 +192,28 @@ func TestEncodePoolIsRefused(t *testing.T) {
 // and a token-producer that discovers render endpoints is refused before the router is built.
 func TestCheckRawConfig_EngineLabelsAndEndpointDiscovery(t *testing.T) {
 	sglang := []map[string]string{{"llm-d.ai/engine-type": "vllm"}, {"llm-d.ai/engine-type": "sglang"}}
-	if err := checkRawConfig(nil, sglang); err == nil || !strings.Contains(err.Error(), `"sglang"`) {
+	if err := checkRawConfig(nil, sglang, 16); err == nil || !strings.Contains(err.Error(), `"sglang"`) {
 		t.Errorf("default configuration, an sglang pod: got %v, want a refusal naming sglang", err)
 	}
-	if err := checkRawConfig(nil, []map[string]string{{"llm-d.ai/engine-type": "vllm"}}); err != nil {
+	if err := checkRawConfig(nil, []map[string]string{{"llm-d.ai/engine-type": "vllm"}}, 16); err != nil {
 		t.Errorf("vllm pods must run: %v", err)
 	}
 	custom := "plugins:\n- type: core-metrics-extractor\n  parameters:\n    engineLabelKey: example.com/engine\n"
-	if err := checkRawConfig([]byte(custom), []map[string]string{{"example.com/engine": "sglang"}}); err == nil {
+	if err := checkRawConfig([]byte(custom), []map[string]string{{"example.com/engine": "sglang"}}, 16); err == nil {
 		t.Errorf("a custom engineLabelKey selecting sglang must be refused")
 	}
 	discovery := "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      endpointDiscovery:\n        discoverModelLimits: true\n"
-	if err := checkRawConfig([]byte(discovery), nil); err == nil || !strings.Contains(err.Error(), "endpointDiscovery") {
+	if err := checkRawConfig([]byte(discovery), nil, 16); err == nil || !strings.Contains(err.Error(), "endpointDiscovery") {
 		t.Errorf("token-producer endpoint discovery: got %v, want a refusal", err)
 	}
-	if err := checkRawConfig([]byte("plugins:\n- type: metrics-data-source\n  parameters:\n    path: /stats\n"), nil); err == nil {
+	if err := checkRawConfig([]byte("plugins:\n- type: metrics-data-source\n  parameters:\n    path: /stats\n"), nil, 16); err == nil {
 		t.Errorf("a metrics path other than /metrics must be refused")
 	}
-	if err := checkRawConfig([]byte("plugins:\n- type: token-producer\n  parameters:\n    vllm:\n      url: http://x\n      endpointDiscovery: false\n"), nil); err != nil {
+	if err := checkRawConfig([]byte("plugins:\n- type: token-producer\n  parameters:\n    vllm:\n      url: http://x\n      endpointDiscovery: false\n"), nil, 16); err != nil {
 		t.Errorf("endpointDiscovery: false must run: %v", err)
 	}
 	fixed := "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      url: http://localhost:8000\n"
-	if err := checkRawConfig([]byte(fixed), nil); err != nil {
+	if err := checkRawConfig([]byte(fixed), nil, 16); err != nil {
 		t.Errorf("token-producer with a fixed url must run: %v", err)
 	}
 }

@@ -56,6 +56,9 @@ var supported = map[string]bool{
 	"approx-prefix-cache-producer": true,
 	"inflight-load-producer":       true,
 	"token-producer":               true,
+	// The engines publish vLLM's KV-cache events, ingested synchronously by the hosted producer
+	// (sim/llmd/kvevents.go); checkPrecisePrefix refuses the configurations it cannot host.
+	"precise-prefix-cache-producer": true,
 	// admission
 	"probabilistic-admitter": true,
 	// saturation detectors
@@ -92,7 +95,6 @@ var supported = map[string]bool{
 // Unsupported gives the reason a plugin type cannot be simulated faithfully.
 var unsupported = map[string]string{
 	"burst-prefix-cache-producer":               "it blocks a request on a sealing timer the hosting runtime does not model",
-	"precise-prefix-cache-producer":             "it consumes vLLM KV-cache events, which the simulated engines do not publish yet",
 	"predicted-latency-producer":                "it calls an external latency-predictor service",
 	"latency-scorer":                            "it consumes the external latency predictor",
 	"latency-slo-admitter":                      "it consumes the external latency predictor",
@@ -242,8 +244,10 @@ func embeddedPlugins(cfg *config.Config, handle fwkplugin.Handle) map[string]str
 //     default extractor;
 //   - a token-producer whose vLLM backend discovers endpoints (vllm.endpointDiscovery): it probes
 //     pods on its own schedule, outside the hosting runtime;
-//   - a metrics-data-source scraping another path than vLLM's /metrics, which would read nothing.
-func checkRawConfig(config []byte, podLabels []map[string]string) error {
+//   - a metrics-data-source scraping another path than vLLM's /metrics, which would read nothing;
+//   - a precise-prefix-cache-producer whose block size differs from the engines' (its keys would
+//     never match the KV events), or whose index the simulation cannot host (checkPrecisePrefix).
+func checkRawConfig(config []byte, podLabels []map[string]string, engineBlockSize int) error {
 	var doc struct {
 		Plugins []struct {
 			Type       string         `json:"type"`
@@ -265,6 +269,10 @@ func checkRawConfig(config []byte, podLabels []map[string]string) error {
 				return fmt.Errorf("plugin %q discovers render endpoints (vllm.endpointDiscovery), probing pods on its own "+
 					"schedule outside the simulation; give its vLLM backend a fixed url, or use the estimate backend", name)
 			}
+		case "precise-prefix-cache-producer":
+			if err := checkPrecisePrefix(name, p.Parameters, engineBlockSize); err != nil {
+				return err
+			}
 		case "metrics-data-source":
 			if path, _ := p.Parameters["path"].(string); path != "" && path != "/metrics" {
 				return fmt.Errorf("plugin %q scrapes %q; the simulated vLLM servers serve their metrics at /metrics", name, path)
@@ -278,6 +286,39 @@ func checkRawConfig(config []byte, podLabels []map[string]string) error {
 	}
 	if extractors == 0 { // the default data layer's extractor
 		return checkExtractor("core-metrics-extractor", nil, podLabels)
+	}
+	return nil
+}
+
+// checkPrecisePrefix refuses a precise-prefix-cache-producer the simulation cannot run as
+// configured. The router's block keys must be cut at the engines' block size, or the KV events the
+// engines publish would never match a request's keys. A Redis index reaches the network; the
+// cost-aware index ranges a sync.Map, so its order is not reproducible.
+func checkPrecisePrefix(name string, params map[string]any, engineBlockSize int) error {
+	blockSize := 16 // kvblock.TokenProcessorConfig's default
+	if tp, _ := params["tokenProcessorConfig"].(map[string]any); tp != nil {
+		for _, key := range []string{"blockSize", "blockSizeTokens"} { // blockSize is the deprecated spelling
+			if v, ok := tp[key].(float64); ok && v > 0 {
+				blockSize = int(v)
+			}
+		}
+	}
+	if engineBlockSize > 0 && blockSize != engineBlockSize {
+		return fmt.Errorf("plugin %q cuts block keys every %d tokens, but the simulated engines' KV block size is %d; "+
+			"set tokenProcessorConfig.blockSizeTokens to %d", name, blockSize, engineBlockSize, engineBlockSize)
+	}
+	indexer, _ := params["indexerConfig"].(map[string]any)
+	index, _ := indexer["kvBlockIndexConfig"].(map[string]any)
+	if enabled(index["redisConfig"]) {
+		return fmt.Errorf("plugin %q keeps its index in Redis, an external service", name)
+	}
+	if enabled(index["costAwareMemoryConfig"]) {
+		return fmt.Errorf("plugin %q uses the cost-aware index, whose lookups range a sync.Map in no fixed order", name)
+	}
+	if events, _ := params["kvEventsConfig"].(map[string]any); events != nil {
+		if engine, _ := events["engineType"].(string); engine != "" && engine != "vllm" {
+			return fmt.Errorf("plugin %q reads %s KV events; the simulated engines publish vLLM's", name, engine)
+		}
 	}
 	return nil
 }

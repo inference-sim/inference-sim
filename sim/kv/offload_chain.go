@@ -498,7 +498,7 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 			}
 			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
 			if gpuBlk.Hash != "" {
-				delete(o.gpu.HashToBlock, gpuBlk.Hash)
+				o.gpu.dropHash(gpuBlk.Hash)
 				gpuBlk.Hash = ""
 			}
 			start := i * bs
@@ -506,7 +506,11 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 			gpuBlk.Hash = h
 			gpuBlk.RefCount = 0
 			gpuBlk.InUse = false
-			o.gpu.HashToBlock[h] = gpuBlk.ID
+			parent := prevHash
+			if i > startBlock {
+				parent = string(tailKeys[i-startBlock-1])
+			}
+			o.gpu.storeHash(parent, h, gpuBlk.ID, gpuBlk.Tokens)
 			o.gpu.appendToFreeList(gpuBlk)
 			o.cpu.touchKey(key) // block is hot: refresh LRU recency
 			o.reloadCount++
@@ -688,3 +692,12 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 		o.inflight[id] = jobRef{keys: []kvkey.BlockKey{key}, tier: tier, dir: kvtransfer.Write}
 	}
 }
+
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes.
+func (o *OffloadCache) EnableKVEvents() { o.gpu.EnableKVEvents() }
+
+// TakeKVEvents implements sim.KVEventSource.
+func (o *OffloadCache) TakeKVEvents() []sim.KVEvent { return o.gpu.TakeKVEvents() }
+
+// CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
+func (o *OffloadCache) CachedBlockHashes() []string { return o.gpu.CachedBlockHashes() }

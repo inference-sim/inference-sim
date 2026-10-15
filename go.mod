@@ -125,4 +125,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261015184025-a95d0c0a54ba
+replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261015230106-5de730622b4e

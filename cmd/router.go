@@ -28,7 +28,8 @@ var (
 	eppManifestPaths []string // --epp-manifests: Kubernetes manifest files
 	podLabelPairs    []string // --pod-labels: extra labels on every model-server pod
 	gatewayLatencyUs int64    // --gateway-latency
-	scrapeJitterUs   int64    // --epp-scrape-jitter
+	scrapeJitterUs   int64
+	kvEventDelayUs   int64 // --epp-scrape-jitter
 )
 
 // registerRouterFlags registers the router inputs on run and replay (INV-13).
@@ -38,6 +39,7 @@ func registerRouterFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&eppManifestPaths, "epp-manifests", nil, "Kubernetes manifest files (comma-separated or repeated). The router reads InferencePool, InferenceObjective and InferenceModelRewrite objects; other kinds are ignored")
 	cmd.Flags().StringSliceVar(&podLabelPairs, "pod-labels", nil, "Extra labels on the simulated model-server pods, so an InferencePool selector or label filter from a real deployment matches: key=value on every pod, or role:key=value on the pods of one P/D role (prefill, decode, prefill-decode, encode); comma-separated or repeated. llm-d.ai/role comes from the scenario's pools")
 	cmd.Flags().Int64Var(&gatewayLatencyUs, "gateway-latency", 0, "Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker)")
+	cmd.Flags().Int64Var(&kvEventDelayUs, "kv-event-delay", 0, "Microseconds from an engine publishing its KV-cache events (at the end of a step, as vLLM does) to the router's precise-prefix-cache-producer ingesting them; 0 = before any later routing decision")
 	cmd.Flags().Int64Var(&scrapeJitterUs, "epp-scrape-jitter", 0, "Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase")
 }
 
@@ -49,6 +51,7 @@ type routerInputs struct {
 	PodLabels        map[string]string
 	GatewayLatencyUs int64
 	ScrapeJitterUs   int64
+	KVEventDelayUs   int64
 	// Seed is the router seed a replay takes from its trace; nil derives it from the run seed.
 	Seed *int64
 }
@@ -62,11 +65,14 @@ func validateRouterFlags() {
 	if scrapeJitterUs < 0 {
 		logrus.Fatalf("--epp-scrape-jitter must be >= 0, got %d", scrapeJitterUs)
 	}
+	if kvEventDelayUs < 0 {
+		logrus.Fatalf("--kv-event-delay must be >= 0, got %d", kvEventDelayUs)
+	}
 }
 
 // resolveRouterInputs reads the router inputs the command line names.
 func resolveRouterInputs() routerInputs {
-	in := routerInputs{GatewayLatencyUs: gatewayLatencyUs, ScrapeJitterUs: scrapeJitterUs}
+	in := routerInputs{GatewayLatencyUs: gatewayLatencyUs, ScrapeJitterUs: scrapeJitterUs, KVEventDelayUs: kvEventDelayUs}
 	validateRouterFlags()
 	if eppFlagsPath != "" {
 		flags, err := readEPPFlags(eppFlagsPath)
@@ -190,7 +196,7 @@ func inlineConfigFile(flags []string) []string {
 
 // routerFlagsChanged reports whether the command line names any router input.
 func routerFlagsChanged(cmd *cobra.Command) bool {
-	for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter"} {
+	for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
 		if cmd.Flags().Changed(name) {
 			return true
 		}
@@ -206,6 +212,7 @@ func (in routerInputs) header(seed int64) *workload.TraceRouterConfig {
 		PodLabels:        in.PodLabels,
 		GatewayLatencyUs: in.GatewayLatencyUs,
 		ScrapeJitterUs:   in.ScrapeJitterUs,
+		KVEventDelayUs:   in.KVEventDelayUs,
 		Seed:             &seed,
 	}
 }
@@ -220,7 +227,7 @@ func reconcileReplayRouter(cmd *cobra.Command, h *workload.TraceRouterConfig) ro
 	}
 	fromHeader := routerInputs{
 		EPPFlags: h.EPPFlags, Manifests: h.Manifests, PodLabels: h.PodLabels,
-		GatewayLatencyUs: h.GatewayLatencyUs, ScrapeJitterUs: h.ScrapeJitterUs, Seed: h.Seed,
+		GatewayLatencyUs: h.GatewayLatencyUs, ScrapeJitterUs: h.ScrapeJitterUs, KVEventDelayUs: h.KVEventDelayUs, Seed: h.Seed,
 	}
 	if !routerFlagsChanged(cmd) {
 		return fromHeader
@@ -250,6 +257,7 @@ func newGateway(in routerInputs, model string) *llmd.Gateway {
 		PodLabels:        podLabelFunc(in.PodLabels),
 		GatewayLatencyUs: in.GatewayLatencyUs,
 		ScrapeJitter:     time.Duration(in.ScrapeJitterUs) * time.Microsecond,
+		KVEventDelayUs:   in.KVEventDelayUs,
 		Seed:             in.Seed,
 		Logger:           routerLogger(),
 	})

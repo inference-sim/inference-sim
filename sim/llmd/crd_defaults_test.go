@@ -24,11 +24,11 @@ var crdSources = map[string]string{
 // go test ./sim/llmd -run TestCRDsMatchModules -update-crds.
 func TestCRDsMatchModules(t *testing.T) {
 	for name, mod := range crdSources {
-		out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", mod).Output()
+		dir, err := goListModuleDir(mod)
 		if err != nil {
 			t.Fatalf("go list -m %s: %v", mod, err)
 		}
-		want, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), "config", "crd", "bases", name))
+		want, err := os.ReadFile(filepath.Join(dir, "config", "crd", "bases", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,4 +83,11 @@ func TestParseManifests_StrictFields(t *testing.T) {
 	if _, err := parseManifests(newScheme(), []byte(bad), defaultNamespace); err == nil || !strings.Contains(err.Error(), "priorty") {
 		t.Fatalf("want the misspelled field rejected, got %v", err)
 	}
+}
+
+// goListModuleDir is the directory of module mod as the build resolves it (replace directives
+// included).
+func goListModuleDir(mod string) (string, error) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", mod).Output()
+	return strings.TrimSpace(string(out)), err
 }

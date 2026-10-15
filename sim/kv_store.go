@@ -119,3 +119,23 @@ func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
 	}
 	return NewKVStoreFromConfig(cfg, 0)
 }
+
+// KVEvent is a change to the set of block hashes an engine's prefix cache can serve, as vLLM
+// publishes it (a stored block, or a removed one). Stored carries the block's parent hash ("" for a
+// first block) and its tokens.
+type KVEvent struct {
+	Removed bool
+	Hash    string
+	Parent  string
+	Tokens  []TokenID
+}
+
+// KVEventSource is implemented by a KVStore that can record KVEvents. Recording starts at
+// EnableKVEvents and costs nothing before it; TakeKVEvents returns, and forgets, the events since
+// the last call, in order.
+type KVEventSource interface {
+	EnableKVEvents()
+	TakeKVEvents() []KVEvent
+	// CachedBlockHashes returns the hashes of the blocks the prefix cache can serve, sorted.
+	CachedBlockHashes() []string
+}

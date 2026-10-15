@@ -558,5 +558,19 @@ func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
 	return i.sim.EngineMetricsAt(t)
 }
 
+// CachedBlockHashes returns the hashes of the blocks the instance's prefix cache can serve,
+// sorted (nil for a KV cache that does not track them).
+func (i *InstanceSimulator) CachedBlockHashes() []string {
+	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
+		return src.CachedBlockHashes()
+	}
+	return nil
+}
+
+// SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
+func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
+	i.sim.SetKVEventSink(sink)
+}
+
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
 func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }

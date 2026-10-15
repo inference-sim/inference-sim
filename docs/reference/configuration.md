@@ -55,7 +55,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | `scheduling_delay_ms` (per-request JSON) | milliseconds | Converted from ticks by dividing by 1,000. Historically was in ticks (μs) despite the `_ms` suffix — fixed by BC-14. Old hypothesis scripts (pre-fix) divide by 1,000 again unnecessarily. |
 | `scheduling_delay_p99_ms` (aggregate) | milliseconds | Always was in milliseconds |
 | `--horizon` | ticks (μs) | Simulation time limit. 1,000,000 = 1 second |
-| `--gateway-latency`, `--epp-scrape-jitter` | ticks (μs) | Gateway hop before the router; scrape phase-offset bound |
+| `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` | ticks (μs) | Gateway hop before the router; scrape phase-offset bound; KV-event delivery delay |
 | `think_time_us` (workload YAML) | microseconds | Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds |
 | `aggregate_rate`, `--rate` | requests/second | Not ticks — real-world time unit |
 
@@ -179,6 +179,7 @@ Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedd
 | `--pod-labels` | string slice | — | Extra labels on the simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches: `key=value` on every pod, or `role:key=value` on the pods of one P/D role (`prefill`, `decode`, `prefill-decode`, `encode`), overriding an unscoped label with the same key. Comma-separated or repeated. |
 | `--gateway-latency` | int64 | 0 | Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker). Must be >= 0. |
 | `--epp-scrape-jitter` | int64 | 0 | Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase. Must be >= 0. |
+| `--kv-event-delay` | int64 | 0 | Microseconds from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them. Must be >= 0. Recorded in the trace header. |
 
 **Recorded in the trace.** The router inputs are written to the TraceV2 header (`--trace-output`); a `--config-file` EPP flag is inlined as `--config-text` so the header carries the configuration itself. `blis replay` rebuilds the recorded router from the header. A replay command line that names router flags must describe the same router, or replay is refused (INV-13).
 
@@ -410,7 +411,7 @@ lora:
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
-| **Router** | `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter` |
+| **Router** | `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 

@@ -78,6 +78,7 @@ inference-sim/
 │   ├── coroutine.go           # Coroutine scheduler: the router's goroutines run one at a time under a single baton, parked until their ready predicate holds; watchdog for unconverted blocking calls
 │   ├── server.go              # The simulated model servers' HTTP surface for the router: /metrics (published vLLM series) and /v1/completions/render (prompt token IDs)
 │   ├── manifests.go           # Kubernetes manifest parsing (InferencePool, InferenceObjective, InferenceModelRewrite) and the default per-SLO-class InferenceObjectives
+│   └── kvevents.go            # the engines' KV-cache events to the router's precise-prefix-cache-producer (ordered, delayed, canonical tokens)
 │   └── prompt.go              # canonical prompt tokens the router sees (prefix-chain blocks), so a replay shows it the run's prompts
 │   └── crd_defaults.go        # applies the router CRDs' defaults to manifests, as an API server does (CRD copies in crds/)
 │   └── support.go             # supported / unsupported plugin types and startup checks: audited plugins run, anything else is refused before its constructor runs, with the reason

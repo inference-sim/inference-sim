@@ -384,7 +384,7 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		// entry mapping the old hash to this block's ID even though the block
 		// is about to be overwritten with different content.
 		if gpuBlk.Hash != "" {
-			delete(t.gpu.HashToBlock, gpuBlk.Hash)
+			t.gpu.dropHash(gpuBlk.Hash)
 			gpuBlk.Hash = ""
 		}
 
@@ -392,7 +392,7 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		gpuBlk.Hash = h
 		gpuBlk.RefCount = 0
 		gpuBlk.InUse = false
-		t.gpu.HashToBlock[h] = gpuBlk.ID
+		t.gpu.storeHash(prevHash, h, gpuBlk.ID, gpuBlk.Tokens)
 		t.gpu.appendToFreeList(gpuBlk)
 
 		// Accumulate transfer latency through the checked shared boundary. The constructor
@@ -546,3 +546,12 @@ func (t *TieredKVCache) MirrorToCPU(batch []*sim.Request) {
 		}
 	}
 }
+
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes.
+func (t *TieredKVCache) EnableKVEvents() { t.gpu.EnableKVEvents() }
+
+// TakeKVEvents implements sim.KVEventSource.
+func (t *TieredKVCache) TakeKVEvents() []sim.KVEvent { return t.gpu.TakeKVEvents() }
+
+// CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
+func (t *TieredKVCache) CachedBlockHashes() []string { return t.gpu.CachedBlockHashes() }
