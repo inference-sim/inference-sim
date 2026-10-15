@@ -78,7 +78,7 @@ BLIS prints diagnostic logs to stderr and results to stdout. You'll see log line
 
 ## Cluster Mode
 
-Scale to 4 instances with routing. `--num-instances` cannot exceed the scenario pool's rank
+Scale to 4 instances behind the router. `--num-instances` cannot exceed the scenario pool's rank
 capacity (pool nodes × gpus_per_node / (pp × tp × pcp)); the single-node scenario above holds
 two TP4 engines, so this uses the committed four-node fixture in `testdata/scenarios/` (up to
 eight instances):
@@ -88,11 +88,10 @@ eight instances):
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 \
-  --routing-policy weighted \
   --rate 100 --num-requests 500
 ```
 
-This simulates a 4-instance cluster receiving 100 requests/second. The `weighted` routing policy uses the default scorer profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) to distribute requests across instances.
+This simulates a 4-instance cluster receiving 100 requests/second. Every cluster run routes with the llm-d router (the Endpoint Picker) embedded in the simulator; with no router configuration it uses the router's built-in default configuration (queue, KV-cache utilization and prefix-cache scorers). A real deployment's router configuration is passed with `--epp-config`, `--epp-flags` and `--epp-manifests`; see [Routing](../guide/routing.md).
 
 !!! note "Multi-instance output format"
     In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has `"instance_id": "cluster"`. If piping to `jq`, use `--slurp` to handle multiple JSON objects: `./blis run ... 2>/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'` to extract the cluster summary.
@@ -120,6 +119,6 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
 ## What's Next
 
 - **[Tutorial: Capacity Planning](tutorial.md)** — Full walkthrough: find the right instance count for your workload
-- **[Routing Policies](../guide/routing.md)** — Understand and compare routing strategies
+- **[Routing with the llm-d Router](../guide/routing.md)** — Configure the router and compare configurations
 - **[Latency Model](../guide/latency-models.md)** — What the kernel prices and how scenarios are structured
 - **[Configuration Reference](../reference/configuration.md)** — Complete CLI flag reference

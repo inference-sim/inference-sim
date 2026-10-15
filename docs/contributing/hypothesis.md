@@ -649,19 +649,19 @@ After convergence, assess whether any confirmed findings should be promoted from
 // TestClusterConservation_AcrossPolicyCombinations tests INV-1 at cluster level.
 // Promoted from hypothesis H12 (hypothesis-archive branch: hypotheses/h12-conservation/).
 func TestClusterConservation_AcrossPolicyCombinations(t *testing.T) {
-    configs := []struct{ routing, scheduler, admission string }{
-        {"round-robin", "fcfs", "always-admit"},
-        {"least-loaded", "fcfs", "always-admit"},
-        {"weighted", "priority-fcfs", "token-bucket"},
-        // ... all 10 H12 configurations
+    configs := []struct{ eppConfig, scheduler string }{
+        {"queue-only.yaml", "fcfs"},
+        {"prefix-and-load.yaml", "fcfs"},
+        {"flow-control.yaml", "priority-fcfs"},
+        // ... every EndpointPickerConfig the hypothesis covered
     }
     for _, cfg := range configs {
-        t.Run(cfg.routing+"/"+cfg.scheduler+"/"+cfg.admission, func(t *testing.T) {
-            // Run cluster simulation
-            // Assert INV-1 at CLUSTER level, so all 12 terms (see canonical INV-1):
+        t.Run(cfg.eppConfig+"/"+cfg.scheduler, func(t *testing.T) {
+            // Run cluster simulation behind the llm-d router configured by cfg.eppConfig
+            // Assert INV-1 at CLUSTER level, so all 11 terms (see canonical INV-1):
             //   injected == completed + still_queued + still_running + dropped_unservable
             //             + timed_out + routing_rejections + gateway_queue_depth
-            //             + gateway_queue_shed + gateway_queue_rejected + gateway_evicted
+            //             + gateway_queue_rejected + gateway_evicted
             //             + gateway_expired + encode_routing_rejections
             // The 5-term form is the single-instance specialisation — incomplete here.
         })

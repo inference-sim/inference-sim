@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.24+** — [Download Go](https://go.dev/dl/)
+- **Go 1.27.2+** (the embedded llm-d router requires it) — [Download Go](https://go.dev/dl/)
 - **Git** — for cloning the repository
 
 ## Build from Source
@@ -124,7 +124,7 @@ Then open [http://localhost:8000](http://localhost:8000).
 For contributors, install the linter used in CI:
 
 ```bash
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 golangci-lint run ./...
 ```
 

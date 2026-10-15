@@ -23,14 +23,22 @@ The GPU-tier block budget is not a flag. blis-latency-kernel computes it with it
 
 When requests share common prefixes (e.g., system prompts in RAG), BLIS can reuse KV cache blocks from prior computations. This reduces prefill tokens and improves TTFT.
 
-Prefix caching is automatic when using the `weighted` routing policy. The default profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) queries actual instance KV cache state to route requests to instances with cached prefix blocks:
+Each instance reuses cached blocks on its own. Whether same-prefix requests land on the same
+instance is the llm-d router's decision. Its built-in default configuration includes the
+`prefix-cache-scorer` (weight 3, beside `queue-scorer` and `kv-cache-utilization-scorer` at 2),
+which estimates each endpoint's cached prefix from the requests the router has sent it; see
+[Routing](routing.md). `examples/llm-d/prefix-affinity.yaml` is an explicit prefix-aware
+configuration:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --routing-policy weighted \
+  --num-instances 4 --epp-config examples/llm-d/prefix-affinity.yaml \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
+
+The `precise-prefix-cache-producer`, which reads vLLM KV-cache events, is refused: the simulated
+engines do not publish KV events.
 
 ### Disabling reuse across requests
 

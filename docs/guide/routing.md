@@ -22,33 +22,51 @@ For instance-level request ordering (the engine's own scheduler), see
   --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
 
 # A real deployment's router configuration, unchanged
-./blis run ... --epp-config epp-config.yaml --epp-flags epp-flags.yaml --epp-manifests inferencepool.yaml
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500 \
+  --epp-config epp-config.yaml --epp-flags epp-flags.yaml --epp-manifests inferencepool.yaml
 ```
 
 ## The router's inputs
 
-| Input | CLI flag | Deployment key | What it is |
-|---|---|---|---|
-| EPP flags | `--epp-flags FILE` | `router.epp_flags` | The router's command-line flags, verbatim: a YAML list of flags, or a map of flag name to value as in the router Helm chart's `epp.flags`. They select the pool (`--pool-name` or `--endpoint-selector`) and set the router's own knobs (`--refresh-metrics-interval`, `--metrics-staleness-threshold`, `--feature-gates`, ...). |
-| EndpointPickerConfig | `--epp-config FILE` | `router.endpoint_picker_config` | The router configuration, as the EPP reads it with `--config-file`. |
-| Manifests | `--epp-manifests FILE[,FILE...]` | `router.manifests` | Kubernetes YAML. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects through its own reconcilers; other kinds (the model servers' Deployments, Services, ...) are ignored. |
-| Pod labels | `--pod-labels k=v[,...]` | `pools[].labels` | Labels on the simulated model-server pods, so an `InferencePool` selector from a real deployment matches. BLIS also sets `llm-d.ai/role` (`prefill`, `decode`, `prefill-decode`, `encode`) on disaggregated deployments and `llm-d.ai/inference-serving=true` on every pod. |
+| Input | CLI flag | What it is |
+|---|---|---|
+| EPP flags | `--epp-flags FILE` | The router's command-line flags, verbatim: a YAML list of flags, or a map of flag name to value as in the router Helm chart's `epp.flags`. They select the pool (`--pool-name` or `--endpoint-selector`) and set the router's own knobs (`--refresh-metrics-interval`, `--metrics-staleness-threshold`, `--feature-gates`, ...). |
+| EndpointPickerConfig | `--epp-config FILE` | The router configuration, as the EPP reads it with `--config-file`. |
+| Manifests | `--epp-manifests FILE[,FILE...]` | Kubernetes YAML. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects through its own reconcilers; other kinds (the model servers' Deployments, Services, ...) are ignored. |
+| Pod labels | `--pod-labels k=v[,...]` | Labels on the simulated model-server pods, so an `InferencePool` selector from a real deployment matches. BLIS also sets `llm-d.ai/role` (`prefill`, `decode`, `prefill-decode`, `encode`) on disaggregated deployments and `llm-d.ai/inference-serving=true` on every pod. |
 
 Each input is parsed by the router's own code: the flags by the EPP's flag set, the
 configuration by its config loader, the manifests by its reconcilers. A value the real router
 rejects is rejected here with the router's message.
 
+`blis run --trace-output` records all four inputs, inline, in the trace header, and
+`blis replay` routes with them; a router flag given to `replay` must match the header's.
+
+The deployment schema's `router:` block and `pools[].labels` (blis-schemas branch `llm-d-r`)
+carry the same inputs inside a scenario. BLIS does not read them yet: that schema release comes
+with a latency-kernel release whose step prices differ from the pinned one, so the CLI flags are
+the only way in for now.
+
 **Defaults.** With no EPP flags, BLIS runs a standalone router whose pool is every simulated
 pod: `--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`. With
 no configuration, the router uses its built-in default configuration (queue, KV-cache
-utilization and prefix-cache scorers). With `--pool-name` and no manifests other than the
-`InferencePool`, BLIS installs one `InferenceObjective` per BLIS SLO class at the Gateway API
-Inference Extension default priorities (`critical` 4, `standard` 3, `batch` -1, `sheddable` -2,
-`background` -3).
+utilization and prefix-cache scorers). BLIS installs no `InferenceObjective` of its own: request
+priorities come only from the deployment's objectives, which the router reconciles for an
+`InferencePool` (`--pool-name`). A request whose objective has no `InferenceObjective`, and every
+request in standalone mode, gets priority 0, as in a deployment.
+`examples/llm-d/inferencepool.yaml` defines one objective per BLIS SLO class.
+
+**As an API server would.** The manifests are admitted the way a cluster admits them: custom
+resources get their CRD defaults (an `InferenceObjective` `poolRef` without a `group` gets
+`inference.networking.k8s.io`), both served `InferenceObjective` versions (`llm-d.ai/v1` and
+`llm-d.ai/v1alpha2`) are reconciled, and a router resource at a version no CRD serves is an
+error. The CRDs are those of the llm-d-router and Gateway API Inference Extension versions BLIS
+builds against.
 
 ## The environment around the router
 
-Three BLIS knobs model the environment, not routing:
+Two BLIS knobs model the environment, not routing:
 
 | Flag | Default | Meaning |
 |---|---|---|

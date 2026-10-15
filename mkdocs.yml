@@ -102,7 +102,7 @@ nav:
       - Core Engine: concepts/core-engine.md
   - User Guide:
       - guide/index.md
-      - Routing Policies: guide/routing.md
+      - Routing (llm-d router): guide/routing.md
       - Admission Control: guide/admission.md
       - Scheduling & Priority: guide/scheduling.md
       - "Latency Kernel": guide/latency-models.md
@@ -127,6 +127,7 @@ nav:
   - Contributing:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
+      - The llm-d Router Fork: contributing/llm-d-router-fork.md
       - PR Workflow: contributing/pr-workflow.md
       - Automated Delivery (L1): contributing/automated-delivery.md
       - External PR Review: contributing/external-pr-review.md

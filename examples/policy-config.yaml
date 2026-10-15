@@ -8,32 +8,24 @@
 #
 # To verify which policies are active, run with --log info.
 #
+# The bundle configures the engine side only. Admission, routing and flow control are the
+# embedded llm-d router's, configured with --epp-config / --epp-flags / --epp-manifests
+# (see docs/guide/routing.md and the EndpointPickerConfig samples in examples/llm-d/).
+#
 # Available policies:
-#   admission: always-admit (default), token-bucket, reject-all
-#   routing:   round-robin (default), least-loaded, weighted, always-busiest
 #   priority:  constant (default), slo-based, inverted-slo
 #   scheduler: fcfs (default), priority-fcfs, sjf, reverse-priority
-#
-# See also: examples/weighted-routing.yaml for a weighted routing example.
-
-admission:
-  policy: always-admit
-  # token_bucket_capacity: 10000      # max tokens (only for token-bucket)
-  # token_bucket_refill_rate: 1000    # tokens/second (only for token-bucket)
-
-routing:
-  policy: round-robin
-  # scorers:                              # scorer config (only for weighted)
-  #   - name: queue-depth
-  #     weight: 2.0
-  #   - name: kv-utilization
-  #     weight: 2.0
-  #   - name: load-balance
-  #     weight: 1.0
-  # See examples/weighted-routing.yaml for weighted routing details.
 
 priority:
   policy: constant
+  # SLO class -> engine priority, used by slo-based priority (priority scheduling and
+  # preemption). Omit to use the defaults shown here.
+  # slo_priorities:
+  #   critical: 4
+  #   standard: 3
+  #   batch: -1
+  #   sheddable: -2
+  #   background: -3
 
 scheduler: fcfs
 # WARNING: Do not combine inverted-slo priority with reverse-priority scheduler.

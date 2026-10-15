@@ -1,0 +1,3 @@
+# EPP flags selecting the InferencePool of examples/llm-d/inferencepool.yaml (--epp-flags).
+- --pool-name=blis-pool
+- --pool-namespace=default
