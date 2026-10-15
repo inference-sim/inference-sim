@@ -66,7 +66,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
 | [INV-M1](#inv-m1-measured-window-accounting-closes) Measured-window accounting closes | Subsystem | metrics output |
 | [INV-M2](#inv-m2-derived-aggregates-are-exactly-their-definitions) Derived aggregates are exactly their definitions | Subsystem | metrics output |
-| [INV-M3](#inv-m3-cluster-cache-hit-rate-is-lookup-weighted) Cluster cache hit rate is lookup-weighted | Subsystem | metrics output / KV cache |
+| [INV-M3](#inv-m3-cluster-cache-hit-rate-is-prompt-lookup-weighted) Cluster cache hit rate is prompt-lookup-weighted | Subsystem | metrics output / KV cache |
 | [INV-M4](#inv-m4-only-the-phase-decides-what-is-measured) Only the phase decides what is measured | Subsystem | metrics output |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
@@ -379,70 +379,86 @@ code comments cite the aiperf lines.
 
 #### INV-M1: Measured-Window Accounting Closes
 
-**Statement:** in a colocated run, every request whose `Phase` is measured (not `warmup`) and
-that was sent before the horizon ends in exactly one of `measured_completed_requests`,
-`cancelled_requests` (timed out, still in flight when the window closed, or completed after an
-explicit `MeasuredWindow.EndUs`), `context_overflow_requests` (prompt, or prompt plus output
-budget, past `MaxModelLen`) and `failed_requests` (any other drop, admission or routing
-rejection, gateway shed, eviction or expiry, decode-KV drop). Two terms are not closed: a
-request still in the gateway queue at the horizon, and a disaggregated parent that timed out
-(its row is removed by the P/D projection). `completed_requests` stays the run-wide INV-1 term.
+**Statement:** every request whose `Phase` is measured (not `warmup`) and that was sent before
+the horizon ends in exactly one of `measured_completed_requests`; `cancelled_requests` (in
+flight when the window closed -- queued, running, or in the P/D pipeline including KV transfer
+-- or completed after an explicit `MeasuredWindow.EndUs`); `context_overflow_requests` (prompt,
+or prompt plus output budget, past `MaxModelLen`); and `failed_requests` (a client timeout,
+which aiperf records as an error; any other drop; admission or routing rejection; gateway shed,
+eviction or expiry; decode-KV drop). It holds for colocated and disaggregated runs. The one
+open term is a request still in the gateway queue at the horizon. `completed_requests` stays
+the run-wide INV-1 term.
 
-**Enforced:** `Metrics.RecordUnserved` beside every instance drop counter;
-`ClusterSimulator.recordUnserved` beside every cluster rejection, shed and decode-KV drop;
-`buildMeasured` derives completed and cancelled from the rows.
+**Enforced:** `Metrics.RecordUnserved` beside every instance drop counter, `Metrics.RecordTimeout`
+beside every timeout counter (it also marks the row so it is not cancelled too),
+`ClusterSimulator.recordUnserved` beside every cluster rejection, shed and decode-KV drop, and
+`projectPDMetrics`, which counts a measured parent still in the pipeline at the horizon
+(`MeasuredPipelineCancellations`) when it removes its rows.
 
-**Verification:** `TestMeasuredAccountingClosesOverClusterRuns` (rapid, over random phases,
-deadlines, oversized prompts, token-bucket admission and horizons);
-`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`; `TestEnqueueRequest_UnservedDropsAreCountedByPhase`.
+**Verification:** `TestMeasuredAccountingClosesOverClusterRuns` and
+`TestMeasuredAccountingClosesOverDisaggregatedRuns` (rapid, over random phases, deadlines,
+oversized prompts, token-bucket admission, tight decode KV and horizons; each run asserts it
+exercised the paths it claims); `TestBuildMeasured_InvariantsHoldOverRandomRequestSets`;
+`TestEnqueueRequest_UnservedDropsAreCountedByPhase`; `TestBuildMeasured_ATimeoutIsAFailureNotACancellation`.
 
 #### INV-M2: Derived Aggregates Are Exactly Their Definitions
 
-**Statement:** `interactivity_p50 == 1000 / request_itl_p50_ms` and `interactivity_p90 == 1000 /
-request_itl_p90_ms` exactly (0 for a non-positive ITL); `output_throughput_tok_s ×
-measured_window_s` equals the measured requests' summed output tokens; every `*_pNN` is the
-numpy-linear percentile (rank `q/100·(n−1)`) of one value per measured request, so the
-percentiles of one family are non-decreasing in `q`. Under time scaling by `s`, TTFT, ITL and
-E2E statistics and the window scale by `s`, and interactivity, per-user and output throughput
-by `1/s`. Duplicating every request keeps every mean and the extreme percentiles and doubles
-the counts and the throughput; interior percentiles are not invariant under duplication,
-because the linear rank depends on `n` (`[0,1]` has p90 0.9, `[0,0,1,1]` has p90 1.0).
+**Statement:** a request's aiperf latency is `FirstTokenTime + ΣITL`, the time of its last
+streamed token. vLLM v0.31.0 queues the final token's output (`v1/engine/output_processor.py:745`)
+before it frees the request (`:759`) and records finish stats (`:766`), and the chat stream
+yields that chunk (`entrypoints/openai/chat_completion/serving.py:828`) before usage and
+`[DONE]`, so the latency model's completion overhead, which E2E carries, is not in it.
+`request_itl = (latency − ttft)/(osl − 1)` over `osl ≥ 2`; `interactivity_pNN == 1000 /
+request_itl_pNN_ms` exactly; `output_tok_per_user_mean` averages `1000/request_itl` over records
+with a non-zero ITL only; `output_throughput_tok_s × measured_window_s` equals the measured output
+tokens; every `*_pNN` is numpy-linear over one value per measured request. Under time scaling by
+`s` the latency statistics and the window scale by `s` and the rates by `1/s`. Duplicating every
+request keeps every mean and the extreme percentiles and doubles counts and throughput; interior
+linear percentiles are not invariant under duplication (`[0,1]` p90 0.9, `[0,0,1,1]` p90 1.0).
 
-**Verification:** `TestBuildMeasured_PinsTheAiperfDefinitions` (hand-computed),
-`TestCalculatePercentile_MatchesNumpyLinear` (a numpy-generated vector),
-`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`,
-`TestBuildMeasured_ScalingTimeScalesLatenciesAndInvertsRates`,
-`TestBuildMeasured_DuplicatingEveryRequestKeepsMeansAndExtremes`, and the end-to-end
-`TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength`
-(`request_itl_p90 ≈ step_interval_p90 / (1 + α·K)` on a K=5 DSpark run).
+**Verification:** `TestBuildMeasured_PinsTheAiperfDefinitions`, `TestCalculatePercentile_MatchesNumpyLinear`,
+`TestMeasured_LatencyEndsAtTheLastTokenNotAtTheCompletionOverhead` (non-zero completion overhead),
+`TestBuildMeasured_PerUserMeanSkipsZeroITLRecords`, `TestBuildMeasured_TheWindowEndIsInclusive`,
+`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`, `TestBuildMeasured_ScalingTimeScalesLatenciesAndInvertsRates`,
+`TestBuildMeasured_DuplicatingEveryRequestKeepsMeansAndExtremes`, and
+`TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength`.
 
-#### INV-M3: Cluster Cache Hit Rate Is Lookup-Weighted
+#### INV-M3: Cluster Cache Hit Rate Is Prompt-Lookup-Weighted
 
-**Statement:** the cluster `cache_hit_rate` is the instances' summed prefix-cache hit tokens over
-their summed lookup tokens (`sim.PrefixCacheCounts`, blocks × block size), so it lies within
-the rates of the instances that looked anything up, and adding idle instances leaves it
-unchanged. `KVThrashingRate` aggregates its own numerator and denominator the same way.
+**Statement:** `cache_hit_rate` is summed prompt-token prefix hits over summed prompt-token
+queries, recorded per admission as vLLM v0.31.0 counts them (`v1/core/sched/scheduler.py:1252-1256`,
+`v1/core/kv_cache_manager.py:253-262`): a new request's prompt is queried once, a re-admission
+after preemption is not counted (`v1/metrics/stats.py:132-143`), and decode growth and decode-pool
+admissions query nothing. It is the GPU prefix cache's local rate; `cpu_tier_hit_rate` is the
+offload tier's share of the same queried tokens. So the cluster rate lies within the rates of the
+instances that queried anything, and adding idle or decode-only instances leaves it unchanged.
+`KVThrashingRate` aggregates its own counts the same way.
 
-**Enforced:** `InstanceSimulator.Finalize` records the counts; `aggregateMetrics` divides the sums;
-`CollectRawMetrics` reports the aggregate's rates.
+**Enforced:** `FormBatch` records `ScheduledRequest.Lookup` on a new prefill admission;
+`Metrics.recordPrefixLookup`; `aggregateMetrics` divides the sums.
 
 **Verification:** `TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt`,
 `TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing` (rapid),
 `TestAggregateCacheHitRateLiesWithinTheInstanceRates` (rapid),
-`TestAggregateCacheHitRate_IsTokenWeighted`.
+`TestAggregateCacheHitRate_IsTokenWeighted`, `TestAggregateCacheHitRate_TheDecodePoolDoesNotDiluteIt`,
+`TestPrefixLookups_APreemptedReadmissionIsNotANewQuery`.
 
 **Evidence:** #1904: four instances with three idle reported 0.2181 where the busy instance's
 rate was 0.8723.
 
 #### INV-M4: Only the Phase Decides What Is Measured
 
-**Statement:** adding warm-up requests (with their decode steps) to a run's records changes no
-measured aggregate, and with no phase set and no explicit window the measured set is every
-completed request (`step_interval_*` then equals the legacy `itl_*`, and `e2e_*` equals stdout's).
+**Statement:** adding warm-up requests (with their decode steps and prefix-cache lookups) to a
+run's records changes no measured aggregate, `cache_hit_rate` and `cpu_tier_hit_rate` included.
+With no phase set and no explicit window the measured set is every completed request:
+`step_interval_*` equals the legacy `itl_*`, and `e2e_*` equals stdout's when the completion
+overhead is zero. The file's `ttft_*` population is completed measured requests; stdout's (kept
+under `whole_run`) also counts a request that emitted a first token and did not complete, so the
+two agree only when there is none.
 
-**Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid),
-`TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured`,
-`TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
+**Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid, with
+lookups), `TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured` (step series, E2E and the
+TTFT population), `TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
 
 ### Autoscaling
 
