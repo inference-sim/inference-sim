@@ -209,3 +209,35 @@ func TestPDContention_RefusesMissingOrInconsistentDemand(t *testing.T) {
 		expectPanic(t, "AloneTime law", func() { _ = cs.Run() })
 	})
 }
+
+// The link arbiter's wakes stay bounded by the events that need them. A wake is scheduled by a
+// handoff start, or by a live wake at a tick where a handoff drains or finishes; one superseded
+// by a later start does nothing (otherwise it would re-advance and schedule yet another). Here
+// every handoff drains at its finish (its 50 us floor is below every duration), so the wakes
+// number at most the starts plus the distinct finish ticks, plus one. A burst of 40 handoffs on
+// one decode NIC.
+func TestPDContention_WakesStayLinearInABurst(t *testing.T) {
+	const n = 40
+	reqs := make([]*sim.Request, n)
+	for i := range reqs {
+		reqs[i] = holdTestRequest(string(rune('A'+i)), i, 0, 256, 2)
+	}
+	cs := runHold(t, contentionConfig(5, 4, 1, true), reqs...)
+	if cs.transfersCompleted != n {
+		t.Fatalf("fixture: %d of %d handoffs completed", cs.transfersCompleted, n)
+	}
+	if peak := cs.PDLinkPeakConcurrent()["nic/ingress/instance_4"]; peak < 4 {
+		t.Fatalf("fixture: handoffs must overlap on the decode ingress (peak %d)", peak)
+	}
+	finishes := map[int64]bool{}
+	for _, p := range cs.ParentRequests() {
+		if p.TransferCompleteTime-p.TransferStartTime <= 50 {
+			t.Fatalf("fixture: %s's handoff is within its floor", p.ID)
+		}
+		finishes[p.TransferCompleteTime] = true
+	}
+	if bound := int64(n + len(finishes) + 1); cs.pdLinkWakeGen > bound {
+		t.Errorf("%d link wakes scheduled for %d starts and %d finish ticks, want at most %d",
+			cs.pdLinkWakeGen, n, len(finishes), bound)
+	}
+}

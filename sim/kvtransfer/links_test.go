@@ -341,3 +341,21 @@ func TestLinkArbiter_PeakConcurrentIsPerLink(t *testing.T) {
 		t.Fatalf("peak = %v, want L1:2 L2:1", p)
 	}
 }
+
+// A re-rate that leaves a transfer's rate unchanged leaves its accounting untouched: its
+// remaining bytes, the tick they are counted from and its drain tick. Re-deriving them from the
+// float remainder would agree only up to rounding, and "a transfer on links nobody else uses
+// finishes exactly as alone" is meant by construction, not by luck of the arithmetic. A
+// 50-million-case search found no rounding flip, so this pins the guard directly.
+func TestLinkArbiter_UnchangedRateKeepsItsAccounting(t *testing.T) {
+	a := NewLinkArbiter()
+	a.Start(0, Flow{Bytes: 1e9, Links: []Link{{"L1", 3e8}}})
+	f := a.flows[0]
+	before := *f
+	for _, at := range []int64{1, 333_333, 2_000_001} { // starts on a disjoint link force re-rates
+		a.Start(at, Flow{Bytes: 1, Links: []Link{{ID: "L2", BytesPerSecond: 1e9}}})
+		if f.remaining != before.remaining || f.since != before.since || f.drainTick != before.drainTick {
+			t.Fatalf("re-rate at %d with an unchanged rate rewrote the accounting: %+v -> %+v", at, before, *f)
+		}
+	}
+}

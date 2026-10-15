@@ -498,7 +498,8 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			ParentRequestID:   e.parentReq.ID,
 			TransferStartTime: e.parentReq.TransferStartTime,
 			TransferDuration:  transferDuration,
-			NumKVBlocks:       e.parentReq.PulledKVBlocks,
+			NumKVBlocks:       e.parentReq.NumKVBlocks,
+			PulledKVBlocks:    e.parentReq.PulledKVBlocks,
 			PrefillInstanceID: string(e.parentReq.PrefillInstanceID),
 			DecodeInstanceID:  decodeInstID,
 		})

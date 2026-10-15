@@ -264,6 +264,8 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 - Predict speculative acceptance (it is an input).
 - Account the speculative KV/token-budget footprint (#1627, above).
 - Price shared prefill-decode or encode instances.
+- Model vLLM's async scheduling: an engine runs one forward pass at a time and schedules the
+  next only when the current one ends (INV-8), with no overlap of scheduling and execution.
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
   registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
 

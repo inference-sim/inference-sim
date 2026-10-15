@@ -33,8 +33,15 @@ func TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 			cfg.DecodeOverrides.PrefixCachingDisabled = &tc.noCache
-			ps := parentsByID(runHold(t, cfg, cloneRequests([]*sim.Request{turn1, turn2})...))
+			cfg.TraceLevel = "decisions"
+			cs := runHold(t, cfg, cloneRequests([]*sim.Request{turn1, turn2})...)
+			ps := parentsByID(cs)
 			p := ps["t2"]
+			for _, r := range cs.Trace().KVTransfers {
+				if r.ParentRequestID == "t2" && (r.NumKVBlocks != 16 || r.PulledKVBlocks != tc.wantPulled) {
+					t.Errorf("trace record: %d prompt blocks, %d pulled; want 16 and %d", r.NumKVBlocks, r.PulledKVBlocks, tc.wantPulled)
+				}
+			}
 			if p.NumKVBlocks != 16 || p.PulledKVBlocks != tc.wantPulled {
 				t.Fatalf("turn 2: %d prompt blocks, %d pulled; want 16 and %d", p.NumKVBlocks, p.PulledKVBlocks, tc.wantPulled)
 			}
