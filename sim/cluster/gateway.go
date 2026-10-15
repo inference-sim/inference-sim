@@ -160,6 +160,7 @@ func (cs *ClusterSimulator) SetGateway(gw Gateway) {
 
 // Dispatch implements GatewayHost.
 func (cs *ClusterSimulator) Dispatch(req *sim.Request, p Placement) {
+	req.GatewayDispatchTime = cs.clock
 	if p.Prefill != "" {
 		cs.dispatchDisaggregated(req, p)
 		return

@@ -238,9 +238,11 @@ func (g *Gateway) Start(host cluster.GatewayHost) error {
 			"the router runs their reconcilers only for an InferencePool (--pool-name)")
 	}
 
+	g.rt.warm = true
 	for _, inst := range host.Instances() {
 		g.OnInstanceChange(inst)
 	}
+	g.rt.warm = false
 	g.rt.co.settle()
 	return nil
 }

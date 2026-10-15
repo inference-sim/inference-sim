@@ -51,6 +51,9 @@ type desRuntime struct {
 	clk          *desClock
 	server       *modelServers
 	scrapeJitter time.Duration
+	// warm makes collectors started now take their first sample immediately: endpoints that
+	// exist when the simulation starts have been scraped by a router that was already running.
+	warm bool
 }
 
 var _ hosting.Runtime = (*desRuntime)(nil)
@@ -117,7 +120,9 @@ func (rt *desRuntime) Every(ctx context.Context, name string, interval time.Dura
 	}
 	step := toMicros(interval)
 	first := step
-	if rt.scrapeJitter > 0 && isCollector(name) {
+	if rt.warm && isCollector(name) {
+		first = 0
+	} else if rt.scrapeJitter > 0 && isCollector(name) {
 		first += int64(rt.Rand("scrape-phase/"+name).Float64() * float64(toMicros(rt.scrapeJitter)))
 	}
 	prio := PriorityHousekeeper
