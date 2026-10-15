@@ -29,7 +29,11 @@ func openSpeculative(t *testing.T, scenario string, k int) *Model {
 	if err != nil {
 		t.Fatalf("New with %d draft tokens: %v", k, err)
 	}
-	return newModel(kn, identityOf(in))
+	m, err := newModel(kn, identityOf(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 // Under speculation a decode costs its verify width -- 1 + the draft length -- whatever it later

@@ -77,6 +77,13 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		if req != nil && req.Model != "" && inst.Model != req.Model {
 			continue
 		}
+		if rep := cs.endpointReplica(inst); rep != nil {
+			// One endpoint per data-parallel replica (#1909), listed at its rank 0.
+			if inst == rep.ranks[0] && rep.routable() {
+				snapshots = append(snapshots, cs.endpointSnapshot(rep))
+			}
+			continue
+		}
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
 		snap.Model = inst.Model

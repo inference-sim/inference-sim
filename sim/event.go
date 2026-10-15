@@ -72,9 +72,7 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 
 	// If there's no Step scheduled and WaitQ has work, trigger one immediately.
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 }
 
@@ -121,6 +119,10 @@ func (e *StepEvent) Priority() int    { return PriorityStep }
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< StepEvent at %d ticks", e.time)
+	if sim.lockstep != nil {
+		sim.lockstep.step(e)
+		return
+	}
 	sim.Step(e.time)
 }
 
@@ -222,9 +224,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// schedule a StepEvent (defense-in-depth, BC-18)
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 
 	// Invoke completion callback for session management

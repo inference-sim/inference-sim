@@ -114,6 +114,18 @@ type ClusterSimulator struct {
 	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
 	cacheQueryFn map[string]func([]sim.TokenID) int
 
+	// Data-parallel lockstep replicas (#1909). replicaOf maps each rank's instance ID to
+	// its replica; both nil when every instance is an independent engine.
+	dpReplicas []*dpReplica
+	replicaOf  map[string]*dpReplica
+	// Scratch for the event loop's per-event bookkeeping, reused to avoid an allocation
+	// per event.
+	memberScratch  [1]*InstanceSimulator
+	counterScratch []instanceCounters
+	// startupErr is why construction could not build the deployment faithfully (an
+	// ungroupable DP replica); Run returns it before simulating anything.
+	startupErr error
+
 	// Cache block staleness is managed by CachedSnapshotProvider via
 	// ObservabilityConfig.CacheBlocks (unified in #1060).
 
@@ -447,6 +459,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			unplacedCount, config.NumInstances, unplacedFirstErr)
 	}
 
+	// Bind each data-parallel replica's ranks into a lockstep group (#1909).
+	cs.startupErr = cs.buildDPReplicas(config, instanceMap)
+
 	// Initialize snapshot provider with exactly the placed instances.
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
 	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
@@ -759,6 +774,9 @@ func (c *ClusterSimulator) Run() error {
 		panic("ClusterSimulator.Run() called more than once")
 	}
 	c.hasRun = true
+	if c.startupErr != nil {
+		return c.startupErr
+	}
 
 	// 1. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
@@ -835,12 +853,14 @@ func (c *ClusterSimulator) Run() error {
 				break
 			}
 			inst := c.instances[instanceIdx]
-			instID := string(inst.ID())
-
-			// Snapshot counters BEFORE processing the event
-			completedBefore := inst.Metrics().CompletedRequests
-			droppedBefore := inst.Metrics().DroppedUnservable
-			timedOutBefore := inst.Metrics().TimedOutRequests
+			// A lockstep data-parallel step (#1909) runs in the leader's queue but advances
+			// every rank of its replica, so each rank's completions are accounted.
+			members := c.eventMembers(inst)
+			before := c.counterScratch[:0]
+			for _, m := range members {
+				before = append(before, countersOf(m))
+			}
+			c.counterScratch = before
 
 			ev := inst.ProcessNextEvent()
 
@@ -851,61 +871,8 @@ func (c *ClusterSimulator) Run() error {
 				c.clock = prevClusterClock
 			}
 
-			// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
-			// dispatch-to-completion window. Decrement by the number of newly completed,
-			// dropped-unservable, or timed-out requests.
-			completedAfter := inst.Metrics().CompletedRequests
-			droppedAfter := inst.Metrics().DroppedUnservable
-			timedOutAfter := inst.Metrics().TimedOutRequests
-			delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore) + (timedOutAfter - timedOutBefore)
-			if delta > 0 {
-				c.inFlightRequests[instID] -= delta
-				if c.inFlightRequests[instID] < 0 {
-					// Warn-and-clamp: inFlightRequests is a best-effort routing signal
-					// (INV-7); it recovers from delta mis-accounting and does not corrupt
-					// deterministic metrics.
-					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
-						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
-					c.inFlightRequests[instID] = 0
-				}
-				// T042: consume warm-up slots for newly completed requests (Phase 1A).
-				// Each completion on a WarmingUp instance counts against the warm-up budget.
-				completionDelta := int(completedAfter - completedBefore)
-				for i := 0; i < completionDelta; i++ {
-					if inst.IsWarmingUp() {
-						inst.ConsumeWarmUpRequest()
-					}
-				}
-
-			}
-
-			// T042: drain completion accounting (Phase 1A).
-			// When a Draining instance has no more queued or running requests,
-			// transition it to Terminated and release its GPU allocations.
-			if inst.State == sim.InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
-				inst.TransitionTo(sim.InstanceStateTerminated)
-				c.releaseInstanceGPUs(inst)
-				c.snapshotProvider.RemoveCacheInstance(inst.ID())
-				delete(c.cacheQueryFn, string(inst.ID()))
-				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug —
-				// a missing completion event or an early-termination race.
-				if c.inFlightRequests[instID] != 0 {
-					logrus.Warnf("[cluster] instance %s terminated with inFlightRequests=%d — bookkeeping bug",
-						instID, c.inFlightRequests[instID])
-				}
-			}
-
-			// PD disaggregation: detect prefill/decode sub-request completions.
-			// Set-membership (.Has) so a shared-role pod (PoolRolePrefillDecode)
-			// fires both detectors — issue #1276 BC-5.
-			if c.poolsConfigured() {
-				role := c.poolMembership[instID]
-				if role.Has(PoolRolePrefill) {
-					c.detectPrefillCompletions(inst)
-				}
-				if role.Has(PoolRoleDecode) {
-					c.detectDecodeCompletions(inst)
-				}
+			for i, m := range members {
+				c.afterInstanceEvent(m, before[i])
 			}
 		}
 
@@ -1002,6 +969,79 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	return nil
+}
+
+// instanceCounters is the terminal-request counters of one instance before an event.
+type instanceCounters struct {
+	completed, dropped, timedOut int
+}
+
+func countersOf(inst *InstanceSimulator) instanceCounters {
+	m := inst.Metrics()
+	return instanceCounters{completed: m.CompletedRequests, dropped: m.DroppedUnservable, timedOut: m.TimedOutRequests}
+}
+
+// afterInstanceEvent does the cluster's bookkeeping for one instance after an event that
+// may have advanced it: in-flight decrement, warm-up, drain, and P/D completion detection.
+func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before instanceCounters) {
+	instID := string(inst.ID())
+	// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
+	// dispatch-to-completion window. Decrement by the number of newly completed,
+	// dropped-unservable, or timed-out requests.
+	completedAfter := inst.Metrics().CompletedRequests
+	droppedAfter := inst.Metrics().DroppedUnservable
+	timedOutAfter := inst.Metrics().TimedOutRequests
+	completedBefore, droppedBefore, timedOutBefore := before.completed, before.dropped, before.timedOut
+	delta := (completedAfter - completedBefore) + (droppedAfter - droppedBefore) + (timedOutAfter - timedOutBefore)
+	if delta > 0 {
+		c.inFlightRequests[instID] -= delta
+		if c.inFlightRequests[instID] < 0 {
+			// Warn-and-clamp: inFlightRequests is a best-effort routing signal
+			// (INV-7); it recovers from delta mis-accounting and does not corrupt
+			// deterministic metrics.
+			logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
+				instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
+			c.inFlightRequests[instID] = 0
+		}
+		// T042: consume warm-up slots for newly completed requests (Phase 1A).
+		// Each completion on a WarmingUp instance counts against the warm-up budget.
+		completionDelta := int(completedAfter - completedBefore)
+		for i := 0; i < completionDelta; i++ {
+			if inst.IsWarmingUp() {
+				inst.ConsumeWarmUpRequest()
+			}
+		}
+
+	}
+
+	// T042: drain completion accounting (Phase 1A).
+	// When a Draining instance has no more queued or running requests,
+	// transition it to Terminated and release its GPU allocations.
+	if inst.State == sim.InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
+		inst.TransitionTo(sim.InstanceStateTerminated)
+		c.releaseInstanceGPUs(inst)
+		c.snapshotProvider.RemoveCacheInstance(inst.ID())
+		delete(c.cacheQueryFn, string(inst.ID()))
+		// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug —
+		// a missing completion event or an early-termination race.
+		if c.inFlightRequests[instID] != 0 {
+			logrus.Warnf("[cluster] instance %s terminated with inFlightRequests=%d — bookkeeping bug",
+				instID, c.inFlightRequests[instID])
+		}
+	}
+
+	// PD disaggregation: detect prefill/decode sub-request completions.
+	// Set-membership (.Has) so a shared-role pod (PoolRolePrefillDecode)
+	// fires both detectors — issue #1276 BC-5.
+	if c.poolsConfigured() {
+		role := c.poolMembership[instID]
+		if role.Has(PoolRolePrefill) {
+			c.detectPrefillCompletions(inst)
+		}
+		if role.Has(PoolRoleDecode) {
+			c.detectDecodeCompletions(inst)
+		}
+	}
 }
 
 // nextSeqID returns the next monotonically increasing sequence ID for event ordering.
@@ -2233,6 +2273,13 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 			)
 		}
 		cs.trace.RecordRouting(record)
+	}
+
+	// A replica endpoint (#1909) hands the request to one of its ranks through vLLM's
+	// internal DP load balancer; the rank is the engine that serves it.
+	if rep := cs.replicaOf[decision.TargetInstance]; rep != nil && cs.endpointReplica(rep.ranks[0]) != nil {
+		decision.TargetInstance = string(cs.pickRank(rep, time).ID())
+		req.AssignedInstance = decision.TargetInstance
 	}
 
 	// Find target instance, increment in-flight count, and inject request

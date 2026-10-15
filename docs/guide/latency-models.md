@@ -135,9 +135,82 @@ encode instances.
 
 ## Data and expert parallelism (MoE)
 
-With `dp > 1` BLIS runs one replica per data-parallel rank, each sized as one EngineCore
+With `dp > 1` BLIS runs one engine per data-parallel rank, each sized as one EngineCore
 (the kernel's per-rank KV budget and caps). `enable_expert_parallel` is priced by the
 kernel. A dense model with `dp > 1` is refused.
+
+**Lockstep (#1909).** The `dp` ranks of one logical instance are one vLLM DP group. vLLM
+v0.31.0 runs an MoE model at `dp > 1` as `DPEngineCoreProc` ranks
+(`vllm/v1/engine/core.py:1386-1395`), with or without expert parallelism: `use_all2all` is
+true at `dp > 1` (`vllm/config/parallel.py:738-743`), so every MoE layer is a collective over
+the ranks. BLIS therefore steps the group's ranks together:
+
+- Every rank runs every step. A rank with nothing ready runs vLLM's dummy batch, one uniform
+  decode of `1 + num_spec_tokens` tokens (`execute_dummy_batch`, `core.py:2280-2287`;
+  `vllm/v1/worker/gpu_worker.py:1376-1382`).
+- Each rank is priced by the kernel at its own batch padded to the group's largest token
+  count, when that count is within the CUDA-graph capture ceiling the kernel resolved
+  (`coordinate_batch_across_dp`, `vllm/v1/worker/dp_utils.py:99-181`: ranks pad only when
+  the synced graph mode is not NONE). Past the ceiling, under `FULL_DECODE_ONLY` with a mixed
+  batch, or when the layout runs no graphs, each rank costs its own batch. The ceiling and the
+  graph modes come from the kernel; a layout that runs graphs with no readable ceiling is
+  refused at startup rather than priced unpadded.
+- The step lasts the slowest rank's price, plus that rank's own offload reload time, and every
+  rank's clock advances by it. Requests that reach any rank at a step's own tick (arrival,
+  queueing, adapter load) join that step, whichever rank they are on.
+- The wave ends only when the unfinished-request all-reduce finds every rank idle. That
+  all-reduce runs on the wave's first step and every 16th (`dp_sync_interval`,
+  `vllm/config/parallel.py:150`; `core.py:2333-2350`), so up to 15 dummy steps follow the last
+  request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
+  divided by it, stop at its last real event.
+
+**How requests reach ranks: `--dp-load-balancing`.** vLLM v0.31.0's serve flags choose
+(`vllm/engine/arg_utils.py:536-538, 1225-1242`; `EngineCoreClient.make_async_mp_client`,
+`vllm/v1/engine/core_client.py:155-166`), and lockstep is the same in every mode:
+
+| mode | vLLM | router sees |
+|---|---|---|
+| `internal` (default) | no LB flag: one front-end balances all ranks (`DPLBAsyncMPClient`) | one endpoint per replica (below) |
+| `hybrid` | `--data-parallel-hybrid-lb`: one front-end per node balances that node's ranks | the same, for a replica on one node; a replica across nodes is refused |
+| `external` | `--data-parallel-external-lb` or `--data-parallel-multi-port-external-lb`: every rank serves its own port (`DPAsyncMPClient`) | every rank, with its own signals and its own prefix cache; the router picks the rank |
+
+**One endpoint per replica** (internal, hybrid). The router sees each DP group as one pod, listed under its rank
+0 instance ID; a request routed to it is assigned to a rank by vLLM v0.31.0's internal DP load
+balancer (`DPLBAsyncMPClient.get_core_engine_for_request`,
+`vllm/v1/engine/core_client.py:1589-1640`): the rank with the lowest
+`max(client_count x in_flight, waiting + running)`, plus `waiting x 6 x max(0, kv_usage - 0.5)`
+when anything waits, over the per-rank counts the DP coordinator publishes every 100 ms
+(`vllm/v1/engine/coordinator.py:154-162`). Between publishes the chosen rank's waiting count
+is bumped and the scan start rotates, as the front-end does; `in_flight` is the front-end's
+exact count of its unfinished requests per rank. The endpoint's signals follow how
+llm-d's endpoint picker reads a pod's per-engine series (`engine="<rank>"` labels,
+`vllm/v1/metrics/loggers.py:480-486`):
+
+| signal | endpoint value |
+|---|---|
+| queue depth, running batch, in-flight requests, KV tokens and capacity | sum over ranks |
+| KV utilization | max over ranks (llm-d-router#3085; v0.10.0 read rank 0's series alone) |
+| prefix cache (precise scorer) | rank 0's cache only |
+
+The prefix-cache view is rank 0's because vLLM publishes each rank's KV events on `base + rank`
+(`vllm/distributed/kv_events.py:355-356`) and llm-d subscribes an endpoint at the pool port plus
+its rank index (`pkg/kvevents/pool.go:134`), which is 0 for an internal-balancer pod.
+
+Known deviations and limits:
+
+- Pad tokens are the kernel's `Batch.PadTokens` (blis-schemas#74): they run the GEMMs,
+  collectives, MoE dispatch and experts, and no attention, logits or sampling; an idle rank's
+  dummy batch is all pad. This needs the kernel and schemas from the dsv41 branches, which
+  `go.mod` pins by `replace` until they are released.
+- vLLM also pads every rank under dual-batch overlap (`should_ubatch`, `dp_utils.py:181`).
+  BLIS does not model DBO, which the kernel does not price (blis-latency-kernel#48).
+- One front-end, with the whole in-flight view, stands for the `api_server_count` front-ends
+  (dp by default), so `client_count` is 1.
+- The coordinator's counts are sampled at the first assignment of each 100 ms period, not at
+  the publish instant.
+- A P/D pool's ranks step in lockstep but stay individually routable.
+- The autoscaler is still refused with `dp > 1`, and a rank whose startup placement is
+  deferred refuses the run.
 
 ## Speculative Decoding / MTP (#1528)
 
