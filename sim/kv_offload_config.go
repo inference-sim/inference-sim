@@ -69,6 +69,11 @@ type KVOffloadConfig struct {
 	// consulted before tier 1, etc. vLLM default empty (single CPU tier, no spill).
 	// A slice (not a map, R8) so ordering is deterministic (INV-6).
 	Tiers []KVOffloadTier
+
+	// CPULoadTime, when set, prices one CPU->GPU load of bytes, in ticks (INV-K7): the
+	// latency backend's host-tier price (blis-latency-kernel TierTime, cpu_dram), supplied at
+	// run time and never serialized. Nil leaves a CPU-tier hit a same-step reload.
+	CPULoadTime func(bytes int64) int64 `yaml:"-" json:"-"`
 }
 
 // KVOffloadTier is one resolved secondary offload tier. Only the filesystem ("fs")

@@ -412,8 +412,9 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 
 // priceOffload has m's kernel price every KV-offload transfer of m's pool: each secondary
 // tier through TierTime for its catalog device class, at the depth the transfer station is
-// serving, and the legacy CPU tier as one whole per-block reload charge, both at m's own
-// per-block bytes (SequenceVariableBytes).
+// serving, the offload CPU tier's CPU->GPU loads at cpu_dram (INV-K7), and the legacy CPU
+// tier as one whole per-block reload charge, all at m's own per-block bytes
+// (SequenceVariableBytes).
 //
 // TierTime's contract is a GPU↔tier transfer, while the station's secondary-tier jobs run
 // CPU↔tier; the kernel's price is applied to them deliberately -- the device and the host
@@ -449,6 +450,12 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 			cfg.Tiers[i].ServiceTime = func(write bool, bytes int64, inService int) int64 {
 				return kernelTierTicks(m, class, write, bytes, inService)
 			}
+		}
+		// vLLM's CPU->GPU loads run one at a time on the handler's stream chain
+		// (kv_offload/cpu/gpu_worker.py:696-701 at v0.31.0), so each is priced alone.
+		kernelTierTicks(m, kernelCPUTier, false, perBlock, 1)
+		cfg.CPULoadTime = func(bytes int64) int64 {
+			return kernelTierTicks(m, kernelCPUTier, false, bytes, 1)
 		}
 	}
 	if kvCPUBlocks <= 0 {

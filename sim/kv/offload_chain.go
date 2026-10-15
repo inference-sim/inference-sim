@@ -89,6 +89,12 @@ type OffloadCache struct {
 	blocksPerChunk int64
 	clock          int64
 
+	// cpuLoadTime prices one CPU->GPU load (INV-K7); nil keeps a CPU-tier hit a same-step
+	// reload. loadBusyUntil is when the last load issued finishes: vLLM chains its loads on
+	// one stream (kv_offload/cpu/gpu_worker.py:696-701 at v0.31.0).
+	cpuLoadTime   func(bytes int64) int64
+	loadBusyUntil int64
+
 	// Device-model latency jitter (#1581 BC-D5). jitterStddev[t] is tier t's relative
 	// stddev σ (0 == off). rng is the seeded kv-offload partition; nil disables jitter
 	// regardless of σ. The RNG lives here (not in the deterministic transfer station,
@@ -103,6 +109,7 @@ type OffloadCache struct {
 	reloadCount      int64 // CPU→GPU reloads performed (diagnostic)
 	mirrorSkipped    int64 // MirrorToCPU stores skipped because CPU was full and all-pinned
 	deferralsStarted int64 // new admissions set aside for a secondary fetch (H3, #1591)
+	cpuLoadsStarted  int64 // new admissions set aside for a priced CPU->GPU load (INV-K7)
 }
 
 // NewOffloadCache builds the tier chain from a resolved, enabled KVOffloadConfig.
@@ -142,6 +149,7 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 		blocksPerChunk:    cfg.BlocksPerChunk,
+		cpuLoadTime:       cfg.CPULoadTime,
 	}
 	for _, opt := range opts {
 		opt(oc)
@@ -355,9 +363,12 @@ func (o *OffloadCache) SetClock(clock int64) {
 //   - A running-request continuation (Phase-1 chunked prefill, decode sub-request,
 //     final-token alloc) never defers — it keeps the H1 background-promote path,
 //     where a false return means GPU pressure (preempt), not "skip".
+//   - A new request whose prefix is CPU-resident waits for its priced CPU->GPU load
+//     (INV-K7, beginCPULoad) and is admitted on the first step after it lands, as vLLM
+//     holds it in WAITING_FOR_REMOTE_KVS (scheduler.py:1258-1275 at v0.31.0).
 //
-// The deferral machinery is inert when there are no secondary tiers, so CPU-only
-// offload and all non-offload stores are byte-identical (INV-6).
+// The secondary deferral is inert with no secondary tiers, and the load with no
+// CPULoadTime, so stores without them are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
 	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before any tier
 	// is consulted or a deferral registered, so the refusal has no side effect.
@@ -387,6 +398,10 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 				// is defensive: never re-fire a promotion, never admit mid-fetch.
 				return false
 			}
+			// A secondary fetch that landed in CPU still has the CPU->GPU load to make.
+			if o.beginCPULoad(req.ID, req.FullInputTokens(), reloadStartBlock, reloadPrevHash) {
+				return false
+			}
 			// resolved (blocks landed) or recompute (fetch refused/lost): admit through
 			// the H1 path (reloads now-ready CPU blocks; a residual miss recomputes —
 			// it never re-enters defer). Clear the episode only once actually admitted;
@@ -402,6 +417,9 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 		if fc := o.classifyFetch(req.FullInputTokens(), reloadStartBlock, reloadPrevHash); fc.kind != fetchNone {
 			o.registerDeferral(req.ID, fc)
 			return false // defer: stays in WaitQ, re-polled next step
+		}
+		if o.beginCPULoad(req.ID, req.FullInputTokens(), reloadStartBlock, reloadPrevHash) {
+			return false // waits for its CPU->GPU load, re-polled each step (INV-K7)
 		}
 	}
 	return o.allocateThroughChain(req, startIndex, endIndex, cachedBlocks)
