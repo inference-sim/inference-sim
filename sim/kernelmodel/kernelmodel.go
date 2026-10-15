@@ -216,11 +216,15 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newModel(k, identityOf(in)), nil
+	return newModel(k, identityOf(in))
 }
 
-func newModel(k kernel.Kernel, id identity) *Model {
+func newModel(k kernel.Kernel, id identity) (*Model, error) {
 	spec := specTokensOf(k)
+	pad, err := dpPaddingOf(k, spec)
+	if err != nil {
+		return nil, err
+	}
 	return &Model{
 		k:  k,
 		id: id,
@@ -230,10 +234,10 @@ func newModel(k kernel.Kernel, id identity) *Model {
 		decodeThreshold:  max(DecodeThreshold, 1+spec),
 		smBudget:         id.smCount,
 		specTokens:       spec,
-		pad:              dpPaddingOf(k, spec),
+		pad:              pad,
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
-	}
+	}, nil
 }
 
 // OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
