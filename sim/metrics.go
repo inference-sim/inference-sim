@@ -72,6 +72,25 @@ type Metrics struct {
 	KVThrashEvents          int64
 	KVThrashOpportunities   int64
 
+	// Measured-window inputs of the --metrics-path aggregates (#1938); see
+	// metrics_measured.go. MeasuredWindow, when set, fixes the window's bounds (aiperf's
+	// profiling phase start and completion); nil derives them from the measured requests.
+	MeasuredWindow *MeasuredWindow
+	// UnmeasuredStepIntervals holds the per-step ITL entries (the AllITLs series) of
+	// requests outside the measured window, so step_interval_* can exclude them.
+	UnmeasuredStepIntervals []int64
+	// MeasuredContextOverflows and MeasuredFailures count measured requests that were never
+	// served (RecordUnserved).
+	MeasuredContextOverflows int
+	MeasuredFailures         int
+	// InFlightSamples is the cluster's engine-side in-flight request count (dispatched, not
+	// yet completed, summed over instances) as a step function: each sample holds from its
+	// time until the next. Set by the cluster on the aggregate; empty per instance.
+	InFlightSamples []InFlightSample
+	// KVCapacityTokensPerReplica is the smallest instance's GPU KV pool in tokens. Set by
+	// the cluster on the aggregate.
+	KVCapacityTokensPerReplica int64
+
 	// completions counts completions on this instance, so each completed request's
 	// Requests entry carries its per-instance completion sequence (see
 	// recordCompletionOrder and RequestMetrics.CompletionIndex).
@@ -79,10 +98,11 @@ type Metrics struct {
 }
 
 // recordCompletionOrder stamps a completed request's Requests entry with this instance's
-// next completion sequence number and the simulation clock at which the completion was
-// processed. Called once per completion, in completion order, from recordRequestCompletion.
-// A request with no Requests entry is left alone (nothing would carry the stamp).
-func (m *Metrics) recordCompletionOrder(id string, clock int64) {
+// next completion sequence number, the simulation clock at which the completion was
+// processed, and the output tokens it emitted. Called once per completion, in completion
+// order, from recordRequestCompletion. A request with no Requests entry is left alone
+// (nothing would carry the stamp).
+func (m *Metrics) recordCompletionOrder(id string, clock int64, outputTokens int) {
 	rm, ok := m.Requests[id]
 	if !ok {
 		return
@@ -90,15 +110,33 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64) {
 	m.completions++
 	rm.completionSeq = m.completions
 	rm.completionClock = clock
+	rm.OutputTokens = outputTokens
 	m.Requests[id] = rm
 }
 
-// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number and
-// clock), for an entry that stands for src's completion under another id -- a disaggregated
-// parent completes when its decode sub-request does.
+// WithCompletionOf returns rm carrying src's completion stamp (its instance sequence number,
+// clock and emitted output tokens), for an entry that stands for src's completion under
+// another id -- a disaggregated parent completes when its decode sub-request does.
 func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
 	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
+	rm.OutputTokens = src.OutputTokens
 	return rm
+}
+
+// RecordUnserved counts a request that left without being served -- dropped at enqueue,
+// rejected at admission or routing, shed from the gateway queue -- toward the measured
+// window's context_overflow_requests or failed_requests (#1938) when its phase is measured.
+// Callers keep their own run-wide counters (DroppedUnservable, RejectedRequests, ...); this
+// is the phase-aware tally beside them.
+func (m *Metrics) RecordUnserved(req *Request, contextOverflow bool) {
+	if !req.Phase.Measured() {
+		return
+	}
+	if contextOverflow {
+		m.MeasuredContextOverflows++
+	} else {
+		m.MeasuredFailures++
+	}
 }
 
 // assignCompletionIndices numbers the completed requests in rs 1..n in the order the
@@ -395,6 +433,15 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+
+		// Measured-window aggregates (#1938): file-only for the same reason. The latency
+		// families stdout already reports (ttft_*, e2e_*) take their measured-window values
+		// here, so the file states one definition per key. The legacy per-step itl_* keys and
+		// the run-wide counts (completed_requests, INV-1) are kept as they are;
+		// step_interval_* restates itl_* over the measured window.
+		measured, lat := m.buildMeasured()
+		output.MeasuredMetrics = &measured
+		output.applyMeasured(lat)
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

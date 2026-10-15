@@ -175,6 +175,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			})
 		}
 		cs.rejectedRequests++
+		cs.recordUnserved(e.request)
 		// Populate per-tier shed counter for every admission rejection, regardless of policy.
 		tier := e.request.SLOClass
 		if tier == "" {
@@ -208,12 +209,14 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// Queue-rejected. NOT an admission rejection (Admit returned true).
 			// Accounted via gatewayQueue.RejectedCount() (INV-1: gateway_queue_rejected).
 			logrus.Debugf("[cluster] req %s: flow-control queue rejected", e.request.ID)
+			cs.recordUnserved(e.request)
 			return
 		case ShedVictim:
 			victim := cs.flowControlAdmission.LastShedVictim()
 			if victim == nil {
 				panic(fmt.Sprintf("FlowControlAdmission: ShedVictim outcome but nil victim for req %s", e.request.ID))
 			}
+			cs.recordUnserved(victim)
 			tier := victim.SLOClass
 			if tier == "" {
 				tier = "standard"
@@ -313,6 +316,7 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	cs.gatewayEvicted++
+	cs.recordUnserved(e.request)
 	tier := e.request.SLOClass
 	if tier == "" {
 		tier = "standard"
@@ -340,6 +344,7 @@ func (e *GatewayQueueTTLEvent) Execute(cs *ClusterSimulator) {
 	}
 	logrus.Debugf("[cluster] gateway TTL expiry: req %s expired at tick %d", e.requestID, e.time)
 	cs.gatewayExpired++
+	cs.recordUnserved(req)
 	tier := req.SLOClass
 	if tier == "" {
 		tier = "standard"
@@ -406,6 +411,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", e.request.ID)
 		cs.routingRejections++
+		cs.recordUnserved(e.request)
 		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
@@ -504,6 +510,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		TenantID:     e.request.TenantID,
 		SLOClass:     e.request.SLOClass,
 		Model:        e.request.Model,
+		Phase:        e.request.Phase,
 	}
 	parent.PrefillSubReq = prefillSubReq
 
