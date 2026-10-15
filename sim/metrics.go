@@ -336,6 +336,7 @@ type EmitOption func(*emitOptions)
 type emitOptions struct {
 	catalog   *CatalogProvenance
 	overrides []ScenarioOverride
+	pd        *PDOutput
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -354,6 +355,12 @@ func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
 // channel INV-6 protects. An empty list leaves the block absent.
 func WithScenarioOverrides(o []ScenarioOverride) EmitOption {
 	return func(opts *emitOptions) { opts.overrides = o }
+}
+
+// WithPD records the P/D block in the --metrics-path file only (stdout carries the "PD
+// Metrics" section). Nil leaves the block absent.
+func WithPD(pd *PDOutput) EmitOption {
+	return func(opts *emitOptions) { opts.pd = pd }
 }
 
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
@@ -395,6 +402,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.PD = resolvedOpts.pd
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

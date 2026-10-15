@@ -11,7 +11,12 @@ type ParentRequest struct {
 	PrefillSubReq   *sim.Request // Pointer to the prefill sub-request, set when the parent is created; its DepartureTime is when the KV the handoff moves exists.
 	DecodeSubReqID  string
 	DecodeSubReq    *sim.Request // Pointer to the decode sub-request. Set by KVTransferStartedEvent on successful ReserveTransferredKV (issue #1343); KVTransferCompletedEvent promotes it from StateWaitingForRemoteKVs to StateQueued and enqueues it on the decode instance. Nil after a late-drop (decode pod unroutable at transfer complete) when reserved KV is released.
-	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
+	NumKVBlocks     int64        // the prompt's KV blocks (ceil(inputLen / blockSize))
+	// PulledKVBlocks are the blocks the decode side's NIXL pull moves: the prompt's blocks less
+	// those the decode instance's prefix cache already held when it reserved them
+	// (InstanceSimulator.ReserveTransferredKV). Set at transfer start; the handoff is priced
+	// for these, and NewParentRequest sets it to NumKVBlocks until then.
+	PulledKVBlocks int64
 
 	// Phase timestamps (microseconds). Zero means phase not yet reached.
 	ArrivalTime          int64
@@ -19,6 +24,10 @@ type ParentRequest struct {
 	PrefillCompleteTime  int64
 	TransferStartTime    int64
 	TransferCompleteTime int64
+	// TransferAloneTicks is what the handoff would take alone on the fabric
+	// (DeploymentConfig.PDTransferTime). TransferCompleteTime - TransferStartTime exceeds it
+	// only by the time contended links added (INV-P2-2): the handoff's queueing delay.
+	TransferAloneTicks int64
 	DecodeEnqueueTime    int64
 	// CompletionTime has four meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
@@ -64,6 +73,7 @@ func NewParentRequest(req *sim.Request, blockSizeTokens int64) *ParentRequest {
 		PrefillSubReqID: req.ID + "_prefill",
 		DecodeSubReqID:  req.ID + "_decode",
 		NumKVBlocks:     numBlocks,
+		PulledKVBlocks:  numBlocks,
 		ArrivalTime:     req.ArrivalTime,
 	}
 }

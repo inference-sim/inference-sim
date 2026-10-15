@@ -1,6 +1,9 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import (
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
+)
 
 // DefaultCacheSignalDelay is the default propagation delay for prefix cache
 // signals in microseconds (50ms). Only affects precise-prefix-cache and
@@ -84,6 +87,32 @@ type DeploymentConfig struct {
 	// and the KV geometry) and the simulator owns only when it happens. Required whenever
 	// PD disaggregation is enabled; NewClusterSimulator refuses a PD deployment without it.
 	PDTransferTime func(tokens int64, from, to InstanceID) int64
+
+	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
+	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a kvtransfer.LinkArbiter, which
+	// divides every link max-min fairly among the handoffs on it and re-rates them as handoffs
+	// start, drain and finish. A handoff alone still completes at exactly PDTransferTime. False
+	// (the default) prices every handoff as if alone, byte-identical to the behaviour before.
+	PDTransferContention bool
+	// PDTransferDemand is the demand behind PDTransferTime for the same handoff: payload bytes,
+	// the floor, and the links crossed with their full rates (blis-schemas
+	// kernel.PDTransferDemand). Required when PDTransferContention is set; the simulator invents
+	// no rate, floor or link of its own.
+	PDTransferDemand func(tokens int64, from, to InstanceID) kvtransfer.Flow
+
+	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
+	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:
+	// request_finished returns delay_free_blocks and records a lease deadline instead of
+	// freeing (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:247-266 at
+	// v0.31.0; push_scheduler.py:260-270 likewise). The blocks are freed when the pull
+	// completes, at once when the decode side aborts the request before pulling, and at lease
+	// expiry when the decode side vanishes (#1934, INV-PD-7). False frees them when the
+	// prefill finishes, the behaviour before #1934.
+	PDPrefillKVHold bool
+	// PDKVLeaseUs is NIXL's kv_lease_duration in microseconds: how long a prefill engine keeps
+	// a finished request's blocks for a decode side that neither pulls them nor renews the
+	// lease. 0 takes vLLM's default of 30 s (nixl/base_scheduler.py:81-85).
+	PDKVLeaseUs int64
 
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.

@@ -1200,7 +1200,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// the decode pre-check returns false before any state mutation (check-then-act
 			// pattern, matching vLLM kv_cache_manager.py:334-336), so RequestMap is
 			// preserved and Release frees all blocks from prior successful allocations.
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1262,7 +1262,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// InstanceSimulator.EvictRequest writes StateCompleted as a tombstone
 			// rather than a completion — see the note there.
 			req.State = StateCompleted
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1282,6 +1282,50 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 		}
 	}
 	return remaining
+}
+
+// ReserveRemoteKV allocates the prompt KV of a P/D decode sub-request whose KV a NIXL pull is
+// about to bring (vLLM's WAITING_FOR_REMOTE_KVS) and returns how many prompt tokens the pull
+// must move. As vLLM's decode engine does, it first takes the prompt's local prefix-cache hit
+// -- full blocks, capped below the prompt's last token (kv_cache_manager.py:290-299 at
+// v0.31.0) -- and the connector is then asked only for the rest (sched/scheduler.py:525-537
+// and 949): NIXL pulls the blocks the decode cache lacks (nixl/pull_scheduler.py:149-177), and
+// the decode engine's own CPU offload tier is not consulted (sim.GPUTierAllocator). On
+// success ProgressIndex is set past the prompt so the request decodes once the pull lands.
+// Returns ok=false, allocating nothing, when the blocks do not fit.
+func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
+	inputLen := req.InputLen()
+	if inputLen == 0 {
+		req.ProgressIndex = 0
+		return 0, true
+	}
+	bs := sim.KVCache.BlockSize()
+	var cached []int64
+	if !sim.prefixCachingDisabled {
+		cached = sim.KVCache.GetCachedBlocks(req.FullInputTokens())
+		for int64(len(cached))*bs > inputLen-1 {
+			cached = cached[:len(cached)-1]
+		}
+	}
+	local := int64(len(cached)) * bs
+	allocate := sim.KVCache.AllocateKVBlocks
+	if g, isTiered := sim.KVCache.(GPUTierAllocator); isTiered {
+		allocate = g.AllocateGPUTier
+	}
+	if !allocate(req, local, inputLen, cached) {
+		return 0, false
+	}
+	req.ProgressIndex = inputLen
+	return inputLen - local, true
+}
+
+// releaseFinishedKV frees a finished request's KV blocks, unless the request's owner keeps
+// them past completion (Request.RetainKVOnFinish) and will release them itself.
+func (sim *Simulator) releaseFinishedKV(req *Request) {
+	if req.RetainKVOnFinish {
+		return
+	}
+	sim.KVCache.ReleaseKVBlocks(req)
 }
 
 // scheduleNextStep handles Phase 4: schedules the next step event based on

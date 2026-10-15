@@ -523,7 +523,7 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.ReserveTransferredKV(req)
+	_, ok := inst.ReserveTransferredKV(req)
 	if !ok {
 		t.Fatal("ReserveTransferredKV returned false, want true")
 	}
@@ -552,7 +552,7 @@ func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.ReserveTransferredKV(req)
+	_, ok := inst.ReserveTransferredKV(req)
 	if ok {
 		t.Error("ReserveTransferredKV returned true with insufficient capacity, want false")
 	}

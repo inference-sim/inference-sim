@@ -502,10 +502,7 @@ Example:
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		requireKernelCapacity(kernelPD)
-		var pdTransferTime func(int64, cluster.InstanceID, cluster.InstanceID) int64
-		if kernelPD != nil {
-			pdTransferTime = kernelPD.transferTime()
-		}
+		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
@@ -546,6 +543,9 @@ Example:
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
 			PDTransferTime:                  pdTransferTime,
+			PDTransferContention:            pdTransferContention,
+			PDTransferDemand:                pdTransferDemand,
+			PDPrefillKVHold:                 kernelPD.holdsPrefillKV(),
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
 			PrefillOverrides:                prefillOverrides,
@@ -694,8 +694,10 @@ Example:
 		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
 		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
 		// (INV-6).
+		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
+		pdMetrics := cs.PDMetrics()
 		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
-			resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot)...); err != nil {
+			append(resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot), sim.WithPD(pdMetrics.Output()))...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -709,12 +711,7 @@ Example:
 			cs.InjectedByClass(),
 		)
 		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
-		rawMetrics.PD = cluster.CollectPDMetrics(
-			cs.ParentRequests(),
-			cs.AggregatedMetrics(),
-			cs.PoolMembership(),
-			cs.PerInstanceMetricsByID(),
-		)
+		rawMetrics.PD = pdMetrics
 		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count

@@ -468,28 +468,20 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 
 // ReserveTransferredKV reserves KV cache blocks on this instance for a decode
 // sub-request whose KV transfer is in flight (issue #1343, vLLM
-// WAITING_FOR_REMOTE_KVS parity). Blocks are allocated immediately so they
-// reduce available capacity for other requests during the transfer window.
-// ProgressIndex is advanced past the input so batch formation treats the
-// request as decode-ready once the transfer completes and the state is
-// promoted to StateQueued. Returns false if insufficient KV capacity on this
-// instance.
+// WAITING_FOR_REMOTE_KVS parity), and returns how many prompt tokens the pull must
+// move: those this instance's prefix cache does not already hold (sim.Simulator.
+// ReserveRemoteKV). Blocks are allocated immediately so they reduce available capacity
+// for other requests during the transfer window. ProgressIndex is advanced past the
+// input so batch formation treats the request as decode-ready once the transfer
+// completes and the state is promoted to StateQueued. Returns ok=false if this instance
+// lacks the KV capacity.
 //
 // Caller is responsible for calling ReleaseReservedKV (or the equivalent
 // KVCache.ReleaseKVBlocks) if the reservation must be undone — e.g., when
 // the decode instance becomes non-routable between KVTransferStartedEvent
 // and KVTransferCompletedEvent.
-func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
-	inputLen := req.InputLen()
-	if inputLen == 0 {
-		req.ProgressIndex = 0
-		return true
-	}
-	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
-	if ok {
-		req.ProgressIndex = inputLen
-	}
-	return ok
+func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) (pulledTokens int64, ok bool) {
+	return i.sim.ReserveRemoteKV(req)
 }
 
 // ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
@@ -498,6 +490,27 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 // no blocks.
 func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// ReleaseHeldKV frees the KV blocks a finished request kept past completion
+// (sim.Request.RetainKVOnFinish): a P/D prefill sub-request's, once the decode side has pulled
+// them (INV-PD-7). The blocks go back to the free list with their prefix hashes, as any
+// finished request's do.
+func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
+	if !req.RetainKVOnFinish || req.State != sim.StateCompleted {
+		panic(fmt.Sprintf("ReleaseHeldKV %s: request %s is not a finished request that retains its KV",
+			i.id, req.ID))
+	}
+	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
+func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
+	r, ok := i.sim.KVCache.(sim.RequestBlockReporter)
+	if !ok {
+		panic(fmt.Sprintf("instance %s: KV store %T does not report a request's blocks", i.id, i.sim.KVCache))
+	}
+	return r.RequestBlocks(req.ID)
 }
 
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.

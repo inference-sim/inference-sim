@@ -23,6 +23,8 @@ var (
 	_ sim.KVStore                = (*OffloadCache)(nil)
 	_ sim.DeferrableKVStore      = (*OffloadCache)(nil)
 	_ sim.ReloadReportingKVStore = (*OffloadCache)(nil)
+	_ sim.RequestBlockReporter   = (*OffloadCache)(nil)
+	_ sim.GPUTierAllocator       = (*OffloadCache)(nil)
 )
 
 // OffloadOption configures an OffloadCache at construction.
@@ -206,6 +208,16 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 }
 
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
+
+// RequestBlocks implements sim.RequestBlockReporter from the GPU tier.
+func (o *OffloadCache) RequestBlocks(reqID string) []int64 { return o.gpu.RequestBlocks(reqID) }
+
+// AllocateGPUTier implements sim.GPUTierAllocator: allocate on the GPU tier, consulting no
+// offload tier.
+func (o *OffloadCache) AllocateGPUTier(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	return o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
+}
+
 func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
 func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
 func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }

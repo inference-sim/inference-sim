@@ -14,6 +14,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool, since each
@@ -21,6 +22,8 @@ import (
 // for that pool rather than by pool 0's copied to both.
 type kernelPools struct {
 	prefill, decode *kernelmodel.Model
+	// connector is the scenario's pd_transfer.connector.
+	connector string
 }
 
 // openKernelPools opens the prefill and decode pools of the run's scenario. It returns nil
@@ -52,6 +55,12 @@ func openKernelPools(catalogRoot string) *kernelPools {
 		}
 		*c.dst = m
 	}
+	shape, err := kernelmodel.ShapeOf(kernelScenario, repos)
+	if err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	p.connector = shape.PDConnector
+	requireNIXLHandoff(p.connector)
 	// For the same reason every instance must belong to a pool: one with no role would run the
 	// first pool's engine with the global sizing, an engine the scenario did not describe.
 	if prefillInstances+decodeInstances != numInstances {
@@ -99,6 +108,92 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
 	}
 	return p
+}
+
+// nixlConnectors are the pd_transfer connectors whose handoff BLIS models: vLLM v0.31.0's
+// NIXL connectors (NixlConnector is an alias of NixlPullConnector, nixl/connector.py:9-12), and
+// MultiConnector, which llm-d composes from a NixlConnector and an OffloadingConnector. The
+// schema cannot see a MultiConnector's children, so, as the blis-schemas rules pack does
+// (rules/v0_31 pack.go:964-968), it is taken to carry the NIXL one.
+var nixlConnectors = map[string]bool{
+	"NixlConnector": true, "NixlPullConnector": true, "NixlPushConnector": true, "MultiConnector": true,
+}
+
+// requireNIXLHandoff refuses a P/D scenario whose handoff is not NIXL's. What BLIS simulates
+// around a handoff is NIXL's protocol: the decode side reserves the blocks at transfer start
+// (WAITING_FOR_REMOTE_KVS), pulls only what its own prefix cache lacks, and the prefill side
+// holds its blocks until the pull completes or the lease expires (INV-PD-7). Another connector
+// (Mooncake, LMCache, P2P NCCL) moves and frees KV on other terms, which would be simulated as
+// NIXL's without a word.
+func requireNIXLHandoff(connector string) {
+	if !nixlConnectors[connector] {
+		logrus.Fatalf("scenario %q hands KV off with pd_transfer.connector %q; BLIS models NIXL's "+
+			"handoff (NixlConnector, NixlPullConnector, NixlPushConnector, or a MultiConnector over "+
+			"one), so state one of those", kernelScenario, connector)
+	}
+}
+
+// holdsPrefillKV reports whether the run's prefill engines hold a finished request's KV for
+// the decode pull: every NIXL handoff does (nixl/pull_scheduler.py:247-266 and
+// push_scheduler.py:260-270 at v0.31.0). False for a colocated run (nil receiver).
+func (p *kernelPools) holdsPrefillKV() bool {
+	return p != nil && nixlConnectors[p.connector]
+}
+
+// handoffPricing returns the run's handoff price and, when contention is on, the demand behind
+// it. Both nil for a colocated run, where contention is refused.
+func (p *kernelPools) handoffPricing(contention bool) (
+	func(int64, cluster.InstanceID, cluster.InstanceID) int64,
+	func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow,
+) {
+	if p == nil {
+		if contention {
+			logrus.Fatalf("--pd-transfer-contention needs a disaggregated run: " +
+				"pass --prefill-instances and --decode-instances with a P/D scenario")
+		}
+		return nil, nil
+	}
+	price := p.transferTime()
+	if !contention {
+		return price, nil
+	}
+	return price, p.transferDemand()
+}
+
+// transferDemand is the demand behind transferTime: the prefill pool kernel's
+// PDTransferDemand between the two instances' placements, as payload, floor and links. The
+// blis-schemas law that alone a demand costs its PDTransferTime is checked for every rank pair
+// up front (a block's handoff), so a kernel breaking it is refused before the run rather than
+// arbitrated.
+func (p *kernelPools) transferDemand() func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow {
+	firstDecode := prefillInstances
+	demand := func(tokens int64, from, to kernel.Placement) kvtransfer.Flow {
+		d := p.prefill.Kernel().PDTransferDemand(int(tokens), from, to)
+		if err := d.Check(); err != nil {
+			logrus.Fatalf("scenario %q: the kernel's demand for a %d-token handoff from %+v to %+v is "+
+				"malformed: %v", kernelScenario, tokens, from, to, err)
+		}
+		f := kvtransfer.Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
+		for _, l := range d.Links {
+			f.Links = append(f.Links, kvtransfer.Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
+		}
+		return f
+	}
+	for i := 0; i < prefillInstances; i++ {
+		for j := 0; j < decodeInstances; j++ {
+			from, to := p.prefill.PlacementOf(i), p.decode.PlacementOf(j)
+			if a, b := kvtransfer.AloneTicks(demand(blockSizeTokens, from, to)),
+				p.prefill.PDTransferTicks(blockSizeTokens, from, to); a != b {
+				logrus.Fatalf("scenario %q: the kernel's handoff demand from prefill rank %d to decode "+
+					"rank %d costs %d ticks alone but it prices the handoff at %d; blis-schemas requires "+
+					"PDTransferTime == PDTransferDemand.AloneTime()", kernelScenario, i, j, a, b)
+			}
+		}
+	}
+	return func(tokens int64, from, to cluster.InstanceID) kvtransfer.Flow {
+		return demand(tokens, p.prefill.PlacementOf(rankInPool(from, firstDecode)),
+			p.decode.PlacementOf(rankInPool(to, firstDecode)))
+	}
 }
 
 // requireSameKVCacheFormat refuses a disaggregated scenario whose pools state different KV

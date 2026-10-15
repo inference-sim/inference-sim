@@ -445,6 +445,11 @@ func (kvc *KVCacheState) BlockSize() int64 { return kvc.BlockSizeTokens }
 // Derived from TotalBlocks - FreeBlockCnt (read-only for callers).
 func (kvc *KVCacheState) UsedBlocks() int64 { return kvc.TotalBlocks - kvc.FreeBlockCnt }
 
+// RequestBlocks implements sim.RequestBlockReporter: the blocks reqID holds.
+func (kvc *KVCacheState) RequestBlocks(reqID string) []int64 { return kvc.RequestMap[reqID] }
+
+var _ sim.RequestBlockReporter = (*KVCacheState)(nil)
+
 // TotalCapacity returns the total number of blocks.
 func (kvc *KVCacheState) TotalCapacity() int64 { return kvc.TotalBlocks }
 

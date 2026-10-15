@@ -504,6 +504,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		TenantID:     e.request.TenantID,
 		SLOClass:     e.request.SLOClass,
 		Model:        e.request.Model,
+		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
 

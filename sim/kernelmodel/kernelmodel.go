@@ -541,6 +541,8 @@ type Deployment struct {
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+	// PDConnector is the deployment's pd_transfer.connector, "" when it states none.
+	PDConnector string
 }
 
 // ShapeOf reads a scenario's Shape.
@@ -550,6 +552,9 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		return Shape{}, err
 	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	if dep.PDTransfer != nil {
+		sh.PDConnector = dep.PDTransfer.Connector
+	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
 	}

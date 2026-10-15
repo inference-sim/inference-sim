@@ -172,7 +172,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	}
 
 	// A reserves first and consumes all 5 blocks.
-	if ok := inst.ReserveTransferredKV(reqA); !ok {
+	if _, ok := inst.ReserveTransferredKV(reqA); !ok {
 		t.Fatal("ReserveTransferredKV(A) failed; test fixture is wrong, capacity should accommodate A")
 	}
 	if used := inst.sim.KVCache.UsedBlocks(); used != 5 {
@@ -181,7 +181,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 
 	// While A still holds blocks, B must not be able to steal them.
 	// This is the core no-stealing contract from issue #1343.
-	if ok := inst.ReserveTransferredKV(reqB); ok {
+	if _, ok := inst.ReserveTransferredKV(reqB); ok {
 		t.Fatal("ReserveTransferredKV(B) succeeded while A still holds the blocks — blocks were stolen, no-stealing contract violated")
 	}
 
@@ -192,7 +192,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	if used := inst.sim.KVCache.UsedBlocks(); used != 0 {
 		t.Fatalf("UsedBlocks after A release = %d, want 0", used)
 	}
-	if ok := inst.ReserveTransferredKV(reqB); !ok {
+	if _, ok := inst.ReserveTransferredKV(reqB); !ok {
 		t.Error("ReserveTransferredKV(B) failed after A released — reservation path is broken independent of A")
 	}
 }
@@ -217,7 +217,7 @@ func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	if ok := inst.ReserveTransferredKV(req); !ok {
+	if _, ok := inst.ReserveTransferredKV(req); !ok {
 		t.Fatal("ReserveTransferredKV failed with ample capacity")
 	}
 	usedAfterReserve := inst.sim.KVCache.UsedBlocks()

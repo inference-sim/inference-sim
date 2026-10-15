@@ -165,6 +165,8 @@ type TieredKVCache struct {
 var (
 	_ sim.KVStore                = (*TieredKVCache)(nil)
 	_ sim.ReloadReportingKVStore = (*TieredKVCache)(nil)
+	_ sim.RequestBlockReporter   = (*TieredKVCache)(nil)
+	_ sim.GPUTierAllocator       = (*TieredKVCache)(nil)
 )
 
 // NewTieredKVCache creates a TieredKVCache.
@@ -408,6 +410,15 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		prevHash = h
 	}
 	return reloaded
+}
+
+// RequestBlocks implements sim.RequestBlockReporter from the GPU tier.
+func (t *TieredKVCache) RequestBlocks(reqID string) []int64 { return t.gpu.RequestBlocks(reqID) }
+
+// AllocateGPUTier implements sim.GPUTierAllocator: allocate on the GPU tier, consulting no
+// CPU tier.
+func (t *TieredKVCache) AllocateGPUTier(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	return t.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
 }
 
 func (t *TieredKVCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {

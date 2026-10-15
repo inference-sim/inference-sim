@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -79,6 +80,19 @@ type ClusterSimulator struct {
 	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
 	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
 	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
+	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
+	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
+	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
+	pdLinks       *kvtransfer.LinkArbiter
+	pdLinkFlows   map[kvtransfer.FlowID]*ParentRequest
+	pdLinkWakeGen int64
+	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
+	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
+	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
+	// heldKVPeakTokens is each instance's peak of distinct held tokens.
+	prefillHolds     map[string][]int64
+	heldBlockRefs    map[string]map[int64]int
+	heldKVPeakTokens map[string]int64
 	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
 
@@ -207,8 +221,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
 		}
 	}
-	// Concurrent handoffs are priced independently: overlapping transfers do not share fabric
-	// bandwidth. Per-link contention is not modelled yet (INV-P2-2, #1922).
+	// With contention on, concurrent handoffs share the links they cross (INV-P2-2, #1922), so
+	// each needs the demand behind its price; the simulator has no link model of its own.
+	if config.PDTransferContention {
+		if config.PrefillInstances == 0 && config.SharedInstances == 0 {
+			panic("ClusterSimulator: PDTransferContention is set but the deployment is not disaggregated")
+		}
+		if config.PDTransferDemand == nil {
+			panic("ClusterSimulator: PDTransferContention requires DeploymentConfig.PDTransferDemand: " +
+				"the latency backend states each handoff's links and rates, and the simulator has none of its own")
+		}
+	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
@@ -287,6 +310,13 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
+		cs.prefillHolds = make(map[string][]int64)
+		if config.PDTransferContention {
+			cs.pdLinks = kvtransfer.NewLinkArbiter()
+			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
+		}
+		cs.heldBlockRefs = make(map[string]map[int64]int)
+		cs.heldKVPeakTokens = make(map[string]int64)
 
 		// Per-pool routing policies and the disaggregation decider are created after
 		// the construction loop (both need cacheQueryFn from instances).
@@ -1305,6 +1335,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
 		c.pdPrefillCompletedCount++
+		c.startPrefillHold(parent)
 
 		// Schedule KV transfer
 		heap.Push(&c.clusterEvents, clusterEventEntry{
@@ -2354,6 +2385,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		TenantID:     req.TenantID,
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
+		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
 

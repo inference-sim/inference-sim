@@ -37,6 +37,26 @@ type PrefixCacheCounter interface {
 	PrefixCacheCounts() PrefixCacheCounts
 }
 
+// RequestBlockReporter is the optional capability a KVStore implements to report the GPU
+// blocks a request holds, in allocation order. Every production store implements it (the
+// offload stores report their GPU tier's). The cluster reads it to count, without double
+// counting a prefix-shared block, the KV a P/D prefill instance holds for decode pulls
+// (INV-PD-7). The slice is the store's own: callers must not modify it.
+type RequestBlockReporter interface {
+	RequestBlocks(reqID string) []int64
+}
+
+// GPUTierAllocator is the optional capability an offload KVStore implements to allocate on its
+// GPU tier alone, without consulting the offload tiers. The P/D decode reservation needs it:
+// under a MultiConnector of NIXL and the OffloadingConnector, the KV of a remotely prefilled
+// request is loaded by the first connector that reports tokens, which is NIXL, so the decode
+// engine's own CPU tier never serves that request's prompt
+// (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:134-141 and 429-448 at
+// v0.31.0). A single-tier store has no other tier and does not implement it.
+type GPUTierAllocator interface {
+	AllocateGPUTier(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+}
+
 // DeferrableKVStore is the optional capability a KVStore implements when it can
 // defer a new prefill admission that needs KV blocks resident only on a secondary
 // (disk/object-store) offload tier, and re-poll it at each scheduler step instead

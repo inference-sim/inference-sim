@@ -143,9 +143,26 @@ type MetricsOutput struct {
 	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
 	// scenario exactly.
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+
+	// PD is the P/D block (PDOutput), file-only; absent for a colocated run.
+	PD *PDOutput `json:"pd,omitempty"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.
+// PDOutput is the results file's P/D block (#1922, #1934, #1940): the KV handoffs, how long
+// contended links held them up, the prefill KV held for decode pulls, and each pool's CPU-tier
+// hit rate. File-only, like Catalog. Times in milliseconds; percentiles numpy-linear.
+type PDOutput struct {
+	Transfers                int                `json:"transfers"`
+	TransferTimeP50Ms        float64            `json:"transfer_time_p50_ms"`
+	TransferTimeP90Ms        float64            `json:"transfer_time_p90_ms"`
+	TransferQueueDelayMeanMs float64            `json:"transfer_queue_delay_mean_ms"`
+	TransferQueueDelayP90Ms  float64            `json:"transfer_queue_delay_p90_ms"`
+	PrefillKVHoldPeakTokens  int64              `json:"prefill_kv_hold_peak_tokens"`
+	LinkPeakConcurrent       map[string]int     `json:"link_peak_concurrent_transfers,omitempty"`
+	CPUTierHitRate           map[string]float64 `json:"cpu_tier_hit_rate"`
+}
+
 type ScenarioOverride struct {
 	Setting  string `json:"setting"`  // what was overridden, e.g. "scheduler"
 	Scenario string `json:"scenario"` // the value the scenario states (in BLIS's terms)
