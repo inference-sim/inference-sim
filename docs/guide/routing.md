@@ -171,8 +171,8 @@ must define prefill/decode pools exactly when the config is disaggregated.
 | `queue-scorer`, `kv-cache-utilization-scorer`, `active-request-scorer`, `running-requests-size-scorer`, `load-aware-scorer`, `lora-affinity-scorer` | the existing scorers (defaults only; parameters are refused) |
 | `no-hit-lru-scorer` | `no-hit-lru`, bound to an llm-d prefix producer |
 | `approx-prefix-cache-producer` | router-side LRU per instance: autoTune capacity = the instance's GPU KV blocks, block size = engine block size floored at 64, `maxPrefixTokensToMatch` cap; a trailing partial block counts |
-| `cpu-prefix-cache-producer` (an approx producer of that name) | with a CPU offload tier: each instance's contiguous CPU-tier-resident prefix (#1912); otherwise an ordinary approx producer |
-| `precise-prefix-cache-producer` | the instance's GPU KV view frozen for `--cache-signal-delay` (KV-event propagation) plus, with an offload tier, the CPU tier weighted by `kvCacheBackendConfigs`; speculative indexing with `speculativeTTL` |
+| a second approx producer (e.g. the tiered guide's `cpu-prefix-cache-producer`) | exactly as llm-d: its own router-side LRU, sized by `lruCapacityPerServer` (or the GPU block count under `autoTune`), credited at PreRequest. `--epp-cpu-tier-view <name>` is a BLIS opt-in that makes the named approx producer report each instance's CPU-offload-tier-resident prefix instead (#1912); it is listed in the `epp` block's `deviations` |
+| `precise-prefix-cache-producer` | the instance's KV view frozen for `--cache-signal-delay` (KV-event propagation): GPU blocks plus, with an offload tier, CPU-tier blocks (read as of the same snapshot time) weighted by `kvCacheBackendConfigs`; speculative indexing with `speculativeTTL` |
 | `inflight-load-producer` | router-side in-flight tokens: uncached prompt tokens charged at routing, released at the first token (or, with `addEstimatedOutputTokens`, prefill at the first token and the rest at completion) |
 | `max-score-picker`, `single-profile-handler` | argmax with a seeded uniform tie-break; one profile |
 | `disagg-profile-handler`, `prefill-filter`, `decode-filter` | decode-first P/D routing; role filters = pool membership |
@@ -183,10 +183,16 @@ Accepted as inert, and listed in the `epp` block: `token-producer`,
 `endpoint-notification-source`, metrics/model data sources and extractors, request
 parsers, `request-attribute-reporter`, `disaggregatedset-rollout-screener` (one
 revision), `dataLayer`, `kvEventsConfig`, index storage sizing,
-`syncCrossReplicaState`, other feature gates. Any other plugin type, and any
-parameter BLIS does not model (for example `ttftSource: latencyPredictor`,
-`enableEviction: true`, `maxNumOfEndpoints > 1`, `stageOrder: prefill-first`,
-E/P/D, zero scorer weights), is refused by name.
+`syncCrossReplicaState`, other feature gates. An inert plugin keeps only the
+parameters with no simulation meaning (endpoints, credentials, metric names,
+headers, rollout scoping); any other parameter is refused. Two inert-plugin
+parameters do carry meaning and are mapped: `metrics-data-source.interval` sets
+`--snapshot-refresh-interval` (rounded to the EPP's 50 ms base tick; an explicit
+conflicting flag is refused) and `static-usage-limit-policy.threshold` sets one
+saturation ceiling for every band when that policy is in force. Any other plugin
+type, and any parameter BLIS does not model (for example `ttftSource:
+latencyPredictor`, `enableEviction: true`, `maxNumOfEndpoints > 1`, `stageOrder:
+prefill-first`, E/P/D, zero scorer weights), is refused by name.
 
 ### Modeling choices
 
@@ -204,7 +210,21 @@ E/P/D, zero scorer weights), is refused by name.
   value (1000) applies.
 - **P/D charges.** A disaggregated request's prefill charge is released at the
   decode stream's first token, as llm-d does; its prefill request counter follows
-  BLIS's in-flight count (prefill completion), not llm-d's StartOfStream.
+  BLIS's in-flight count (prefill completion), not llm-d's StartOfStream. A prefill
+  sub-request that ends without completing (timeout, drop) ends the request and
+  releases all of its charges, as llm-d frees every entry on stream end.
+- **Scheduling timing.** Producers run once per request over every candidate of
+  both pools before any profile; PreRequest work (index recording, in-flight
+  charges, no-hit-lru moves) runs once both P/D picks are made and not at all if
+  scheduling fails, as in llm-d's director. llm-d applies the approx index update
+  asynchronously (a goroutine in PreRequest); BLIS applies it synchronously at
+  PreRequest, so a request scheduled in the same instant sees it slightly sooner.
+- **Rejections.** A request the filters cannot place is a routing rejection
+  (INV-1) and is reported to the session driver, so closed-loop runs continue.
+- **Tokenization.** Without a `token-producer` (or with its `estimate` backend)
+  llm-d hashes byte-packed pseudo-tokens; BLIS uses the request's token IDs, so
+  token counts and block boundaries only approximate llm-d's (noted in the `epp`
+  block). With the vLLM render backend the two agree.
 - **Prefix match unit.** llm-d main prefers an endpoint's `CachePrefixMatchUnit`
   metric; BLIS uses the engine block size.
 
@@ -216,7 +236,7 @@ E/P/D, zero scorer weights), is refused by name.
 | concurrency-detector saturation | in-flight only | + dispatch reservations between flow-control dispatch and routing (`main:…/detector.go:139-228`) |
 | prefix-cache-affinity-filter | missing in-flight signal = zero load; negative threshold accepted | missing signal skips the TTFT gate; threshold must be in [0, 1] (`main:…/prefixcacheaffinity/plugin.go:141-250`) |
 | inflight-load-producer | output = round(input·`outputRatio`=1.5); role-blind | output = 1000 (unknown bucket); `outputRatio` removed; prefill-role pods charged prompt only, decode-role pods output only (`main:…/inflightload/producer.go:508-545`) |
-| approx-prefix-cache-producer | block 0 inserted first (LRU evicts a prompt's head), linear match | last block first (evicts the tail), galloping match (`main:…/approximateprefix/indexer.go:94-160`); default `blockSizeTokens` 64 |
+| approx-prefix-cache-producer | block 0 inserted first (LRU evicts a prompt's head), linear match | last block first (evicts the tail), galloping match (`main:…/approximateprefix/indexer.go:94-160`). The `blockSizeTokens` default (16 vs 64) has no effect: both releases floor the block size at 64 |
 | precise producer tier weights | a tier missing from `kvCacheBackendConfigs` weighs 1.0 | weighs 0.0 (`main:pkg/kvcache/prefix_match.go:44-45`) |
 | disagg-profile-handler | an empty prefill result falls back to decode-only (refused at load: a concurrency-detector in the prefill profile is not accepted under v0.10.0) | the request fails |
 | config schema | `llm-d.ai/v1alpha1` only | also `llm-d.ai/v1`; `noEndpointRequestTTL` (inert), `bandSelectionPolicyPluginRef` (refused) |
@@ -226,7 +246,13 @@ E/P/D, zero scorer weights), is refused by name.
 `test/llmd-conformance/{main,v0_10_0}` are separate Go modules that run
 llm-d-router's own plugin code and BLIS's ports on the same randomized endpoint
 states (rapid) and require identical outputs: filtered sets, per-endpoint scores,
-saturation, the P/D decision, and a pick within BLIS's tied maxima. Run locally
+saturation, the P/D decision, the full profile's pick (within BLIS's tied maxima)
+and its empty-result failure, and the in-flight ledger over PreRequest /
+ResponseBody sequences. Generators vary per-endpoint block size and totals,
+attribute presence, tier-weighted match, role labels, output estimation and client
+caps, exploration, and endpoint counts down to zero. Not compared differentially:
+the approx producer's index (llm-d updates it asynchronously) and flow-control
+queue internals, which are unit-tested against the cited semantics. Run locally
 (needs network access for the modules and the Go toolchain they pin):
 
 ```bash
@@ -234,8 +260,9 @@ cd test/llmd-conformance/main && go test ./... -rapid.checks=5000
 cd ../v0_10_0 && go test ./... -rapid.checks=5000
 ```
 
-The optional `llm-d conformance` workflow runs both on PRs that touch the routing
-files.
+The `llm-d conformance` workflow runs both on every PR and push to `main`; it
+needs network access (module and toolchain downloads), which GitHub-hosted runners
+have, and is intended to be a required status check.
 
 ## Further Reading
 

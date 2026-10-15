@@ -137,3 +137,20 @@ func TestApplyEPPConfig_AbsentIsInert(t *testing.T) {
 		t.Errorf("absent --epp-config must be inert")
 	}
 }
+
+// --epp-cpu-tier-view is the explicit opt-in for the CPU-tier view; without it the
+// curvebender CPU producer stays llm-d's LRU and no deviation is recorded.
+func TestApplyEPPConfig_CPUTierViewOptIn(t *testing.T) {
+	resetEPPGlobals()
+	defer resetEPPGlobals()
+	defer func() { eppConfigPath, eppCPUTierArg = "", "" }()
+	path := "../sim/testdata/epp/optimized-baseline-cpu-tier.yaml"
+	applyEPPConfig(eppTestCmd(t, "--epp-config", path), nil)
+	if d := eppProvenance().Deviations; len(d) != 0 {
+		t.Errorf("no opt-in, deviations %v", d)
+	}
+	applyEPPConfig(eppTestCmd(t, "--epp-config", path, "--epp-cpu-tier-view", "cpu-prefix-cache-producer"), nil)
+	if d := eppProvenance().Deviations; len(d) != 1 {
+		t.Errorf("opt-in must record one deviation, got %v", d)
+	}
+}
