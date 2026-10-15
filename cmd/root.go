@@ -306,13 +306,13 @@ const dpPlacementInstanceWarnThreshold = 512
 // returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
 // on error and not use the plan.
 //
-// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each replica is
-// then a standalone TP engine sized per-rank (DP=1). vLLM data parallelism is N independent
-// EngineCores with an internal load balancer distributing requests disjointly — the BLIS
-// equivalent is N real instances behind the existing cluster router. The lumped
-// single-instance DP model divided token work by dp precisely because it held every
-// request; once the router splits requests across N instances each replica must be DP=1 or
-// the /dp factor double-counts.
+// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each rank is then a
+// TP engine sized per-rank (DP=1). vLLM data parallelism is N EngineCores, each holding a
+// disjoint share of the requests, so the BLIS equivalent is N real instances, each DP=1 (a
+// per-instance /dp factor would double-count). For an MoE model the N ranks are one DP
+// group (#1909): they step in lockstep and sit behind one router endpoint, vLLM's internal
+// DP load balancer assigning each request to a rank; LockstepRanks carries that grouping to
+// the cluster.
 //
 // PD disaggregation and node pools are SUPPORTED alongside it (#1553, lifting #1531's
 // rejections). Neither changes the plan the way the autoscaler would: the PD extension is

@@ -152,21 +152,27 @@ the ranks. BLIS therefore steps the group's ranks together:
   count, when that count is within the CUDA-graph capture ceiling the kernel resolved
   (`coordinate_batch_across_dp`, `vllm/v1/worker/dp_utils.py:99-181`: ranks pad only when
   the synced graph mode is not NONE). Past the ceiling, under `FULL_DECODE_ONLY` with a mixed
-  batch, or when the layout runs no graphs, each rank costs its own batch. Padding is priced
-  as dummy-width decode rows that read no KV.
+  batch, or when the layout runs no graphs, each rank costs its own batch. The ceiling and the
+  graph modes come from the kernel; a layout that runs graphs with no readable ceiling is
+  refused at startup rather than priced unpadded.
 - The step lasts the slowest rank's price, plus that rank's own offload reload time, and every
-  rank's clock advances by it.
+  rank's clock advances by it. Requests that reach any rank at a step's own tick (arrival,
+  queueing, adapter load) join that step, whichever rank they are on.
 - The wave ends only when the unfinished-request all-reduce finds every rank idle. That
   all-reduce runs on the wave's first step and every 16th (`dp_sync_interval`,
   `vllm/config/parallel.py:150`; `core.py:2333-2350`), so up to 15 dummy steps follow the last
-  request.
+  request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
+  divided by it, stop at its last real event.
 
 **One endpoint per replica.** The router sees each DP group as one pod, listed under its rank
-0 instance ID; a request routed to it is assigned to a rank by vLLM's internal DP load
-balancer (`DPLBAsyncMPClient`, `vllm/v1/engine/core_client.py:1589-1640`), which BLIS prices
-with the `vllm-dp` scorer over the per-rank counts the DP coordinator publishes every 100 ms
+0 instance ID; a request routed to it is assigned to a rank by vLLM v0.31.0's internal DP load
+balancer (`DPLBAsyncMPClient.get_core_engine_for_request`,
+`vllm/v1/engine/core_client.py:1589-1640`): the rank with the lowest
+`max(client_count x in_flight, waiting + running)`, plus `waiting x 6 x max(0, kv_usage - 0.5)`
+when anything waits, over the per-rank counts the DP coordinator publishes every 100 ms
 (`vllm/v1/engine/coordinator.py:154-162`). Between publishes the chosen rank's waiting count
-is bumped and the scan start rotates, as the front-end does. The endpoint's signals follow how
+is bumped and the scan start rotates, as the front-end does; `in_flight` is the front-end's
+exact count of its unfinished requests per rank. The endpoint's signals follow how
 llm-d's endpoint picker reads a pod's per-engine series (`engine="<rank>"` labels,
 `vllm/v1/metrics/loggers.py:480-486`):
 
@@ -182,13 +188,18 @@ its rank index (`pkg/kvevents/pool.go:134`), which is 0 for an internal-balancer
 
 Known deviations and limits:
 
-- The `vllm-dp` scorer prices `waiting x 4 + running`; v0.31.0's balancer scores
-  `max(client_count x in_flight, waiting + running)` plus a KV-pressure term on waiting. One
-  front-end stands for the `api_server_count` front-ends (dp by default).
+- Padding is priced as decode rows that read no KV but, unlike vLLM's pad tokens, pay the LM
+  head and sampler (`blis-latency-kernel` v0.2.0 has no pad input; `kernel.Batch.PadTokens` is
+  coming, and `withPadding` in `sim/kernelmodel/dp_lockstep.go` is where it plugs in).
+- vLLM also pads every rank under dual-batch overlap (`should_ubatch`, `dp_utils.py:181`).
+  BLIS does not model DBO, which the kernel does not price (blis-latency-kernel#48).
+- One front-end, with the whole in-flight view, stands for the `api_server_count` front-ends
+  (dp by default), so `client_count` is 1.
 - The coordinator's counts are sampled at the first assignment of each 100 ms period, not at
   the publish instant.
 - A P/D pool's ranks step in lockstep but stay individually routable.
-- The autoscaler is still refused with `dp > 1`.
+- The autoscaler is still refused with `dp > 1`, and a rank whose startup placement is
+  deferred refuses the run.
 
 ## Speculative Decoding / MTP (#1528)
 

@@ -75,9 +75,9 @@ This replicates vLLM's `DPLBAsyncMPClient` formula: selecting the instance with 
 
 **Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). Using `--snapshot-refresh-interval 100000` matches this staleness interval. The default 50ms (`--snapshot-refresh-interval 50000`) matches llm-d's `RefreshMetricsInterval`. Pass `--snapshot-refresh-interval 0` for oracle mode (immediate signals, no staleness) — the cleanest baseline for algorithmic comparisons.
 
-**Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.
+**Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. The `vllm-dp` scorer does not model this. In staleness-matched mode it will concentrate more traffic per snapshot window than real vLLM would.
 
-**Inside a DP replica (#1909):** a scenario with `dp > 1` on an MoE model shows the router one endpoint per replica, and the cluster itself applies `vllm-dp` to pick the rank, with the 100 ms coordinator period and the per-assignment waiting increment above. See [Latency Models](latency-models.md#data-and-expert-parallelism-moe).
+**Inside a DP replica (#1909):** a scenario with `dp > 1` on an MoE model shows the router one endpoint per replica. The cluster itself then picks the rank with vLLM v0.31.0's own balancer formula, its 100 ms coordinator period and the per-assignment waiting increment; `vllm-dp` is not involved. See [Latency Models](latency-models.md#data-and-expert-parallelism-moe).
 
 **Note:** Do not compose `vllm-dp` with other scorers unless comparing hybrid strategies. For vLLM parity, use `vllm-dp:1` alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.
 

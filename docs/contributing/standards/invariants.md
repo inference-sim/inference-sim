@@ -197,7 +197,7 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
 
-**Data-parallel lockstep (#1909):** for the ranks of one DP group the property holds per group: while any rank has waiting or running work, the group's single `StepEvent` is armed in rank 0's queue and every rank's step guard points at it (`sim/dp_lockstep.go`). Verified by `sim/cluster/dp_replica_test.go`.
+**Data-parallel lockstep (#1909):** for the ranks of one DP group the property holds per group: while any rank has waiting or running work, the group's single `StepEvent` is armed in rank 0's queue and every rank's step guard points at it (`sim/dp_lockstep.go`). Verified after every event of random multi-rank workloads by the rapid property `TestLockstepGroup_WorkConservingAndWaveEnd` (`sim/dp_lockstep_test.go`), which also checks that a wave ends on a sync step fewer than 16 dummy steps after its last request.
 
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
 
