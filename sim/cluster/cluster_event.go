@@ -315,7 +315,7 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	if cs.inFlightRequests[e.targetInstance] < 0 {
 		cs.inFlightRequests[e.targetInstance] = 0
 	}
-	cs.releaseInFlightLoad(e.request.ID)
+	cs.releaseInFlightLoad(e.request)
 
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnComplete(e.request.TenantID)

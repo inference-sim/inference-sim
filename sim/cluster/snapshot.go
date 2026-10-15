@@ -318,6 +318,10 @@ func (p *CachedSnapshotProvider) RemoveCacheInstance(id InstanceID) {
 	delete(p.cacheEntries, id)
 }
 
+// CacheSnapshotTime is the sim time of the frozen cache view queries currently see
+// (the last periodic refresh); only meaningful in stale mode.
+func (p *CachedSnapshotProvider) CacheSnapshotTime() int64 { return p.cacheLastRefresh }
+
 // IsStaleCacheMode returns true when stale cache mode is active (CacheBlocks.Mode == Periodic).
 func (p *CachedSnapshotProvider) IsStaleCacheMode() bool {
 	return p.config.CacheBlocks.Mode == Periodic

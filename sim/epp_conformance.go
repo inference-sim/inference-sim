@@ -155,7 +155,7 @@ func (h *ConformanceHarness) MaxScoreCandidates(scorers []ScorerConfig) []string
 // sequence (it keeps an endpoint LRU across requests).
 type ConformanceNoHitLRU struct {
 	scorer scorerFunc
-	rec    func(*Request, string, int64)
+	decide func(*Request, string) func()
 	fixed  *fixedPrefixProducer
 	p      *RoutingPipeline
 }
@@ -166,8 +166,8 @@ func NewConformanceNoHitLRU(lruSize int) *ConformanceNoHitLRU {
 	fixed := &fixedPrefixProducer{info: map[string]prefixMatchInfo{}}
 	p.producers[LLMDApproxPrefixProducer] = fixed
 	p.producerNames = append(p.producerNames, LLMDApproxPrefixProducer)
-	s, rec := newProducerNoHitLRUScorer(ScorerParams{ProducerBound: true, LRUSize: lruSize}, p)
-	return &ConformanceNoHitLRU{scorer: s, rec: rec, fixed: fixed, p: p}
+	s, decide := newProducerNoHitLRUScorer(ScorerParams{ProducerBound: true, LRUSize: lruSize}, p)
+	return &ConformanceNoHitLRU{scorer: s, decide: decide, fixed: fixed, p: p}
 }
 
 // Score scores one request over the endpoints (their prefix attributes decide
@@ -187,4 +187,8 @@ func (c *ConformanceNoHitLRU) Score(reqID string, eps []ConformanceEndpoint) map
 }
 
 // Record reports the routed target of the request just scored (PreRequest).
-func (c *ConformanceNoHitLRU) Record(reqID, target string) { c.rec(&Request{ID: reqID}, target, 0) }
+func (c *ConformanceNoHitLRU) Record(reqID, target string) {
+	if a := c.decide(&Request{ID: reqID}, target); a != nil {
+		a()
+	}
+}

@@ -490,6 +490,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		}
 	}
 	if cs.routingPipeline != nil {
+		// P/D: PreRequest waits until both profiles have picked (llm-d runs it once
+		// after scheduling and not at all on a scheduling error).
+		cs.routingPipeline.SetDeferred(cs.poolsConfigured())
 		cs.inFlightLoadTrackers = cs.routingPipeline.InFlightLoadTrackers()
 		name := ""
 		if config.FlowControlConcurrency != nil {
@@ -619,6 +622,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		if config.FlowControlMaxBytes > 0 || config.FlowControlPerBandMaxBytes > 0 {
 			gq.SetByteCapacity(config.FlowControlMaxBytes, config.FlowControlPerBandMaxBytes)
 		}
+		if config.FlowControlUniformCeiling > 0 {
+			gq.SetUniformCeiling(config.FlowControlUniformCeiling)
+		}
 		for _, band := range config.FlowControlBands {
 			var fp FairnessPolicy
 			switch band.Fairness {
@@ -677,7 +683,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 				// llm-d inflight-load-producer: EndOfStream (or any terminal state)
 				// releases the request's remaining token charge.
-				cs.releaseInFlightLoad(req.ID)
+				cs.releaseInFlightLoad(req)
 				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
 				if cs.tenantTracker != nil {
 					cs.tenantTracker.OnComplete(req.TenantID)
@@ -2207,7 +2213,7 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 		// llm-d: every candidate filtered out ⇒ "no endpoints available" and the
 		// request fails (scheduler_profile.go:126-129, director.go:333-344, v0.10.0).
 		logrus.Debugf("[cluster] req %s: rejected at routing (%s)", req.ID, decision.Reason)
-		cs.routingRejections++
+		cs.eppRejected(req)
 		return
 	}
 	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", req.ID, decision.TargetInstance, decision.Reason)
@@ -2284,11 +2290,16 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	if policy == nil {
 		policy = cs.routingPolicy
 	}
+	if cs.routingPipeline != nil {
+		// llm-d produces once per request over every candidate, before any profile.
+		all := append(append([]sim.RoutingSnapshot{}, filteredSnapshots...), cs.buildPoolFilteredSnapshots(PoolRolePrefill)...)
+		cs.routingPipeline.BeginRequest(req, dedupSnapshots(all), cs.clock)
+	}
 	decodeDecision := policy.Route(req, state)
 	if decodeDecision.TargetInstance == "" {
 		// llm-d: no decode endpoint ⇒ the request fails (ProcessResults, disagg_profile_handler.go).
 		logrus.Debugf("[cluster] req %s: rejected at decode routing (%s)", req.ID, decodeDecision.Reason)
-		cs.routingRejections++
+		cs.eppRejected(req)
 		return
 	}
 	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", req.ID, decodeDecision.TargetInstance)
@@ -2375,6 +2386,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	}
 
 	if !disaggDecision.Disaggregate {
+		if cs.routingPipeline != nil {
+			cs.routingPipeline.Commit(req.ID) // decode-only: scheduling complete
+		}
 		// Step 3a: local path — inject directly to the selected decode pod.
 		// Non-disaggregated requests route exclusively to the decode pool, not to all
 		// instances via buildRouterState().
@@ -2439,8 +2453,8 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		Model:        req.Model,
 	}
 	parent.PrefillSubReq = prefillSubReq
-	for _, t := range cs.inFlightLoadTrackers {
-		t.AliasPrefill(prefillSubReq.ID, parent.ID) // llm-d: one request, a prefill and a decode charge
+	if cs.routingPipeline != nil {
+		cs.routingPipeline.AliasPrefill(prefillSubReq.ID, parent.ID) // llm-d: one request, a prefill and a decode charge
 	}
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
@@ -2495,9 +2509,15 @@ func (cs *ClusterSimulator) routingEnv(rng *sim.PartitionedRNG) sim.RoutingEnv {
 		}
 		return inst.sim.KVCache.TotalCapacity()
 	}
+	// The CPU tier reaches the router through the same KV-event stream as the GPU
+	// tier, so it is frozen with the GPU view for --cache-signal-delay.
+	var asOf func() int64
+	if cs.snapshotProvider.IsStaleCacheMode() {
+		asOf = cs.snapshotProvider.CacheSnapshotTime
+	}
 	var cpu map[string]func([]sim.TokenID) int
 	for _, inst := range cs.instances {
-		if fn := inst.cpuTierPrefixFn(); fn != nil {
+		if fn := inst.cpuTierPrefixFn(asOf); fn != nil {
 			if cpu == nil {
 				cpu = make(map[string]func([]sim.TokenID) int)
 			}
@@ -2515,9 +2535,36 @@ func (cs *ClusterSimulator) releaseInFlightGroup(groupID string) {
 	}
 }
 
-// releaseInFlightLoad releases a request's llm-d in-flight token charge.
-func (cs *ClusterSimulator) releaseInFlightLoad(reqID string) {
+// releaseInFlightLoad applies a request's end to the llm-d in-flight ledger.
+func (cs *ClusterSimulator) releaseInFlightLoad(req *sim.Request) {
 	for _, t := range cs.inFlightLoadTrackers {
-		t.OnRequestDone(reqID)
+		t.OnRequestDone(req)
 	}
+}
+
+// dedupSnapshots drops repeated instance IDs (a shared-role pod is in both pools),
+// keeping the first occurrence.
+func dedupSnapshots(in []sim.RoutingSnapshot) []sim.RoutingSnapshot {
+	seen := make(map[string]bool, len(in))
+	out := in[:0]
+	for _, s := range in {
+		if !seen[s.ID] {
+			seen[s.ID] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// eppRejected ends a request the EPP routing pipeline could not place (an empty
+// filter result, as llm-d fails it): counted as a routing rejection (INV-1), its
+// queued PreRequest work dropped and its in-flight charges released, and reported
+// through recordUnserved so closed-loop drivers learn it ended.
+func (cs *ClusterSimulator) eppRejected(req *sim.Request) {
+	cs.routingRejections++
+	if cs.routingPipeline != nil {
+		cs.routingPipeline.Discard(req.ID)
+	}
+	cs.releaseInFlightGroup(req.ID)
+	cs.recordUnserved(req)
 }

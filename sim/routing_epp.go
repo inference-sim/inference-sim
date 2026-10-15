@@ -825,10 +825,19 @@ func (t *InFlightLoadTracker) ReleaseGroup(groupID string) {
 }
 
 // OnRequestDone releases the group whose stream request finished. A prefill
-// sub-request finishing releases nothing: llm-d frees the prefill charge at the
-// client stream's first token.
-func (t *InFlightLoadTracker) OnRequestDone(reqID string) {
-	if gid, ok := t.byStream[reqID]; ok {
+// sub-request that completes releases nothing: llm-d frees the prefill charge at
+// the client stream's first token. A prefill sub-request that ends any other way
+// (timeout, drop) ends the request: llm-d frees every entry on stream end or
+// disconnect (main:…/inflightload/producer.go:621-633), so the group is released.
+func (t *InFlightLoadTracker) OnRequestDone(req *Request) {
+	if req == nil {
+		return
+	}
+	if gid, ok := t.byStream[req.ID]; ok {
+		t.ReleaseGroup(gid)
+		return
+	}
+	if gid, ok := t.alias[req.ID]; ok && req.State != StateCompleted {
 		t.ReleaseGroup(gid)
 	}
 }
@@ -875,7 +884,15 @@ type RoutingPipeline struct {
 	inflightByNm  map[string]*InFlightLoadTracker
 	inflightBind  map[string]string // tracker name → prefix producer name
 
-	cycle map[string]map[string]prefixMatchInfo // producer → instance → info, current request
+	cycle      map[string]map[string]prefixMatchInfo // producer → instance → info, current request
+	cycleGroup string                                // request group the cycle was produced for ("" = none)
+
+	// deferred: PreRequest (recording + charging) waits for Commit, as llm-d runs it
+	// once after every profile of a request has run and skips it on a scheduling
+	// error (pkg/epp/requestcontrol/director.go: Schedule, then prepareRequest).
+	deferred bool
+	alias    map[string]string   // sub-request ID → group ID
+	pending  map[string][]func() // group ID → PreRequest actions in routing order
 }
 
 // NewRoutingPipeline builds the data layer for a resolved config
@@ -887,6 +904,8 @@ func NewRoutingPipeline(cfg *RoutingPipelineConfig, env RoutingEnv, cacheFn map[
 		producers:    make(map[string]prefixProducer),
 		inflightByNm: make(map[string]*InFlightLoadTracker),
 		inflightBind: make(map[string]string),
+		alias:        make(map[string]string),
+		pending:      make(map[string][]func()),
 	}
 	for _, pc := range cfg.Producers {
 		var prod prefixProducer
@@ -934,11 +953,88 @@ func (p *RoutingPipeline) InFlightLoadTracker(name string) *InFlightLoadTracker 
 // before filtering: main:pkg/epp/requestcontrol/director.go).
 func (p *RoutingPipeline) begin(req *Request, snapshots []RoutingSnapshot, clock int64) {
 	p.cycle = make(map[string]map[string]prefixMatchInfo, len(p.producerNames))
+	p.cycleGroup = ""
 	if req == nil {
 		return
 	}
 	for _, name := range p.producerNames {
 		p.cycle[name] = p.producers[name].produce(req, snapshots, clock)
+	}
+	p.cycleGroup = p.group(req.ID)
+}
+
+// BeginRequest runs the producers once for a request over every candidate of all
+// its profiles (decode and prefill pools); the profiles of that request then read
+// this output instead of producing again, as llm-d runs its data producers once
+// before any profile (director.go: runDataProducerPlugins, then Schedule).
+func (p *RoutingPipeline) BeginRequest(req *Request, snapshots []RoutingSnapshot, clock int64) {
+	p.begin(req, snapshots, clock)
+}
+
+// ensureCycle produces for the request unless BeginRequest already did for its group.
+func (p *RoutingPipeline) ensureCycle(req *Request, snapshots []RoutingSnapshot, clock int64) {
+	if req != nil && p.cycleGroup != "" && p.cycleGroup == p.group(req.ID) {
+		return
+	}
+	p.begin(req, snapshots, clock)
+}
+
+func (p *RoutingPipeline) group(reqID string) string {
+	if g, ok := p.alias[reqID]; ok {
+		return g
+	}
+	return reqID
+}
+
+// SetDeferred makes PreRequest wait for Commit (P/D: until the prefill pick).
+func (p *RoutingPipeline) SetDeferred(on bool) { p.deferred = on }
+
+// AliasPrefill attributes a prefill sub-request to its parent request's group in
+// the pipeline and every in-flight tracker.
+func (p *RoutingPipeline) AliasPrefill(subReqID, parentID string) {
+	p.alias[subReqID] = parentID
+	for _, t := range p.inflight {
+		t.AliasPrefill(subReqID, parentID)
+	}
+}
+
+// preRequest runs a PreRequest action now, or queues it for the request's group
+// in deferred mode.
+func (p *RoutingPipeline) preRequest(req *Request, action func()) {
+	if !p.deferred || req == nil {
+		action()
+		p.cycleGroup = ""
+		return
+	}
+	g := p.group(req.ID)
+	p.pending[g] = append(p.pending[g], action)
+}
+
+// Commit runs the group's queued PreRequest actions (the request was scheduled).
+func (p *RoutingPipeline) Commit(groupID string) {
+	actions := p.pending[groupID]
+	delete(p.pending, groupID)
+	for _, a := range actions {
+		a()
+	}
+	p.forget(groupID)
+}
+
+// Discard drops the group's queued PreRequest actions (scheduling failed: llm-d
+// skips PreRequest).
+func (p *RoutingPipeline) Discard(groupID string) {
+	delete(p.pending, groupID)
+	p.forget(groupID)
+}
+
+func (p *RoutingPipeline) forget(groupID string) {
+	if p.cycleGroup == groupID {
+		p.cycleGroup = ""
+	}
+	for sub, g := range p.alias {
+		if g == groupID {
+			delete(p.alias, sub)
+		}
 	}
 }
 
@@ -1161,13 +1257,14 @@ func newTokenLoadScorer(params ScorerParams, p *RoutingPipeline) scorerFunc {
 // endpoints first (in candidate order), then used endpoints from least to most
 // recently used by their position among all LRU keys; warm requests score 0.5.
 // The routed target of a cold request moves to the LRU front.
-func newProducerNoHitLRUScorer(params ScorerParams, p *RoutingPipeline) (scorerFunc, func(*Request, string, int64)) {
+func newProducerNoHitLRUScorer(params ScorerParams, p *RoutingPipeline) (scorerFunc, func(*Request, string) func()) {
 	size := params.LRUSize
 	if size <= 0 {
 		size = noHitLRUDefaultSize
 	}
 	var keys []string // oldest first, as golang-lru Keys()
 	coldReq := ""
+	move := noHitLRUMove(&keys, size)
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))
 		cold := true
@@ -1216,22 +1313,32 @@ func newProducerNoHitLRUScorer(params ScorerParams, p *RoutingPipeline) (scorerF
 		}
 		return scores
 	}
-	observer := func(req *Request, target string, _ int64) {
+	// decide runs at routing time (the cold verdict belongs to the request just
+	// scored) and returns the PreRequest LRU move, or nil for a warm request.
+	decide := func(req *Request, target string) func() {
 		if req == nil || coldReq == "" || coldReq != req.ID {
-			return
+			return nil
 		}
-		for i, k := range keys {
+		return func() { move(target) }
+	}
+	return scorer, decide
+}
+
+// noHitLRUMove is filled by newProducerNoHitLRUScorer; split out so the cold
+// decision is taken at routing time while the LRU move can be deferred.
+func noHitLRUMove(keys *[]string, size int) func(string) {
+	return func(target string) {
+		for i, k := range *keys {
 			if k == target {
-				keys = append(keys[:i], keys[i+1:]...)
+				*keys = append((*keys)[:i], (*keys)[i+1:]...)
 				break
 			}
 		}
-		keys = append(keys, target)
-		if len(keys) > size {
-			keys = keys[len(keys)-size:]
+		*keys = append(*keys, target)
+		if len(*keys) > size {
+			*keys = (*keys)[len(*keys)-size:]
 		}
 	}
-	return scorer, observer
 }
 
 // LLMDPrefixPDDeciderConfig is prefix-based-pd-decider's config
