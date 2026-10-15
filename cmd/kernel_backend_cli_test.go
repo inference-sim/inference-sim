@@ -792,6 +792,11 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
+		// qwen3.5's linear-attention layers carry recurrent state, so NIXL's prefill backs off
+		// one token for the decode side to recompute (nixl/base_scheduler.py:385-407), which
+		// BLIS does not model.
+		{"a model whose NIXL prefill backs off", "BLIS does not model that recompute",
+			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",

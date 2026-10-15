@@ -135,7 +135,20 @@ encode instances.
 
 The handoff follows vLLM v0.31.0's NIXL protocol, so the scenario's `pd_transfer.connector`
 must be `NixlConnector`, `NixlPullConnector`, `NixlPushConnector` or a `MultiConnector` over
-one; any other connector is refused.
+one; any other connector is refused. Three further rules follow from vLLM:
+
+- **An offload tier needs a MultiConnector.** With a tier, `pd_transfer.connector` must be
+  `MultiConnector`: setting `kv_offloading_size` replaces `kv_connector` with the
+  OffloadingConnector (`vllm/config/vllm.py:1124-1158`), so a plain NIXL connector and a
+  tier cannot run together.
+- **A MultiConnector is assumed to list NixlConnector first.** The first connector in config
+  order that reports tokens loads them (`multi_connector.py:134-141, 429-448`). blis-schemas
+  states neither the children nor their order, so BLIS assumes llm-d's composition and says
+  so on stderr.
+- **A model whose NIXL prefill backs off is refused.** That covers Mamba-state models and
+  multi-module MTP drafting K > 1: the decode side recomputes the trailing prompt tokens
+  (`_prefill_backoff`, `nixl/base_scheduler.py:385-407`), which BLIS does not model. DSpark
+  backs off nothing: its prefill lookahead is 1 (`config/vllm.py:657-678`).
 
 - **Decode-side load (INV-PD-8).** The decode instance takes its own prefix-cache hit first
   (whole blocks, never the prompt's last token) and reserves the rest

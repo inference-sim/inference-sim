@@ -135,8 +135,11 @@ func TestRunCmd_KernelBackend_PDResultsFileBlock(t *testing.T) {
 func TestRunCmd_KernelBackend_PDWithOffloadTiers(t *testing.T) {
 	tier := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1099511627776\n")
 	workload := []string{"--num-requests", "30", "--rate", "8", "--prefix-tokens", "1024"}
+	// A NIXL handoff and an offload tier run together only through a MultiConnector.
+	multi := append(append([]string(nil), pdTopology...),
+		"--scenarios", writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector"), "--scenario", "variant.yaml")
 	for _, extra := range [][]string{nil, {"--pd-transfer-contention"}} {
-		args := append(append([]string{"--kv-offload-config", tier}, pdTopology...), extra...)
+		args := append(append([]string{"--kv-offload-config", tier}, multi...), extra...)
 		prefix := filepath.Join(t.TempDir(), "trace")
 		out, stderr, err := runKernelCLI(t, append(append([]string{"run", "--trace-output", prefix}, workload...), args...)...)
 		if err != nil {
@@ -145,6 +148,9 @@ func TestRunCmd_KernelBackend_PDWithOffloadTiers(t *testing.T) {
 		clusterConservationHolds(t, out, 30)
 		if !strings.Contains(out, "Disaggregated Requests: 30") {
 			t.Errorf("run %v: not every request was disaggregated:\n%s", extra, out)
+		}
+		if !strings.Contains(stderr, "simulated as NixlConnector listed before OffloadingConnector") {
+			t.Errorf("run %v: the unchecked MultiConnector order must be stated on stderr:\n%s", extra, lastLines(stderr, 5))
 		}
 		rep, stderr, err := runKernelCLI(t, append([]string{"replay",
 			"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, args...)...)
@@ -155,8 +161,13 @@ func TestRunCmd_KernelBackend_PDWithOffloadTiers(t *testing.T) {
 			t.Errorf("the offloaded P/D run's replay differs (%v)\n--- run\n%s\n--- replay\n%s", extra, out, rep)
 		}
 	}
+	// A plain NixlConnector beside a tier is what vLLM cannot run (vllm/config/vllm.py:1124-1158).
+	if _, stderr, err := runKernelCLI(t, append(append([]string{"run", "--kv-offload-config", tier}, workload...), pdTopology...)...); err == nil ||
+		!strings.Contains(stderr, "only through a MultiConnector") {
+		t.Errorf("NixlConnector with an offload tier must be refused; err=%v\n%s", err, lastLines(stderr, 3))
+	}
 	zero := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 0\n")
-	if _, stderr, err := runKernelCLI(t, append(append([]string{"run", "--kv-offload-config", zero}, workload...), pdTopology...)...); err == nil ||
+	if _, stderr, err := runKernelCLI(t, append(append([]string{"run", "--kv-offload-config", zero}, workload...), multi...)...); err == nil ||
 		!strings.Contains(stderr, "cpu_bytes_to_use must be > 0") {
 		t.Errorf("a 0-byte CPU tier must be refused, as vLLM refuses it; err=%v\n%s", err, lastLines(stderr, 3))
 	}

@@ -61,6 +61,25 @@ func openKernelPools(catalogRoot string) *kernelPools {
 	}
 	p.connector = shape.PDConnector
 	requireNIXLHandoff(p.connector)
+	if p.connector == "MultiConnector" {
+		// The schema states no MultiConnector children or their order, and the order decides
+		// which connector loads a request's KV: the first, in config order, that reports
+		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
+		// NIXL listed first, which it cannot check.
+		logrus.Warnf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
+			"listed before OffloadingConnector (the first connector reporting tokens loads them); "+
+			"blis-schemas does not state the children or their order, so this assumption is not "+
+			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
+			"prefilled prompts from the decode CPU tier", kernelScenario)
+	}
+	// NIXL's prefill backoff (nixl/base_scheduler.py:385-407): the prefill stops short of the
+	// last few prompt tokens and the decode side recomputes them. BLIS moves and decodes the
+	// whole prompt, so a pool that backs off is refused rather than simulated without it.
+	if b := p.prefill.PrefillBackoffTokens(); b > 0 {
+		logrus.Fatalf("scenario %q: under NIXL this model's decode engine recomputes the last %d prompt "+
+			"token(s) that the prefill engine does not compute (_prefill_backoff: a Mamba-state model, "+
+			"or multi-module MTP drafting K>1); BLIS does not model that recompute", kernelScenario, b)
+	}
 	// For the same reason every instance must belong to a pool: one with no role would run the
 	// first pool's engine with the global sizing, an engine the scenario did not describe.
 	if prefillInstances+decodeInstances != numInstances {
@@ -422,6 +441,16 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *cluster.PoolOverrides) {
 	if !cfg.IsEnabled() && kvCPUBlocks <= 0 {
 		return
+	}
+	// A disaggregated engine with an offload tier runs both connectors, which only a
+	// MultiConnector composes: with kv_offloading_size set, vLLM overwrites kv_connector with
+	// the OffloadingConnector and kv_role with kv_both (vllm/config/vllm.py:1124-1158 at
+	// v0.31.0), so a plain NIXL connector and a tier cannot run together.
+	if p.connector != "MultiConnector" {
+		logrus.Fatalf("scenario %q offloads KV under P/D with pd_transfer.connector %q; vLLM runs a NIXL "+
+			"handoff and an offload tier together only through a MultiConnector (stating "+
+			"kv_offloading_size replaces kv_connector with OffloadingConnector, vllm/config/vllm.py:1124-1158), "+
+			"so state pd_transfer.connector: MultiConnector", kernelScenario, p.connector)
 	}
 	for _, c := range []struct {
 		m   *kernelmodel.Model

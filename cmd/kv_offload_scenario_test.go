@@ -131,7 +131,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 		{"colocated", scenarios, "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "",
 			[]string{"--num-requests", "20", "--rate", "4", "--prefix-tokens", "512", "--seed", "5", "--horizon", "600000000"},
 			[]string{"--seed", "5", "--horizon", "600000000"}},
-		{"P/D", pdScenarios, "glm-5-h200-3p1d-ib.yaml", "pd_transfer:",
+		{"P/D", writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector"), "variant.yaml", "pd_transfer:",
 			append(append([]string(nil), pdTopology...), "--num-requests", "20", "--rate", "4", "--prefix-tokens", "512"),
 			pdTopology},
 	} {
