@@ -14,8 +14,8 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 | Setting | Behavior |
 |---------|----------|
-| `--num-instances 1` (default) | Single-instance: requests go directly to the wait queue; there is no router |
-| `--num-instances N` (N > 1) | Cluster mode: every request passes through the llm-d router, which admits, queues (flow control) and routes it to an instance |
+| `--num-instances 1` (default) | One instance behind the llm-d router: the router can only pick that instance, but its admission and flow control apply. With the default configuration it admits every request at once, and results equal a run without a router |
+| `--num-instances N` (N > 1) | Every request passes through the llm-d router, which admits, queues (flow control) and routes it to an instance |
 
 ## The Pipeline
 

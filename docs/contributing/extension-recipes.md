@@ -6,7 +6,7 @@ Step-by-step guides for extending BLIS. Each recipe lists the exact files to tou
 
 BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process ([Routing](../guide/routing.md)). New routing, admission or flow-control behavior belongs in [llm-d-router](https://github.com/llm-d/llm-d-router), as a plugin or configuration, not in this repository.
 
-A new llm-d plugin type becomes usable in BLIS once it is audited and added to `Supported` in `sim/llmd/support.go`: read every clock read, goroutine, blocking wait, random draw and map iteration it makes, route the decision-relevant ones through the hosting runtime in the fork, check that every signal it consumes is produced by the simulated engines, and add a test in `sim/llmd`. Until then it is refused at startup with the reason in `Unsupported`. See [The llm-d router fork](llm-d-router-fork.md).
+A new llm-d plugin type becomes usable in BLIS once it is audited and added to the supported list in `sim/llmd/support.go`: read every clock read, goroutine, blocking wait, random draw and map iteration it makes, route the decision-relevant ones through the hosting runtime in the fork, check that every signal it consumes is produced by the simulated engines, and add a test in `sim/llmd`. Until then it is refused at startup with the reason in the unsupported list. See [The llm-d router fork](llm-d-router-fork.md).
 
 ## Adding New Instance Schedulers
 

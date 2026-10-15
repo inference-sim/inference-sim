@@ -80,7 +80,7 @@ flowchart TD
     style Out2 fill:#f1f3f5
 ```
 
-A single-instance run has no router: requests go straight to the instance's wait queue.
+A single-instance run goes through the router too. The router can only pick that instance, but its admission and flow control still apply; with the default configuration it admits every request on arrival, so the results equal those of the instance alone (`sim/llmd/single_instance_test.go`).
 
 ## Shared-Clock Event Loop
 
