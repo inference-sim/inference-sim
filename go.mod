@@ -22,3 +22,5 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )
+
+replace github.com/inference-sim/blis-schemas => /Users/sri/Documents/Projects/.worktrees/dsv41-h100/repos/blis-schemas

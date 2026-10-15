@@ -153,6 +153,10 @@ type MetricsOutput struct {
 	// scenario exactly.
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
 
+	// Agentic is an agentic replay's own counts (#1937; workload.AgentXSummary, held as
+	// any to avoid an import cycle). File-only (WithAgentic); absent for other workloads.
+	Agentic any `json:"agentic,omitempty"`
+
 	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
 	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
 	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).

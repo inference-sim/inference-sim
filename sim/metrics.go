@@ -374,6 +374,7 @@ type EmitOption func(*emitOptions)
 type emitOptions struct {
 	catalog   *CatalogProvenance
 	overrides []ScenarioOverride
+	agentic   any
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -433,6 +434,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.Agentic = resolvedOpts.agentic
 
 		// Measured-window aggregates (#1938): file-only for the same reason. The latency
 		// families stdout already reports (ttft_*, e2e_*) take their measured-window values
