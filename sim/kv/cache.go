@@ -495,10 +495,13 @@ func (kvc *KVCacheState) stateDelta(reqID string, startIndex, endIndex int64) in
 // bounded state at SequenceState.Gate -- each window group at min(cdiv(num_tokens),
 // max_admission_blocks_per_request) -- must be free, or the request is not admitted
 // (kv_cache_manager.py:517-534, single_type_kv_cache_manager.py:216-229 at v0.31.0). It
-// gates only; what the request then holds grows step by step. Applied only with a
-// SequenceState, which keeps models without bounded caches byte-identical.
+// gates only; what the request then holds grows step by step. It applies to every model, as
+// scheduler_reserve_full_isl does (vllm/config/scheduler.py:191, default True): a model
+// without bounded state gates on its prompt blocks alone. Without it a long prompt is admitted
+// on its first chunk into a pool that cannot hold the rest, and its next chunk preempts
+// (INV-PD-9's queue-not-thrash law).
 func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []int64) bool {
-	if kvc.SequenceState.Gate == nil || len(kvc.RequestMap[req.ID]) > 0 || len(kvc.StateBlocks[req.ID]) > 0 {
+	if len(kvc.RequestMap[req.ID]) > 0 || len(kvc.StateBlocks[req.ID]) > 0 {
 		return false
 	}
 	var claimedFromFree int64
@@ -508,7 +511,10 @@ func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []i
 		}
 	}
 	promptBlocks := max((req.InputLen()+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(cachedBlocks), 0)
-	need := claimedFromFree + promptBlocks + kvc.SequenceState.Gate(req.InputLen())
+	need := claimedFromFree + promptBlocks
+	if kvc.SequenceState.Gate != nil {
+		need += kvc.SequenceState.Gate(req.InputLen())
+	}
 	if need > kvc.countFreeBlocks() {
 		logrus.Debugf("KV admission gate: req %s needs %d blocks for its full prompt and state, %d free", req.ID, need, kvc.countFreeBlocks())
 		return true

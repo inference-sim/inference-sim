@@ -76,7 +76,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
-| [INV-PD-1 … INV-PD-8](#pd-disaggregation) PD disaggregation | Subsystem | PD |
+| [INV-PD-1 … INV-PD-9](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
 | [NS-6](#ns-6-catalog-is-authoritative-and-read-only) Catalog is authoritative and read-only | Code-boundary | CLI / model catalog |
 
@@ -845,6 +845,44 @@ The held KV is a subset of what the prefill instance has allocated, equal to it 
 **Verification:** `sim/cluster/pd_decode_load_test.go` — `TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks`, `TestPDDecodeLoad_LocalHitStopsBeforeTheLastToken`, `TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff` (metamorphic), `TestPDDecodeLoad_InFlightBlocksAreNotAPrefixHit`; `sim/kv/remote_kv_test.go`; `sim/cluster/pd_offload_test.go` — `TestPDOffload_PrefillTierServesALaterTurnsPrefix` (the prefill pool's tier does serve its own prompts).
 
 **Evidence:** `sim.Simulator.ReserveRemoteKV` allocates through `sim.GPUTierAllocator` when the store has one.
+
+#### INV-PD-9: A Decode Engine Admits a Pull Only Where vLLM's Schedule Would
+
+**Statement:** A P/D handoff's decode-side KV is allocated, and its pull starts, at one of two points:
+- in the decode engine's schedule (the end of `scheduleBatch`); or
+- on a decode engine with no running or waiting request, once its last step has ended (`BusyUntil`).
+
+The schedule point requires all of the following:
+- running requests have already taken this step's slots;
+- the step preempted nothing;
+- the wait queue ahead is empty;
+- fewer than `max_num_seqs` requests run.
+
+Admission is FCFS and stops at the first handoff that does not fit. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
+
+Consequences:
+- A handoff holding transferred KV is never preempted and keeps its whole prompt until its pull lands.
+- No instance ever uses more blocks than it has.
+- Waiting requests that hold KV are scheduled before the rest.
+- Every new admission is gated on the whole prompt fitting (`full_sequence_must_fit`, every model).
+- A saturated pool queues its handoffs rather than thrashing.
+
+vLLM v0.31.0 sources:
+- `sched/scheduler.py:872-894` (WAITING phase, the KV-holding queue first);
+- `:1195-1229` (`reserved_blocks`, `delay_cache_blocks`, refusal breaks);
+- `:1258-1287` (WAITING_FOR_REMOTE_KVS);
+- `:3003-3036` (`_request_remaining_blocks`);
+- `kv_cache_manager.py:517-576`;
+- `config/scheduler.py:191` (`scheduler_reserve_full_isl` True).
+
+**Limitation:** a BLIS preemption restarts a request's output, whereas vLLM keeps generated tokens. Under long outputs, some growth preemption therefore remains.
+
+**Enforced:**
+- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (`sim/simulator.go`);
+- `KVCacheState.admissionGateRefuses` (`sim/kv`);
+- `serveDecodeKVWaiters`, `admitDecodeKVIfIdle`, `decodeAdmitEvent` (`sim/cluster/pd_events.go`).
+
+**Verification:** `TestPDDecodeAdmission_LawsHoldUnderRandomSaturation` (rapid; checked at every step: block bound, holders keep their KV, no pull starts inside a decode step, all complete), `TestPDDecodeAdmission_ASaturatedPoolQueuesRatherThanThrashes` (`sim/cluster`). Mutation-checked: admission at any event, admission in a preempting step, no reservation, no KV-holding-first and no full-prompt gate each fail.
 
 ### Pools and KV transfer
 

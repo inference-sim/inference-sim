@@ -196,7 +196,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	cs.awaitDecodeKV(decodeInst, e.parentReq, decodeSubReq)
-	cs.serveDecodeKVWaiters(decodeInst, e.time)
+	cs.admitDecodeKVIfIdle(decodeInst, e.time)
 }
 
 // decodeKVWaiter is a decode sub-request whose NIXL pull cannot start yet because its decode
@@ -209,9 +209,13 @@ type decodeKVWaiter struct {
 	req    *sim.Request
 }
 
-// awaitDecodeKV queues a handoff behind the decode instance's earlier waiters (FCFS).
+// awaitDecodeKV queues a handoff behind the decode instance's earlier waiters (FCFS), and makes
+// the instance's schedule admit them (INV-PD-9).
 func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *ParentRequest, req *sim.Request) {
 	id := string(inst.ID())
+	if _, armed := cs.decodeKVWaiters[id]; !armed {
+		inst.sim.SetRemoteKVAdmission(func(now int64) { cs.serveDecodeKVWaiters(inst, now) })
+	}
 	cs.decodeKVWaiters[id] = append(cs.decodeKVWaiters[id], decodeKVWaiter{parent: parent, req: req})
 }
 
@@ -231,10 +235,14 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 			q = q[1:]
 			continue
 		}
-		pulled, ok := inst.ReserveTransferredKV(w.req)
+		// vLLM's reserved_blocks: what the instance's other admitted handoffs -- pulls in flight
+		// and landed ones not yet running -- still need before they can run.
+		reserved := cs.pullFirstStepBlocks[id] + inst.sim.WaitingHolderBlocks()
+		pulled, ok := inst.ReserveTransferredKVBehind(w.req, reserved)
 		if !ok {
 			break
 		}
+		cs.pullFirstStepBlocks[id] += inst.sim.FirstDecodeStepBlocks(w.req)
 		q = q[1:]
 		w.parent.DecodeSubReq = w.req
 		// llm-d in-flight load: the client stream is now the decode sub-request.
@@ -449,6 +457,11 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	e.parentReq.TransferCompleteTime = e.time
 
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decodeInstID {
+			cs.pullFirstStepBlocks[decodeInstID] -= inst.sim.FirstDecodeStepBlocks(decodeSubReq)
+		}
+	}
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
 		e.parentReq.ID, decodeInstID)
 
@@ -489,7 +502,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		// A decode side that went away mid-pull sends no completion notice and no more
 		// heartbeats, so the prefill side frees its blocks only when the lease runs out.
 		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
-		cs.serveDecodeKVWaiters(decodeInst, e.time)
+		cs.admitDecodeKVIfIdle(decodeInst, e.time)
 		return
 	}
 	// The pull is complete: the decode side notifies the prefill side, which frees the
@@ -547,3 +560,32 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }
+
+// admitDecodeKVIfIdle admits an instance's waiting handoffs now when its engine has no
+// running or waiting request: vLLM's engine with nothing to do schedules a newly arrived
+// request at once, so the WAITING phase reaches the handoff with all its blocks free. An
+// engine with work admits them in its next schedule instead (sim.SetRemoteKVAdmission),
+// after its running requests have taken their slots (INV-PD-9).
+func (cs *ClusterSimulator) admitDecodeKVIfIdle(inst *InstanceSimulator, now int64) {
+	if len(cs.decodeKVWaiters[string(inst.ID())]) == 0 || inst.sim.HasWork() {
+		return
+	}
+	// A step that finished its last request is still executing until it ends; the engine's
+	// next schedule runs then.
+	if end := inst.sim.BusyUntil(); now < end {
+		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &decodeAdmitEvent{time: end, inst: inst}, seqID: cs.nextSeqID()})
+		return
+	}
+	cs.serveDecodeKVWaiters(inst, now)
+}
+
+// decodeAdmitEvent is an idle decode engine's next schedule, when its last step ends: it
+// admits the waiting handoffs then (admitDecodeKVIfIdle). Priority 5, a transfer start's.
+type decodeAdmitEvent struct {
+	time int64
+	inst *InstanceSimulator
+}
+
+func (e *decodeAdmitEvent) Timestamp() int64 { return e.time }
+func (e *decodeAdmitEvent) Priority() int    { return 5 }
+func (e *decodeAdmitEvent) Execute(cs *ClusterSimulator) { cs.admitDecodeKVIfIdle(e.inst, e.time) }

@@ -597,3 +597,9 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	}
 	return false
 }
+
+// ReserveTransferredKVBehind is ReserveTransferredKV leaving reserved blocks free for the
+// instance's other admitted handoffs (sim.Simulator.ReserveRemoteKVBehind, INV-PD-9).
+func (i *InstanceSimulator) ReserveTransferredKVBehind(req *sim.Request, reserved int64) (int64, bool) {
+	return i.sim.ReserveRemoteKVBehind(req, reserved)
+}

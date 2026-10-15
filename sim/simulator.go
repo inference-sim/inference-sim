@@ -2,6 +2,7 @@
 package sim
 
 import (
+	"sort"
 	"container/heap"
 	"fmt"
 	"math"
@@ -178,6 +179,11 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	// remoteKVAdmission admits requests whose KV a remote pull will fill (a P/D decode
+	// engine's handoffs), at the point of vLLM's schedule() where the WAITING phase runs: see
+	// SetRemoteKVAdmission. Nil on every instance that receives no handoff.
+	remoteKVAdmission func(now int64)
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -925,6 +931,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// (vLLM static priority model; per-step recomputation removed).
 	sim.WaitQ.Reorder(func(reqs []*Request) {
 		sim.scheduler.OrderQueue(reqs, now)
+		holdingKVFirst(reqs)
 	})
 
 	// Cold-load pre-admission gate (LoRA, #1466): if the wait-queue head is a cold
@@ -970,6 +977,8 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
 		sim.Metrics.PreemptionCount++
 	}
+
+	sim.admitRemoteKV(now, len(batchResult.Preempted) > 0)
 
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
@@ -1433,3 +1442,94 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		}
 	}
 }
+
+// SetRemoteKVAdmission installs f as the engine's admission of remote-KV pulls (INV-PD-9).
+// vLLM v0.31.0 admits a request whose KV loads asynchronously inside schedule()'s WAITING
+// phase (sched/scheduler.py:872-894, 1195-1229, 1258-1287): after the running requests have taken their
+// slots, only in a step that preempted nothing, behind every waiting request ahead of it, and
+// only while fewer than max_num_seqs run. The engine calls f at exactly that point of each
+// schedule; f allocates the pulls that fit, in arrival order, and the engine with no work at
+// all admits whenever one arrives (HasWork).
+func (sim *Simulator) SetRemoteKVAdmission(f func(now int64)) { sim.remoteKVAdmission = f }
+
+// admitRemoteKV runs the remote-KV admission at the end of a schedule, when vLLM's WAITING
+// phase would reach it: no preemption this step (scheduler.py:873), the waiting queue drained
+// ahead of it (the queue is FCFS, holding-KV requests first, :885-889), and a running slot
+// free (max_num_active_reqs, :891-894).
+func (sim *Simulator) admitRemoteKV(now int64, preempted bool) {
+	if sim.remoteKVAdmission == nil || preempted || sim.WaitQ.Len() > 0 {
+		return
+	}
+	if sim.RunningBatch != nil && int64(len(sim.RunningBatch.Requests)) >= sim.maxNumSeqs {
+		return
+	}
+	sim.remoteKVAdmission(now)
+}
+
+// HasWork reports whether the engine has running or waiting requests, as vLLM's
+// has_unfinished_requests does. An engine without work schedules a newly arrived request at
+// once.
+func (sim *Simulator) HasWork() bool { return hasWork(sim) }
+
+// holdingKVFirst moves the waiting requests that already hold their KV -- P/D decode
+// sub-requests whose pull has landed (ProgressIndex set at reservation; a waiting request
+// otherwise holds none) -- ahead of the rest, keeping each group's order. vLLM v0.31.0 drains
+// its kv_holding_waiting queue before waiting (sched/scheduler.py:886-887). Without it a
+// preempted request at the head that cannot be readmitted blocks the handoffs holding the
+// blocks it needs, and the decode engine deadlocks (INV-PD-9). No-op when none holds KV.
+func holdingKVFirst(reqs []*Request) {
+	holds := func(r *Request) bool { return r.IsDecodeSubRequest && r.ProgressIndex > 0 }
+	for _, r := range reqs {
+		if holds(r) {
+			sort.SliceStable(reqs, func(i, j int) bool { return holds(reqs[i]) && !holds(reqs[j]) })
+			return
+		}
+	}
+}
+
+// FirstDecodeStepBlocks is the blocks a remote-KV request's first decode step takes beyond
+// the prompt it holds: one when the prompt fills its last block, else none. A speculating
+// engine's reservation already holds the step's slots (AllocateRemoteKV sizes them).
+func (sim *Simulator) FirstDecodeStepBlocks(req *Request) int64 {
+	if sim.specEnabled || req.InputLen()%sim.KVCache.BlockSize() != 0 {
+		return 0
+	}
+	return 1
+}
+
+// WaitingHolderBlocks is FirstDecodeStepBlocks summed over the waiting requests that hold
+// their KV (pulls that landed and have not run): the blocks they need before they can start.
+func (sim *Simulator) WaitingHolderBlocks() int64 {
+	var n int64
+	for _, r := range sim.WaitQ.Items() {
+		if r.IsDecodeSubRequest && r.ProgressIndex > 0 {
+			n += sim.FirstDecodeStepBlocks(r)
+		}
+	}
+	return n
+}
+
+// ReserveRemoteKVBehind is ReserveRemoteKV gated as vLLM gates an async-load admission
+// (sched/scheduler.py:1195-1205, kv_cache_manager.py:570-576 at v0.31.0): the allocation must
+// leave reserved blocks free -- what the other admitted remote-KV requests still need to run --
+// plus the request's own first-step blocks, "to avoid deadlock and predictable preemptions".
+// A refused reservation leaves no allocation behind.
+func (sim *Simulator) ReserveRemoteKVBehind(req *Request, reserved int64) (pulledTokens int64, ok bool) {
+	free := func() int64 { return sim.KVCache.TotalCapacity() - sim.KVCache.UsedBlocks() }
+	if free() < reserved+sim.FirstDecodeStepBlocks(req) {
+		return 0, false
+	}
+	pulled, ok := sim.ReserveRemoteKV(req)
+	if !ok {
+		return 0, false
+	}
+	if free() < reserved+sim.FirstDecodeStepBlocks(req) {
+		sim.KVCache.ReleaseKVBlocks(req)
+		req.ProgressIndex = 0
+		return 0, false
+	}
+	return pulled, true
+}
+
+// BusyUntil is when the engine's last executed step ends; its next schedule runs no earlier.
+func (sim *Simulator) BusyUntil() int64 { return sim.busyUntil }

@@ -99,6 +99,9 @@ type ClusterSimulator struct {
 	prefillHolds     map[string][]int64
 	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
 	decodeKVWaiters map[string][]decodeKVWaiter
+	// pullFirstStepBlocks are, per decode instance, the first-step blocks of its pulls in flight
+	// (sim.Simulator.FirstDecodeStepBlocks): part of the reservation new pulls leave free.
+	pullFirstStepBlocks map[string]int64
 	heldBlockRefs    map[string]map[int64]int
 	heldKVPeakTokens map[string]int64
 	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
@@ -345,6 +348,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.pendingDecodeCompletions = make(map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
 		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
+		cs.pullFirstStepBlocks = make(map[string]int64)
 		if config.PDTransferContention {
 			cs.pdLinks = kvtransfer.NewLinkArbiter()
 			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
@@ -1156,7 +1160,7 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 		}
 		if role.Has(PoolRoleDecode) {
 			c.detectDecodeCompletions(inst)
-					c.serveDecodeKVWaiters(inst, c.clock)
+			c.admitDecodeKVIfIdle(inst, c.clock)
 		}
 	}
 }
