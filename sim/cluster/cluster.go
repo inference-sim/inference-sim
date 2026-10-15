@@ -82,10 +82,10 @@ type ClusterSimulator struct {
 	// successful promotions, late drops (decode pod became non-routable
 	// mid-transfer), and degenerate completions scheduled by dropAtStart.
 	transfersCompleted      int
-	pdPrefillCompletedCount int // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount  int // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount   int // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV       int // requests dropped due to insufficient KV at decode
+	pdPrefillCompletedCount int               // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
@@ -96,13 +96,13 @@ type ClusterSimulator struct {
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
 	// heldKVPeakTokens is each instance's peak of distinct held tokens.
-	prefillHolds map[string][]int64
+	prefillHolds     map[string][]int64
 	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
-	decodeKVWaiters      map[string][]decodeKVWaiter
-	heldBlockRefs        map[string]map[int64]int
-	heldKVPeakTokens     map[string]int64
-	prefillRoutingPolicy sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy  sim.RoutingPolicy // nil = use main routingPolicy
+	decodeKVWaiters map[string][]decodeKVWaiter
+	heldBlockRefs    map[string]map[int64]int
+	heldKVPeakTokens map[string]int64
+	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
@@ -183,13 +183,13 @@ type ClusterSimulator struct {
 	// Determinism (INV-6): the hook sees requests in the same monotonic
 	// non-decreasing ArrivalTime order the cluster enqueues them.
 	// fireArrivalHook() panics on a regression.
-	arrivalHook func(*sim.Request)
+	arrivalHook         func(*sim.Request)
 	// arrivalGate, when set, decides at each arrival whether the client sends it
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
 	arrivalGate ArrivalGate
 	// unservedHook, when set, is told of every request the cluster refuses or drops
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
-	unservedHook        func(req *sim.Request, now int64) []*sim.Request
+	unservedHook func(req *sim.Request, now int64) []*sim.Request
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
@@ -975,7 +975,7 @@ func (c *ClusterSimulator) Run() error {
 			ev := inst.ProcessNextEvent()
 			// StartOfStream: first token releases prompt tokens, on every rank the event advanced.
 			for _, m := range members {
-				for _, t := range c.inFlightLoadTrackers {
+			for _, t := range c.inFlightLoadTrackers {
 					t.ObserveInstance(string(m.ID()))
 				}
 			}
@@ -1156,7 +1156,7 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 		}
 		if role.Has(PoolRoleDecode) {
 			c.detectDecodeCompletions(inst)
-			c.serveDecodeKVWaiters(inst, c.clock)
+					c.serveDecodeKVWaiters(inst, c.clock)
 		}
 	}
 }
@@ -2614,17 +2614,17 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// sub-request views the same underlying token buffer, no flatten. If
 	// Request.InputTokens ever becomes lazy/chained, this site must update.
 	prefillSubReq := &sim.Request{
-		ID:               parent.PrefillSubReqID,
-		InputTokens:      req.InputTokens,
-		MaxOutputLen:     req.MaxOutputLen,
-		Deadline:         req.Deadline,
-		PrefixGroup:      req.PrefixGroup,
-		State:            sim.StateQueued,
-		ArrivalTime:      req.ArrivalTime,
-		TenantID:         req.TenantID,
-		SLOClass:         req.SLOClass,
-		Model:            req.Model,
-		Phase:            req.Phase,
+		ID:           parent.PrefillSubReqID,
+		InputTokens:  req.InputTokens,
+		MaxOutputLen: req.MaxOutputLen,
+		Deadline:     req.Deadline,
+		PrefixGroup:  req.PrefixGroup,
+		State:        sim.StateQueued,
+		ArrivalTime:  req.ArrivalTime,
+		TenantID:     req.TenantID,
+		SLOClass:     req.SLOClass,
+		Model:        req.Model,
+		Phase:        req.Phase,
 		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
