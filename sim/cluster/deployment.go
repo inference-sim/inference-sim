@@ -23,6 +23,19 @@ type DeploymentConfig struct {
 	// multiple of it.
 	DPLockstepRanks int
 
+	// DPLoadBalancing is how a lockstep replica's requests reach its ranks (#1909), as vLLM
+	// v0.31.0's serve flags choose (vllm/engine/arg_utils.py:536-538, :1225-1242;
+	// EngineCoreClient.make_async_mp_client, vllm/v1/engine/core_client.py:155-166):
+	//   - DPLoadBalancingInternal ("" or "internal", vLLM's default) and
+	//     DPLoadBalancingHybrid (--data-parallel-hybrid-lb): one endpoint per replica,
+	//     whose front-end balances requests over its ranks (DPLBAsyncMPClient). Hybrid
+	//     balances over one node's ranks, which is the whole replica when it fits a node.
+	//   - DPLoadBalancingExternal (--data-parallel-external-lb, or
+	//     --data-parallel-multi-port-external-lb): every rank serves its own port
+	//     (DPAsyncMPClient, one client per rank), so the router sees and picks ranks.
+	// Lockstep stepping is the same in every mode.
+	DPLoadBalancing string
+
 	// Online routing pipeline configuration (PR4+)
 	AdmissionPolicy       string  // "always-admit" (default) or "token-bucket"
 	AdmissionLatency      int64   // microseconds, default 0

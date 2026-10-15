@@ -528,6 +528,7 @@ Example:
 			},
 			NumInstances:                    numInstances,
 			DPLockstepRanks:                 dpPlan.LockstepRanks,
+			DPLoadBalancing:                 dpLoadBalancing,
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,

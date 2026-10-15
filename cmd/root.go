@@ -169,6 +169,7 @@ var (
 	kvTransferBandwidth     float64 // no flag sets it: the kernel prices the legacy CPU tier (KVTransferTicksPerBlock)
 	kvTransferBaseLatency   int64   // no flag sets it, for the same reason
 	snapshotRefreshInterval int64
+	dpLoadBalancing         string // --dp-load-balancing: internal | hybrid | external (#1909)
 	cacheSignalDelay        int64
 
 	// PD disaggregation config
@@ -486,6 +487,9 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 		logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × scenario dp %d); "+
 			"if the scenario's dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
 	}
+	if err := checkHybridDPNodeLocal(plan); err != nil {
+		return dpPlacementPlan{}, err
+	}
 	if enableExpertParallel {
 		// EP-ON placement (#1548): the expert-parallel group is the whole N×TP GPU set this
 		// placement already reserves. The kernel prices each replica's steps for the
@@ -495,6 +499,28 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
 	}
 	return plan, nil
+}
+
+// checkHybridDPNodeLocal refuses --dp-load-balancing hybrid for a colocated replica whose
+// ranks span nodes. vLLM's hybrid balancer runs one front-end per node over that node's
+// ranks (DPLBAsyncMPClient over engine_ranks_managed, vllm/v1/engine/core_client.py:1500-1520;
+// api_server_count defaults to data_parallel_size_local, vllm/entrypoints/cli/serve.py:
+// 112-120), so a replica across nodes is several endpoints, which BLIS does not model. On one
+// node hybrid is the internal balancer.
+func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
+	if dpLoadBalancing != cluster.DPLoadBalancingHybrid || !plan.Active || kernelOpened == nil ||
+		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0 {
+		return nil
+	}
+	dp := plan.Replicas
+	for first := 0; first+dp <= numInstances; first += dp {
+		if a, b := kernelOpened.PlacementOf(first), kernelOpened.PlacementOf(first+dp-1); a.Node != b.Node {
+			return fmt.Errorf("--dp-load-balancing hybrid: the replica of ranks %d-%d spans nodes %d-%d, and a "+
+				"hybrid front-end balances only its own node's ranks (one endpoint per node), which BLIS does "+
+				"not model; use internal or external", first, first+dp-1, a.Node, b.Node)
+		}
+	}
+	return nil
 }
 
 // offloadPerBlockBytes is the per-rank KV bytes of one block of blockSize tokens, which sizes
@@ -935,6 +961,10 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	if cacheSignalDelay < 0 {
 		logrus.Fatalf("--cache-signal-delay must be >= 0, got %d", cacheSignalDelay)
 	}
+	if !cluster.IsValidDPLoadBalancing(dpLoadBalancing) {
+		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", cluster.DPLoadBalancingInternal,
+			cluster.DPLoadBalancingHybrid, cluster.DPLoadBalancingExternal, dpLoadBalancing)
+	}
 	if admissionLatency < 0 {
 		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 	}
@@ -1133,6 +1163,12 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of the kernel's per-rank GPU KV blocks")
 	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 50000, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate/oracle mode, default 50ms = llm-d parity)")
+	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", cluster.DPLoadBalancingInternal,
+		"How a dp>1 MoE replica's requests reach its ranks, as vLLM's serve flags choose: "+
+			"internal (default; one endpoint per replica, vLLM's DP balancer picks the rank), "+
+			"hybrid (--data-parallel-hybrid-lb; the same for a replica on one node), or "+
+			"external (--data-parallel-external-lb / --data-parallel-multi-port-external-lb; "+
+			"every rank is its own router endpoint). Ranks step in lockstep in every mode")
 	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 50ms. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
 
@@ -1928,6 +1964,7 @@ var runCmd = &cobra.Command{
 			},
 			NumInstances:                    numInstances,
 			DPLockstepRanks:                 dpPlan.LockstepRanks,
+			DPLoadBalancing:                 dpLoadBalancing,
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"pgregory.net/rapid"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -265,5 +267,85 @@ func TestDPLockstep_PDPools(t *testing.T) {
 	}
 	if !reflect.DeepEqual(clusterOutcome(a), clusterOutcome(b)) {
 		t.Error("two identical P/D lockstep runs differ")
+	}
+}
+
+func runDPMode(t *testing.T, instances, lockstep int, mode string, reqs []*sim.Request) *ClusterSimulator {
+	t.Helper()
+	cfg := newTestDeploymentConfig(instances)
+	cfg.DPLockstepRanks = lockstep
+	cfg.DPLoadBalancing = mode
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+	mustRun(t, cs)
+	return cs
+}
+
+// Without data parallelism the load-balancing mode is moot: dp 1 runs identically in every
+// mode, and identically to a deployment that states none (today's behavior). In particular a
+// hybrid replica of one rank is an external one.
+func TestDPLoadBalancing_ModeIsMootAtDPOne(t *testing.T) {
+	want := clusterOutcome(runDP(t, 3, 0, steadyRequests()))
+	for _, mode := range []string{DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal} {
+		for _, width := range []int{0, 1} {
+			if got := clusterOutcome(runDPMode(t, 3, width, mode, steadyRequests())); !reflect.DeepEqual(got, want) {
+				t.Errorf("mode %s, width %d: outcome differs from a dp-1 run", mode, width)
+			}
+		}
+	}
+}
+
+// Under external DP load balancing every rank is its own routable endpoint, under its own
+// ID with its own signals, whatever the replica layout; under internal and hybrid each
+// replica is one.
+func TestDPLoadBalancing_ExternalEveryRankIsAnEndpoint(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		dp := rapid.SampledFrom([]int{2, 4}).Draw(rt, "dp")
+		replicas := rapid.IntRange(1, 3).Draw(rt, "replicas")
+		mode := rapid.SampledFrom([]string{DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal}).Draw(rt, "mode")
+		cfg := newTestDeploymentConfig(dp * replicas)
+		cfg.DPLockstepRanks = dp
+		cfg.DPLoadBalancing = mode
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		snaps := buildRouterState(cs, nil).Snapshots
+		want := replicas
+		if mode == DPLoadBalancingExternal {
+			want = dp * replicas
+		}
+		if len(snaps) != want {
+			rt.Fatalf("mode %s, %d replicas of dp %d: %d endpoints, want %d", mode, replicas, dp, len(snaps), want)
+		}
+		if mode == DPLoadBalancingExternal {
+			for i, s := range snaps {
+				if s.ID != string(cs.instances[i].ID()) {
+					rt.Fatalf("endpoint %d is %s, want rank %s", i, s.ID, cs.instances[i].ID())
+				}
+			}
+		}
+	})
+}
+
+// External load balancing changes who picks the rank, not how ranks step: the router places
+// each request on a rank, and load on one rank still slows its lockstep neighbour.
+func TestDPLoadBalancing_ExternalKeepsLockstep(t *testing.T) {
+	probe := func(neighbourInput int) float64 {
+		reqs := []*sim.Request{dpReq("probe", 0, 64, 32), dpReq("neighbour", 0, neighbourInput, 32)}
+		cs := runDPMode(t, 2, 2, DPLoadBalancingExternal, reqs)
+		if reqs[0].AssignedInstance != "instance_0" || reqs[1].AssignedInstance != "instance_1" {
+			t.Fatalf("round-robin routing placed probe on %s and neighbour on %s", reqs[0].AssignedInstance, reqs[1].AssignedInstance)
+		}
+		return cs.AggregatedMetrics().RequestE2Es["probe"]
+	}
+	if light, heavy := probe(64), probe(8192); heavy <= light {
+		t.Errorf("external mode: the probe's E2E did not rise with its neighbour's load (%v, %v)", light, heavy)
+	}
+}
+
+// An unknown mode is refused when the run starts.
+func TestDPLoadBalancing_UnknownModeIsAnError(t *testing.T) {
+	cfg := newTestDeploymentConfig(2)
+	cfg.DPLockstepRanks = 2
+	cfg.DPLoadBalancing = "random"
+	if err := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil).Run(); err == nil || !strings.Contains(err.Error(), "random") {
+		t.Errorf("Run() = %v, want the unknown mode refused", err)
 	}
 }

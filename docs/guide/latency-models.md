@@ -164,7 +164,17 @@ the ranks. BLIS therefore steps the group's ranks together:
   request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
   divided by it, stop at its last real event.
 
-**One endpoint per replica.** The router sees each DP group as one pod, listed under its rank
+**How requests reach ranks: `--dp-load-balancing`.** vLLM v0.31.0's serve flags choose
+(`vllm/engine/arg_utils.py:536-538, 1225-1242`; `EngineCoreClient.make_async_mp_client`,
+`vllm/v1/engine/core_client.py:155-166`), and lockstep is the same in every mode:
+
+| mode | vLLM | router sees |
+|---|---|---|
+| `internal` (default) | no LB flag: one front-end balances all ranks (`DPLBAsyncMPClient`) | one endpoint per replica (below) |
+| `hybrid` | `--data-parallel-hybrid-lb`: one front-end per node balances that node's ranks | the same, for a replica on one node; a replica across nodes is refused |
+| `external` | `--data-parallel-external-lb` or `--data-parallel-multi-port-external-lb`: every rank serves its own port (`DPAsyncMPClient`) | every rank, with its own signals and its own prefix cache; the router picks the rank |
+
+**One endpoint per replica** (internal, hybrid). The router sees each DP group as one pod, listed under its rank
 0 instance ID; a request routed to it is assigned to a rank by vLLM v0.31.0's internal DP load
 balancer (`DPLBAsyncMPClient.get_core_engine_for_request`,
 `vllm/v1/engine/core_client.py:1589-1640`): the rank with the lowest
@@ -188,9 +198,10 @@ its rank index (`pkg/kvevents/pool.go:134`), which is 0 for an internal-balancer
 
 Known deviations and limits:
 
-- Padding is priced as decode rows that read no KV but, unlike vLLM's pad tokens, pay the LM
-  head and sampler (`blis-latency-kernel` v0.2.0 has no pad input; `kernel.Batch.PadTokens` is
-  coming, and `withPadding` in `sim/kernelmodel/dp_lockstep.go` is where it plugs in).
+- Pad tokens are the kernel's `Batch.PadTokens` (blis-schemas#74): they run the GEMMs,
+  collectives, MoE dispatch and experts, and no attention, logits or sampling; an idle rank's
+  dummy batch is all pad. This needs the kernel and schemas from the dsv41 branches, which
+  `go.mod` pins by `replace` until they are released.
 - vLLM also pads every rank under dual-batch overlap (`should_ubatch`, `dp_utils.py:181`).
   BLIS does not model DBO, which the kernel does not price (blis-latency-kernel#48).
 - One front-end, with the whole in-flight view, stands for the `api_server_count` front-ends

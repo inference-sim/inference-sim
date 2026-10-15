@@ -12,6 +12,22 @@ import (
 // (vllm/v1/engine/coordinator.py:154-162, :267-269 at v0.31.0).
 const DPStatsIntervalUs int64 = 100_000
 
+// The DP load-balancing modes (DeploymentConfig.DPLoadBalancing).
+const (
+	DPLoadBalancingInternal = "internal"
+	DPLoadBalancingHybrid   = "hybrid"
+	DPLoadBalancingExternal = "external"
+)
+
+// IsValidDPLoadBalancing reports whether mode names a DP load-balancing mode ("" is internal).
+func IsValidDPLoadBalancing(mode string) bool {
+	switch mode {
+	case "", DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal:
+		return true
+	}
+	return false
+}
+
 // dpReplica is one data-parallel MoE replica (#1909): dp engine ranks that step in
 // lockstep and sit behind one API endpoint, the pod the router sees.
 //
@@ -50,6 +66,10 @@ type dpRankCounts struct {
 // placement deferred -- is reported as an error, which Run returns before simulating
 // anything, so the CLI refuses it naming the cause.
 func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap map[InstanceID]*InstanceSimulator) error {
+	if !IsValidDPLoadBalancing(config.DPLoadBalancing) {
+		return fmt.Errorf("unknown DP load-balancing mode %q; want %s, %s or %s", config.DPLoadBalancing,
+			DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal)
+	}
 	dp := config.DPLockstepRanks
 	if dp <= 1 {
 		return nil
@@ -108,10 +128,10 @@ func (cs *ClusterSimulator) eventMembers(inst *InstanceSimulator) []*InstanceSim
 }
 
 // endpointReplica is the replica whose endpoint stands for inst in routing, or nil when inst
-// is its own endpoint. Replicas are endpoints only on the colocated routing path: a P/D
-// pool's ranks stay individually routable (a documented limitation).
+// is its own endpoint: under external DP load balancing every rank is, and a P/D pool's
+// ranks stay individually routable (a documented limitation).
 func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica {
-	if cs.replicaOf == nil || cs.poolsConfigured() {
+	if cs.replicaOf == nil || cs.poolsConfigured() || cs.config.DPLoadBalancing == DPLoadBalancingExternal {
 		return nil
 	}
 	return cs.replicaOf[string(inst.ID())]
