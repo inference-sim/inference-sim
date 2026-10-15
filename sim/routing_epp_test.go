@@ -433,7 +433,7 @@ func TestInFlightLoad_ReleaseLifecycle(t *testing.T) {
 		tr.charge(&Request{ID: "p_prefill"}, "pf", 40)
 		decode := &Request{ID: "p_decode"}
 		tr.SetStream("p", decode)
-		tr.OnRequestDone("p_prefill") // prefill completion releases nothing
+		tr.OnRequestDone(&Request{ID: "p_prefill", State: StateCompleted}) // prefill completion releases nothing
 		if tr.Tokens("pf") != 40 || tr.Tokens("d") != 100 {
 			t.Fatalf("add=%v: prefill completion must not release: pf=%d d=%d", add, tr.Tokens("pf"), tr.Tokens("d"))
 		}
@@ -446,7 +446,7 @@ func TestInFlightLoad_ReleaseLifecycle(t *testing.T) {
 		if tr.Tokens("pf") != 0 || tr.Tokens("d") != wantD {
 			t.Errorf("add=%v after first token: pf=%d d=%d, want 0/%d", add, tr.Tokens("pf"), tr.Tokens("d"), wantD)
 		}
-		tr.OnRequestDone("p_decode")
+		tr.OnRequestDone(decode)
 		if tr.Tokens("d") != 0 || len(tr.groups) != 0 {
 			t.Errorf("add=%v after completion: d=%d groups=%d", add, tr.Tokens("d"), len(tr.groups))
 		}
@@ -456,6 +456,21 @@ func TestInFlightLoad_ReleaseLifecycle(t *testing.T) {
 		tr.ReleaseGroup("q")
 		if tr.Tokens("d") != 0 {
 			t.Errorf("decrement floors at zero: %d", tr.Tokens("d"))
+		}
+	}
+}
+
+// A prefill sub-request that ends without completing (timeout, drop) ends the
+// request: the whole group is released (main:…/inflightload/producer.go:621-633).
+func TestInFlightLoad_PrefillTimeoutReleasesGroup(t *testing.T) {
+	for _, state := range []RequestState{StateTimedOut, StateQueued} {
+		tr := newInFlightLoadTracker(DefaultInFlightLoadConfig("x", EPPVersionMain))
+		tr.charge(&Request{ID: "p"}, "d", 100)
+		tr.AliasPrefill("p_prefill", "p")
+		tr.charge(&Request{ID: "p_prefill"}, "pf", 40)
+		tr.OnRequestDone(&Request{ID: "p_prefill", State: state})
+		if tr.Tokens("d") != 0 || tr.Tokens("pf") != 0 || len(tr.groups) != 0 || len(tr.alias) != 0 {
+			t.Errorf("state %s: d=%d pf=%d groups=%d alias=%d", state, tr.Tokens("d"), tr.Tokens("pf"), len(tr.groups), len(tr.alias))
 		}
 	}
 }
@@ -557,7 +572,12 @@ func TestPreciseProducer_TierWeightsAndSpeculative(t *testing.T) {
 
 func TestProducerNoHitLRU_ColdRequestsSpread(t *testing.T) {
 	p := matchPipeline(EPPVersionMain, map[string]int{"a": 0, "b": 0, "c": 0})
-	scorer, rec := newProducerNoHitLRUScorer(ScorerParams{PrefixMatchInfoProducerName: "m", ProducerBound: true}, p)
+	scorer, decide := newProducerNoHitLRUScorer(ScorerParams{PrefixMatchInfoProducerName: "m", ProducerBound: true}, p)
+	rec := func(r *Request, target string, _ int64) {
+		if a := decide(r, target); a != nil {
+			a()
+		}
+	}
 	snaps := eppSnaps("a", "b", "c")
 	pick := func(id string) string {
 		r := eppReq(id, 100)
@@ -784,5 +804,105 @@ func TestNewRoutingPolicyWithPipeline_NilPipelineMatchesLegacy(t *testing.T) {
 		if a.TargetInstance != b.TargetInstance {
 			t.Fatalf("request %d: legacy %q vs nil-pipeline %q", i, a.TargetInstance, b.TargetInstance)
 		}
+	}
+}
+
+type countingProducer struct {
+	prefixProducer
+	produced int
+}
+
+func (c *countingProducer) produce(r *Request, s []RoutingSnapshot, clock int64) map[string]prefixMatchInfo {
+	c.produced++
+	return c.prefixProducer.produce(r, s, clock)
+}
+
+// P/D timing (llm-d runs producers once per request, before any profile, and
+// PreRequest once after scheduling — never on a scheduling error): with a
+// deferred pipeline the decode and prefill picks produce once, record nothing
+// until Commit, and nothing at all after Discard.
+func TestRoutingPipeline_DeferredPreRequestAndSingleProduce(t *testing.T) {
+	build := func() (*RoutingPipeline, *countingProducer, RoutingPolicy, RoutingPolicy) {
+		cfg, _ := ResolveRoutingPipeline([]ScorerConfig{{Name: "token-load", Weight: 1}, {Name: "prefix-cache", Weight: 1}}, &RoutingPipelineConfig{Version: EPPVersionMain})
+		p := NewRoutingPipeline(cfg, RoutingEnv{EngineBlockSize: 64}, nil)
+		cp := &countingProducer{prefixProducer: p.producers[LLMDApproxPrefixProducer]}
+		p.producers[LLMDApproxPrefixProducer] = cp
+		p.SetDeferred(true)
+		sc := []ScorerConfig{{Name: "token-load", Weight: 1}, {Name: "prefix-cache", Weight: 1}}
+		return p, cp, NewWeightedRoutingOnPipeline(sc, nil, 64, rand.New(rand.NewSource(1)), nil, p),
+			NewWeightedRoutingOnPipeline(sc, nil, 64, rand.New(rand.NewSource(2)), nil, p)
+	}
+	approx := func(p *RoutingPipeline) *approxPrefixProducer {
+		return p.producers[LLMDApproxPrefixProducer].(*countingProducer).prefixProducer.(*approxPrefixProducer)
+	}
+	for _, commit := range []bool{true, false} {
+		p, cp, decode, prefill := build()
+		parent := eppReq("p", 256)
+		p.BeginRequest(parent, eppSnaps("d0", "d1", "p0", "p1"), 0)
+		d := decode.Route(parent, &RouterState{Snapshots: eppSnaps("d0", "d1")})
+		p.AliasPrefill("p_prefill", "p")
+		sub := &Request{ID: "p_prefill", InputTokens: parent.InputTokens}
+		pf := prefill.Route(sub, &RouterState{Snapshots: eppSnaps("p0", "p1")})
+		if cp.produced != 1 {
+			t.Errorf("producers ran %d times for one request, want 1", cp.produced)
+		}
+		tr := p.InFlightLoadTracker("")
+		if tr.Tokens(d.TargetInstance) != 0 || approx(p).idx.InstanceBlockCount(d.TargetInstance) != 0 {
+			t.Fatal("PreRequest ran before the request was fully scheduled")
+		}
+		if commit {
+			p.Commit("p")
+			if tr.Tokens(d.TargetInstance) != 256 || tr.Tokens(pf.TargetInstance) != 256 ||
+				approx(p).idx.InstanceBlockCount(d.TargetInstance) == 0 || approx(p).idx.InstanceBlockCount(pf.TargetInstance) == 0 {
+				t.Errorf("Commit: decode %d prefill %d tokens", tr.Tokens(d.TargetInstance), tr.Tokens(pf.TargetInstance))
+			}
+		} else {
+			p.Discard("p")
+			p.Commit("p")
+			if tr.Tokens(d.TargetInstance) != 0 || approx(p).idx.InstanceBlockCount(d.TargetInstance) != 0 {
+				t.Error("Discard: the decode pick of a failed request must not be recorded")
+			}
+		}
+	}
+}
+
+// A CPU-tier approx producer is llm-d's router-side LRU in both curvebender forms —
+// autoTune (GPU-sized: CacheNumBlocks) and lruCapacityPerServer 30659 — credited at
+// PreRequest; it ignores the CPU tier unless the BLIS opt-in marks it CPUTier.
+func TestApproxProducer_CPUTierFormsAreLRUUnlessOptedIn(t *testing.T) {
+	cpu := map[string]func([]TokenID) int{"x": func([]TokenID) int { return 3 }}
+	env := RoutingEnv{EngineBlockSize: 64, KVBlocks: func(string) int64 { return 777 }, CPUTierCacheFn: cpu}
+	auto := DefaultApproxPrefixProducerConfig("cpu-prefix-cache-producer", EPPVersionMain)
+	fixed := auto
+	fixed.AutoTune, fixed.LRUCapacityPerServer = false, 30659
+	for _, tc := range []struct {
+		cfg  PrefixProducerConfig
+		want int
+	}{{auto, 777}, {fixed, 30659}} {
+		p := NewRoutingPipeline(&RoutingPipelineConfig{Producers: []PrefixProducerConfig{tc.cfg}}, env, nil)
+		ap, ok := p.producers[tc.cfg.Name].(*approxPrefixProducer)
+		if !ok {
+			t.Fatalf("%+v: not an approx LRU producer", tc.cfg)
+		}
+		if got := ap.idx.capacityFor("x"); got != tc.want {
+			t.Errorf("capacity %d, want %d", got, tc.want)
+		}
+		r := eppReq("r", 64*4)
+		p.begin(r, eppSnaps("x"), 0)
+		if info, _ := p.matchInfo(tc.cfg.Name, "x"); info.match != 0 {
+			t.Errorf("before routing the LRU holds nothing, got match %d", info.match)
+		}
+		p.recordRouted(r, "x", 0)
+		p.begin(eppReq("r2", 64*4), eppSnaps("x"), 0)
+		if info, _ := p.matchInfo(tc.cfg.Name, "x"); info.match != 4 {
+			t.Errorf("after routing: match %d, want 4 (credited at PreRequest)", info.match)
+		}
+	}
+	opt := auto
+	opt.CPUTier = true
+	p := NewRoutingPipeline(&RoutingPipelineConfig{Producers: []PrefixProducerConfig{opt}}, env, nil)
+	p.begin(eppReq("r", 64*4), eppSnaps("x"), 0)
+	if info, _ := p.matchInfo(opt.Name, "x"); info.match != 3 {
+		t.Errorf("opt-in CPU-tier view: match %d, want the tier's 3 blocks", info.match)
 	}
 }

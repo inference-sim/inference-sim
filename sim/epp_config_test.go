@@ -70,8 +70,9 @@ func TestEPPConfig_CurvebenderOptimizedBaseline(t *testing.T) {
 				cpu = p
 			}
 		}
-		if !cpu.CPUTier || !cpu.AutoTune {
-			t.Errorf("%s: cpu producer %+v", v, cpu)
+		// llm-d: an ordinary approx producer, GPU-sized under autoTune (makeserver).
+		if cpu.CPUTier || !cpu.AutoTune || len(in.Provenance.Deviations) != 0 {
+			t.Errorf("%s: cpu producer must be llm-d's LRU estimate by default: %+v, deviations %v", v, cpu, in.Provenance.Deviations)
 		}
 		if len(in.Pipeline.InFlightLoads) != 1 || in.Pipeline.InFlightLoads[0].PrefixMatchInfoProducerName != LLMDApproxPrefixProducer {
 			t.Errorf("%s: inflight %+v", v, in.Pipeline.InFlightLoads)
@@ -261,5 +262,74 @@ func TestParseQuantity(t *testing.T) {
 	}
 	if _, err := parseQuantity("-1", "q"); err == nil {
 		t.Error("negative quantity must be refused")
+	}
+}
+
+// The live CPU-tier view is an explicit BLIS opt-in, recorded as a deviation; it
+// must name an approx producer of the config.
+func TestEPPConfig_CPUTierViewIsAnOptIn(t *testing.T) {
+	in, err := LoadEndpointPickerConfig("testdata/epp/optimized-baseline-cpu-tier.yaml", 64, EPPVersionV0_10_0, WithCPUTierView("cpu-prefix-cache-producer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range in.Pipeline.Producers {
+		if (p.Name == "cpu-prefix-cache-producer") != p.CPUTier {
+			t.Errorf("%s: CPUTier=%v", p.Name, p.CPUTier)
+		}
+	}
+	if len(in.Provenance.Deviations) != 1 || !strings.Contains(in.Provenance.Deviations[0], "cpu-prefix-cache-producer") {
+		t.Errorf("deviation not recorded: %v", in.Provenance.Deviations)
+	}
+	if _, err := LoadEndpointPickerConfig("testdata/epp/optimized-baseline-cpu-tier.yaml", 64, EPPVersionMain, WithCPUTierView("token-load-scorer")); err == nil {
+		t.Error("a non-producer name must be refused")
+	}
+}
+
+// Inert plugins: parameters with no simulation meaning are accepted, any other is
+// refused; metrics-data-source interval maps to the snapshot refresh interval and
+// static-usage-limit-policy threshold to the uniform band ceiling.
+func TestEPPConfig_InertParameters(t *testing.T) {
+	ok := eppDoc("- type: metrics-data-source\n  parameters: {scheme: https, interval: 120ms}\n- type: token-producer\n  parameters: {modelName: m, vllm: {url: http://x}}", "")
+	in, err := ParseEndpointPickerConfig(ok, 64, EPPVersionMain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.MetricsRefreshIntervalUs != 100_000 {
+		t.Errorf("120ms rounds to 2 base ticks (100ms): got %d", in.MetricsRefreshIntervalUs)
+	}
+	for _, bad := range []string{
+		"- type: endpoint-notification-source\n  parameters: {debounce: 5}",
+		"- type: metrics-data-source\n  parameters: {stalenessThreshold: 1s}",
+		"- type: fcfs-ordering-policy\n  parameters: {x: 1}",
+	} {
+		if _, err := ParseEndpointPickerConfig(eppDoc(bad, ""), 64, EPPVersionMain); err == nil || !strings.Contains(err.Error(), "is not supported by the simulator") {
+			t.Errorf("%q: want a refusal, got %v", bad, err)
+		}
+	}
+	fc := `apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+featureGates: [flowControl]
+plugins:
+- type: static-usage-limit-policy
+  parameters: {threshold: 0.7}
+- type: concurrency-detector
+- type: queue-scorer
+schedulingProfiles:
+- name: default
+  plugins: [{pluginRef: queue-scorer}]
+flowControl:
+  saturationDetector: {pluginRef: concurrency-detector}
+`
+	in, err = ParseEndpointPickerConfig([]byte(fc), 64, EPPVersionMain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.FlowControl.UniformCeiling != 0.7 {
+		t.Errorf("static threshold: ceiling %v, want 0.7", in.FlowControl.UniformCeiling)
+	}
+	// Renamed and unreferenced, the policy is not the default and has no effect.
+	renamed := strings.Replace(fc, "- type: static-usage-limit-policy\n", "- type: static-usage-limit-policy\n  name: other\n", 1)
+	if in, err = ParseEndpointPickerConfig([]byte(renamed), 64, EPPVersionMain); err != nil || in.FlowControl.UniformCeiling != 1.0 {
+		t.Errorf("unreferenced policy: %v %v", err, in.FlowControl)
 	}
 }

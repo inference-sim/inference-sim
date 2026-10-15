@@ -156,6 +156,9 @@ type DeploymentConfig struct {
 	// FlowControlBands configures individual priority bands (llm-d
 	// flowControl.priorityBands): caps and fairness ("global-strict"/"round-robin").
 	FlowControlBands []sim.EPPPriorityBand `yaml:"-"`
+	// FlowControlUniformCeiling, when > 0, is one saturation ceiling for every band
+	// (llm-d static-usage-limit-policy threshold).
+	FlowControlUniformCeiling float64 `yaml:"-"`
 	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
 }
 
@@ -199,6 +202,9 @@ func (d *DeploymentConfig) ApplyEPPIngest(in *sim.EPPIngest) {
 	d.RoutingPolicy = "weighted"
 	d.RoutingScorerConfigs = in.Scorers
 	d.RoutingPipeline = in.Pipeline
+	if in.MetricsRefreshIntervalUs > 0 {
+		d.SnapshotRefreshInterval = in.MetricsRefreshIntervalUs // metrics-data-source interval
+	}
 	if in.Disaggregated {
 		d.PrefillScorerConfigs = in.PrefillScorers
 		d.DecodeScorerConfigs = in.DecodeScorers
@@ -222,6 +228,7 @@ func (d *DeploymentConfig) ApplyEPPIngest(in *sim.EPPIngest) {
 		d.FlowControlPerBandMaxBytes = fc.PerBandMaxBytes
 		d.FlowControlBands = fc.Bands
 		d.FlowControlRequestTTL = fc.RequestTTLUs
+		d.FlowControlUniformCeiling = fc.UniformCeiling
 		d.FlowControlDispatchOrder = "fifo"
 		d.FlowControlFairnessPolicy = "global-strict"
 	}

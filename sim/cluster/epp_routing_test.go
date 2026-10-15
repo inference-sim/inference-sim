@@ -160,6 +160,48 @@ schedulingProfiles:
 	}
 }
 
+// A P/D request whose prefill sub-request times out ends there; its decode and
+// prefill charges are released (llm-d frees every entry on stream end), so the
+// ledger drains and every request is accounted for (INV-1).
+func TestEPP_PD_PrefillTimeoutDrainsLedger(t *testing.T) {
+	const cfgYAML = `apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+plugins:
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters: {deciders: {prefill: always-disagg-pd-decider}}
+- type: prefill-filter
+- type: decode-filter
+- type: inflight-load-producer
+  parameters: {addEstimatedOutputTokens: true}
+- type: token-load-scorer
+schedulingProfiles:
+- name: prefill
+  plugins: [{pluginRef: prefill-filter}, {pluginRef: token-load-scorer}]
+- name: decode
+  plugins: [{pluginRef: decode-filter}, {pluginRef: token-load-scorer}]
+`
+	in, err := sim.ParseEndpointPickerConfig([]byte(cfgYAML), 64, sim.EPPVersionMain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := newTestDisaggDeploymentConfig(4, 2, 2)
+	base.BlockSizeTokens = 64
+	base.ApplyEPPIngest(in)
+	reqs := newTestRequests(60)
+	for _, r := range reqs {
+		r.Deadline = r.ArrivalTime + 1 // every prefill times out before it can finish
+	}
+	cs := NewClusterSimulator(base, NewSliceRequestSource(reqs), nil)
+	mustRun(t, cs)
+	assertClusterINV1Conservation(t, cs, len(reqs), cs.RejectedRequests(), "prefill timeouts")
+	for _, inst := range cs.instances {
+		if got := cs.inFlightLoadTrackers[0].Tokens(string(inst.ID())); got != 0 {
+			t.Errorf("%d tokens left on %s", got, inst.ID())
+		}
+	}
+}
+
 type peakTokensHook struct {
 	cs   *ClusterSimulator
 	peak int64
@@ -221,5 +263,61 @@ func TestEPP_FlagScorersBuildDefaultPipeline(t *testing.T) {
 		if got := cs.inFlightLoadTrackers[0].Tokens(string(inst.ID())); got != 0 {
 			t.Errorf("%d tokens left on %s", got, inst.ID())
 		}
+	}
+}
+
+// v0.10.0's concurrency guard does not fail open: with no flow-control gate and a
+// tiny maxConcurrency, saturated endpoints are filtered out and requests are
+// rejected at routing, as llm-d fails them. Every request is still accounted for
+// (INV-1), the in-flight ledger drains, and each rejection is reported to the
+// session driver (recordUnserved). main fails open and rejects nothing.
+func TestEPP_ConcurrencyGuardRejections(t *testing.T) {
+	const cfgYAML = `apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+plugins:
+- type: concurrency-detector
+  parameters: {maxConcurrency: 1}
+- type: inflight-load-producer
+- type: token-load-scorer
+schedulingProfiles:
+- name: default
+  plugins: [{pluginRef: concurrency-detector}, {pluginRef: token-load-scorer}]
+`
+	for _, tc := range []struct {
+		v         sim.EPPVersion
+		rejecting bool
+	}{{sim.EPPVersionV0_10_0, true}, {sim.EPPVersionMain, false}} {
+		t.Run(string(tc.v), func(t *testing.T) {
+			in, err := sim.ParseEndpointPickerConfig([]byte(cfgYAML), 16, tc.v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := newTestDeploymentConfig(2)
+			cfg.ApplyEPPIngest(in)
+			reqs := newTestRequests(120)
+			for i, r := range reqs {
+				r.ArrivalTime = int64(i) // a burst: far more arrivals than 2 × maxConcurrency
+			}
+			unserved := 0
+			cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), func(r *sim.Request, _ int64) []*sim.Request {
+				if r.State != sim.StateCompleted {
+					unserved++
+				}
+				return nil
+			})
+			mustRun(t, cs)
+			assertClusterINV1Conservation(t, cs, len(reqs), cs.RejectedRequests(), string(tc.v))
+			if got := cs.RoutingRejections() > 0; got != tc.rejecting {
+				t.Errorf("routing rejections %d, rejecting=%v", cs.RoutingRejections(), tc.rejecting)
+			}
+			if tc.rejecting && unserved < cs.RoutingRejections() {
+				t.Errorf("session driver told of %d unserved requests, %d rejected", unserved, cs.RoutingRejections())
+			}
+			for _, inst := range cs.instances {
+				if got := cs.inFlightLoadTrackers[0].Tokens(string(inst.ID())); got != 0 {
+					t.Errorf("%d tokens left on %s", got, inst.ID())
+				}
+			}
+		})
 	}
 }

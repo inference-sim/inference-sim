@@ -26,6 +26,9 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] prefill req %s: no routable instances in prefill pool — request rejected at routing", e.request.ID)
+		if cs.routingPipeline != nil {
+			cs.routingPipeline.Discard(e.parentReq.ID)
+		}
 		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.routingRejections++
 		return
@@ -42,9 +45,11 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		// (disagg_profile_handler.go:536-540 at 981acb8a). The v0.10.0 decode-only
 		// fallback is refused at --epp-config load time.
 		logrus.Debugf("[cluster] prefill req %s: rejected at routing (%s)", e.request.ID, decision.Reason)
-		cs.releaseInFlightGroup(e.parentReq.ID)
-		cs.routingRejections++
+		cs.eppRejected(e.parentReq.OriginalRequest)
 		return
+	}
+	if cs.routingPipeline != nil {
+		cs.routingPipeline.Commit(e.parentReq.ID) // decode and prefill picked: PreRequest
 	}
 
 	logrus.Debugf("[cluster] prefill req %s → instance %s", e.request.ID, decision.TargetInstance)

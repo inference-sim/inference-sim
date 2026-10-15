@@ -14,6 +14,7 @@ import (
 var (
 	eppConfigPath string
 	eppVersionArg string
+	eppCPUTierArg string
 	eppIngest     *sim.EPPIngest // nil unless --epp-config is set
 )
 
@@ -31,6 +32,7 @@ var eppConflictingFlags = []string{
 
 func registerEPPConfigFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&eppConfigPath, "epp-config", "", "llm-d EndpointPickerConfig YAML, ingested verbatim: plugins, schedulingProfiles (single or disagg-profile-handler P/D) and flowControl replace --routing-policy/--routing-scorers, the P/D routing flags and the flow-control flags. Unsupported scheduling plugins are refused by name; infrastructure-only plugins are accepted as inert.")
+	cmd.Flags().StringVar(&eppCPUTierArg, "epp-cpu-tier-view", "", "BLIS opt-in (deviation from llm-d): name an approx-prefix-cache-producer of --epp-config that reports each instance's CPU-offload-tier-resident prefix instead of llm-d's router-side LRU estimate (#1912). Recorded in the epp block's deviations.")
 	cmd.Flags().StringVar(&eppVersionArg, "epp-version", string(sim.EPPVersionMain), "llm-d-router release whose plugin semantics --epp-config follows: "+string(sim.EPPVersionMain)+" (latest main; alias main) or "+string(sim.EPPVersionV0_10_0)+" (the EPP image curvebender deploys). See docs/guide/routing.md for the deltas.")
 }
 
@@ -58,7 +60,11 @@ func applyEPPConfig(cmd *cobra.Command, bundle *sim.PolicyBundle) {
 	if err != nil {
 		logrus.Fatalf("--epp-version: %v", err)
 	}
-	ingest, err := sim.LoadEndpointPickerConfig(eppConfigPath, int(blockSizeTokens), version)
+	var opts []sim.EPPOption
+	if eppCPUTierArg != "" {
+		opts = append(opts, sim.WithCPUTierView(eppCPUTierArg))
+	}
+	ingest, err := sim.LoadEndpointPickerConfig(eppConfigPath, int(blockSizeTokens), version, opts...)
 	if err != nil {
 		logrus.Fatalf("--epp-config %s (llm-d %s): %v", eppConfigPath, version, err)
 	}
@@ -70,6 +76,12 @@ func applyEPPConfig(cmd *cobra.Command, bundle *sim.PolicyBundle) {
 		logrus.Fatalf("--epp-config %s uses a disagg-profile-handler but the scenario defines no prefill/decode pools", eppConfigPath)
 	case !ingest.Disaggregated && pools:
 		logrus.Fatalf("--epp-config %s is a single-profile config but the scenario defines prefill/decode pools; use a disagg-profile-handler config", eppConfigPath)
+	}
+	if iv := ingest.MetricsRefreshIntervalUs; iv > 0 {
+		if f := cmd.Flags().Lookup("snapshot-refresh-interval"); f != nil && f.Changed && snapshotRefreshInterval != iv {
+			logrus.Fatalf("--snapshot-refresh-interval %d conflicts with the config's metrics-data-source interval (%dµs)", snapshotRefreshInterval, iv)
+		}
+		snapshotRefreshInterval = iv
 	}
 	eppIngest = ingest
 	routingPolicy = "weighted"

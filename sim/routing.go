@@ -204,6 +204,9 @@ type WeightedScoring struct {
 	filters   []filterFunc
 	pipeline  *RoutingPipeline // nil without an EPP pipeline
 	clock     int64            // RouterState.Clock of the decision in progress
+	// decisions take a routing-time verdict and return a PreRequest action
+	// (producer-bound no-hit-lru); only with a pipeline.
+	decisions []func(req *Request, target string) func()
 }
 
 // Pipeline returns the policy's llm-d data layer (nil without one).
@@ -222,7 +225,7 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	}
 	ws.clock = state.Clock
 	if ws.pipeline != nil {
-		ws.pipeline.begin(req, snapshots, state.Clock)
+		ws.pipeline.ensureCycle(req, snapshots, state.Clock)
 	}
 	for _, filter := range ws.filters {
 		snapshots = filter(req, snapshots)
@@ -422,9 +425,9 @@ func newWeightedScoring(scorerConfigs []ScorerConfig, filterCfgs []FilterConfig,
 		case cfg.Name == "token-load":
 			scorer = newTokenLoadScorer(cfg.Params, p)
 		case cfg.Name == "no-hit-lru" && cfg.Params.ProducerBound:
-			var rec func(*Request, string, int64)
-			scorer, rec = newProducerNoHitLRUScorer(cfg.Params, p)
-			obs = func(req *Request, target string) { rec(req, target, ws.clock) }
+			var decide func(*Request, string) func()
+			scorer, decide = newProducerNoHitLRUScorer(cfg.Params, p)
+			ws.decisions = append(ws.decisions, decide)
 		default:
 			scorer, obs = newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
 		}
@@ -434,7 +437,27 @@ func newWeightedScoring(scorerConfigs []ScorerConfig, filterCfgs []FilterConfig,
 		}
 	}
 	if p != nil {
-		ws.observers = append(ws.observers, func(req *Request, target string) { p.recordRouted(req, target, ws.clock) })
+		// Every routing-history update is llm-d PreRequest work: run it through the
+		// pipeline so P/D defers it until the request is fully scheduled.
+		observers, decisions := ws.observers, ws.decisions
+		ws.observers = []observerFunc{func(req *Request, target string) {
+			clock := ws.clock
+			var actions []func()
+			for _, d := range decisions {
+				if a := d(req, target); a != nil {
+					actions = append(actions, a)
+				}
+			}
+			p.preRequest(req, func() {
+				for _, obs := range observers {
+					obs(req, target)
+				}
+				for _, a := range actions {
+					a()
+				}
+				p.recordRouted(req, target, clock)
+			})
+		}}
 	}
 	ws.weights = normalizeScorerWeights(scorerConfigs)
 	return ws

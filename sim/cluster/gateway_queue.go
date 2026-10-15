@@ -154,6 +154,7 @@ type GatewayQueue struct {
 	requestIndex         map[string]requestLocation // request ID → flow coordinates for TTL removal
 	sheddingEnabled      bool                       // BLIS-extra: cross-band shedding on enqueue (not in llm-d). Requires --queue-shedding.
 	bandLimits           map[int]bandLimit          // per-priority overrides of the band caps and fairness (llm-d priorityBands)
+	uniformCeiling       float64                    // >0: one saturation ceiling for every band (llm-d static-usage-limit-policy)
 	maxBytes             int64                      // 0 = unlimited (global estimated request bytes)
 	maxBandBytes         int64                      // 0 = unlimited (per-band estimated request bytes)
 	totalBytes           int64
@@ -194,6 +195,17 @@ func (q *GatewayQueue) bandCaps(priority int) (int, int64) {
 		return l.maxRequests, l.maxBytes
 	}
 	return q.maxBandCapacity, q.maxBandBytes
+}
+
+// SetUniformCeiling gives every priority band the same saturation ceiling t
+// (llm-d static-usage-limit-policy: pkg/epp/framework/plugins/flowcontrol/
+// usagelimits/usagelimitpolicy.go:35-66), replacing the rank interpolation of
+// SetUsageLimitThreshold. Panics unless 0 < t <= 1 (R3).
+func (q *GatewayQueue) SetUniformCeiling(t float64) {
+	if !(t > 0 && t <= 1) {
+		panic(fmt.Sprintf("GatewayQueue.SetUniformCeiling: ceiling must be in (0, 1], got %v", t))
+	}
+	q.uniformCeiling = t
 }
 
 // SetByteCapacity bounds the queue's estimated request bytes globally and per band
@@ -521,7 +533,10 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		// Position 0 (highest) = 1.0, position N-1 (lowest) = usageLimitThreshold.
 		// Single band always gets ceiling 1.0.
 		ceiling := 1.0
-		if numBands > 1 {
+		switch {
+		case q.uniformCeiling > 0:
+			ceiling = q.uniformCeiling
+		case numBands > 1:
 			ceiling = 1.0 - float64(i)*(1.0-q.usageLimitThreshold)/float64(numBands-1)
 		}
 

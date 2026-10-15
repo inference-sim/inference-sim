@@ -49,7 +49,11 @@ type EPPIngest struct {
 	// FlowControl is nil when the flowControl feature gate is off (llm-d then
 	// runs no flow controller).
 	FlowControl *EPPFlowControl
-	Provenance  EPPProvenance
+	// MetricsRefreshIntervalUs is metrics-data-source's interval rounded to the EPP
+	// base tick; 0 when not configured (llm-d then scrapes every 50ms tick, BLIS's
+	// default --snapshot-refresh-interval).
+	MetricsRefreshIntervalUs int64
+	Provenance               EPPProvenance
 }
 
 // EPPFlowControl is the flowControl block mapped onto BLIS's gateway queue.
@@ -61,6 +65,10 @@ type EPPFlowControl struct {
 	PerBandMaxBytes    int64
 	Bands              []EPPPriorityBand
 	RequestTTLUs       int64 // defaultRequestTTL (controller/config.go, default 60s; 0 disables)
+	// UniformCeiling is static-usage-limit-policy's threshold: one saturation ceiling
+	// for every band (main:…/flowcontrol/usagelimits/usagelimitpolicy.go:35-66);
+	// 1.0 = no gating below saturation 1.
+	UniformCeiling float64
 }
 
 // EPPPriorityBand is one flowControl.priorityBands entry.
@@ -83,6 +91,9 @@ type EPPProvenance struct {
 	FlowControl       *EPPFlowControlRecord `json:"flow_control,omitempty"`
 	Inert             []string              `json:"inert,omitempty"`
 	Notes             []string              `json:"notes,omitempty"`
+	// Deviations are BLIS options that change llm-d's behavior (opt-ins such as the
+	// CPU-tier view); empty for a run that follows the config as llm-d does.
+	Deviations []string `json:"deviations,omitempty"`
 }
 
 // EPPPluginRecord describes one plugin instance.
@@ -221,18 +232,38 @@ var eppSimpleScorers = map[string]string{
 // eppKnownFeatureGates are the gates llm-d registers (main:cmd/epp/runner/runner.go).
 var eppKnownFeatureGates = map[string]bool{"flowControl": true, "haPopulateNonLeaderDatastore": true}
 
+// EPPOption is a BLIS-side ingestion option. Options are BLIS deviations from the
+// verbatim config and are recorded in the epp block's deviations.
+type EPPOption func(*eppOptions)
+
+type eppOptions struct {
+	cpuTierView string
+}
+
+// WithCPUTierView makes the named approx-prefix-cache-producer report each
+// instance's CPU-offload-tier-resident prefix (the tier's actual contents, delayed
+// by --cache-signal-delay) instead of llm-d's router-side LRU estimate (#1912).
+// A BLIS opt-in: llm-d itself only has the LRU estimate.
+func WithCPUTierView(producer string) EPPOption {
+	return func(o *eppOptions) { o.cpuTierView = producer }
+}
+
 // LoadEndpointPickerConfig reads and ingests an EndpointPickerConfig file under
 // the given llm-d version. engineBlockSize is the engine's KV block size (scenario).
-func LoadEndpointPickerConfig(path string, engineBlockSize int, v EPPVersion) (*EPPIngest, error) {
+func LoadEndpointPickerConfig(path string, engineBlockSize int, v EPPVersion, opts ...EPPOption) (*EPPIngest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading EndpointPickerConfig: %w", err)
 	}
-	return ParseEndpointPickerConfig(data, engineBlockSize, v)
+	return ParseEndpointPickerConfig(data, engineBlockSize, v, opts...)
 }
 
 // ParseEndpointPickerConfig ingests EndpointPickerConfig bytes (YAML, comments allowed).
-func ParseEndpointPickerConfig(data []byte, engineBlockSize int, v EPPVersion) (*EPPIngest, error) {
+func ParseEndpointPickerConfig(data []byte, engineBlockSize int, v EPPVersion, opts ...EPPOption) (*EPPIngest, error) {
+	var o eppOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if v == "" {
 		v = EPPVersionMain
 	}
@@ -256,11 +287,13 @@ func ParseEndpointPickerConfig(data []byte, engineBlockSize int, v EPPVersion) (
 		scorers:         make(map[string]ScorerConfig),
 		roles:           make(map[string]string),
 		deciders:        make(map[string]*eppDecider),
+		staticThreshold: make(map[string]float64),
 		out: &EPPIngest{Version: v, Provenance: EPPProvenance{
 			ConfigSHA256:      hex.EncodeToString(sum[:]),
 			LLMDRouterVersion: string(v),
 		}},
 		pipeline: &RoutingPipelineConfig{Version: v},
+		opts:     o,
 	}
 	if err := b.build(); err != nil {
 		return nil, err
@@ -281,6 +314,9 @@ type eppBuilder struct {
 	roles           map[string]string
 	disagg          *eppDisaggParams
 	deciders        map[string]*eppDecider
+	opts            eppOptions
+	tokenProducer   bool
+	staticThreshold map[string]float64
 }
 
 type eppDisaggParams struct {
@@ -365,6 +401,15 @@ func (b *eppBuilder) build() error {
 		}
 		b.roles[p.Name] = role
 		b.record(EPPPluginRecord{Type: p.Type, Name: p.Name, Role: role, BLIS: blis})
+	}
+
+	if n := b.opts.cpuTierView; n != "" {
+		if p, ok := b.byName[n]; !ok || p.Type != LLMDApproxPrefixProducer {
+			return fmt.Errorf("--epp-cpu-tier-view %q names no approx-prefix-cache-producer in the config", n)
+		}
+	}
+	if !b.tokenProducer {
+		b.note("no token-producer: llm-d's default estimate backend hashes byte-packed pseudo-tokens; BLIS uses the request's token IDs (token counts and block boundaries approximate llm-d's)")
 	}
 
 	var handlers []string
@@ -569,11 +614,21 @@ func (b *eppBuilder) resolveFlowControl(gate bool, resolved *RoutingPipelineConf
 	if fc.DefaultNegativePriorityBand != nil {
 		return fmt.Errorf("flowControl: defaultNegativePriorityBand is not supported by the simulator's EPP ingestion")
 	}
-	if fc.UsageLimitPolicyPluginRef != "" {
-		p, ok := b.byName[fc.UsageLimitPolicyPluginRef]
+	// The usage-limit policy in force: usageLimitPolicyPluginRef, else the plugin
+	// named static-usage-limit-policy (DefaultUsageLimitPolicyRef,
+	// pkg/epp/flowcontrol/registry/config.go), else the 1.0 default.
+	ceiling := 1.0
+	ref0 := fc.UsageLimitPolicyPluginRef
+	if ref0 != "" {
+		p, ok := b.byName[ref0]
 		if !ok || p.Type != "static-usage-limit-policy" {
-			return fmt.Errorf("flowControl: usageLimitPolicyPluginRef %q is not supported (only static-usage-limit-policy)", fc.UsageLimitPolicyPluginRef)
+			return fmt.Errorf("flowControl: usageLimitPolicyPluginRef %q is not supported (only static-usage-limit-policy)", ref0)
 		}
+	} else if p, ok := b.byName["static-usage-limit-policy"]; ok && p.Type == "static-usage-limit-policy" {
+		ref0 = p.Name
+	}
+	if t, ok := b.staticThreshold[ref0]; ok {
+		ceiling = t
 	}
 	if fc.EnableEviction {
 		return fmt.Errorf("flowControl: enableEviction true is not supported by the simulator (llm-d's in-flight evictor is not modeled)")
@@ -693,6 +748,7 @@ func (b *eppBuilder) resolveFlowControl(gate bool, resolved *RoutingPipelineConf
 		PerBandMaxBytes:    bandBytes,
 		Bands:              bands,
 		RequestTTLUs:       ttl.Microseconds(),
+		UniformCeiling:     ceiling,
 	}
 	b.out.Provenance.FlowControl = &EPPFlowControlRecord{
 		SaturationDetector: ref,
@@ -728,6 +784,9 @@ func parseTTL(s *string, def time.Duration, field string) (time.Duration, error)
 // ingestPlugin maps one plugin and returns its role and the BLIS implementation.
 func (b *eppBuilder) ingestPlugin(p *eppPluginSpec) (string, string, error) {
 	if why, ok := eppInertTypes[p.Type]; ok {
+		if err := b.checkInertParams(p); err != nil {
+			return "", "", err
+		}
 		b.inert(fmt.Sprintf("%s %q (%s)", p.Type, p.Name, why))
 		return "inert", "inert: " + why, nil
 	}
@@ -873,6 +932,86 @@ func (b *eppBuilder) ingestPlugin(p *eppPluginSpec) (string, string, error) {
 	return "", "", fmt.Errorf("plugin %q: type %q is not supported by the simulator", p.Name, p.Type)
 }
 
+// eppInertParams lists, per inert plugin type, the parameters with no simulation
+// meaning (endpoints, credentials, metric names, headers, rollout scoping). Any other
+// parameter is refused; parameters with simulation meaning are mapped in
+// checkInertParams.
+var eppInertParams = map[string][]string{
+	"token-producer":                    {"modelName", "vllm", "estimate"},
+	"tokenizer":                         {"modelName", "vllm", "estimate"},
+	"metrics-data-source":               {"scheme", "path", "port", "insecureSkipVerify", "caCertPath", "clientCertPath", "clientKeyPath", "families", "interval"},
+	"core-metrics-extractor":            {"engineConfigs", "defaultEngine", "engineLabelKey"},
+	"k8s-notification-source":           {"group", "version", "kind"},
+	"request-attribute-reporter":        {"attributes"},
+	"disaggregatedset-rollout-screener": {"scope", "revisionGating"},
+	"static-usage-limit-policy":         {"threshold"},
+}
+
+// checkInertParams refuses parameters outside the type's allowlist and maps the
+// ones that matter: metrics-data-source interval -> snapshot refresh interval,
+// static-usage-limit-policy threshold -> the uniform band ceiling, token-producer
+// backend -> a tokenization note.
+func (b *eppBuilder) checkInertParams(p *eppPluginSpec) error {
+	if isEmptyNode(p.Parameters) {
+		if p.Type == "token-producer" || p.Type == "tokenizer" {
+			b.tokenProducer = true
+			b.note("%q: no backend configured, llm-d's estimate backend hashes byte-packed pseudo-tokens; BLIS uses the request's token IDs", p.Name)
+		}
+		return nil
+	}
+	var raw map[string]json.RawMessage
+	if err := decodeParams(p, &raw); err != nil {
+		return err
+	}
+	allowed := map[string]bool{}
+	for _, k := range eppInertParams[p.Type] {
+		allowed[k] = true
+	}
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !allowed[k] {
+			return fmt.Errorf("plugin %q (%s): parameter %q is not supported by the simulator", p.Name, p.Type, k)
+		}
+	}
+	switch p.Type {
+	case "token-producer", "tokenizer":
+		b.tokenProducer = true
+		if _, ok := raw["vllm"]; !ok {
+			b.note("%q: estimate backend — llm-d hashes byte-packed pseudo-tokens; BLIS uses the request's token IDs", p.Name)
+		}
+	case "metrics-data-source":
+		if iv, ok := raw["interval"]; ok {
+			var str string
+			if err := json.Unmarshal(iv, &str); err != nil {
+				return fmt.Errorf("plugin %q: interval: %w", p.Name, err)
+			}
+			d, err := time.ParseDuration(str)
+			if err != nil || d < 0 {
+				return fmt.Errorf("plugin %q: invalid interval %q", p.Name, str)
+			}
+			// Rounded to a multiple of the EPP's --refresh-metrics-interval base tick
+			// (default 50ms; main:…/datalayer/source/metrics/datasource.go:66-70).
+			const tick = 50 * time.Millisecond
+			n := (d + tick/2) / tick
+			if n < 1 {
+				n = 1
+			}
+			b.out.MetricsRefreshIntervalUs = (n * tick).Microseconds()
+		}
+	case "static-usage-limit-policy":
+		var t float64
+		if err := json.Unmarshal(raw["threshold"], &t); err != nil || t <= 0 || t > 1 || math.IsNaN(t) {
+			return fmt.Errorf("plugin %q: threshold must be in (0, 1], got %s", p.Name, raw["threshold"])
+		}
+		b.staticThreshold[p.Name] = t
+	}
+	return nil
+}
+
 // parseStageOrder mirrors ParseStageOrder (main:…/disagg_profile_handler.go:69-78).
 func parseStageOrder(s string) (string, error) {
 	switch strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "-", ""), "_", "")) {
@@ -917,14 +1056,18 @@ func (b *eppBuilder) ingestApprox(p *eppPluginSpec) (string, string, error) {
 	if b.v == EPPVersionMain && cfg.MaxPrefixBlocksToMatch < 0 {
 		return "", "", fmt.Errorf("plugin %q: maxPrefixBlocksToMatch must be >= 0", p.Name)
 	}
-	// BLIS convention (#1912): the llm-d tiered-prefix-cache guide's CPU-tier
-	// producer name designates the CPU-offload-tier view.
-	cfg.CPUTier = p.Name == "cpu-prefix-cache-producer"
+	// llm-d models every approx producer — including a CPU-tier one such as the
+	// tiered guide's cpu-prefix-cache-producer — as a router-side LRU sized by
+	// lruCapacityPerServer or, under autoTune, the GPU block count (makeserver,
+	// main:…/approximateprefix/plugin.go:361-372). The live CPU-tier view is an
+	// explicit BLIS opt-in (WithCPUTierView), recorded as a deviation.
+	cfg.CPUTier = b.opts.cpuTierView != "" && p.Name == b.opts.cpuTierView
 	b.pipeline.Producers = append(b.pipeline.Producers, cfg)
 	blis := fmt.Sprintf("router-side approximate prefix index (block %d tokens)", resolveApproxBlockSize(cfg, b.engineBlockSize))
 	if cfg.CPUTier {
-		blis = "CPU-offload-tier prefix view when an offload tier exists, else " + blis
-		b.note("%q is read as the CPU-offload-tier view: with an offload tier it reports each instance's CPU-tier-resident prefix (#1912)", p.Name)
+		blis = "BLIS opt-in: CPU-offload-tier prefix view (with an offload tier), else " + blis
+		b.out.Provenance.Deviations = append(b.out.Provenance.Deviations,
+			fmt.Sprintf("%q reports each instance's CPU-offload-tier-resident prefix (--epp-cpu-tier-view) instead of llm-d's router-side LRU", p.Name))
 	}
 	return "producer", blis, nil
 }
