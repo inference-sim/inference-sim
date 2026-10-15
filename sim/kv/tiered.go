@@ -323,7 +323,17 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 				// New request: commit all reloaded blocks from block 0.
 				t.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+			if t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached) {
+				return true
+			}
+			// The tail did not fit. A request that stays queued must not keep the reloaded
+			// prefix it was committed: it would hold blocks no running request can free, and
+			// a pool that tight livelocks. Undo the commit; the reloaded blocks go back to the
+			// free list with their hashes, still a hit for the retry.
+			if !running {
+				t.gpu.ReleaseKVBlocks(req)
+			}
+			return false
 		}
 		// Reload produced no prefix hit beyond startIndex — allocate with the
 		// caller's original params (any space freed by the reload still helps).

@@ -454,7 +454,17 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 			} else {
 				o.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			return o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+			if o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached) {
+				return true
+			}
+			// The tail did not fit. A request that stays queued must not keep the reloaded
+			// prefix it was committed: it would hold blocks no running request can free, and
+			// a pool that tight livelocks. Undo the commit; the reloaded blocks go back to the
+			// free list with their hashes, still a hit for the retry.
+			if !running {
+				o.gpu.ReleaseKVBlocks(req)
+			}
+			return false
 		}
 		// Reload produced no prefix hit beyond startIndex; allocate as given.
 		return o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
