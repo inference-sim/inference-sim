@@ -131,7 +131,9 @@ Everything the router reads comes from the simulated engines, with real engine s
   order per engine, and ingests them synchronously (no ZMQ subscriber). The events carry the
   blocks' tokens as the router saw them, so the router's index holds, per pod, exactly the
   blocks the engine can serve from its cache. A terminated instance's blocks are cleared.
-  Speculative indexing (`speculativeIndexing`) expires its entries on simulated time.
+  Speculative indexing (`speculativeIndexing`) expires its entries on simulated time. Not yet
+  published: CPU-tier (`medium=cpu`) events of a KV-offload deployment; only the GPU prefix
+  cache's changes reach the router.
 - **Prompt rendering.** The `token-producer` plugin's vLLM backend calls a render endpoint; the
   simulated model server answers it with the request's token IDs.
 - **Responses.** The router sees the response headers when the engine accepts a streaming
