@@ -1,0 +1,63 @@
+# EXTRACTED VERBATIM by scripts/extract_router_profiles.py -- do not edit.
+# source: curvebender-tools@7e4bf4ffa45c091ae3b0870dd8af35536440ee3d:deployments/deepseek-v4.1-flash/roce-h100/router/router.yaml ConfigMap data[agentic-serving-gpu-cpu-plugins.yaml]
+# sha256(extracted text): 02d426d63ce4c4a9a4452b4b478eb5de5a24c1aaffbbfa97380326b2be3e042b
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+# GPU producer: unnamed on purpose, autoTune: true is the default - do not pin it.
+- type: approx-prefix-cache-producer
+  parameters:
+    autoTune: true
+# CPU-tier producer. TODO: pin lruCapacityPerServer once a replica is up.
+# lru = TIER_BYTES / (GPU_GIB / GPU_BLOCKS) - read values from engine log.
+# autoTune: true is a placeholder (it sizes from GPU blocks, approximate for CPU tier).
+- type: approx-prefix-cache-producer
+  name: cpu-prefix-cache-producer
+  parameters:
+    autoTune: true
+# Named to its own default (name == type) - do not rename, token-load-scorer resolves its
+# data key against the producer's default name.
+- type: inflight-load-producer
+  name: inflight-load-producer
+  parameters:
+    addEstimatedOutputTokens: false
+    prefixMatchInfoProducerName: approx-prefix-cache-producer
+# Hard-filters overloaded pods before the affinity filter runs. Also wired as flowControl's
+# saturationDetector below. concurrencyMode: requests, not hybrid - see the file header.
+- type: concurrency-detector
+  name: concurrency-guard
+  parameters:
+    concurrencyMode: requests
+    maxConcurrency: 256
+    headroom: 0                                       # routing cap = 256 * 1 = 256
+    inFlightLoadProducerName: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  name: gpu-prefix-cache-affinity-filter
+  parameters:
+    affinityThreshold: 0.5
+    explorationProbability: 0
+    inFlightLoadProducerName: inflight-load-producer
+    maxTTFTPenaltyMs: 4500
+    peakPrefillThroughput: 15000
+    prefixMatchInfoProducerName: approx-prefix-cache-producer
+- type: token-load-scorer
+- type: prefix-cache-scorer
+  name: cpu-prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: cpu-prefix-cache-producer
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: concurrency-guard              # order matters: shed hot pods first
+  - pluginRef: gpu-prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+  - pluginRef: cpu-prefix-cache-scorer
+flowControl:
+  saturationDetector:
+    pluginRef: concurrency-guard
+  enableEviction: false
+  defaultRequestTTL: 300s
+  maxRequests: 4096
+  maxBytes: 4Gi

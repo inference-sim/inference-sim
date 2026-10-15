@@ -333,6 +333,25 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
 	return len(i.sim.KVCache.GetCachedBlocks(tokens))
 }
 
+// cpuTierPrefixFn returns a CPU-offload-tier prefix query (contiguous leading
+// blocks readable in the CPU tier), or nil when the instance has no offload tier.
+// With asOf non-nil the tier is read as of time asOf() (the frozen cache-signal
+// view), otherwise live.
+func (i *InstanceSimulator) cpuTierPrefixFn(asOf func() int64) func([]sim.TokenID) int {
+	if i.sim == nil {
+		return nil
+	}
+	oc, ok := i.sim.KVCache.(*kv.OffloadCache)
+	if !ok {
+		return nil
+	}
+	if asOf == nil {
+		return oc.CPUTierPrefixBlockCount
+	}
+	oc.EnableCPUTierHistory()
+	return func(tokens []sim.TokenID) int { return oc.CPUTierPrefixBlockCountAt(tokens, asOf()) }
+}
+
 // cacheSnapshotCapable is satisfied by KVStore implementations that can produce
 // a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
 // Used for stale cache signal simulation (issue #919).

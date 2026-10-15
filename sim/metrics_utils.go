@@ -161,6 +161,10 @@ type MetricsOutput struct {
 	// states -- so a results file always says when it does not reproduce its scenario.
 	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
 	// scenario exactly.
+	// EPP is the ingested llm-d EndpointPickerConfig (--epp-config, #1930); file-only
+	// via WithEPPProvenance, absent otherwise.
+	EPP *EPPProvenance `json:"epp,omitempty"`
+
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
 
 	// Agentic is an agentic replay's own counts (#1937; workload.AgentXSummary, held as

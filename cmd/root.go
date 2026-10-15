@@ -895,6 +895,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
+	// --epp-config (#1930) sets routing and flow control before they are validated.
+	applyEPPConfig(cmd, loadedBundle)
+
 	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
 	if gaieQDThreshold == 0 {
 		gaieQDThreshold = 5
@@ -1053,7 +1056,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	// Parse scorer configuration for weighted routing
 	var parsedScorerConfigs []sim.ScorerConfig
 	if routingPolicy == "weighted" {
-		if routingScorers != "" {
+		if eppIngest != nil {
+			parsedScorerConfigs = eppIngest.Scorers
+		} else if routingScorers != "" {
 			var err error
 			parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
 			if err != nil {
@@ -1148,6 +1153,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
+	registerEPPConfigFlag(cmd)
 
 	// Fitness evaluation config (PR9)
 	cmd.Flags().StringVar(&fitnessWeights, "fitness-weights", "", "Fitness weights as key:value pairs (e.g., throughput:0.5,p99_ttft:0.3)")
@@ -2014,6 +2020,9 @@ var runCmd = &cobra.Command{
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
 			InstanceLifecycle:               bundleInstanceLifecycle,
+		}
+		if eppIngest != nil {
+			config.ApplyEPPIngest(eppIngest) // --epp-config (#1930): one mapping for run and replay (INV-13)
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.

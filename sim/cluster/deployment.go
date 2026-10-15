@@ -49,6 +49,10 @@ type DeploymentConfig struct {
 	// Routing policy configuration (PR6, evolved in PR17)
 	RoutingPolicy        string             // "round-robin" (default), "least-loaded", "weighted", "always-busiest"
 	RoutingScorerConfigs []sim.ScorerConfig // for weighted routing scorer pipeline (nil = use defaults)
+	// RoutingPipeline is llm-d's data layer and filter stage for weighted routing
+	// (producers, inflight-load-producers, filters), from --epp-config. Nil keeps
+	// the scorer-only pipeline (INV-6).
+	RoutingPipeline *sim.RoutingPipelineConfig `yaml:"-"`
 
 	// Decision trace configuration (PR13)
 	TraceLevel      string // "none" (default), "decisions"
@@ -92,6 +96,9 @@ type DeploymentConfig struct {
 	SharedInstances   int
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
+	// PDPrefixBased, when non-nil, selects llm-d's prefix-based-pd-decider on the EPP
+	// data layer (requires RoutingPipeline); it overrides PDDecider.
+	PDPrefixBased *sim.LLMDPrefixPDDeciderConfig `yaml:"-"`
 
 	// E/P/D disaggregation configuration (GAP-4, issue #1264).
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
@@ -187,6 +194,20 @@ type DeploymentConfig struct {
 	FlowControlRequestTTL           int64   `yaml:"flow_control_request_ttl,omitempty"`             // microseconds; 0 = disabled (default). GIE parity: DefaultRequestTTL.
 	FlowControlQueueShedding        bool    `yaml:"flow_control_queue_shedding,omitempty"`          // BLIS-extra: cross-band shedding on full queue (not in llm-d). Default false.
 	FlowControlDispatchTickInterval int64   `yaml:"flow_control_dispatch_tick_interval,omitempty"`  // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity). 0 = use default.
+	// FlowControlConcurrency, when non-nil, replaces FlowControlMaxConcurrency with
+	// the full llm-d concurrency-detector parameter set (--epp-config).
+	FlowControlConcurrency *sim.ConcurrencyDetectorConfig `yaml:"-"`
+	// FlowControlMaxBytes / FlowControlPerBandMaxBytes bound the gateway queue's
+	// estimated request bytes (llm-d flowControl maxBytes and the per-band default,
+	// registry/config.go:44). 0 = unlimited.
+	FlowControlMaxBytes        int64 `yaml:"-"`
+	FlowControlPerBandMaxBytes int64 `yaml:"-"`
+	// FlowControlBands configures individual priority bands (llm-d
+	// flowControl.priorityBands): caps and fairness ("global-strict"/"round-robin").
+	FlowControlBands []sim.EPPPriorityBand `yaml:"-"`
+	// FlowControlUniformCeiling, when > 0, is one saturation ceiling for every band
+	// (llm-d static-usage-limit-policy threshold).
+	FlowControlUniformCeiling float64 `yaml:"-"`
 	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
 }
 
@@ -220,5 +241,44 @@ func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
 		return d.SimConfig
 	default:
 		return d.SimConfig
+	}
+}
+
+// ApplyEPPIngest maps an ingested llm-d EndpointPickerConfig (--epp-config, #1930)
+// onto the deployment: weighted routing over the EPP data layer, the P/D profiles
+// and decider, and flow control. The single mapping point for run and replay.
+func (d *DeploymentConfig) ApplyEPPIngest(in *sim.EPPIngest) {
+	d.RoutingPolicy = "weighted"
+	d.RoutingScorerConfigs = in.Scorers
+	d.RoutingPipeline = in.Pipeline
+	if in.MetricsRefreshIntervalUs > 0 {
+		d.SnapshotRefreshInterval = in.MetricsRefreshIntervalUs // metrics-data-source interval
+	}
+	if in.Disaggregated {
+		d.PrefillScorerConfigs = in.PrefillScorers
+		d.DecodeScorerConfigs = in.DecodeScorers
+		d.PDPrefixBased = in.PDPrefixBased
+		switch in.PDDecider {
+		case "always", "never":
+			d.PDDecider = in.PDDecider
+		default:
+			d.PDDecider = "never" // PDPrefixBased supersedes it
+		}
+	}
+	if fc := in.FlowControl; fc != nil {
+		det := fc.Detector
+		d.FlowControlEnabled = true
+		d.FlowControlDetector = "concurrency"
+		d.FlowControlConcurrency = &det
+		d.FlowControlMaxConcurrency = int(det.MaxConcurrency)
+		d.FlowControlMaxQueueDepth = fc.MaxRequests
+		d.FlowControlPerBandCapacity = fc.PerBandMaxRequests
+		d.FlowControlMaxBytes = fc.MaxBytes
+		d.FlowControlPerBandMaxBytes = fc.PerBandMaxBytes
+		d.FlowControlBands = fc.Bands
+		d.FlowControlRequestTTL = fc.RequestTTLUs
+		d.FlowControlUniformCeiling = fc.UniformCeiling
+		d.FlowControlDispatchOrder = "fifo"
+		d.FlowControlFairnessPolicy = "global-strict"
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 	"github.com/inference-sim/inference-sim/sim/kvtransfer"
@@ -707,4 +708,62 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 		}
 		o.inflight[id] = jobRef{keys: []kvkey.BlockKey{key}, tier: tier, dir: kvtransfer.Write}
 	}
+}
+
+// EnableCPUTierHistory starts journaling CPU-tier readability so
+// CPUTierPrefixBlockCountAt can answer for an earlier time. Blocks already readable
+// count as readable since the start.
+func (o *OffloadCache) EnableCPUTierHistory() {
+	if o.cpu.journal != nil {
+		return
+	}
+	j := &cpuReadabilityJournal{now: func() int64 { return o.clock }, readableAt: map[kvkey.BlockKey]int64{}, gone: map[kvkey.BlockKey][2]int64{}}
+	for k, blk := range o.cpu.blocks {
+		if blk.refCnt >= 0 {
+			j.readableAt[k] = math.MinInt64
+		}
+	}
+	o.cpu.journal = j
+}
+
+// CPUTierPrefixBlockCountAt is CPUTierPrefixBlockCount as of time at (<= the
+// current clock), from the readability journal; it also forgets history before at.
+// Panics unless EnableCPUTierHistory was called (R3).
+func (o *OffloadCache) CPUTierPrefixBlockCountAt(tokens []sim.TokenID, at int64) int {
+	j := o.cpu.journal
+	if j == nil {
+		panic("OffloadCache.CPUTierPrefixBlockCountAt: EnableCPUTierHistory not called")
+	}
+	j.prune(at)
+	bs := int(o.gpu.BlockSize())
+	n := len(tokens) / bs
+	prev := ""
+	count := 0
+	for i := 0; i < n; i++ {
+		prev = hash.HashBlock(prev, tokens[i*bs:(i+1)*bs])
+		if !j.readableAtTime(kvkey.BlockKey(prev), at) {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// CPUTierPrefixBlockCount returns the number of leading full blocks of tokens that
+// are readable in the CPU offload tier (cpuHit), stopping at the first block that
+// is not. A pure query: no tier state or recency changes. It is the CPU-tier
+// analogue of GetCachedBlocks for the router's CPU-tier prefix view (#1912).
+func (o *OffloadCache) CPUTierPrefixBlockCount(tokens []sim.TokenID) int {
+	bs := int(o.gpu.BlockSize())
+	n := len(tokens) / bs
+	prev := ""
+	count := 0
+	for i := 0; i < n; i++ {
+		prev = hash.HashBlock(prev, tokens[i*bs:(i+1)*bs])
+		if o.cpu.lookup(kvkey.BlockKey(prev)) != cpuHit {
+			break
+		}
+		count++
+	}
+	return count
 }

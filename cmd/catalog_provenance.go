@@ -123,12 +123,16 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 	if outputFilePath == "" {
 		return nil
 	}
-	return []sim.EmitOption{
+	opts := []sim.EmitOption{
 		sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot)),
 		sim.WithScenarioOverrides(scenarioOverrides),
 		sim.WithKernelProvenance(kernelProvenance(kernelOpened, kernelPDOpened)),
 		sim.WithBuildVersions(buildVersions()),
 	}
+	if p := eppProvenance(); p != nil {
+		opts = append(opts, sim.WithEPPProvenance(p)) // --epp-config (#1930)
+	}
+	return opts
 }
 
 // kernelProvenance is each opened pool's kernel evidence (#1942), keyed by pool role: the
