@@ -1,8 +1,8 @@
 package cluster
 
 import (
-	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -73,23 +73,94 @@ func TestDPReplica_IsOneEndpointWithAggregatedSignals(t *testing.T) {
 	}
 }
 
-// vLLM's internal balancer spreads simultaneous arrivals across the ranks (the front-end
-// bumps the chosen rank's waiting count between coordinator publishes), and every request
-// is served by a rank of the replica the router chose.
-func TestDPReplica_InternalBalancerSpreadsArrivals(t *testing.T) {
-	var reqs []*sim.Request
-	for i := 0; i < 8; i++ {
-		reqs = append(reqs, dpReq(fmt.Sprintf("r%d", i), 0, 32, 8))
+// vLLM's balancer is load-aware, not round-robin: with one rank still serving a long
+// request, later arrivals go to the other rank every time, though a rotating round-robin
+// would hand the busy rank its turn.
+func TestDPReplica_BalancerIsLoadAwareNotRoundRobin(t *testing.T) {
+	reqs := []*sim.Request{
+		dpReq("long", 0, 64, 4000), dpReq("short", 0, 64, 2),
+		dpReq("c", 1_000_000, 64, 2), dpReq("d", 2_000_000, 64, 2), dpReq("e", 3_000_000, 64, 2),
 	}
 	cs := runDP(t, 2, 2, reqs)
-	for k, inst := range cs.instances {
-		if got := inst.Metrics().CompletedRequests; got != 4 {
-			t.Errorf("rank %d served %d of 8 simultaneous requests, want 4", k, got)
+	if reqs[0].AssignedInstance != "instance_0" {
+		t.Fatalf("the first arrival went to %s, want rank 0", reqs[0].AssignedInstance)
+	}
+	if end := float64(reqs[0].ArrivalTime) + cs.AggregatedMetrics().RequestE2Es["long"]; end <= 3_000_000 {
+		t.Fatalf("the long request ended at %v, before the last probe; the test is vacuous", end)
+	}
+	for _, r := range reqs[1:] {
+		if r.AssignedInstance != "instance_1" {
+			t.Errorf("%s went to %s while rank 0 was busy; want the idle rank 1", r.ID, r.AssignedInstance)
 		}
 	}
-	for _, r := range reqs {
-		if r.AssignedInstance != "instance_0" && r.AssignedInstance != "instance_1" {
-			t.Errorf("%s assigned to %q, not a rank", r.ID, r.AssignedInstance)
+}
+
+// pickRank reads the coordinator's counts as published at the start of a 100 ms period,
+// bumping the chosen rank's waiting count between publishes; the next period's first
+// assignment re-samples the ranks. Waiting requests on a rank with KV usage above one half
+// are penalised, and the front-end's exact in-flight count floors a rank's load.
+func TestDPReplica_PickRankStalenessAndScore(t *testing.T) {
+	cfg := newTestDeploymentConfig(2)
+	cfg.DPLockstepRanks = 2
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	rep := cs.replicaOf["instance_0"]
+	pick := func(now int64) string { return string(cs.pickRank(rep, now).ID()) }
+
+	// A stale publish says rank 0 is queued; the live ranks are idle.
+	rep.epoch, rep.counts = 0, []dpRankCounts{{waiting: 3, kvUsage: 0.9}, {}}
+	if got := []string{pick(10_000), pick(20_000)}; got[0] != "instance_1" || got[1] != "instance_1" {
+		t.Errorf("within the published period the stale queue must steer both picks to rank 1, got %v", got)
+	}
+	// The next period re-samples (both idle) and the rotated scan starts at rank 0.
+	if got := pick(DPStatsIntervalUs + 1); got != "instance_0" {
+		t.Errorf("after the next publish the idle ranks tie and the scan starts at rank 0, got %s", got)
+	}
+
+	// The local bump: rank 0 starts lighter, takes the first request, and is then counted as
+	// waiting it, so the second goes to rank 1 though no publish has happened.
+	rep.epoch, rep.start = 3, 0
+	rep.counts = []dpRankCounts{{}, {waiting: 1}}
+	if got := []string{pick(3*DPStatsIntervalUs + 1), pick(3*DPStatsIntervalUs + 2)}; got[0] != "instance_0" || got[1] != "instance_1" {
+		t.Errorf("between publishes the chosen rank's waiting count must be bumped: got %v", got)
+	}
+
+	// KV pressure: 2 waiting at 95% usage (2 + 2*6*0.45 = 7.4) loses to 3 waiting at 0%.
+	rep.epoch, rep.start = 5, 0
+	rep.counts = []dpRankCounts{{waiting: 2, kvUsage: 0.95}, {waiting: 3}}
+	if got := pick(5*DPStatsIntervalUs + 1); got != "instance_1" {
+		t.Errorf("the KV-pressure penalty must steer away from rank 0, got %s", got)
+	}
+
+	// In-flight floor: published counts are empty, but rank 0 holds five unfinished requests.
+	rep.epoch, rep.start = 6, 0
+	rep.counts = []dpRankCounts{{}, {}}
+	cs.inFlightRequests["instance_0"] = 5
+	if got := pick(6*DPStatsIntervalUs + 1); got != "instance_1" {
+		t.Errorf("the in-flight floor must steer away from rank 0, got %s", got)
+	}
+}
+
+// The ranks a replica's requests land on do not change the outcome: two identical requests
+// arriving together get identical TTFTs whichever rank serves each, and reordering
+// same-tick arrivals (which swaps their ranks) leaves every request's latency unchanged.
+func TestDPLockstep_RankAssignmentIsOutcomeNeutral(t *testing.T) {
+	twins := runDP(t, 2, 2, []*sim.Request{dpReq("x", 0, 512, 16), dpReq("y", 0, 512, 16)})
+	m := twins.AggregatedMetrics()
+	if m.RequestTTFTs["x"] != m.RequestTTFTs["y"] || m.RequestE2Es["x"] != m.RequestE2Es["y"] {
+		t.Errorf("identical same-tick requests on two ranks: TTFT %v vs %v, E2E %v vs %v",
+			m.RequestTTFTs["x"], m.RequestTTFTs["y"], m.RequestE2Es["x"], m.RequestE2Es["y"])
+	}
+	ab := runDP(t, 2, 2, []*sim.Request{dpReq("a", 0, 64, 32), dpReq("b", 0, 3000, 8)})
+	ba := runDP(t, 2, 2, []*sim.Request{dpReq("b", 0, 3000, 8), dpReq("a", 0, 64, 32)})
+	if ab.instances[0].Metrics().CompletedRequests != 1 || ab.AggregatedMetrics().RequestE2Es["a"] == 0 {
+		t.Fatal("each rank must serve one request")
+	}
+	for _, f := range []func(*sim.Metrics) map[string]float64{
+		func(m *sim.Metrics) map[string]float64 { return m.RequestTTFTs },
+		func(m *sim.Metrics) map[string]float64 { return m.RequestE2Es },
+	} {
+		if x, y := f(ab.AggregatedMetrics()), f(ba.AggregatedMetrics()); !reflect.DeepEqual(x, y) {
+			t.Errorf("swapping the ranks changed per-request latency: %v vs %v", x, y)
 		}
 	}
 }
@@ -129,11 +200,70 @@ func TestDPLockstep_DeterministicAndConserving(t *testing.T) {
 	}
 }
 
-// Ranks of one replica share a clock: each step ends at the same instant on every rank, so
-// their last steps end together and the wave's trailing dummy steps keep them aligned.
-func TestDPLockstep_RanksEndTogether(t *testing.T) {
-	cs := runDP(t, 2, 2, []*sim.Request{dpReq("a", 0, 64, 4), dpReq("b", 0, 4096, 64)})
-	if a, b := cs.instances[0].Metrics().SimEndedTime, cs.instances[1].Metrics().SimEndedTime; a != b {
-		t.Errorf("ranks ended at %d and %d; a lockstep wave ends on every rank at once", a, b)
+// Trailing dummy steps are not work: a lockstep run ends at its last real event, exactly as
+// far past the last request's completion as an independent run does, rather than a wave's
+// dummy tail later.
+func TestDPLockstep_DummyTailDoesNotStretchTheRun(t *testing.T) {
+	gap := func(lockstep int) float64 {
+		reqs := []*sim.Request{dpReq("a", 0, 64, 4), dpReq("b", 0, 4096, 64)}
+		cs := runDP(t, 2, lockstep, reqs)
+		m := cs.AggregatedMetrics()
+		last := 0.0
+		for _, r := range reqs {
+			last = max(last, float64(r.ArrivalTime)+m.RequestE2Es[r.ID])
+		}
+		return float64(m.SimEndedTime) - last
+	}
+	if l, i := gap(2), gap(0); l != i {
+		t.Errorf("SimEndedTime overshoots the last completion by %v in lockstep, %v independently", l, i)
+	}
+}
+
+// A deployment a replica cannot be built from is refused when the run starts, naming why:
+// a rank whose startup placement was deferred, or a count that is not whole replicas.
+func TestDPReplica_UnbuildableDeploymentIsAnError(t *testing.T) {
+	short := newTestDeploymentConfig(4)
+	short.DPLockstepRanks = 2
+	short.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 4, 1, false, 0)
+	short.NodePools = []NodePoolConfig{{Name: "p", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80}}
+	ragged := newTestDeploymentConfig(3)
+	ragged.DPLockstepRanks = 2
+	for name, c := range map[string]struct {
+		cfg  DeploymentConfig
+		want string
+	}{"deferred rank": {short, "could not be placed"}, "ragged count": {ragged, "whole number"}} {
+		err := NewClusterSimulator(c.cfg, NewSliceRequestSource(nil), nil).Run()
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: Run() = %v, want an error mentioning %q", name, err, c.want)
+		}
+	}
+}
+
+// P/D pools step in lockstep too: every request is conserved, each prefill and decode
+// completion is detected (the decode sub-request's arrival wakes its idle group), and the
+// run is deterministic.
+func TestDPLockstep_PDPools(t *testing.T) {
+	run := func() *ClusterSimulator {
+		cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+		cfg.DPLockstepRanks = 2
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(steadyRequests()), nil)
+		mustRun(t, cs)
+		return cs
+	}
+	a, b := run(), run()
+	n := len(steadyRequests())
+	if got := a.AggregatedMetrics().CompletedRequests; got != n {
+		t.Errorf("completed %d of %d disaggregated requests", got, n)
+	}
+	if a.pdDecodeCompletedCount != n || a.pdPrefillCompletedCount != n {
+		t.Errorf("detected %d prefill and %d decode completions of %d", a.pdPrefillCompletedCount, a.pdDecodeCompletedCount, n)
+	}
+	for _, rep := range a.dpReplicas {
+		if served := rep.ranks[0].Metrics().CompletedRequests + rep.ranks[1].Metrics().CompletedRequests; served == 0 {
+			t.Errorf("replica %s served nothing", rep.id)
+		}
+	}
+	if !reflect.DeepEqual(clusterOutcome(a), clusterOutcome(b)) {
+		t.Error("two identical P/D lockstep runs differ")
 	}
 }

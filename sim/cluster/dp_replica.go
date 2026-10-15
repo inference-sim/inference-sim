@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -25,12 +26,12 @@ type dpReplica struct {
 	ranks []*InstanceSimulator
 	group *sim.LockstepGroup
 
-	// The front-end's internal DP load balancer: the vllm-dp scorer over the coordinator's
-	// last published per-rank counts (see pickRank).
-	balancer sim.RoutingPolicy
-	// counts is the coordinator's latest [waiting, running] per rank, which the front-end
-	// bumps locally on each assignment until the next publish overwrites it
-	// (vllm/v1/engine/core_client.py:1626-1628).
+	// vLLM's internal DP load balancer state (DPLBAsyncMPClient,
+	// vllm/v1/engine/core_client.py:1550-1640 at v0.31.0).
+	//
+	// counts is the coordinator's latest [waiting, running, kv_cache_usage] per rank, which
+	// the front-end bumps locally on each assignment until the next publish overwrites it
+	// (:1626-1628).
 	counts []dpRankCounts
 	// epoch is the DPStatsIntervalUs period counts was published in; -1 before the first.
 	epoch int64
@@ -40,39 +41,43 @@ type dpReplica struct {
 
 type dpRankCounts struct {
 	waiting, running int
+	kvUsage          float64
 }
 
 // buildDPReplicas groups each run of config.DPLockstepRanks consecutive instances into a
-// lockstep replica. A no-op when DPLockstepRanks <= 1.
-func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap map[InstanceID]*InstanceSimulator) {
+// lockstep replica. A no-op when DPLockstepRanks <= 1. A deployment it cannot group -- an
+// instance count that is not a whole number of replicas, the autoscaler, or a rank startup
+// placement deferred -- is reported as an error, which Run returns before simulating
+// anything, so the CLI refuses it naming the cause.
+func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap map[InstanceID]*InstanceSimulator) error {
 	dp := config.DPLockstepRanks
 	if dp <= 1 {
-		return
+		return nil
 	}
-	if config.NumInstances%dp != 0 {
-		panic(fmt.Sprintf("ClusterSimulator: NumInstances %d is not a multiple of the data-parallel width %d",
-			config.NumInstances, dp))
-	}
-	for _, n := range []int{config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.EncodeInstances} {
-		if n%dp != 0 {
-			panic(fmt.Sprintf("ClusterSimulator: pool instance count %d is not a multiple of the data-parallel width %d", n, dp))
+	for _, c := range []struct {
+		what string
+		n    int
+	}{{"instance", config.NumInstances}, {"prefill", config.PrefillInstances},
+		{"decode", config.DecodeInstances}, {"shared", config.SharedInstances}, {"encode", config.EncodeInstances}} {
+		if c.n%dp != 0 {
+			return fmt.Errorf("%d %s instance(s) is not a whole number of data-parallel replicas of %d ranks", c.n, c.what, dp)
 		}
 	}
 	if config.ModelAutoscalerIntervalUs > 0 {
-		panic("ClusterSimulator: data-parallel lockstep replicas cannot be autoscaled")
+		return fmt.Errorf("data-parallel replicas of %d ranks cannot be autoscaled", dp)
 	}
-	cs.replicaOf = make(map[string]*dpReplica, config.NumInstances)
+	replicaOf := make(map[string]*dpReplica, config.NumInstances)
+	var replicas []*dpReplica
 	for r := 0; r < config.NumInstances/dp; r++ {
-		rep := &dpReplica{epoch: -1, counts: make([]dpRankCounts, dp),
-			balancer: sim.NewRoutingPolicy("weighted", []sim.ScorerConfig{{Name: "vllm-dp", Weight: 1}},
-				config.BlockSizeTokens, nil)}
+		rep := &dpReplica{epoch: -1, counts: make([]dpRankCounts, dp)}
 		sims := make([]*sim.Simulator, 0, dp)
 		for k := 0; k < dp; k++ {
 			id := InstanceID(fmt.Sprintf("instance_%d", r*dp+k))
 			inst, ok := instanceMap[id]
 			if !ok {
-				panic(fmt.Sprintf("ClusterSimulator: data-parallel rank %s of replica %d was not placed at startup; "+
-					"a lockstep replica needs every rank", id, r))
+				return fmt.Errorf("data-parallel rank %s of replica %d could not be placed at startup, and a "+
+					"replica steps only with every rank; give the node pools room for %d instance(s) of TP %d",
+					id, r, config.NumInstances, max(config.TP, 1))
 			}
 			rep.ranks = append(rep.ranks, inst)
 			sims = append(sims, inst.sim)
@@ -80,14 +85,16 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		rep.id = string(rep.ranks[0].ID())
 		g, err := sim.NewLockstepGroup(sims)
 		if err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: replica %s: %v", rep.id, err))
+			return fmt.Errorf("replica %s: %w", rep.id, err)
 		}
 		rep.group = g
-		cs.dpReplicas = append(cs.dpReplicas, rep)
+		replicas = append(replicas, rep)
 		for _, inst := range rep.ranks {
-			cs.replicaOf[string(inst.ID())] = rep
+			replicaOf[string(inst.ID())] = rep
 		}
 	}
+	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
+	return nil
 }
 
 // eventMembers is the instances an event on inst can advance: the whole replica for a
@@ -183,43 +190,55 @@ func (cs *ClusterSimulator) endpointSnapshot(rep *dpReplica) sim.RoutingSnapshot
 // endpoint of rank index 0, so only rank 0's events reach the index. Ranks 1..dp-1 cache
 // prefixes the router never sees.
 
-// pickRank assigns a request that reached the replica's endpoint to a rank: vLLM's
-// internal DP load balancer (DPLBAsyncMPClient.get_core_engine_for_request,
-// vllm/v1/engine/core_client.py:1589-1640 at v0.31.0), priced by BLIS's vllm-dp scorer.
+// dpClientCount is the number of front-ends one balancer stands for. vLLM starts
+// api_server_count front-ends, dp by default under the internal balancer
+// (vllm/entrypoints/cli/serve.py:105-127), each scaling its own in-flight count by the
+// client count to estimate the total. BLIS models one front-end that sees every in-flight
+// request, which is the quantity that scaling estimates, so the count is 1.
+const dpClientCount = 1
+
+// pickRank assigns a request that reached the replica's endpoint to a rank, as vLLM
+// v0.31.0's internal DP load balancer does (DPLBAsyncMPClient.get_core_engine_for_request,
+// vllm/v1/engine/core_client.py:1589-1640):
 //
-// The balancer reads the coordinator's last published per-rank counts, which the
-// coordinator sends at most every DPStatsIntervalUs; BLIS samples the ranks at the first
-// assignment of each period. Between publishes the front-end bumps the chosen rank's
-// waiting count, and it rotates where its scan starts so ties do not always favour one
-// rank. The scorer keeps the first maximum, so presenting the ranks from the rotating start
-// is that scan.
+//	score = max(client_count x in_flight, waiting + running)
+//	        + waiting x 6 x max(0, kv_cache_usage - 0.5)      (only when waiting > 0)
 //
-// The vllm-dp scorer prices waiting x 4 + running. v0.31.0's balancer instead scores
-// max(client_count x in_flight, waiting + running), plus waiting x 6 x max(0, kv - 0.5)
-// when anything waits; the scorer, not this assignment path, owns that formula.
-func (cs *ClusterSimulator) pickRank(rep *dpReplica, req *sim.Request, now int64) *InstanceSimulator {
+// over the coordinator's last published [waiting, running, kv_cache_usage], scanning from a
+// rotating start and keeping the first minimum. The chosen rank's waiting count is bumped
+// by client_count until the next publish. in_flight is the front-end's exact count of its
+// unfinished requests on the rank (engine_inflight, :1569-1570, :1639, :1655-1660), which is
+// the cluster's per-rank in-flight counter: raised at dispatch, lowered at completion,
+// drop or timeout.
+//
+// The coordinator publishes at most every DPStatsIntervalUs; BLIS samples the ranks at the
+// first assignment of each period rather than at the publish instant.
+func (cs *ClusterSimulator) pickRank(rep *dpReplica, now int64) *InstanceSimulator {
 	if epoch := now / DPStatsIntervalUs; epoch != rep.epoch {
 		rep.epoch = epoch
 		for k, inst := range rep.ranks {
-			rep.counts[k] = dpRankCounts{waiting: inst.QueueDepth(), running: inst.BatchSize()}
+			rep.counts[k] = dpRankCounts{
+				waiting: inst.QueueDepth(),
+				running: inst.BatchSize(),
+				kvUsage: inst.KVUtilization(),
+			}
 		}
 	}
 	n := len(rep.ranks)
-	snaps := make([]sim.RoutingSnapshot, 0, n)
+	best, bestScore := 0, math.Inf(1)
 	for i := 0; i < n; i++ {
 		k := (rep.start + i) % n
-		snap := sim.NewRoutingSnapshot(string(rep.ranks[k].ID()))
-		snap.QueueDepth, snap.BatchSize = rep.counts[k].waiting, rep.counts[k].running
-		snap.InFlightRequests = cs.inFlightRequests[snap.ID]
-		snaps = append(snaps, snap)
-	}
-	decision := rep.balancer.Route(req, &sim.RouterState{Snapshots: snaps, Clock: now})
-	rep.start = (rep.start + 1) % n
-	for k, inst := range rep.ranks {
-		if string(inst.ID()) == decision.TargetInstance {
-			rep.counts[k].waiting++
-			return inst
+		c := rep.counts[k]
+		inflight := cs.inFlightRequests[string(rep.ranks[k].ID())]
+		score := float64(max(dpClientCount*inflight, c.waiting+c.running))
+		if c.waiting > 0 {
+			score += float64(c.waiting) * 6.0 * math.Max(0, c.kvUsage-0.5)
+		}
+		if score < bestScore {
+			best, bestScore = k, score
 		}
 	}
-	panic(fmt.Sprintf("pickRank: balancer chose %q, not a rank of replica %s", decision.TargetInstance, rep.id))
+	rep.counts[best].waiting += dpClientCount
+	rep.start = (rep.start + 1) % n
+	return rep.ranks[best]
 }

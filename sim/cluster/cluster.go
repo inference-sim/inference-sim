@@ -116,6 +116,9 @@ type ClusterSimulator struct {
 	// per event.
 	memberScratch  [1]*InstanceSimulator
 	counterScratch []instanceCounters
+	// startupErr is why construction could not build the deployment faithfully (an
+	// ungroupable DP replica); Run returns it before simulating anything.
+	startupErr error
 
 	// Cache block staleness is managed by CachedSnapshotProvider via
 	// ObservabilityConfig.CacheBlocks (unified in #1060).
@@ -445,7 +448,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	}
 
 	// Bind each data-parallel replica's ranks into a lockstep group (#1909).
-	cs.buildDPReplicas(config, instanceMap)
+	cs.startupErr = cs.buildDPReplicas(config, instanceMap)
 
 	// Initialize snapshot provider with exactly the placed instances.
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
@@ -759,6 +762,9 @@ func (c *ClusterSimulator) Run() error {
 		panic("ClusterSimulator.Run() called more than once")
 	}
 	c.hasRun = true
+	if c.startupErr != nil {
+		return c.startupErr
+	}
 
 	// 1. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
@@ -2186,7 +2192,7 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 	// A replica endpoint (#1909) hands the request to one of its ranks through vLLM's
 	// internal DP load balancer; the rank is the engine that serves it.
 	if rep := cs.replicaOf[decision.TargetInstance]; rep != nil && cs.endpointReplica(rep.ranks[0]) != nil {
-		decision.TargetInstance = string(cs.pickRank(rep, req, time).ID())
+		decision.TargetInstance = string(cs.pickRank(rep, time).ID())
 		req.AssignedInstance = decision.TargetInstance
 	}
 
