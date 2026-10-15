@@ -1,3 +1,5 @@
+# TEMPORARY: pre-release pins of PR heads; replace with release tags before merge.
+#
 # Upstreams vendored ahead of blis-latency-kernel's testdata/upstream.lock (same format:
 # <dest> <repository> <branch> <commit> [paths]). The pinned kernel pre-release
 # (v0.2.1-0.20261015060036-dd1fd672694c) still locks blis-catalog 0.2.2 and blis-registry
