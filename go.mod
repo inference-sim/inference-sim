@@ -26,3 +26,8 @@ require (
 // TODO(#1939): development pin to a local checkout of blis-schemas dsv41/acceptance-profile
 // (148d08e). The final PR pins the pushed schemas PR branch commit instead.
 replace github.com/inference-sim/blis-schemas => ../blis-schemas-accept-pin
+
+// TODO(#1941): development pin to a local checkout of blis-latency-kernel
+// dsv41/h100-capacity-fidelity (da85be7, blis-latency-kernel#46) for SequenceAdmissionBytes.
+// The final PR pins the pushed kernel branch commit instead.
+replace github.com/inference-sim/blis-latency-kernel => ../blis-latency-kernel-accept-pin

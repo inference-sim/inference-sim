@@ -24,10 +24,12 @@
 //   - SequenceVariableBytes(blockSize) is the per-sequence KV cost of one page, already
 //     page-quantized and already divided by tensor-parallel width down to the engine's
 //     one-KV-head floor.
-//   - SequenceFixedBytes() is what every resident sequence holds whatever its length: window
-//     rings, compressor and indexer state, bounded recurrent state. The budget charges it per
-//     admitted sequence, in whole blocks of PerBlockBytes, rather than out of the pool up
-//     front, because how many sequences are resident is the scheduler's to decide (#1941).
+//   - SequenceAdmissionBytes() is what the engine reserves for every resident sequence
+//     whatever its length -- window rings at vLLM's admission cap, compressor and indexer
+//     state, bounded recurrent state -- already in whole blocks of the shared pool. The
+//     budget charges it per admitted sequence, in blocks of PerBlockBytes, rather than out of
+//     the pool up front, because how many sequences are resident is the scheduler's to decide
+//     (#1941).
 package kernelmodel
 
 import (
@@ -62,11 +64,14 @@ type KVBudget struct {
 	// DPScaled records whether the MoE DP multiplication applied.
 	DPScaled bool
 
-	// SequenceFixedBytes is the kernel's per-sequence occupancy that does not grow with
-	// context, and SequenceFixedBlocks the whole blocks of PerBlockBytes it takes from the pool
-	// for each resident sequence. Both are zero for a model with no such caches.
-	SequenceFixedBytes  int64
-	SequenceFixedBlocks int64
+	// SequenceAdmissionBytes is what the engine reserves for each resident sequence whatever
+	// its length (the kernel's SequenceAdmissionBytes), and SequenceFixedBlocks the whole
+	// blocks of PerBlockBytes it takes from the pool. SequenceSteadyBytes is the smaller hold
+	// a decoding sequence's bounded caches settle at (the kernel's SequenceFixedBytes),
+	// reported, not charged. All are zero for a model with no such caches.
+	SequenceAdmissionBytes int64
+	SequenceSteadyBytes    int64
+	SequenceFixedBlocks    int64
 }
 
 // KVBudget derives the block budget for this model's deployment.
@@ -156,10 +161,16 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		scaled = true
 	}
 
-	seqFixed := m.k.SequenceFixedBytes()
+	adm, ok := m.k.(admissionReserver)
+	if !ok {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: the kernel (%T) does not report the per-sequence admission "+
+				"reservation (SequenceAdmissionBytes), which the KV budget charges", m.k)
+	}
+	seqFixed := adm.SequenceAdmissionBytes()
 	if seqFixed < 0 {
 		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: per-sequence fixed occupancy resolved to %d bytes", seqFixed)
+			"kernelmodel: per-sequence admission reservation resolved to %d bytes", seqFixed)
 	}
 	seqFixedBlocks := (seqFixed + perBlock - 1) / perBlock
 	if seqFixedBlocks >= perRank {
@@ -169,18 +180,25 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 	}
 
 	return KVBudget{
-		TotalBlocks:         blocks,
-		PerRankBlocks:       perRank,
-		BlockSize:           blockSize,
-		DeviceBytes:         deviceBytes,
-		BudgetBytes:         budget,
-		FixedBytes:          fixed,
-		AllocatableBytes:    allocatable,
-		PerBlockBytes:       perBlock,
-		DPScaled:            scaled,
-		SequenceFixedBytes:  seqFixed,
-		SequenceFixedBlocks: seqFixedBlocks,
+		TotalBlocks:            blocks,
+		PerRankBlocks:          perRank,
+		BlockSize:              blockSize,
+		DeviceBytes:            deviceBytes,
+		BudgetBytes:            budget,
+		FixedBytes:             fixed,
+		AllocatableBytes:       allocatable,
+		PerBlockBytes:          perBlock,
+		DPScaled:               scaled,
+		SequenceAdmissionBytes: seqFixed,
+		SequenceSteadyBytes:    m.k.SequenceFixedBytes(),
+		SequenceFixedBlocks:    seqFixedBlocks,
 	}, nil
+}
+
+// admissionReserver is the kernel method the budget charges per sequence. blis-latency-kernel
+// exports it beside the published kernel.Kernel interface (blis-latency-kernel#46).
+type admissionReserver interface {
+	SequenceAdmissionBytes() int64
 }
 
 const gibToBytes = 1 << 30

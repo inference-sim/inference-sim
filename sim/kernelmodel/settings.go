@@ -20,9 +20,11 @@ type Settings struct {
 	// page-quantized and sharded by the parallel layout.
 	KVBytesPerBlock int64
 	// SequenceFixedBlocks is what each resident sequence takes from the pool whatever its
-	// length (KVBudget.SequenceFixedBlocks), and SequenceFixedBytes the bytes it rounds up.
-	SequenceFixedBlocks int64
-	SequenceFixedBytes  int64
+	// length (KVBudget.SequenceFixedBlocks), SequenceAdmissionBytes the bytes it rounds up,
+	// and SequenceSteadyBytes the smaller steady decode hold, for the log.
+	SequenceFixedBlocks    int64
+	SequenceAdmissionBytes int64
+	SequenceSteadyBytes    int64
 
 	BlockSize           int
 	MaxNumSeqs          int
@@ -59,16 +61,17 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 	}
 	d := m.Deployment()
 	s := Settings{
-		KVBlocks:              b.PerRankBlocks,
-		AggregateKVBlocks:     b.TotalBlocks,
-		KVBytesPerBlock:       b.PerBlockBytes,
-		SequenceFixedBlocks:   b.SequenceFixedBlocks,
-		SequenceFixedBytes:    b.SequenceFixedBytes,
-		BlockSize:             e.BlockSize,
-		MaxNumSeqs:            e.MaxNumSeqs,
-		MaxNumBatchedTokens:   e.MaxNumBatchedTokens,
-		DataParallel:          m.DataParallelWidth(),
-		PrefixCachingDisabled: d.PrefixCachingDisabled,
+		KVBlocks:               b.PerRankBlocks,
+		AggregateKVBlocks:      b.TotalBlocks,
+		KVBytesPerBlock:        b.PerBlockBytes,
+		SequenceFixedBlocks:    b.SequenceFixedBlocks,
+		SequenceAdmissionBytes: b.SequenceAdmissionBytes,
+		SequenceSteadyBytes:    b.SequenceSteadyBytes,
+		BlockSize:              e.BlockSize,
+		MaxNumSeqs:             e.MaxNumSeqs,
+		MaxNumBatchedTokens:    e.MaxNumBatchedTokens,
+		DataParallel:           m.DataParallelWidth(),
+		PrefixCachingDisabled:  d.PrefixCachingDisabled,
 	}
 	if sp := e.Speculative; sp != nil && sp.NumSpecTokens > 0 {
 		s.SpeculativeTokens, s.SpeculativeMethod = sp.NumSpecTokens, sp.Method

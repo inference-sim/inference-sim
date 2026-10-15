@@ -179,13 +179,16 @@ and under-predicts preemption. Below saturation the two agree.
 ## Per-sequence fixed memory (#1941)
 
 The KV pool is sized from the kernel's per-token bytes, and every resident sequence is also
-charged the kernel's `SequenceFixedBytes`: what it holds whatever its length -- window rings,
-compressor and indexer state, bounded recurrent state. The charge is whole pool blocks,
-`ceil(SequenceFixedBytes / bytes per block)`, taken when the sequence is admitted and freed
-with it, so a sequence is admitted only when both its tokens and its fixed term fit. For
-DeepSeek-V4.1-Flash on h100 tp8 that is about 5.0 MB (43 blocks) a sequence per rank. The
-startup log reports the term and its share of the pool at `max_num_seqs`; a model with no such
-caches is charged nothing.
+charged what vLLM reserves for it at admission whatever its length: its window rings at the
+admission cap (`cdiv(window - 1 + max_in_flight_tokens, block) + 1` pages, which grows with
+`max_num_batched_tokens`), compressor and indexer state, and bounded recurrent state -- the
+kernel's `SequenceAdmissionBytes`, in whole pool blocks. It is taken when the sequence is
+admitted and freed with it, so a sequence is admitted only when both its tokens and this term
+fit. For DeepSeek-V4.1-Flash with DSpark on h100 tp8 at 8,192 batched tokens it is 4,137 blocks
+(about 484 MB) a sequence per rank; a BLIS sequence then holds exactly the blocks vLLM's own
+"GPU KV cache size" divides by (pinned against the engine's log on H200). The startup log
+reports the term, the smaller steady decode hold, and the term's share of the pool at
+`max_num_seqs`. A model with no such caches is charged nothing.
 
 ## KV offload
 

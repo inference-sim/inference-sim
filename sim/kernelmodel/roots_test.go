@@ -2,6 +2,7 @@ package kernelmodel
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,12 @@ func TestDefaultScenariosAreThePinnedKernelModulesFixtures(t *testing.T) {
 	if got == "" {
 		_, err := kernelModuleDir()
 		t.Fatalf("the scenario root did not resolve: %v", err)
+	}
+	if out, err := exec.Command("go", "list", "-m", "-f", "{{if .Replace}}{{.Replace.Path}}{{end}}", kernelModule).Output(); err == nil {
+		if r := strings.TrimSpace(string(out)); r != "" && !strings.Contains(r, "@") && strings.HasPrefix(got, filepath.Clean(filepath.Join(repoRoot(), r))) {
+			t.Skipf("go.mod replaces %s with the local checkout %s (a development pin); the "+
+				"module-cache check applies to a released pin", kernelModule, r)
+		}
 	}
 	if !strings.Contains(got, kernelModule+"@") {
 		t.Errorf("scenario root %q is not inside the module cache's %s@<version>", got,

@@ -147,12 +147,12 @@ func evaluationScenarios(t *testing.T) []string {
 	return out
 }
 
-// #1941: the budget charges each resident sequence the kernel's per-sequence fixed bytes in
-// whole blocks of its per-block bytes -- the smallest block count that holds them -- and
-// charges nothing for a model with no bounded per-sequence caches. DeepSeek-V4.1-Flash's
-// window rings and compressor/indexer state (about 5 MB a sequence per rank on h100 tp8)
-// is the case that motivated it; Llama has none.
-func TestTheBudgetChargesTheKernelsPerSequenceFixedBytesInWholeBlocks(t *testing.T) {
+// #1941: the budget charges each resident sequence what the engine reserves for it at
+// admission whatever its length -- the kernel's SequenceAdmissionBytes, window rings at vLLM's
+// admission cap plus compressor/indexer state -- in whole blocks of its per-block bytes, the
+// smallest block count that holds it, and charges nothing for a model with no bounded
+// per-sequence caches. The steady decode hold is reported beside it and never exceeds it.
+func TestTheBudgetChargesTheKernelsAdmissionReservationInWholeBlocks(t *testing.T) {
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
 	for _, tt := range []struct {
@@ -170,13 +170,18 @@ func TestTheBudgetChargesTheKernelsPerSequenceFixedBytesInWholeBlocks(t *testing
 		if err != nil {
 			t.Fatalf("%s: %v", tt.scenario, err)
 		}
-		fixed := m.Kernel().SequenceFixedBytes()
-		if b.SequenceFixedBytes != fixed {
-			t.Errorf("%s: budget reports %d fixed bytes a sequence, the kernel %d", tt.scenario, b.SequenceFixedBytes, fixed)
+		reserved := m.Kernel().(admissionReserver).SequenceAdmissionBytes()
+		if b.SequenceAdmissionBytes != reserved || b.SequenceSteadyBytes != m.Kernel().SequenceFixedBytes() {
+			t.Errorf("%s: budget reports %d/%d bytes a sequence, the kernel %d/%d", tt.scenario,
+				b.SequenceAdmissionBytes, b.SequenceSteadyBytes, reserved, m.Kernel().SequenceFixedBytes())
 		}
-		if got := b.SequenceFixedBlocks * b.PerBlockBytes; got < fixed || (b.SequenceFixedBlocks > 0 && got-b.PerBlockBytes >= fixed) {
+		if b.SequenceSteadyBytes > b.SequenceAdmissionBytes {
+			t.Errorf("%s: the steady hold %d exceeds the admission reservation %d", tt.scenario,
+				b.SequenceSteadyBytes, b.SequenceAdmissionBytes)
+		}
+		if got := b.SequenceFixedBlocks * b.PerBlockBytes; got < reserved || (b.SequenceFixedBlocks > 0 && got-b.PerBlockBytes >= reserved) {
 			t.Errorf("%s: %d blocks of %d bytes is not the smallest whole-block cover of %d bytes",
-				tt.scenario, b.SequenceFixedBlocks, b.PerBlockBytes, fixed)
+				tt.scenario, b.SequenceFixedBlocks, b.PerBlockBytes, reserved)
 		}
 		if (b.SequenceFixedBlocks > 0) != tt.charged {
 			t.Errorf("%s: %d fixed blocks a sequence; charged = %t, want %t",
@@ -230,4 +235,60 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 				lo, ceil(a), promptBlocks, hi, ceil(b))
 		}
 	})
+}
+
+// GOLDEN, from the engine's own log (#1941, blis-latency-kernel#46): DeepSeek-V4.1-Flash on 8x
+// H200 under vLLM v0.31.0 -- tp 8, expert parallelism off, DSpark K=5, a 1,048,576-token
+// context, 8,192 batched tokens, gpu_memory_utilization 0.80 -- reported 61.18 GiB of KV cache
+// and "GPU KV cache size: 28,706,997 tokens": the pool's blocks over one request's blocks at
+// max_model_len, times max_model_len (get_kv_cache_capacity,
+// vllm/v1/core/kv_cache_utils.py:2444-2471). A BLIS sequence holds exactly that many blocks --
+// its per-sequence admission charge plus its tokens' pages (INV-K3) -- so in vLLM's 61.18 GiB
+// BLIS admits vLLM's count, to the 0.005 GiB rounding of the logged figure (about 2,350
+// tokens).
+//
+// End to end BLIS's own pool is smaller, so it admits about 11% fewer tokens (25.5M): the
+// kernel's fixed occupancy leaves about 54.4 GiB, not 61.18, its weights being 48.2 GiB
+// against vLLM's logged 45.8. That gap is the kernel's FixedBytes (blis-latency-kernel#46), not
+// the admission sizing this pins; the test logs it.
+func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
+	const (
+		scenario    = "deepseek-v4.1-flash-h200-tp8-dspark5-1m.yaml"
+		maxModelLen = 1 << 20
+		engine      = 28706997
+		rounding    = 2400
+	)
+	loggedGiB := 61.18
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	m, err := Open(scenario, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.MaxModelLen != maxModelLen {
+		t.Fatalf("the scenario serves max_model_len %d, want %d", s.MaxModelLen, maxModelLen)
+	}
+	tokenBlocks := m.Kernel().SequenceVariableBytes(maxModelLen) / s.KVBytesPerBlock
+	perRequest := s.SequenceFixedBlocks + tokenBlocks
+	capacity := func(poolBlocks int64) float64 {
+		return float64(poolBlocks) / float64(perRequest) * maxModelLen
+	}
+
+	loggedPool := int64(loggedGiB*(1<<30)) / s.KVBytesPerBlock
+	if d := capacity(loggedPool) - engine; d > rounding || d < -rounding {
+		t.Errorf("a BLIS sequence of %d tokens holds %d blocks (%d admission + %d token); in vLLM's "+
+			"%.2f GiB that admits %.0f tokens, against vLLM's logged %d", maxModelLen, perRequest,
+			s.SequenceFixedBlocks, tokenBlocks, loggedGiB, capacity(loggedPool), engine)
+	}
+	if steady := m.Kernel().SequenceFixedBytes() / s.KVBytesPerBlock; float64(loggedPool)/float64(steady+tokenBlocks)*maxModelLen-engine <= rounding {
+		t.Errorf("sized at the steady decode hold (%d blocks) the capacity is within rounding too; "+
+			"the check does not distinguish the admission charge", steady)
+	}
+
+	t.Logf("BLIS pool %d blocks (%.2f GiB) admits %.0f tokens; vLLM's %.2f GiB admits %d",
+		s.KVBlocks, float64(s.KVBlocks*s.KVBytesPerBlock)/(1<<30), capacity(s.KVBlocks), loggedGiB, engine)
 }

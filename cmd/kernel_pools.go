@@ -166,19 +166,21 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	return o
 }
 
-// logSequenceFixedCharge reports the per-sequence fixed term of an engine's KV capacity
-// (#1941): what each resident sequence holds whatever its length, and what it costs the pool
-// at max_num_seqs. Silent for a model with no such caches, whose capacity it does not touch.
+// logSequenceFixedCharge reports the per-sequence term of an engine's KV capacity (#1941):
+// what the engine reserves for each resident sequence whatever its length, and what that
+// costs the pool at max_num_seqs. Silent for a model with no such caches, whose capacity it
+// does not touch.
 func logSequenceFixedCharge(what string, s kernelmodel.Settings) {
 	if s.SequenceFixedBlocks == 0 {
 		return
 	}
 	atCap := min(int64(s.MaxNumSeqs)*s.SequenceFixedBlocks, s.KVBlocks)
-	logrus.Infof("KV capacity (%s): each resident sequence holds %d bytes of fixed state per rank "+
-		"(window rings, compressor/indexer/recurrent state), charged as %d blocks of %d bytes on "+
-		"admission; at max_num_seqs %d that is %d of %d blocks (%.1f%%)",
-		what, s.SequenceFixedBytes, s.SequenceFixedBlocks, s.KVBytesPerBlock, s.MaxNumSeqs,
-		atCap, s.KVBlocks, 100*float64(atCap)/float64(s.KVBlocks))
+	logrus.Infof("KV capacity (%s): each resident sequence reserves %d bytes of bounded state per "+
+		"rank at admission (window rings at vLLM's admission cap, compressor/indexer/recurrent "+
+		"state; %d bytes once decoding), charged as %d blocks of %d bytes; at max_num_seqs %d "+
+		"that is %d of %d blocks (%.1f%%)",
+		what, s.SequenceAdmissionBytes, s.SequenceSteadyBytes, s.SequenceFixedBlocks,
+		s.KVBytesPerBlock, s.MaxNumSeqs, atCap, s.KVBlocks, 100*float64(atCap)/float64(s.KVBlocks))
 }
 
 // requireWindowFits refuses an engine whose window one request could not fit in, as vLLM does
