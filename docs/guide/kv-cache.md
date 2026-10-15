@@ -143,9 +143,10 @@ rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesyst
 O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
 ([blis-latency-kernel#41](https://github.com/inference-sim/blis-latency-kernel/issues/41)). A class the catalog does not define, or
 a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
-sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario that
-states its own `offload` block is refused for now: that block and `--kv-offload-config` describe
-the same tiers in two formats, and #1910 makes them one.
+sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario's own
+`offload` block is the deployment's tier configuration (#1910): its `cpu_dram` tier is the CPU
+tier, and `--kv-offload-config` may only restate it (a disagreement is refused, naming the
+fields). See [Latency models](latency-models.md#kv-offload) for the mapping and what it refuses.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config

@@ -151,13 +151,13 @@ one; any other connector is refused.
   one node. Each link is divided max-min fairly and re-divided as handoffs start and finish.
   The floor is never shared. A handoff alone still takes exactly `PDTransferTime`. With
   contention off, every handoff is priced as if alone.
-- **Offload tiers (#1940).** `--kv-offload-config` gives every pool its own tier of that
-  size: llm-d's MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
+- **Offload tiers (#1940).** The scenario's `offload` block (or `--kv-offload-config`, see
+  [KV offload](#kv-offload)) gives every pool its own tier of that size: llm-d's
+  MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
   what its engine computes. The prefill pool's tier serves prefix hits before compute. The
   decode pool's tier serves the requests the decode pool runs itself (those the decider
   does not disaggregate), but never a remotely prefilled prompt, which NIXL, listed first,
-  loads. A 0-byte tier is refused, as vLLM refuses it. The scenario's own `offload:` block is
-  still refused (#1910).
+  loads. A 0-byte tier is refused, as vLLM refuses it.
 
 The PD section on stdout, and the results file's `pd` block, report the handoffs, their p50
 and p90 durations, the queueing delay contention added (duration minus the uncontended
@@ -209,6 +209,29 @@ about `K+1` of `max_num_batched_tokens`, so above KV saturation BLIS over-predic
 and under-predicts preemption. Below saturation the two agree.
 
 ## KV offload
+
+The scenario's `offload` block is the run's KV offload configuration (#1910). It maps onto
+vLLM's OffloadingConnector:
+
+- **Tiers.** A `cpu_dram` tier of `bytes` is the CPU tier (`cpu_bytes_to_use`). vLLM's
+  defaults apply to everything the schema does not state: block size, `offload_prompt_only`,
+  `tokens_per_hash`.
+- **Accepted settings.** `connector` may be `OffloadingConnector` or left out; `spec` may be
+  `CPUOffloadingSpec`, `TieringOffloadingSpec`, or left out; `eviction_policy` may be `lru`.
+- **Refused by name:**
+  - another connector or spec;
+  - `prefetch_depth`;
+  - `arc`;
+  - a secondary tier (blis-schemas does not state the fs tier's `root_dir`, `direct_io` and
+    thread counts; describe those with `--kv-offload-config` instead);
+  - an offload block with no `cpu_dram` tier.
+- **0 bytes.** blis-schemas refuses a 0-byte tier, as vLLM refuses `cpu_bytes_to_use: 0`.
+- **Per engine.** The block is deployment-level and the schema has no per-pool form, while
+  `cpu_bytes_to_use` belongs to one engine's connector. So every engine gets its own tier of
+  the stated bytes: the colocated pool, and each prefill and each decode engine.
+- **The flag only restates.** `--kv-offload-config` may restate the scenario's block; it must
+  then resolve identically, or the run is refused naming the fields that differ. With no
+  scenario block, the flag alone configures the offload.
 
 `--kv-offload-config` tiers must each name a catalog `device_class`; the kernel prices every
 transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit

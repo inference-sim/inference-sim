@@ -91,6 +91,7 @@ var (
 	schedulerSource           string                 // what chose the scheduler: "--scheduler", "--policy-config", "" = the scenario
 	preemptionSource          string                 // likewise for the preemption policy
 	scenarioDisaggregated     bool                   // the scenario states prefill and decode pools (each pool records its own overrides)
+	scenarioOffload           *deployment.Offload    // the scenario deployment's offload block, nil when it states none (#1910)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
@@ -622,14 +623,9 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		logrus.Fatalf("scenario %q states %d colocated pools; a run simulates one colocated "+
 			"engine, so state one pool and scale it with --num-instances", kernelScenario, len(shape.Roles))
 	}
-	// The scenario's offload block and --kv-offload-config describe the same tiers in two
-	// formats that are not yet one (#1910). Simulating without a hierarchy the scenario states
-	// would drop it silently (R1), so it is refused until the scenario is the one source.
-	if shape.StatesOffload {
-		logrus.Fatalf("scenario %q states a deployment offload block, which BLIS does not "+
-			"read yet (#1910); describe the tiers with --kv-offload-config and remove the block "+
-			"from the scenario", kernelScenario)
-	}
+	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
+	// may only restate it (resolveKVOffloadConfig).
+	scenarioOffload = shape.Offload
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
@@ -1184,7 +1180,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
 	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
 	// read only when some tier actually names a class.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. Absent => offload subsystem inert. On replay the trace header is authoritative.")
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. When the scenario states an offload block, that block is the configuration and this file may only restate it (a file resolving differently is refused). Absent, with no scenario block => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
