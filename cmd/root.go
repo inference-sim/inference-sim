@@ -289,6 +289,9 @@ type dpPlacementPlan struct {
 	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
 	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
 	PerRankDP int  // DP to configure on each replica (1 when Active, else dp)
+	// LockstepRanks is how many consecutive replicas form one vLLM DP group whose ranks
+	// step in lockstep behind one endpoint (#1909): dp when Active, else 0.
+	LockstepRanks int
 }
 
 // dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
@@ -353,7 +356,11 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	_ = nodePoolsActive
 	// Expert parallelism reserves no extra GPUs, so the plan is identical either way.
 	_ = epOn
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1}, nil
+	// The dp replicas of one logical instance are one vLLM DP group: an MoE model at dp > 1
+	// runs as DPEngineCoreProc ranks that step in lockstep (vllm/v1/engine/core.py:1386-1395
+	// at v0.31.0), with or without expert parallelism (use_all2all is true at dp > 1,
+	// vllm/config/parallel.py:738-743), behind one API endpoint (#1909).
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dp}, nil
 }
 
 // dpPlacementDeployment carries the deployment quantities DP-as-real-placement
@@ -1920,6 +1927,7 @@ var runCmd = &cobra.Command{
 				LatencyModel: lr.KernelModel,
 			},
 			NumInstances:                    numInstances,
+			DPLockstepRanks:                 dpPlan.LockstepRanks,
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,

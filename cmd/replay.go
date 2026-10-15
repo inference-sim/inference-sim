@@ -527,6 +527,7 @@ Example:
 				LatencyModel: lr.KernelModel,
 			},
 			NumInstances:                    numInstances,
+			DPLockstepRanks:                 dpPlan.LockstepRanks,
 			AdmissionPolicy:                 admissionPolicy,
 			AdmissionLatency:                admissionLatency,
 			RoutingLatency:                  routingLatency,

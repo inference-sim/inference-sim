@@ -77,6 +77,8 @@ This replicates vLLM's `DPLBAsyncMPClient` formula: selecting the instance with 
 
 **Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.
 
+**Inside a DP replica (#1909):** a scenario with `dp > 1` on an MoE model shows the router one endpoint per replica, and the cluster itself applies `vllm-dp` to pick the rank, with the 100 ms coordinator period and the per-assignment waiting increment above. See [Latency Models](latency-models.md#data-and-expert-parallelism-moe).
+
 **Note:** Do not compose `vllm-dp` with other scorers unless comparing hybrid strategies. For vLLM parity, use `vllm-dp:1` alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.
 
 ## Signal Freshness

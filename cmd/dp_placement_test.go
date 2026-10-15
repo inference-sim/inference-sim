@@ -151,6 +151,15 @@ func TestPlanDPPlacement(t *testing.T) {
 			if plan.PerRankDP != tc.wantPerRankDP {
 				t.Errorf("PerRankDP: got %d, want %d", plan.PerRankDP, tc.wantPerRankDP)
 			}
+			// #1909: an expanded plan's dp replicas are one lockstep DP group behind one
+			// endpoint, with or without expert parallelism.
+			wantLockstep := 0
+			if tc.wantActive {
+				wantLockstep = tc.dp
+			}
+			if plan.LockstepRanks != wantLockstep {
+				t.Errorf("LockstepRanks: got %d, want %d", plan.LockstepRanks, wantLockstep)
+			}
 		})
 	}
 }
