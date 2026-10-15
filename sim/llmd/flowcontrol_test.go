@@ -157,3 +157,84 @@ func TestFlowControl_INV1_UnderCapacityRejectionAndTTLExpiry(t *testing.T) {
 		t.Errorf("%d router coroutines alive after Stop", live)
 	}
 }
+
+// orderingConfig is globalStrictConfig with the band's ordering policy set to policy.
+func orderingConfig(policy string) string {
+	return `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: single-profile-handler
+- type: max-score-picker
+- type: global-strict-fairness-policy
+- type: ` + policy + `
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker
+flowControl:
+  priorityBands:
+  - priority: 0
+    fairnessPolicyRef: global-strict-fairness-policy
+    orderingPolicyRef: ` + policy + `
+`
+}
+
+// TestFlowControl_SLODeadlineOrdersBySimulatedTargets: a request's SLO target reaches the router
+// as x-llm-d-slo-ttft-ms, so slo-deadline-ordering-policy dispatches SLO-bound requests ahead of
+// requests without a target, where fcfs-ordering-policy does not.
+func TestFlowControl_SLODeadlineOrdersBySimulatedTargets(t *testing.T) {
+	gap := func(policy string) float64 {
+		reqs := testRequests(120, 11, 1000, 0)
+		for i, r := range reqs {
+			if i%2 == 1 {
+				r.SLOTargetUs = 2000
+			}
+		}
+		dep := testDeployment(2)
+		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		gw := New(Options{Model: "test-model", EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--config-text="+orderingConfig(policy))})
+		cs.SetGateway(gw)
+		if err := cs.Run(); err != nil {
+			t.Fatalf("%s: Run: %v", policy, err)
+		}
+		assertConservation(t, runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}, len(reqs))
+		var wait [2]float64
+		for i, r := range reqs {
+			wait[i%2] += float64(r.GatewayDispatchTime - r.ArrivalTime)
+		}
+		return (wait[0] - wait[1]) / float64(len(reqs)/2) // untargeted minus targeted mean wait, µs
+	}
+	fcfs, slo := gap("fcfs-ordering-policy"), gap("slo-deadline-ordering-policy")
+	t.Logf("mean wait advantage of SLO-bound requests: fcfs %.0f µs, slo-deadline %.0f µs", fcfs, slo)
+	if slo <= 0 || slo <= fcfs {
+		t.Errorf("slo-deadline-ordering-policy gave SLO-bound requests no advantage over fcfs (%.0f vs %.0f µs)", slo, fcfs)
+	}
+}
+
+// TestFlowControl_QueueDelayRecorded: under flow control each dispatched request carries the
+// time it entered the router's queue, so gateway_queue_delay_ms is reported; without flow control
+// there is no queue and no enqueue time.
+func TestFlowControl_QueueDelayRecorded(t *testing.T) {
+	res := runBurst(t, globalStrictConfig, 2, 60)
+	positive := 0
+	for _, r := range res.reqs {
+		if r.GatewayEnqueueTime != r.ArrivalTime {
+			t.Fatalf("%s: enqueued at %d, arrived at %d with no gateway latency", r.ID, r.GatewayEnqueueTime, r.ArrivalTime)
+		}
+		if r.GatewayDispatchTime > r.GatewayEnqueueTime {
+			positive++
+		}
+	}
+	if positive == 0 {
+		t.Errorf("no request waited in flow control")
+	}
+	plain := runCluster(t, 2, 20, Options{})
+	for _, r := range plain.reqs {
+		if r.GatewayEnqueueTime != 0 {
+			t.Fatalf("%s: enqueue time %d without flow control", r.ID, r.GatewayEnqueueTime)
+		}
+	}
+}

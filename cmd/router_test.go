@@ -265,3 +265,97 @@ func TestRunAndReplay_BLISRoutingFlagsRemoved(t *testing.T) {
 		}
 	}
 }
+
+// inv13Manifests is an InferencePool deployment with one objective; inv13Config bounds flow
+// control so a burst both queues and rejects.
+const inv13Manifests = `apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: vllm
+spec:
+  selector:
+    matchLabels:
+      app: vllm
+  targetPorts:
+  - number: 8000
+  endpointPickerRef:
+    name: epp
+    port:
+      number: 9002
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: standard
+spec:
+  priority: 1
+  poolRefs:
+  - name: vllm
+`
+
+const inv13Config = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: prefix-cache-scorer
+- type: max-score-picker
+- type: single-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+    weight: 2
+  - pluginRef: kv-cache-utilization-scorer
+  - pluginRef: prefix-cache-scorer
+    weight: 3
+  - pluginRef: max-score-picker
+flowControl:
+  maxRequests: 8
+  defaultRequestTTL: 2s
+`
+
+// TestINV13_RunReplayParity_LLMDRouterInputs: a run that sets every router input (EPP flags in
+// pool mode, an EndpointPickerConfig with flow control, manifests, pod labels, gateway latency,
+// scrape jitter) exports them in its trace header, and a replay given no router flags reproduces
+// the run byte for byte.
+func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
+	flagsFile := writeRouterFile(t, "epp-flags.yaml", "- --pool-name=vllm\n- --refresh-metrics-interval=20ms\n")
+	cfg := writeRouterFile(t, "epp-config.yaml", inv13Config)
+	manifests := writeRouterFile(t, "pool.yaml", inv13Manifests)
+	prefix := filepath.Join(t.TempDir(), "trace")
+	horizon := "600000000"
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--rate", "2000", "--num-requests", "1500", "--seed", "7", "--horizon", horizon,
+		"--epp-flags", flagsFile, "--epp-config", cfg, "--epp-manifests", manifests,
+		"--pod-labels", "app=vllm", "--gateway-latency", "300", "--epp-scrape-jitter", "5000",
+		"--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
+	}
+	if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
+		t.Fatalf("parity check would be vacuous: the run completed %d requests", completed)
+	}
+	if !strings.Contains(runOut, "Gateway Queue Rejected:") {
+		t.Errorf("the bounded flow-control queue never rejected; the router inputs may not have taken effect\n%s", runOut)
+	}
+	header, err := os.ReadFile(prefix + ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"--pool-name=vllm", "maxRequests: 8", "kind: InferencePool", "app: vllm"} {
+		if !strings.Contains(string(header), want) {
+			t.Errorf("trace header does not record %q", want)
+		}
+	}
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--seed", "7", "--horizon", horizon)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if replayOut != runOut {
+		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
+	}
+}

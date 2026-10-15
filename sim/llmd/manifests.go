@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	apixv1 "github.com/llm-d/llm-d-router/apix/v1"
 	"github.com/llm-d/llm-d-router/apix/v1alpha2"
@@ -18,6 +20,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	giev1 "sigs.k8s.io/gateway-api-inference-extension/api/v1"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 // newScheme registers every resource kind a router deployment's manifests can carry.
@@ -40,6 +43,8 @@ type resources struct {
 	objectives     []*apixv1.InferenceObjective
 	objectivesV1a2 []*v1alpha2.InferenceObjective
 	rewrites       []*v1alpha2.InferenceModelRewrite
+	// served are the custom resource kinds and versions the simulated cluster's CRDs serve.
+	served map[schema.GroupVersionKind]bool
 }
 
 func (r *resources) objects() []client.Object {
@@ -61,11 +66,19 @@ func (r *resources) objects() []client.Object {
 
 // parseManifests decodes multi-document Kubernetes YAML. Kinds the router does not read (the
 // model servers' own Deployments, Services, ConfigMaps, ...) are accepted and ignored, because a
-// real deployment's manifest set carries them too; unknown group-versions are an error.
+// real deployment's manifest set carries them too; unknown group-versions are an error. Custom
+// resources get their CRD defaults, as on admission to an API server.
 func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*resources, error) {
 	decoder := serializer.NewCodecFactory(scheme).UniversalDeserializer()
 	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(docs)))
-	res := &resources{}
+	defaults, err := newCRDDefaulter()
+	if err != nil {
+		return nil, err
+	}
+	res := &resources{served: map[schema.GroupVersionKind]bool{}}
+	for gvk := range defaults {
+		res.served[gvk] = true
+	}
 	for i := 0; ; i++ {
 		doc, err := reader.Read()
 		if err == io.EOF {
@@ -77,9 +90,17 @@ func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*res
 		if len(bytes.TrimSpace(doc)) == 0 {
 			continue
 		}
+		if doc, err = defaults.apply(doc); err != nil {
+			return nil, fmt.Errorf("manifest document %d: %w", i, err)
+		}
 		obj, gvk, err := decoder.Decode(doc, nil, nil)
 		if err != nil {
 			if runtime.IsNotRegisteredError(err) {
+				var tm metav1.TypeMeta
+				_ = sigsyaml.Unmarshal(doc, &tm)
+				if gv, _ := schema.ParseGroupVersion(tm.APIVersion); routerGroups[gv.Group] {
+					return nil, fmt.Errorf("manifest document %d: %s %s is not served by the router's CRDs (%s)", i, tm.APIVersion, tm.Kind, servedList(res.served))
+				}
 				continue // a kind the router never reads
 			}
 			return nil, fmt.Errorf("manifest document %d: %w", i, err)
@@ -105,21 +126,15 @@ func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*res
 	return res, nil
 }
 
-// defaultObjectives are the InferenceObjectives BLIS installs when the deployment supplies no
-// manifests: one per BLIS SLO class, at the priorities of the Gateway API Inference Extension
-// defaults.
-func defaultObjectives(poolNamespace, poolName string) []*apixv1.InferenceObjective {
-	prio := map[string]int32{"critical": 4, "standard": 3, "batch": -1, "sheddable": -2, "background": -3}
-	var out []*apixv1.InferenceObjective
-	for _, name := range []string{"background", "batch", "critical", "sheddable", "standard"} {
-		p := prio[name]
-		out = append(out, &apixv1.InferenceObjective{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: poolNamespace},
-			Spec: apixv1.InferenceObjectiveSpec{
-				Priority: &p,
-				PoolRefs: []apixv1.PoolObjectReference{{Name: apixv1.ObjectName(poolName), Group: giev1.GroupName, Kind: "InferencePool"}},
-			},
-		})
+// routerGroups are the API groups of the router's resources. A manifest in one of them that no
+// installed CRD serves is an error, as applying it to a cluster would be.
+var routerGroups = map[string]bool{"llm-d.ai": true, "inference.networking.k8s.io": true, "inference.networking.x-k8s.io": true}
+
+func servedList(served map[schema.GroupVersionKind]bool) string {
+	var out []string
+	for gvk := range served {
+		out = append(out, gvk.GroupVersion().String()+" "+gvk.Kind)
 	}
-	return out
+	sort.Strings(out)
+	return strings.Join(out, ", ")
 }

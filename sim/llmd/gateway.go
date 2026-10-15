@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -253,11 +254,6 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	g.server.SetResponders(nil)
 
 	objs := res.objects()
-	if len(objs) == 0 && eppOpts.PoolName != "" {
-		for _, o := range defaultObjectives(g.gknn.Namespace, g.gknn.Name) {
-			objs = append(objs, o)
-		}
-	}
 	g.kube = fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 	g.pods = &controller.PodReconciler{Reader: g.kube, Datastore: emb.Datastore}
 	if eppOpts.PoolName != "" {
@@ -321,6 +317,8 @@ func (g *Gateway) reconcileResources(res *resources, objs []client.Object) error
 	objRec := &controller.InferenceObjectiveReconciler{
 		Reader: g.kube, Datastore: g.emb.Datastore, PoolGKNN: g.gknn,
 		PriorityBandControlPlane: g.emb.ControlPlane, PrimaryV1: true,
+		// As the runner discovers from the API server: the installed CRD serves both versions.
+		WatchV1Alpha2: res.served[schema.GroupVersion(v1alpha2.GroupVersion).WithKind("InferenceObjective")],
 	}
 	rwRec := &controller.InferenceModelRewriteReconciler{Reader: g.kube, Datastore: g.emb.Datastore, PoolGKNN: g.gknn}
 	for _, o := range objs {
@@ -499,6 +497,9 @@ func (g *Gateway) handleRequest(f *flight) {
 	if err != nil {
 		g.finishRequest(f, errcommon.Error{Code: errcommon.BadRequest, Msg: err.Error()})
 		return
+	}
+	if g.emb.FlowControlEnabled() {
+		f.req.GatewayEnqueueTime = g.host.Now() // the Director enqueues it in flow control now
 	}
 	g.rt.Go(func() {
 		_, err := g.emb.Director.HandleRequest(f.ctx, reqCtx, parsed.Body)
@@ -713,6 +714,10 @@ func (g *Gateway) requestHeaderMap(f *flight) map[string]string {
 	}
 	if f.req.TenantID != "" {
 		h[metadata.FlowFairnessIDKey] = f.req.TenantID
+	}
+	if f.req.SLOTargetUs > 0 {
+		// The header is whole milliseconds; round up so a sub-millisecond target stays a target.
+		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt((f.req.SLOTargetUs+999)/1000, 10)
 	}
 	return h
 }

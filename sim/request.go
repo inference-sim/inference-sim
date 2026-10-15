@@ -106,7 +106,7 @@ type Request struct {
 	Deadline int64
 
 	// Per-request SLO TTFT target in microseconds (0 = no target).
-	// Used by slo-deadline dispatch ordering: deadline = GatewayEnqueueTime + SLOTargetUs.
+	// Sent to the router as x-llm-d-slo-ttft-ms (slo-deadline-ordering-policy reads it).
 	// Distinct from Deadline (hard timeout). Set from workload spec or trace.
 	SLOTargetUs int64
 
