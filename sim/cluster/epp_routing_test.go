@@ -202,3 +202,24 @@ func TestGatewayQueue_ByteAndBandCaps(t *testing.T) {
 	}
 	assertINV16(t, q, "drain")
 }
+
+// --routing-scorers token-load:1,prefix-cache:1 builds the llm-d data layer with
+// llm-d's default producers and keeps the in-flight ledger consistent.
+func TestEPP_FlagScorersBuildDefaultPipeline(t *testing.T) {
+	scorers, err := sim.ParseScorerConfigs("token-load:1,prefix-cache:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := newTestDeploymentConfig(3)
+	cfg.RoutingPolicy, cfg.RoutingScorerConfigs = "weighted", scorers
+	cs := eppRun(t, cfg, 80)
+	assertClusterINV1Conservation(t, cs, 80, cs.RejectedRequests(), "flag scorers")
+	if cs.routingPipeline == nil || len(cs.inFlightLoadTrackers) != 1 {
+		t.Fatalf("default pipeline not built: %v", cs.routingPipeline)
+	}
+	for _, inst := range cs.instances {
+		if got := cs.inFlightLoadTrackers[0].Tokens(string(inst.ID())); got != 0 {
+			t.Errorf("%d tokens left on %s", got, inst.ID())
+		}
+	}
+}

@@ -41,6 +41,8 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
 | `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
 | `vllm-dp` | vLLM data-parallel routing: `waiting × 4 + running` (inverted min-max) | DPLBAsyncMPClient.get_core_engine_for_request |
+| `prefix-cache` | `matched/total` prefix blocks from an llm-d prefix producer (optionally blended with a match-length term) | prefix-cache-scorer |
+| `token-load` | `1 − min(inFlight + uncached incoming tokens, threshold)/threshold`; idle = 1.0 | token-load-scorer |
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
@@ -130,6 +132,110 @@ chmod +x examples/routing-comparison.sh
 ```
 
 This runs 5 configurations and shows TTFT p99, target distribution, and throughput for each. See `examples/routing-comparison.sh` for the full script.
+
+## llm-d EndpointPickerConfig (`--epp-config`)
+
+`--epp-config <file>` ingests an llm-d router `EndpointPickerConfig` verbatim (YAML
+comments allowed) on `blis run` and `blis replay`. It replaces `--routing-policy`,
+`--routing-scorers`, the P/D routing flags (`--prefill-routing-scorers`,
+`--decode-routing-scorers`, `--pd-decider`, `--pd-prefix-threshold`) and the
+flow-control flags; setting any of them alongside it is refused. The ingested
+config, its sha256 and the BLIS mapping of every plugin are written to the
+`--metrics-path` file as the `epp` block (never to stdout).
+
+```bash
+blis run --scenario <file> --scenarios <dir> --registry <root> --rate 10 --num-requests 200 \
+  --epp-config optimized-baseline-cpu-tier.yaml --epp-version v0.10.0 --metrics-path out.json
+```
+
+`--epp-version` selects the llm-d-router release whose plugin semantics BLIS
+mirrors: `main@981acb8a` (default, alias `main`) or `v0.10.0` (the EPP image
+`ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.10.0`, which curvebender deploys).
+Use the release your router runs; the deltas are listed below.
+
+### What runs
+
+The profile runs llm-d's order: producers over all candidates, filters in profile
+order, weighted scorers over the survivors (each clamped to [0, 1]), then the
+max-score pick. If the filters remove every candidate, the request is rejected at
+routing, as llm-d fails it. A `disagg-profile-handler` config runs BLIS's
+decode-first P/D routing: the `decode` profile picks the decode pod, the prefill
+decider decides, and the `prefill` profile picks the prefill pod. The scenario
+must define prefill/decode pools exactly when the config is disaggregated.
+
+| llm-d plugin | BLIS implementation |
+|---|---|
+| `prefix-cache-affinity-filter` | filter: sticky set (match ratio ≥ `affinityThreshold`), exploration (seeded), TTFT gate `inFlightTokens / peakPrefillThroughput · 1000` |
+| `concurrency-detector` | filter (`maxConcurrency·(1+headroom)` per endpoint, requests/tokens/hybrid) and, as `flowControl.saturationDetector`, the gateway saturation |
+| `token-load-scorer`, `prefix-cache-scorer` | `token-load`, `prefix-cache` scorers |
+| `queue-scorer`, `kv-cache-utilization-scorer`, `active-request-scorer`, `running-requests-size-scorer`, `load-aware-scorer`, `lora-affinity-scorer` | the existing scorers (defaults only; parameters are refused) |
+| `no-hit-lru-scorer` | `no-hit-lru`, bound to an llm-d prefix producer |
+| `approx-prefix-cache-producer` | router-side LRU per instance: autoTune capacity = the instance's GPU KV blocks, block size = engine block size floored at 64, `maxPrefixTokensToMatch` cap; a trailing partial block counts |
+| `cpu-prefix-cache-producer` (an approx producer of that name) | with a CPU offload tier: each instance's contiguous CPU-tier-resident prefix (#1912); otherwise an ordinary approx producer |
+| `precise-prefix-cache-producer` | the instance's GPU KV view frozen for `--cache-signal-delay` (KV-event propagation) plus, with an offload tier, the CPU tier weighted by `kvCacheBackendConfigs`; speculative indexing with `speculativeTTL` |
+| `inflight-load-producer` | router-side in-flight tokens: uncached prompt tokens charged at routing, released at the first token (or, with `addEstimatedOutputTokens`, prefill at the first token and the rest at completion) |
+| `max-score-picker`, `single-profile-handler` | argmax with a seeded uniform tie-break; one profile |
+| `disagg-profile-handler`, `prefill-filter`, `decode-filter` | decode-first P/D routing; role filters = pool membership |
+| `always-disagg-pd-decider`, `prefix-based-pd-decider` | `always`; llm-d's rule `input − cachedBlocks·blockSize ≥ nonCachedTokens` (with `promptTokens`), on the decode pod's match info |
+| `flowControl` (`featureGates: [flowControl]`) | gateway queue: `maxRequests`, `maxBytes`, `defaultRequestTTL`, `priorityBands` (caps, round-robin fairness) |
+
+Accepted as inert, and listed in the `epp` block: `token-producer`,
+`endpoint-notification-source`, metrics/model data sources and extractors, request
+parsers, `request-attribute-reporter`, `disaggregatedset-rollout-screener` (one
+revision), `dataLayer`, `kvEventsConfig`, index storage sizing,
+`syncCrossReplicaState`, other feature gates. Any other plugin type, and any
+parameter BLIS does not model (for example `ttftSource: latencyPredictor`,
+`enableEviction: true`, `maxNumOfEndpoints > 1`, `stageOrder: prefill-first`,
+E/P/D, zero scorer weights), is refused by name.
+
+### Modeling choices
+
+- **Tie-break.** llm-d's max-score picker orders candidates from a map, shuffles
+  (v0.10.0) or rotates ties by a request counter (main); both are a uniform pick
+  among the tied maxima. BLIS draws that pick from the seeded router RNG (INV-6).
+- **Weights.** llm-d sums `weight · score`; BLIS divides the weights by their total,
+  which preserves the argmax.
+- **Hashing.** The approx producer chains SHA-256 block hashes where llm-d uses
+  xxhash64; prefix semantics are identical.
+- **Request bytes.** Flow-control byte limits use 4 bytes per prompt token (llm-d's
+  `averageCharactersPerToken`); llm-d counts request body bytes.
+- **Output estimate (main).** llm-d main estimates output tokens by an
+  `outlen-bucket` request header; BLIS requests carry none, so main's unknown-bucket
+  value (1000) applies.
+- **P/D charges.** A disaggregated request's prefill charge is released at the
+  decode stream's first token, as llm-d does; its prefill request counter follows
+  BLIS's in-flight count (prefill completion), not llm-d's StartOfStream.
+- **Prefix match unit.** llm-d main prefers an endpoint's `CachePrefixMatchUnit`
+  metric; BLIS uses the engine block size.
+
+### Release deltas (`--epp-version`)
+
+| Plugin | v0.10.0 | main@981acb8a |
+|---|---|---|
+| concurrency-detector filter | no fail-open: all dropped ⇒ empty (`v0.10.0:…/concurrency/detector.go:187-209`) | `failOpen` (default true) returns all; tokens/hybrid count the request's own uncached tokens, an idle endpoint always passes (`main:…/detector.go:249-298`) |
+| concurrency-detector saturation | in-flight only | + dispatch reservations between flow-control dispatch and routing (`main:…/detector.go:139-228`) |
+| prefix-cache-affinity-filter | missing in-flight signal = zero load; negative threshold accepted | missing signal skips the TTFT gate; threshold must be in [0, 1] (`main:…/prefixcacheaffinity/plugin.go:141-250`) |
+| inflight-load-producer | output = round(input·`outputRatio`=1.5); role-blind | output = 1000 (unknown bucket); `outputRatio` removed; prefill-role pods charged prompt only, decode-role pods output only (`main:…/inflightload/producer.go:508-545`) |
+| approx-prefix-cache-producer | block 0 inserted first (LRU evicts a prompt's head), linear match | last block first (evicts the tail), galloping match (`main:…/approximateprefix/indexer.go:94-160`); default `blockSizeTokens` 64 |
+| precise producer tier weights | a tier missing from `kvCacheBackendConfigs` weighs 1.0 | weighs 0.0 (`main:pkg/kvcache/prefix_match.go:44-45`) |
+| disagg-profile-handler | an empty prefill result falls back to decode-only (refused at load: a concurrency-detector in the prefill profile is not accepted under v0.10.0) | the request fails |
+| config schema | `llm-d.ai/v1alpha1` only | also `llm-d.ai/v1`; `noEndpointRequestTTL` (inert), `bandSelectionPolicyPluginRef` (refused) |
+
+### llm-d conformance
+
+`test/llmd-conformance/{main,v0_10_0}` are separate Go modules that run
+llm-d-router's own plugin code and BLIS's ports on the same randomized endpoint
+states (rapid) and require identical outputs: filtered sets, per-endpoint scores,
+saturation, the P/D decision, and a pick within BLIS's tied maxima. Run locally
+(needs network access for the modules and the Go toolchain they pin):
+
+```bash
+cd test/llmd-conformance/main && go test ./... -rapid.checks=5000
+cd ../v0_10_0 && go test ./... -rapid.checks=5000
+```
+
+The optional `llm-d conformance` workflow runs both on PRs that touch the routing
+files.
 
 ## Further Reading
 
