@@ -39,6 +39,10 @@ type AgentXReplay struct {
 	inFlight      int
 	idleSinceUs   int64 // -1: not idle
 	warmupLeft    int
+	// released are barrier-released sends not yet on the wire: aiperf issues them from a
+	// task (ReplayBarrierCoordinator._dispatch_pending), after the return that released
+	// them has finished, including its idle-cap check.
+	released []*agxDispatch
 
 	instances []*agxInstance
 	laneInst  []*agxInstance // the tree currently holding each lane's slot
@@ -480,7 +484,6 @@ func (x *AgentXReplay) issue(d *agxDispatch) {
 	d.state = agxReady
 	x.push(d, x.nowUs)
 	x.inFlight++
-	x.idleSinceUs = -1
 	if d.warmup {
 		return
 	}
@@ -529,7 +532,11 @@ func (x *AgentXReplay) Gate(req *sim.Request, now int64) (bool, []*sim.Request) 
 		d.ph = nil
 		x.removeTimer(d)
 		x.fire(d)
-		x.enforceIdleCap(false)
+		if d.shiftable {
+			// LoopScheduler's drain observer re-checks the idle cap after a scheduler task.
+			x.enforceIdleCap(false)
+		}
+		x.issueReleased()
 		x.maybeComplete()
 		return false, x.flush()
 	}
@@ -730,6 +737,7 @@ func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
 	}
 	x.onReturn(d, overflow)
 	x.enforceIdleCap(true)
+	x.issueReleased()
 	x.maybeComplete()
 	return x.flush()
 }
@@ -930,7 +938,14 @@ func (x *AgentXReplay) releaseHeld(in *agxInstance) {
 		}
 		return ready[i].turn < ready[j].turn
 	})
-	for _, d := range ready {
+	x.released = append(x.released, ready...)
+}
+
+// issueReleased sends the barrier-released dispatches.
+func (x *AgentXReplay) issueReleased() {
+	for len(x.released) > 0 {
+		d := x.released[0]
+		x.released = x.released[1:]
 		x.issue(d)
 	}
 }
@@ -1105,4 +1120,51 @@ func agxMix(a, b uint64) uint64 {
 
 func agxToken(base, i uint64) sim.TokenID {
 	return sim.TokenID(agxMix(base, i) >> 33)
+}
+
+// AgentXRequestTimeoutUs is aiperf's --request-timeout-seconds default, 6 h
+// (config/endpoint.py:52, EndpointDefaults.TIMEOUT): a request still unfinished after it
+// is an error record.
+const AgentXRequestTimeoutUs = int64(6 * 3600 * 1_000_000)
+
+// AgentXSummary is the results file's agentic block.
+type AgentXSummary struct {
+	Scenario                   string  `json:"scenario"`
+	Lanes                      int     `json:"lanes"`
+	TreesStarted               int     `json:"trees_started"`
+	TreesCompleted             int     `json:"trees_completed"`
+	MainRequests               int     `json:"main_requests"`
+	SubagentRequests           int     `json:"subagent_requests"`
+	WarmupRequests             int     `json:"warmup_requests"`
+	CancelledRequests          int     `json:"cancelled_requests"`
+	ErrorRequests              int     `json:"error_requests"`
+	ContextOverflowRequests    int     `json:"context_overflow_requests"`
+	TracesInCorpus             int     `json:"traces_in_corpus"`
+	TracesFilteredByMaxContext int     `json:"traces_filtered_by_max_context"`
+	MaxContextLength           int     `json:"max_context_length"`
+	CorpusSHA256               string  `json:"corpus_sha256"`
+	CorpusSHA256Verified       bool    `json:"corpus_sha256_verified"`
+	ProfileStartUs             int64   `json:"profile_start_us"`
+	WindowEndUs                int64   `json:"window_end_us"`
+	ProfileCompleteUs          int64   `json:"profile_complete_us"`
+	IdleCapJumps               int     `json:"idle_cap_jumps"`
+	IdleCapSkippedS            float64 `json:"idle_cap_skipped_s"`
+	BarrierHeld                int     `json:"barrier_holds"`
+	JoinSuspensions            int     `json:"join_suspensions"`
+	ChildrenSpawned            int     `json:"children_spawned"`
+}
+
+// Summary assembles the agentic block once the run has finished.
+func (x *AgentXReplay) Summary(c *AgentXCorpus, maxContextLength int, verified bool) AgentXSummary {
+	s := x.stats
+	return AgentXSummary{
+		Scenario: "inferencex-agentx-mvp", Lanes: s.Lanes, TreesStarted: s.TreesStarted, TreesCompleted: s.TreesCompleted,
+		MainRequests: s.MainRequests, SubagentRequests: s.SubagentRequests, WarmupRequests: s.WarmupRequests,
+		CancelledRequests: s.Cancelled, ErrorRequests: s.Errors, ContextOverflowRequests: s.ContextOverflows,
+		TracesInCorpus: c.Rows, TracesFilteredByMaxContext: c.FilteredByMaxCtx, MaxContextLength: maxContextLength,
+		CorpusSHA256: c.SHA256, CorpusSHA256Verified: verified,
+		ProfileStartUs: x.profileUs, WindowEndUs: x.windowEndUs, ProfileCompleteUs: x.completeUs,
+		IdleCapJumps: s.IdleCapJumps, IdleCapSkippedS: float64(s.IdleCapSkippedUs) / 1e6,
+		BarrierHeld: s.BarrierHeld, JoinSuspensions: s.JoinSuspensions, ChildrenSpawned: s.ChildrenSpawned,
+	}
 }
