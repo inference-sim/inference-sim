@@ -155,7 +155,7 @@ BLIS prices every step with [blis-latency-kernel](https://github.com/inference-s
 | `--speculative-acceptance-length` | float64 | 0.0 | The mean acceptance length AL (tokens per verification step, counting the bonus token), in [1, K + 1]. The highest acceptance layer; not with `--speculative-acceptance-rate`. |
 | `--speculative-thinking` | string | | `on` or `off`: with `--speculative-category`, selects the registry's acceptance profile, overriding the workload's selectors. |
 | `--speculative-category` | string | | The workload category (e.g. `coding`) that selects the registry's acceptance profile. |
-| `--speculative-fallback-category` | string | | A category to use, recorded as a fallback, when the workload's has no profile. Without it an unmatched category is refused. |
+| `--speculative-fallback-category` | string | | A category to use, recorded as a fallback, when the workload's has no profile. Without it an unmatched category is refused. A scenario pin's own `fallback_category` wins over it (blis-schemas `acceptance.Resolve`). |
 
 ## Cluster Configuration
 

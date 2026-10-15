@@ -162,9 +162,11 @@ highest layer that states it, lowest to highest:
 
 Changing the deployment's K selects that K's profile, so a K sweep with no override takes a
 different AL at each K. Nothing falls back silently: an unmatched category, a missing thinking
-mode, a value stated for another K or an AL outside `[1, K+1]` is refused, unless
-`--speculative-fallback-category` (or the pin's `fallback_category`) names a category to use,
-which is then recorded. The `--metrics-path` file records
+mode, a value stated for another K or an AL outside `[1, K+1]` is refused, unless a
+fallback category names one to use, which is then recorded: the scenario pin's
+`fallback_category`, or `--speculative-fallback-category` when the pin states none (blis-schemas'
+`acceptance.Resolve` lets the scenario's fallback win; the CLI outranks it only for the
+acceptance value itself). The `--metrics-path` file records
 `acceptance: {length, rate, source_layer, entry}`, the length and rate being those the run
 advanced requests by and `entry` the profile set, key, provenance, any fallback, the hardware a
 profile was measured on when it is not the run's, and the per-position rates (vLLM's
