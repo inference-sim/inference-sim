@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.
@@ -30,8 +32,8 @@ func requireCompletedRequests(t *testing.T, label, stdout string) {
 }
 
 // CLI-level contract tests for the catalog CLONE ROOT layout: --catalog / BLIS_CATALOG
-// names the clone root, so a real `blis run` and `blis replay` read the model config from
-// <catalog>/models/<short-name>/config.json.
+// names the clone root, so a real `blis run` and `blis replay` read the scenario's model graph
+// from <catalog>/models/<name>/graph.yaml (through blis-latency-kernel).
 //
 // #1774 introduced this layout alongside a transition fallback that also accepted the flat
 // <catalog>/<short-name> layout (the then-bundled model_configs/ tree). #1771 deleted that
@@ -43,12 +45,11 @@ func requireCompletedRequests(t *testing.T, label, stdout string) {
 //
 //	INV-6  — the clone-root layout resolves and runs deterministically (byte-identical
 //	         stdout across repeated runs of the same catalog).
-//	INV-13 — run and replay share resolveModelConfig, so both resolve the clone-root layout.
+//	INV-13 — run and replay share resolveLatencyConfig, so both resolve the clone-root layout.
 //	NS-6   — a model absent from the (sole) layout is refused, naming the canonical path.
 //
-// The unit-level layout laws (candidate derivation, malformed-entry boundary, relative vs
-// absolute paths, uncatalogued refusal) live on catalogModelDirs / resolveModelConfigInCatalog
-// in hfconfig_test.go; these tests prove the contract is wired into the commands.
+// The kernel owns reading the catalog entries; these tests prove the contract is wired into
+// the commands.
 
 // Environment variables driving the re-exec subprocess legs. A leg runs the real cobra
 // tree so a logrus.Fatalf surfaces as a non-zero exit status.
@@ -58,32 +59,13 @@ const (
 	catalogLayoutTraceEnv   = "BLIS_CATALOG_LAYOUT_TRACE"
 )
 
-// catalogLayoutModel is a model catalogued in the committed test catalog
-// testdata/catalog/models/, so newCloneRootCatalog can copy its entry.
-const catalogLayoutModel = "qwen/qwen3-14b"
-
-// newCloneRootCatalog builds a catalog CLONE ROOT whose models/ namespace holds a
-// byte-for-byte copy of the test-catalog entry for catalogLayoutModel, and returns its
-// root. The copy (rather than a symlink) makes the "same config.json bytes" premise of the
-// determinism comparison explicit and independent of symlink support.
+// newCloneRootCatalog builds a catalog CLONE ROOT -- a byte-for-byte copy of the vendored
+// catalog, so the kernel scenario's model graph, hardware and fabric all resolve from it -- and
+// returns its root. The copy makes the "same catalog bytes" premise of the determinism
+// comparison explicit.
 func newCloneRootCatalog(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	shortName := catalogLayoutModel[strings.Index(catalogLayoutModel, "/")+1:]
-
-	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
-	content, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read test catalog entry %s: %v", src, err)
-	}
-	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
-	if err := os.MkdirAll(entryDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entryDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, hfConfigFile), content, 0o644); err != nil {
-		t.Fatalf("write clone-root catalog entry: %v", err)
-	}
-	return root
+	return copyKernelCatalog(t)
 }
 
 // runCatalogLayoutLeg re-execs this test binary as the named leg with the given catalog
@@ -121,12 +103,13 @@ func catalogLayoutSubprocess() bool {
 	catalog := os.Getenv(catalogLayoutCatalogEnv)
 	tracePrefix := os.Getenv(catalogLayoutTraceEnv)
 
+	repos := kernelmodel.DefaultRepos()
+	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry}
 	var args []string
 	switch leg {
 	case "run", "run-export":
 		args = []string{
-			"run", "--model", catalogLayoutModel,
-			"--hardware", "H100", "--tp", "1",
+			"run",
 			"--seed", "42", "--num-requests", "20",
 			"--defaults-filepath", "../defaults.yaml",
 			"--catalog", catalog,
@@ -139,8 +122,6 @@ func catalogLayoutSubprocess() bool {
 			"replay",
 			"--trace-header", tracePrefix + ".yaml",
 			"--trace-data", tracePrefix + ".csv",
-			"--model", catalogLayoutModel,
-			"--hardware", "H100", "--tp", "1",
 			"--seed", "42",
 			"--defaults-filepath", "../defaults.yaml",
 			"--catalog", catalog,
@@ -148,6 +129,7 @@ func catalogLayoutSubprocess() bool {
 	default:
 		os.Exit(2)
 	}
+	args = append(args, scenario...)
 
 	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
@@ -159,7 +141,7 @@ func catalogLayoutSubprocess() bool {
 
 // TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns is the #1771 INV-6 contract at the
 // `blis run` boundary: a model config stored the way the authoritative blis-catalog
-// repository stores it — <catalog>/models/<name>/config.json — resolves and runs, and the
+// repository stores it — <catalog>/models/<name>/graph.yaml — resolves and runs, and the
 // same catalog produces byte-identical stdout across runs (the layout is not a source of
 // nondeterminism). With the flat transition fallback gone, this is now the only layout.
 func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
@@ -183,7 +165,7 @@ func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 }
 
 // TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns is the INV-13 half: `blis replay`
-// shares resolveModelConfig with `blis run`, so it resolves the clone-root layout too. A
+// shares resolveLatencyConfig with `blis run`, so it resolves the clone-root layout too. A
 // trace exported through the clone-root catalog replays deterministically through it.
 func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	if catalogLayoutSubprocess() {
@@ -214,19 +196,23 @@ func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 // entry belongs at (NS-6, #1733). #1771 removed the flat fallback, so the only path an
 // entry can live at is the one the refusal names.
 func TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused(t *testing.T) {
-	root := t.TempDir()
-	if _, err := resolveModelConfigInCatalog("test-org/not-catalogued", root); err == nil {
+	scenarios, _, registry := kernelRepos(t)
+	root := copyKernelCatalog(t)
+	entry := filepath.Join(root, catalogModelsSubdir, "gpt-oss-120b")
+	if err := os.RemoveAll(entry); err != nil {
+		t.Fatal(err)
+	}
+	_, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{
+		Scenarios: scenarios, Catalog: root, Registry: registry,
+	})
+	if err == nil {
 		t.Fatal("expected refusal for a model absent from the catalog")
-	} else if want := filepath.Join(root, catalogModelsSubdir, "not-catalogued", hfConfigFile); !strings.Contains(err.Error(), want) {
+	}
+	if want := filepath.Join(entry, catalogModelGraphFile); !strings.Contains(err.Error(), want) {
 		t.Errorf("refusal must name the canonical clone-root path (%s), got: %v", want, err)
 	}
-
 	// And nothing may be created under the catalog root by the attempt.
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("read catalog root: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("resolution must not create anything under the catalog root; found %v", entries)
+	if _, statErr := os.Stat(entry); !os.IsNotExist(statErr) {
+		t.Errorf("resolution must not create the missing entry; stat says %v", statErr)
 	}
 }

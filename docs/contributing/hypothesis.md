@@ -135,7 +135,7 @@ Then run the **5-perspective Design Review** using the [universal convergence pr
 - If reusing calibration from a prior experiment, is the config diff documented? (ED-6)
 
 **Perspective 3 — Parameter Calibration:**
-- Are parameters computed analytically from known coefficients (alpha/beta), not guessed?
+- Are parameters derived from the scenario and the kernel's pricing (e.g. a measured saturated throughput), not guessed?
 - Are capacity estimates matched to the actual workload mode (CLI defaults vs workload-spec YAML)?
 - Is the operating point correct for the intended effect? (e.g., near saturation for queueing effects, sub-saturation for baseline)
 
@@ -146,7 +146,7 @@ Then run the **5-perspective Design Review** using the [universal convergence pr
 
 **Perspective 5 — DES and Domain Fit:**
 - Will the experiment create the conditions needed for the hypothesis to be testable?
-- Are there DES-specific subtleties (event ordering, clock granularity, alpha overhead) that could confound results?
+- Are there DES-specific subtleties (event ordering, clock granularity, host overheads) that could confound results?
 - Is the experiment duration sufficient? Is the warmup period adequate?
 
 **Cross-gate regression:** If a later gate (Code Review, FINDINGS Review) discovers a design-level flaw (e.g., confounding variable, wrong operating point), the workflow loops back to Step 2 for re-design, re-convergence, and re-approval.
@@ -189,7 +189,7 @@ Then verify the harness output format matches the current CLI before use — the
 **Harness requirements (mandatory):**
 - `run.sh` MUST source `hypotheses/lib/harness.sh` and use `blis_run` for every simulation call
 - Every `blis_run` call MUST have an appropriate timeout tier (`TIMEOUT_QUICK`/`TIMEOUT_STANDARD`/`TIMEOUT_EXTENDED`)
-- If using `--total-kv-blocks`, call `preflight_kv_check` with max expected input tokens
+- For KV-constrained experiments, call `preflight_kv_check` with the KV budget the run reports and the max expected input tokens
 - `analyze.py` MUST import `analyze_helpers` and use `parse_blis_output` (handles timeouts gracefully)
 
 **Reference comment:** If reusing calibration from a prior experiment, include `# Reference: hypotheses/<name>/run.sh` with the branch and file path (e.g., `# Reference: hypothesis-archive:hypotheses/h12-conservation/run.sh` for archived experiments, or the feature branch name for recent ones).
@@ -332,7 +332,7 @@ Run the **10-perspective FINDINGS Review** using the [universal convergence prot
 
 **Reviewer 7 — DES Mechanism Expert:**
 - Are there event-ordering subtleties that could explain the results differently?
-- Are assumptions about DES timing correct (alpha overhead, step quantization, clock granularity)?
+- Are assumptions about DES timing correct (host overheads, step quantization, clock granularity)?
 - Could the result be an artifact of the simulation architecture rather than the modeled system behavior?
 
 **Reviewer 8 — Reproducibility and Robustness:**
@@ -481,7 +481,7 @@ Note: `hypotheses/lib/harness.sh` and `analyze_helpers.py` are not on `main`. Ob
 
 - [ ] `run.sh` sources `hypotheses/lib/harness.sh` and uses `blis_run` for every simulation call
 - [ ] Every `blis_run` call has an appropriate timeout tier (`TIMEOUT_QUICK`/`TIMEOUT_STANDARD`/`TIMEOUT_EXTENDED`)
-- [ ] KV safety pre-flight: if experiment uses `--total-kv-blocks`, call `preflight_kv_check` with max expected input tokens
+- [ ] KV safety pre-flight: for KV-constrained experiments, call `preflight_kv_check` with max expected input tokens
 - [ ] `analyze.py` imports `analyze_helpers` and uses `parse_blis_output` (handles timeouts gracefully)
 - [ ] `run.sh` flags verified against `cmd/root.go` help text
 - [ ] `analyze.py` regexes verified against actual output format strings in `cmd/root.go` and `sim/metrics_utils.go`

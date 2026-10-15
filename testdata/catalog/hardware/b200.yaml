@@ -1,0 +1,11 @@
+_comment: "B200 SXM. Peak FLOPs, HBM capacity and HBM bandwidth are the figures NVIDIA ships in AISimulate's own system descriptor (systems/b200_sxm.yaml), which is the same source the h200 and gb200 entries cite: dense BF16 2250 TFLOPS, dense FP8 4500 TFLOPS, dense FP4 9000 TFLOPS, 7.7 TB/s HBM3e. FP4 has native Tensor-Core support on this part, where on Hopper it is a bandwidth saving only. CAVEAT (memory unit): the descriptor states mem_capacity as 193273528320 bytes, which is exactly 180 GiB, so this entry records the GiB reading the source itself uses rather than converting."
+Provenance: vendor_spec
+TFlopsPeak: 2250.0
+TFlopsFP8: 4500.0
+TFlopsNVFP4: 9000.0
+BwPeakTBs: 7.7
+MemoryGiB: 180.0
+_comment_interconnect: "IntraNodeBwGBps is the NVLink 5 per-GPU unidirectional figure, 900 GB/s (1800 GB/s bidirectional per GPU / 2). A node's GPU count is a property of the deployment rather than of this part, so it comes from the scenario's cluster block; the common chassis is the 8-GPU HGX B200 baseboard. Unlike GB200 this part carries no rack tier: its NVLink domain is the baseboard, so crossing a node boundary is a bandwidth change and the fabric governs (networks/roce-200g.yaml at 50 GB/s per GPU is the descriptor's reference, CX7 400GbE RoCEv2). No GPUsPerRack or IntraRackBwGBps is stated here because there is no rack-wide NVLink domain to describe."
+IntraNodeBwGBps: 900
+_comment_sm: "SMCount is the count of ENABLED Streaming Multiprocessors on the two GB100 dies this part carries. 148, from NVIDIA's own Hot Chips 2024 Blackwell disclosure: each die physically contains 80 SMs and enables 74, giving 148 across the GPU (https://chipsandcheese.com/p/nvidias-b200-keeping-the-cuda-juggernaut, reporting that presentation's specifications table). NOT a datasheet figure the way the Hopper and Ada entries' counts are: NVIDIA's B200 datasheet publishes no SM count, and the AISimulate descriptor this entry cites for FLOPs and HBM (systems/b200_sxm.yaml) states none either, so this is the most authoritative public source rather than a vendor spec sheet. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 8.11% at 148 SMs."
+SMCount: 148

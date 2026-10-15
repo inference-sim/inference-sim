@@ -4,7 +4,6 @@ package cluster
 
 import (
 	"container/heap"
-	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
@@ -49,34 +48,19 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	placed := cs.placement.RetryPendingInstances()
 	for idx := range placed {
 		p := &placed[idx]
-		// Deferred construction: set pool's GPU type (authoritative per SC-003) and,
-		// when HWConfigByGPU is provided, override HWConfig for roofline backends (issue #893).
+		// Deferred construction: set pool's GPU type (authoritative per SC-003).
 		p.simCfg.GPU = p.gpuType
-		if hc, ok := cs.config.HWConfigByGPU[p.gpuType]; ok {
-			if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
-				panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
-					p.gpuType, hc.TFlopsPeak, hc.BwPeakTBs))
-			}
-			p.simCfg.HWConfig = hc
-		}
 
 		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
-		// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 		var poolCostPerHour float64
-		var poolGPUMemoryGiB float64
 		for i := range cs.config.NodePools {
 			if cs.config.NodePools[i].GPUType == p.gpuType {
 				poolCostPerHour = cs.config.NodePools[i].CostPerHour
-				poolGPUMemoryGiB = cs.config.NodePools[i].GPUMemoryGiB
 				break
 			}
 		}
-		// Issue #1522: recompute KV capacity from the placed GPU memory in the deferred
-		// path too (mirrors the startup path). No-op when KVAutoCalc.Enabled is false.
-		applyPerInstanceKVCapacity(&p.simCfg, poolGPUMemoryGiB, cs.config.KVAutoCalc, p.gpuType)
-		// Issue #1530: stamp the placement-derived interconnect topology (mirrors the
-		// startup path) so a deferred instance prices cross-node comm identically.
-		cs.applyPlacementTopology(&p.simCfg, p.gpuIDs)
+		// Record the instance's node span (mirrors the startup path).
+		cs.recordNodeSpan(p.gpuIDs)
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup path).
 		instCost := cs.placement.InstanceCostPerHour(p.gpuIDs, poolCostPerHour)
@@ -319,5 +303,3 @@ func (cs *ClusterSimulator) releaseInstanceGPUs(inst *InstanceSimulator) {
 		logrus.Debugf("[cluster] releaseInstanceGPUs %s: %v", inst.ID(), err)
 	}
 }
-
-

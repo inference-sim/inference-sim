@@ -19,7 +19,7 @@ Running these experiments on real GPUs costs thousands of dollars and takes days
 
 | Audience | Use Case |
 |----------|----------|
-| **Capacity planners** | Determine instance counts, GPU memory, and TP configurations before procurement |
+| **Capacity planners** | Determine instance counts, GPU memory, and parallelism configurations before procurement |
 | **Platform engineers** | Compare routing policies, tune scorer weights, evaluate admission control strategies |
 | **Researchers** | Run controlled experiments on scheduling, batching, and caching algorithms |
 | **Developers** | Validate new policies against existing ones before deploying to production |
@@ -32,7 +32,7 @@ Running these experiments on real GPUs costs thousands of dollars and takes days
 
 ## Key Features
 
-See the [Home page feature list](../index.md#key-features) for the full capabilities catalog, including the workload specification DSL, metrics pipeline, latency model backends, and policy framework.
+See the [Home page feature table](../index.md#features) for the capabilities and the guide for each.
 
 ## Next Steps
 

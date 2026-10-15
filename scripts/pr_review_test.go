@@ -9,6 +9,7 @@ package scripts_test
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,58 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// Minimal NetworkPolicy shape for parse-and-assert egress checks (refactor-proof:
+// asserts the except list on the actual :443 rule, not substring presence).
+type npParsed struct {
+	Kind     string `yaml:"kind"`
+	Metadata struct {
+		Name string `yaml:"name"`
+	} `yaml:"metadata"`
+	Spec struct {
+		PodSelector struct {
+			MatchLabels map[string]string `yaml:"matchLabels"`
+		} `yaml:"podSelector"`
+		Egress []struct {
+			To []struct {
+				PodSelector *struct {
+					MatchLabels map[string]string `yaml:"matchLabels"`
+				} `yaml:"podSelector"`
+				IPBlock *struct {
+					CIDR   string   `yaml:"cidr"`
+					Except []string `yaml:"except"`
+				} `yaml:"ipBlock"`
+			} `yaml:"to"`
+			Ports []struct {
+				Protocol string `yaml:"protocol"`
+				Port     int    `yaml:"port"`
+			} `yaml:"ports"`
+		} `yaml:"egress"`
+	} `yaml:"spec"`
+}
+
+// findNetworkPolicy decodes the multi-doc runner manifest and returns the
+// NetworkPolicy with the given name.
+func findNetworkPolicy(t *testing.T, name string) npParsed {
+	t.Helper()
+	data := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
+	dec := yaml.NewDecoder(strings.NewReader(data))
+	for {
+		var np npParsed
+		err := dec.Decode(&np)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("decoding pr-review-runner.yaml: %v", err)
+		}
+		if np.Kind == "NetworkPolicy" && np.Metadata.Name == name {
+			return np
+		}
+	}
+	t.Fatalf("NetworkPolicy %q not found in pr-review-runner.yaml", name)
+	return npParsed{}
+}
 
 func prReviewWorkflowPath() string {
 	return filepath.Join("..", ".github", "workflows", "pr-review.yml")
@@ -225,6 +278,125 @@ func TestPrReviewBlisHasNoBash(t *testing.T) {
 	}
 }
 
+// TestPrReviewBlisSkipsOIDC pins the #1883 fix: the blis action must be given the
+// job's read-only github_token so claude-code-action takes its OVERRIDE_GITHUB_TOKEN
+// path and SKIPS the OIDC exchange. Without it the action calls getIDToken(), which
+// needs `id-token: write` — a privilege we withhold from the untrusted review job —
+// and aborts before the model runs. The review job must therefore ALSO not grant
+// id-token: write (the whole point is to stay least-privilege, not to add it).
+func TestPrReviewBlisSkipsOIDC(t *testing.T) {
+	// Parse the blis step precisely and assert ITS `with.github_token` is the
+	// read-only job token. A file-global Contains would also be satisfied by a
+	// github_token: on any OTHER step even if the blis step regressed (jgchn).
+	type step struct {
+		Uses string            `yaml:"uses"`
+		With map[string]string `yaml:"with"`
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Permissions yaml.Node `yaml:"permissions"`
+			Steps       []step    `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(prReviewWorkflow(t)), &wf); err != nil {
+		t.Fatalf("parsing pr-review.yml: %v", err)
+	}
+	review, ok := wf.Jobs["review"]
+	if !ok {
+		t.Fatal("no `review` job in pr-review.yml")
+	}
+	// Assert on EVERY claude-code-action step, not just the first: a second such
+	// step added later without github_token must not slip through on the first
+	// match (code-reviewer note).
+	var found bool
+	for i := range review.Steps {
+		if !strings.Contains(review.Steps[i].Uses, "claude-code-action") {
+			continue
+		}
+		found = true
+		if got := review.Steps[i].With["github_token"]; !strings.Contains(got, "secrets.GITHUB_TOKEN") {
+			t.Errorf("the claude-code-action (blis) step must pass github_token: ${{ secrets.GITHUB_TOKEN }} so it skips the OIDC exchange (#1883); got %q", got)
+		}
+	}
+	if !found {
+		t.Fatal("no claude-code-action (blis) step in the review job")
+	}
+	// The review job must NOT grant id-token: write — neither as an explicit key
+	// nor via a `write-all` scalar, which implicitly includes it and decodes to an
+	// empty map (jgchn). Check the node shape before decoding.
+	assertNoIDTokenGrant(t, review.Permissions)
+}
+
+// assertNoIDTokenGrant fails if the job permissions grant the id-token: write
+// scope that enables OIDC minting — either an explicit `id-token: write` key or
+// the `write-all` scalar shorthand. A `read-all` scalar or `id-token: read`
+// grants no minting scope (GitHub's getIDToken needs write), so it is allowed.
+func assertNoIDTokenGrant(t *testing.T, perms yaml.Node) {
+	t.Helper()
+	if perms.Kind == yaml.ScalarNode {
+		if perms.Value == "write-all" {
+			t.Error("the review job uses `permissions: write-all`, which implicitly grants id-token: write; it must be an explicit least-privilege block")
+		}
+		return
+	}
+	var m map[string]string
+	if err := perms.Decode(&m); err != nil {
+		t.Fatalf("decoding review permissions: %v", err)
+	}
+	if m["id-token"] == "write" {
+		t.Errorf("the review job must NOT grant id-token: write (the minting scope); the github_token override removes the need for OIDC")
+	}
+}
+
+// TestPrReviewWorktreeIsIdempotent pins the #1888 fix: the worktree step must
+// clear a leaked registration (prune) and any leftover directory (rm) BEFORE
+// `worktree add`, so a restarted ephemeral runner that kept the _work emptyDir
+// cannot exit-128 on a "missing but already registered" worktree.
+func TestPrReviewWorktreeIsIdempotent(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	rm := strings.Index(wf, `rm -rf "$WORKTREE"`)
+	prune := strings.Index(wf, "git worktree prune")
+	add := strings.Index(wf, "worktree add --detach")
+	if rm < 0 || prune < 0 || add < 0 {
+		t.Fatal(`worktree step must run rm -rf "$WORKTREE" and git worktree prune before worktree add --detach (#1888)`)
+	}
+	if rm > add || prune > add {
+		t.Error("the worktree cleanup (rm + prune) must come BEFORE `worktree add` to be idempotent (#1888)")
+	}
+}
+
+// TestPrReviewBlisWriteIsBareWithHook pins the #1888 fix: blis must grant a BARE
+// Write tool — a path-qualified Write(...) allow-rule refuses silently in the
+// action (see scripts/pr_review/restrict-write.sh), so the verdict never gets
+// written — with the restrict-write PreToolUse hook as the actual path boundary.
+func TestPrReviewBlisWriteIsBareWithHook(t *testing.T) {
+	wf := prReviewWorkflow(t)
+	// blis is the only --allowedTools in the workflow; assert that so this test
+	// can't silently validate some other step's allow-list (code-reviewer note).
+	if n := strings.Count(wf, "--allowedTools"); n != 1 {
+		t.Fatalf("expected exactly one --allowedTools (blis), found %d", n)
+	}
+	allow := regexp.MustCompile(`--allowedTools\s+"([^"]*)"`).FindStringSubmatch(wf)
+	if allow == nil {
+		t.Fatal("no --allowedTools found for blis")
+	}
+	var hasBareWrite bool
+	for _, tool := range strings.Split(allow[1], ",") {
+		tool = strings.TrimSpace(tool)
+		if tool == "Write" {
+			hasBareWrite = true
+		} else if strings.HasPrefix(tool, "Write(") {
+			t.Errorf("blis must grant a BARE Write, not a path-qualified %q (it refuses silently in the action, #1888)", tool)
+		}
+	}
+	if !hasBareWrite {
+		t.Error("blis must grant a bare Write tool so the verdict file can be written (#1888)")
+	}
+	if !strings.Contains(wf, "scripts/pr_review/restrict-write.sh") {
+		t.Error("blis must confine the bare Write via the restrict-write PreToolUse hook")
+	}
+}
+
 // TestPrReviewActionsArePinnedToSHA enforces #1879's requirement that every
 // third-party action — especially the one that creates the tool-restricted blis
 // session — is pinned to a full 40-char commit SHA, not a mutable tag.
@@ -251,16 +423,16 @@ func TestPrReviewActionsArePinnedToSHA(t *testing.T) {
 func TestPrReviewKeyNeverInSession(t *testing.T) {
 	wf := prReviewWorkflow(t)
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;
-	// the external reviewer must NOT reference it — it uses the sidecar + a dummy.
+	// the external reviewer must NOT reference it — it uses the litellm-proxy + a dummy.
 	if strings.Contains(wf, "secrets.LITELLM_API_KEY") {
-		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the sidecar")
+		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the litellm-proxy pod")
 	}
 	if !strings.Contains(wf, "Assert no LiteLLM key in the session") {
 		t.Error("pr-review.yml must assert at runtime that no real LiteLLM key is in the review job env")
 	}
-	// The LLM clients must point at the in-pod proxy.
+	// The LLM clients must point at the litellm-proxy Service.
 	if !strings.Contains(wf, "LLM_PROXY_URL") {
-		t.Error("pr-review.yml must route LLM calls through the sidecar proxy (LLM_PROXY_URL)")
+		t.Error("pr-review.yml must route LLM calls through the litellm-proxy (LLM_PROXY_URL)")
 	}
 }
 
@@ -294,14 +466,65 @@ func TestPrReviewSecondRoundHardening(t *testing.T) {
 			t.Errorf("pr-review.yml missing %q — %s", c.needle, c.why)
 		}
 	}
-	// The sidecar must bind loopback only (k8s manifest), not all interfaces.
-	runner := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
-	if !strings.Contains(runner, "listen 127.0.0.1:4000") {
-		t.Error("the LiteLLM sidecar must listen on 127.0.0.1 only, not all interfaces")
+	// The untrusted runner must be egress-locked (k8s manifest). The proxy now
+	// lives in its OWN pod (so the per-pod NetworkPolicy can confine the runner
+	// tighter than the proxy), replacing the old loopback-bind invariant. Parse
+	// the policy and assert the actual rules — NOT substring presence — so a
+	// refactor that moved an except CIDR onto the proxy's rule or into a comment
+	// would fail here.
+	np := findNetworkPolicy(t, "pr-review-runner-egress")
+	if got := np.Spec.PodSelector.MatchLabels["app"]; got != "github-runner-pr-review" {
+		t.Errorf("runner egress policy must select app=github-runner-pr-review, got %q", got)
 	}
-	if strings.Contains(runner, "listen 4000;") {
-		t.Error("the sidecar still binds all interfaces (listen 4000); must be 127.0.0.1:4000")
+	// Find the :443 egress rule and assert its ipBlock excludes metadata + the VPC.
+	var except []string
+	var found443, proxyByLabel bool
+	for _, rule := range np.Spec.Egress {
+		has443, has4000 := false, false
+		for _, p := range rule.Ports {
+			if p.Port == 443 {
+				has443 = true
+			}
+			if p.Port == 4000 {
+				has4000 = true
+			}
+		}
+		if has443 {
+			found443 = true
+			for _, peer := range rule.To {
+				if peer.IPBlock != nil {
+					except = peer.IPBlock.Except
+				}
+			}
+		}
+		if has4000 {
+			for _, peer := range rule.To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "litellm-proxy" {
+					proxyByLabel = true
+				}
+			}
+		}
 	}
+	if !found443 {
+		t.Fatal("runner egress policy has no :443 rule")
+	}
+	for _, cidr := range []string{"169.254.0.0/16", "9.0.0.0/8"} {
+		if !slicesContains(except, cidr) {
+			t.Errorf("runner :443 egress must except %s (metadata + IBM VPC must be unreachable); except=%v", cidr, except)
+		}
+	}
+	if !proxyByLabel {
+		t.Error("runner egress must allow :4000 to the litellm-proxy pod by label (app=litellm-proxy)")
+	}
+}
+
+func slicesContains(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAssembleCommentCapsOversizeBody(t *testing.T) {

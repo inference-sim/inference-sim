@@ -1,0 +1,74 @@
+kind: ModelGraph
+name: mistral-nemo-instruct-2407
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 8a42669219f4caadedb891be88c34712572573d42b3d02d665d527f92d94ddfe
+  deriver_version: 1
+global:
+  hidden_size: 5120
+  vocab_size: 131072
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 6144
+    k: 5120
+  - op: Attention
+    kind: gqa
+    n_q: 32
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 5120
+    k: 4096
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 28672
+    k: 5120
+  - op: GEMM
+    role: mlp_down
+    n: 5120
+    k: 14336
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - dense
+  repeat: 40
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 131072
+  k: 5120

@@ -1,0 +1,135 @@
+kind: ModelGraph
+name: qwen3.5-397b-a17b
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 3ae7fa89c2f7d1354096418ddaf1331e9e0898a8ca11e804fb6dbaa087efb7da
+  deriver_version: 1
+global:
+  hidden_size: 4096
+  vocab_size: 248320
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: gdn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: RecurrentUpdate
+    recurrent_kind: gdn
+    n_heads: 64
+    state_size: 128
+    conv_kernel: 4
+    intermediate_size: 12288
+    state_dtype: fp32
+  - op: GEMM
+    role: mixer_out
+    n: 4096
+    k: 8192
+  - op: AllReduce
+    role: mixer_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 1024
+    k: 4096
+    experts: 512
+    top_k: 10
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 4096
+  - op: Attention
+    kind: gqa
+    n_q: 32
+    n_kv: 2
+    d_h: 256
+  - op: GEMM
+    role: o_proj
+    n: 4096
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 1024
+    k: 4096
+    experts: 512
+    top_k: 10
+    shared_experts: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - gdn_moe
+  - gdn_moe
+  - gdn_moe
+  - attn_moe
+  repeat: 15
+modality: text_decoder_of_multimodal
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 248320
+  k: 4096
+speculator:
+  method: qwen3_5_mtp
+  num_spec_tokens: 1
+  stack:
+    pattern:
+    - attn_moe
+    repeat: 1

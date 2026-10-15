@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // CLI-level contracts for #1770: a real `blis run` / `blis replay` resolves a
@@ -39,9 +41,6 @@ const (
 	devicesCLITraceEnv   = "BLIS_KVDEV_CLI_TRACE"
 )
 
-// devicesCLIModel is catalogued in the committed test catalog testdata/catalog/models/.
-const devicesCLIModel = "qwen/qwen3-14b"
-
 // writeOffloadConfigWithClass writes a --kv-offload-config file whose single fs tier
 // resolves its physics from the named device_class, and returns the path.
 func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
@@ -60,24 +59,14 @@ func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
 	return path
 }
 
-// newDeviceCatalog builds a catalog CLONE ROOT with (a) a models/ entry copied verbatim
-// from the test catalog so the model resolves, and (b) a devices/storage.yaml holding the
-// given table. Returns the root.
+// newDeviceCatalog builds a catalog CLONE ROOT that is the vendored catalog -- so the kernel
+// scenario's model graph, hardware and fabric resolve -- with devices/storage.yaml replaced by
+// the given table. Returns the root.
 func newDeviceCatalog(t *testing.T, table string) string {
 	t.Helper()
-	root := writeCatalogStorageDevices(t, table)
-	shortName := devicesCLIModel[strings.Index(devicesCLIModel, "/")+1:]
-	src := filepath.Join("..", "testdata", "catalog", "models", shortName, hfConfigFile)
-	content, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatalf("read test catalog entry %s: %v", src, err)
-	}
-	entryDir := filepath.Join(root, catalogModelsSubdir, shortName)
-	if err := os.MkdirAll(entryDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entryDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(entryDir, hfConfigFile), content, 0o644); err != nil {
-		t.Fatalf("write catalog entry: %v", err)
+	root := copyKernelCatalog(t)
+	if err := os.WriteFile(catalogStorageDevicesPath(root), []byte(table), 0o644); err != nil {
+		t.Fatalf("write storage.yaml: %v", err)
 	}
 	return root
 }
@@ -116,9 +105,9 @@ func devicesCLISubprocess() bool {
 	offload := os.Getenv(devicesCLIOffloadEnv)
 	tracePrefix := os.Getenv(devicesCLITraceEnv)
 
+	repos := kernelmodel.DefaultRepos()
 	base := []string{
-		"--model", devicesCLIModel,
-		"--hardware", "H100", "--tp", "1",
+		"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 		"--catalog", catalog,
@@ -167,11 +156,11 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 	const name = "TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "testdata", "catalog")
+	_, bundled, _ := kernelRepos(t)
 
 	// The temp catalog's table is a verbatim copy of the historical nvme_gen4 numbers.
 	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 
 	viaBundled, _, err := runDevicesCLILeg(t, name, "run", bundled, offload, "")
 	if err != nil {
@@ -207,7 +196,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	// Non-vacuity for the header assertion: a catalog with different numbers for the same
 	// class produces a different header, so the values above are read, not hardcoded.
 	otherTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth: 1.25e3, write_bandwidth: 6.25e2, base_latency: 4242.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 1.25e3, write_bandwidth_mb_s: 6.25e2, base_latency_us: 4242.0}\n")
 	otherPrefix := filepath.Join(t.TempDir(), "offload-other")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", otherTable, offload, otherPrefix); err != nil {
 		t.Fatalf("other-table export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
@@ -252,7 +241,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 	}
 	const name = "TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution"
 	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	bundled := filepath.Join("..", "testdata", "catalog")
+	_, bundled, _ := kernelRepos(t)
 
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
@@ -264,7 +253,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 
 	// Same catalog table (a temp clone-root copy) ⇒ replay's flag reconciles with the header.
 	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 	out, errOut, err := runDevicesCLILeg(t, name, "replay", sameTable, offload, tracePrefix)
 	if err != nil {
 		t.Fatalf("replay with the same device table must reconcile with the header (INV-13): %v\nstdout:\n%s\nstderr:\n%s",
@@ -276,7 +265,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 
 	// Different numbers for the same class ⇒ refused, naming the conflict.
 	otherTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth: 1.25e3, write_bandwidth: 6.25e2, base_latency: 4242.0}\n")
+		"nvme_gen4: {read_bandwidth_mb_s: 1.25e3, write_bandwidth_mb_s: 6.25e2, base_latency_us: 4242.0}\n")
 	_, controlErrOut, err := runDevicesCLILeg(t, name, "replay", otherTable, offload, tracePrefix)
 	if err == nil {
 		t.Error("non-vacuity: replay against a catalog whose device table differs from the " +
@@ -301,7 +290,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	const name = "TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused"
 
 	// A catalog with the model entry but no devices/ namespace.
-	noDevices := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth: 1.0, write_bandwidth: 1.0, base_latency: 1.0}\n")
+	noDevices := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 1.0, base_latency_us: 1.0}\n")
 	if err := os.RemoveAll(filepath.Join(noDevices, catalogDevicesSubdir)); err != nil {
 		t.Fatalf("remove devices namespace: %v", err)
 	}
@@ -317,7 +306,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 
 	// Negative control: restoring the table makes the SAME invocation succeed, so the
 	// refusal is attributable to the missing table and not to anything else in the leg.
-	restored := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}\n")
+	restored := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run", restored, offload, ""); err != nil {
 		t.Errorf("negative control: the same run with a device table present must succeed: %v\nstdout:\n%s\nstderr:\n%s",
 			err, out, errOut)

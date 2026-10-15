@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
@@ -29,7 +30,7 @@ func TestSaturationCLI_RunReplayParity(t *testing.T) {
 	// Subprocess leg: execute the command named by the env var.
 	if leg := os.Getenv("BLIS_PARITY_LEG"); leg != "" {
 		common := []string{
-			"--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1",
+			"--scenario", kernelTestScenario, "--scenarios", kernelmodel.DefaultScenarios(), "--registry", kernelmodel.DefaultRegistry(),
 			"--catalog", "../testdata/catalog",
 			"--defaults-filepath", "../defaults.yaml",
 			"--detectors", os.Getenv("BLIS_PARITY_DETECTORS"),

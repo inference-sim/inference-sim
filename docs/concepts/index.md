@@ -7,9 +7,8 @@ These pages explain BLIS's architecture and core mechanisms at the level needed 
 | Page | Description |
 |------|-------------|
 | [Glossary](glossary.md) | Definitions of BLIS-specific terminology |
-| [Cluster Architecture](architecture.md) | Multi-instance simulation: admission, routing, scorer composition, snapshot freshness, shared-clock event loop |
+| [Cluster Architecture](architecture.md) | The five BLIS repositories and how they divide the work; multi-instance simulation: admission, routing, scorer composition, snapshot freshness, shared-clock event loop |
 | [Core Engine](core-engine.md) | Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models |
-| [Roofline Estimation](roofline.md) | Analytical GPU step time estimation without training data |
 
 ## Diagrams
 

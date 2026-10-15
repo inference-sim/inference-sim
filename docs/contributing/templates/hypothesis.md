@@ -117,23 +117,23 @@ setup_experiment "${1:-}"
 #
 # Example (basic):
 #   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
-#       --model "$MODEL" --num-instances 4 --seed 42 \
+#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 \
 #       --workload-spec "$WORKLOAD_YAML" --log error
 #
 # Example (with stderr capture for robustness experiments):
 #   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
 #       --stderr "$RESULTS_DIR/config_a_stderr.txt" \
-#       --model "$MODEL" --num-instances 4 --seed 42 --log error
+#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error
 #
 # Example (with per-request JSON):
 #   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
-#       --model "$MODEL" --num-instances 4 --seed 42 --log error \
+#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error \
 #       --metrics-path "$RESULTS_DIR/config_a_results.json"
 #
 # Example (robustness/stress — non-zero exit expected, use || true under set -e):
 #   blis_run $TIMEOUT_EXTENDED "$RESULTS_DIR/stress.txt" \
 #       --stderr "$RESULTS_DIR/stress_stderr.txt" \
-#       --model "$MODEL" --num-instances 4 --seed 42 --log error || true
+#       --scenario "$SCENARIO" --scenarios "$SCENARIOS" --registry "$REGISTRY" --num-instances 4 --seed 42 --log error || true
 #
 # For KV-constrained experiments, add pre-flight check (advisory, never aborts):
 #   preflight_kv_check 800 16 512  # total_blocks, block_size (default: 16), max_input

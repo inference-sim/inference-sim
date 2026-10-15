@@ -37,7 +37,7 @@ type NormalizedRound struct {
 // TraceRecord.Model is left empty deliberately: it is routing-significant at
 // replay (buildRouterState filters instances by it), so writing a recorded
 // cross-model name would drop every request at routing. Empty makes requests
-// inherit --model (#1477). ThinkUs, when a reader sets it (non-nil), is written to
+// inherit the run's model (#1477). ThinkUs, when a reader sets it (non-nil), is written to
 // the think_time_us column (#1478) and preferred over arrival-gap think at replay;
 // the OTel reader leaves it nil (no reliable response-complete time → arrival-gap
 // fallback), Weka sets it — including a recorded &0 for an overlapping turn, which

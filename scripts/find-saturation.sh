@@ -5,9 +5,11 @@
 # Drives `blis run` across a configurable rate sweep, records throughput and
 # every post-hoc detector's final verdict per rate (via the detector bank,
 # #1519), and prints a single table summarizing the saturation envelope.
-# Reproduces the Llama-3.1-70B / TP=8 / H100 / chatbot reference validation.
+# The deployment (model, hardware, parallelism, engine settings) comes from a
+# blis-schemas scenario file; blis-latency-kernel prices every step.
 #
-# All inputs are environment variables; defaults match the reference run.
+# All inputs are environment variables. SCENARIO, SCENARIOS and REGISTRY are
+# required; the rest have defaults.
 # See scripts/README.md for the full input table and worked examples.
 #
 # Output:
@@ -18,15 +20,23 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MODEL="${MODEL:-meta-llama/Llama-3.1-70B-Instruct}"
-# Model catalog clone root: holds models/<short-name>/config.json per model (#1731, #1774).
-# Required by blis run — there is no default and no search path. Point this at a checkout of
-# the blis-catalog repository (or export BLIS_CATALOG instead of setting this).
-CATALOG="${CATALOG:-blis-catalog}"
-HARDWARE="${HARDWARE:-H100}"
-TP="${TP:-8}"
+# Scenario file name, the directory holding it, and the blis-registry clone root. All three are
+# required by blis run; there are no defaults.
+SCENARIO="${SCENARIO:-}"
+SCENARIOS="${SCENARIOS:-}"
+REGISTRY="${REGISTRY:-}"
+for v in SCENARIO SCENARIOS REGISTRY; do
+  if [[ -z "${!v}" ]]; then
+    echo "error: $v is not set. find-saturation.sh needs SCENARIO (a scenario file name)," >&2
+    echo "SCENARIOS (the directory holding it) and REGISTRY (a blis-registry clone root)." >&2
+    echo "See the find-saturation.sh section of scripts/README.md." >&2
+    exit 1
+  fi
+done
+# Catalog clone root (blis-catalog at its pinned release). Required by blis run -- there is no
+# default and no search path. Falls back to BLIS_CATALOG, then ./blis-catalog.
+CATALOG="${CATALOG:-${BLIS_CATALOG:-blis-catalog}}"
 WORKLOAD="${WORKLOAD:-chatbot}"
-LATENCY_MODEL="${LATENCY_MODEL:-trained-physics}"
 NUM_REQUESTS="${NUM_REQUESTS:-6000}"
 HORIZON_US="${HORIZON_US:-600000000}"   # 600s
 # Trailing window for the stdout/report final-label plurality vote (#1517).
@@ -37,9 +47,8 @@ RATES="${RATES:-0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100}"
 SEED="${SEED:-42}"
 
 # --catalog is always passed: blis refuses a run with neither --catalog nor BLIS_CATALOG.
-# The model's config.json is read from "$CATALOG/models/<model-short-name>/config.json"; a
-# model with no entry there is refused, never fetched (NS-6).
-CFG_ARGS=(--catalog "$CATALOG")
+# The scenario's model must be in the catalog; a model with no entry is refused (NS-6).
+CFG_ARGS=(--catalog "$CATALOG" --scenarios "$SCENARIOS" --registry "$REGISTRY")
 
 OUT_DIR="${OUT_DIR:-results/saturation-$(date +%Y%m%d-%H%M%S)-$$}"
 mkdir -p "$OUT_DIR"
@@ -52,7 +61,7 @@ if [[ ! -x ./blis ]]; then
 fi
 
 echo "intended_rate,sustained_throughput,goodput_rps,goodput_vs_intended,timeout_frac,e2e_p99_ms,ttft_p99_ms,still_queued,still_running,composite_verdict,threshold_verdict,backlog_drift_verdict,peak_rate_verdict" > "$SUMMARY"
-printf "Model:     %s (TP=%d, %s)\n" "$MODEL" "$TP" "$HARDWARE"
+printf "Scenario:  %s (from %s)\n" "$SCENARIO" "$SCENARIOS"
 printf "Workload:  %s\n" "$WORKLOAD"
 printf "Detectors: %s (final window %s)\n" "$DETECTORS" "$FINAL_WINDOW"
 printf "Sweeping:  %s req/s\n" "$RATES"
@@ -75,11 +84,8 @@ for R in $RATES; do
   # One deterministic run per rate: the detector bank fans the same replay out
   # to every selected detector, so all verdicts come from a single pass.
   ./blis run \
-    --model "$MODEL" \
+    --scenario "$SCENARIO" \
     "${CFG_ARGS[@]}" \
-    --hardware "$HARDWARE" \
-    --tp "$TP" \
-    --latency-model "$LATENCY_MODEL" \
     --workload "$WORKLOAD" \
     --rate "$R" \
     --num-requests "$NUM_REQUESTS" \

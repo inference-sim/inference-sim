@@ -1,0 +1,6 @@
+name: llama-4-scout-17b-16e-instruct-fp8-dynamic
+source:
+  provider: huggingface
+  repo: RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic
+  revision: fc1b4f4cea92cfc13570f504a209eb4d4ca81534
+  retrieved: 2026-09-16

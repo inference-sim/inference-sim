@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
@@ -27,7 +28,7 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	// Subprocess leg: emit the metrics stdout for the variant named by the env var.
 	if v := os.Getenv("BLIS_SAT_VARIANT"); v != "" {
 		args := []string{
-			"run", "--model", "qwen/qwen3-14b", "--hardware", "H100", "--tp", "1", "--seed", "42",
+			"run", "--scenario", kernelTestScenario, "--scenarios", kernelmodel.DefaultScenarios(), "--registry", kernelmodel.DefaultRegistry(), "--seed", "42",
 			"--catalog", "../testdata/catalog",
 			"--num-requests", "50",
 			"--defaults-filepath", "../defaults.yaml",

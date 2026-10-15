@@ -52,6 +52,7 @@ type Request struct {
 	ArrivalTime      int64   // Timestamp in ticks when the request arrives in the simulator
 	ScheduledStepIdx int     // Step index when this request got scheduled (waiting -> running)
 	FinishedStepIdx  int     // Step index when this request finished (running -> completed)
+	DepartureTime    int64   // Tick its final step ends (its RequestLeftEvent time); 0 until it completes
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
 	ITL              []int64 // List of inter-token latencies

@@ -28,7 +28,7 @@ func (m *fixedOverheadModel) OutputTokenProcessingTime() int64 { return 0 }
 func (m *fixedOverheadModel) PostDecodeFixedOverhead() int64   { return m.overhead }
 
 // fixedStepModel is a test-only LatencyModel stub that returns a fixed step time.
-// Used by tests that need deterministic timing without depending on the roofline model.
+// Used by tests that need deterministic timing without depending on any pricing model.
 type fixedStepModel struct {
 	stepTime int64
 }
@@ -52,27 +52,10 @@ func (m *spyLatencyModel) QueueingTime(req *Request) int64  { return 0 }
 func (m *spyLatencyModel) OutputTokenProcessingTime() int64 { return 0 }
 func (m *spyLatencyModel) PostDecodeFixedOverhead() int64   { return 0 }
 
-// rooflineModelConfig returns a minimal valid ModelConfig for roofline latency tests.
-// Llama-3.1-8B-like values; used wherever tests need a valid model configuration.
-func rooflineModelConfig() ModelConfig {
-	return ModelConfig{
-		NumLayers:     32,
-		HiddenDim:     4096,
-		NumHeads:      32,
-		NumKVHeads:    8,
-		BytesPerParam: 2, // bfloat16
-	}
-}
-
-// rooflineHWCalib returns a minimal valid HardwareCalib for roofline latency tests.
-// H100-like values; used wherever tests need a valid hardware configuration.
-func rooflineHWCalib() HardwareCalib {
-	return HardwareCalib{
-		TFlopsPeak: 989.0,
-		BwPeakTBs:  3.35,
-		MfuPrefill: 0.55,
-		MfuDecode:  0.30,
-	}
+// testModelConfig returns a dense ModelConfig for tests that need one. Step time comes from
+// the fake latency model.
+func testModelConfig() ModelConfig {
+	return ModelConfig{}
 }
 
 // BC-2 (#963): StepTime receives only requests with NumNewTokens > 0.
@@ -192,13 +175,12 @@ func TestSimulator_PostDecodeFixedOverhead_DelegatesToModel(t *testing.T) {
 
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
 // Honors KVCPUBlocks for tiered KV cache construction via MustNewKVStoreFromConfig.
+// Steps are priced by cfg.LatencyModel when set, else by the default fake
+// latency model (newFakeLatency) -- these tests exercise simulation behavior, not pricing.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	t.Helper()
 	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
+	latencyModel := fakeLatencyFor(cfg)
 	s, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
@@ -206,8 +188,12 @@ func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
 	return s
 }
 
-// TestRegenGoldenDataset regenerates testdata/goldendataset.json with roofline backend.
-// Skipped by default; run with: go test ./sim -run TestRegenGoldenDataset -regen-golden
+// goldenApproach names how the golden dataset's metrics were produced.
+const goldenApproach = "fake-latency"
+
+// TestRegenGoldenDataset regenerates testdata/goldendataset.json, pricing steps with the
+// default deterministic fake latency model (testutil.DefaultFakeLatency).
+// Skipped by default; run with: REGEN_GOLDEN=1 go test ./sim -run TestRegenGoldenDataset
 func TestRegenGoldenDataset(t *testing.T) {
 	if os.Getenv("REGEN_GOLDEN") != "1" {
 		t.Skip("set REGEN_GOLDEN=1 to regenerate golden dataset")
@@ -219,8 +205,7 @@ func TestRegenGoldenDataset(t *testing.T) {
 			Seed:                tc.Seed,
 			KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 			BatchConfig:         NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-			LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-			ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
+			ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, tc.MaxModelLen),
 		}
 		s := mustNewSimulator(t, cfg)
 		requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
@@ -248,7 +233,7 @@ func TestRegenGoldenDataset(t *testing.T) {
 		}
 		sort.Float64s(sortedSD)
 
-		dataset.Tests[i].Approach = "roofline"
+		dataset.Tests[i].Approach = goldenApproach
 		dataset.Tests[i].Metrics = testutil.GoldenMetrics{
 			CompletedRequests:      s.Metrics.CompletedRequests,
 			TotalInputTokens:       int(s.Metrics.TotalInputTokens),
@@ -315,8 +300,7 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				Seed:                tc.Seed,
 				KVCacheConfig:       NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(tc.MaxNumSeqs, tc.MaxNumBatchedTokens, tc.LongPrefillTokenThreshold),
-				LatencyCoeffs:       NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "", "roofline", tc.MaxModelLen),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), tc.Model, tc.Hardware, tc.TP, 1, false, tc.MaxModelLen),
 			})
 
 			requests := testGenerateRequests(tc.Seed, math.MaxInt64, tc.Rate/1e6,
@@ -453,8 +437,7 @@ func TestSimulator_WorkloadRNG_NotNil(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 	})
 
 	rng := sim.WorkloadRNG()
@@ -475,8 +458,7 @@ func TestSimulator_DeterministicWorkload(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 
 	requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 50,
@@ -520,18 +502,14 @@ func newTestSimConfig() SimConfig {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 	}
 }
 
 func TestNewSimulator_NilKVStore_ReturnsError(t *testing.T) {
 	cfg := newTestSimConfig()
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	_, err = NewSimulator(cfg, nil, latencyModel)
+	latencyModel := fakeLatencyFor(cfg)
+	_, err := NewSimulator(cfg, nil, latencyModel)
 	if err == nil {
 		t.Fatal("expected error for nil kvStore")
 	}
@@ -565,11 +543,8 @@ func TestNewSimulator_BatchConfigValidation(t *testing.T) {
 				LongPrefillTokenThreshold: tc.prefillThresh,
 			}
 			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
-			latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-			if err != nil {
-				t.Fatalf("MustNewLatencyModel: %v", err)
-			}
-			_, err = NewSimulator(cfg, kvStore, latencyModel)
+			latencyModel := fakeLatencyFor(cfg)
+			_, err := NewSimulator(cfg, kvStore, latencyModel)
 			if err == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -604,32 +579,6 @@ func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 	MustNewKVCacheState(100, 16)
 }
 
-func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
-	// Save and restore the registered function
-	saved := NewLatencyModelFunc
-	defer func() { NewLatencyModelFunc = saved }()
-	NewLatencyModelFunc = nil
-
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic for nil NewLatencyModelFunc")
-		}
-		msg, ok := r.(string)
-		if !ok {
-			t.Fatalf("expected string panic, got %T: %v", r, r)
-		}
-		expected := "NewLatencyModelFunc not registered: import sim/latency to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/latency\")"
-		if msg != expected {
-			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
-		}
-	}()
-	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
-	hw := NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0)
-	_, _ = MustNewLatencyModel(coeffs, hw) //nolint:errcheck // expected to panic before returning
-}
-
 func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 	cfg := newTestSimConfig()
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -646,15 +595,12 @@ func TestNewSimulator_NilLatencyModel_ReturnsError(t *testing.T) {
 func TestNewSimulator_MaxModelLen_KVTooSmall(t *testing.T) {
 	cfg := newTestSimConfig()
 	// 1024 tokens / 16 block size = 64 blocks needed, but only 50 available
-	cfg.ModelHardwareConfig = NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 1024)
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 1024)
 	cfg.KVCacheConfig = NewKVCacheConfig(50, 16, 0, 0, 0, 0)
 
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	_, err = NewSimulator(cfg, kvStore, latencyModel)
+	latencyModel := fakeLatencyFor(cfg)
+	_, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err == nil {
 		t.Fatal("expected error when KV cache too small for MaxModelLen")
 	}
@@ -667,7 +613,7 @@ func TestNewSimulator_MaxModelLen_KVTooSmall(t *testing.T) {
 func TestNewSimulator_MaxModelLen_KVSufficient(t *testing.T) {
 	cfg := newTestSimConfig()
 	// 1024 tokens / 16 block size = 64 blocks needed, 100 available
-	cfg.ModelHardwareConfig = NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 1024)
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 1024)
 	cfg.KVCacheConfig = NewKVCacheConfig(100, 16, 0, 0, 0, 0)
 	_ = mustNewSimulator(t, cfg) // should not error
 }
@@ -676,7 +622,7 @@ func TestNewSimulator_MaxModelLen_KVSufficient(t *testing.T) {
 func TestNewSimulator_MaxModelLen_Zero_NoValidation(t *testing.T) {
 	cfg := newTestSimConfig()
 	// MaxModelLen=0 (default) — no validation even with small KV cache
-	cfg.ModelHardwareConfig = NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0)
+	cfg.ModelHardwareConfig = NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0)
 	cfg.KVCacheConfig = NewKVCacheConfig(1, 16, 0, 0, 0, 0)
 	_ = mustNewSimulator(t, cfg) // should not error
 }
@@ -860,8 +806,7 @@ func TestSimulator_RequestConservation_InfiniteHorizon_AllRequestsComplete(t *te
 		Seed:                99,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-conservation", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-conservation", "H100", 1, 1, false, 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -906,8 +851,7 @@ func TestSimulator_RequestConservation_FiniteHorizon_ThreeTermEquation(t *testin
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-conservation-finite", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-conservation-finite", "H100", 1, 1, false, 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -962,8 +906,7 @@ func TestSimulator_Causality_FullChain_ArrivalToCompletion(t *testing.T) {
 		Seed:                77,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-causality", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-causality", "H100", 1, 1, false, 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -1018,8 +961,7 @@ func TestSimulator_ClockMonotonicity_NeverDecreases(t *testing.T) {
 		Seed:                55,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-monotonicity", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-monotonicity", "H100", 1, 1, false, 0),
 	}
 
 	sim := mustNewSimulator(t, cfg)
@@ -1061,8 +1003,7 @@ func TestInjectArrival_BeyondHorizon_Warns(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 	req := &Request{
@@ -1086,8 +1027,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-determinism", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-determinism", "H100", 1, 1, false, 0),
 	}
 
 	// Run 1
@@ -1166,8 +1106,7 @@ func TestSimulator_KVBlockConservation_PostSimulation_ZeroLeak(t *testing.T) {
 				Seed:                42,
 				KVCacheConfig:       NewKVCacheConfig(10000, 16, tt.kvCPUBlocks, 0.8, 100.0, 0),
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
-				LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-kv-conservation", "H100", 1, 1, false, "", "roofline", 0),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-kv-conservation", "H100", 1, 1, false, 0),
 			}
 
 			sim := mustNewSimulator(t, cfg)
@@ -1237,8 +1176,7 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // KEY: only one request can run at a time
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-work-conserving", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-work-conserving", "H100", 1, 1, false, 0),
 	}
 
 	s := mustNewSimulator(t, cfg)
@@ -1250,7 +1188,7 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 		OutputTokens: make([]TokenID, 5),
 		State:        StateQueued,
 	})
-	// Request B: arrives at t=1 (during A's service time, which is ~6000μs)
+	// Request B: arrives at t=1 (during A's service time)
 	s.InjectArrival(&Request{
 		ID: "req-B", ArrivalTime: 1,
 		InputTokens:  make([]TokenID, 10),
@@ -1269,21 +1207,21 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 	}
 
 	// BC-2: req-B's scheduling delay must be bounded.
-	// It should wait approximately one service time of req-A (~6000μs), not be stuck indefinitely.
+	// It should wait approximately one service time of req-A, not be stuck indefinitely.
 	delayA := s.Metrics.RequestSchedulingDelays["req-A"]
 	delayB := s.Metrics.RequestSchedulingDelays["req-B"]
 
-	// req-A should be scheduled almost immediately (only alpha queueing delay)
+	// req-A should be scheduled almost immediately (only the model's queueing delay)
 	if delayA > 10000 {
 		t.Errorf("req-A scheduling delay = %d μs, want < 10000 (should be near-immediate)", delayA)
 	}
 
-	// req-B should wait approximately one service time of req-A, not be unbounded.
-	// With beta=[1000,10,5] and 10 input + 5 output tokens, service time is ~6000-7000μs.
-	// We use a generous bound (40000μs ≈ 6× service time) to avoid brittleness.
-	if delayB > 40000 {
-		t.Errorf("req-B scheduling delay = %d μs, exceeds generous service time bound "+
-			"(may indicate work-conserving violation)", delayB)
+	// req-B should wait at most one service time of req-A, not be unbounded: with one
+	// seat, B is scheduled no later than A's completion (A arrived at 0, so A's E2E is
+	// its completion time).
+	if e2eA := s.Metrics.RequestE2Es["req-A"]; float64(delayB) > e2eA {
+		t.Errorf("req-B scheduling delay = %d μs, exceeds req-A's service time %.0f μs "+
+			"(may indicate work-conserving violation)", delayB, e2eA)
 	}
 
 	// req-B must have waited longer than req-A (it was queued behind A)
@@ -1341,8 +1279,7 @@ func TestINV3_ClockNeverDecreases(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(2, 2048, 0), // small batch: forces queueing, so events interleave
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-inv3", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-inv3", "H100", 1, 1, false, 0),
 	}
 
 	s := mustNewSimulator(t, cfg)
@@ -1425,14 +1362,11 @@ func TestEnqueueRequest_OversizedInput_DroppedNotEnqueued(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
+	latencyModel := fakeLatencyFor(cfg)
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
@@ -1479,14 +1413,11 @@ func TestEnqueueRequest_NormalInput_Enqueued(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
+	latencyModel := fakeLatencyFor(cfg)
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
@@ -1525,8 +1456,8 @@ func TestEnqueueRequest_MaxModelLen_Exceeded_Dropped(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 512),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 512),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1560,8 +1491,8 @@ func TestEnqueueRequest_MaxModelLen_Zero_FallsThroughToKV(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1588,8 +1519,8 @@ func TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 512),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 512),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1651,8 +1582,8 @@ func TestEnqueueRequest_InputEqualsMaxModelLen_Dropped(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 512),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 512),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1681,8 +1612,8 @@ func TestEnqueueRequest_ExactFit_Accepted(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 512),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 512),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1707,8 +1638,8 @@ func TestEnqueueRequest_NegativeMaxOutputLen_Dropped(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 512),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 512),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1742,8 +1673,8 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 100),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1800,8 +1731,8 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 100),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -1833,9 +1764,22 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.TotalOutputTokens == 0 {
 		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
 	}
-	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens + 1 prefill-generated = 50
+	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens
+	// + 1 prefill-generated = 50 — vLLM's check_stop count, MaxModelLen - input (#1891).
 	if sim.Metrics.TotalOutputTokens != 50 {
 		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	}
+	// BC-2 (#1891): the reported mean ITL is the decode-interval sum over the emitted
+	// token count minus one — the same law the normal completion path applies — computed
+	// here from the request's own ITL entries rather than from a pinned value.
+	var itlSum int64
+	for _, v := range req.ITL {
+		itlSum += v
+	}
+	wantITL := float64(itlSum) / float64(sim.Metrics.TotalOutputTokens-1)
+	if got := sim.Metrics.RequestITLs[req.ID]; got != wantITL {
+		t.Errorf("RequestITLs = %f, want %f (itlSum %d / (emitted %d - 1))",
+			got, wantITL, itlSum, sim.Metrics.TotalOutputTokens)
 	}
 	// KV blocks released
 	if sim.KVCache.UsedBlocks() != 0 {
@@ -1852,8 +1796,8 @@ func TestSimulator_Conservation_WithMaxModelLen_Drops(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 200),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 200),
 	}
 	sim := mustNewSimulator(t, cfg)
 	rng := sim.WorkloadRNG()
@@ -1904,11 +1848,8 @@ func TestNewSimulator_NegativeMaxModelLen_Error(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.MaxModelLen = -5 // bypass canonical constructor's panic to test NewSimulator validation
 	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
-	_, err = NewSimulator(cfg, kvStore, latencyModel)
+	latencyModel := fakeLatencyFor(cfg)
+	_, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err == nil {
 		t.Fatal("expected error for negative MaxModelLen")
 	}
@@ -1929,7 +1870,7 @@ func TestNewModelHardwareConfig_NegativeMaxModelLen_Panics(t *testing.T) {
 			t.Errorf("panic message %q should contain MaxModelLen", msg)
 		}
 	}()
-	NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", -1)
+	NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, -1)
 }
 
 // oracleReadPatterns are the two ways a control-plane file can reach oracle output
@@ -1953,8 +1894,8 @@ var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
 //
 // Deliberately out of scope: sim/ subpackages. sim/workload/ generates requests rather
 // than deciding whether to admit or route them, so it holds no servability decision for
-// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/latency/
-// and sim/kv/ are likewise execution-side. Only sim/cluster/ contains control-plane code,
+// INV-9 to constrain — it is the source of the oracle, not a consumer of it. sim/kv/ is
+// likewise execution-side. Only sim/cluster/ contains control-plane code,
 // and it is scanned by the explicit list further down.
 var simControlPlaneGlobs = []string{
 	"routing*.go",
@@ -2220,14 +2161,11 @@ func TestSimulator_OversizedRequests_TerminatesNoLivelock(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(50, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
+	latencyModel := fakeLatencyFor(cfg)
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
@@ -2281,14 +2219,11 @@ func TestSimulator_AllOversized_TerminatesEmpty(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	kvStore := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	latencyModel, err := MustNewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
-	if err != nil {
-		t.Fatalf("MustNewLatencyModel: %v", err)
-	}
+	latencyModel := fakeLatencyFor(cfg)
 	sim, err := NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
 		t.Fatalf("NewSimulator: %v", err)
@@ -2331,8 +2266,7 @@ func TestRequestLifecycle_ValidTransitions(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{50, 0.1, 50}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	})
 
 	req := &Request{
@@ -2381,8 +2315,7 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 		Horizon:             100_000_000,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(100, 10000, 100),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 2}, []float64{500, 1, 1000}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2428,22 +2361,6 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 	}
 }
 
-// TestNewLatencyModel_ZeroNumHeads_Fails verifies that roofline mode rejects
-// ModelConfig with NumHeads=0 (all backends validate model config fields).
-func TestNewLatencyModel_ZeroNumHeads_Fails(t *testing.T) {
-	// GIVEN a ModelHardwareConfig with NumHeads=0 (invalid for roofline)
-	hw := NewModelHardwareConfig(ModelConfig{NumHeads: 0}, rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0)
-	coeffs := NewLatencyCoeffs([]float64{1, 2, 3}, []float64{1, 2, 3})
-
-	// WHEN NewLatencyModel is called
-	_, err := MustNewLatencyModel(coeffs, hw)
-
-	// THEN it returns an error (roofline validates NumHeads > 0)
-	if err == nil {
-		t.Fatal("expected error for NumHeads=0 with roofline backend, got nil")
-	}
-}
-
 // BC-7: Chunked prefill + MaxModelLen — no spurious force-completion.
 // GIVEN LongPrefillTokenThreshold=64, MaxModelLen=500, input=200, output=50
 // WHEN the request undergoes multi-chunk prefill (4 chunks: 64,64,64,8)
@@ -2456,8 +2373,8 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 64), // LongPrefillTokenThreshold=64
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 500),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 500),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2550,8 +2467,8 @@ func TestEnqueueRequest_AutoFill_MaxOutputLen(t *testing.T) {
 			cfg := SimConfig{
 				KVCacheConfig:       NewKVCacheConfig(1000000, 16, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(256, 4096, 0),
-				LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{0, 0, 0}),
-				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", tc.maxModelLen),
+				LatencyModel:        fakeZeroQueueing(),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, tc.maxModelLen),
 				Horizon:             1000000,
 				Seed:                42,
 			}
@@ -2592,8 +2509,8 @@ func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{6910, 17.67, 2.84}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 100),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2629,8 +2546,8 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 2),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 2),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2662,8 +2579,8 @@ func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 100),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2690,26 +2607,31 @@ func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
 	}
 }
 
-// TestRecordRequestCompletion_LengthCapped_ITL verifies BC-8:
-// Length-capped request uses len(req.ITL)-1 as ITL denominator.
+// TestRecordRequestCompletion_LengthCapped_ITL verifies BC-8: a length-capped request's
+// ITL denominator comes from the output tokens it actually emitted, never from the oracle
+// len(req.OutputTokens) — which a length cap never reaches (#588), nor from len(req.ITL),
+// which counts decode steps and is one short of the token count (#1891).
 func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 100),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 100),
 	}
 	sim := mustNewSimulator(t, cfg)
 
-	// 200 pre-determined output tokens, but only 3 actual decode steps (ITL entries)
+	// 200 pre-determined output tokens, but the request was stopped after 3 decode steps:
+	// ProgressIndex = 50+3 = 53, so it emitted 4 tokens (1 charged to prefill + 3 decode),
+	// one ITL entry per decode step.
 	req := &Request{
 		ID:             "capped_itl",
 		InputTokens:    make([]TokenID, 50),
 		OutputTokens:   make([]TokenID, 200),
 		State:          StateCompleted,
 		LengthCapped:   true,
+		ProgressIndex:  53,
 		ArrivalTime:    0,
 		FirstTokenTime: 10000,
 		ITL:            []int64{5000, 5000, 5000}, // 3 intervals, sum=15000
@@ -2718,10 +2640,14 @@ func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 
 	sim.recordRequestCompletion(req)
 
-	// denominator = max(len(ITL)-1, 1) = max(3-1, 1) = 2 → avgITL = 15000/2 = 7500
+	// denominator = emitted-1 = 4-1 = 3 → avgITL = 15000/3 = 5000. Neither the oracle
+	// len(OutputTokens)-1 = 199 (75.4) nor the pre-#1891 len(ITL)-1 = 2 (7500).
 	gotITL := sim.Metrics.RequestITLs[req.ID]
-	if gotITL != 7500.0 {
-		t.Errorf("RequestITLs = %f, want 7500 (denom=max(len(ITL)-1,1)=2, not len(OutputTokens)-1=199)", gotITL)
+	if gotITL != 5000.0 {
+		t.Errorf("RequestITLs = %f, want 5000 (denom = emitted-1 = 3; not len(OutputTokens)-1=199, not len(ITL)-1=2)", gotITL)
+	}
+	if sim.Metrics.TotalOutputTokens != 4 {
+		t.Errorf("TotalOutputTokens = %d, want 4 (1 prefill-generated + 3 decode steps)", sim.Metrics.TotalOutputTokens)
 	}
 }
 
@@ -2733,8 +2659,8 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2758,6 +2684,156 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 	}
 }
 
+// TestLengthCap_VLLMParityOutputTokens verifies BC-1 (#1891): a length-capped request
+// emits exactly maxModelLen - input output tokens, and its sequence lands exactly ON the
+// context window rather than one token short of (or past) it.
+//
+// This is the vLLM check_stop law, not a golden value. BLIS's ProgressIndex is vLLM's
+// num_computed_tokens, which lags the generated-token count by exactly one — BLIS charges
+// output token #1 to prefill completion, just as vLLM's num_computed lags num_tokens by
+// the token the forward pass has just appended. So force-completing at
+// PI >= maxModelLen-1 IS vLLM's `num_tokens >= max_model_len`, and the emitted count is
+// maxModelLen - input. The assertions fail in both directions: dropping the
+// prefill-charged token (#1097) reads maxModelLen-input-1, and "fixing" the boundary to
+// PI >= maxModelLen reads maxModelLen-input+1 — a sequence one token past the window.
+func TestLengthCap_VLLMParityOutputTokens(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxModelLen int64
+		inputLen    int64
+	}{
+		{"mid-window input", 100, 50},
+		{"single input token", 64, 1},
+		{"input one short of the window", 64, 63},
+		{"smallest window that admits a request", 2, 1},
+		{"odd window and input", 33, 17},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Horizon:             100_000_000,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyModel:        fakeZeroQueueing(),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, tc.maxModelLen),
+			}
+			s := mustNewSimulator(t, cfg)
+
+			// Assigned output reaches far past the window, so the length cap — not the
+			// oracle output length — is what stops this request.
+			req := &Request{
+				ID:           "capped",
+				InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), int(tc.inputLen)),
+				OutputTokens: GenerateRandomTokenIDs(s.WorkloadRNG(), int(tc.maxModelLen)*3),
+				ArrivalTime:  0,
+				State:        StateQueued,
+			}
+			s.InjectArrival(req)
+			s.Run()
+
+			if !req.LengthCapped || s.Metrics.LengthCappedRequests != 1 {
+				t.Fatalf("LengthCapped = %v, LengthCappedRequests = %d, want true/1 (request must stop at the window)",
+					req.LengthCapped, s.Metrics.LengthCappedRequests)
+			}
+			want := int(tc.maxModelLen - tc.inputLen)
+			if s.Metrics.TotalOutputTokens != want {
+				t.Errorf("TotalOutputTokens = %d, want %d (vLLM check_stop: maxModelLen(%d) - input(%d))",
+					s.Metrics.TotalOutputTokens, want, tc.maxModelLen, tc.inputLen)
+			}
+			// num_computed_tokens at the stop: vLLM's scheduler cap holds it at
+			// max_model_len-1, one behind the token count.
+			if req.ProgressIndex != tc.maxModelLen-1 {
+				t.Errorf("final ProgressIndex = %d, want %d (maxModelLen-1)", req.ProgressIndex, tc.maxModelLen-1)
+			}
+			// The context window is filled exactly, never overrun.
+			if seq := tc.inputLen + int64(s.Metrics.TotalOutputTokens); seq != tc.maxModelLen {
+				t.Errorf("final sequence length = %d, want %d (input + emitted must land ON the window)", seq, tc.maxModelLen)
+			}
+			assertINV1Conservation(t, s.Metrics, 1, "length-cap vLLM parity")
+		})
+	}
+}
+
+// TestRecordRequestCompletion_LengthCapped_ITLMatchesNormalPath verifies BC-2 (#1891):
+// the mean-ITL (TPOT) denominator of a length-capped request is derived from the
+// output-token count it actually emitted (tokens-1), exactly as the normal completion
+// path uses len(OutputTokens)-1. Two requests that emitted the same number of output
+// tokens with the same per-step latencies must report the same mean ITL — being
+// length-capped cannot change a per-token average.
+//
+// Before #1891 the capped branch divided by max(len(req.ITL)-1, 1). len(req.ITL) counts
+// decode STEPS, which is already tokens-1 (the first token's latency is TTFT, not an ITL
+// entry), so that denominator was tokens-2: the metric was computed as if the request had
+// emitted one output token fewer than vLLM's maxModelLen - input.
+func TestRecordRequestCompletion_LengthCapped_ITLMatchesNormalPath(t *testing.T) {
+	const (
+		maxModelLen = int64(100)
+		inputLen    = int64(50)
+		stepITL     = int64(5000)
+	)
+	// A request stopped at the boundary has num_computed = maxModelLen-1 and emitted
+	// maxModelLen-inputLen tokens: one charged to prefill (its latency is TTFT) plus
+	// maxModelLen-1-inputLen decode steps, each contributing one ITL entry.
+	emitted := int(maxModelLen - inputLen)
+	itls := make([]int64, emitted-1)
+	for i := range itls {
+		itls[i] = stepITL
+	}
+
+	newSim := func() *Simulator {
+		return mustNewSimulator(t, SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+			BatchConfig:         NewBatchConfig(256, 2048, 0),
+			LatencyModel:        fakeZeroQueueing(),
+			ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, maxModelLen),
+		})
+	}
+
+	record := func(req *Request) float64 {
+		s := newSim()
+		s.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
+		s.recordRequestCompletion(req)
+		if s.Metrics.TotalOutputTokens != emitted {
+			t.Fatalf("%s: TotalOutputTokens = %d, want %d", req.ID, s.Metrics.TotalOutputTokens, emitted)
+		}
+		return s.Metrics.RequestITLs[req.ID]
+	}
+
+	// Length-capped: oracle output far past the window, stopped at num_computed = 99.
+	gotCapped := record(&Request{
+		ID:             "capped",
+		InputTokens:    make([]TokenID, inputLen),
+		OutputTokens:   make([]TokenID, 200),
+		ProgressIndex:  maxModelLen - 1,
+		State:          StateCompleted,
+		LengthCapped:   true,
+		FirstTokenTime: 10000,
+		ITL:            itls,
+	})
+	// Normal completion of the same number of output tokens with the same step latencies.
+	gotNormal := record(&Request{
+		ID:             "normal",
+		InputTokens:    make([]TokenID, inputLen),
+		OutputTokens:   make([]TokenID, emitted),
+		ProgressIndex:  inputLen + int64(emitted) - 1,
+		State:          StateCompleted,
+		FirstTokenTime: 10000,
+		ITL:            itls,
+	})
+
+	if gotCapped != gotNormal {
+		t.Errorf("RequestITLs capped = %f, normal = %f — must be equal (same emitted tokens, same step latencies)", gotCapped, gotNormal)
+	}
+	// Every step took stepITL, so the per-token mean is stepITL regardless of path.
+	if gotCapped != float64(stepITL) {
+		t.Errorf("RequestITLs[capped] = %f, want %d (itlSum/(emitted-1) = %d/%d)",
+			gotCapped, stepITL, stepITL*int64(emitted-1), emitted-1)
+	}
+}
+
 // TestSimulator_Conservation_FiveTermWithTimeout verifies BC-4:
 // GIVEN requests with short deadlines mixed with normal requests AND dropped requests
 // WHEN simulation completes
@@ -2768,8 +2844,8 @@ func TestSimulator_Conservation_FiveTermWithTimeout(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens capacity
 		BatchConfig:         NewBatchConfig(1, 2048, 0),          // batch size 1 forces queuing
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2834,8 +2910,8 @@ func TestSimulator_Timeout_KVConservation(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0), // small KV for observability
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{0, 0, 0}), // slower steps so timeout hits mid-execution
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -2876,8 +2952,7 @@ func TestEnqueueDecodeSubRequest_StepEventAtClusterTime(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-clustertime", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-clustertime", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 	// Internal clock is 0 (idle simulator, no events processed).
@@ -2922,8 +2997,7 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-simclockahead", "H100", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-simclockahead", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -3011,15 +3085,15 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 // A's full post-eviction run (one extra).
 // With the fix: TotalOutputTokens = 10 (5 per request: OutputLen).
 func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) {
-	// beta=[0,1,0]: StepTime = cacheMissTokens (min 1 µs).
-	// Decode steps cost 0 µs → clamped to 1; prefill costs inputTokens µs.
+	// fakeTokenCost: StepTime = scheduled tokens (1 µs each).
+	// Decode steps cost 1 µs; prefill costs inputTokens µs.
 	cfg := SimConfig{
 		Horizon:             1_000_000_000,
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeTokenCost(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -3073,8 +3147,8 @@ func TestSimulator_ITL_NoDuplicateEntriesAfterPreemption(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeTokenCost(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -3122,8 +3196,8 @@ func TestSimulator_TTFTSum_NoDoubleCountAfterPreemption(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeTokenCost(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -3205,8 +3279,8 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeZeroQueueing(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -3264,8 +3338,8 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 10_000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
+		LatencyModel:        fakeTokenCost(),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -3343,8 +3417,7 @@ func TestEnqueueRequest_SetsVLLMConventionPriority(t *testing.T) {
 				Seed:                42,
 				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
-				LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 			}
 			s := mustNewSimulator(t, cfg)
 			req := &Request{
@@ -3370,8 +3443,7 @@ func TestSimulator_PriorityIsStatic_NotRecomputedEachStep(t *testing.T) {
 		Seed:                42,
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
 	req := &Request{
@@ -3411,8 +3483,7 @@ func TestEnqueueDecodeSubRequest_SetsVLLMConventionPriority(t *testing.T) {
 				Seed:                42,
 				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 				BatchConfig:         NewBatchConfig(256, 2048, 0),
-				LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "", "roofline", 0),
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 			}
 			s := mustNewSimulator(t, cfg)
 			// Simulate a decode sub-request with SLOClass inherited from parent.

@@ -1,0 +1,6 @@
+name: deepseek-v3
+source:
+  provider: huggingface
+  repo: deepseek-ai/DeepSeek-V3
+  revision: e815299b0bcbac849fa540c768ef21845365c9eb
+  retrieved: 2026-10-02

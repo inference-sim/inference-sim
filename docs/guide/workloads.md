@@ -4,7 +4,8 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 
 ```bash
 # Quick example: workload-spec YAML
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -30,6 +31,10 @@ This section maps common traffic patterns to YAML workload spec configurations. 
 User-facing chat applications need low latency, memoryless arrivals (users arrive independently), and moderate token variance around a central prompt length.
 
 ```yaml
+# chat.yaml
+version: "2"
+aggregate_rate: 20
+num_requests: 500
 clients:
   - id: "chat-user"
     rate_fraction: 1.0
@@ -54,7 +59,8 @@ clients:
 Pair with weighted routing for cache-aware request distribution (the default profile uses `precise-prefix-cache`):
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --workload-spec chat.yaml \
   --routing-policy weighted
 ```
@@ -64,6 +70,10 @@ Pair with weighted routing for cache-aware request distribution (the default pro
 Retrieval-augmented generation workloads share a common document context across requests. The `prefix_group` and `prefix_length` fields model this shared context, and prefix-aware routing (the default `precise-prefix-cache` scorer) ensures requests with the same prefix hit cached KV blocks on the same instance.
 
 ```yaml
+# rag.yaml
+version: "2"
+aggregate_rate: 20
+num_requests: 500
 clients:
   - id: "rag-query"
     rate_fraction: 1.0
@@ -88,7 +98,8 @@ clients:
 Run with weighted routing to maximize cache reuse (the default `precise-prefix-cache` scorer queries actual KV cache state):
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --num-instances 4 --workload-spec rag.yaml \
   --routing-policy weighted
 ```
@@ -98,6 +109,10 @@ Run with weighted routing to maximize cache reuse (the default `precise-prefix-c
 Non-interactive workloads (summarization, data extraction) tolerate latency and typically have higher token counts. Use `batch` or `background` SLO classes so per-class metrics track them separately from latency-sensitive traffic.
 
 ```yaml
+# batch.yaml
+version: "2"
+aggregate_rate: 5
+num_requests: 200
 clients:
   - id: "batch-summarize"
     rate_fraction: 1.0
@@ -198,7 +213,8 @@ Setting `closed_loop: false` switches to **open-loop** scheduling: all round arr
 The simplest way to generate traffic:
 
 ```bash
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128
@@ -330,7 +346,7 @@ Requests can be tagged with SLO classes for per-class metric tracking:
 ## Estimating Capacity for Your Workload
 
 !!! warning "CLI mode and YAML mode have different defaults"
-    CLI mode uses `--prompt-tokens 512, --output-tokens 512` by default. With the default roofline latency model (Qwen3-14B / H100 / TP=1), a saturated single instance handles ~17 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.
+    CLI mode uses `--prompt-tokens 512, --output-tokens 512` by default. With those defaults, a saturated single instance of the `llama-3.1-70b-instruct-h200-fp8-vllm-tp4` scenario (H200, FP8, TP4) handles ~11 req/s. YAML workloads define their own distributions — a YAML with shorter sequences (e.g., mean=256/128) will have higher per-instance throughput. Don't reuse capacity estimates across modes or models.
 
 !!! tip "Parameter resolution reference"
     For the complete precedence chain of how CLI flags, workload-spec YAML, and `defaults.yaml` interact, see [Parameter Resolution by Category](../reference/configuration.md#parameter-resolution-by-category) in the Configuration Reference. See also [Common Pitfalls](../reference/configuration.md#common-pitfalls) for documented gotchas like `--rate` vs `aggregate_rate`.
@@ -349,6 +365,7 @@ The compose operation:
 - **Concatenates** all client lists from each input spec
 - **Sums** aggregate rates (e.g., 60 req/s + 40 req/s = 100 req/s total)
 - **Renormalizes** `rate_fraction` values proportionally: each client's merged fraction = `original_fraction * (spec_rate / total_rate)`, preserving absolute request rates
+- **Drops** `num_requests`: the merged spec carries none, so add a `num_requests:` line to `combined.yaml` (or pass `--horizon`) before running it, or `blis run` refuses it with "Workload requires either num_requests or --horizon"
 
 This lets you build complex mixed workloads from reusable single-purpose specs.
 
@@ -544,13 +561,15 @@ the sibling of the `models/` namespace. Locate the catalog once with `--catalog`
 `export BLIS_CATALOG=$PWD/blis-catalog`; all three preset consumers read the same file, so a
 preset cannot mean different things per command (#1769; before that, the copy in
 `defaults.yaml` was the one that moved output while the catalog copy was read by nothing).
-Use them with `blis run`, `blis observe`, or the convert command:
+Use them with `blis run`, `blis observe` (deprecated, #1901), or the convert command:
 
 ```bash
 # Run simulation with a named preset
-./blis run --model qwen/qwen3-14b --hardware H100 --tp 1 --workload chatbot --rate 10
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --registry $PWD/blis-registry --workload chatbot --rate 10
 
-# Observe a real server with the same preset (identical token distributions as run)
+# Observe a real server with the same preset (identical token distributions as run;
+# blis observe is deprecated, #1901)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
   --trace-header trace.yaml --trace-data trace.csv

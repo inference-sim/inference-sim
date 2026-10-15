@@ -1,0 +1,10 @@
+_comment: "SXM H200 shares the H100 GH100 Hopper compute die (same SMs/Tensor Cores) => identical peak FLOPs; differs only in memory: 141 GiB HBM3e vs 80, 4.8 TB/s vs 3.35. FLOPs & bandwidth are the NVIDIA H200 datasheet spec (https://www.nvidia.com/en-us/data-center/h200/; dense BF16 989.5 TFLOPS, dense FP8 1979 TFLOPS). CAVEAT (memory unit): reading NVIDIA's advertised '141GB' as 141 GiB is a choice; the decimal-GB reading is 131.3 GiB, and that lower value reorders the top two placement topologies in capacity planning — so the GiB interpretation is not free of consequence."
+Provenance: vendor_spec
+TFlopsPeak: 989.5
+TFlopsFP8: 1979.0
+BwPeakTBs: 4.8
+MemoryGiB: 141.0
+_comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 4 link as a per-GPU NOMINAL unidirectional bandwidth in GB/s: 900 GB/s bidirectional per GPU (NVIDIA H200 datasheet) => 450 unidirectional. vendor_spec (bidirectional / 2), NOT measured effective throughput; any measured correction is a per-cluster blis-registry number. The inter-node fabric figure and the intra:inter ratio it feeds (#1530) live with the reusable Network fabric class (networks/ib-400g.yaml), paired with this chip per deployment (a cluster/pool concept, #1662)."
+IntraNodeBwGBps: 450
+_comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GH100 die as shipped in this part, from the NVIDIA datasheet (https://www.nvidia.com/en-us/data-center/h200/). H200 SXM shares the GH100 die and its 132 enabled SMs with H100 SXM5. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."
+SMCount: 132

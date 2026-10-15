@@ -80,6 +80,13 @@ type TierConfig struct {
 	ReadBytesPerTick  float64
 	WriteBytesPerTick float64
 
+	// ServiceTime, when set, is the whole service time of one transfer at in-service depth
+	// q, replacing the base/bandwidth/ramp physics above for pricing. It is how
+	// a latency backend that prices tier transfers itself (blis-latency-kernel's TierTime)
+	// supplies them; the station still owns the servers, the queues and when each transfer
+	// starts and finishes.
+	ServiceTime func(dir Direction, bytes int64, q int) int64
+
 	// SaturationQueueDepth (Qsat) and SingleTransferFraction (f₁) describe the
 	// device's queue-depth bandwidth curve (#1581, BC-D1). Effective per-transfer
 	// bandwidth ramps linearly from f₁·bw at in-service depth q=1 up to bw (peak)
@@ -197,10 +204,10 @@ func validateTier(i int, tc TierConfig) error {
 	if tc.ReadBaseTicks < 0 || tc.WriteBaseTicks < 0 {
 		return fmt.Errorf("kvtransfer: tier %d base ticks must be ≥ 0 (read=%d write=%d)", i, tc.ReadBaseTicks, tc.WriteBaseTicks)
 	}
-	if !(tc.ReadBytesPerTick > 0) {
+	if tc.ServiceTime == nil && !(tc.ReadBytesPerTick > 0) {
 		return fmt.Errorf("kvtransfer: tier %d ReadBytesPerTick must be > 0, got %g", i, tc.ReadBytesPerTick)
 	}
-	if !(tc.WriteBytesPerTick > 0) {
+	if tc.ServiceTime == nil && !(tc.WriteBytesPerTick > 0) {
 		return fmt.Errorf("kvtransfer: tier %d WriteBytesPerTick must be > 0, got %g", i, tc.WriteBytesPerTick)
 	}
 	if tc.MaxQueueDepth < 0 {
@@ -252,6 +259,17 @@ func (s *TransferStation) ServiceTicksAtDepth(tier int, dir Direction, bytes int
 // clamped to maxServiceTicks to prevent int64 overflow on adversarially large
 // Bytes.
 func (c TierConfig) serviceTicks(dir Direction, bytes int64, q int) int64 {
+	if c.ServiceTime != nil {
+		if bytes < 0 {
+			panic(fmt.Sprintf("kvtransfer: negative bytes %d", bytes))
+		}
+		t := c.ServiceTime(dir, bytes, max(1, q))
+		if t < 1 {
+			panic(fmt.Sprintf("kvtransfer: injected service time for %d bytes at depth %d is %d ticks; "+
+				"a transfer takes at least one", bytes, q, t))
+		}
+		return t
+	}
 	var base int64
 	var bw float64
 	switch dir {

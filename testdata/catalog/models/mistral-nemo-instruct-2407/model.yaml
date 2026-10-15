@@ -1,0 +1,6 @@
+name: mistral-nemo-instruct-2407
+source:
+  provider: huggingface
+  repo: mistralai/Mistral-Nemo-Instruct-2407
+  revision: 04d8a90549d23fc6bd7f642064003592df51e9b3
+  retrieved: 2026-09-16

@@ -46,8 +46,7 @@ type ProgressSnapshot struct {
 	GatewayEvicted    int
 	GatewayExpired    int
 	// ShedByTier: per-SLO-class cumulative count of admission rejections + gateway queue shed + in-flight evictions + TTL expirations.
-	ShedByTier        map[string]int
-	ActivePDTransfers int
+	ShedByTier map[string]int
 
 	// ActiveInstances counts instances in Active or WarmingUp state.
 	// Loading and Draining instances appear in InstanceSnapshots but are excluded

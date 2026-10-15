@@ -257,7 +257,7 @@ BLIS has four extension types. Identify which type your change is, then follow t
 |---|---|---|---|
 | **Policy Template** | New algorithm behind an existing interface | No | New routing algorithm |
 | **Subsystem Module** | New module with its own interface and events | Yes | AutoScaler, P/D disaggregation |
-| **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | SGLang latency model |
+| **Backend Swap** | Alternative implementation of internal module | Yes (covers both phases) | Alternative KV store |
 | **Tier Composition** | Wrapper layering behavior on existing module | Recommended | NVMe KV tier |
 
 ### Adding a New Model to the Catalog
@@ -268,8 +268,7 @@ A model runs **if and only if it is in the catalog** (NS-6, #1733), and the cata
 
 **That is the whole procedure — `defaults.yaml` needs no edit at all.** As of #1768 it holds no
 per-model entry of any kind: the `defaults:` block (`GPU` / `tensor_parallelism` / `hf_repo`) is
-deleted, having been unreachable on every run path since the deployment became a required
-`--hardware`/`--tp` input. Two consequences for a contributor:
+deleted; the deployment is stated by the run's scenario. Two consequences for a contributor:
 
 1. **Do not add a `defaults:` block back.** `defaults.yaml` is decoded into a fixed struct
    (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse
@@ -279,9 +278,10 @@ deleted, having been unreachable on every run path since the deployment became a
    committed `config.json` came from; say that in the commit message or PR instead (the
    `blis-catalog` repository records it per model in `models/<name>/model.yaml`).
 
-Nothing further is needed for latency either: the trained-physics coefficients
-(`trained_physics_coefficients`) are a single global block shared by every model, not a per-model
-list.
+`defaults.yaml` carries only the `lora:` block and `version`. Latency needs nothing here either:
+the model is priced by `blis-latency-kernel` from its catalog graph and the `blis-registry`
+coefficient sets a scenario names, so a new model also needs its `graph.yaml` in the catalog and
+a scenario that deploys it.
 
 ### Policy Template (lightest — ~3 files)
 
@@ -343,9 +343,9 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 |---|---|---|
 | `CLAUDE.md` | Agent operating context: catalog/deployment rules, canonical commands, and pointers to the standards docs and topic guides (not a per-PR changelog — see its charter) | Always — the starting point for working in this repo |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/contributing/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, INV-BC-DP1, the LoRA family (INV-L1–INV-L7, by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
+| `docs/contributing/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, the LoRA family (by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
 | `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
-| `docs/concepts/` | System architecture, core engine, concepts glossary, roofline estimation | When learning how BLIS works before contributing |
+| `docs/concepts/` | System architecture, core engine, concepts glossary | When learning how BLIS works before contributing |
 | `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
 | `docs/contributing/rfc.md` | RFC template for large features (holes/surfaces/contracts) | When planning a multi-PR feature |
 | `docs/contributing/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |

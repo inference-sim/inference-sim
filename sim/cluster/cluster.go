@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -23,17 +22,6 @@ type ClusterSimulator struct {
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
-
-	// Cross-node network-cost diagnostics (#1530), latched PER CAUSE so a mixed fleet
-	// reports each distinct reason once rather than only whichever happened first. The
-	// three crossNode* latches each cover a way a genuinely spanning placement ends up
-	// unpriced (no comm term in the backend / unresolvable node size / uncalibrated
-	// interconnect); implausibleFabricWarned covers a calibration whose intra-to-inter
-	// ratio looks like a unit mistake. Never reset. See warnIfCrossNodeUnpriced.
-	crossNodeBackendWarned      bool
-	crossNodeUnresolvedWarned   bool
-	crossNodeUncalibratedWarned bool
-	implausibleFabricWarned     bool
 
 	// maxNodesSpanned is the largest number of physical nodes any single instance has
 	// occupied (#1530). 0/1 = every instance is single-node. Exported via
@@ -98,13 +86,6 @@ type ClusterSimulator struct {
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
 	encodeDecider           sim.EncodeDecider
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
-
-	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
-	activeTransfers                int
-	peakConcurrentTransfers        int
-	transferDepthSum               int64
-	transferStartCount             int64
-	contentionBookkeepingCorrupted bool
 
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
@@ -215,25 +196,19 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		}
 	}
 
-	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
-	// encounters a configuration error at runtime (the panic there is now unreachable).
-	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform
-	// prefill and therefore source a KV transfer.
+	// A KV handoff is priced by the latency backend (DeploymentConfig.PDTransferTime); the
+	// simulator owns only when it happens and has no transfer formula of its own. Refuse a
+	// PD-enabled deployment without a pricer here, so KVTransferStartedEvent never meets one
+	// at runtime (R1). Covers pure-shared clusters too (issue #1276): a shared-role pod can
+	// perform prefill and therefore source a KV transfer.
 	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
-		if config.EffectivePrefillTP() <= 0 {
-			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
-		}
-		if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
+		if config.PDTransferTime == nil {
+			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.PDTransferTime: " +
+				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
 		}
 	}
-
-	// PDTransferContention is valid for any PD-enabled deployment, including pure-shared
-	// (shared pod → shared pod KV transfer is possible when prefill and decode land on
-	// different shared pods). Only reject when PD is entirely disabled. (#1276)
-	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
-		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
-	}
+	// Concurrent handoffs are priced independently: overlapping transfers do not share fabric
+	// bandwidth. Per-link contention is not modelled yet (INV-P2-2, #1922).
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
@@ -331,7 +306,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if len(config.NodePools) > 0 {
 		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
 		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
-		// override (--prefill-tp/--decode-tp) would make the simulated TP diverge
+		// override (PoolOverrides.TP, from a P/D scenario's per-pool parallelism) would make the simulated TP diverge
 		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
 		// capacity. Per-role placement does not exist yet, so reject the combination
 		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
@@ -344,7 +319,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if ov.po.TP != nil && *ov.po.TP != config.TP {
 				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
 					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
-					"TP would be simulated at one degree but placed/billed at another. Use a uniform --tp, or drop node_pools.",
+					"TP would be simulated at one degree but placed/billed at another. Use a uniform TP across pools, or drop node_pools.",
 					ov.name, *ov.po.TP, config.TP))
 			}
 		}
@@ -395,37 +370,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
-			// Set GPU label and, when HWConfigByGPU is provided, override HWConfig so that
-			// roofline and trained-physics backends use the pool's hardware coefficients (issue #893).
 			simCfg.GPU = matchedGPUType
-			if hc, ok := config.HWConfigByGPU[matchedGPUType]; ok {
-				if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
-					panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
-						matchedGPUType, hc.TFlopsPeak, hc.BwPeakTBs))
-				}
-				simCfg.HWConfig = hc
-			}
 			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
-			// Also capture the pool's GPU memory for per-instance KV auto-calc (#1522).
 			var poolCostPerHour float64
-			var poolGPUMemoryGiB float64
 			for i := range config.NodePools {
 				if config.NodePools[i].GPUType == matchedGPUType {
 					poolCostPerHour = config.NodePools[i].CostPerHour
-					poolGPUMemoryGiB = config.NodePools[i].GPUMemoryGiB
 					break
 				}
 			}
-			// Issue #1522: recompute KV-block capacity from the ACTUAL placed GPU
-			// memory so a mixed-GPU pool no longer forces every instance onto the
-			// global capacity. Runs after the HWConfigByGPU execution-calibration
-			// override above, giving the placed GPU authority over KV capacity too.
-			// No-op when KVAutoCalc.Enabled is false (INV-6).
-			applyPerInstanceKVCapacity(&simCfg, poolGPUMemoryGiB, config.KVAutoCalc, matchedGPUType)
-			// Issue #1530: stamp the placement-derived interconnect topology (the size
-			// of the node(s) this instance actually landed on) so the latency model can
-			// price cross-node collective traffic. Inert when unresolvable.
-			cs.applyPlacementTopology(&simCfg, gpuIDs)
+			// Record how many nodes this instance spans, for the trace header (#1530).
+			cs.recordNodeSpan(gpuIDs)
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
@@ -627,7 +582,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if config.TenantBudgets != nil {
 		totalCapacity := config.NumInstances * int(config.MaxNumSeqs)
 		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
-			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — set --max-num-seqs > 0",
+			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — MaxNumSeqs must be > 0",
 				config.NumInstances, config.MaxNumSeqs)
 		}
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
@@ -899,9 +854,7 @@ func (c *ClusterSimulator) Run() error {
 				if c.inFlightRequests[instID] < 0 {
 					// Warn-and-clamp: inFlightRequests is a best-effort routing signal
 					// (INV-7); it recovers from delta mis-accounting and does not corrupt
-					// deterministic metrics. Contrast with activeTransfers (contention
-					// subsystem) which uses a hard error because contention metrics are
-					// meaningless once the counter is wrong.
+					// deterministic metrics.
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
 					c.inFlightRequests[instID] = 0
@@ -1019,15 +972,6 @@ func (c *ClusterSimulator) Run() error {
 	// user-facing distributions reflect the full request lifecycle.
 	c.projectPDMetrics()
 
-	// Post-simulation contention bookkeeping checks (INV-P2-2)
-	if c.contentionBookkeepingCorrupted {
-		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
-	}
-	if c.config.PDTransferContention && c.activeTransfers != 0 {
-		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0), initiated=%d completed=%d — contention metrics (PeakConcurrentTransfers, MeanTransferQueueDepth) may be inflated if horizon cut off in-flight transfers",
-			c.activeTransfers, c.transfersInitiated, c.transfersCompleted)
-	}
-
 	// Flow control: log gateway queue state at simulation end
 	if c.flowControlEnabled && c.gatewayQueue.Len() > 0 {
 		logrus.Warnf("[cluster] %d requests remain in gateway queue at simulation end", c.gatewayQueue.Len())
@@ -1131,7 +1075,6 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		GatewayQueueShed:  gatewayQueueShed,
 		GatewayEvicted:    c.gatewayEvicted,
 		GatewayExpired:    c.gatewayExpired,
-		ActivePDTransfers: c.activeTransfers,
 		ActiveInstances:   activeCount,
 		TotalInstances:    len(c.instances),
 		IsFinal:           isFinal,
@@ -1202,7 +1145,7 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 // (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
 // which bulk-initialises the snapshot provider with a full instance map.
 //
-// simCfg must already have GPU and HWConfig set (pool-authoritative, SC-004).
+// simCfg must already have GPU set (pool-authoritative, SC-004).
 // Returns true on success. On false, GPU allocations have been released — callers
 // must not touch the instance and should skip/continue.
 //
@@ -1359,14 +1302,17 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	for _, subReqID := range completedIDs {
 		parentID := c.pendingPrefillCompletions[subReqID]
 		parent := c.parentRequests[parentID]
-		parent.PrefillCompleteTime = c.clock
+		// The prefill completes at the END of the step that computed its KV, not at the
+		// cluster clock, which reads that step's START when this detector runs right after
+		// the step event (#1903): the handoff cannot begin before the KV it moves exists.
+		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
 		c.pdPrefillCompletedCount++
 
 		// Schedule KV transfer
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &KVTransferStartedEvent{
-				time:      c.clock,
+				time:      parent.PrefillCompleteTime,
 				parentReq: parent,
 			},
 			seqID: c.nextSeqID(),
@@ -1399,14 +1345,15 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// Phase 2: process completions in deterministic order
 	for _, subReqID := range completedIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
-		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
-		// client-visible completion time, matching non-PD E2E semantics (issue #846).
-		// For roofline (overhead=0), value is byte-identical to before.
-		// No zero-output guard needed: decode sub-requests always carry the full
-		// output token list from the original request (set in KVTransferCompletedEvent.Execute).
+		// The end of the decode sub-request's final step -- not the cluster clock, which
+		// reads that step's START when this detector runs (#1903) -- plus
+		// PostDecodeFixedOverhead, so parent.CompletionTime is the client-visible completion,
+		// matching non-PD E2E semantics (issue #846). No zero-output guard needed: decode
+		// sub-requests always carry the full output token list (set in
+		// KVTransferCompletedEvent.Execute).
 		//
 		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
-		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
+		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
 
@@ -1749,30 +1696,6 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 	return result
 }
 
-// PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
-// Returns 0 when --pd-transfer-contention is disabled (backward-compat).
-func (c *ClusterSimulator) PeakConcurrentTransfers() int {
-	return c.peakConcurrentTransfers
-}
-
-// MeanTransferQueueDepth returns the mean number of active concurrent transfers sampled at each
-// transfer initiation event (arrival-weighted mean, not a time-average). Specifically:
-//
-//	sum(activeTransfers at each start event) / count(start events)
-//
-// The activeTransfers count is taken post-increment, so it includes the initiating transfer
-// itself. For example, with fully sequential transfers the mean is exactly 1.0.
-//
-// This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
-// how many transfers were in flight at the moment each new transfer began, including the new one.
-// Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
-func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
-	if c.transferStartCount == 0 {
-		return 0
-	}
-	return float64(c.transferDepthSum) / float64(c.transferStartCount)
-}
-
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
 func mergeFloat64Map(dst, src map[string]float64, mapName string) {
 	for k, v := range src {
@@ -1933,8 +1856,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// the TTFT/E2E/scheduling-delay distributions (INV-PD-6). `served` folds that
 		// requirement into the projection gate below. A decode sub-request that emitted a
 		// first token and THEN timed out mid-generation WITHOUT an intervening preemption
-		// keeps a non-empty ITL, so it is still served and keeps its entries (the user did
-		// receive that token).
+		// keeps a non-empty ITL, so it is still served: it keeps its TTFT, scheduling delay
+		// and request row (the user did receive that token), but gets no E2E or completion
+		// stamp, since it did not complete (the E2E block below).
 		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
 		served := completed && servedFirstToken
 
@@ -1977,23 +1901,17 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		//     simulator.go) must NOT be added or E2E double-counts the pre-decode wait.
 		//     Discriminate on FirstTokenTime != 0 and use decodeOwnE2E directly.
 		//
-		// On the primary path this is the E2E-analog of the TTFT fix below and
-		// guarantees INV-5 by construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep,
-		// so E2E ≥ TTFT. (The fallback branch below inherits the pre-#1513
-		// parent.CompletionTime-based value; INV-5 there is not guaranteed by
-		// construction — e.g. a decode sub-request that emits a first token and then
-		// times out mid-generation takes the TTFT primary path but the E2E fallback,
-		// so a deadline landing inside the post-first-token OTPT window can leave
-		// TTFT slightly above E2E. This is unchanged from main and orthogonal to both
-		// the short-output under-count fixed in #1513 and the no-token exclusion fixed
-		// in #1511 — that request DID serve a token, so it legitimately keeps its
-		// TTFT/E2E entries; the residual TTFT>E2E micro-edge is a separate concern.)
+		// This is the E2E-analog of the TTFT fix below and guarantees INV-5 by
+		// construction: decodeOwnE2E ≥ ITL[0] = firstDecodeStep, so E2E ≥ TTFT. Only a
+		// decode sub-request that completed has an own E2E, so only a completed parent
+		// gets one.
 		//
 		// The previous formula (parent.CompletionTime − ArrivalTime) under-counted:
-		// parent.CompletionTime is stamped on the CLUSTER clock at the
-		// completion-DETECTION tick (detectDecodeCompletions) and omits the decode
-		// step's own advance, so for short outputs the reported E2E fell below a
-		// single decode step (ITL[0]) — and below the parent TTFT — violating INV-5.
+		// parent.CompletionTime was then stamped on the CLUSTER clock at the
+		// completion-DETECTION tick and omitted the decode step's own advance, so for
+		// short outputs the reported E2E fell below a single decode step (ITL[0]) — and
+		// below the parent TTFT — violating INV-5. (Since #1903 it is stamped at the
+		// final step's end.)
 		//
 		// parentE2E / haveParentE2E are captured for reuse by the completion-time
 		// block below (metric consistency: completion == arrival + E2E).
@@ -2023,25 +1941,18 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					parentE2E = e2e
 					haveParentE2E = true
 				}
-			} else {
-				// Fallback: this parent served a first token (guaranteed by `served`) but
-				// its decode sub-request has no recorded own E2E — e.g. it emitted the first
-				// token and THEN timed out mid-generation, so recordRequestCompletion never
-				// ran. Use the parent.CompletionTime-based value (cluster clock), matching
-				// the pre-#1513 behavior for this edge case (no regression). The no-token
-				// terminal outcomes (decode-side drops, timeout-while-queued) never reach
-				// here — `served` excludes them (issue #1511).
-				e2e := parent.CompletionTime - parent.ArrivalTime
-				if e2e < 0 {
-					// INV-3/INV-5 violation: completion before arrival. Should never occur
-					// after the clusterTime fix in EnqueueDecodeSubRequest.
-					logrus.Errorf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
-						pid, parent.CompletionTime, parent.ArrivalTime)
-				} else {
-					parentE2E = float64(e2e)
-					haveParentE2E = true
-				}
+			} else if hasDecodeOwnE2E {
+				// A completed decode sub-request is always scheduled first, so it has a
+				// scheduling delay; without one the span cannot be reconstructed.
+				logrus.Errorf("[cluster] projectPDMetrics: completed decode sub-request %s has no scheduling delay; no E2E for %s",
+					dec, pid)
 			}
+			// A decode sub-request with no own E2E did not complete: it emitted a first
+			// token and then timed out mid-generation (recordRequestCompletion never ran).
+			// Like a non-P/D request timed out mid-generation (simulator.go records E2E only
+			// on completion), it keeps its TTFT -- the user did receive that token -- but no
+			// E2E, completion time or completion index: it is a timeout (TimedOutRequests),
+			// not a completion, and its deadline is not an end-to-end latency.
 			if haveParentE2E {
 				m.RequestE2Es[pid] = parentE2E
 			}
@@ -2154,6 +2065,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Requests metadata keyed by parent ID, HandledBy set to decode instance.
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
+		decodeEntry := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
 		if served {
@@ -2162,7 +2074,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
 			rm.HandledBy = string(parent.DecodeInstanceID)
-			m.Requests[pid] = rm
+			// The parent completes when its decode sub-request does, on the decode instance,
+			// so it takes that completion's place in the completion order.
+			m.Requests[pid] = rm.WithCompletionOf(decodeEntry)
 		}
 
 		// ITL from decode sub-request (prefill ITL is 0 noise).
@@ -2184,9 +2098,8 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// This adjusts only the METRIC, not the lifecycle field parent.CompletionTime,
 		// which is intentionally left untouched: it drives session follow-up arrival
 		// scheduling (sessionCallback in detectDecodeCompletions) and phase-causality
-		// checks (INV-10). When the E2E fallback is taken (decode-side metrics
-		// unavailable), parentE2E already derives from parent.CompletionTime, so this
-		// reduces to the pre-#1513 value for those edge cases.
+		// checks (INV-10). A parent with no E2E (it timed out mid-generation) gets no
+		// completion time either, as in the non-P/D path.
 		delete(m.RequestCompletionTimes, pfx)
 		delete(m.RequestCompletionTimes, dec)
 		if served && haveParentE2E {
@@ -2438,6 +2351,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
 	}
+	parent.PrefillSubReq = prefillSubReq
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &PrefillRoutingEvent{

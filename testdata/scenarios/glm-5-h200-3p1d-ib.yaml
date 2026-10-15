@@ -1,0 +1,58 @@
+# A disaggregated deployment for the P/D tests: three one-node TP8 prefill engines and one
+# one-node TP8 decode engine on a four-node H200 cluster over 400G InfiniBand -- the 3P1D
+# shape the llm-d GLM campaigns run. Every vendored blis-latency-kernel scenario is
+# colocated, so this one is authored here; it is an input to this simulator in the
+# blis-schemas format, not catalog or registry data. Engine settings are glm-5's from the
+# kernel's committed glm-5-h200-fp8-sglang-tp8 scenario.
+kind: Scenario
+name: glm-5-h200-3p1d-ib
+engine_version: "0.29.0"
+
+model: glm-5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: glm-5-h200-3p1d-ib
+
+pools:
+  - role: prefill
+    nodes: 3
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 64
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+  - role: decode
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 64
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+
+pd_transfer:
+  connector: NixlConnector
