@@ -34,10 +34,10 @@ func perInstanceCompleted(cs *ClusterSimulator) []int {
 	return out
 }
 
-// The curvebender routers run end to end under both llm-d versions: every request
+// The deployed routers run end to end under both llm-d versions: every request
 // is accounted for (INV-1), the in-flight token ledger drains to zero once all
 // requests finish, and two runs with one seed are identical (INV-6).
-func TestEPP_CurvebenderRouters_RunConserveAndDrain(t *testing.T) {
+func TestEPP_DeployedRouters_RunConserveAndDrain(t *testing.T) {
 	for _, fixture := range []string{"optimized-baseline-cpu-tier.yaml", "precise-gpu.yaml"} {
 		for _, v := range []sim.EPPVersion{sim.EPPVersionMain, sim.EPPVersionV0_10_0} {
 			t.Run(fixture+"/"+string(v), func(t *testing.T) {
@@ -66,10 +66,10 @@ func TestEPP_CurvebenderRouters_RunConserveAndDrain(t *testing.T) {
 	}
 }
 
-// curvebender's P/D router (always-disagg-pd-decider, decode-first) runs on BLIS's
+// The deployed P/D router (always-disagg-pd-decider, decode-first) runs on BLIS's
 // P/D machinery: every request is disaggregated, prefill lands only on prefill
 // pods, and the in-flight ledger drains.
-func TestEPP_CurvebenderPD_RunsDisaggregated(t *testing.T) {
+func TestEPP_DeployedPD_RunsDisaggregated(t *testing.T) {
 	cases := []struct {
 		fixture string
 		v       sim.EPPVersion

@@ -68,9 +68,9 @@ func TestEPPConfigFlags_RegisteredOnRunAndReplay(t *testing.T) {
 	}
 }
 
-// The curvebender router ingests and fixes routing, flow control and the `epp`
+// The deployed optimized-baseline router ingests and fixes routing, flow control and the `epp`
 // provenance block; the DeploymentConfig mapping matches the ingested config.
-func TestApplyEPPConfig_CurvebenderOptimizedBaseline(t *testing.T) {
+func TestApplyEPPConfig_DeployedOptimizedBaseline(t *testing.T) {
 	resetEPPGlobals()
 	defer resetEPPGlobals()
 	path := "../sim/testdata/epp/optimized-baseline-cpu-tier.yaml"
@@ -139,7 +139,7 @@ func TestApplyEPPConfig_AbsentIsInert(t *testing.T) {
 }
 
 // --epp-cpu-tier-view is the explicit opt-in for the CPU-tier view; without it the
-// curvebender CPU producer stays llm-d's LRU and no deviation is recorded.
+// deployed router's CPU producer stays llm-d's LRU and no deviation is recorded.
 func TestApplyEPPConfig_CPUTierViewOptIn(t *testing.T) {
 	resetEPPGlobals()
 	defer resetEPPGlobals()

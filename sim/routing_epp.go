@@ -17,7 +17,7 @@ import (
 //
 // Reference implementation (MANDATORY): llm-d-router
 //   - main@981acb8a (the default EPPVersionMain), and
-//   - v0.10.0 (EPPVersionV0_10_0, the EPP image curvebender deploys:
+//   - v0.10.0 (EPPVersionV0_10_0, the EPP image our calibration deployments run:
 //     ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.10.0).
 // Citations read "main:<path>:<line>" or "v0.10.0:<path>:<line>"; paths are
 // relative to pkg/epp/framework/plugins/ unless they start with pkg/. Where the

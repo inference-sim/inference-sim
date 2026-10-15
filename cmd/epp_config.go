@@ -33,7 +33,7 @@ var eppConflictingFlags = []string{
 func registerEPPConfigFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&eppConfigPath, "epp-config", "", "llm-d EndpointPickerConfig YAML, ingested verbatim: plugins, schedulingProfiles (single or disagg-profile-handler P/D) and flowControl replace --routing-policy/--routing-scorers, the P/D routing flags and the flow-control flags. Unsupported scheduling plugins are refused by name; infrastructure-only plugins are accepted as inert.")
 	cmd.Flags().StringVar(&eppCPUTierArg, "epp-cpu-tier-view", "", "BLIS opt-in (deviation from llm-d): name an approx-prefix-cache-producer of --epp-config that reports each instance's CPU-offload-tier-resident prefix instead of llm-d's router-side LRU estimate (#1912). Recorded in the epp block's deviations.")
-	cmd.Flags().StringVar(&eppVersionArg, "epp-version", string(sim.EPPVersionMain), "llm-d-router release whose plugin semantics --epp-config follows: "+string(sim.EPPVersionMain)+" (latest main; alias main) or "+string(sim.EPPVersionV0_10_0)+" (the EPP image curvebender deploys). See docs/guide/routing.md for the deltas.")
+	cmd.Flags().StringVar(&eppVersionArg, "epp-version", string(sim.EPPVersionMain), "llm-d-router release whose plugin semantics --epp-config follows: "+string(sim.EPPVersionMain)+" (latest main; alias main) or "+string(sim.EPPVersionV0_10_0)+" (the EPP image our calibration deployments run). See docs/guide/routing.md for the deltas.")
 }
 
 // applyEPPConfig loads --epp-config and writes the routing and flow-control

@@ -152,7 +152,7 @@ blis run --scenario <file> --scenarios <dir> --registry <root> --rate 10 --num-r
 
 `--epp-version` selects the llm-d-router release whose plugin semantics BLIS
 mirrors: `main@981acb8a` (default, alias `main`) or `v0.10.0` (the EPP image
-`ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.10.0`, which curvebender deploys).
+`ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.10.0`, which our calibration deployments run).
 Use the release your router runs; the deltas are listed below.
 
 ### What runs
