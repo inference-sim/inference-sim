@@ -69,6 +69,9 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-M2](#inv-m2-derived-aggregates-are-exactly-their-definitions) Derived aggregates are exactly their definitions | Subsystem | metrics output |
 | [INV-M3](#inv-m3-cluster-cache-hit-rate-is-prompt-lookup-weighted) Cluster cache hit rate is prompt-lookup-weighted | Subsystem | metrics output / KV cache |
 | [INV-M4](#inv-m4-only-the-phase-decides-what-is-measured) Only the phase decides what is measured | Subsystem | metrics output |
+| [INV-K3](#inv-k3-a-sequences-bounded-state-is-held-on-demand-and-gated-at-admission) A sequence's bounded state is held on demand and gated at admission | Subsystem | KV cache |
+| [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
+| [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-8](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -289,11 +292,27 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Statement:** `allocated_blocks + free_blocks = total_blocks` at all times.
 
-**Verification:** Checked after every allocation/deallocation. Check-then-act pre-check gate before any state mutation (vLLM parity); post-pre-check `popFreeBlock() == nil` panics (structurally unreachable in single-threaded DES). `FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`. `verifyBlockConservation()` provides independent free-list walk for debug-mode assertions.
+**Verification:** Checked after every allocation/deallocation. Check-then-act pre-check gate before any state mutation (vLLM parity); post-pre-check `popFreeBlock() == nil` panics (structurally unreachable in single-threaded DES). `FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`. `verifyBlockConservation()` provides independent free-list walk for debug-mode assertions. Every running request holds KV for every token it has computed: a prefix-cache hit is capped at `InputLen - 1` tokens in whole blocks (an offload reload at `InputLen - 1` tokens), so a fully cached prompt -- resumed after preemption or admitted over another request's prefix -- recomputes its last token and claims its blocks (#1943, vLLM v0.31.0 `get_computed_blocks` and `_update_waiting_for_remote_kv`); `TestEveryRunningRequestHoldsKVForItsComputedTokens` (`sim/kv`, rapid) checks it at every allocation, `TestAFullyCachedPromptRecomputesItsLastBlockAndHoldsItsKV` (`sim`) pins both cases.
 
 **Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
 
 **Additional evidence (hardening wave):** Two KV conservation bugs discovered in March 2026: (1) Issue #492, fix #502 — prefill capacity pre-check over-estimated by up to 1 block (partial last-block fill not accounted for), causing false allocation failures that triggered unnecessary preemptions. (2) Issue #501, fix #506 — TieredKVCache CPU→GPU reload could produce an inverted range (`newStart >= endIndex`), causing a slice-bounds panic in block allocation. Both bugs directly affected the allocation/deallocation balance that INV-4 protects. (See also #519 in INV-8 — the range-loop livelock primarily violated the work-conserving property, not block-level conservation.)
+
+#### INV-K3: A Sequence's Bounded State Is Held on Demand and Gated at Admission
+
+**Statement:** After every allocation a request holds exactly `SequenceState.Hold(computed, inFlight)` blocks for its bounded per-sequence state -- window rings, compressor and indexer state, bounded recurrent state -- where `computed` is its tokens computed before the step and `inFlight` those scheduled in it: the kernel's `SequenceBoundedBytesAt` in whole pool blocks (#1941, blis-latency-kernel#46/#56). That is vLLM's on-demand hold: `allocate_slots` allocates a window group's blocks for the scheduled tokens after `remove_skipped_blocks` frees those the window has passed (`single_type_kv_cache_manager.py:178-238, 687-725, 1153-1175` at v0.31.0), so the hold grows through a prefill chunk and settles at the steady `SequenceFixedBytes` while decoding; a shrink frees its blocks before any are taken. The admission cap (`SequenceAdmissionBytes`, `max_admission_blocks_per_request`) is only a gate: a request's first allocation is refused unless its whole prompt and its state at `SequenceState.Gate(prompt)` = each window group at `min(cdiv(prompt), cap)` are free (`full_sequence_must_fit`, `kv_cache_manager.py:517-534`, `single_type_kv_cache_manager.py:216-229`). State blocks hold no tokens or hash, are freed with the request, and are counted in INV-4. A model whose kernel reports no bounded per-sequence state has no `SequenceState`, no gate, and byte-identical output.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`admissionGateRefuses`, `stateDelta`, `resizeState`), `ReleaseKVBlocks`; the offload tiers check `sequenceFits` before reloading and charge through `chargeSequence`. The functions are `sim/kernelmodel` `Settings.SequenceState`.
+
+**Verification:** `TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle` (`sim/kernelmodel`: the real DSV4.1 kernel through the store over a prefill -> decode lifecycle; exact hold every step, recycling chunks, steady decode, never the cap); `TestSequenceState_LowerTheAdmissionCeilingByTheFixedTerm` (rapid), `TestSequenceState_ChargedOnceAndFreedWithTheSequence`, `TestSequenceState_RefusalIsSideEffectFree`, `TestSequenceState_DoNotTakeTheCachedPrefixBeingClaimed`, `TestARefusedReloadAdmissionHasNoSideEffects`, `TestAFullyReloadedAllocationHoldsItsSlotsAndStateBlocks` (`sim/kv`); `TestTheBudgetChargesTheKernelsAdmissionReservationInWholeBlocks`, `TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling`, and the startup-figure golden `TestKVCapacityMatchesTheEnginesLoggedFigure` (vLLM's logged "GPU KV cache size", a request at its admission cap; a startup report, not a runtime hold) (`sim/kernelmodel`).
+
+#### INV-K4: A Speculating Request Holds Its Verify Width and Lookahead
+
+**Statement:** On a speculating instance (`K > 0`), after any allocation a request holds `max(blocks held before, token blocks, ceil(min(end + L, max_model_len) / block))` token and spare blocks besides its INV-K3 state blocks, where `end` is its computed tokens plus everything scheduled this step and `L` is vLLM's `num_lookahead_tokens` for the method (vLLM v0.31.0 `allocate_slots`, `num_tokens_need_slot`, `kv_cache_manager.py:536-538`; a running request's slots are never handed back, `single_type_kv_cache_manager.py:223-228`); a speculating decode schedules and debits `1 + K` of `max_num_batched_tokens` (fewer only when the budget or `max_model_len` leaves less), never less than it advances; every scheduled request also debits the drafter's `max_num_new_slots_for_drafting` from the input budget (`stepBudget`, scheduler.py:682, 825-826, 1073, 1313-1314); a preemption returns what the victim debited, draft slots included. Progress is still the accepted count (INV-K2). A run without speculation reserves nothing extra and is byte-identical.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); `sim/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); `cluster.NewInstanceSimulator` derives the reservation from the `SpeculativeConfig` (`SpeculativeConfig.KV`).
+
+**Verification:** `TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead` (rapid), `TestSpeculativeSlots_TokensFillTheReservedBlocksFirst`, `TestSpeculativeSlotsStopAtMaxModelLen`, and `TestEveryRunningRequestHoldsKVForItsComputedTokens` (rapid: the exact hold after every allocation under every store with state, speculation, max_model_len and preemption at once) (`sim/kv`); `TestSpecDecode_ADecodeDebitsItsVerifyWidthFromTheTokenBudget`, `TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth`, `TestSpecDecode_TheSimulatorSchedulesTheVerifyWidth`, `TestSpecDecode_LookaheadReservationPreemptsEarlierUnderKVPressure`, `TestSpecDecode_ReservationPropertiesAroundSaturation` (rapid; tokens conserved across K), `TestSpecDecode_AcceptanceLengthOneChangesPriceNotProgress`, `TestLookaheadTokensFollowVLLMsNumLookaheadTokens`, `TestSpecDecode_ParallelDraftSlotsDebitTheInputBudget`, `TestDraftSlotsFollowVLLMsMaxNumNewSlotsForDrafting`, `TestSpecDecode_TheSimulatorChargesTheDraftersSlots` (`sim`); `TestInstanceKVReservesTheSpeculativeConfigsSlots` (`sim/cluster`).
 
 ### Batch formation
 
@@ -633,6 +652,14 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 **Enforced:** `sim/simulator.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
 
 **Verification:** `TestRejectedDraftsDoNotAdvanceComputed` (`sim/kernelmodel`; a real DSpark simulation at α = 0.502); `TestSpecDecode_OutputTokenConservation` (`sim`).
+
+#### INV-K5: The Recorded Acceptance Is the Simulated One
+
+**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
+
+**Enforced:** `cmd/speculative_acceptance.go` (`resolveAcceptance`, `acceptanceRecordOf`), `cmd/root.go` `resolveSpeculativeConfig`.
+
+**Verification:** `TestAcceptancePrecedence`, `TestAcceptanceKSweepPicksTheProfileAtEachK`, `TestAcceptanceRefusals`, `TestAcceptanceIsAbsentWithoutSpeculation`, `TestAcceptanceRunReplayParity` (`cmd`).
 
 #### Retired latency-model invariants
 

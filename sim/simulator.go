@@ -144,10 +144,15 @@ type Simulator struct {
 	// per-request fractional carry.
 	specEnabled       bool
 	specTokensPerStep float64
-	rng               *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	sloMap            *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
-	scheduler         InstanceScheduler
-	latencyModel      LatencyModel
+	// specVerifyWidth is what a speculating decode schedules a step, K+1 (#1627).
+	specVerifyWidth int64
+	// specDraftSlots is the drafter's extra query slots per request a step (vLLM
+	// max_num_new_slots_for_drafting).
+	specDraftSlots int64
+	rng            *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	sloMap         *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	scheduler      InstanceScheduler
+	latencyModel   LatencyModel
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
@@ -230,6 +235,8 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		maxModelLen:               cfg.MaxModelLen,
 		specEnabled:               cfg.IsEnabled(),
 		specTokensPerStep:         cfg.EffectiveTokensPerStep(),
+		specVerifyWidth:           int64(cfg.VerifyWidth()),
+		specDraftSlots:            cfg.DraftSlots(),
 		latencyModel:              latencyModel,
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}
@@ -932,6 +939,8 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		// Pure peek: FormBatch sizes the decode step and caps g; the carry is
 		// committed with the granted count in executeBatchStep (#1528).
 		batchCtx.DecodeTokensPerStep = sim.peekDecodeTokens
+		batchCtx.SpecVerifyWidth = sim.specVerifyWidth
+		batchCtx.DraftSlots = sim.specDraftSlots
 	}
 	batchResult := sim.batchFormation.FormBatch(batchCtx)
 

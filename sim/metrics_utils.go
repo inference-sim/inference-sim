@@ -190,6 +190,11 @@ type MetricsOutput struct {
 
 	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
 	*BuildVersions
+
+	// Acceptance records the speculative acceptance the run advanced requests by and where it
+	// came from (#1939). File-only, like Catalog (WithAcceptance); omitted when the run does
+	// not speculate.
+	Acceptance *AcceptanceRecord `json:"acceptance,omitempty"`
 }
 
 // BuildVersions are the module versions a results file was produced by: BLIS itself and the
@@ -251,6 +256,44 @@ type PDOutput struct {
 	PrefillKVHoldPeakTokens  int64              `json:"prefill_kv_hold_peak_tokens"`
 	LinkPeakConcurrent       map[string]int     `json:"link_peak_concurrent_transfers,omitempty"`
 	CPUTierHitRate           map[string]float64 `json:"cpu_tier_hit_rate"`
+}
+
+
+// AcceptanceRecord is a speculating run's acceptance as simulated: the mean acceptance length
+// AL each verification step advanced a request by (1 + accepted drafts, so in [1, K+1]), its
+// rate (AL-1)/K, the precedence layer that supplied it (registry, workload, scenario or cli),
+// and the evidence behind it.
+type AcceptanceRecord struct {
+	Length      float64         `json:"length"`
+	Rate        float64         `json:"rate"`
+	SourceLayer string          `json:"source_layer"`
+	Entry       AcceptanceEntry `json:"entry"`
+}
+
+// AcceptanceEntry is the provenance of a resolved acceptance. Set, Key and the profile fields
+// are filled when a profile layer resolved it; Source always cites the evidence when one was
+// stated.
+type AcceptanceEntry struct {
+	// Set and Key name the profile set and the (model/method/k/thinking/category) profile.
+	Set string `json:"set,omitempty"`
+	Key string `json:"key,omitempty"`
+	// Method is how the profile's value was obtained (measured, copied, ...), and CopiedFrom
+	// the profile a copied value came from.
+	Method     string `json:"method,omitempty"`
+	CopiedFrom string `json:"copied_from,omitempty"`
+	// Source is the document cited: the profile's provenance source or the value's source.
+	Source string `json:"source,omitempty"`
+	// Run is the job that measured a profile.
+	Run string `json:"run,omitempty"`
+	// FallbackFrom is the workload category that had no profile when a requested fallback
+	// category replaced it.
+	FallbackFrom string `json:"fallback_from,omitempty"`
+	// MeasuredOn is the hardware a profile was measured on when it differs from the run's.
+	MeasuredOn string `json:"measured_on,omitempty"`
+	// PerPositionRates are the per-position acceptance rates p_1..p_K, and RatesDerived
+	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
+	PerPositionRates []float64 `json:"per_position_rates"`
+	RatesDerived     bool      `json:"rates_derived"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.

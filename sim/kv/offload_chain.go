@@ -372,6 +372,11 @@ func (o *OffloadCache) SetClock(clock int64) {
 // The deferral machinery is inert when there are no secondary tiers, so CPU-only
 // offload and all non-offload stores are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before any tier
+	// is consulted or a deferral registered, so the refusal has no side effect.
+	if !o.gpu.sequenceFits(req, startIndex, endIndex, cachedBlocks) {
+		return false
+	}
 	// Defer only genuinely-new prefill admissions. A running-request continuation
 	// already owns GPU blocks (in RequestMap). A PD decode sub-request is also NOT a
 	// prefill admission: its KV is pre-reserved via ReserveTransferredKV
@@ -455,6 +460,10 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 				} else {
 					o.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
+				// Its bounded state (#1941) and slots (#1627), on every allocation as vLLM
+				// passes num_lookahead_tokens to every allocate_slots
+				// (scheduler.py:745-751, 1214 at v0.31.0); room was checked before the reload.
+				o.gpu.chargeSequence(req.ID, startIndex, endIndex)
 				return true
 			}
 			// Partial improvement: commit the reloaded prefix, then allocate the tail.
@@ -466,7 +475,17 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 			} else {
 				o.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
 			}
-			return o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
+			if o.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached) {
+				return true
+			}
+			// The tail did not fit. A request that stays queued must not keep the reloaded
+			// prefix it was committed: it would hold blocks no running request can free, and
+			// a pool that tight livelocks. Undo the commit; the reloaded blocks go back to the
+			// free list with their hashes, still a hit for the retry.
+			if !running {
+				o.gpu.ReleaseKVBlocks(req)
+			}
+			return false
 		}
 		// Reload produced no prefix hit beyond startIndex; allocate as given.
 		return o.gpu.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks)
@@ -518,10 +537,7 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 				return reloaded
 			}
 			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
-			if gpuBlk.Hash != "" {
-				delete(o.gpu.HashToBlock, gpuBlk.Hash)
-				gpuBlk.Hash = ""
-			}
+			o.gpu.dropHash(gpuBlk)
 			start := i * bs
 			gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
 			gpuBlk.Hash = h

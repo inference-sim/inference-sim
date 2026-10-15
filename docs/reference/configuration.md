@@ -108,7 +108,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Max sequence length | Pool `engine.max_model_len` — **required** in the scenario |
 | Prefix caching | Pool `engine.enable_prefix_caching` |
 | KV-cache dtype | Pool `engine.cache_dtype` |
-| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (`--speculative-acceptance-rate` is still required on the CLI when the scenario drafts tokens) |
+| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
 **Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `--dp-load-balancing external` instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
@@ -151,7 +151,11 @@ BLIS prices every step with [blis-latency-kernel](https://github.com/inference-s
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--speculative-acceptance-rate` | float64 | 0.0 | Mean fraction of draft tokens accepted, in [0, 1]. **Required** when the scenario's pool drafts tokens (`engine.speculative.num_spec_tokens > 0`). The draft length and method come from the scenario. |
+| `--speculative-acceptance-rate` | float64 | 0.0 | The accepted fraction of drafts, (AL − 1)/K, in [0, 1]. The highest acceptance layer (#1939); not with `--speculative-acceptance-length`. |
+| `--speculative-acceptance-length` | float64 | 0.0 | The mean acceptance length AL (tokens per verification step, counting the bonus token), in [1, K + 1]. The highest acceptance layer; not with `--speculative-acceptance-rate`. |
+| `--speculative-thinking` | string | | `on` or `off`: with `--speculative-category`, selects the registry's acceptance profile, overriding the workload's selectors. |
+| `--speculative-category` | string | | The workload category (e.g. `coding`) that selects the registry's acceptance profile. |
+| `--speculative-fallback-category` | string | | A category to use, recorded as a fallback, when the workload's has no profile. Without it an unmatched category is refused. A scenario pin's own `fallback_category` wins over it (blis-schemas `acceptance.Resolve`). |
 
 ## Cluster Configuration
 
@@ -524,7 +528,7 @@ lora:
 | **Deployment (required)** | `--scenario`, `--scenarios`, `--registry`, `--catalog` (or `BLIS_CATALOG`) |
 | **KVCacheConfig** | `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-offload-config` (block budget and block size: scenario + kernel) |
 | **BatchConfig** | `--long-prefill-token-threshold` (`max_num_seqs`, `max_num_batched_tokens`: scenario) |
-| **Latency** | `--speculative-acceptance-rate` (everything else: scenario + registry, priced by blis-latency-kernel) |
+| **Latency** | `--speculative-acceptance-rate` / `--speculative-acceptance-length` and the acceptance selectors (everything else: scenario + registry, priced by blis-latency-kernel) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--pd-transfer-contention`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |

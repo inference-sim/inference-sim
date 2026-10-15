@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -41,6 +42,7 @@ func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 		replaySessionMode, replayMetricsPath = origSession, origMetrics
 		agxScenarioFlag, agxWorkloadSpec, agxCorpusPath, agxCorpusSHA256 = "", "", "", ""
 		agxConcurrency, agxBenchmarkDur, agxGracePeriod, agxMaxContextLength, agxCorpusCache = 0, 0, "", "", ""
+		workloadAcceptance = nil
 	}()
 	catalogDir := setupKernelTestFixtures(t)
 	metrics := filepath.Join(t.TempDir(), "m.json")
@@ -59,6 +61,11 @@ func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 		"--defaults-filepath", "../defaults.yaml",
 		"--agentic-scenario", "inferencex-agentx-mvp", "--corpus", agentXSlice, "--corpus-sha256", agentXSliceSHA(t),
 		"--benchmark-duration", "900s", "--metrics-path", metrics,
+	}
+	// noDefaultAcceptance drops the default CLI acceptance, so a lower layer can supply it.
+	if len(args) > 0 && args[0] == noDefaultAcceptance {
+		args = args[1:]
+		base = slices.DeleteFunc(base, func(s string) bool { return s == "--speculative-acceptance-rate" || s == "0.502" })
 	}
 	if err := testCmd.ParseFlags(append(base, args...)); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -216,6 +223,38 @@ func TestReplayAgentX_WorkloadSpecWithFlagOverrides(t *testing.T) {
 		if m.Agentic.Lanes != tc.lanes || m.Agentic.MaxContextLength <= 0 {
 			t.Errorf("%v: %d lanes (want %d), max_context_length %d", tc.args, m.Agentic.Lanes, tc.lanes, m.Agentic.MaxContextLength)
 		}
+	}
+}
+
+// noDefaultAcceptance, as runAgentXReplay's first argument, runs without the default
+// --speculative-acceptance-rate.
+const noDefaultAcceptance = "<no-default-acceptance>"
+
+// The agentic descriptor is the simulated workload, so the acceptance it states is the
+// workload layer (#1939): with no CLI acceptance the run speculates at it and records it.
+func TestReplayAgentX_DescriptorAcceptanceIsTheWorkloadLayer(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "replay.yaml")
+	doc := "workload:\n  replay:\n    scenario: inferencex-agentx-mvp\n    harness_version: 0.12.0\n" +
+		"    corpus:\n      loader: semianalysis_cc_traces_weka_062126_256k\n      format: weka-trace-v7\n      encoding: jsonl\n" +
+		"      source:\n        huggingface: semianalysisai/cc-traces-weka-062126-256k\n        revision: test\n" +
+		"      sha256: " + agentXSliceSHA(t) + "\n" +
+		"    concurrency: 2\n    benchmark_duration_s: 900\n    max_context_length: max_model_len\n" +
+		"    acceptance:\n      num_spec_tokens: 5\n      acceptance_length: 3.1\n      source: test descriptor\n"
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, f := runAgentXReplay(t, noDefaultAcceptance, "--workload-spec", spec)
+	var m struct {
+		Acceptance *struct {
+			Length      float64 `json:"length"`
+			SourceLayer string  `json:"source_layer"`
+		} `json:"acceptance"`
+	}
+	if err := json.Unmarshal(f, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Acceptance == nil || m.Acceptance.SourceLayer != "workload" || m.Acceptance.Length != 3.1 {
+		t.Errorf("acceptance = %+v, want length 3.1 from the workload layer", m.Acceptance)
 	}
 }
 

@@ -58,6 +58,7 @@ var (
 	simulationHorizon         int64                  // Total simulation time (in ticks)
 	logLevel                  string                 // Log verbosity level
 	totalKVBlocks             int64                  // KV blocks per rank, sized by the kernel
+	sequenceState             sim.KVSequenceState    // each resident sequence's bounded state in pool blocks, from the kernel (#1941)
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
@@ -140,11 +141,10 @@ var (
 
 	// Speculative decoding / MTP (#1528). The draft length K and method come from the
 	// scenario's engine.speculative (set when the kernel deployment is adopted); K=0 =>
-	// feature inert, output byte-identical (INV-6). --speculative-acceptance-rate, a workload
-	// property, is required (Changed-gated) when K > 0 to prevent the α=0 "pure slowdown"
-	// footgun.
+	// feature inert, output byte-identical (INV-6). The acceptance is resolved by
+	// blis-schemas' precedence (#1939): registry profile < workload < scenario < CLI.
 	numSpeculativeTokens  int     // K, from the scenario
-	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1])
+	speculativeAcceptance float64 // --speculative-acceptance-rate (α ∈ [0,1]); see speculative_acceptance.go
 	speculativeMethod     string  // method, from the scenario (informational label)
 
 	// loraReservedBytesForKV carries the resolved static LoRA HBM reservation (bytes)
@@ -660,6 +660,8 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
 	// may only restate it (resolveKVOffloadConfig).
 	scenarioOffload = shape.Offload
+	scenarioShape = shape
+	acceptanceRecord = nil
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
@@ -702,6 +704,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// pages and pool. Per data-parallel RANK: a dp>1 MoE deployment runs one replica per rank
 	// (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
 	totalKVBlocks = settings.KVBlocks
+	sequenceState = settings.SequenceState
 	blockSizeTokens = int64(settings.BlockSize)
 	maxNumSeqs = int64(settings.MaxNumSeqs)
 	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
@@ -718,6 +721,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		tensorParallelism, dataParallelism, enableExpertParallel,
 		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, settings.MaxModelLenFrom,
 		!noEnablePrefixCaching, numSpeculativeTokens)
+	logSequenceFixedCharge("first pool", settings)
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel
@@ -1220,7 +1224,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
-	cmd.Flags().Float64Var(&speculativeAcceptance, "speculative-acceptance-rate", 0.0, "Speculative decoding: mean fraction of draft tokens accepted, in [0,1] -- a property of the workload, not the deployment. Required when the scenario's engine drafts tokens (engine.speculative).")
+	registerAcceptanceFlags(cmd)
 
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
@@ -1323,31 +1327,34 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 	return cfg
 }
 
-// resolveSpeculativeConfig builds the speculative-decoding / MTP config from CLI
-// flags (#1528). Shared by run and replay via the shared flag set, so a trace
-// round-trips under identical flags (INV-13). Fatalf on invalid config (CLI boundary,
-// R6).
+// resolveSpeculativeConfig builds the speculative-decoding / MTP config (#1528): K and the
+// method from the scenario, and the acceptance resolved by blis-schemas' precedence (#1939,
+// resolveAcceptance), which it records for the results file (acceptanceRecord). Shared by run
+// and replay, so a trace round-trips under identical flags (INV-13). Fatal on an invalid or
+// unresolvable config (CLI boundary, R6).
 func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
-	// Footgun guard: a scenario drafting k>0 tokens with an unsupplied
-	// --speculative-acceptance-rate would default α=0, modeling spec-decode as PURE
-	// SLOWDOWN (verify width k+1 raises per-step cost while g=1 gives no throughput
-	// gain) — the opposite of the feature's intent. Require α to be supplied
-	// explicitly when k>0 (α=0 stays legal, but must be a deliberate choice). Mirrors
-	// the codebase's Changed()-gated required-flag idiom.
-	if numSpeculativeTokens > 0 && !cmd.Flags().Changed("speculative-acceptance-rate") {
-		logrus.Fatalf("--speculative-acceptance-rate is required when scenario %q drafts %d tokens "+
-			"(engine.speculative): set it explicitly, e.g. --speculative-acceptance-rate 0.7; use 0 only "+
-			"to deliberately model 0%% acceptance", kernelScenario, numSpeculativeTokens)
+	acceptanceRecord = nil
+	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
+	alpha := 0.0
+	if speculating {
+		alpha = ar.res.AcceptanceRate()
+		if ar.cliRate != nil {
+			alpha = *ar.cliRate
+		}
+	} else if cmd.Flags().Changed(acceptanceRateFlag) {
+		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
 	}
-	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, speculativeAcceptance, speculativeMethod)
+	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, alpha, speculativeMethod)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	if c.IsEnabled() {
-		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d)",
-			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth())
+		acceptanceRecord = acceptanceRecordOf(ar.res, c)
+		logAcceptance(acceptanceRecord, c.K)
+		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
+			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())
 		if c.Acceptance == 0 {
-			logrus.Warnf("speculative decoding: acceptance-rate=0 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
+			logrus.Warnf("speculative decoding: acceptance length 1 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
 		}
 	}
 	return c
@@ -1593,6 +1600,9 @@ var runCmd = &cobra.Command{
 			}
 			spec = workload.SynthesizeFromPreset(workloadType, wl.toPresetConfig(), rate, numRequests)
 			spec.Seed = seed
+			// The preset is the simulated workload, so its acceptance terms are the workload
+			// layer (#1939).
+			workloadAcceptance = wl.Acceptance
 		}
 
 		// Apply per-request timeout to all clients.
@@ -1948,7 +1958,8 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks)),
+					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
+					sim.WithSequenceState(sequenceState)),
 				BatchConfig: batchConfigFromCLI(),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism

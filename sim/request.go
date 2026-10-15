@@ -166,6 +166,11 @@ type Request struct {
 	// preemptions counts how often batch formation preempted this request; a re-admission
 	// after preemption is not a new prefix-cache query (PrefixLookup).
 	preemptions int
+	// scheduledTokens is what this step debited from the batched-token budget for the
+	// request: NumNewTokens, except for a speculating decode, which schedules its whole
+	// verify width however many drafts are later accepted (#1627). Set by FormBatch; read
+	// when a preemption returns the debit.
+	scheduledTokens int64
 }
 
 // This method returns a human-readable string representation of a Request.

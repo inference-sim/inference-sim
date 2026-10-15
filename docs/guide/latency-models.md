@@ -260,8 +260,36 @@ Known deviations and limits:
 ## Speculative Decoding / MTP (#1528)
 
 A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` tokens per
-step. Pass `--speculative-acceptance-rate α` (required when the scenario drafts): BLIS does
-not predict acceptance, since it runs no draft model.
+step. BLIS does not predict acceptance, since it runs no draft model: it resolves it (below).
+
+### Speculative acceptance (#1939)
+
+The acceptance length AL (tokens per verification step, counting the bonus token, in
+`[1, K+1]`; rate `α = (AL − 1)/K`) is resolved by blis-schemas' `acceptance.Resolve` from the
+highest layer that states it, lowest to highest:
+
+1. **Registry profile** -- `<registry>/acceptance/*.yaml`, keyed by (model, method, K,
+   thinking, category). The workload's `category` and `thinking` select it, or
+   `--speculative-category` and `--speculative-thinking`, which override the workload's.
+2. **Workload** -- the simulated workload's own `acceptance` value (a catalog preset's, or the
+   scenario's trace or replay binding's).
+3. **Scenario** -- the scenario's `acceptance` pin: an inline value, or `profiles: <set>` to
+   use that registry set in place of the default.
+4. **CLI** -- `--speculative-acceptance-length AL` or `--speculative-acceptance-rate α`
+   (mutually exclusive).
+
+Changing the deployment's K selects that K's profile, so a K sweep with no override takes a
+different AL at each K. Nothing falls back silently: an unmatched category, a missing thinking
+mode, a value stated for another K or an AL outside `[1, K+1]` is refused, unless a
+fallback category names one to use, which is then recorded: the scenario pin's
+`fallback_category`, or `--speculative-fallback-category` when the pin states none (blis-schemas'
+`acceptance.Resolve` lets the scenario's fallback win; the CLI outranks it only for the
+acceptance value itself). The `--metrics-path` file records
+`acceptance: {length, rate, source_layer, entry}`, the length and rate being those the run
+advanced requests by and `entry` the profile set, key, provenance, any fallback, the hardware a
+profile was measured on when it is not the run's, and the per-position rates (vLLM's
+minimum-variance schedule when the source states none). A run that does not speculate records
+none.
 
 - **Method: the engine release's list.** `method` is checked against the rules pack of the
   scenario's `engine_version` (blis-schemas `rules.Pack.SpeculativeMethods`), not a list in
@@ -290,11 +318,42 @@ per verification step; the `--metrics-path` file's `request_itl_*` (aiperf's per
 `interactivity_*` are per token, about the step interval over `1 + α·K` (see
 [Metrics & Results](results.md#measured-window-aggregates-metrics-path-file)).
 
-**Known limitation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)).**
-KV and token-budget occupancy are accounted by the accepted count `g`, not the speculative
-footprint. vLLM reserves `K` lookahead KV slots per running request per step and consumes
-about `K+1` of `max_num_batched_tokens`, so above KV saturation BLIS over-predicts batch size
-and under-predicts preemption. Below saturation the two agree.
+**Occupancy: the speculative footprint (#1627).** As vLLM v0.31.0 does, a speculating decode
+schedules its whole verify width, `1 + K` tokens, and debits all of it from
+`max_num_batched_tokens` whatever is later accepted, and every allocation holds KV slots for the
+request's computed tokens, everything scheduled this step, and the drafter's lookahead past them
+(`num_lookahead_tokens`: `K` for DSpark, EAGLE, MTP and draft models, `K + 1` for DFlash, 0 for
+n-gram, suffix and Medusa). Progress still advances by the accepted count. Below saturation
+nothing binds and results match the accepted-count accounting; under KV pressure fewer requests
+fit and preemption starts earlier, as in the engine. vLLM's second budget is modelled too:
+`input_budget` (`max_num_batched_tokens`) is debited every scheduled request's tokens plus
+`max_num_new_slots_for_drafting` -- `K - 1` for DSpark, `K` for DFlash, 1 for a serial draft
+model, 0 otherwise -- so a DSpark K=5 decode costs 10 of it, and a prefill chunk scheduled
+beside decodes gets `min(token_budget, input_budget - draft_slots)`.
+
+## Per-sequence bounded state (#1941)
+
+The KV pool is sized from the kernel's per-token bytes; each resident sequence's bounded state
+-- window rings, compressor and indexer state, bounded recurrent state -- is charged on top,
+in pool blocks, the way vLLM v0.31.0 holds it:
+
+- **On demand.** Every allocation resizes the sequence's state to the kernel's
+  `SequenceBoundedBytesAt(computed, in flight)`: a window ring holds pages for the tokens
+  scheduled this step plus the window behind them, and blocks the window has passed are freed
+  first (vLLM's `allocate_slots` after `remove_skipped_blocks`). The hold grows while a prefill
+  chunk is in flight and settles at the steady `SequenceFixedBytes` once decoding.
+- **Gated at admission.** A new or resumed request is admitted only if its whole prompt and its
+  state at the admission cap -- each window group at `min(cdiv(prompt), cap)`, the cap being
+  `cdiv(window - 1 + max_in_flight_tokens, block) + 1` pages, which grows with
+  `max_num_batched_tokens` -- are free (`full_sequence_must_fit`). The cap is never held.
+
+For DeepSeek-V4.1-Flash with DSpark on h100 tp8 the steady hold is 49 blocks (about 5.7 MB) a
+sequence per rank; the admission cap at 32,768 batched tokens is 16,425 blocks (about 1.9 GB).
+vLLM's startup "GPU KV cache size" sizes a request at that cap plus its tokens, and BLIS
+reproduces that figure (pinned against the engine's log on H200), but it is a report, not what
+a running sequence holds. The startup log reports the steady hold, the cap and the steady
+hold's share of the pool at `max_num_seqs`. A model with no such caches is charged nothing
+and gated as before (BLIS does not apply vLLM's full-prompt gate to it).
 
 ## KV offload
 
@@ -337,7 +396,6 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 ## What it does not yet do
 
 - Predict speculative acceptance (it is an input).
-- Account the speculative KV/token-budget footprint (#1627, above).
 - Price shared prefill-decode or encode instances.
 - Model vLLM's async scheduling: an engine runs one forward pass at a time and schedules the
   next only when the current one ends (INV-8), with no overlap of scheduling and execution.
