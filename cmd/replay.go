@@ -338,8 +338,10 @@ Example:
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
 		// Observe traces (mode "real") may model the observed deployment's offload via
 		// --kv-offload-config for the sim side of the #1583 hit-rate comparison; sim-
-		// generated traces remain header-authoritative (INV-13).
-		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload, traceData.Header.Mode == "real")
+		// generated traces remain header-authoritative (INV-13). An agentic replay has no
+		// trace, so no recorded deployment: the scenario's offload block is its tiers.
+		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload,
+			!replayRecordsDeployment(traceData.Header, agx != nil))
 		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
 		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
 		// are distinct offload models; refuse both with a clean CLI error rather than
