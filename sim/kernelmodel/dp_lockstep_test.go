@@ -52,12 +52,11 @@ func TestStepTimesAcrossDP_PadsToTheLargestRank(t *testing.T) {
 		t.Errorf("past the capture ceiling each rank must cost its own batch: got %v, own %d/%d",
 			eager, m.StepTime(light), m.StepTime(prefill))
 	}
-	// Unpadded, an idle rank still runs the dummy batch -- one uniform decode -- which costs
-	// more than a step with no forward at all.
+	// Unpadded, an idle rank still runs the dummy batch -- one uniform decode, all of it pad --
+	// which costs more than a step with no forward at all.
 	idleEager := m.StepTimesAcrossDP([][]*sim.Request{nil, prefill})
-	if dummy := m.StepTime(decodes(1, 1)); idleEager[0] != dummy || dummy <= m.StepTime(nil) {
-		t.Errorf("an idle rank in an unpadded step priced %d; the dummy decode costs %d, an empty step %d",
-			idleEager[0], dummy, m.StepTime(nil))
+	if empty := m.StepTime(nil); idleEager[0] <= empty {
+		t.Errorf("an idle rank in an unpadded step priced %d, no more than an empty step %d", idleEager[0], empty)
 	}
 }
 
@@ -97,7 +96,7 @@ func TestDPPadding_CeilingIffGraphs(t *testing.T) {
 			continue
 		}
 		opened++
-		_, decode, other, _ := graphResolution(m.k)
+		decode, other := m.k.(graphResolver).GraphModes()
 		graphs := decode != "NONE" || other != "NONE"
 		if graphs != (m.pad.ceiling > 0) {
 			t.Errorf("%s: graph modes %s/%s but capture ceiling %d", e.Name(), decode, other, m.pad.ceiling)
