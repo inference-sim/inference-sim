@@ -50,6 +50,7 @@ invariant test. The companions are:
 `testdata/catalog/` is a verbatim subset of a tagged blis-catalog release and
 `testdata/registry/` holds a tagged blis-registry release's coefficient sets. Both are pinned to
 the releases blis-latency-kernel's `testdata/upstream.lock` names, and a test fails if they
-drift. See `catalog/README.md` for what is included and how to update it. The kernel's scenario
+drift. `testdata/upstream-prerelease.lock` can name an unreleased commit in a lock entry's place while
+the pinned kernel pre-release lags it (now: blis-catalog `a2ef6d3`, blis-registry `88c46fd`). See `catalog/README.md` for what is included and how to update it. The kernel's scenario
 fixtures are not copied: they are read from the blis-latency-kernel module `go.mod` pins.
 
