@@ -1,4 +1,4 @@
-# Vendored for tests from blis-registry branch dsv41/h100-coefficients at 88c46fd
+# Vendored for tests from blis-registry branch dsv41/h100-coefficients at 0161fa4
 # (acceptance/inferencex-golden-al.yaml, blis-registry#44); replace with the released file.
 # Speculative acceptance lengths, from SemiAnalysis InferenceX's golden curves.
 #
