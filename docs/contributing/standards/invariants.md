@@ -66,7 +66,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
-| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
+| [INV-PD-1 … INV-PD-8](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
 | [NS-6](#ns-6-catalog-is-authoritative-and-read-only) Catalog is authoritative and read-only | Code-boundary | CLI / model catalog |
 
@@ -558,6 +558,26 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 **Evidence:** `detectDecodeCompletions()` in `sim/cluster/cluster.go` stamps `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()` (overhead fixed in issue #846). `projectPDMetrics()` computes the parent E2E metric as `decodeSchedulingDelay + decodeOwnE2E` (E2E under-count fixed in issue #1513).
 
+#### INV-PD-7: Prefill KV Hold
+
+**Statement:** With `DeploymentConfig.PDPrefillKVHold` (every kernel P/D run: a NIXL handoff), a finished prefill sub-request's KV blocks stay allocated on its prefill instance from prefill completion until (a) the decode side's pull completes (`KVTransferCompletedEvent`), (b) at once, when the decode side never took the request (drop at transfer start), or (c) at lease expiry, `max(prefill_complete + lease, vanish + 2/3·lease)`, when the decode instance became unroutable mid-pull. The held KV is a subset of what the prefill instance has allocated, equal to it when nothing else is queued or running there, never exceeds its capacity, and is fully released by the end of an unbounded run.
+
+**Source:** vLLM v0.31.0 `nixl/pull_scheduler.py:247-266` (`request_finished` returns `delay_free_blocks` with a lease deadline), `:219-232` (a decode-side abort before the pull notifies the prefill side to free), `nixl/base_worker.py:2902-3031` (`finished_sending` frees on pull completion), `:3056-3096` and `base_scheduler.py:81-87`, `base_worker.py:563-567` (30 s lease, renewed by the decode side's heartbeats to 2/3 of a lease, so it expires only after the decode side has gone).
+
+**Verification:** `sim/cluster/pd_kv_hold_test.go` — `TestPrefillKVHold_HeldFromPrefillEndUntilThePullCompletes`, `TestPrefillKVHold_HeldBlocksGateTheNextPrefill` (the hold costs capacity), `TestPrefillKVHold_DropAtTransferStartFreesAtOnce`, `TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry` (both lease terms), `TestPrefillKVHold_AmpleCapacityChangesNoLatency` (metamorphic), `TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity` (rapid: subset/equality/capacity/no leak/INV-1).
+
+**Evidence:** `sim.Request.RetainKVOnFinish` makes `processCompletions` skip the release; `ClusterSimulator.startPrefillHold`/`releasePrefillHold` (`sim/cluster/pd_kv_hold.go`) count each held block once across the holds that share it.
+
+#### INV-PD-8: Decode-Side Load Path
+
+**Statement:** A decode sub-request's reservation takes the decode instance's own GPU prefix-cache hit first (whole blocks, never the prompt's last token, none with prefix caching off) and the handoff moves and is priced for only the remaining blocks (`ParentRequest.PulledKVBlocks`). The decode instance's CPU offload tier is never consulted for that reservation, so under `--pd-decider always` a decode-pool CPU tier changes no latency.
+
+**Source:** vLLM v0.31.0 `v1/core/sched/scheduler.py:525-537, 949` (local hit, then `get_num_new_matched_tokens` for the rest), `v1/core/kv_cache_manager.py:290-299` (hit capped at `num_tokens - 1`), `nixl/pull_scheduler.py:149-177` (pull only the unhashed blocks), `multi_connector.py:134-141, 429-448` (the first connector reporting tokens loads them; NIXL, listed first, claims a remotely prefilled prompt).
+
+**Verification:** `sim/cluster/pd_decode_load_test.go` — `TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks`, `TestPDDecodeLoad_LocalHitStopsBeforeTheLastToken`, `TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff` (metamorphic); `sim/cluster/pd_offload_test.go` — `TestPDOffload_PrefillTierServesALaterTurnsPrefix` (the prefill pool's tier does serve its own prompts).
+
+**Evidence:** `sim.Simulator.ReserveRemoteKV` allocates through `sim.GPUTierAllocator` when the store has one.
+
 ### Pools and KV transfer
 
 #### INV-P2-1: Pool-Config Consistency
@@ -570,8 +590,10 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 #### INV-P2-2: KV Transfer Contention
 
-**Status: not modelled yet ([#1922](https://github.com/inference-sim/inference-sim/issues/1922)).** Every P/D handoff is priced by the kernel through `DeploymentConfig.PDTransferTime` as if it were alone on the fabric: concurrent handoffs do not share bandwidth. The earlier model (one cluster-wide transfer counter dividing a configured bandwidth, each duration fixed at the transfer's start, behind `--pd-transfer-contention`) was removed with the simulator's own transfer formula, together with its bookkeeping and metrics, so no unreachable contention logic remains.
+**Statement:** With `--pd-transfer-contention` (`DeploymentConfig.PDTransferContention`), concurrent handoffs share the links they cross. Each handoff's demand -- payload, floor, and links with their full rates -- is the kernel's `PDTransferDemand` (blis-schemas `kernel.TransferDemand`); `kvtransfer.LinkArbiter` divides every link max-min fairly (progressive filling) among the undrained handoffs on it, re-dividing whenever one starts, drains or finishes. The floor is per handoff and never shared: a handoff completes at the later of start + floor and the tick its last byte drains. Laws: (1) a handoff alone completes at exactly `PDTransferTime` in ticks (the schemas law `PDTransferTime == PDTransferDemand.AloneTime()`, checked for every rank pair at startup and every handoff at run time); (2) no link carries more than its rate, and every undrained handoff has a saturated bottleneck link on which none is faster (max-min fairness); (3) handoffs on links nobody else uses finish exactly as alone; (4) doubling every link's rate never delays a handoff; (5) on one shared link set (every 1P1D handoff), no handoff is faster than alone and one more handoff never makes another finish earlier; (6) INV-PD-3 and INV-1 hold, at any horizon; (7) deterministic (INV-6), and run → replay byte-identical (INV-13). Max-min fairness is not monotone across different link sets in general (more traffic on one link can speed a flow on another); `TestLinkArbiter_MaxMinIsNotMonotoneAcrossLinks` pins the counterexample so no law claims it. Off (the default), every handoff is priced as if alone, byte-identical to before.
 
-**What it will state (#1922):** with contention on, transfers that cross the same link share that link's bandwidth fairly; each transfer's rate is its smallest share over the links it crosses, re-evaluated as transfers start and finish; the fixed floor is never shared; and a transfer alone completes at exactly the kernel's `PDTransferTime`. The links and their rates come from the kernel (`PDTransferDemand`, blis-schemas#46, blis-latency-kernel#29); the arbitration is the simulator's.
+**Verification:** `sim/kvtransfer/links_test.go` (laws 1-5, 7; rapid), `sim/cluster/pd_transfer_contention_test.go` (one-at-a-time identical, shared decode NIC doubles each, disjoint links identical, never faster than alone + INV-PD-3 + INV-1 at a horizon, refusals), `cmd/kernel_pd_fidelity_test.go` (CLI, run → replay).
 
-**Error until then:** about `T·ρ/(1−ρ)` added to each handoff, where `T` is one handoff's time and `ρ` the utilisation of the busiest shared link (for xP1D, the decode node's NIC: arrival rate × `T`). On GLM-5 3P1D with 8k-token prompts this is ~0.2% of TTFT at 20 req/s on 400G InfiniBand and ~8% on 100 GbE; ITL and colocated runs are unaffected.
+**Evidence:** `scheduleTransferCompletion` starts the handoff in the arbiter; `PDLinkWakeEvent` completes finished handoffs through the same `KVTransferCompletedEvent` an uncontended one takes. The handoff's queueing delay is its duration minus `TransferAloneTicks`, reported per run (`pd.transfer_queue_delay_*`).
+
+**Coverage limit:** the kernel's demand is one rank's pull at one rank's link rate, exact when the pools' TP widths match (blis-latency-kernel `pdTransferBytes`). NIXL's transfers do not share a LinkID with offload-tier I/O (the kernel prices those over the host link with `TierTime`), so handoffs and CPU-tier traffic do not contend.

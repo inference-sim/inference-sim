@@ -130,8 +130,40 @@ exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pc
 
 Refused: a P/D topology over a colocated scenario; a disaggregated scenario run without
 `--prefill-instances`/`--decode-instances`; pools that differ in block size, dp or draft
-configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or
+configuration; a handoff connector other than NIXL's; shared (`--prefill-decode-instances`) or
 encode instances.
+
+The handoff follows vLLM v0.31.0's NIXL protocol, so the scenario's `pd_transfer.connector`
+must be `NixlConnector`, `NixlPullConnector`, `NixlPushConnector` or a `MultiConnector` over
+one; any other connector is refused.
+
+- **Decode-side load (INV-PD-8).** The decode instance takes its own prefix-cache hit first
+  (whole blocks, never the prompt's last token) and reserves the rest
+  (`WAITING_FOR_REMOTE_KVS`). The handoff moves and is priced for only those blocks, so a
+  session's later turn on the same decode instance pulls only its new blocks.
+- **Prefill KV hold (INV-PD-7).** The prefill instance keeps a finished request's blocks,
+  which count against its KV capacity, until the pull completes. They are freed at once if
+  the decode side never took the request, and at NIXL's 30 s lease expiry if the decode
+  instance went away mid-pull.
+- **Contention (INV-P2-2, `--pd-transfer-contention`, default off).** Concurrent handoffs
+  share the links they cross. The links come from the kernel's `PDTransferDemand`: the
+  sender's NIC egress and the receiver's NIC ingress across nodes, or the NVLink domain on
+  one node. Each link is divided max-min fairly and re-divided as handoffs start and finish.
+  The floor is never shared. A handoff alone still takes exactly `PDTransferTime`. With
+  contention off, every handoff is priced as if alone.
+- **Offload tiers (#1940).** `--kv-offload-config` gives every pool its own tier of that
+  size: llm-d's MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
+  what its engine computes. The prefill pool's tier serves prefix hits before compute. The
+  decode pool's tier serves the requests the decode pool runs itself (those the decider
+  does not disaggregate), but never a remotely prefilled prompt, which NIXL, listed first,
+  loads. A 0-byte tier is refused, as vLLM refuses it. The scenario's own `offload:` block is
+  still refused (#1910).
+
+The PD section on stdout, and the results file's `pd` block, report the handoffs, their p50
+and p90 durations, the queueing delay contention added (duration minus the uncontended
+price), each link's peak concurrent handoffs, the prefill KV hold's peak, and each pool's
+CPU-tier hit rate.
+
 
 ## Data and expert parallelism (MoE)
 
@@ -196,7 +228,6 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 - Predict speculative acceptance (it is an input).
 - Account the speculative KV/token-budget footprint (#1627, above).
 - Price shared prefill-decode or encode instances.
-- Make concurrent P/D handoffs share fabric bandwidth: each is priced as if alone (#1922).
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
   registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
 
