@@ -16,6 +16,8 @@ import (
 type agxHarness struct {
 	x       *AgentXReplay
 	service func(*sim.Request) int64
+	// reject, when set, has the "cluster" refuse a request on arrival (OnUnserved).
+	reject  func(*sim.Request) bool
 	events  agxEvHeap
 	seq     int64
 	horizon int64
@@ -33,11 +35,16 @@ type agxIssue struct {
 	in     int
 	out    int
 	doneAt int64
+	// refused: the request ended in a refusal (the cluster's or the engine's), whose
+	// error response reaches the client a round trip later.
+	refused bool
 }
 
 type agxEv struct {
 	at, seq int64
 	arrive  bool
+	end     sim.RequestState // how a non-arrival event ends the request
+	unserv  bool             // the cluster refused it
 	req     *sim.Request
 }
 
@@ -64,8 +71,12 @@ func (h *agxEvHeap) Pop() any {
 }
 
 func (h *agxHarness) push(at int64, arrive bool, r *sim.Request) {
+	h.pushEnd(at, arrive, sim.StateCompleted, false, r)
+}
+
+func (h *agxHarness) pushEnd(at int64, arrive bool, end sim.RequestState, unserved bool, r *sim.Request) {
 	h.seq++
-	heap.Push(&h.events, agxEv{at, h.seq, arrive, r})
+	heap.Push(&h.events, agxEv{at: at, seq: h.seq, arrive: arrive, end: end, unserv: unserved, req: r})
 }
 
 // agxTB is what the harness needs of a *testing.T or *rapid.T.
@@ -76,12 +87,19 @@ type agxTB interface {
 }
 
 func runAgentX(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64) *agxHarness {
+	return runAgentXWith(t, c, cfg, service, nil)
+}
+
+// runAgentXWith is runAgentX with refusals: a request reject() picks is refused by the
+// "cluster" on arrival; a prompt past cfg.MaxModelLen is refused by the "engine"; a
+// request whose service outlasts its Deadline times out at the deadline.
+func runAgentXWith(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64, reject func(*sim.Request) bool) *agxHarness {
 	t.Helper()
 	x, err := NewAgentXReplay(c, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &agxHarness{x: x, service: service, horizon: math.MaxInt64, inFl: map[*sim.Request]bool{}}
+	h := &agxHarness{x: x, service: service, reject: reject, horizon: math.MaxInt64, inFl: map[*sim.Request]bool{}}
 	x.SetHorizon = func(v int64) { h.horizon = v }
 	for _, r := range x.Start() {
 		h.push(r.ArrivalTime, true, r)
@@ -110,14 +128,30 @@ func runAgentX(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*s
 			h.issued = append(h.issued, agxIssue{at: e.at, req: r, tag: *r.Agentic, phase: r.Phase, in: len(r.InputTokens), out: len(r.OutputTokens), doneAt: -1})
 			h.inFl[r] = true
 			h.maxInFl = max(h.maxInFl, len(h.inFl))
-			h.push(e.at+h.service(r), false, r)
+			switch L := cfg.MaxModelLen; {
+			case h.reject != nil && h.reject(r):
+				h.pushEnd(e.at, false, sim.StateQueued, true, r)
+			case L > 0 && (r.InputLen() >= L || r.InputLen()+int64(r.MaxOutputLen) > L):
+				h.pushEnd(e.at, false, sim.StateQueued, false, r)
+			case r.Deadline > 0 && e.at+h.service(r) > r.Deadline:
+				h.pushEnd(r.Deadline, false, sim.StateTimedOut, false, r)
+			default:
+				h.push(e.at+h.service(r), false, r)
+			}
 			continue
 		}
 		delete(h.inFl, e.req)
-		e.req.State = sim.StateCompleted
+		e.req.State = e.end
 		h.issued[idx[e.req]].doneAt = e.at
+		h.issued[idx[e.req]].refused = e.unserv || e.end == sim.StateQueued
 		h.done = append(h.done, h.issued[idx[e.req]])
-		for _, m := range x.OnComplete(e.req, e.at) {
+		var more []*sim.Request
+		if e.unserv {
+			more = x.OnUnserved(e.req, e.at)
+		} else {
+			more = x.OnComplete(e.req, e.at)
+		}
+		for _, m := range more {
 			h.push(m.ArrivalTime, true, m)
 		}
 	}

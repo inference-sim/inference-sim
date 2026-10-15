@@ -522,6 +522,12 @@ the max-context filter, chain splitting and the build), later runs load it in we
 second instead of re-parsing the JSON, and a missing, damaged or mismatched snapshot is
 ignored, logged and rewritten -- output is byte-identical either way.
 
+Not supported: the accelerated cache-pressure warm-up (`warmup: cache_pressure`, refused),
+`--synthesis-max-osl` (no such cap is applied; the descriptor has no field for it),
+`--trace-output` (refused), a trace-idle or per-turn delay cap (forbidden by the scenario),
+and model mapping (every request goes to the scenario's model). A warm-up request that ends
+in an error, which makes aiperf abort, is counted and warned about.
+
 The workload can also be given as `--workload-spec <file>` with a blis-schemas replay descriptor (`replay:`), which the
 flags override; the descriptor is validated as aiperf's scenario validator validates the
 scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
@@ -545,9 +551,23 @@ aiperf's own runtime (`TestAgentXRuntimeMatchesAiperf`):
   warm-up drains and sends for `--benchmark-duration`; requests in flight then have
   `--grace-period` to finish, after which they are cancelled and leave no aiperf record.
   A 10 s global idle cap pulls in pending timers whenever nothing is in flight.
-- **Prompts.** Exactly `in` tokens: the request's hash blocks (shared within one tree
-  instance, never across trees: aiperf's per-tree cache-bust marker) and a unique tail.
-  Outputs are `max(out, 1)` tokens (ignore_eos); generated tokens are never fed back.
+- **Prompts.** A turn's prompt is its full message list (aiperf re-sends the whole history
+  every turn), split into user and assistant messages as aiperf's reconstructor splits it,
+  rendered through DeepSeek-V3-family chat-template tokens (BOS, a header per message, EOS
+  after assistant messages, the generation prompt) with the tree's cache-bust marker (10
+  tokens) at the head of the first user message. Message content is exactly the recorded
+  `in` tokens: hash blocks (equal across the tree's conversations) and per-turn synthetic
+  tails. So prefixes are shared within a tree up to the first message boundary two
+  conversations place differently, never across trees. The template adds 0.09% to the
+  content (median 27 messages per prompt). Outputs are `max(out, 1)` tokens (ignore_eos);
+  generated tokens are never fed back.
+- **Outcomes.** A cluster refusal (admission, routing, flow-control rejection or shed, queue
+  TTL, eviction, P/D decode-KV drop) or a client timeout is an error and the stream goes on;
+  a prompt past `max_model_len` is a context overflow and ends the stream; a request still in
+  flight at the grace end is cancelled. P/D, flow control and REDIRECT drains are supported.
+- **`--horizon`.** The replay sets the run's end itself (the grace end, or the profiling
+  phase's completion when that comes first); a smaller `--horizon` cuts the run there, and
+  the measured window then ends at it.
 
 Every request carries `Phase` (`warmup` / `profile`, `grace` once it completes after the
 window) and an `agentic` tag (lane, tree, trace, stream, kind, turn, outcome:

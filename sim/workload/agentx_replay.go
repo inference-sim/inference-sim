@@ -83,13 +83,19 @@ type AgentXReplayConfig struct {
 
 // AgentXStats are the replay's own counts, reported in the results file's agentic block.
 type AgentXStats struct {
-	Lanes             int
-	TreesStarted      int // tree instances minted: one per lane plus every recycle
-	TreesCompleted    int // trees that drained (root and every descendant finished)
-	WarmupRequests    int
-	MainRequests      int // profiling requests of root streams
-	SubagentRequests  int // profiling requests of child streams (subagents and flat chains)
-	Cancelled         int // in flight when the grace period ended
+	Lanes int
+	// UnspawnableSkipped counts sampled traces skipped while building lanes because no
+	// stream was dispatchable at their t* (aiperf skips them too and samples again).
+	UnspawnableSkipped int
+	TreesStarted       int // tree instances minted: one per lane plus every recycle
+	TreesCompleted     int // trees that drained (root and every descendant finished)
+	WarmupRequests     int
+	MainRequests       int // profiling requests of root streams
+	SubagentRequests   int // profiling requests of child streams (subagents and flat chains)
+	Cancelled          int // in flight when the grace period ended
+	// CancelledRefused counts the cancelled requests the server had already refused, whose
+	// error response had not reached the client when the run stopped (a round trip).
+	CancelledRefused  int
 	Completed         int // ended with a response
 	Errors            int // timed out, or refused by the cluster or the engine (not overflow)
 	WarmupFailures    int // warm-up requests that ended in an error (aiperf aborts such a run)
@@ -130,6 +136,10 @@ type agxDispatch struct {
 	lane      int // recycle only
 	recycle   bool
 	windowEnd bool // the sending window's duration timeout
+	// refusal, when set, is the client receiving the error response for that send.
+	refusal   *agxDispatch
+	outcome   string
+	refusing  bool // its error response is on the way
 	warmup    bool
 	start     bool // session start (acquires the tree slot)
 	childPath bool // sent via dispatch_child_turn (refusal drains the child's join)
@@ -234,7 +244,7 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 		idleSinceUs:   -1,
 		completeUs:    -1,
 	}
-	x.lanes = agxBuildLanes(x.sampler, cfg.Concurrency, cfg.Seed, cfg.MinRatio, cfg.MaxRatio)
+	x.lanes, x.stats.UnspawnableSkipped = agxBuildLanes(x.sampler, cfg.Concurrency, cfg.Seed, cfg.MinRatio, cfg.MaxRatio)
 	if len(x.lanes) == 0 {
 		return nil, fmt.Errorf("no spawnable trajectory in the pool")
 	}
@@ -608,6 +618,8 @@ func (x *AgentXReplay) fire(d *agxDispatch) {
 	switch {
 	case d.windowEnd:
 		x.closeWindow()
+	case d.refusal != nil:
+		x.end(d.refusal, d.outcome, x.nowUs)
 	case d.recycle:
 		x.dispatchRecycle(d.lane)
 	default:
@@ -762,7 +774,7 @@ func (x *AgentXReplay) futureJoin(in *agxInstance, gated int32) *agxJoin {
 // request the cluster finished: completed, timed out, or dropped by the engine.
 func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
 	d := x.issued(req)
-	if d == nil {
+	if d == nil || d.refusing {
 		return nil
 	}
 	if req.ID != d.ph.ID && req.State == sim.StateCompleted {
@@ -783,8 +795,23 @@ func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
 			(req.MaxOutputLen > 0 && req.InputLen()+int64(req.MaxOutputLen) > x.cfg.MaxModelLen)) {
 			outcome = sim.AgenticContextOverflow
 		}
+		d.refusing = true
+		return x.respondError(d, outcome, now)
 	}
 	return x.terminal(d, outcome, now)
+}
+
+// agxRefusalRoundTripUs is when the client sees an error response after the server refused
+// the request: one HTTP round trip, which aiperf's credit never skips. Without it a refusal
+// with no admission or routing latency would come back at the instant of the send, and a
+// stream or a lane recycle refused at every send would never let the clock advance.
+const agxRefusalRoundTripUs = 1000
+
+// respondError delivers a refusal's error response a round trip later.
+func (x *AgentXReplay) respondError(d *agxDispatch, outcome string, now int64) []*sim.Request {
+	x.nowUs = now
+	x.push(&agxDispatch{state: agxTimer, refusal: d, outcome: outcome}, now+agxRefusalRoundTripUs)
+	return x.flush()
 }
 
 // OnUnserved is the cluster's unserved hook: a request the cluster refused or dropped
@@ -794,10 +821,11 @@ func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
 // stream's next turn.
 func (x *AgentXReplay) OnUnserved(req *sim.Request, now int64) []*sim.Request {
 	d := x.issued(req)
-	if d == nil {
+	if d == nil || d.refusing {
 		return nil
 	}
-	return x.terminal(d, sim.AgenticError, now)
+	d.refusing = true
+	return x.respondError(d, sim.AgenticError, now)
 }
 
 // issued resolves a request -- or a P/D sub-request of one (<id>_prefill, <id>_decode) --
@@ -819,8 +847,15 @@ func (x *AgentXReplay) issued(req *sim.Request) *agxDispatch {
 	return nil
 }
 
-// terminal is a credit return: the send d ended with outcome at now.
+// terminal is a credit return: the send d ended with outcome at now. It returns the sends
+// the return causes.
 func (x *AgentXReplay) terminal(d *agxDispatch, outcome string, now int64) []*sim.Request {
+	x.end(d, outcome, now)
+	return x.flush()
+}
+
+// end applies a credit return, leaving the sends it causes in x.out.
+func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 	req := d.ph
 	delete(x.byID, req.ID)
 	d.state = agxDropped
@@ -850,13 +885,12 @@ func (x *AgentXReplay) terminal(d *agxDispatch, outcome string, now int64) []*si
 			x.startProfiling(now)
 		}
 		x.enforceIdleCap(true)
-		return x.flush()
+		return
 	}
 	x.onReturn(d, outcome == sim.AgenticContextOverflow)
 	x.enforceIdleCap(true)
 	x.issueReleased()
 	x.maybeComplete()
-	return x.flush()
 }
 
 // onReturn is steps 4b-5 of on_credit_return for a profiling credit.
@@ -1138,6 +1172,9 @@ func (x *AgentXReplay) Finish(stopUs int64) {
 		if d.state == agxIssued && d.ph.Agentic != nil && d.ph.Agentic.Outcome == "" {
 			d.ph.Agentic.Outcome = sim.AgenticCancelled
 			cancelled++
+			if d.refusing {
+				x.stats.CancelledRefused++
+			}
 		}
 	}
 	x.stats.Cancelled += cancelled
@@ -1225,30 +1262,40 @@ func (x *AgentXReplay) promptTokens(in *agxInstance, s *agxStream, turn int32) [
 	for k := s.recon.turn + 1; k <= turn; k++ {
 		s.recon.advance(conv, k)
 	}
-	segs := s.recon.segs
-	toks := make([]sim.TokenID, 0, int(conv.turns[turn].in)+agxTemplateOverhead(segs))
-	toks = append(toks, agxTokBOS)
+	return agxRender(in.trace, in.salt, s.conv, s.recon.segs, conv.turns[turn].in, true)
+}
+
+// agxRender renders a message list: with the template, as promptTokens describes; without
+// it, the bare concatenated message content (the hash-id-only model, for comparison).
+func agxRender(tr *AgentXTrace, salt uint64, conv int32, segs []agxSeg, in int32, template bool) []sim.TokenID {
+	cv := &tr.convs[conv]
+	toks := make([]sim.TokenID, 0, int(in)+agxTemplateOverhead(segs))
+	if template {
+		toks = append(toks, agxTokBOS)
+	}
 	marker := false
 	hashes := map[int32][]int64{}
 	for _, sg := range segs {
-		switch sg.role {
-		case 'a':
-			toks = append(toks, agxTokAssistant)
-		case 's':
-			toks = append(toks, agxTokSystem)
-		default:
-			toks = append(toks, agxTokUser)
-			if !marker {
-				m := agxMix(in.salt, 0x6d61726b6572)
-				for i := 0; i < agxMarkerTokens; i++ {
-					toks = append(toks, agxToken(m, uint64(i)))
+		if template {
+			switch sg.role {
+			case 'a':
+				toks = append(toks, agxTokAssistant)
+			case 's':
+				toks = append(toks, agxTokSystem)
+			default:
+				toks = append(toks, agxTokUser)
+				if !marker {
+					m := agxMix(salt, 0x6d61726b6572)
+					for i := 0; i < agxMarkerTokens; i++ {
+						toks = append(toks, agxToken(m, uint64(i)))
+					}
+					marker = true
 				}
-				marker = true
 			}
 		}
 		for _, r := range sg.runs {
 			if r.tail {
-				base := agxMix(agxMix(in.salt^0x7461696c, uint64(s.conv)), uint64(r.turn))
+				base := agxMix(agxMix(salt^0x7461696c, uint64(conv)), uint64(r.turn))
 				for t := r.a; t < r.b; t++ {
 					toks = append(toks, agxToken(base, uint64(t)))
 				}
@@ -1256,19 +1303,22 @@ func (x *AgentXReplay) promptTokens(in *agxInstance, s *agxStream, turn int32) [
 			}
 			hl, ok := hashes[r.turn]
 			if !ok {
-				tn := &conv.turns[r.turn]
-				hl = in.trace.hashPrefix(tn.hashNode, tn.nHash, int(tn.nHash), nil)
+				tn := &cv.turns[r.turn]
+				hl = tr.hashPrefix(tn.hashNode, tn.nHash, int(tn.nHash), nil)
 				hashes[r.turn] = hl
 			}
 			for t := r.a; t < r.b; t++ {
-				toks = append(toks, agxBlockToken(in.trace, hl[t/agxBlockSize], t%agxBlockSize))
+				toks = append(toks, agxBlockToken(tr, hl[t/agxBlockSize], t%agxBlockSize))
 			}
 		}
-		if sg.role == 'a' {
+		if template && sg.role == 'a' {
 			toks = append(toks, agxTokEOS)
 		}
 	}
-	return append(toks, agxTokAssistant)
+	if template {
+		toks = append(toks, agxTokAssistant)
+	}
+	return toks
 }
 
 // agxBlockToken is token i of hash block h of the trace: the trace's hash-id namespace is
@@ -1338,6 +1388,8 @@ type AgentXSummary struct {
 	BarrierHeld                int     `json:"barrier_holds"`
 	JoinSuspensions            int     `json:"join_suspensions"`
 	ChildrenSpawned            int     `json:"children_spawned"`
+	UnspawnableSkipped         int     `json:"unspawnable_traces_skipped"`
+	WarmupFailures             int     `json:"warmup_failures"`
 }
 
 // Summary assembles the agentic block once the run has finished.
@@ -1352,5 +1404,6 @@ func (x *AgentXReplay) Summary(c *AgentXCorpus, maxContextLength int, verified b
 		ProfileStartUs: x.profileUs, WindowEndUs: x.windowEndUs, ProfileCompleteUs: x.completeUs,
 		IdleCapJumps: s.IdleCapJumps, IdleCapSkippedS: float64(s.IdleCapSkippedUs) / 1e6,
 		BarrierHeld: s.BarrierHeld, JoinSuspensions: s.JoinSuspensions, ChildrenSpawned: s.ChildrenSpawned,
+		UnspawnableSkipped: s.UnspawnableSkipped, WarmupFailures: s.WarmupFailures,
 	}
 }

@@ -65,12 +65,16 @@ func agxOffset(ts, tStar float64) float64 { return math.Max(0, ts-tStar) }
 // agxBuildLanes is TrajectorySource._build_trajectories: lane i takes the sampler's next
 // root (skipping unspawnable ones, which still consume the sampler) and snapshots it at
 // t* drawn from default_rng(sha256("{seed}:{trace}:{lane}")[:8]).uniform over the window.
-func agxBuildLanes(s *agxSampler, concurrency int, seed int64, minRatio, maxRatio float64) []*agxLane {
-	var lanes []*agxLane
+//
+// A trace with no dispatchable stream at its t* is skipped exactly as aiperf skips it
+// (_build_trajectory_for_lane returns None and logs a warning); skipped counts them so the
+// caller can say so rather than drop them silently.
+func agxBuildLanes(s *agxSampler, concurrency int, seed int64, minRatio, maxRatio float64) (lanes []*agxLane, skipped int) {
 	maxAttempts := concurrency + 2*max(len(s.pool), 1)
 	for attempts := 0; len(lanes) < concurrency && attempts < maxAttempts; attempts++ {
 		tr := s.nextTrace()
 		if len(tr.convs[0].turns) == 0 {
+			skipped++
 			continue
 		}
 		start, end := tr.minMs, tr.maxMs
@@ -86,9 +90,11 @@ func agxBuildLanes(s *agxSampler, concurrency int, seed int64, minRatio, maxRati
 		}
 		if l := agxSnapshot(tr, tStar); l != nil {
 			lanes = append(lanes, l)
+		} else {
+			skipped++
 		}
 	}
-	return lanes
+	return lanes, skipped
 }
 
 // agxSnapshot is TrajectorySource._snapshot_for: the streams live at t*.

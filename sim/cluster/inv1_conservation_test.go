@@ -80,6 +80,12 @@ func (l clusterLedger) accounted() int {
 	return total
 }
 
+// inSystem counts the requests the cluster still holds: queued or running on an instance
+// (including in transfer) or waiting in the gateway queue.
+func (l clusterLedger) inSystem() int {
+	return l.stillQueued + l.stillRunning + l.gatewayQueueDepth
+}
+
 func (l clusterLedger) String() string {
 	parts := make([]string, 0, len(clusterLedgerTerms))
 	for i, v := range l.terms() {

@@ -449,21 +449,35 @@ checks it send for send against aiperf's own runtime.
 #### INV-AX1: Agentic Request Conservation
 
 **Statement:** every request the replay sends is injected into the cluster exactly once and
-ends exactly once: completed (outcome `completed`, `error` for a client timeout, or
-`context_overflow` for an engine refusal), or still in flight when the run stops at the end
-of the grace period (outcome `cancelled`, which aiperf records nowhere). A superseded send
-(a timer the idle cap moved, a send held behind a barrier, a timer cancelled at the window
-end) is refused by the arrival gate before admission and is never a request, so INV-1 holds
-over the sent requests unchanged. No profiling completion is accepted after the grace end,
-and the profiling phase completes no earlier than the window end.
+ends exactly once, with one outcome:
 
-**Enforced:** `AgentXReplay.Gate` (one confirmed send per dispatch), `OnComplete` (one
-outcome), `Finish` (the cancelled outcome); `ClusterSimulator.gateArrival` before
-`injectedByClass`.
+| outcome | how it ends | the stream then |
+|---|---|---|
+| `completed` | a response (non-P/D, or a P/D parent's completion, reported by ID) | continues |
+| `error` | a client timeout (aiperf's 6 h default); a cluster refusal -- admission or routing rejection, flow-control rejection or shed, gateway TTL expiry, in-flight eviction, P/D decode-KV drop (`SetUnservedHook`); an engine refusal other than context length | continues (aiperf records an error and dispatches the next turn) |
+| `context_overflow` | the engine refuses the prompt, or prompt plus output budget, past max_model_len | stops (non-final turn: trajectory death; a root's tree drains and recycles) |
+| `cancelled` | still in flight -- queued, running, in transfer or in the gateway queue -- when the run stops at the end of the grace period | -- (aiperf keeps no record) |
 
-**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora` (rapid, harness);
-`TestReplayAgentX_DeterministicConservingAndTagged` (through the real cluster: injected =
-completed + cancelled = sent).
+A request the cluster re-injects while in flight (a REDIRECT drain) is the same request, not
+a new one. A superseded send (a timer the idle cap moved, a send held behind a barrier, a
+timer cancelled at the window end) is refused by the arrival gate before admission and is
+never a request, so INV-1 holds over the sent requests unchanged. At the end, the replay's
+in-flight count equals the cancelled count, which equals what the cluster still holds. No
+profiling request ends after the grace end, and the profiling phase completes no earlier
+than the window end (and, as aiperf's does, 10 s after the grace end when requests were
+cancelled while branch work was pending).
+
+**Enforced:** `AgentXReplay.Gate` (one confirmed send per dispatch; redirects pass),
+`OnComplete` / `OnUnserved` (one outcome, matched by request ID), `Finish` (the cancelled
+outcome); `ClusterSimulator.gateArrival` before `injectedByClass`, `notifyUnserved` in
+`recordUnserved`.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora` (rapid, harness, with random
+timeouts, refusals and overflows, and a coverage check that every outcome occurs); through
+the real cluster, `TestAgentXThroughPDDisaggregation`, `TestAgentXThroughFlowControlTTL`,
+`TestAgentXThroughAdmissionRejection`, `TestAgentXThroughRedirectDrain`,
+`TestAgentXContextOverflowEndsTheStream` (sim/cluster) and
+`TestReplayAgentX_DeterministicConservingAndTagged` (cmd).
 
 #### INV-AX2: Dependency Causality
 

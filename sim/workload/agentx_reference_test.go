@@ -221,7 +221,7 @@ func compareLanesToAiperf(t *testing.T, c *AgentXCorpus, ref *aiperfReference) {
 			t.Fatal(err)
 		}
 		s := &agxSampler{pool: c.Traces}
-		lanes := agxBuildLanes(s, conc, 42, 0, 1)
+		lanes, _ := agxBuildLanes(s, conc, 42, 0, 1)
 		if len(lanes) != len(rl.Lanes) {
 			t.Fatalf("C=%d: %d lanes, aiperf %d", conc, len(lanes), len(rl.Lanes))
 		}

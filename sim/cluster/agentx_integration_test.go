@@ -114,8 +114,8 @@ func (r *agxRun) checkConservation(t *testing.T) map[string]int {
 	}
 	// A cancelled request is one the cluster still holds when the run stops (queued or
 	// running on an instance, in transfer, or in the gateway queue) -- not one it lost.
-	m := r.cs.AggregatedMetrics()
-	if held := m.StillQueued + m.StillRunning + r.cs.GatewayQueueDepth(); held != st.Cancelled {
+	assertClusterINV1Conservation(t, r.cs, len(r.sent), r.cs.RejectedRequests(), "agentx")
+	if held := newClusterLedger(r.cs).inSystem() + st.CancelledRefused; held != st.Cancelled {
 		t.Errorf("%d requests cancelled at the end, but the cluster holds %d", st.Cancelled, held)
 	}
 	return out

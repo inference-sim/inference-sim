@@ -50,7 +50,9 @@ func genTrace(t *rapid.T, id string) string {
 		in := len(hash)*64 + rapid.IntRange(0, 63).Draw(t, "partial")
 		out := rapid.IntRange(0, 300).Draw(t, "out")
 		reqs = append(reqs, map[string]any{"type": "s", "t": tm, "api_time": api, "in": in, "out": out, "model": "m", "hash_ids": hash})
-		if k < nRoot-1 && rapid.Bool().Draw(t, "subagent") {
+		// Subagents after any root turn: after the last one they outlive the root (a
+		// background branch); several may share a gap and overlap.
+		for ns := rapid.IntRange(0, 2).Draw(t, "nSub"); ns > 0; ns-- {
 			st := tm + msGrid(t, 0, 3, "saStart")
 			var inner []map[string]any
 			ih := []int64{next, next + 1}
@@ -65,7 +67,7 @@ func genTrace(t *rapid.T, id string) string {
 				ih = append(append([]int64(nil), ih...), next)
 				next++
 			}
-			reqs = append(reqs, map[string]any{"type": "subagent", "t": st, "agent_id": fmt.Sprintf("a%d", k), "subagent_type": "Explore",
+			reqs = append(reqs, map[string]any{"type": "subagent", "t": st, "agent_id": fmt.Sprintf("a%d_%d", k, ns), "subagent_type": "Explore",
 				"duration_ms": (end - st) * 1000, "status": "completed", "models": []string{"m"}, "requests": inner})
 		}
 	}
@@ -115,7 +117,7 @@ func genCorpus(t *rapid.T) []string {
 }
 
 func genConfig(t *rapid.T) AgentXReplayConfig {
-	return AgentXReplayConfig{
+	cfg := AgentXReplayConfig{
 		Concurrency: rapid.IntRange(1, 5).Draw(t, "C"),
 		Seed:        int64(rapid.IntRange(0, 1000).Draw(t, "seed")),
 		DurationUs:  int64(rapid.IntRange(20, 300).Draw(t, "dur")) * sec,
@@ -123,7 +125,26 @@ func genConfig(t *rapid.T) AgentXReplayConfig {
 		IdleCapUs:   10 * sec,
 		MinRatio:    0, MaxRatio: 1,
 	}
+	if rapid.Bool().Draw(t, "timeouts") {
+		cfg.RequestTimeoutUs = int64(rapid.IntRange(1, 6).Draw(t, "timeoutS")) * sec
+	}
+	if rapid.Bool().Draw(t, "overflows") {
+		cfg.MaxModelLen = int64(rapid.IntRange(150, 700).Draw(t, "maxModelLen"))
+	}
+	return cfg
 }
+
+// genReject has the cluster refuse a pseudo-random share of requests (none, or 1 in n).
+func genReject(t *rapid.T) func(*sim.Request) bool {
+	n := rapid.SampledFrom([]int{0, 3, 7}).Draw(t, "rejectEvery")
+	if n == 0 {
+		return nil
+	}
+	return func(r *sim.Request) bool { return agxMix(uint64(len(r.ID)), uint64(r.ArrivalTime))%uint64(n) == 0 }
+}
+
+// agxCoverage counts what the random runs exercised, so a property cannot pass vacuously.
+var agxCoverage = map[string]int{}
 
 // genService draws a service time that depends on the request's size and lane.
 func genService(t *rapid.T) func(*sim.Request) int64 {
@@ -179,23 +200,29 @@ func checkAgentXInvariants(t interface {
 		streamSends[sk] = append(streamSends[sk], is)
 		byConv[[2]any{is.tag.Tree, is.tag.Stream}] = append(byConv[[2]any{is.tag.Tree, is.tag.Stream}], is.tag.StreamInstance)
 	}
-	// INV-AX1: every send ends exactly once: completed, or cancelled at the grace end.
-	var completed, cancelled int
+	// INV-AX1: every send ends exactly once -- completed, an error (timeout or refusal), a
+	// context overflow, or cancelled because it was still in flight at the grace end.
+	ended := map[string]int{}
 	for _, is := range h.issued {
+		o := is.req.Agentic.Outcome
 		switch {
-		case is.doneAt >= 0 && is.req.Agentic.Outcome == sim.AgenticCompleted:
-			completed++
+		case is.doneAt >= 0 && (o == sim.AgenticCompleted || o == sim.AgenticError || o == sim.AgenticContextOverflow):
 			if is.phase != sim.PhaseWarmup && is.doneAt > x.graceEndUs {
-				t.Errorf("INV-AX1: completion at %d after the grace end %d", is.doneAt, x.graceEndUs)
+				t.Errorf("INV-AX1: a request ended at %d after the grace end %d", is.doneAt, x.graceEndUs)
 			}
-		case is.doneAt < 0 && is.req.Agentic.Outcome == sim.AgenticCancelled:
-			cancelled++
+		case o == sim.AgenticCancelled && (is.doneAt < 0 || is.refused):
+			// In flight at the stop -- or refused, with the error response still on its way.
 		default:
-			t.Errorf("INV-AX1: send %s done=%d outcome %q", is.req.ID, is.doneAt, is.req.Agentic.Outcome)
+			t.Errorf("INV-AX1: send %s done=%d outcome %q", is.req.ID, is.doneAt, o)
 		}
+		ended[o]++
+		agxCoverage["outcome:"+o]++
 	}
-	if completed+cancelled != len(h.issued) || cancelled != x.Stats().Cancelled {
-		t.Errorf("INV-AX1: %d sent != %d completed + %d cancelled (driver says %d cancelled)", len(h.issued), completed, cancelled, x.Stats().Cancelled)
+	st := x.Stats()
+	if ended[sim.AgenticCompleted] != st.Completed || ended[sim.AgenticError] != st.Errors ||
+		ended[sim.AgenticContextOverflow] != st.ContextOverflows || ended[sim.AgenticCancelled] != st.Cancelled ||
+		x.InFlight() != st.Cancelled {
+		t.Errorf("INV-AX1: outcomes %v disagree with the replay's %+v (in flight %d)", ended, st, x.InFlight())
 	}
 	if end < windowEnd && x.phase >= agxProfile && end >= 0 {
 		t.Errorf("INV-AX1: phase completion %d before the window end %d", end, windowEnd)
@@ -208,6 +235,13 @@ func checkAgentXInvariants(t interface {
 	for sk, ss := range streamSends {
 		sort.SliceStable(ss, func(i, j int) bool { return ss[i].at < ss[j].at })
 		for i := 1; i < len(ss); i++ {
+			agxCoverage["stream continued"]++
+			if ss[i-1].req.Agentic.Outcome == sim.AgenticContextOverflow {
+				t.Errorf("INV-AX2: stream %v sent turn %d after a context overflow", sk, ss[i].tag.Turn)
+			}
+			if ss[i-1].req.Agentic.Outcome == sim.AgenticError {
+				agxCoverage["continued after error"]++
+			}
 			if ss[i].tag.Turn != ss[i-1].tag.Turn+1 {
 				t.Errorf("INV-AX2: stream %v turns %d then %d", sk, ss[i-1].tag.Turn, ss[i].tag.Turn)
 			}
@@ -244,6 +278,7 @@ func checkAgentXInvariants(t interface {
 			}
 			switch {
 			case ok:
+				agxCoverage["barrier predecessor checked"]++
 				if ps.doneAt < 0 || ps.doneAt > is.at {
 					t.Errorf("INV-AX2: %v sent at %d before its barrier predecessor %v completed (%d)", is.tag, is.at, pk, ps.doneAt)
 				}
@@ -263,10 +298,11 @@ func checkAgentXInvariants(t interface {
 						continue
 					}
 					last := cs[len(cs)-1]
-					if int(last.tag.Turn) == len(tr.convs[c].turns)-1 && (last.doneAt < 0 || last.doneAt > is.at) {
+					agxCoverage["join checked"]++
+					if (int(last.tag.Turn) == len(tr.convs[c].turns)-1 || last.req.Agentic.Outcome == sim.AgenticContextOverflow) && (last.doneAt < 0 || last.doneAt > is.at) {
 						t.Errorf("INV-AX2: gated root turn %v sent at %d before child %s finished (%d)", is.tag, is.at, tr.convs[c].sessionID, last.doneAt)
 					}
-					if int(last.tag.Turn) < len(tr.convs[c].turns)-1 {
+					if int(last.tag.Turn) < len(tr.convs[c].turns)-1 && last.req.Agentic.Outcome != sim.AgenticContextOverflow {
 						t.Errorf("INV-AX2: gated root turn %v sent while child %s has turns left", is.tag, tr.convs[c].sessionID)
 					}
 				}
@@ -320,12 +356,22 @@ func issueLog(h *agxHarness) []string {
 	return out
 }
 
-func runRapid(t *rapid.T, lines []string, cfg AgentXReplayConfig, svc func(*sim.Request) int64) *agxHarness {
+func runRapid(t *rapid.T, lines []string, cfg AgentXReplayConfig, svc func(*sim.Request) int64, reject ...func(*sim.Request) bool) *agxHarness {
 	c, err := ReadAgentXCorpus(strings.NewReader(strings.Join(lines, "\n")), 0, true)
 	if err != nil {
 		t.Fatalf("corpus: %v", err)
 	}
-	return runAgentX(t, c, cfg, svc)
+	var rj func(*sim.Request) bool
+	if len(reject) > 0 {
+		rj = reject[0]
+	}
+	h := runAgentXWith(t, c, cfg, svc, rj)
+	for _, is := range h.issued {
+		if is.tag.Kind != "root" {
+			agxCoverage["child sent"]++
+		}
+	}
+	return h
 }
 
 // TestAgentXInvariantsHoldOverRandomCorpora: INV-AX1 ... INV-AX4 and INV-6 over random
@@ -335,12 +381,21 @@ func TestAgentXInvariantsHoldOverRandomCorpora(t *testing.T) {
 		lines := genCorpus(t)
 		cfg := genConfig(t)
 		svc := genService(t)
-		h := runRapid(t, lines, cfg, svc)
+		rj := genReject(t)
+		h := runRapid(t, lines, cfg, svc, rj)
 		checkAgentXInvariants(t, h, cfg)
-		if again := runRapid(t, lines, cfg, svc); !reflect.DeepEqual(issueLog(h), issueLog(again)) {
+		if again := runRapid(t, lines, cfg, svc, rj); !reflect.DeepEqual(issueLog(h), issueLog(again)) {
 			t.Fatalf("INV-6: two runs of the same corpus and config sent different requests")
 		}
 	})
+	// Not vacuous: the runs sent children, checked barriers and joins, and ended requests
+	// every way a request can end.
+	for _, k := range []string{"child sent", "barrier predecessor checked", "join checked", "continued after error",
+		"outcome:" + sim.AgenticCompleted, "outcome:" + sim.AgenticError, "outcome:" + sim.AgenticContextOverflow, "outcome:" + sim.AgenticCancelled} {
+		if agxCoverage[k] == 0 {
+			t.Errorf("the random runs never exercised %q", k)
+		}
+	}
 }
 
 // TestAgentXLongerGraceKeepsEveryCompletion (metamorphic): lengthening the grace period
