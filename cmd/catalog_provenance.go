@@ -121,8 +121,12 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 	if outputFilePath == "" {
 		return nil
 	}
-	return []sim.EmitOption{
+	opts := []sim.EmitOption{
 		sim.WithCatalogProvenance(captureCatalogProvenance(catalogRoot)),
 		sim.WithScenarioOverrides(scenarioOverrides),
 	}
+	if p := eppProvenance(); p != nil {
+		opts = append(opts, sim.WithEPPProvenance(p)) // --epp-config (#1930)
+	}
+	return opts
 }
