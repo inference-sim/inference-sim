@@ -19,6 +19,11 @@ type RoutingSnapshot struct {
 	FreeKVBlocks          int64
 	CacheHitRate          float64
 	InFlightRequests      int     // Requests dispatched to this instance but not yet completed
+	// InFlightTokens is the router-side in-flight token count of the llm-d
+	// inflight-load-producer bound to flow control (#1907/#1908). Freshness:
+	// synchronous (charged at routing, released at first token or completion).
+	// Zero unless an EPP routing pipeline tracks in-flight tokens.
+	InFlightTokens int64
 	PreemptionCount       int64   // Cumulative preemption events since instance start (monotonically increasing; Immediate by default, Periodic when --snapshot-refresh-interval > 0)
 	Model                 string  // Model served by this instance; used by buildRouterState() for per-model filtering
 	GPUType               string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
@@ -156,6 +161,11 @@ func (ll *LeastLoaded) Route(req *Request, state *RouterState) RoutingDecision {
 // Used by scorers like prefix-affinity that track routing history.
 type observerFunc func(req *Request, targetInstance string)
 
+// filterFunc narrows the candidate set before scoring (llm-d's Filter stage,
+// pkg/epp/scheduling/scheduler_profile.go:138-165 at v0.10.0). It returns a subset
+// of snapshots in their original order; an empty result fails the request.
+type filterFunc func(req *Request, snapshots []RoutingSnapshot) []RoutingSnapshot
+
 // WeightedScoring routes requests using a composable scorer pipeline.
 //
 // Each scorer evaluates all instances on a [0,1] scale. Scores are combined
@@ -173,11 +183,35 @@ type observerFunc func(req *Request, targetInstance string)
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
 // by first occurrence (lowest index) when rng is nil.
+//
+// With an EPP pipeline (RoutingPipelineConfig) the policy runs llm-d's profile
+// order (scheduler_profile.go:125-136, v0.10.0): producers over all candidates,
+// filters in profile order, scorers over the survivors, then the max-score pick.
+// If the filters eliminate every candidate the decision has an empty
+// TargetInstance (llm-d: "no endpoints available", the request fails).
+//
+// Weights: llm-d sums weight·clamp(score) without normalizing; BLIS divides every
+// weight by their total, a positive constant that preserves the argmax.
+// Ties: llm-d's max-score-picker shuffles candidates from a time-seeded global
+// source and stable-sorts by score (picker/maxscore/picker.go:87-115), i.e. a
+// uniform pick among the tied maxima; BLIS draws that pick from the seeded router
+// partition, so it is deterministic (INV-6).
 type WeightedScoring struct {
 	scorers   []scorerFunc
 	weights   []float64 // normalized to sum to 1.0
 	observers []observerFunc
 	rng       *rand.Rand
+	filters   []filterFunc
+	pipeline  *RoutingPipeline // nil without an EPP pipeline
+	clock     int64            // RouterState.Clock of the decision in progress
+}
+
+// Pipeline returns the policy's llm-d data layer (nil without one).
+func (ws *WeightedScoring) Pipeline() *RoutingPipeline { return ws.pipeline }
+
+// PipelineSource is implemented by routing policies built on an llm-d data layer.
+type PipelineSource interface {
+	Pipeline() *RoutingPipeline
 }
 
 // Route implements RoutingPolicy for WeightedScoring.
@@ -185,6 +219,16 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 	snapshots := state.Snapshots
 	if len(snapshots) == 0 {
 		panic("WeightedScoring.Route: empty snapshots")
+	}
+	ws.clock = state.Clock
+	if ws.pipeline != nil {
+		ws.pipeline.begin(req, snapshots, state.Clock)
+	}
+	for _, filter := range ws.filters {
+		snapshots = filter(req, snapshots)
+		if len(snapshots) == 0 {
+			return RoutingDecision{Reason: "weighted-scoring: no endpoints available (filters eliminated all candidates)"}
+		}
 	}
 
 	// Compute composite scores from all scorers
@@ -291,6 +335,44 @@ func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockS
 
 // newRoutingPolicyInternal creates a routing policy, shared by both public constructors.
 func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn cacheQueryFn) RoutingPolicy {
+	return newRoutingPolicyWithPipeline(name, scorerConfigs, blockSize, rng, cacheFn, nil, RoutingEnv{})
+}
+
+// NewRoutingPolicyWithPipeline is NewRoutingPolicyWithCache plus llm-d's data layer
+// and filter stage (#1907/#1908/#1912/#1930), building a private pipeline from
+// pipelineCfg (resolved by ResolveRoutingPipeline). A nil pipelineCfg with only
+// existing scorers builds exactly the policy NewRoutingPolicyWithCache builds.
+// Panics when the pipeline does not resolve; callers validate first.
+func NewRoutingPolicyWithPipeline(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand,
+	cacheFn map[string]func([]TokenID) int, pipelineCfg *RoutingPipelineConfig, env RoutingEnv) RoutingPolicy {
+	return newRoutingPolicyWithPipeline(name, scorerConfigs, blockSize, rng, cacheQueryFn(cacheFn), pipelineCfg, env)
+}
+
+// NewWeightedRoutingOnPipeline builds a weighted-scoring profile (filters, then
+// scorers, then the max-score pick) on a shared llm-d data layer, so several
+// profiles (prefill, decode) read and record into the same producers.
+func NewWeightedRoutingOnPipeline(scorerConfigs []ScorerConfig, filters []FilterConfig, blockSize int64, rng *rand.Rand,
+	cacheFn map[string]func([]TokenID) int, p *RoutingPipeline) RoutingPolicy {
+	if p == nil {
+		panic("NewWeightedRoutingOnPipeline: pipeline must not be nil")
+	}
+	return newWeightedScoring(scorerConfigs, filters, blockSize, rng, cacheQueryFn(cacheFn), p)
+}
+
+func needsPipeline(scorerConfigs []ScorerConfig, pipeline *RoutingPipelineConfig) bool {
+	if pipeline != nil {
+		return true
+	}
+	for _, c := range scorerConfigs {
+		if c.Name == "prefix-cache" || c.Name == "token-load" || (c.Name == "no-hit-lru" && c.Params.ProducerBound) {
+			return true
+		}
+	}
+	return false
+}
+
+func newRoutingPolicyWithPipeline(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand,
+	cacheFn cacheQueryFn, pipelineCfg *RoutingPipelineConfig, env RoutingEnv) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -303,20 +385,57 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		if len(scorerConfigs) == 0 {
 			scorerConfigs = DefaultScorerConfigs()
 		}
-		scorers := make([]scorerFunc, len(scorerConfigs))
-		var observers []observerFunc
-		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
-			scorers[i] = scorer
-			if obs != nil {
-				observers = append(observers, obs)
+		var p *RoutingPipeline
+		var filters []FilterConfig
+		if needsPipeline(scorerConfigs, pipelineCfg) {
+			resolved, err := ResolveRoutingPipeline(scorerConfigs, pipelineCfg)
+			if err != nil {
+				panic(fmt.Sprintf("routing pipeline: %v", err))
 			}
+			if env.EngineBlockSize <= 0 {
+				env.EngineBlockSize = int(blockSize)
+			}
+			p = NewRoutingPipeline(resolved, env, cacheFn)
+			filters = resolved.Filters
 		}
-		weights := normalizeScorerWeights(scorerConfigs)
-		return &WeightedScoring{scorers: scorers, weights: weights, observers: observers, rng: rng}
+		return newWeightedScoring(scorerConfigs, filters, blockSize, rng, cacheFn, p)
 	case "always-busiest":
 		return &AlwaysBusiest{}
 	default:
 		panic(fmt.Sprintf("unhandled routing policy %q", name))
 	}
+}
+
+func newWeightedScoring(scorerConfigs []ScorerConfig, filterCfgs []FilterConfig, blockSize int64, rng *rand.Rand,
+	cacheFn cacheQueryFn, p *RoutingPipeline) *WeightedScoring {
+	ws := &WeightedScoring{rng: rng, pipeline: p}
+	for _, f := range filterCfgs {
+		ws.filters = append(ws.filters, p.buildFilter(f))
+	}
+	ws.scorers = make([]scorerFunc, len(scorerConfigs))
+	for i, cfg := range scorerConfigs {
+		var scorer scorerFunc
+		var obs observerFunc
+		switch {
+		case cfg.Name == "prefix-cache":
+			scorer = newPrefixCacheScorer(cfg.Params, p)
+		case cfg.Name == "token-load":
+			scorer = newTokenLoadScorer(cfg.Params, p)
+		case cfg.Name == "no-hit-lru" && cfg.Params.ProducerBound:
+			var rec func(*Request, string, int64)
+			scorer, rec = newProducerNoHitLRUScorer(cfg.Params, p)
+			obs = func(req *Request, target string) { rec(req, target, ws.clock) }
+		default:
+			scorer, obs = newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
+		}
+		ws.scorers[i] = scorer
+		if obs != nil {
+			ws.observers = append(ws.observers, obs)
+		}
+	}
+	if p != nil {
+		ws.observers = append(ws.observers, func(req *Request, target string) { p.recordRouted(req, target, ws.clock) })
+	}
+	ws.weights = normalizeScorerWeights(scorerConfigs)
+	return ws
 }

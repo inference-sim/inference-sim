@@ -325,6 +325,14 @@ type EmitOption func(*emitOptions)
 type emitOptions struct {
 	catalog   *CatalogProvenance
 	overrides []ScenarioOverride
+	epp       *EPPProvenance
+}
+
+// WithEPPProvenance records the ingested llm-d EndpointPickerConfig (#1930: config
+// sha256, plugins and their BLIS mapping, the scheduling profile, flow control) in
+// the --metrics-path file only, like WithCatalogProvenance. Nil leaves it absent.
+func WithEPPProvenance(p *EPPProvenance) EmitOption {
+	return func(o *emitOptions) { o.epp = p }
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -384,6 +392,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.EPP = resolvedOpts.epp
 
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)

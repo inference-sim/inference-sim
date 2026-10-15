@@ -118,6 +118,13 @@ type ClusterSimulator struct {
 	gatewayQueue         *GatewayQueue
 	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
 
+	// llm-d inflight-load-producer trackers of the routing policy (nil without an
+	// EPP pipeline). flowInFlightLoad is the one whose tokens RoutingSnapshot.InFlightTokens
+	// carries (the flow-control concurrency detector's binding).
+	routingPipeline      *sim.RoutingPipeline
+	inFlightLoadTrackers []*sim.InFlightLoadTracker
+	flowInFlightLoad     *sim.InFlightLoadTracker
+
 	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
@@ -446,20 +453,63 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	cs.cacheQueryFn = cs.snapshotProvider.BuildCacheQueryFn()
 
 	// Create routing policies now that cacheQueryFn is available.
-	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
-	if len(config.PrefillScorerConfigs) > 0 {
-		cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
+	if config.RoutingPipeline != nil {
+		// llm-d EPP data layer + filter stage (#1907/#1908/#1912/#1930), shared by the
+		// default/decode and prefill profiles as llm-d shares plugin instances.
+		all := append(append(append([]sim.ScorerConfig{}, config.RoutingScorerConfigs...), config.PrefillScorerConfigs...), config.DecodeScorerConfigs...)
+		resolved, err := sim.ResolveRoutingPipeline(all, config.RoutingPipeline)
+		if err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: routing pipeline: %v", err))
+		}
+		cs.routingPipeline = sim.NewRoutingPipeline(resolved, cs.routingEnv(rng), cs.cacheQueryFn)
+		cs.routingPolicy = sim.NewWeightedRoutingOnPipeline(config.RoutingScorerConfigs, resolved.Filters, config.BlockSizeTokens,
+			rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn, cs.routingPipeline)
+		if len(config.PrefillScorerConfigs) > 0 {
+			cs.prefillRoutingPolicy = sim.NewWeightedRoutingOnPipeline(config.PrefillScorerConfigs, resolved.PrefillFilters, config.BlockSizeTokens,
+				rng.ForSubsystem("prefill-router"), cs.cacheQueryFn, cs.routingPipeline)
+		}
+		if len(config.DecodeScorerConfigs) > 0 {
+			cs.decodeRoutingPolicy = sim.NewWeightedRoutingOnPipeline(config.DecodeScorerConfigs, resolved.Filters, config.BlockSizeTokens,
+				rng.ForSubsystem("decode-router"), cs.cacheQueryFn, cs.routingPipeline)
+		}
+	} else {
+		if routingScorersNeedPipeline(config.RoutingScorerConfigs) {
+			cs.routingPolicy = sim.NewRoutingPolicyWithPipeline(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens,
+				rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn, nil, cs.routingEnv(rng))
+			if src, ok := cs.routingPolicy.(sim.PipelineSource); ok {
+				cs.routingPipeline = src.Pipeline()
+			}
+		} else {
+			cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
+		}
+		if len(config.PrefillScorerConfigs) > 0 {
+			cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
+		}
+		if len(config.DecodeScorerConfigs) > 0 {
+			cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
+		}
 	}
-	if len(config.DecodeScorerConfigs) > 0 {
-		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
+	if cs.routingPipeline != nil {
+		cs.inFlightLoadTrackers = cs.routingPipeline.InFlightLoadTrackers()
+		name := ""
+		if config.FlowControlConcurrency != nil {
+			name = config.FlowControlConcurrency.InFlightLoadProducerName
+		}
+		cs.flowInFlightLoad = cs.routingPipeline.InFlightLoadTracker(name)
 	}
 
 	// PD disaggregation: construct the decider now that cacheQueryFn is available.
 	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
 	// ignore state but share the same construction point.
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
-		switch config.PDDecider {
-		case "prefix-threshold":
+		switch {
+		case config.PDPrefixBased != nil:
+			// llm-d prefix-based-pd-decider on the EPP data layer (--epp-config).
+			if cs.routingPipeline == nil {
+				panic("ClusterSimulator: PDPrefixBased requires an EPP RoutingPipeline")
+			}
+			cs.disaggregationDecider = sim.NewLLMDPrefixPDDecider(*config.PDPrefixBased, cs.routingPipeline)
+		case config.PDDecider == "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens), cs.cacheQueryFn)
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
@@ -556,12 +606,30 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		if cs.dispatchTickInterval == 0 {
 			cs.dispatchTickInterval = 1000 // default 1ms (llm-d parity)
 		}
-		cs.saturationDetector = sim.NewSaturationDetector(
-			config.FlowControlDetector,
-			config.FlowControlQueueDepthThreshold,
-			config.FlowControlKVCacheUtilThreshold,
-			config.FlowControlMaxConcurrency,
-		)
+		if config.FlowControlConcurrency != nil {
+			cs.saturationDetector = sim.NewConcurrencyDetectorFromConfig(*config.FlowControlConcurrency)
+		} else {
+			cs.saturationDetector = sim.NewSaturationDetector(
+				config.FlowControlDetector,
+				config.FlowControlQueueDepthThreshold,
+				config.FlowControlKVCacheUtilThreshold,
+				config.FlowControlMaxConcurrency,
+			)
+		}
+		if config.FlowControlMaxBytes > 0 || config.FlowControlPerBandMaxBytes > 0 {
+			gq.SetByteCapacity(config.FlowControlMaxBytes, config.FlowControlPerBandMaxBytes)
+		}
+		for _, band := range config.FlowControlBands {
+			var fp FairnessPolicy
+			switch band.Fairness {
+			case "round-robin":
+				fp = NewRoundRobinPolicy()
+			case "", "global-strict":
+			default:
+				panic(fmt.Sprintf("ClusterSimulator: unknown band fairness %q", band.Fairness))
+			}
+			gq.SetBandLimits(band.Priority, band.MaxRequests, band.MaxBytes, fp)
+		}
 		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
 		cs.admissionPolicy = fcAdmission
@@ -604,9 +672,12 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
+	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil || cs.inFlightLoadTrackers != nil {
 		for _, inst := range cs.instances {
 			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+				// llm-d inflight-load-producer: EndOfStream (or any terminal state)
+				// releases the request's remaining token charge.
+				cs.releaseInFlightLoad(req.ID)
 				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
 				if cs.tenantTracker != nil {
 					cs.tenantTracker.OnComplete(req.TenantID)
@@ -831,6 +902,9 @@ func (c *ClusterSimulator) Run() error {
 			timedOutBefore := inst.Metrics().TimedOutRequests
 
 			ev := inst.ProcessNextEvent()
+			for _, t := range c.inFlightLoadTrackers {
+				t.ObserveInstance(instID) // StartOfStream: first token releases prompt tokens
+			}
 
 			// If ProcessNextEvent() skipped a cancelled TimeoutEvent (lazy
 			// cancellation — inst.Clock was not advanced), restore c.clock.
@@ -1630,6 +1704,9 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 		return false
 	}
 	req.GatewayDispatchTime = c.clock
+	if t, ok := c.saturationDetector.(sim.DispatchReservationTracker); ok {
+		t.ReserveDispatch(req.ID) // no-op unless the detector counts reservations (llm-d main)
+	}
 
 	// Schedule routing (BC-9). RoutingDecisionEvent.Execute branches internally on
 	// cs.poolsConfigured() for the disaggregated vs standard path — no fork here.
@@ -2126,6 +2203,13 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 	}
 
 	decision := cs.routingPolicy.Route(req, state)
+	if decision.TargetInstance == "" {
+		// llm-d: every candidate filtered out ⇒ "no endpoints available" and the
+		// request fails (scheduler_profile.go:126-129, director.go:333-344, v0.10.0).
+		logrus.Debugf("[cluster] req %s: rejected at routing (%s)", req.ID, decision.Reason)
+		cs.routingRejections++
+		return
+	}
 	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", req.ID, decision.TargetInstance, decision.Reason)
 
 	// #181: Stamp request with assigned instance for per-request metrics
@@ -2201,6 +2285,12 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		policy = cs.routingPolicy
 	}
 	decodeDecision := policy.Route(req, state)
+	if decodeDecision.TargetInstance == "" {
+		// llm-d: no decode endpoint ⇒ the request fails (ProcessResults, disagg_profile_handler.go).
+		logrus.Debugf("[cluster] req %s: rejected at decode routing (%s)", req.ID, decodeDecision.Reason)
+		cs.routingRejections++
+		return
+	}
 	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", req.ID, decodeDecision.TargetInstance)
 
 	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
@@ -2349,6 +2439,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		Model:        req.Model,
 	}
 	parent.PrefillSubReq = prefillSubReq
+	for _, t := range cs.inFlightLoadTrackers {
+		t.AliasPrefill(prefillSubReq.ID, parent.ID) // llm-d: one request, a prefill and a decode charge
+	}
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &PrefillRoutingEvent{
@@ -2358,4 +2451,73 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		},
 		seqID: cs.nextSeqID(),
 	})
+}
+
+// routingScorersNeedPipeline reports whether a scorer list uses a data-layer-bound
+// scorer (prefix-cache, token-load).
+func routingScorersNeedPipeline(cfgs []sim.ScorerConfig) bool {
+	for _, c := range cfgs {
+		if c.Name == "prefix-cache" || c.Name == "token-load" {
+			return true
+		}
+	}
+	return false
+}
+
+// routingEnv exposes the per-instance facts the llm-d data layer reads: the engine
+// block size, each instance's GPU KV block count (approx autoTune), and — when the
+// instances have a CPU offload tier — the CPU-tier prefix view (#1912, oracle:
+// read live, no signal delay).
+func (cs *ClusterSimulator) routingEnv(rng *sim.PartitionedRNG) sim.RoutingEnv {
+	env := sim.RoutingEnv{
+		EngineBlockSize: int(cs.config.BlockSizeTokens),
+		FilterRNG:       rng.ForSubsystem("router-filter"),
+	}
+	if cs.poolMembership != nil {
+		env.Role = func(id string) string {
+			switch cs.poolMembership[id] {
+			case PoolRolePrefill:
+				return "prefill"
+			case PoolRoleDecode:
+				return "decode"
+			}
+			return ""
+		}
+	}
+	byID := make(map[string]*InstanceSimulator, len(cs.instances))
+	for _, inst := range cs.instances {
+		byID[string(inst.ID())] = inst
+	}
+	env.KVBlocks = func(id string) int64 {
+		inst, ok := byID[id]
+		if !ok || inst.sim == nil || inst.sim.KVCache == nil {
+			return 0
+		}
+		return inst.sim.KVCache.TotalCapacity()
+	}
+	var cpu map[string]func([]sim.TokenID) int
+	for _, inst := range cs.instances {
+		if fn := inst.cpuTierPrefixFn(); fn != nil {
+			if cpu == nil {
+				cpu = make(map[string]func([]sim.TokenID) int)
+			}
+			cpu[string(inst.ID())] = fn
+		}
+	}
+	env.CPUTierCacheFn = cpu
+	return env
+}
+
+// releaseInFlightGroup releases every llm-d in-flight charge of a failed request.
+func (cs *ClusterSimulator) releaseInFlightGroup(groupID string) {
+	for _, t := range cs.inFlightLoadTrackers {
+		t.ReleaseGroup(groupID)
+	}
+}
+
+// releaseInFlightLoad releases a request's llm-d in-flight token charge.
+func (cs *ClusterSimulator) releaseInFlightLoad(reqID string) {
+	for _, t := range cs.inFlightLoadTrackers {
+		t.OnRequestDone(reqID)
+	}
 }
