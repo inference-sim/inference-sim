@@ -572,6 +572,9 @@ Example:
 			TenantBudgets:                   tenantBudgets,
 			InstanceLifecycle:               bundleInstanceLifecycle,
 		}
+		if eppIngest != nil {
+			config.ApplyEPPIngest(eppIngest) // --epp-config (#1930): one mapping for run and replay (INV-13)
+		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
 		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298).
