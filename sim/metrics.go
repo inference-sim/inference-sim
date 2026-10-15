@@ -61,6 +61,17 @@ type Metrics struct {
 	AdapterLoadCounts     map[string]int64
 	AdapterEvictionCounts map[string]int64
 
+	// Prefix-cache tallies in tokens at finalization (#1904), from the KV store's
+	// PrefixCacheCounts. Summed across instances, so the cluster CacheHitRate is hits over
+	// lookups rather than a mean of per-instance rates. CPUTierHitTokens counts the prompt
+	// tokens reloaded from the CPU tier. KVThrashEvents/KVThrashOpportunities are the
+	// numerator and denominator of KVThrashingRate, summed the same way.
+	PrefixCacheHitTokens    int64
+	PrefixCacheLookupTokens int64
+	CPUTierHitTokens        int64
+	KVThrashEvents          int64
+	KVThrashOpportunities   int64
+
 	// completions counts completions on this instance, so each completed request's
 	// Requests entry carries its per-instance completion sequence (see
 	// recordCompletionOrder and RequestMetrics.CompletionIndex).
