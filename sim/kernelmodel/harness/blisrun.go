@@ -48,7 +48,8 @@ func RequireBlis(path string) error {
 
 // writeScenarioVariant writes the scenario file src to dst with its single pool's run settings
 // replaced by pc's: max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching,
-// max_model_len, gpu_memory_utilization and parallel.enable_expert_parallel. Everything else --
+// max_model_len, gpu_memory_utilization, parallel.enable_expert_parallel and, when the run
+// passed one, max_cudagraph_capture_size. Everything else --
 // model, hardware, parallel widths, quantization, the remaining engine knobs -- is carried
 // over as the committed file states it.
 //
@@ -95,6 +96,10 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 	e.MaxModelLen = deployment.MaxModelLen(pc.MaxModelLen)
 	e.GPUMemoryUtilization = pc.GPUMemoryUtilization
 	pool.Parallel.EnableExpertParallel = pc.EnableExpertParallel
+	if pc.MaxCUDAGraphCaptureSize != nil {
+		c := *pc.MaxCUDAGraphCaptureSize
+		e.MaxCUDAGraphCaptureSize = &c
+	}
 }
 
 // blisArgs is the `blis replay` command line for one point: the variant scenario's file name

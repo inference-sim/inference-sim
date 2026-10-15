@@ -112,9 +112,11 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 		ByConcurrency: map[string]*PointSettings{"4": &ps}}}}
 	gaps = gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set})
-	// The schema has no field for the capture size.
-	if !hasGap(gaps, OwnerSchemas, "run setting blis-schemas cannot express: max_cudagraph_capture_size") {
-		t.Errorf("gaps lack max_cudagraph_capture_size: %+v", gaps)
+	// blis-schemas#72 states the capture size, so the passed value is carried into the variant.
+	for _, g := range gaps {
+		if g.Concurrency == 4 && strings.Contains(g.Cause, "max_cudagraph_capture_size") {
+			t.Errorf("a passed max_cudagraph_capture_size is reported as a gap: %+v", g)
+		}
 	}
 	// Expert parallelism was not passed: vLLM's unconditional default, not a gap. The batch
 	// caps were passed here, so only an unpassed one would be a resolved gap.
