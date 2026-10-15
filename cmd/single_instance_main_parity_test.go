@@ -1,15 +1,20 @@
 package cmd
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // TestSingleInstance_MatchesMainGolden: a single-instance run behind the embedded llm-d router
-// prints, and writes as per-request metrics, exactly what the main branch's native-routing
-// binary did for the same flags (cmd/testdata/golden, produced by `blis run` built from main at
+// prints, and writes as per-request metrics, what the main branch's native-routing binary did for
+// the same flags: the same text, with every number equal to the last few ULPs (sameOutput; the
+// goldens were recorded on amd64, and an arm64 build rounds some percentiles in the last digit) (cmd/testdata/golden, produced by `blis run` built from main at
 // 0d092d4e). The router can only pick the one instance, and with the default configuration it
 // admits every request on arrival, so nothing a user reads may change.
 //
@@ -40,20 +45,63 @@ func TestSingleInstance_MatchesMainGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 10))
 			}
-			if stdout != string(wantStdout) {
-				t.Errorf("stdout differs from main's\n--- main\n%s\n--- this branch\n%s", wantStdout, stdout)
+			if why := sameOutput(string(wantStdout), stdout); why != "" {
+				t.Errorf("stdout differs from main's: %s\n--- main\n%s\n--- this branch\n%s", why, wantStdout, stdout)
 			}
 			got, err := os.ReadFile(metrics)
 			if err != nil {
 				t.Fatal(err)
 			}
-			// The provenance block records the catalog path as given; the golden was written with
-			// the repository-relative one.
+			// The catalog provenance block records the catalog's path as given and its clone's git
+			// revision; the vendored catalog lives in this repository, so its revision is this
+			// repository's commit. Neither is a simulation result.
 			_, catalog, _ := kernelRepos(t)
 			got = []byte(strings.ReplaceAll(string(got), `"path": "`+catalog+`"`, `"path": "testdata/catalog"`))
-			if string(got) != string(wantMetrics) {
-				t.Errorf("per-request metrics differ from main's (%s)", base+".metrics.json")
+			got, wantMetrics = revisionRE.ReplaceAll(got, []byte(`"revision": "-"`)), revisionRE.ReplaceAll(wantMetrics, []byte(`"revision": "-"`))
+			if why := sameOutput(string(wantMetrics), string(got)); why != "" {
+				t.Errorf("per-request metrics differ from main's (%s): %s", base+".metrics.json", why)
 			}
 		})
+	}
+}
+
+// revisionRE matches a git revision in a provenance block.
+var revisionRE = regexp.MustCompile(`"revision": "[0-9a-f]{40}"`)
+
+// numberRE matches a JSON or plain-text number.
+var numberRE = regexp.MustCompile(`-?\d+(\.\d+)?([eE][-+]?\d+)?`)
+
+// sameOutput reports "" when got is want with every number equal within a relative 1e-9 (floating
+// point formatted on another architecture), and otherwise the first difference.
+func sameOutput(want, got string) string {
+	wantText, gotText := numberRE.ReplaceAllString(want, "#"), numberRE.ReplaceAllString(got, "#")
+	if wantText != gotText {
+		return "the text around the numbers differs"
+	}
+	wn, gn := numberRE.FindAllString(want, -1), numberRE.FindAllString(got, -1)
+	for i := range wn {
+		a, errA := strconv.ParseFloat(wn[i], 64)
+		b, errB := strconv.ParseFloat(gn[i], 64)
+		if errA != nil || errB != nil {
+			if wn[i] != gn[i] {
+				return fmt.Sprintf("number %d: %s vs %s", i, wn[i], gn[i])
+			}
+			continue
+		}
+		if math.Abs(a-b) > 1e-9*math.Max(math.Abs(a), math.Abs(b)) {
+			return fmt.Sprintf("number %d: %s vs %s", i, wn[i], gn[i])
+		}
+	}
+	return ""
+}
+
+func TestSameOutput(t *testing.T) {
+	if why := sameOutput(`{"p99": 24682.288969999983, "n": 3}`, `{"p99": 24682.288969999998, "n": 3}`); why != "" {
+		t.Errorf("a last-ULP difference must compare equal: %s", why)
+	}
+	for _, got := range []string{`{"p99": 24682.29, "n": 3}`, `{"p99": 24682.288969999983, "n": 4}`, `{"p98": 24682.288969999983, "n": 3}`} {
+		if sameOutput(`{"p99": 24682.288969999983, "n": 3}`, got) == "" {
+			t.Errorf("%s must differ", got)
+		}
 	}
 }
