@@ -125,7 +125,7 @@ type Simulator struct {
 	// that empties the running batch leaves stepEvent nil at that step's START, so an
 	// arrival during the step must not start the next one before this (idleStepTime).
 	busyUntil int64
-	stepCount int
+	stepCount                 int
 	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
 	// independent engine.
 	lockstep *LockstepGroup
