@@ -484,6 +484,10 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) (pulledTokens
 	return i.sim.ReserveRemoteKV(req)
 }
 
+// CacheRemoteKV registers a decode sub-request's pulled blocks in this instance's prefix
+// cache once the pull has landed (sim.Simulator.CacheRemoteKV).
+func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) { i.sim.CacheRemoteKV(req) }
+
 // ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
 // Used when a reservation must be undone (e.g., decode instance transitioned
 // to a non-routable state mid-transfer). Safe to call when the request holds

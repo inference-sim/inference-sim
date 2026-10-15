@@ -94,3 +94,29 @@ func TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff(t *testing.T) {
 		t.Errorf("decode pool CPU-tier hit rate %v, want 0: no handoff reads it", got)
 	}
 }
+
+// Blocks a pull is still filling are no prefix hit: vLLM allocates them with
+// delay_cache_blocks and caches them only once the pull lands (sched/scheduler.py:1216,
+// 3052-3085). Two handoffs of the same prompt from two prefill instances to one decode
+// instance, overlapping, both pull every block; once the first has landed, a third pulls only
+// the last block.
+func TestPDDecodeLoad_InFlightBlocksAreNotAPrefixHit(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(3, 2, 1)
+	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 1_000_000 }
+	a := holdTestRequest("a", 1, 0, 160, 4)
+	b := extend("b", a, 0, 0, 4)
+	c := extend("c", a, 10_000_000, 0, 4)
+	ps := parentsByID(runHold(t, cfg, a, b, c))
+	if ps["a"].PrefillInstanceID == ps["b"].PrefillInstanceID ||
+		ps["a"].TransferStartTime != ps["b"].TransferStartTime {
+		t.Fatalf("fixture: a and b must hand off together from different prefill instances")
+	}
+	for _, id := range []string{"a", "b"} {
+		if got := ps[id].PulledKVBlocks; got != 10 {
+			t.Errorf("%s pulled %d blocks while the other's pull of the same prompt was in flight, want all 10", id, got)
+		}
+	}
+	if got := ps["c"].PulledKVBlocks; got != 1 {
+		t.Errorf("after the pulls landed, c pulled %d blocks, want only the last 1", got)
+	}
+}

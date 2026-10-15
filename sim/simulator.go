@@ -1290,7 +1290,8 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 // -- full blocks, capped below the prompt's last token (kv_cache_manager.py:290-299 at
 // v0.31.0) -- and the connector is then asked only for the rest (sched/scheduler.py:525-537
 // and 949): NIXL pulls the blocks the decode cache lacks (nixl/pull_scheduler.py:149-177), and
-// the decode engine's own CPU offload tier is not consulted (sim.GPUTierAllocator). On
+// the decode engine's own CPU offload tier is not consulted, nor are the blocks visible to the
+// prefix cache until the pull lands (sim.RemoteKVReserver). On
 // success ProgressIndex is set past the prompt so the request decodes once the pull lands.
 // Returns ok=false, allocating nothing, when the blocks do not fit.
 func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
@@ -1308,15 +1309,23 @@ func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool
 		}
 	}
 	local := int64(len(cached)) * bs
-	allocate := sim.KVCache.AllocateKVBlocks
-	if g, isTiered := sim.KVCache.(GPUTierAllocator); isTiered {
-		allocate = g.AllocateGPUTier
-	}
-	if !allocate(req, local, inputLen, cached) {
+	if !sim.remoteKVReserver().AllocateRemoteKV(req, local, inputLen, cached) {
 		return 0, false
 	}
 	req.ProgressIndex = inputLen
 	return inputLen - local, true
+}
+
+// CacheRemoteKV registers a decode sub-request's pulled blocks in the prefix cache once its
+// pull has landed (sim.RemoteKVReserver). Until then no other request hits on them.
+func (sim *Simulator) CacheRemoteKV(req *Request) { sim.remoteKVReserver().CacheRemoteKV(req.ID) }
+
+func (sim *Simulator) remoteKVReserver() RemoteKVReserver {
+	r, ok := sim.KVCache.(RemoteKVReserver)
+	if !ok {
+		panic(fmt.Sprintf("KV store %T cannot reserve KV for a remote pull (sim.RemoteKVReserver)", sim.KVCache))
+	}
+	return r
 }
 
 // releaseFinishedKV frees a finished request's KV blocks, unless the request's owner keeps

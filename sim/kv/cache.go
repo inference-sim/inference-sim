@@ -46,6 +46,10 @@ type KVCacheState struct {
 	FreeBlockCnt    int64              // Direct count of blocks in free list (vLLM parity)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
+	// remoteKV are the requests whose blocks a remote pull is still filling
+	// (AllocateRemoteKV): their full blocks carry hashes but are not registered in
+	// HashToBlock until CacheRemoteKV, so no other request hits on KV not yet present.
+	remoteKV map[string]bool
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -301,7 +305,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				}
 				h := hash.HashBlock(prevHash, latestBlk.Tokens)
 				latestBlk.Hash = h
-				kvc.HashToBlock[h] = latestBlk.ID
+				if !kvc.remoteKV[reqID] {
+					kvc.HashToBlock[h] = latestBlk.ID
+				}
 			}
 		} else {
 			// latest block is full or request is coming in for the first time.
@@ -331,8 +337,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// semantics (block_pool.py:331-356). Hash was preserved in
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
+				// Only the entry that names this block: a block whose content another
+				// block also holds may never have been registered (AllocateRemoteKV).
 				if blk.Hash != "" {
-					delete(kvc.HashToBlock, blk.Hash)
+					if id, ok := kvc.HashToBlock[blk.Hash]; ok && id == blk.ID {
+						delete(kvc.HashToBlock, blk.Hash)
+					}
 					blk.Hash = ""
 				}
 
@@ -355,7 +365,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					// participate in prefix caching (input sequences only).
 					h := hash.HashBlock(prevHash, blk.Tokens)
 					blk.Hash = h
-					kvc.HashToBlock[h] = blk.ID
+					if !kvc.remoteKV[reqID] {
+						kvc.HashToBlock[h] = blk.ID
+					}
 					prevHash = h
 				}
 				// allocated is the block IDs allocated for this request
@@ -422,6 +434,7 @@ func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) 
 func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	ids := kvc.RequestMap[req.ID]
 	delete(kvc.RequestMap, req.ID)
+	delete(kvc.remoteKV, req.ID)
 	// From https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html
 	// Freed blocks are added to the tail of the free queue in reverse order.
 	// Later blocks can only be reused if all preceding blocks also match
@@ -448,7 +461,44 @@ func (kvc *KVCacheState) UsedBlocks() int64 { return kvc.TotalBlocks - kvc.FreeB
 // RequestBlocks implements sim.RequestBlockReporter: the blocks reqID holds.
 func (kvc *KVCacheState) RequestBlocks(reqID string) []int64 { return kvc.RequestMap[reqID] }
 
-var _ sim.RequestBlockReporter = (*KVCacheState)(nil)
+var (
+	_ sim.RequestBlockReporter = (*KVCacheState)(nil)
+	_ sim.RemoteKVReserver     = (*KVCacheState)(nil)
+)
+
+// AllocateRemoteKV implements sim.RemoteKVReserver: allocate as AllocateKVBlocks does, but
+// register none of the request's block hashes until CacheRemoteKV -- vLLM allocates a
+// request loading KV asynchronously with delay_cache_blocks (sched/scheduler.py:1216 at
+// v0.31.0) and caches its blocks only once the load finishes (_update_waiting_for_remote_kv,
+// :3052-3085), so no request hits on blocks a pull is still filling.
+func (kvc *KVCacheState) AllocateRemoteKV(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	if kvc.remoteKV == nil {
+		kvc.remoteKV = make(map[string]bool)
+	}
+	kvc.remoteKV[req.ID] = true
+	if !kvc.AllocateKVBlocks(req, startIndex, endIndex, cachedBlocks) {
+		delete(kvc.remoteKV, req.ID)
+		return false
+	}
+	return true
+}
+
+// CacheRemoteKV implements sim.RemoteKVReserver: the pull has landed, so register the
+// request's full blocks in the prefix cache (vLLM's cache_blocks). A hash another block
+// already registered keeps that block.
+func (kvc *KVCacheState) CacheRemoteKV(reqID string) {
+	if !kvc.remoteKV[reqID] {
+		return
+	}
+	delete(kvc.remoteKV, reqID)
+	for _, id := range kvc.RequestMap[reqID] {
+		if h := kvc.Blocks[id].Hash; h != "" {
+			if _, taken := kvc.HashToBlock[h]; !taken {
+				kvc.HashToBlock[h] = id
+			}
+		}
+	}
+}
 
 // TotalCapacity returns the total number of blocks.
 func (kvc *KVCacheState) TotalCapacity() int64 { return kvc.TotalBlocks }

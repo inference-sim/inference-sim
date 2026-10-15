@@ -46,15 +46,21 @@ type RequestBlockReporter interface {
 	RequestBlocks(reqID string) []int64
 }
 
-// GPUTierAllocator is the optional capability an offload KVStore implements to allocate on its
-// GPU tier alone, without consulting the offload tiers. The P/D decode reservation needs it:
-// under a MultiConnector of NIXL and the OffloadingConnector, the KV of a remotely prefilled
-// request is loaded by the first connector that reports tokens, which is NIXL, so the decode
-// engine's own CPU tier never serves that request's prompt
-// (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:134-141 and 429-448 at
-// v0.31.0). A single-tier store has no other tier and does not implement it.
-type GPUTierAllocator interface {
-	AllocateGPUTier(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+// RemoteKVReserver is the capability a KVStore implements to reserve a P/D decode
+// sub-request's prompt KV for an incoming NIXL pull. Every production store implements it.
+//
+//   - AllocateRemoteKV allocates on the GPU tier alone, consulting no offload tier: under a
+//     MultiConnector of NIXL and the OffloadingConnector, the KV of a remotely prefilled request
+//     is loaded by the first connector that reports tokens, which is NIXL, so the decode
+//     engine's own CPU tier never serves that prompt
+//     (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:134-141 and 429-448 at
+//     v0.31.0). It also registers none of the blocks in the prefix cache: vLLM allocates with
+//     delay_cache_blocks (sched/scheduler.py:1216) so no request hits on KV still in flight.
+//   - CacheRemoteKV registers them once the pull has landed (_update_waiting_for_remote_kv,
+//     sched/scheduler.py:3052-3085).
+type RemoteKVReserver interface {
+	AllocateRemoteKV(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+	CacheRemoteKV(reqID string)
 }
 
 // DeferrableKVStore is the optional capability a KVStore implements when it can
