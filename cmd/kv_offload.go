@@ -476,6 +476,16 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 	return cfg
 }
 
+// replayRecordsDeployment reports whether a replay's trace records the deployment BLIS ran:
+// a BLIS-generated trace does, and INV-13 keeps its header authoritative, so neither the
+// scenario's offload block nor --kv-offload-config may add tiers it did not run. An observe
+// trace (mode "real") records a server's requests, not BLIS's deployment, and an agentic
+// replay (#1937) has no trace at all -- its header is synthesized -- so for both the scenario
+// and an agreeing flag supply the tiers.
+func replayRecordsDeployment(h workload.TraceHeader, agentic bool) bool {
+	return !agentic && h.Mode != "real"
+}
+
 // resolveReplayKVOffload is the PURE, error-returning core of replay's
 // header-authoritative reconciliation (Deviation #9 — every reject branch is
 // unit-testable). See reconcileReplayKVOffload for the policy summary.
@@ -506,7 +516,7 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 			// resolved); replay derives it after the latency config resolves.
 			return flagCfg, nil
 		}
-		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config or the scenario's offload block cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") may have an offload config supplied on replay to model the observed deployment")
+		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config or the scenario's offload block cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") and agentic replays, which record no BLIS deployment, take their offload config from the scenario or the flag on replay")
 	}
 	return sim.KVOffloadConfig{}, nil
 }
