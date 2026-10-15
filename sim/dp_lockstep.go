@@ -36,6 +36,10 @@ type LockstepGroup struct {
 	pending *StepEvent
 	// stepCounter counts the wave's steps since its start, as vLLM's step_counter.
 	stepCounter int
+	// idleSteps counts the wave's steps since one last ran a request. lastWave and
+	// lastWaveIdle record both counts for the wave that ended last (for tests).
+	idleSteps              int
+	lastWave, lastWaveIdle int
 }
 
 // NewLockstepGroup binds ranks into one lockstep group. Rank 0 is the leader. It is an
@@ -92,7 +96,8 @@ func (g *LockstepGroup) arm(t int64) {
 
 func (g *LockstepGroup) disarm() {
 	g.pending = nil
-	g.stepCounter = 0
+	g.lastWave, g.lastWaveIdle = g.stepCounter, g.idleSteps
+	g.stepCounter, g.idleSteps = 0, 0
 	for _, r := range g.ranks {
 		r.stepEvent = nil
 	}
@@ -111,19 +116,26 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		return
 	}
 	now := e.time
+	g.drainSameTick(now)
 	n := len(g.ranks)
 	active := make([]bool, n)
 	batches := make([][]*Request, n)
 	for i, r := range g.ranks {
-		if r.Clock < now {
-			r.Clock = now
-		}
 		if !hasWork(r) {
 			continue
 		}
 		active[i] = true
+		if r.Clock < now {
+			r.Clock = now
+		}
 		r.scheduleBatch(now)
 		batches[i] = r.scheduledRequests()
+	}
+	if !active[0] {
+		// A dummy step is not work: the leader's clock stays at its last real event, so
+		// SimEndedTime and the rates divided by it are not stretched by the wave's trailing
+		// dummy steps (cf. ProcessNextEvent's lazy cancellation).
+		g.ranks[0].Clock = g.ranks[0].preEventClock
 	}
 
 	durations := g.price(batches)
@@ -151,6 +163,13 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	}
 
 	g.stepCounter++
+	g.idleSteps++
+	for _, a := range active {
+		if a {
+			g.idleSteps = 0
+			break
+		}
+	}
 	running := g.stepCounter != 1 && g.stepCounter%DPSyncInterval != 0
 	for _, r := range g.ranks {
 		running = running || hasWork(r)
@@ -161,6 +180,23 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		return
 	}
 	g.disarm()
+}
+
+// drainSameTick runs, on every rank but the leader, the events due at now that order before
+// a step (arrival, queueing, adapter-load completion). The group's StepEvent sits in the
+// leader's queue and the cluster breaks a time tie by the lowest instance index, so without
+// this a request queued on rank k > 0 at the step's own tick would wait a whole step that a
+// request queued on rank 0 at the same tick joins.
+func (g *LockstepGroup) drainSameTick(now int64) {
+	for _, r := range g.ranks[1:] {
+		for len(r.eventQueue) > 0 {
+			head := r.eventQueue[0].event
+			if head.Timestamp() != now || head.Priority() >= PriorityStep {
+				break
+			}
+			r.ProcessNextEvent()
+		}
+	}
 }
 
 func (g *LockstepGroup) price(batches [][]*Request) []int64 {

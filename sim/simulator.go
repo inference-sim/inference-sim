@@ -125,6 +125,9 @@ type Simulator struct {
 	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
 	// independent engine.
 	lockstep *LockstepGroup
+	// preEventClock is Clock before the event being processed advanced it, so a lockstep
+	// dummy step can leave the clock at the rank's last real work.
+	preEventClock int64
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -334,6 +337,7 @@ func (sim *Simulator) ProcessNextEvent() Event {
 		return ev
 	}
 
+	sim.preEventClock = sim.Clock
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
