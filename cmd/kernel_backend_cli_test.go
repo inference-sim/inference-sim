@@ -910,7 +910,10 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 // tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
 // completes, and its exported trace replays byte-identically (INV-13).
 func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
-	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--pd-decider", "always",
+	// An offload tier beside the NIXL handoff runs only through a MultiConnector
+	// (vllm/config/vllm.py:1124-1158).
+	multi := writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector")
+	common := []string{"--scenarios", multi, "--scenario", "variant.yaml", "--pd-decider", "always",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
 		"--horizon", "600000000"}
 	for _, tt := range []struct {
@@ -955,7 +958,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
 	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
-	pools := &kernelPools{}
+	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector
 	for _, c := range []struct {
 		role deployment.Role
 		dst  **kernelmodel.Model
