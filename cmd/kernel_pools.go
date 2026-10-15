@@ -98,6 +98,7 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"must agree", kernelScenario, ps.SpeculativeTokens,
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
 	}
+	kernelPDOpened = p
 	return p
 }
 

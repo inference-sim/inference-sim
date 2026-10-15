@@ -94,6 +94,10 @@ type Model struct {
 	outputTokenTicks int64
 	completionTicks  int64
 
+	// rules is the release-rule report taken from the Inputs at open: the rules no one
+	// enforces on this pool and what they find (#1942). See Provenance.
+	rules ruleReport
+
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
 	// into Pools[poolIndex] would be a second answer to "which pool is this", and a
@@ -214,7 +218,9 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newModel(k, identityOf(in)), nil
+	m := newModel(k, identityOf(in))
+	m.rules = reportRules(in)
+	return m, nil
 }
 
 func newModel(k kernel.Kernel, id identity) *Model {

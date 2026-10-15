@@ -3,6 +3,9 @@ package sim
 
 import (
 	"math"
+
+	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/vocab"
 )
 
 type IntOrFloat64 interface {
@@ -154,6 +157,50 @@ type MetricsOutput struct {
 	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
 	*MeasuredMetrics
 
+	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
+	// (#1942). File-only (WithKernelProvenance).
+	KernelProvenance map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
+
+	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
+	*BuildVersions
+}
+
+// BuildVersions are the module versions a results file was produced by: BLIS itself and the
+// blis-latency-kernel and blis-schemas releases it was built against.
+type BuildVersions struct {
+	BLIS    string `json:"blis_version"`
+	Kernel  string `json:"kernel_version"`
+	Schemas string `json:"schemas_version"`
+}
+
+// KernelPoolProvenance is the evidence behind one pool's kernel (#1942): how many of the
+// coefficients it priced with rest on each evidence method, the registry entries that rest on
+// none (copied from another scope, or assumed), the assumptions the kernel made itself, and
+// the release rules no one applied to the scenario. Entries are blis-latency-kernel's own
+// kernel.CoefficientOrigin records, so their keys are that type's field names.
+type KernelPoolProvenance struct {
+	// MethodCounts counts the Provenance entries by evidence method; Evidenced and Total are
+	// the kernel's Evidence() figures.
+	MethodCounts map[vocab.Method]int `json:"method_counts"`
+	Evidenced    int                  `json:"evidenced"`
+	Total        int                  `json:"total"`
+	// NotEvidenced are the registry entries whose method is neither evidenced nor
+	// not_charged: copied from another scope (a fallback) or assumed.
+	NotEvidenced []kernel.CoefficientOrigin `json:"fallback_or_assumed"`
+	// Assumptions are the values the kernel supplied itself (Set == KernelAssumptionSet).
+	Assumptions []kernel.CoefficientOrigin `json:"assumptions"`
+	// SkippedRules are the scenario's release rules that neither the kernel nor BLIS
+	// enforces, and SkippedRuleFindings what they report on this scenario.
+	SkippedRules        []string      `json:"skipped_rules"`
+	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+}
+
+// RuleFinding is one finding of a blis-schemas release rule.
+type RuleFinding struct {
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"`
+	Path     string `json:"path,omitempty"`
+	Message  string `json:"message"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.

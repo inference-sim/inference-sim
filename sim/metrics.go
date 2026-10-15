@@ -372,8 +372,22 @@ type EmitOption func(*emitOptions)
 
 // emitOptions is the resolved option set for one EmitOutput call.
 type emitOptions struct {
-	catalog   *CatalogProvenance
-	overrides []ScenarioOverride
+	catalog    *CatalogProvenance
+	overrides  []ScenarioOverride
+	provenance map[string]KernelPoolProvenance
+	versions   *BuildVersions
+}
+
+// WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
+// file only, keyed by pool role. An empty map leaves the block absent.
+func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
+	return func(o *emitOptions) { o.provenance = p }
+}
+
+// WithBuildVersions records the build's module versions in the --metrics-path file only:
+// two builds of one commit can differ in them, so they stay off stdout (INV-6).
+func WithBuildVersions(v *BuildVersions) EmitOption {
+	return func(o *emitOptions) { o.versions = v }
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -433,6 +447,8 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.KernelProvenance = resolvedOpts.provenance
+		output.BuildVersions = resolvedOpts.versions
 
 		// Measured-window aggregates (#1938): file-only for the same reason. The latency
 		// families stdout already reports (ttft_*, e2e_*) take their measured-window values
