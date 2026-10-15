@@ -45,10 +45,16 @@ type ClusterSimulator struct {
 	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass       map[string]int64
-	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
-	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
-	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
+	injectedByClass  map[string]int64
+	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
+	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	// inFlightSamples is the step function of the in-flight total across instances, one
+	// sample per change, and measuredUnserved the measured-phase requests the cluster itself
+	// never served (rejected, shed, dropped at decode KV). Both feed the --metrics-path
+	// measured-window aggregates (#1938).
+	inFlightSamples       []sim.InFlightSample
+	measuredUnserved      int
 	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil unless --in-flight-eviction set)
 	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
 	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
@@ -897,6 +903,7 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
+		c.recordInFlight()
 		c.maybeDeliverProgressSnapshot(false)
 	}
 
@@ -1693,6 +1700,37 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 	return result
 }
 
+// recordInFlight appends a sample when the cluster-wide in-flight total has changed since
+// the last one. Called once per processed event, so the samples are a step function of
+// time (#1938).
+func (c *ClusterSimulator) recordInFlight() {
+	total := 0
+	for _, n := range c.inFlightRequests {
+		total += n
+	}
+	if k := len(c.inFlightSamples); k > 0 {
+		last := &c.inFlightSamples[k-1]
+		if last.Count == total {
+			return
+		}
+		if last.AtUs == c.clock {
+			last.Count = total
+			return
+		}
+	} else if total == 0 {
+		return
+	}
+	c.inFlightSamples = append(c.inFlightSamples, sim.InFlightSample{AtUs: c.clock, Count: total})
+}
+
+// recordUnserved counts a request the cluster itself never served toward the measured
+// window's failed_requests, when its phase is measured (#1938).
+func (c *ClusterSimulator) recordUnserved(req *sim.Request) {
+	if req != nil && req.Phase.Measured() {
+		c.measuredUnserved++
+	}
+}
+
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
 func mergeFloat64Map(dst, src map[string]float64, mapName string) {
 	for k, v := range src {
@@ -1769,8 +1807,15 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.CPUTierHitTokens += m.CPUTierHitTokens
 		merged.KVThrashEvents += m.KVThrashEvents
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
+		merged.UnmeasuredStepIntervals = append(merged.UnmeasuredStepIntervals, m.UnmeasuredStepIntervals...)
+		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
+		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
 		merged.StillRunning += m.StillRunning
+		if kv := inst.TotalKvCapacityTokens(); kv > 0 &&
+			(merged.KVCapacityTokensPerReplica == 0 || kv < merged.KVCapacityTokensPerReplica) {
+			merged.KVCapacityTokensPerReplica = kv
+		}
 	}
 	// Hits over lookups summed across instances, not a mean of per-instance rates, so an
 	// idle or decode-only instance does not dilute the cluster figure (#1904).
@@ -1780,6 +1825,8 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 	if merged.KVThrashOpportunities > 0 {
 		merged.KVThrashingRate = float64(merged.KVThrashEvents) / float64(merged.KVThrashOpportunities)
 	}
+	merged.MeasuredFailures += c.measuredUnserved
+	merged.InFlightSamples = c.inFlightSamples
 
 	// T042: apply warm-up TTFT factor to requests served during warm-up (Phase 1A, R23).
 	// C4 (known simplification): The penalty is applied post-hoc to recorded TTFTs rather than
@@ -2129,6 +2176,7 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 	if len(state.Snapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", req.ID, req.Model)
 		cs.routingRejections++
+		cs.recordUnserved(req)
 		return
 	}
 
@@ -2200,6 +2248,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", req.ID)
 		cs.routingRejections++
+		cs.recordUnserved(req)
 		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
@@ -2265,6 +2314,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		if len(encodeSnapshots) == 0 {
 			logrus.Warnf("[cluster] req %s: no routable instances in encode pool — request rejected at encode routing", req.ID)
 			cs.encodeRoutingRejections++
+			cs.recordUnserved(req)
 			return
 		}
 		encodeState := &sim.RouterState{Snapshots: encodeSnapshots, Clock: cs.clock}
@@ -2354,6 +2404,7 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		TenantID:     req.TenantID,
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
+		Phase:        req.Phase,
 	}
 	parent.PrefillSubReq = prefillSubReq
 

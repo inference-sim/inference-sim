@@ -28,6 +28,10 @@ type RequestMetrics struct {
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
+	Phase             Phase   `json:"phase,omitempty"`                  // #1938: benchmark phase; "" = measured
+	// OutputTokens is the count the request emitted (aiperf's OSL), set at completion. It
+	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
+	OutputTokens int `json:"output_tokens,omitempty"`
 
 	// CompletionIndex is this request's 1-based position in the run's completion order,
 	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
@@ -63,6 +67,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		LengthCapped:     req.LengthCapped,
 		SessionID:        req.SessionID,
 		RoundIndex:       req.RoundIndex,
+		Phase:            req.Phase,
 	}
 	// Flow control: compute gateway queue delay when timestamps are set (#882)
 	if req.GatewayDispatchTime > 0 && req.GatewayEnqueueTime > 0 {
@@ -143,6 +148,12 @@ type MetricsOutput struct {
 	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
 	// scenario exactly.
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+
+	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
+	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
+	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
+	*MeasuredMetrics
+
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.
