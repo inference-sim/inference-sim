@@ -1262,3 +1262,83 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/gb300.yaml", role: primary}
       rationale: >
         3.8 GB of non-weight, non-KV occupancy NVIDIA's descriptor reserves, which AISimulate's memory model labels as CUDA context, cuBLAS and the like ("cuda, cublas, etc.", sdk/backends/base_backend.py) and the descriptor annotates as a safety reserve that also covers part of the inaccuracy of the rest of its memory calculation. It does NOT include CUDA-graph capture: AISimulate annotates other_mem as excluding the graph reservation (support/config_profile.py) and takes that reservation as a separate argument (capacity.py, cuda_graph_reserved_bytes), so cudagraph_capture_bytes_<mode> in cost-model-memory.yaml adds to this rather than sitting inside it. Nor is it part of the collective reservation: NVIDIA's composition sums it with nccl_communicator_bytes_<N>rank. It is a lumped allowance rather than a decomposition, so a memory breakdown reports it as one term and does not claim to split it.
+  - mhc_floor_pre:
+      value: 8.9
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H200), 70 pre rows", role: primary}
+      rationale: >
+        The per-site floor of V4.1's mHC pre (the RMS prenorm GEMM over the hc_mult x hidden residual, the Sinkhorn mixing and the layer-input write): 8.9 us. Fitted jointly with mhc_rate_pre over 70 sites, 1-524,288 tokens: 1.052x, signed 0.994. By band: 1-64 tokens 16 rows 1.071x (signed 0.948); 65-2048 tokens 26 rows 1.064x (signed 1.032); 2049-max tokens 28 rows 1.031x (signed 0.987). HELD OUT across hidden: hidden 4096 predicted from the other 1.103x (signed 1.061, n=35); hidden 7168 predicted from the other 1.073x (signed 0.948, n=35). THE FORM the kernel evaluates for every Elementwise node whose role starts with mhc_, per rank, per step: t = sum over the node's components (pre if the role ends in _pre, post if it contains post) of mhc_floor_<c> + W / mhc_rate_<c>, W = rows x hidden_size x 8 B (hc_mult 4 BF16 residual streams; 40,960 B a token at V4.1's 5120), rows the tokens the node runs on this rank (its token shard under sequence parallelism). This REPLACES the node's bytes_per_token charge, and the hc_*_fn projection GEMM after it is NOT charged separately: the timed pre includes the TF32 split-K prenorm GEMM (tf32_hc_prenorm_gemm) over the same fn. A post+pre site at V4.1's geometry prices at 12.2 us for 6 tokens and 0.380 ms for 8,192. MEASURED: mhc_module_perf.parquet (vllm/0.25.0, H200), TileLang mhc_pre / mhc_post under CUDA graphs, hc_mult 4, Sinkhorn 20 iterations, hidden 4096 and 7168 (V4.1's 5120 lies between: W carries the hidden size, so one floor and one rate are fitted over both and interpolate by bytes); each row times 2 sites and is divided by 2. VERSIONS: on SM90 vLLM v0.31.0 runs V4.1's mHC as mhc_fused_post_pre_delayed_tilelang (the DeepGEMM mega-mHC path and the overlap stream need SM100); above 32 tokens it runs 'the same post kernel and split-k GEMM as the unfused pair' measured here, and at <= 32 tokens it folds the post into the prenorm GEMM, one launch fewer, so at decode sizes this pair is an UPPER bound by about one launch. The measured pre is the norm_weight=None variant; the fused serving path also applies the attention RMSNorm, which AISimulate's collector records as 2-3% of pre on H20. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - mhc_rate_pre:
+      value: 1799384.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H200), 70 pre rows", role: primary}
+      rationale: >
+        1.80 TB/s over the residual-stream bytes W for the mHC pre, 0.37 of this part's 4.8 TB/s datasheet bandwidth. Fitted on each hidden size alone it is 4096: 1.79 TB/s (floor 8.4 us), 7168: 1.84 TB/s (floor 10.0 us) -- the bytes form carries the hidden size. See mhc_floor_pre for the errors and the form.
+  - mhc_floor_post:
+      value: 3.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H200), 70 post rows", role: primary}
+      rationale: >
+        The per-site floor of V4.1's mHC post (the residual update from the sublayer output with the post and comb mixes): 3.0 us. Fitted jointly with mhc_rate_post over 70 sites, 1-524,288 tokens: 1.091x, signed 1.022. By band: 1-64 tokens 16 rows 1.168x (signed 0.938); 65-2048 tokens 26 rows 1.138x (signed 1.108); 2049-max tokens 28 rows 1.010x (signed 0.996). HELD OUT across hidden: hidden 4096 predicted from the other 1.178x (signed 1.172, n=35); hidden 7168 predicted from the other 1.109x (signed 0.930, n=35). THE FORM the kernel evaluates for every Elementwise node whose role starts with mhc_, per rank, per step: t = sum over the node's components (pre if the role ends in _pre, post if it contains post) of mhc_floor_<c> + W / mhc_rate_<c>, W = rows x hidden_size x 8 B (hc_mult 4 BF16 residual streams; 40,960 B a token at V4.1's 5120), rows the tokens the node runs on this rank (its token shard under sequence parallelism). This REPLACES the node's bytes_per_token charge, and the hc_*_fn projection GEMM after it is NOT charged separately: the timed pre includes the TF32 split-K prenorm GEMM (tf32_hc_prenorm_gemm) over the same fn. A post+pre site at V4.1's geometry prices at 12.2 us for 6 tokens and 0.380 ms for 8,192. MEASURED: mhc_module_perf.parquet (vllm/0.25.0, H200), TileLang mhc_pre / mhc_post under CUDA graphs, hc_mult 4, Sinkhorn 20 iterations, hidden 4096 and 7168 (V4.1's 5120 lies between: W carries the hidden size, so one floor and one rate are fitted over both and interpolate by bytes); each row times 2 sites and is divided by 2. VERSIONS: on SM90 vLLM v0.31.0 runs V4.1's mHC as mhc_fused_post_pre_delayed_tilelang (the DeepGEMM mega-mHC path and the overlap stream need SM100); above 32 tokens it runs 'the same post kernel and split-k GEMM as the unfused pair' measured here, and at <= 32 tokens it folds the post into the prenorm GEMM, one launch fewer, so at decode sizes this pair is an UPPER bound by about one launch. The measured pre is the norm_weight=None variant; the fused serving path also applies the attention RMSNorm, which AISimulate's collector records as 2-3% of pre on H20. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - mhc_rate_post:
+      value: 1850611.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H200), 70 post rows", role: primary}
+      rationale: >
+        1.85 TB/s over the residual-stream bytes W for the mHC post, 0.39 of this part's 4.8 TB/s datasheet bandwidth. Fitted on each hidden size alone it is 4096: 1.85 TB/s (floor 2.6 us), 7168: 1.86 TB/s (floor 3.8 us) -- the bytes form carries the hidden size. See mhc_floor_post for the errors and the form.
+  - mhc_floor_pre:
+      value: 9.3
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H100), 70 pre rows", role: primary}
+      rationale: >
+        The per-site floor of V4.1's mHC pre (the RMS prenorm GEMM over the hc_mult x hidden residual, the Sinkhorn mixing and the layer-input write): 9.3 us. Fitted jointly with mhc_rate_pre over 70 sites, 1-524,288 tokens: 1.057x, signed 1.011. By band: 1-64 tokens 16 rows 1.080x (signed 0.938); 65-2048 tokens 26 rows 1.089x (signed 1.080); 2049-max tokens 28 rows 1.015x (signed 0.993). HELD OUT across hidden: hidden 4096 predicted from the other 1.083x (signed 1.076, n=35); hidden 7168 predicted from the other 1.061x (signed 0.954, n=35). THE FORM the kernel evaluates for every Elementwise node whose role starts with mhc_, per rank, per step: t = sum over the node's components (pre if the role ends in _pre, post if it contains post) of mhc_floor_<c> + W / mhc_rate_<c>, W = rows x hidden_size x 8 B (hc_mult 4 BF16 residual streams; 40,960 B a token at V4.1's 5120), rows the tokens the node runs on this rank (its token shard under sequence parallelism). This REPLACES the node's bytes_per_token charge, and the hc_*_fn projection GEMM after it is NOT charged separately: the timed pre includes the TF32 split-K prenorm GEMM (tf32_hc_prenorm_gemm) over the same fn. A post+pre site at V4.1's geometry prices at 12.8 us for 6 tokens and 0.522 ms for 8,192. MEASURED: mhc_module_perf.parquet (vllm/0.25.0, H100), TileLang mhc_pre / mhc_post under CUDA graphs, hc_mult 4, Sinkhorn 20 iterations, hidden 4096 and 7168 (V4.1's 5120 lies between: W carries the hidden size, so one floor and one rate are fitted over both and interpolate by bytes); each row times 2 sites and is divided by 2. VERSIONS: on SM90 vLLM v0.31.0 runs V4.1's mHC as mhc_fused_post_pre_delayed_tilelang (the DeepGEMM mega-mHC path and the overlap stream need SM100); above 32 tokens it runs 'the same post kernel and split-k GEMM as the unfused pair' measured here, and at <= 32 tokens it folds the post into the prenorm GEMM, one launch fewer, so at decode sizes this pair is an UPPER bound by about one launch. The measured pre is the norm_weight=None variant; the fused serving path also applies the attention RMSNorm, which AISimulate's collector records as 2-3% of pre on H20. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - mhc_rate_pre:
+      value: 1325488.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H100), 70 pre rows", role: primary}
+      rationale: >
+        1.33 TB/s over the residual-stream bytes W for the mHC pre, 0.40 of this part's 3.35 TB/s datasheet bandwidth. Fitted on each hidden size alone it is 4096: 1.34 TB/s (floor 8.9 us), 7168: 1.32 TB/s (floor 9.9 us) -- the bytes form carries the hidden size. See mhc_floor_pre for the errors and the form.
+  - mhc_floor_post:
+      value: 3.1
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H100), 69 post rows", role: primary}
+      rationale: >
+        The per-site floor of V4.1's mHC post (the residual update from the sublayer output with the post and comb mixes): 3.1 us. Fitted jointly with mhc_rate_post over 69 sites, 1-524,288 tokens: 1.100x, signed 1.023. By band: 1-64 tokens 16 rows 1.203x (signed 0.941); 65-2048 tokens 26 rows 1.137x (signed 1.109); 2049-max tokens 27 rows 1.009x (signed 0.996). HELD OUT across hidden: hidden 4096 predicted from the other 1.171x (signed 1.162, n=35); hidden 7168 predicted from the other 1.115x (signed 0.944, n=34). THE FORM the kernel evaluates for every Elementwise node whose role starts with mhc_, per rank, per step: t = sum over the node's components (pre if the role ends in _pre, post if it contains post) of mhc_floor_<c> + W / mhc_rate_<c>, W = rows x hidden_size x 8 B (hc_mult 4 BF16 residual streams; 40,960 B a token at V4.1's 5120), rows the tokens the node runs on this rank (its token shard under sequence parallelism). This REPLACES the node's bytes_per_token charge, and the hc_*_fn projection GEMM after it is NOT charged separately: the timed pre includes the TF32 split-K prenorm GEMM (tf32_hc_prenorm_gemm) over the same fn. A post+pre site at V4.1's geometry prices at 12.8 us for 6 tokens and 0.522 ms for 8,192. MEASURED: mhc_module_perf.parquet (vllm/0.25.0, H100), TileLang mhc_pre / mhc_post under CUDA graphs, hc_mult 4, Sinkhorn 20 iterations, hidden 4096 and 7168 (V4.1's 5120 lies between: W carries the hidden size, so one floor and one rate are fitted over both and interpolate by bytes); each row times 2 sites and is divided by 2. VERSIONS: on SM90 vLLM v0.31.0 runs V4.1's mHC as mhc_fused_post_pre_delayed_tilelang (the DeepGEMM mega-mHC path and the overlap stream need SM100); above 32 tokens it runs 'the same post kernel and split-k GEMM as the unfused pair' measured here, and at <= 32 tokens it folds the post into the prenorm GEMM, one launch fewer, so at decode sizes this pair is an UPPER bound by about one launch. The measured pre is the norm_weight=None variant; the fused serving path also applies the attention RMSNorm, which AISimulate's collector records as 2-3% of pre on H20. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - mhc_rate_post:
+      value: 1306352.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/mhc/vllm/0.25.0/mhc_module_perf.parquet (NVIDIA H100), 69 post rows", role: primary}
+      rationale: >
+        1.31 TB/s over the residual-stream bytes W for the mHC post, 0.39 of this part's 3.35 TB/s datasheet bandwidth. Fitted on each hidden size alone it is 4096: 1.31 TB/s (floor 2.9 us), 7168: 1.31 TB/s (floor 3.9 us) -- the bytes form carries the hidden size. See mhc_floor_post for the errors and the form.
