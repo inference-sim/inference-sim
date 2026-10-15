@@ -351,9 +351,9 @@ func (o *OffloadCache) SetClock(clock int64) {
 // The deferral machinery is inert when there are no secondary tiers, so CPU-only
 // offload and all non-offload stores are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	// A sequence whose fixed blocks or slot reservation do not fit is refused before any tier
+	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before any tier
 	// is consulted or a deferral registered, so the refusal has no side effect.
-	if !o.gpu.sequenceFits(req.ID, endIndex, cachedBlocks) {
+	if !o.gpu.sequenceFits(req, startIndex, endIndex, cachedBlocks) {
 		return false
 	}
 	// Defer only genuinely-new prefill admissions. A running-request continuation
@@ -439,10 +439,10 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 				} else {
 					o.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
-				// Its fixed blocks (#1941) and slots (#1627), on every allocation as vLLM
+				// Its bounded state (#1941) and slots (#1627), on every allocation as vLLM
 				// passes num_lookahead_tokens to every allocate_slots
 				// (scheduler.py:745-751, 1214 at v0.31.0); room was checked before the reload.
-				o.gpu.chargeSequence(req.ID, endIndex)
+				o.gpu.chargeSequence(req.ID, startIndex, endIndex)
 				return true
 			}
 			// Partial improvement: commit the reloaded prefix, then allocate the tail.

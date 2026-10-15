@@ -37,9 +37,9 @@ type PoolOverrides struct {
 	// own kernel, since pools of different widths hold different bytes per block.
 	KVOffload               *sim.KVOffloadConfig
 	KVTransferTicksPerBlock *int64
-	// SequenceFixedBlocks is the pool's per-sequence fixed charge (nil = use global): pools of
-	// different widths hold different fixed bytes per sequence and per block (#1941).
-	SequenceFixedBlocks *int64
+	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
+	// different widths hold different state per sequence and per block (#1941).
+	SequenceState *sim.KVSequenceState
 
 	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
 	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
@@ -71,8 +71,8 @@ func (o PoolOverrides) Validate(name string) error {
 	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
 		return fmt.Errorf("%s: PoolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
 	}
-	if o.SequenceFixedBlocks != nil && *o.SequenceFixedBlocks < 0 {
-		return fmt.Errorf("%s: PoolOverrides.SequenceFixedBlocks must be >= 0 when set, got %d", name, *o.SequenceFixedBlocks)
+	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
+		return fmt.Errorf("%s: PoolOverrides.SequenceState needs both Hold and Gate, or neither", name)
 	}
 	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
 		return fmt.Errorf("%s: PoolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
@@ -86,7 +86,7 @@ func (o PoolOverrides) IsEmpty() bool {
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
 		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
-		o.SequenceFixedBlocks == nil && o.Scheduler == "" && o.PreemptionPolicy == ""
+		o.SequenceState == nil && o.Scheduler == "" && o.PreemptionPolicy == ""
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -129,8 +129,8 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	if overrides.KVTransferTicksPerBlock != nil {
 		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
-	if overrides.SequenceFixedBlocks != nil {
-		resolved.SequenceFixedBlocks = *overrides.SequenceFixedBlocks
+	if overrides.SequenceState != nil {
+		resolved.SequenceState = *overrides.SequenceState
 	}
 	if overrides.Scheduler != "" {
 		resolved.Scheduler = overrides.Scheduler

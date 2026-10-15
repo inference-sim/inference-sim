@@ -238,9 +238,9 @@ func (t *TieredKVCache) accumulateTransferLatency() {
 }
 
 func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
-	// A sequence whose fixed blocks or slot reservation do not fit is refused before the CPU
+	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before the CPU
 	// tier is consulted, so the refusal reloads, charges and reorders nothing.
-	if !t.gpu.sequenceFits(req.ID, endIndex, cachedBlocks) {
+	if !t.gpu.sequenceFits(req, startIndex, endIndex, cachedBlocks) {
 		return false
 	}
 	// BC-D3.3 (#1586): consult the CPU offload tier on EVERY request, before GPU
@@ -298,10 +298,10 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 					// New request: commit all cached blocks from block 0.
 					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
 				}
-				// Its fixed blocks (#1941) and slots (#1627), on every allocation as vLLM
+				// Its bounded state (#1941) and slots (#1627), on every allocation as vLLM
 				// passes num_lookahead_tokens to every allocate_slots
 				// (scheduler.py:745-751, 1214 at v0.31.0); room was checked before the reload.
-				t.gpu.chargeSequence(req.ID, endIndex)
+				t.gpu.chargeSequence(req.ID, startIndex, endIndex)
 				return true
 			}
 			// Partial improvement: commit reloaded prefix blocks before allocating tail.

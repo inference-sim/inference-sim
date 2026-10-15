@@ -207,19 +207,29 @@ fit and preemption starts earlier, as in the engine. Not modelled: vLLM's second
 `input_budget`, which also debits `max_num_new_slots_for_drafting` (`K - 1` for DSpark) per
 request.
 
-## Per-sequence fixed memory (#1941)
+## Per-sequence bounded state (#1941)
 
-The KV pool is sized from the kernel's per-token bytes, and every resident sequence is also
-charged what vLLM reserves for it at admission whatever its length: its window rings at the
-admission cap (`cdiv(window - 1 + max_in_flight_tokens, block) + 1` pages, which grows with
-`max_num_batched_tokens`), compressor and indexer state, and bounded recurrent state -- the
-kernel's `SequenceAdmissionBytes`, in whole pool blocks. It is taken when the sequence is
-admitted and freed with it, so a sequence is admitted only when both its tokens and this term
-fit. For DeepSeek-V4.1-Flash with DSpark on h100 tp8 at 8,192 batched tokens it is 4,137 blocks
-(about 484 MB) a sequence per rank; a BLIS sequence then holds exactly the blocks vLLM's own
-"GPU KV cache size" divides by (pinned against the engine's log on H200). The startup log
-reports the term, the smaller steady decode hold, and the term's share of the pool at
-`max_num_seqs`. A model with no such caches is charged nothing.
+The KV pool is sized from the kernel's per-token bytes; each resident sequence's bounded state
+-- window rings, compressor and indexer state, bounded recurrent state -- is charged on top,
+in pool blocks, the way vLLM v0.31.0 holds it:
+
+- **On demand.** Every allocation resizes the sequence's state to the kernel's
+  `SequenceBoundedBytesAt(computed, in flight)`: a window ring holds pages for the tokens
+  scheduled this step plus the window behind them, and blocks the window has passed are freed
+  first (vLLM's `allocate_slots` after `remove_skipped_blocks`). The hold grows while a prefill
+  chunk is in flight and settles at the steady `SequenceFixedBytes` once decoding.
+- **Gated at admission.** A new or resumed request is admitted only if its whole prompt and its
+  state at the admission cap -- each window group at `min(cdiv(prompt), cap)`, the cap being
+  `cdiv(window - 1 + max_in_flight_tokens, block) + 1` pages, which grows with
+  `max_num_batched_tokens` -- are free (`full_sequence_must_fit`). The cap is never held.
+
+For DeepSeek-V4.1-Flash with DSpark on h100 tp8 the steady hold is 49 blocks (about 5.7 MB) a
+sequence per rank; the admission cap at 32,768 batched tokens is 16,425 blocks (about 1.9 GB).
+vLLM's startup "GPU KV cache size" sizes a request at that cap plus its tokens, and BLIS
+reproduces that figure (pinned against the engine's log on H200), but it is a report, not what
+a running sequence holds. The startup log reports the steady hold, the cap and the steady
+hold's share of the pool at `max_num_seqs`. A model with no such caches is charged nothing
+and gated as before (BLIS does not apply vLLM's full-prompt gate to it).
 
 ## KV offload
 

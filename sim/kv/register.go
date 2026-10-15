@@ -26,7 +26,7 @@ func init() {
 // Returns *TieredKVCache for tiered mode (KVCPUBlocks > 0).
 func NewKVStore(cfg sim.KVCacheConfig, seed int64) sim.KVStore {
 	gpu := NewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
-	gpu.SequenceFixedBlocks = cfg.SequenceFixedBlocks
+	gpu.SequenceState = cfg.SequenceState
 	gpu.Speculative = cfg.Speculative
 	// #1590 (H1): the multi-tier offload chain (--kv-offload-config) and the legacy
 	// single-CPU-tier path (--kv-cpu-blocks) are two distinct offload models; setting

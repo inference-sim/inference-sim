@@ -143,12 +143,12 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	seqs, toks := int64(s.MaxNumSeqs), int64(s.MaxNumBatchedTokens)
 	noCache := s.PrefixCachingDisabled
 	ml := int64(s.MaxModelLen)
-	fixed := s.SequenceFixedBlocks
+	state := s.SequenceState
 	logSequenceFixedCharge(string(m.Role())+" pool", s)
 	o := cluster.PoolOverrides{
 		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
-		SequenceFixedBlocks: &fixed,
+		SequenceState: &state,
 	}
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
 	// one for the run, which then applies to every pool and is recorded where it departs.
@@ -167,20 +167,21 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 }
 
 // logSequenceFixedCharge reports the per-sequence term of an engine's KV capacity (#1941):
-// what the engine reserves for each resident sequence whatever its length, and what that
-// costs the pool at max_num_seqs. Silent for a model with no such caches, whose capacity it
-// does not touch.
+// the steady hold each decoding sequence's bounded state settles at, and the admission cap
+// vLLM gates a new request on and sizes its startup capacity figure by. Silent for a model
+// with no such caches, whose capacity it does not touch.
 func logSequenceFixedCharge(what string, s kernelmodel.Settings) {
-	if s.SequenceFixedBlocks == 0 {
+	if s.SequenceState.Hold == nil {
 		return
 	}
-	atCap := min(int64(s.MaxNumSeqs)*s.SequenceFixedBlocks, s.KVBlocks)
-	logrus.Infof("KV capacity (%s): each resident sequence reserves %d bytes of bounded state per "+
-		"rank at admission (window rings at vLLM's admission cap, compressor/indexer/recurrent "+
-		"state; %d bytes once decoding), charged as %d blocks of %d bytes; at max_num_seqs %d "+
-		"that is %d of %d blocks (%.1f%%)",
-		what, s.SequenceAdmissionBytes, s.SequenceSteadyBytes, s.SequenceFixedBlocks,
-		s.KVBytesPerBlock, s.MaxNumSeqs, atCap, s.KVBlocks, 100*float64(atCap)/float64(s.KVBlocks))
+	atCap := min(int64(s.MaxNumSeqs)*s.SequenceSteadyBlocks, s.KVBlocks)
+	logrus.Infof("KV capacity (%s): each sequence's bounded state (window rings, compressor/indexer/"+
+		"recurrent state) is held step by step: %d bytes per rank (%d blocks of %d bytes) once "+
+		"decoding, more while a prefill chunk is in flight; vLLM's admission gate caps it at %d "+
+		"bytes (%d blocks). At max_num_seqs %d the steady hold is %d of %d blocks (%.1f%%)",
+		what, s.SequenceSteadyBytes, s.SequenceSteadyBlocks, s.KVBytesPerBlock,
+		s.SequenceAdmissionBytes, s.SequenceAdmissionBlocks, s.MaxNumSeqs, atCap, s.KVBlocks,
+		100*float64(atCap)/float64(s.KVBlocks))
 }
 
 // requireWindowFits refuses an engine whose window one request could not fit in, as vLLM does

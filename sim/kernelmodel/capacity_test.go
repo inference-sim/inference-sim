@@ -7,6 +7,9 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"pgregory.net/rapid"
+
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kv"
 )
 
 // A KV budget must be derived from the kernel's own memory answers, and it must be
@@ -179,20 +182,23 @@ func TestTheBudgetChargesTheKernelsAdmissionReservationInWholeBlocks(t *testing.
 			t.Errorf("%s: the steady hold %d exceeds the admission reservation %d", tt.scenario,
 				b.SequenceSteadyBytes, b.SequenceAdmissionBytes)
 		}
-		if got := b.SequenceFixedBlocks * b.PerBlockBytes; got < reserved || (b.SequenceFixedBlocks > 0 && got-b.PerBlockBytes >= reserved) {
-			t.Errorf("%s: %d blocks of %d bytes is not the smallest whole-block cover of %d bytes",
-				tt.scenario, b.SequenceFixedBlocks, b.PerBlockBytes, reserved)
+		for _, c := range []struct{ blocks, bytes int64 }{{b.SequenceAdmissionBlocks, reserved}, {b.SequenceSteadyBlocks, b.SequenceSteadyBytes}} {
+			if got := c.blocks * b.PerBlockBytes; got < c.bytes || (c.blocks > 0 && got-b.PerBlockBytes >= c.bytes) {
+				t.Errorf("%s: %d blocks of %d bytes is not the smallest whole-block cover of %d bytes",
+					tt.scenario, c.blocks, b.PerBlockBytes, c.bytes)
+			}
 		}
-		if (b.SequenceFixedBlocks > 0) != tt.charged {
-			t.Errorf("%s: %d fixed blocks a sequence; charged = %t, want %t",
-				tt.scenario, b.SequenceFixedBlocks, b.SequenceFixedBlocks > 0, tt.charged)
+		if (b.SequenceAdmissionBlocks > 0) != tt.charged {
+			t.Errorf("%s: %d admission blocks a sequence; charged = %t, want %t",
+				tt.scenario, b.SequenceAdmissionBlocks, b.SequenceAdmissionBlocks > 0, tt.charged)
 		}
 		s, err := m.Settings()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s.SequenceFixedBlocks != b.SequenceFixedBlocks {
-			t.Errorf("%s: Settings carries %d fixed blocks, the budget %d", tt.scenario, s.SequenceFixedBlocks, b.SequenceFixedBlocks)
+		if (s.SequenceState.Hold != nil) != tt.charged || s.SequenceAdmissionBlocks != b.SequenceAdmissionBlocks {
+			t.Errorf("%s: Settings carries a state = %t with %d admission blocks; want %t and %d", tt.scenario,
+				s.SequenceState.Hold != nil, s.SequenceAdmissionBlocks, tt.charged, b.SequenceAdmissionBlocks)
 		}
 	}
 }
@@ -225,11 +231,11 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 		hi := rapid.Float64Range(lo, 0.95).Draw(rt, "hi")
 		promptBlocks := rapid.Int64Range(1, 4096).Draw(rt, "promptBlocks")
 		a, b := budgetAt(lo), budgetAt(hi)
-		if a.SequenceFixedBlocks != b.SequenceFixedBlocks {
-			rt.Fatalf("the fixed term moved with utilization: %d at %v, %d at %v",
-				a.SequenceFixedBlocks, lo, b.SequenceFixedBlocks, hi)
+		if a.SequenceSteadyBlocks != b.SequenceSteadyBlocks || a.SequenceAdmissionBlocks != b.SequenceAdmissionBlocks {
+			rt.Fatalf("the per-sequence term moved with utilization: %d/%d at %v, %d/%d at %v",
+				a.SequenceSteadyBlocks, a.SequenceAdmissionBlocks, lo, b.SequenceSteadyBlocks, b.SequenceAdmissionBlocks, hi)
 		}
-		ceil := func(x KVBudget) int64 { return x.PerRankBlocks / (promptBlocks + x.SequenceFixedBlocks) }
+		ceil := func(x KVBudget) int64 { return x.PerRankBlocks / (promptBlocks + x.SequenceSteadyBlocks) }
 		if ceil(b) < ceil(a) {
 			rt.Fatalf("utilization %v holds %d sequences of %d blocks, %v holds only %d",
 				lo, ceil(a), promptBlocks, hi, ceil(b))
@@ -242,10 +248,12 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 // context, 8,192 batched tokens, gpu_memory_utilization 0.80 -- reported 61.18 GiB of KV cache
 // and "GPU KV cache size: 28,706,997 tokens": the pool's blocks over one request's blocks at
 // max_model_len, times max_model_len (get_kv_cache_capacity,
-// vllm/v1/core/kv_cache_utils.py:2444-2471). A BLIS sequence holds exactly that many blocks --
-// its per-sequence admission charge plus its tokens' pages (INV-K3) -- so in vLLM's 61.18 GiB
-// BLIS admits vLLM's count, to the 0.005 GiB rounding of the logged figure (about 2,350
-// tokens).
+// vllm/v1/core/kv_cache_utils.py:2444-2471), a request sized at its admission cap plus its
+// tokens' pages. This is the STARTUP figure the engine reports, not a runtime hold: vLLM gates
+// admission on that cap but holds a sequence's window rings on demand (INV-K3,
+// TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle). In vLLM's 61.18 GiB, BLIS's per-
+// request sizing gives vLLM's count, to the 0.005 GiB rounding of the logged figure (about
+// 2,350 tokens).
 //
 // End to end BLIS's own pool is smaller, so it admits about 11% fewer tokens (25.5M): the
 // kernel's fixed occupancy leaves about 54.4 GiB, not 61.18, its weights being 48.2 GiB
@@ -273,7 +281,7 @@ func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 		t.Fatalf("the scenario serves max_model_len %d, want %d", s.MaxModelLen, maxModelLen)
 	}
 	tokenBlocks := m.Kernel().SequenceVariableBytes(maxModelLen) / s.KVBytesPerBlock
-	perRequest := s.SequenceFixedBlocks + tokenBlocks
+	perRequest := s.SequenceAdmissionBlocks + tokenBlocks
 	capacity := func(poolBlocks int64) float64 {
 		return float64(poolBlocks) / float64(perRequest) * maxModelLen
 	}
@@ -282,7 +290,7 @@ func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 	if d := capacity(loggedPool) - engine; d > rounding || d < -rounding {
 		t.Errorf("a BLIS sequence of %d tokens holds %d blocks (%d admission + %d token); in vLLM's "+
 			"%.2f GiB that admits %.0f tokens, against vLLM's logged %d", maxModelLen, perRequest,
-			s.SequenceFixedBlocks, tokenBlocks, loggedGiB, capacity(loggedPool), engine)
+			s.SequenceAdmissionBlocks, tokenBlocks, loggedGiB, capacity(loggedPool), engine)
 	}
 	if steady := m.Kernel().SequenceFixedBytes() / s.KVBytesPerBlock; float64(loggedPool)/float64(steady+tokenBlocks)*maxModelLen-engine <= rounding {
 		t.Errorf("sized at the steady decode hold (%d blocks) the capacity is within rounding too; "+
@@ -291,4 +299,91 @@ func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 
 	t.Logf("BLIS pool %d blocks (%.2f GiB) admits %.0f tokens; vLLM's %.2f GiB admits %d",
 		s.KVBlocks, float64(s.KVBlocks*s.KVBytesPerBlock)/(1<<30), capacity(s.KVBlocks), loggedGiB, engine)
+}
+
+// #1941, review C1: a sequence's bounded state is held on demand, as vLLM holds it, never at
+// the admission cap for its life. vLLM's allocate_slots allocates a window group's blocks for
+// the tokens scheduled and remove_skipped_blocks first frees those the window has passed
+// (single_type_kv_cache_manager.py:178-238, 687-725, 1153-1175 at v0.31.0); the
+// max_admission_blocks_per_request cap applies only to the admission gate (:216-229). Over a
+// DeepSeek-V4.1 DSpark prefill -> decode lifecycle through the real KV store:
+//
+//   - after every allocation the store holds exactly the kernel's SequenceBoundedBytesAt for
+//     that step, in blocks;
+//   - a prefill chunk past the window holds the same however far the prompt has got (the
+//     rings recycle), and more than a decode step (the chunk is in flight);
+//   - once decoding the hold is the steady SequenceFixedBytes, every step;
+//   - no step holds the admission cap, and the gate is min(cdiv(prompt), cap) per ring.
+func TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	m, err := Open(dspark, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := s.SequenceState
+	if st.Hold == nil {
+		t.Fatal("DeepSeek-V4.1 has bounded per-sequence state; Settings carries none")
+	}
+	k := m.Kernel().(admissionReserver)
+	per := s.KVBytesPerBlock
+	blocks := func(b int64) int64 { return (b + per - 1) / per }
+
+	kvc := kv.NewKVCacheState(s.KVBlocks, int64(s.BlockSize))
+	kvc.SequenceState = st
+	const prompt, decodes = 20000, 40
+	chunk := int64(s.MaxNumBatchedTokens)
+	verify := int64(s.SpeculativeTokens + 1)
+	req := &sim.Request{ID: "r", InputTokens: make([]sim.TokenID, prompt), OutputTokens: make([]sim.TokenID, 3*decodes)}
+	for i := range req.InputTokens {
+		req.InputTokens[i] = sim.TokenID(i + 1)
+	}
+	if got, want := st.Gate(prompt), min(blocks(k.SequenceBoundedBytesAt(0, prompt)), s.SequenceAdmissionBlocks); got != want {
+		t.Errorf("gate for a %d-token prompt: %d blocks, want min(cdiv, cap) = %d", prompt, got, want)
+	}
+	var chunkHolds []int64
+	for c := int64(0); c < prompt; c += chunk {
+		end := min(c+chunk, prompt)
+		if !kvc.AllocateKVBlocks(req, c, end, nil) {
+			t.Fatalf("chunk at %d refused", c)
+		}
+		req.ProgressIndex = end
+		got := int64(len(kvc.StateBlocks["r"]))
+		if want := blocks(k.SequenceBoundedBytesAt(int(c), int(end-c))); got != want {
+			t.Errorf("prefill chunk [%d, %d): holds %d state blocks, the kernel prices %d", c, end, got, want)
+		}
+		if end-c == chunk {
+			chunkHolds = append(chunkHolds, got)
+		}
+		if got >= s.SequenceAdmissionBlocks {
+			t.Errorf("prefill chunk [%d, %d) holds the admission cap (%d of %d blocks)", c, end, got, s.SequenceAdmissionBlocks)
+		}
+	}
+	for i := 2; i < len(chunkHolds); i++ { // the first chunk has not filled the window yet
+		if chunkHolds[i] != chunkHolds[1] {
+			t.Errorf("full chunks past the window hold %v blocks; the rings recycle, so they hold alike", chunkHolds)
+		}
+	}
+	for d := 0; d < decodes; d++ {
+		pi := req.ProgressIndex
+		if !kvc.AllocateKVBlocks(req, pi, pi+verify, nil) {
+			t.Fatalf("decode %d refused", d)
+		}
+		if got := int64(len(kvc.StateBlocks["r"])); got != s.SequenceSteadyBlocks {
+			t.Fatalf("decode %d: holds %d state blocks, want the steady %d (admission cap %d)", d, got,
+				s.SequenceSteadyBlocks, s.SequenceAdmissionBlocks)
+		}
+		req.ProgressIndex += 2
+	}
+	if len(chunkHolds) > 1 && chunkHolds[1] <= s.SequenceSteadyBlocks {
+		t.Errorf("a full chunk in flight holds %d blocks, no more than a decode's %d", chunkHolds[1], s.SequenceSteadyBlocks)
+	}
+	kvc.ReleaseKVBlocks(req)
+	if kvc.UsedBlocks() != 0 {
+		t.Errorf("%d blocks held after release", kvc.UsedBlocks())
+	}
 }

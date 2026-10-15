@@ -26,11 +26,10 @@ type KVCacheConfig struct {
 	// WithKVTransferTicksPerBlock.
 	KVTransferTicksPerBlock int64
 
-	// SequenceFixedBlocks is what every resident sequence takes from the GPU pool whatever
-	// its length: the latency kernel's per-sequence fixed bytes (window rings, compressor and
-	// indexer state, bounded recurrent state) in whole blocks (#1941). Charged when a sequence
-	// is admitted and freed with it; 0 charges nothing. Set via WithSequenceFixedBlocks.
-	SequenceFixedBlocks int64
+	// SequenceState is each resident sequence's bounded per-sequence state -- window rings,
+	// compressor and indexer state, bounded recurrent state -- in pool blocks, as the latency
+	// kernel prices it (#1941). Zero value: none. Set via WithSequenceState.
+	SequenceState KVSequenceState
 
 	// Speculative is the KV side of speculative decoding (#1627); its zero value is off.
 	// NewInstanceSimulator sets it from the SpeculativeConfig, so the two cannot disagree.
@@ -72,10 +71,24 @@ func WithKVTransferTicksPerBlock(ticks int64) KVCacheOption {
 	return func(c *KVCacheConfig) { c.KVTransferTicksPerBlock = ticks }
 }
 
-// WithSequenceFixedBlocks sets the blocks each resident sequence is charged whatever its
-// length (#1941).
-func WithSequenceFixedBlocks(blocks int64) KVCacheOption {
-	return func(c *KVCacheConfig) { c.SequenceFixedBlocks = blocks }
+// KVSequenceState is how many pool blocks a sequence's bounded state takes (#1941). vLLM
+// holds a window ring's blocks on demand -- allocate_slots allocates them for the tokens
+// scheduled and remove_skipped_blocks frees those the window has passed -- and applies its
+// max_admission_blocks_per_request cap only as an admission gate; both are in blocks of the
+// shared pool.
+type KVSequenceState struct {
+	// Hold is the blocks a sequence's state holds once computed tokens are computed and
+	// inFlight more are scheduled this step (the kernel's SequenceBoundedBytesAt). Nil: the
+	// model has no bounded per-sequence state.
+	Hold func(computed, inFlight int64) int64
+	// Gate is the state blocks admission requires of a request of tokens tokens: each
+	// window group at min(cdiv(tokens), its admission cap).
+	Gate func(tokens int64) int64
+}
+
+// WithSequenceState sets the bounded per-sequence state the KV store charges (#1941).
+func WithSequenceState(st KVSequenceState) KVCacheOption {
+	return func(c *KVCacheConfig) { c.SequenceState = st }
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
@@ -106,9 +119,8 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if cfg.SequenceFixedBlocks < 0 || cfg.SequenceFixedBlocks >= totalKVBlocks {
-		panic(fmt.Sprintf("NewKVCacheConfig: SequenceFixedBlocks must be in [0, %d), got %d",
-			totalKVBlocks, cfg.SequenceFixedBlocks))
+	if (cfg.SequenceState.Hold == nil) != (cfg.SequenceState.Gate == nil) {
+		panic("NewKVCacheConfig: SequenceState needs both Hold and Gate, or neither")
 	}
 	if cfg.KVTransferTicksPerBlock < 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: KVTransferTicksPerBlock must be >= 0, got %d", cfg.KVTransferTicksPerBlock))

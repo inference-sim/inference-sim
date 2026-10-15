@@ -9,6 +9,18 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// constantState is a bounded per-sequence state of n blocks whatever the sequence's length
+// or step, gated at n: the shape of a model whose state does not grow with what is in flight.
+func constantState(n int64) sim.KVSequenceState {
+	if n == 0 {
+		return sim.KVSequenceState{}
+	}
+	return sim.KVSequenceState{
+		Hold: func(int64, int64) int64 { return n },
+		Gate: func(int64) int64 { return n },
+	}
+}
+
 // promptRequest is a request with an n-token prompt of distinct tokens, so no two requests
 // share a prefix block.
 func promptRequest(id string, n int) *sim.Request {
@@ -39,7 +51,7 @@ func admitUntilFull(t *testing.T, kvc *KVCacheState, promptTokens int) int {
 // admitted-sequence ceiling from floor(N/P) to floor(N/(P+F)), and with F = 0 the ceiling is
 // the pool's alone. The law, not a value: the fixed term is paid once per sequence, whatever
 // its length.
-func TestSequenceFixedBlocks_LowerTheAdmissionCeilingByTheFixedTerm(t *testing.T) {
+func TestSequenceState_LowerTheAdmissionCeilingByTheFixedTerm(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		blockSize := rapid.IntRange(1, 16).Draw(rt, "blockSize")
 		total := rapid.Int64Range(8, 400).Draw(rt, "total")
@@ -47,7 +59,7 @@ func TestSequenceFixedBlocks_LowerTheAdmissionCeilingByTheFixedTerm(t *testing.T
 		fixed := rapid.Int64Range(0, 6).Draw(rt, "fixed")
 
 		kvc := NewKVCacheState(total, int64(blockSize))
-		kvc.SequenceFixedBlocks = fixed
+		kvc.SequenceState = constantState(fixed)
 		got := admitUntilFull(t, kvc, int(promptBlocks)*blockSize)
 		if want := int(total / (promptBlocks + fixed)); got != want {
 			rt.Fatalf("pool %d, prompt %d blocks, fixed %d: admitted %d sequences, want %d",
@@ -62,9 +74,9 @@ func TestSequenceFixedBlocks_LowerTheAdmissionCeilingByTheFixedTerm(t *testing.T
 // The fixed blocks are charged once, at a sequence's first allocation: later prefill chunks
 // and decode tokens add only the blocks their tokens fill, and releasing the sequence returns
 // every block it held, fixed ones included (INV-4).
-func TestSequenceFixedBlocks_ChargedOnceAndFreedWithTheSequence(t *testing.T) {
+func TestSequenceState_ChargedOnceAndFreedWithTheSequence(t *testing.T) {
 	kvc := NewKVCacheState(64, 4)
-	kvc.SequenceFixedBlocks = 3
+	kvc.SequenceState = constantState(3)
 	req := promptRequest("a", 10)
 
 	if !kvc.AllocateKVBlocks(req, 0, 6, nil) {
@@ -87,7 +99,7 @@ func TestSequenceFixedBlocks_ChargedOnceAndFreedWithTheSequence(t *testing.T) {
 	if got := kvc.UsedBlocks(); got != 4+3 {
 		t.Fatalf("13 tokens: %d blocks used, want 4 token blocks + 3 fixed", got)
 	}
-	for _, id := range kvc.FixedBlocks["a"] {
+	for _, id := range kvc.StateBlocks["a"] {
 		if b := kvc.Blocks[id]; len(b.Tokens) != 0 || b.Hash != "" {
 			t.Errorf("fixed block %d holds tokens %v / hash %q; it must hold neither", id, b.Tokens, b.Hash)
 		}
@@ -96,31 +108,31 @@ func TestSequenceFixedBlocks_ChargedOnceAndFreedWithTheSequence(t *testing.T) {
 	if got := kvc.UsedBlocks(); got != 0 {
 		t.Errorf("after release: %d blocks still used", got)
 	}
-	if len(kvc.FixedBlocks) != 0 {
-		t.Errorf("after release: fixed blocks still recorded: %v", kvc.FixedBlocks)
+	if len(kvc.StateBlocks) != 0 {
+		t.Errorf("after release: fixed blocks still recorded: %v", kvc.StateBlocks)
 	}
 	assertBlockConservation(t, kvc)
 }
 
 // A refusal for want of the fixed blocks mutates nothing (check-then-act): the request holds
 // no blocks afterwards, and a pool with room for the tokens but not the fixed term refuses.
-func TestSequenceFixedBlocks_RefusalIsSideEffectFree(t *testing.T) {
+func TestSequenceState_RefusalIsSideEffectFree(t *testing.T) {
 	kvc := NewKVCacheState(4, 4)
-	kvc.SequenceFixedBlocks = 2
+	kvc.SequenceState = constantState(2)
 	req := promptRequest("a", 12) // 3 token blocks + 2 fixed > 4
 	if kvc.AllocateKVBlocks(req, 0, 12, nil) {
 		t.Fatal("admitted a sequence whose fixed term does not fit")
 	}
-	if kvc.UsedBlocks() != 0 || len(kvc.RequestMap) != 0 || len(kvc.FixedBlocks) != 0 {
+	if kvc.UsedBlocks() != 0 || len(kvc.RequestMap) != 0 || len(kvc.StateBlocks) != 0 {
 		t.Errorf("a refused allocation left state behind: used %d, map %v, fixed %v",
-			kvc.UsedBlocks(), kvc.RequestMap, kvc.FixedBlocks)
+			kvc.UsedBlocks(), kvc.RequestMap, kvc.StateBlocks)
 	}
 	assertBlockConservation(t, kvc)
 }
 
 // A fixed block is taken off the free list, so a prefix cached in a freed block must not be
 // clobbered by it while that block is being claimed as a prefix hit in the same allocation.
-func TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) {
+func TestSequenceState_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) {
 	kvc := NewKVCacheState(5, 4)
 	first := promptRequest("a", 8)
 	if !kvc.AllocateKVBlocks(first, 0, 8, nil) {
@@ -135,7 +147,7 @@ func TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) 
 	kvc.ReleaseKVBlocks(filler)
 
 	again := &sim.Request{ID: "b", InputTokens: append([]sim.TokenID(nil), first.InputTokens...)}
-	kvc.SequenceFixedBlocks = 2
+	kvc.SequenceState = constantState(2)
 	cached := kvc.GetCachedBlocks(again.InputTokens)
 	if len(cached) != 2 {
 		t.Fatalf("expected the 2-block prefix cached, got %v", cached)
@@ -149,7 +161,7 @@ func TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) 
 			t.Errorf("cached block %d lost its prefix (hash %q, refcount %d)", c, b.Hash, b.RefCount)
 		}
 	}
-	for _, id := range kvc.FixedBlocks["b"] {
+	for _, id := range kvc.StateBlocks["b"] {
 		for _, c := range cached {
 			if id == c {
 				t.Fatalf("fixed block %d is the cached prefix block it was claiming", id)
@@ -161,7 +173,7 @@ func TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) 
 
 // held is every block a request holds: its token blocks, spare slot blocks and fixed blocks.
 func held(kvc *KVCacheState, id string) int64 {
-	return int64(len(kvc.RequestMap[id]) + len(kvc.SpareBlocks[id]) + len(kvc.FixedBlocks[id]))
+	return int64(len(kvc.RequestMap[id]) + len(kvc.SpareBlocks[id]) + len(kvc.StateBlocks[id]))
 }
 
 // #1627: a speculating request holds blocks for vLLM's slot count -- its computed tokens,
@@ -179,7 +191,7 @@ func TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead(t *testing.T) {
 		total := rapid.Int64Range(4, 256).Draw(rt, "total")
 		fixed := rapid.Int64Range(0, 2).Draw(rt, "fixed")
 		kvc := NewKVCacheState(total, bs)
-		kvc.SequenceFixedBlocks = fixed
+		kvc.SequenceState = constantState(fixed)
 		kvc.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: lookahead}
 
 		input := rapid.IntRange(1, 40).Draw(rt, "input")
@@ -334,7 +346,7 @@ func TestARefusedReloadAdmissionHasNoSideEffects(t *testing.T) {
 	gpu := NewKVCacheState(6, 4)
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 	prompt := cpuResidentPrompt(t, tiered, gpu)
-	gpu.SequenceFixedBlocks = 5 // 2 token blocks + 5 fixed > 6
+	gpu.SequenceState = constantState(5) // 2 token blocks + 5 fixed > 6
 
 	free, latency, hits, cpuHits := freeListIDs(gpu), tiered.PendingTransferLatency(), gpu.CacheHits, tiered.cpuHitCount
 	req := &sim.Request{ID: "r", InputTokens: append([]sim.TokenID(nil), prompt...)}
@@ -348,8 +360,8 @@ func TestARefusedReloadAdmissionHasNoSideEffects(t *testing.T) {
 		t.Errorf("side effects: latency %d->%d, cache hits %d->%d, cpu hits %d->%d", latency,
 			tiered.PendingTransferLatency(), hits, gpu.CacheHits, cpuHits, tiered.cpuHitCount)
 	}
-	if len(gpu.RequestMap) != 0 || len(gpu.FixedBlocks) != 0 {
-		t.Errorf("the refused request holds blocks: %v %v", gpu.RequestMap, gpu.FixedBlocks)
+	if len(gpu.RequestMap) != 0 || len(gpu.StateBlocks) != 0 {
+		t.Errorf("the refused request holds blocks: %v %v", gpu.RequestMap, gpu.StateBlocks)
 	}
 	assertBlockConservation(t, gpu)
 }
@@ -357,11 +369,11 @@ func TestARefusedReloadAdmissionHasNoSideEffects(t *testing.T) {
 // Review I2: a reload that covers a request's whole allocation still charges its fixed
 // blocks and its speculative slots -- for a new request and for a running one -- as vLLM
 // passes num_lookahead_tokens to every allocate_slots (scheduler.py:745-751, 1214).
-func TestAFullyReloadedAllocationHoldsItsSlotsAndFixedBlocks(t *testing.T) {
+func TestAFullyReloadedAllocationHoldsItsSlotsAndStateBlocks(t *testing.T) {
 	gpu := NewKVCacheState(32, 4)
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 	prompt := cpuResidentPrompt(t, tiered, gpu)
-	gpu.SequenceFixedBlocks = 2
+	gpu.SequenceState = constantState(2)
 	gpu.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: 5}
 	reloadsBefore := tiered.cpuHitCount
 
