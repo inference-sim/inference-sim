@@ -192,7 +192,5 @@ func TestRenderQueue_EveryArrivalIsRenderedOnce(t *testing.T) {
 	if s.Renderer().WaitTicks() == 0 {
 		t.Error("no request waited for the render thread; the workload no longer exercises the queue")
 	}
-	if got := s.Metrics.CompletedRequests + s.Metrics.StillQueued + s.Metrics.StillRunning; got != len(reqs) {
-		t.Errorf("INV-1: completed+queued+running = %d, want %d", got, len(reqs))
-	}
+	assertINV1Conservation(t, s.Metrics, len(reqs), "render queue")
 }
