@@ -124,7 +124,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the `cache_hit_rate` and `catalog` provenance fields when those apply). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the file-only `cache_hit_rate`, `catalog`, measured-window aggregates (#1938), `kernel_provenance` (#1942) and build-version fields; see the results guide). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 

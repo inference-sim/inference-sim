@@ -64,6 +64,10 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
 | [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
+| [INV-M1](#inv-m1-measured-window-accounting-closes) Measured-window accounting closes | Subsystem | metrics output |
+| [INV-M2](#inv-m2-derived-aggregates-are-exactly-their-definitions) Derived aggregates are exactly their definitions | Subsystem | metrics output |
+| [INV-M3](#inv-m3-cluster-cache-hit-rate-is-lookup-weighted) Cluster cache hit rate is lookup-weighted | Subsystem | metrics output / KV cache |
+| [INV-M4](#inv-m4-only-the-phase-decides-what-is-measured) Only the phase decides what is measured | Subsystem | metrics output |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -366,6 +370,79 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Enforced:** `sim/prefix_cache_index.go:131` — `evictOldest` panics on a nil tail, and its message already said *"(invariant violation)"* before the invariant had an ID. The two nil-node guards in `pushHead` (`:139`) and `removeNode` (`:155`) are the same family.
 
 **Verification:** `sim/prefix_cache_index_invariant_test.go` — `TestINV18_ListAndLookupStayConsistent` walks the list forward and backward after each of a long sequence of `RecordBlocks` calls that crosses capacity repeatedly, asserting the walked node set equals the `lookup` key set, the head/tail terminals are correct in both directions, and the `tail == nil ⟺ len(lookup) == 0` biconditional holds at every step (including the empty cache, the one-entry cache, and the at-capacity cache). The biconditional is checked in **both** directions: a nil tail with a non-empty map is the panic case, while a non-nil tail with an empty map is the mirror leak — an orphaned node the map can no longer reach, which degrades routing without ever reaching the panic. `TestINV18_EvictOldestPanicsOnInconsistentState` asserts the guard itself fires on a hand-built inconsistent cache, so the entry's "eviction at capacity can never fail" clause does not rest on dead code.
+
+### Metrics output
+
+These bind the measured-window aggregates of the `--metrics-path` file (`sim/metrics_measured.go`,
+#1938) and the cluster cache hit rate (#1904). The definitions mirror aiperf 0.12.0; the
+code comments cite the aiperf lines.
+
+#### INV-M1: Measured-Window Accounting Closes
+
+**Statement:** in a colocated run, every request whose `Phase` is measured (not `warmup`) and
+that was sent before the horizon ends in exactly one of `measured_completed_requests`,
+`cancelled_requests` (timed out, still in flight when the window closed, or completed after an
+explicit `MeasuredWindow.EndUs`), `context_overflow_requests` (prompt, or prompt plus output
+budget, past `MaxModelLen`) and `failed_requests` (any other drop, admission or routing
+rejection, gateway shed, eviction or expiry, decode-KV drop). Two terms are not closed: a
+request still in the gateway queue at the horizon, and a disaggregated parent that timed out
+(its row is removed by the P/D projection). `completed_requests` stays the run-wide INV-1 term.
+
+**Enforced:** `Metrics.RecordUnserved` beside every instance drop counter;
+`ClusterSimulator.recordUnserved` beside every cluster rejection, shed and decode-KV drop;
+`buildMeasured` derives completed and cancelled from the rows.
+
+**Verification:** `TestMeasuredAccountingClosesOverClusterRuns` (rapid, over random phases,
+deadlines, oversized prompts, token-bucket admission and horizons);
+`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`; `TestEnqueueRequest_UnservedDropsAreCountedByPhase`.
+
+#### INV-M2: Derived Aggregates Are Exactly Their Definitions
+
+**Statement:** `interactivity_p50 == 1000 / request_itl_p50_ms` and `interactivity_p90 == 1000 /
+request_itl_p90_ms` exactly (0 for a non-positive ITL); `output_throughput_tok_s ×
+measured_window_s` equals the measured requests' summed output tokens; every `*_pNN` is the
+numpy-linear percentile (rank `q/100·(n−1)`) of one value per measured request, so the
+percentiles of one family are non-decreasing in `q`. Under time scaling by `s`, TTFT, ITL and
+E2E statistics and the window scale by `s`, and interactivity, per-user and output throughput
+by `1/s`. Duplicating every request keeps every mean and the extreme percentiles and doubles
+the counts and the throughput; interior percentiles are not invariant under duplication,
+because the linear rank depends on `n` (`[0,1]` has p90 0.9, `[0,0,1,1]` has p90 1.0).
+
+**Verification:** `TestBuildMeasured_PinsTheAiperfDefinitions` (hand-computed),
+`TestCalculatePercentile_MatchesNumpyLinear` (a numpy-generated vector),
+`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`,
+`TestBuildMeasured_ScalingTimeScalesLatenciesAndInvertsRates`,
+`TestBuildMeasured_DuplicatingEveryRequestKeepsMeansAndExtremes`, and the end-to-end
+`TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength`
+(`request_itl_p90 ≈ step_interval_p90 / (1 + α·K)` on a K=5 DSpark run).
+
+#### INV-M3: Cluster Cache Hit Rate Is Lookup-Weighted
+
+**Statement:** the cluster `cache_hit_rate` is the instances' summed prefix-cache hit tokens over
+their summed lookup tokens (`sim.PrefixCacheCounts`, blocks × block size), so it lies within
+the rates of the instances that looked anything up, and adding idle instances leaves it
+unchanged. `KVThrashingRate` aggregates its own numerator and denominator the same way.
+
+**Enforced:** `InstanceSimulator.Finalize` records the counts; `aggregateMetrics` divides the sums;
+`CollectRawMetrics` reports the aggregate's rates.
+
+**Verification:** `TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt`,
+`TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing` (rapid),
+`TestAggregateCacheHitRateLiesWithinTheInstanceRates` (rapid),
+`TestAggregateCacheHitRate_IsTokenWeighted`.
+
+**Evidence:** #1904: four instances with three idle reported 0.2181 where the busy instance's
+rate was 0.8723.
+
+#### INV-M4: Only the Phase Decides What Is Measured
+
+**Statement:** adding warm-up requests (with their decode steps) to a run's records changes no
+measured aggregate, and with no phase set and no explicit window the measured set is every
+completed request (`step_interval_*` then equals the legacy `itl_*`, and `e2e_*` equals stdout's).
+
+**Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid),
+`TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured`,
+`TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
 
 ### Autoscaling
 
