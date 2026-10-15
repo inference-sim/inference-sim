@@ -1,9 +1,12 @@
 package llmd
 
 import (
+	"cmp"
 	"fmt"
 	"sort"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/llm-d/llm-d-router/cmd/epp/runner"
 )
@@ -155,6 +158,69 @@ func validateEmbedded(e *runner.Embedded) error {
 	sort.Strings(problems)
 	if len(problems) > 0 {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully:\n  %s", strings.Join(problems, "\n  "))
+	}
+	return nil
+}
+
+// checkMetricSpecs refuses a configuration whose core-metrics-extractor requires an engine series
+// the simulated engines do not publish. The simulated model servers carry no engine-type label,
+// so the extractor reads them with its default engine's mapping.
+func checkMetricSpecs(config []byte) error {
+	if len(config) == 0 {
+		return nil // the router's default configuration reads the vLLM mapping
+	}
+	var doc struct {
+		Plugins []struct {
+			Type       string         `json:"type"`
+			Name       string         `json:"name"`
+			Parameters map[string]any `json:"parameters"`
+		} `json:"plugins"`
+	}
+	if err := yaml.Unmarshal(config, &doc); err != nil {
+		return nil // the router's own loader reports a malformed configuration
+	}
+	for _, p := range doc.Plugins {
+		if p.Type != "core-metrics-extractor" {
+			continue
+		}
+		engine, _ := p.Parameters["defaultEngine"].(string)
+		if engine == "" {
+			engine = "vllm"
+		}
+		var specs map[string]any
+		if list, ok := p.Parameters["engineConfigs"].([]any); ok {
+			for _, ec := range list {
+				if m, ok := ec.(map[string]any); ok && m["name"] == engine {
+					specs = m
+				}
+			}
+		}
+		if specs == nil {
+			if engine != "vllm" {
+				return fmt.Errorf("plugin %q reads the %q engine's metrics; the simulated engines publish vLLM's series (%s)",
+					cmp.Or(p.Name, p.Type), engine, strings.Join(publishedSeries, ", "))
+			}
+			continue // the built-in vLLM mapping
+		}
+		var missing []string
+		for _, key := range []string{"queuedRequestsSpec", "runningRequestsSpec", "kvUsageSpec", "loraSpec", "cacheInfoSpec", "cacheBlockSizeSpec", "cacheNumBlocksSpec"} {
+			if s, _ := specs[key].(string); s != "" && !isPublished(s) {
+				missing = append(missing, fmt.Sprintf("%s %q", key, s))
+			}
+		}
+		if custom, ok := specs["customMetrics"].([]any); ok {
+			for _, c := range custom {
+				m, _ := c.(map[string]any)
+				s, _ := m["metricSpec"].(string)
+				if optional, _ := m["optional"].(bool); !optional && s != "" && !isPublished(s) {
+					missing = append(missing, fmt.Sprintf("custom metric %q", s))
+				}
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("plugin %q requires engine series the simulated engines do not publish: %s (published: %s)",
+				cmp.Or(p.Name, p.Type), strings.Join(missing, ", "), strings.Join(publishedSeries, ", "))
+		}
 	}
 	return nil
 }

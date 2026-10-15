@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -24,12 +25,12 @@ func newScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
 	utilruntime.Must(giev1.Install(s))
-	s.AddKnownTypes(apixv1.SchemeGroupVersion, &apixv1.InferenceObjective{}, &apixv1.InferenceObjectiveList{})
-	metav1.AddToGroupVersion(s, apixv1.SchemeGroupVersion)
-	s.AddKnownTypes(v1alpha2.SchemeGroupVersion,
+	s.AddKnownTypes(schema.GroupVersion(apixv1.GroupVersion), &apixv1.InferenceObjective{}, &apixv1.InferenceObjectiveList{})
+	metav1.AddToGroupVersion(s, schema.GroupVersion(apixv1.GroupVersion))
+	s.AddKnownTypes(schema.GroupVersion(v1alpha2.GroupVersion),
 		&v1alpha2.InferenceObjective{}, &v1alpha2.InferenceObjectiveList{},
 		&v1alpha2.InferenceModelRewrite{}, &v1alpha2.InferenceModelRewriteList{})
-	metav1.AddToGroupVersion(s, v1alpha2.SchemeGroupVersion)
+	metav1.AddToGroupVersion(s, schema.GroupVersion(v1alpha2.GroupVersion))
 	return s
 }
 

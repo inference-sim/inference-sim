@@ -23,7 +23,7 @@ func TestResolveLatencyConfig_SignatureCheck(t *testing.T) {
 // is removed or its signature changes, this file will not compile.
 func TestResolvePolicies_SignatureCheck(t *testing.T) {
 	// Compile-time assertion: resolvePolicies(cmd) returns *sim.PolicyBundle.
-	var _ func(*cobra.Command) *sim.PolicyBundle = resolvePolicies
+	var _ func(*cobra.Command) *sim.PolicyBundle = resolvePolicies //nolint:staticcheck // the explicit type is the guard
 }
 
 // TestNoR23CommentSyncMarkersInReplay verifies that after the refactor,

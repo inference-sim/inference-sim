@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -184,17 +185,31 @@ func ParseEPPFlags(args []string) (*runserver.Options, error) {
 }
 
 // Start assembles the router through its own startup path and registers the instances.
-func (g *Gateway) Start(host cluster.GatewayHost) error {
+func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
+	defer func() {
+		if err != nil {
+			g.Stop() // release whatever the router started before the failure
+		}
+	}()
 	g.host = host
 	g.logger = g.opts.Logger
 	if g.logger.GetSink() == nil {
 		g.logger = logr.Discard()
 	}
-	eppOpts, err := ParseEPPFlags(g.opts.EPPFlags)
-	if err != nil {
-		return err
+	eppOpts, perr := ParseEPPFlags(g.opts.EPPFlags)
+	if perr != nil {
+		return perr
 	}
 	g.eppOpts = eppOpts
+	config := []byte(eppOpts.ConfigText)
+	if eppOpts.ConfigFile != "" {
+		if config, err = os.ReadFile(eppOpts.ConfigFile); err != nil {
+			return fmt.Errorf("EPP flag --config-file: %w", err)
+		}
+	}
+	if err := checkMetricSpecs(config); err != nil {
+		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
+	}
 
 	scheme := newScheme()
 	res, err := parseManifests(scheme, g.opts.Manifests, poolNamespace(eppOpts))
@@ -212,10 +227,10 @@ func (g *Gateway) Start(host cluster.GatewayHost) error {
 
 	embedMu.Lock()
 	ctrl.SetLogger(g.logger)
-	emb, err := runner.Embed(g.ctx, runner.EmbedOptions{Options: eppOpts, Pool: g.pool})
+	emb, eerr := runner.Embed(g.ctx, runner.EmbedOptions{Options: eppOpts, Pool: g.pool})
 	embedMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("llm-d router: %w", err)
+	if eerr != nil {
+		return fmt.Errorf("llm-d router: %w", eerr)
 	}
 	g.emb = emb
 	if err := validateEmbedded(emb); err != nil {
@@ -427,7 +442,7 @@ func (g *Gateway) FastForwardIdle(target int64) {
 
 // Stop implements cluster.Gateway: it ends every router loop and every coroutine.
 func (g *Gateway) Stop() {
-	if g.cancel == nil {
+	if g.cancel == nil || g.rt == nil {
 		return
 	}
 	for _, id := range g.sortedFlights() {

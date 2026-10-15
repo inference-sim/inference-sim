@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -151,8 +149,3 @@ var sortedSeries = func() []string {
 	sort.Strings(s)
 	return s
 }()
-
-// hostPort joins an endpoint address.
-func hostPort(ip string, port int) string { return net.JoinHostPort(ip, fmt.Sprint(port)) }
-
-var _ = sim.EngineMetrics{}

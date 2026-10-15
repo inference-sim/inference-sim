@@ -291,15 +291,6 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 	cs.gateway.OnDispatched(req, cs.clock)
 }
 
-// isPrefillSubRequest reports whether req is the prefill half of a disaggregated request.
-func (cs *ClusterSimulator) isPrefillSubRequest(req *sim.Request) bool {
-	if cs.pendingPrefillCompletions == nil {
-		return false
-	}
-	_, ok := cs.pendingPrefillCompletions[req.ID]
-	return ok
-}
-
 // parentOf returns the parent of a prefill or decode sub-request, or nil.
 func (cs *ClusterSimulator) parentOf(req *sim.Request) *ParentRequest {
 	if cs.parentRequests == nil {

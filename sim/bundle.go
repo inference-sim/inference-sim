@@ -259,17 +259,3 @@ func (b *PolicyBundle) Validate() error {
 	}
 	return nil
 }
-
-// validateFloat checks that a float parameter is non-negative and finite.
-func validateFloat(name string, val *float64) error {
-	if val == nil {
-		return nil
-	}
-	if math.IsNaN(*val) || math.IsInf(*val, 0) {
-		return fmt.Errorf("%s must be a finite number, got %f", name, *val)
-	}
-	if *val < 0 {
-		return fmt.Errorf("%s must be non-negative, got %f", name, *val)
-	}
-	return nil
-}

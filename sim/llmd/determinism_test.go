@@ -34,9 +34,9 @@ func routingDigest(t *testing.T) string {
 		}
 		m := cs.AggregatedMetrics()
 		for _, r := range reqs {
-			fmt.Fprintf(h, "%s %s %d %v %v\n", r.ID, r.AssignedInstance, r.GatewayDispatchTime, m.RequestTTFTs[r.ID], m.RequestE2Es[r.ID])
+			_, _ = fmt.Fprintf(h, "%s %s %d %v %v\n", r.ID, r.AssignedInstance, r.GatewayDispatchTime, m.RequestTTFTs[r.ID], m.RequestE2Es[r.ID])
 		}
-		fmt.Fprintf(h, "rej %d %d %d\n", cs.RejectedRequests(), cs.GatewayQueueRejected(), cs.GatewayExpired())
+		_, _ = fmt.Fprintf(h, "rej %d %d %d\n", cs.RejectedRequests(), cs.GatewayQueueRejected(), cs.GatewayExpired())
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
