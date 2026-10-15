@@ -312,3 +312,99 @@ func TestSpecDecode_ADecodeSubRequestsVerifyWidthStopsAtMaxModelLen(t *testing.T
 		t.Errorf("scheduled %d tokens at progress 17 of a %d-token window, want %d", r.scheduledTokens, maxModelLen, want)
 	}
 }
+
+// Review I4: vLLM keeps a second budget, input_budget = max_num_batched_tokens, debited
+// num_new_tokens + max_num_new_slots_for_drafting for every request it schedules
+// (scheduler.py:682, 825-826, 1073, 1313-1314 at v0.31.0); DSpark drafts in parallel, so each
+// request adds K-1 query slots. At K=5 a decode costs 6 + 4 = 10 of the budget, not 6: a
+// 30-token budget runs three decodes, not five, and a prefill admitted behind two decodes gets
+// min(token_budget, input_budget - draft_slots) = min(30-12, 30-20-4) = 6 tokens.
+func TestSpecDecode_ParallelDraftSlotsDebitTheInputBudget(t *testing.T) {
+	const k = 5
+	spec := SpeculativeConfig{K: k, Acceptance: 0, Method: "dspark"}
+	if spec.DraftSlots() != k-1 {
+		t.Fatalf("DSpark draft slots %d, want K-1 = %d", spec.DraftSlots(), k-1)
+	}
+	decoding := func(kv KVStore, n int) *Batch {
+		b := &Batch{}
+		for i := 0; i < n; i++ {
+			r := &Request{ID: fmt.Sprintf("d%d", i), InputTokens: make([]TokenID, 4), OutputTokens: make([]TokenID, 8), State: StateRunning}
+			if !kv.AllocateKVBlocks(r, 0, 4, nil) {
+				t.Fatal("setup refused")
+			}
+			r.ProgressIndex = 4
+			b.Requests = append(b.Requests, r)
+		}
+		return b
+	}
+	count := func(b *Batch) int {
+		n := 0
+		for _, r := range b.Requests {
+			if r.NumNewTokens > 0 {
+				n++
+			}
+		}
+		return n
+	}
+	for _, tt := range []struct {
+		draftSlots int64
+		want       int
+	}{{spec.DraftSlots(), 3}, {0, 5}} {
+		kv := MustNewKVCacheState(200, 4)
+		res := NewBatchFormation("").FormBatch(BatchContext{RunningBatch: decoding(kv, 5), WaitQ: &WaitQueue{}, KVCache: kv,
+			MaxNumBatchedTokens: 30, MaxNumSeqs: 10, ComputedTokens: map[string]int64{},
+			DecodeTokensPerStep: func(*Request) int64 { return 1 }, SpecVerifyWidth: k + 1, DraftSlots: tt.draftSlots})
+		if got := count(res.RunningBatch); got != tt.want {
+			t.Errorf("draft slots %d: %d of 5 decodes ran in a 30-token budget, want %d", tt.draftSlots, got, tt.want)
+		}
+	}
+
+	kv := MustNewKVCacheState(200, 4)
+	wq := &WaitQueue{}
+	p := &Request{ID: "p", InputTokens: make([]TokenID, 100), OutputTokens: make([]TokenID, 4), State: StateQueued}
+	wq.Enqueue(p)
+	NewBatchFormation("").FormBatch(BatchContext{RunningBatch: decoding(kv, 2), WaitQ: wq, KVCache: kv,
+		MaxNumBatchedTokens: 30, MaxNumSeqs: 10, ComputedTokens: map[string]int64{},
+		DecodeTokensPerStep: func(*Request) int64 { return 1 }, SpecVerifyWidth: k + 1, DraftSlots: spec.DraftSlots()})
+	if p.NumNewTokens != 6 {
+		t.Errorf("a prefill behind two DSpark decodes was scheduled %d tokens, want min(18, 6) = 6", p.NumNewTokens)
+	}
+}
+
+// vLLM's max_num_new_slots_for_drafting by method (vllm/config/speculative.py:1882-1919).
+func TestDraftSlotsFollowVLLMsMaxNumNewSlotsForDrafting(t *testing.T) {
+	const k = 4
+	for method, want := range map[string]int64{"dflash": k, "dspark": k - 1, "draft_model": 1, "mtp": 0, "eagle3": 0, "ngram": 0, "suffix": 0} {
+		if got := (SpeculativeConfig{K: k, Method: method}).DraftSlots(); got != want {
+			t.Errorf("%s: %d draft slots, want %d", method, got, want)
+		}
+	}
+	if (SpeculativeConfig{}).DraftSlots() != 0 {
+		t.Error("a non-speculating config has draft slots")
+	}
+}
+
+// The simulator hands batch formation the method's draft slots: at full acceptance two decodes
+// under a 15-token budget both advance six tokens a step with serial MTP (12 of 15), but with
+// DSpark's K-1 extra query slots the second is left one token of input budget and advances one,
+// so the same work takes more steps.
+func TestSpecDecode_TheSimulatorChargesTheDraftersSlots(t *testing.T) {
+	steps := func(method string) int {
+		cfg := SimConfig{Horizon: math.MaxInt64, Seed: 7, KVCacheConfig: NewKVCacheConfig(1000, 4, 0, 0, 0, 0),
+			BatchConfig:         NewBatchConfig(16, 15, 0),
+			ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+			SpeculativeConfig:   SpeculativeConfig{K: 5, Acceptance: 1, Method: method}}
+		s, err := NewSimulator(cfg, MustNewKVStoreFromConfig(cfg.KVCacheConfig), fakeLatencyFor(cfg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		runShapes(t, s, []reqShape{{3, 30}, {3, 30}})
+		if s.Metrics.TotalOutputTokens != 60 {
+			t.Fatalf("%s: %d output tokens, want 60", method, s.Metrics.TotalOutputTokens)
+		}
+		return s.stepCount
+	}
+	if mtp, dspark := steps("mtp"), steps("dspark"); dspark <= mtp {
+		t.Errorf("DSpark took %d steps, MTP %d; its draft slots should leave the second decode short", dspark, mtp)
+	}
+}

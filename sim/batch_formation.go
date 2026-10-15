@@ -60,6 +60,11 @@ type BatchContext struct {
 	// by the accepted tokens. 0 when not speculating: a decode schedules what it advances.
 	SpecVerifyWidth int64
 
+	// DraftSlots is vLLM's max_num_new_slots_for_drafting: the query slots a parallel drafter
+	// adds per scheduled request (K-1 for DSpark), debited from max_num_batched_tokens beside
+	// the scheduled tokens (stepBudget). 0 when not speculating or drafting serially.
+	DraftSlots int64
+
 	// PrefixCachingDisabled suppresses cross-request prefix reuse, mirroring vLLM's
 	// --no-enable-prefix-caching (#1867).
 	//
@@ -87,6 +92,28 @@ type BatchResult struct {
 	Preempted          []PreemptedRequest
 	PreemptionHappened bool
 }
+
+// stepBudget is a step's two token budgets, as vLLM v0.31.0's Scheduler.schedule keeps them:
+// token_budget (max_num_scheduled_tokens, which defaults to max_num_batched_tokens) and
+// input_budget (max_num_batched_tokens), the second also debited max_num_new_slots_for_drafting
+// for every scheduled request -- the query slots a parallel drafter adds to the forward pass
+// (scheduler.py:584-585, 632, 682, 788, 825-826, 888, 1073, 1313-1314). With no draft slots the
+// two budgets move together, so a non-drafting step is exactly the one-budget step it was.
+type stepBudget struct {
+	tokens, input, draftSlots int64
+}
+
+// room is the most a request may be scheduled: min(token_budget, input_budget - draft_slots).
+func (b *stepBudget) room() int64 { return min(b.tokens, b.input-b.draftSlots) }
+
+// open reports whether another request may be scheduled at all.
+func (b *stepBudget) open() bool { return b.tokens > 0 && b.input > b.draftSlots }
+
+// debit charges a request scheduled n tokens.
+func (b *stepBudget) debit(n int64) { b.tokens -= n; b.input -= n + b.draftSlots }
+
+// credit returns a preempted request's debit (scheduler.py:786-788).
+func (b *stepBudget) credit(n int64) { b.tokens += n; b.input += n + b.draftSlots }
 
 // PreemptionPolicy controls how preemption selects a victim from the running batch.
 type PreemptionPolicy string
@@ -139,7 +166,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		RunningBatch: ctx.RunningBatch,
 	}
 
-	tokenBudget := ctx.MaxNumBatchedTokens
+	bud := &stepBudget{tokens: ctx.MaxNumBatchedTokens, input: ctx.MaxNumBatchedTokens, draftSlots: ctx.DraftSlots}
 
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
@@ -157,7 +184,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// Analog of vLLM v1 req_index -= 1 (scheduler.py:853).
 	reqIndex := 0
 	for reqIndex < len(result.RunningBatch.Requests) {
-		if tokenBudget <= 0 {
+		if !bud.open() {
 			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", ctx.Now)
 			break
 		}
@@ -169,7 +196,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 				numNewTokens = ctx.PrefillTokenThreshold
 			}
-			numNewTokens = min(numNewTokens, tokenBudget)
+			numNewTokens = min(numNewTokens, bud.room())
 			// Proactive MaxModelLen cap (BC-1): match vLLM scheduler.py:773-774.
 			// Note: the enqueue guard (len(InputTokens) < maxModelLen) guarantees
 			// maxAllowed >= 1 during prefill, so this clamp only reduces chunk size,
@@ -179,13 +206,13 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				numNewTokens = min(numNewTokens, maxAllowed)
 			}
 
-			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget, reqIndex)
+			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, bud, reqIndex)
 			reqIndex -= adj
 			if !canSchedule {
 				break
 			}
 
-			tokenBudget -= numNewTokens
+			bud.debit(numNewTokens)
 			req.NumNewTokens = int(numNewTokens)
 			req.scheduledTokens = numNewTokens
 			ctx.ComputedTokens[req.ID] += numNewTokens
@@ -202,14 +229,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			if ctx.DecodeTokensPerStep != nil {
 				decodeTokens = ctx.DecodeTokensPerStep(req)
 				if ctx.SpecVerifyWidth > 0 {
-					scheduled = min(ctx.SpecVerifyWidth, tokenBudget)
+					scheduled = min(ctx.SpecVerifyWidth, bud.room())
 					if ctx.MaxModelLen > 0 {
 						scheduled = min(scheduled, max(ctx.MaxModelLen-1-req.ProgressIndex, 0))
 					}
 					decodeTokens = min(decodeTokens, scheduled)
 				}
 				// Cap g by remaining token budget (spec-decode only; g can exceed 1).
-				decodeTokens = min(decodeTokens, tokenBudget)
+				decodeTokens = min(decodeTokens, bud.room())
 				// Output-budget cap (#1657): land exactly ON the completion boundary,
 				// never past it. A running decode request is always at least one token
 				// short of the boundary — processCompletions completes every batch member
@@ -231,12 +258,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			}
 			if decodeTokens > 0 {
 				scheduled = max(scheduled, decodeTokens)
-				canSchedule, adj := v.preemptForTokens(req, scheduled, &result, ctx, &tokenBudget, reqIndex)
+				canSchedule, adj := v.preemptForTokens(req, scheduled, &result, ctx, bud, reqIndex)
 				reqIndex -= adj
 				if !canSchedule {
 					break
 				}
-				tokenBudget -= scheduled
+				bud.debit(scheduled)
 				req.NumNewTokens = int(decodeTokens)
 				req.scheduledTokens = scheduled
 				ctx.ComputedTokens[req.ID] += decodeTokens
@@ -278,7 +305,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
 	// DequeueBatch — identical to the pre-#1591 head-only loop.
 	skipped := 0
-	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && tokenBudget > 0 && !result.PreemptionHappened {
+	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && bud.open() && !result.PreemptionHappened {
 		next := ctx.WaitQ.PeekAt(skipped)
 
 		// A request whose secondary-tier fetch is still in flight is not admittable
@@ -347,7 +374,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				// Token-budget cap: this alone may hit 0, which is transient (next step
 				// has fresh budget), so breaking here — like the KV-alloc-failure break
 				// below — is safe and does not strand the request.
-				decodeTokens = min(decodeTokens, tokenBudget)
+				decodeTokens = min(decodeTokens, bud.room())
 				if decodeTokens < 1 {
 					break
 				}
@@ -356,7 +383,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			// never below the advance.
 			scheduled := decodeTokens
 			if ctx.SpecVerifyWidth > 0 {
-				w := min(ctx.SpecVerifyWidth, tokenBudget)
+				w := min(ctx.SpecVerifyWidth, bud.room())
 				if ctx.MaxModelLen > 0 {
 					// As Phase 1: num_new_tokens <= max_model_len - num_computed - 1
 					// (scheduler.py:686-692 at v0.31.0).
@@ -371,7 +398,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 			next.ScheduledStepIdx = ctx.StepCount
 			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
-			tokenBudget -= scheduled
+			bud.debit(scheduled)
 			next.State = StateRunning
 			next.NumNewTokens = int(decodeTokens)
 			next.scheduledTokens = scheduled
@@ -432,7 +459,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 			numNewTokens = ctx.PrefillTokenThreshold
 		}
-		numNewTokens = min(numNewTokens, tokenBudget)
+		numNewTokens = min(numNewTokens, bud.room())
 		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
 		// For valid enqueued requests (input < maxModelLen), this is a no-op.
 		if ctx.MaxModelLen > 0 {
@@ -468,7 +495,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// computedStart above), so it is both the billed prefill work (the StepTime input)
 		// and the chunk over which progress advances: ComputedTokens reaches endIndex, which
 		// sits past the whole reloaded prefix.
-		tokenBudget -= numNewTokens
+		bud.debit(numNewTokens)
 		next.State = StateRunning
 		next.NumNewTokens = int(numNewTokens)
 		next.scheduledTokens = numNewTokens
@@ -497,7 +524,7 @@ func dequeueAdmitted(wq *WaitQueue, req *Request, skipped int) {
 // The caller must apply reqIndex -= reqAdjustment after each call to prevent
 // element skipping when non-tail removal shifts elements left.
 // Analog of vLLM scheduler.py:853 (req_index -= 1).
-func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64, reqIndex int) (bool, int) {
+func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, bud *stepBudget, reqIndex int) (bool, int) {
 	adjustment := 0
 	for {
 		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
@@ -557,7 +584,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// With FCFS (tail-only eviction), unreachable because evicted
 			// requests are always unvisited (beyond reqIndex).
 			if preemptedRequest.NumNewTokens > 0 {
-				*tokenBudget += preemptedRequest.scheduledTokens
+				bud.credit(preemptedRequest.scheduledTokens)
 				preemptedRequest.NumNewTokens = 0
 				preemptedRequest.scheduledTokens = 0
 			}

@@ -203,9 +203,11 @@ request's computed tokens, everything scheduled this step, and the drafter's loo
 (`num_lookahead_tokens`: `K` for DSpark, EAGLE, MTP and draft models, `K + 1` for DFlash, 0 for
 n-gram, suffix and Medusa). Progress still advances by the accepted count. Below saturation
 nothing binds and results match the accepted-count accounting; under KV pressure fewer requests
-fit and preemption starts earlier, as in the engine. Not modelled: vLLM's second budget,
-`input_budget`, which also debits `max_num_new_slots_for_drafting` (`K - 1` for DSpark) per
-request.
+fit and preemption starts earlier, as in the engine. vLLM's second budget is modelled too:
+`input_budget` (`max_num_batched_tokens`) is debited every scheduled request's tokens plus
+`max_num_new_slots_for_drafting` -- `K - 1` for DSpark, `K` for DFlash, 1 for a serial draft
+model, 0 otherwise -- so a DSpark K=5 decode costs 10 of it, and a prefill chunk scheduled
+beside decodes gets `min(token_budget, input_budget - draft_slots)`.
 
 ## Per-sequence bounded state (#1941)
 

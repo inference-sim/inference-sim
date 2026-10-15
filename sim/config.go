@@ -280,6 +280,28 @@ func (c SpeculativeConfig) LookaheadTokens() int64 {
 	}
 }
 
+// DraftSlots is vLLM v0.31.0's SpeculativeConfig.max_num_new_slots_for_drafting
+// (vllm/config/speculative.py:1882-1919): the query slots a drafter adds to the forward pass
+// per scheduled request beyond the one already budgeted -- K for DFlash, K-1 for the other
+// parallel drafter DSpark (parallel_drafting is set for both, :1462-1463), 1 for a serial
+// draft model, 0 for the rest. The scheduler debits it from input_budget for every request
+// it schedules (scheduler.py:826, 1314). 0 when off.
+func (c SpeculativeConfig) DraftSlots() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch c.Method {
+	case "dflash":
+		return int64(c.K)
+	case "dspark":
+		return int64(c.K) - 1
+	case "draft_model":
+		return 1
+	default:
+		return 0
+	}
+}
+
 // KV is the KV-slot reservation the config implies (#1627).
 func (c SpeculativeConfig) KV() KVSpeculation {
 	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens()}
