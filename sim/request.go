@@ -56,6 +56,9 @@ type Request struct {
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
 	ITL              []int64 // List of inter-token latencies
+	// GeneratedTokens is the number of output tokens the engine generated, set when the request
+	// completes; it is what a model server reports as usage.completion_tokens.
+	GeneratedTokens int
 	Priority         float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
 	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
 	// not recomputed per step.

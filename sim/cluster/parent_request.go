@@ -5,6 +5,7 @@ import "github.com/inference-sim/inference-sim/sim"
 // ParentRequest tracks the disaggregated lifecycle of a request that was split
 // into prefill and decode sub-requests. Owned by ClusterSimulator.
 type ParentRequest struct {
+	gatewayDone     bool         // the gateway has been told the request ended
 	ID              string       // Original request ID
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string

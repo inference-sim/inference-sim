@@ -21,6 +21,8 @@ type InstanceID string
 //
 // Thread-safety: NOT thread-safe. All methods must be called from the same goroutine.
 type InstanceSimulator struct {
+	// onTransition, when set, is called after every lifecycle transition.
+	onTransition func(*InstanceSimulator)
 	id     InstanceID
 	sim    *sim.Simulator
 	hasRun bool
@@ -449,6 +451,9 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q — INV-14 violation", i.id, i.State, state))
 	}
 	i.State = state
+	if i.onTransition != nil {
+		i.onTransition(i)
+	}
 }
 
 // ReserveTransferredKV reserves KV cache blocks on this instance for a decode
@@ -548,3 +553,9 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	}
 	return false
 }
+
+// EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
+func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics { return i.sim.EngineMetricsAt(t) }
+
+// AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
+func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }

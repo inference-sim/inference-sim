@@ -157,6 +157,15 @@ type Simulator struct {
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
 
+	// OnFirstToken is an optional callback invoked once per prefill completion, when a request's
+	// first output token is produced. at is the simulated time the client receives that token
+	// (ArrivalTime + FirstTokenTime). It must not mutate simulation state. Nil = no callback.
+	OnFirstToken func(req *Request, at int64)
+
+	// engineMetrics is the state this engine publishes on its metrics endpoint.
+	engineMetrics   engineMetricsLog
+	adapterCapacity int
+
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
@@ -263,6 +272,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: NewResidentAdapterSetFunc returned nil for capacity %d", *cfg.AdapterCapacity)
 		}
 		s.residentAdapters = rs
+		s.adapterCapacity = *cfg.AdapterCapacity
 		s.adapterCost = ac
 	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
 		// Adapters declared but no capacity: the resident set stays inert and every
@@ -762,6 +772,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	if outputTokens > 0 {
 		sim.Metrics.TotalOutputTokens += outputTokens
 	}
+	req.GeneratedTokens = max(outputTokens, 0)
 
 	var itlSum int64
 	for _, v := range req.ITL {
@@ -849,6 +860,7 @@ func (sim *Simulator) Step(now int64) {
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, currStepAdvance)
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
+	sim.publishEngineMetrics(now + currStepAdvance)
 }
 
 // scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,
@@ -1135,6 +1147,9 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 
