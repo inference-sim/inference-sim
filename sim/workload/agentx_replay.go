@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -34,8 +35,9 @@ type AgentXReplay struct {
 	graceEndUs  int64 // windowEndUs + grace: in-flight requests cancelled
 	completeUs  int64 // profiling phase completion (aiperf lifecycle complete_at); -1 until known
 
-	byPlaceholder map[*sim.Request]*agxDispatch
-	timers        []*agxDispatch // scheduler timers (LoopScheduler): shiftable by the idle cap
+	byPlaceholder map[*sim.Request]*agxDispatch // pending sends, by the request pushed for them
+	byID          map[string]*agxDispatch       // sends in flight, by request ID
+	timers        []*agxDispatch                // scheduler timers (LoopScheduler): shiftable by the idle cap
 	inFlight      int
 	idleSinceUs   int64 // -1: not idle
 	warmupLeft    int
@@ -48,6 +50,7 @@ type AgentXReplay struct {
 	laneInst  []*agxInstance // the tree currently holding each lane's slot
 	nextReqID int64
 	streams   int
+	horizonUs int64 // the horizon last asked for; 0 = none yet
 	out       []*sim.Request
 	nowUs     int64
 
@@ -71,6 +74,11 @@ type AgentXReplayConfig struct {
 	// --request-timeout-seconds default, 6 h (config/endpoint.py:52). A timed-out request
 	// is an error record. 0 disables it.
 	RequestTimeoutUs int64
+	// MaxModelLen is the deployment's resolved max_model_len, which decides whether an
+	// engine refusal is a context overflow; 0 = unknown (refusals are errors).
+	MaxModelLen int64
+	// HorizonCapUs is a user --horizon; 0 = none. The run never extends past it.
+	HorizonCapUs int64
 }
 
 // AgentXStats are the replay's own counts, reported in the results file's agentic block.
@@ -82,7 +90,9 @@ type AgentXStats struct {
 	MainRequests      int // profiling requests of root streams
 	SubagentRequests  int // profiling requests of child streams (subagents and flat chains)
 	Cancelled         int // in flight when the grace period ended
-	Errors            int // timed out
+	Completed         int // ended with a response
+	Errors            int // timed out, or refused by the cluster or the engine (not overflow)
+	WarmupFailures    int // warm-up requests that ended in an error (aiperf aborts such a run)
 	ContextOverflows  int // refused by the engine's context check
 	IdleCapJumps      int
 	IdleCapSkippedUs  int64
@@ -163,6 +173,7 @@ type agxStream struct {
 	conv    int32
 	child   bool
 	tracked bool
+	recon   *agxRecon    // the stream's message list as of its last rendered turn
 	gates   []agxGateRef // (gated turn, branch) memberships; empty = background
 	done    bool
 }
@@ -219,6 +230,7 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 		cfg:           cfg,
 		sampler:       &agxSampler{pool: c.Traces},
 		byPlaceholder: map[*sim.Request]*agxDispatch{},
+		byID:          map[string]*agxDispatch{},
 		idleSinceUs:   -1,
 		completeUs:    -1,
 	}
@@ -247,6 +259,31 @@ func (x *AgentXReplay) newInstance(lane int, tr *AgentXTrace) *agxInstance {
 	x.stats.TreesStarted++
 	return in
 }
+
+// setHorizon tells the cluster where the run must end, never past a user --horizon. A
+// value set before the cluster is bound (profiling can start inside Start) is kept and
+// applied by BindHorizon.
+func (x *AgentXReplay) setHorizon(h int64) {
+	if x.cfg.HorizonCapUs > 0 {
+		h = min(h, x.cfg.HorizonCapUs)
+	}
+	x.horizonUs = h
+	if x.SetHorizon != nil {
+		x.SetHorizon(h)
+	}
+}
+
+// BindHorizon connects the replay to the cluster's horizon setter, applying any horizon the
+// replay already asked for.
+func (x *AgentXReplay) BindHorizon(set func(int64)) {
+	x.SetHorizon = set
+	if x.horizonUs > 0 && set != nil {
+		set(x.horizonUs)
+	}
+}
+
+// InFlight is the number of sends not yet ended.
+func (x *AgentXReplay) InFlight() int { return x.inFlight }
 
 func (x *AgentXReplay) newStream(in *agxInstance, conv int32, child bool) *agxStream {
 	x.streams++
@@ -355,9 +392,7 @@ func (x *AgentXReplay) startProfiling(now int64) {
 	} else {
 		x.graceEndUs = x.windowEndUs + x.cfg.GraceUs
 	}
-	if x.SetHorizon != nil {
-		x.SetHorizon(x.graceEndUs)
-	}
+	x.setHorizon(x.graceEndUs)
 	// The end of the sending window is a timer the idle cap never moves: it is the
 	// phase's duration timeout, not a scheduler timer.
 	x.push(&agxDispatch{state: agxTimer, windowEnd: true}, x.windowEndUs)
@@ -523,7 +558,16 @@ func (x *AgentXReplay) refused(d *agxDispatch) {
 // came due, and refuses every superseded placeholder.
 func (x *AgentXReplay) Gate(req *sim.Request, now int64) (bool, []*sim.Request) {
 	d, ok := x.byPlaceholder[req]
-	if !ok || now != d.dueUs {
+	if !ok {
+		// A request already in flight that the cluster re-injects (a drained instance's
+		// queued request redirected, Request.Redirected) is the same send: let it through
+		// with no change of state.
+		if d, ok := x.byID[req.ID]; ok && d.ph == req && d.state == agxIssued {
+			return true, nil
+		}
+		return false, x.flush()
+	}
+	if now != d.dueUs {
 		return false, x.flush()
 	}
 	x.nowUs = now
@@ -532,7 +576,7 @@ func (x *AgentXReplay) Gate(req *sim.Request, now int64) (bool, []*sim.Request) 
 		delete(x.byPlaceholder, req)
 		d.state = agxIssued
 		x.fillRequest(d, req, now)
-		x.byPlaceholder[req] = d // keyed by the live request until it completes
+		x.byID[req.ID] = d
 		return true, x.flush()
 	case agxTimer:
 		delete(x.byPlaceholder, req)
@@ -685,6 +729,15 @@ func (x *AgentXReplay) spawn(in *agxInstance, branches []int32, originMs float64
 			x.schedule(d, x.nowUs+msToUs(k.offset), false)
 		}
 	}
+	immediate := false
+	for _, k := range kids {
+		immediate = immediate || k.offset <= 0
+	}
+	if immediate {
+		// aiperf dispatches the immediate children under asyncio.gather, which yields to
+		// the loop: barrier-released sends already queued as tasks go out first.
+		x.issueReleased()
+	}
 	for _, k := range kids {
 		if k.offset <= 0 {
 			x.submit(&agxDispatch{inst: in, stream: k.s, turn: 0, childPath: true, first: true})
@@ -708,33 +761,89 @@ func (x *AgentXReplay) futureJoin(in *agxInstance, gated int32) *agxJoin {
 // OnComplete is the credit-return path (credit/callback_handler.on_credit_return) for a
 // request the cluster finished: completed, timed out, or dropped by the engine.
 func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
-	d, ok := x.byPlaceholder[req]
-	if !ok || d.state != agxIssued {
+	d := x.issued(req)
+	if d == nil {
 		return nil
 	}
-	delete(x.byPlaceholder, req)
+	if req.ID != d.ph.ID && req.State == sim.StateCompleted {
+		// A P/D sub-request finished its stage; the parent's completion is reported
+		// separately, with the parent's ID.
+		return nil
+	}
+	outcome := sim.AgenticCompleted
+	switch req.State {
+	case sim.StateTimedOut:
+		outcome = sim.AgenticError // aiperf records a client timeout as an error
+	case sim.StateQueued:
+		// Refused at enqueue. The engine's context check (prompt, or prompt plus the
+		// output budget, past max_model_len) is aiperf's context-overflow error; the other
+		// refusals (KV budget, invalid budget) are plain errors.
+		outcome = sim.AgenticError
+		if x.cfg.MaxModelLen > 0 && (req.InputLen() >= x.cfg.MaxModelLen ||
+			(req.MaxOutputLen > 0 && req.InputLen()+int64(req.MaxOutputLen) > x.cfg.MaxModelLen)) {
+			outcome = sim.AgenticContextOverflow
+		}
+	}
+	return x.terminal(d, outcome, now)
+}
+
+// OnUnserved is the cluster's unserved hook: a request the cluster refused or dropped
+// without completing it (admission or routing rejection, flow-control rejection or shed,
+// queue TTL expiry, in-flight eviction, a P/D decode-KV drop). The serving stack answers
+// such a request with an HTTP error, which aiperf records as an error and follows with the
+// stream's next turn.
+func (x *AgentXReplay) OnUnserved(req *sim.Request, now int64) []*sim.Request {
+	d := x.issued(req)
+	if d == nil {
+		return nil
+	}
+	return x.terminal(d, sim.AgenticError, now)
+}
+
+// issued resolves a request -- or a P/D sub-request of one (<id>_prefill, <id>_decode) --
+// to the send in flight it belongs to.
+func (x *AgentXReplay) issued(req *sim.Request) *agxDispatch {
+	if req == nil {
+		return nil
+	}
+	if d, ok := x.byID[req.ID]; ok && d.state == agxIssued {
+		return d
+	}
+	for _, suf := range []string{"_prefill", "_decode"} {
+		if base, ok := strings.CutSuffix(req.ID, suf); ok {
+			if d, ok := x.byID[base]; ok && d.state == agxIssued {
+				return d
+			}
+		}
+	}
+	return nil
+}
+
+// terminal is a credit return: the send d ended with outcome at now.
+func (x *AgentXReplay) terminal(d *agxDispatch, outcome string, now int64) []*sim.Request {
+	req := d.ph
+	delete(x.byID, req.ID)
 	d.state = agxDropped
 	x.nowUs = now
 	x.inFlight--
 	if x.inFlight == 0 {
 		x.idleSinceUs = now
 	}
-	overflow := req.State == sim.StateQueued
-	errored := req.State == sim.StateTimedOut
-	switch {
-	case overflow:
-		req.Agentic.Outcome = sim.AgenticContextOverflow
+	req.Agentic.Outcome = outcome
+	switch outcome {
+	case sim.AgenticCompleted:
+		x.stats.Completed++
+	case sim.AgenticContextOverflow:
 		x.stats.ContextOverflows++
-	case errored:
-		req.Agentic.Outcome = sim.AgenticError
+	case sim.AgenticError:
 		x.stats.Errors++
-	default:
-		req.Agentic.Outcome = sim.AgenticCompleted
+		if d.warmup {
+			x.stats.WarmupFailures++
+		}
 	}
 	if x.phase != agxWarmup && now > x.windowEndUs {
 		req.Phase = sim.PhaseGrace
 	}
-
 	if d.warmup {
 		x.warmupLeft--
 		if x.warmupLeft == 0 {
@@ -743,7 +852,7 @@ func (x *AgentXReplay) OnComplete(req *sim.Request, now int64) []*sim.Request {
 		x.enforceIdleCap(true)
 		return x.flush()
 	}
-	x.onReturn(d, overflow)
+	x.onReturn(d, outcome == sim.AgenticContextOverflow)
 	x.enforceIdleCap(true)
 	x.issueReleased()
 	x.maybeComplete()
@@ -998,44 +1107,60 @@ func (x *AgentXReplay) enforceIdleCap(afterReturn bool) {
 // _wait_for_returning_complete with BranchOrchestrator.has_pending_branch_work); otherwise
 // the phase completes at the grace end.
 func (x *AgentXReplay) maybeComplete() {
-	if x.phase != agxClosed || x.inFlight > 0 || x.completeUs >= 0 {
+	if x.phase != agxClosed || x.inFlight > 0 || x.completeUs >= 0 || x.pendingBranchWork() {
 		return
-	}
-	for _, in := range x.instances {
-		if in.active != nil || len(in.future) > 0 || in.descendants > 0 {
-			return
-		}
-		for _, s := range in.childStreams {
-			if s.tracked {
-				return
-			}
-		}
 	}
 	x.completeUs = x.nowUs
 	x.phase = agxDone
-	if x.SetHorizon != nil {
-		x.SetHorizon(x.nowUs)
+	x.setHorizon(x.nowUs)
+}
+
+// pendingBranchWork is BranchOrchestrator.has_pending_branch_work.
+func (x *AgentXReplay) pendingBranchWork() bool {
+	for _, in := range x.instances {
+		if in.active != nil || len(in.future) > 0 || in.descendants > 0 {
+			return true
+		}
+		for _, s := range in.childStreams {
+			if s.tracked {
+				return true
+			}
+		}
 	}
+	return false
 }
 
 // Finish closes the replay after the simulation stopped at stopUs: requests still in
 // flight were cancelled at the grace end and leave no aiperf record.
 func (x *AgentXReplay) Finish(stopUs int64) {
-	for req, d := range x.byPlaceholder {
-		if d.state == agxIssued && req.Agentic != nil && req.Agentic.Outcome == "" {
-			req.Agentic.Outcome = sim.AgenticCancelled
-			x.stats.Cancelled++
+	cancelled := 0
+	for _, d := range x.byID {
+		if d.state == agxIssued && d.ph.Agentic != nil && d.ph.Agentic.Outcome == "" {
+			d.ph.Agentic.Outcome = sim.AgenticCancelled
+			cancelled++
 		}
 	}
+	x.stats.Cancelled += cancelled
 	if x.completeUs < 0 && x.phase >= agxProfile {
-		// Branch work still pending: aiperf waits out the grace period even when nothing
-		// is in flight, and completes at its end.
+		// The grace period ran out (PhaseRunner._wait_for_returning_complete): aiperf
+		// cancels what is in flight and, when branch work is still pending, waits out
+		// CANCEL_DRAIN_TIMEOUT (10 s) for the all-returned signal the pending work keeps
+		// deferring; with nothing in flight it completes at the grace end.
 		x.completeUs = x.graceEndUs
-		if x.completeUs == math.MaxInt64 {
+		if cancelled > 0 && x.pendingBranchWork() {
+			x.completeUs += agxCancelDrainTimeoutUs
+		}
+		if x.graceEndUs == math.MaxInt64 {
 			x.completeUs = max(stopUs, x.windowEndUs)
+		}
+		if x.cfg.HorizonCapUs > 0 && x.completeUs > x.cfg.HorizonCapUs {
+			x.completeUs = x.cfg.HorizonCapUs // a --horizon cut the run short
 		}
 	}
 }
+
+// agxCancelDrainTimeoutUs is aiperf's Environment.TIMING.CANCEL_DRAIN_TIMEOUT default.
+const agxCancelDrainTimeoutUs = 10 * 1_000_000
 
 // Window returns the profiling phase's start and completion (aiperf lifecycle
 // started_at and complete_at), the measured window's bounds.
@@ -1056,7 +1181,7 @@ func (x *AgentXReplay) fillRequest(d *agxDispatch, req *sim.Request, now int64) 
 	}
 	req.ID = fmt.Sprintf("agentx_%d", x.nextReqID)
 	req.ArrivalTime = now
-	req.InputTokens = x.promptTokens(in, s.conv, d.turn, tn)
+	req.InputTokens = x.promptTokens(in, s, d.turn)
 	req.OutputTokens = agxOutputTokens(out)
 	req.MaxOutputLen = out
 	req.State = sim.StateQueued
@@ -1083,31 +1208,83 @@ func (x *AgentXReplay) fillRequest(d *agxDispatch, req *sim.Request, now int64) 
 	}
 }
 
-// promptTokens lays out a turn's prompt as aiperf's ConversationReconstructor does
-// (dataset/loader/weka_synth_buf.py compute_turn_block_geometry): exactly `in` tokens,
-// the first min(len(hash_ids), in/64) blocks from the trace's hash ids, the rest a tail
-// unique to this request. A block's content is a function of the tree instance and the
-// hash id only, so identical hash prefixes within one tree share KV blocks (parent with
-// subagents, turn k with k+1) and nothing is shared across trees (the per-tree cache-bust
-// marker). The model is the chat template's identity map: template tokens are not added.
-func (x *AgentXReplay) promptTokens(in *agxInstance, conv, turn int32, tn *agxTurn) []sim.TokenID {
-	n := int(tn.in)
-	toks := make([]sim.TokenID, n)
-	covered := min(int(tn.nHash), n/agxBlockSize)
-	hashes := in.trace.hashPrefix(tn.hashNode, tn.nHash, covered, nil)
-	for b, h := range hashes {
-		base := agxMix(in.salt, uint64(h))
-		for i := 0; i < agxBlockSize; i++ {
-			toks[b*agxBlockSize+i] = agxToken(base, uint64(i))
+// promptTokens renders the wire prompt of turn `turn` of stream s: the stream's message
+// list after that turn (agxRecon, aiperf's ConversationReconstructor; aiperf re-sends the
+// full history every turn), through the chat template, with the tree's cache-bust marker at
+// the head of the first user message. Message content is exactly the recorded `in` tokens:
+// hash blocks, whose tokens depend only on the trace and the hash id (so equal blocks are
+// equal tokens across the tree's conversations), and synthetic tails unique to their
+// (stream, turn). The marker differs per tree instance, so nothing is shared across trees,
+// and template tokens at each message boundary end cross-conversation sharing where the
+// real wire does: at the first message boundary the two conversations place differently.
+func (x *AgentXReplay) promptTokens(in *agxInstance, s *agxStream, turn int32) []sim.TokenID {
+	conv := &in.trace.convs[s.conv]
+	if s.recon == nil || s.recon.turn >= turn {
+		s.recon = newAgxRecon()
+	}
+	for k := s.recon.turn + 1; k <= turn; k++ {
+		s.recon.advance(conv, k)
+	}
+	segs := s.recon.segs
+	toks := make([]sim.TokenID, 0, int(conv.turns[turn].in)+agxTemplateOverhead(segs))
+	toks = append(toks, agxTokBOS)
+	marker := false
+	hashes := map[int32][]int64{}
+	for _, sg := range segs {
+		switch sg.role {
+		case 'a':
+			toks = append(toks, agxTokAssistant)
+		case 's':
+			toks = append(toks, agxTokSystem)
+		default:
+			toks = append(toks, agxTokUser)
+			if !marker {
+				m := agxMix(in.salt, 0x6d61726b6572)
+				for i := 0; i < agxMarkerTokens; i++ {
+					toks = append(toks, agxToken(m, uint64(i)))
+				}
+				marker = true
+			}
+		}
+		for _, r := range sg.runs {
+			if r.tail {
+				base := agxMix(agxMix(in.salt^0x7461696c, uint64(s.conv)), uint64(r.turn))
+				for t := r.a; t < r.b; t++ {
+					toks = append(toks, agxToken(base, uint64(t)))
+				}
+				continue
+			}
+			hl, ok := hashes[r.turn]
+			if !ok {
+				tn := &conv.turns[r.turn]
+				hl = in.trace.hashPrefix(tn.hashNode, tn.nHash, int(tn.nHash), nil)
+				hashes[r.turn] = hl
+			}
+			for t := r.a; t < r.b; t++ {
+				toks = append(toks, agxBlockToken(in.trace, hl[t/agxBlockSize], t%agxBlockSize))
+			}
+		}
+		if sg.role == 'a' {
+			toks = append(toks, agxTokEOS)
 		}
 	}
-	// The tail (partial last block plus any blocks the recording did not hash) is unique
-	// to this request: seeded by the request number, which no other request shares.
-	tail := agxMix(agxMix(in.salt^0x7461696c, uint64(x.nextReqID)), uint64(conv)<<32|uint64(turn))
-	for i := covered * agxBlockSize; i < n; i++ {
-		toks[i] = agxToken(tail, uint64(i))
+	return append(toks, agxTokAssistant)
+}
+
+// agxBlockToken is token i of hash block h of the trace: the trace's hash-id namespace is
+// local (hash_id_scope "local"), so the trace id seeds it.
+func agxBlockToken(tr *AgentXTrace, h int64, i int32) sim.TokenID {
+	return agxToken(agxMix(tr.blockSalt(), uint64(h)), uint64(i))
+}
+
+func (t *AgentXTrace) blockSalt() uint64 { return t.salt }
+
+func agxTraceSalt(id string) uint64 {
+	s := agxMix(0x626c6f636b, uint64(len(id)))
+	for _, c := range []byte(id) {
+		s = agxMix(s, uint64(c))
 	}
-	return toks
+	return s
 }
 
 func agxOutputTokens(n int) []sim.TokenID {
@@ -1126,8 +1303,9 @@ func agxMix(a, b uint64) uint64 {
 	return z ^ (z >> 31)
 }
 
+// agxToken is a content token: above the reserved template ids.
 func agxToken(base, i uint64) sim.TokenID {
-	return sim.TokenID(agxMix(base, i) >> 33)
+	return sim.TokenID(agxContentBase + agxMix(base, i)>>34)
 }
 
 // AgentXRequestTimeoutUs is aiperf's --request-timeout-seconds default, 6 h

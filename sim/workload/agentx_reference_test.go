@@ -172,6 +172,18 @@ func TestAgentXTreesMatchAiperfOnSlice(t *testing.T) {
 	compareLanesToAiperf(t, c, ref)
 }
 
+// TestAgentXTreesMatchAiperfOnSynthetic: the hand-built shapes the real corpus does not
+// exercise (gen_synthetic_corpus.py) rebuild exactly as aiperf rebuilds them.
+func TestAgentXTreesMatchAiperfOnSynthetic(t *testing.T) {
+	c, err := LoadAgentXCorpus("testdata/agentx/weka_v7_synthetic.jsonl", "", 1048576, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := loadAiperfReference(t, "testdata/agentx/aiperf_reference_synthetic.json")
+	compareTreesToAiperf(t, c, ref)
+	compareLanesToAiperf(t, c, ref)
+}
+
 // TestAgentXTreesMatchAiperfOnFullCorpus runs the same comparison on the full corpus when
 // AGENTX_CORPUS and AGENTX_AIPERF_REFERENCE name the corpus and a gen_aiperf_reference.py
 // dump of it (both too large to commit).

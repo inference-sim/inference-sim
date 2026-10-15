@@ -25,6 +25,9 @@ type agxTurn struct {
 	maxTokens int32   // max(out, 1): ignore_eos makes this the generated count
 	hashNode  int32   // trie node of the request's full hash_ids list (-1: empty)
 	nHash     int32
+	rawOut    int32   // recorded output_length (prev_out of the next turn's role split)
+	lcp       int32   // longest common hash prefix with the conversation's previous turn
+	asstCap   int32   // compute_asst_block_caps bound on this turn's assistant blocks; -1 none
 	spawns    []int32 // branches declared on this turn
 	gates     []int32 // branches whose SPAWN_JOIN gates this turn
 	preds     []agxRef
@@ -61,6 +64,7 @@ type AgentXTrace struct {
 	trieHash   []int64
 	minMs      float64 // first and last recorded request start, ms, over every conversation
 	maxMs      float64
+	salt       uint64 // block-content salt: agxTraceSalt(ID)
 }
 
 // agxTrieBuilder interns hash-id prefixes for one trace.
@@ -308,15 +312,55 @@ func agxTurnsFor(reqs []*agxReq, trie *agxTrieBuilder) []agxTurn {
 			maxTokens: int32(max(r.out, 1)),
 			hashNode:  trie.intern(r.hash),
 			nHash:     int32(len(r.hash)),
+			rawOut:    int32(r.out),
 		}
 		if k > 0 {
 			p := reqs[k-1]
+			tn.lcp = int32(agxLCP(p.hash, r.hash))
 			tn.delayMs = math.Max(0, (tsMs-float64(p.t*1000.0))-float64(p.api*1000.0))
 			tn.hasDelay = true
 		}
 		turns[k] = tn
 	}
+	for k, c := range agxAsstBlockCaps(reqs) {
+		turns[k].asstCap = c
+	}
 	return turns
+}
+
+// agxAsstBlockCaps is weka_synth_buf.compute_asst_block_caps: per turn, an upper bound on
+// the assistant blocks the role split may attribute (-1 = none), chosen so a later
+// block-aligned pull-back truncates onto a user block.
+func agxAsstBlockCaps(reqs []*agxReq) []int32 {
+	caps := make([]int32, len(reqs))
+	for i := range caps {
+		caps[i] = -1
+	}
+	var tile []int
+	effLCP := make([]int, len(reqs))
+	for k, r := range reqs {
+		covered := min(len(r.hash), r.in/agxBlockSize)
+		if k == 0 {
+			tile = make([]int, covered)
+			continue
+		}
+		synthTail := r.in%agxBlockSize + max(0, (r.in/agxBlockSize-len(r.hash))*agxBlockSize)
+		eff := min(agxLCP(reqs[k-1].hash, r.hash), len(tile))
+		effLCP[k] = eff
+		newBlocks := max(0, covered-eff)
+		if newBlocks == 0 && synthTail == 0 && eff >= 1 {
+			if owner := tile[eff-1]; owner != 0 {
+				if bound := (eff - 1) - effLCP[owner]; bound >= 0 && (caps[owner] < 0 || int32(bound) < caps[owner]) {
+					caps[owner] = int32(bound)
+				}
+			}
+		}
+		tile = tile[:eff]
+		for i := 0; i < newBlocks; i++ {
+			tile = append(tile, k)
+		}
+	}
+	return caps
 }
 
 // BuildAgentXTrace rebuilds one Weka v7 trace as aiperf's session tree. split selects
@@ -361,7 +405,7 @@ func BuildAgentXTrace(s *wekaSession, split bool) (*AgentXTrace, error) {
 	}
 
 	trie := &agxTrieBuilder{child: map[agxTrieKey]int32{}}
-	tr := &AgentXTrace{ID: s.ID, Peak: wekaPeak(s)}
+	tr := &AgentXTrace{ID: s.ID, Peak: wekaPeak(s), salt: agxTraceSalt(s.ID)}
 	tr.convs = append(tr.convs, agxConv{sessionID: s.ID, scope: 0, turns: agxTurnsFor(normals, trie)})
 	root := &tr.convs[0]
 

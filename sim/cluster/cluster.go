@@ -152,6 +152,9 @@ type ClusterSimulator struct {
 	// arrivalGate, when set, decides at each arrival whether the client sends it
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
 	arrivalGate ArrivalGate
+	// unservedHook, when set, is told of every request the cluster refuses or drops
+	// (arrival_gate.go). Nil for every workload but the agentic replay.
+	unservedHook func(req *sim.Request, now int64) []*sim.Request
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
@@ -1732,6 +1735,7 @@ func (c *ClusterSimulator) recordUnserved(req *sim.Request) {
 	if req != nil && req.Phase.Measured() {
 		c.measuredUnserved++
 	}
+	c.notifyUnserved(req)
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.

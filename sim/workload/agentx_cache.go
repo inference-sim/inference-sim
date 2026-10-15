@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // The parsed-corpus cache (--corpus-cache): a binary snapshot of a rebuilt AgentXCorpus,
@@ -26,7 +27,7 @@ import (
 
 // agxCacheSchema versions the snapshot layout and the rebuild it records; bump it when
 // either changes.
-const agxCacheSchema = 1
+const agxCacheSchema = 2
 
 var agxCacheMagic = []byte("BLISAGXC")
 
@@ -43,20 +44,37 @@ type AgentXCacheResult struct {
 // LoadAgentXCorpusCached is LoadAgentXCorpus with a snapshot cache in cacheDir. buildKey
 // identifies the build (e.g. a digest of the executable): a snapshot written by another
 // build is ignored.
+//
+// The corpus file is read exactly once either way. A snapshot is located by the corpus
+// file's path, size and modification time (plus the filter, split, build and schema), and
+// its key states the corpus sha256 it was built from: on a hit the file is only hashed, and
+// the snapshot is used only if that digest matches; on a miss it is parsed and hashed in
+// one pass. Snapshots are never evicted: delete the directory to reclaim the space (one
+// snapshot per corpus file and setting, about an eighth of the corpus's size).
 func LoadAgentXCorpusCached(path, wantSHA256 string, maxContextLength int, split bool, cacheDir, buildKey string) (*AgentXCorpus, AgentXCacheResult, error) {
 	var res AgentXCacheResult
-	sum, err := fileSHA256(path)
+	st, err := os.Stat(path)
 	if err != nil {
 		return nil, res, err
 	}
-	if wantSHA256 != "" && !strings.EqualFold(wantSHA256, sum) {
-		return nil, res, fmt.Errorf("%s: sha256 %s does not match --corpus-sha256 %s", path, sum, wantSHA256)
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, res, err
 	}
-	key := fmt.Sprintf("schema=%d corpus=%s max_context_length=%d split=%t build=%s", agxCacheSchema, sum, maxContextLength, split, buildKey)
-	k := sha256.Sum256([]byte(key))
-	res.Path = filepath.Join(cacheDir, "agentx-corpus-"+hex.EncodeToString(k[:8])+".bin")
+	setting := fmt.Sprintf("schema=%d max_context_length=%d split=%t build=%s", agxCacheSchema, maxContextLength, split, buildKey)
+	loc := sha256.Sum256([]byte(fmt.Sprintf("%s path=%s size=%d mtime=%d", setting, abs, st.Size(), st.ModTime().UnixNano())))
+	res.Path = filepath.Join(cacheDir, "agentx-corpus-"+hex.EncodeToString(loc[:8])+".bin")
+	keyFor := func(sum string) string { return setting + " corpus=" + sum }
+
 	if b, rerr := os.ReadFile(res.Path); rerr == nil {
-		c, derr := decodeAgentXSnapshot(b, key)
+		sum, herr := fileSHA256(path)
+		if herr != nil {
+			return nil, res, herr
+		}
+		if wantSHA256 != "" && !strings.EqualFold(wantSHA256, sum) {
+			return nil, res, fmt.Errorf("%s: sha256 %s does not match --corpus-sha256 %s", path, sum, wantSHA256)
+		}
+		c, derr := decodeAgentXSnapshot(b, keyFor(sum))
 		if derr == nil {
 			res.Hit = true
 			return c, res, nil
@@ -65,11 +83,11 @@ func LoadAgentXCorpusCached(path, wantSHA256 string, maxContextLength int, split
 	} else if !errors.Is(rerr, os.ErrNotExist) {
 		res.Ignored = rerr.Error()
 	}
-	c, err := LoadAgentXCorpus(path, sum, maxContextLength, split)
+	c, err := LoadAgentXCorpus(path, wantSHA256, maxContextLength, split)
 	if err != nil {
 		return nil, res, err
 	}
-	res.WriteErr = writeFileAtomic(res.Path, encodeAgentXSnapshot(c, key))
+	res.WriteErr = writeFileAtomic(res.Path, encodeAgentXSnapshot(c, keyFor(c.SHA256)))
 	return c, res, nil
 }
 
@@ -89,6 +107,15 @@ func fileSHA256(path string) (string, error) {
 func writeFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
+	}
+	// A writer that died between create and rename leaves its temp file behind; reap those
+	// older than an hour (a live writer finishes in seconds).
+	if stale, gerr := filepath.Glob(filepath.Join(filepath.Dir(path), ".agentx-corpus-*.tmp")); gerr == nil {
+		for _, f := range stale {
+			if fi, serr := os.Stat(f); serr == nil && time.Since(fi.ModTime()) > time.Hour {
+				_ = os.Remove(f)
+			}
+		}
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".agentx-corpus-*.tmp")
 	if err != nil {
@@ -175,6 +202,9 @@ func encodeAgentXSnapshot(c *AgentXCorpus, key string) []byte {
 				p.i64(int64(tn.maxTokens))
 				p.i64(int64(tn.hashNode))
 				p.i64(int64(tn.nHash))
+				p.i64(int64(tn.rawOut))
+				p.i64(int64(tn.lcp))
+				p.i64(int64(tn.asstCap))
 				p.i32s(tn.spawns)
 				p.i32s(tn.gates)
 				p.n(tn.preds == nil, len(tn.preds))
@@ -306,6 +336,7 @@ func decodeAgentXSnapshot(b []byte, wantKey string) (*AgentXCorpus, error) {
 	}
 	for i := range c.Traces {
 		t := &AgentXTrace{ID: d.str(), Peak: int(d.i64()), minMs: d.f64(), maxMs: d.f64()}
+		t.salt = agxTraceSalt(t.ID)
 		if nc := d.length(); nc >= 0 {
 			t.convs = make([]agxConv, nc)
 		}
@@ -320,6 +351,7 @@ func decodeAgentXSnapshot(b []byte, wantKey string) (*AgentXCorpus, error) {
 				tn := &cv.turns[k]
 				tn.tsMs, tn.delayMs, tn.hasDelay, tn.apiMs = d.f64(), d.f64(), d.boolean(), d.f64()
 				tn.in, tn.maxTokens, tn.hashNode, tn.nHash = int32(d.i64()), int32(d.i64()), int32(d.i64()), int32(d.i64())
+				tn.rawOut, tn.lcp, tn.asstCap = int32(d.i64()), int32(d.i64()), int32(d.i64())
 				tn.spawns, tn.gates = d.i32s(), d.i32s()
 				if np := d.length(); np >= 0 {
 					tn.preds = make([]agxRef, np)

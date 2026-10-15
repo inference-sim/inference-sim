@@ -59,39 +59,41 @@ func TestAgentXClosedLoopWarmupAndRecycle(t *testing.T) {
 	}
 }
 
-// TestAgentXPromptsShareOnlyWithinATree: prompts are exactly `in` tokens; within one tree
-// a turn's leading hash blocks are byte-identical to the previous turn's, and the partial
-// tail is not; across tree instances of the same trace nothing is shared (cache bust).
+// TestAgentXPromptsShareOnlyWithinATree: a prompt is its message list rendered through the
+// chat template -- BOS, a role header per message, the tree's marker at the head of the first
+// user message, the generation prompt -- around exactly the recorded `in` content tokens.
+// Within one tree, turn k+1 re-sends turn k's messages, so it shares all of turn k's prompt
+// but the generation prompt; across tree instances of the same trace the marker differs,
+// so the prompts share only BOS and the first header.
 func TestAgentXPromptsShareOnlyWithinATree(t *testing.T) {
 	c := agxCorpus(t, threeTurnTrace(t, "A"))
 	h := runAgentX(t, c, agxCfg(1, 0.5, 20), fixedService(sec))
 	tok := func(i int) []sim.TokenID { return h.issued[i].req.InputTokens }
-	for i, want := range []int{128, 192, 256, 128, 192, 256, 128} {
-		if h.issued[i].in != want {
-			t.Errorf("issue %d: %d prompt tokens, want %d", i, h.issued[i].in, want)
+	common := func(a, b []sim.TokenID) int {
+		n := 0
+		for n < len(a) && n < len(b) && a[n] == b[n] {
+			n++
+		}
+		return n
+	}
+	// Turns 0, 1, 2 hold 1, 2 and 3 user messages: [h1 h2], [h3], [h4] (each new block is
+	// user content: the trailing-user rule hands back the one assistant block).
+	for i, w := range []struct{ in, msgs int }{{128, 1}, {192, 2}, {256, 3}, {128, 1}, {192, 2}, {256, 3}, {128, 1}} {
+		if got := agxContentLen(tok(i)); got != w.in {
+			t.Errorf("issue %d: %d content tokens, want %d", i, got, w.in)
+		}
+		if want := w.in + 2 + w.msgs + agxMarkerTokens; len(tok(i)) != want {
+			t.Errorf("issue %d: %d prompt tokens, want %d", i, len(tok(i)), want)
 		}
 	}
-	same := func(a, b []sim.TokenID, n int) bool {
-		for i := 0; i < n; i++ {
-			if a[i] != b[i] {
-				return false
-			}
-		}
-		return true
+	if n := common(tok(1), tok(2)); n != len(tok(1))-1 {
+		t.Errorf("turn 2 shares %d tokens with turn 1, want all %d but its generation prompt", n, len(tok(1))-1)
 	}
-	// tree 0: turn 1 (192 = 3 blocks) and turn 2 (4 blocks) share hash ids [1,2,3].
-	if !same(tok(1), tok(2), 192) {
-		t.Error("turn 2 does not reuse turn 1's three hash blocks within the tree")
+	if n := common(tok(0), tok(1)); n != len(tok(0))-1 {
+		t.Errorf("turn 1 shares %d tokens with the warm-up's turn 0, want %d", n, len(tok(0))-1)
 	}
-	// warm-up turn 0 (128 tokens, hash [1,2]) shares its two blocks with turn 1.
-	if !same(tok(0), tok(1), 128) {
-		t.Error("turn 1 does not reuse the warm-up's two hash blocks")
-	}
-	// tree 1's turn 0 shares nothing with tree 0's turn 0.
-	for i := 0; i < 128; i += 64 {
-		if tok(0)[i] == tok(3)[i] {
-			t.Errorf("block %d shared across tree instances", i/64)
-		}
+	if n := common(tok(0), tok(3)); n != 2 {
+		t.Errorf("two tree instances share %d leading tokens, want 2 (BOS and the user header)", n)
 	}
 }
 

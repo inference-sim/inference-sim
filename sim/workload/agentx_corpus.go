@@ -74,13 +74,15 @@ func ReadAgentXCorpus(r io.Reader, maxContextLength int, split bool) (*AgentXCor
 				return nil, fmt.Errorf("line %d: %w", lineNo, jerr)
 			}
 			c.Rows++
-			if seen[s.ID] {
-				return nil, fmt.Errorf("line %d: duplicate trace id %q", lineNo, s.ID)
-			}
-			seen[s.ID] = true
 			if maxContextLength > 0 && wekaPeak(&s) > maxContextLength {
 				c.FilteredByMaxCtx++
 			} else {
+				// Duplicates are refused among the kept rows only, as aiperf checks them after
+				// filter-then-cap (semianalysis_cc_traces_weka.py _validate_rows).
+				if seen[s.ID] {
+					return nil, fmt.Errorf("line %d: duplicate trace id %q", lineNo, s.ID)
+				}
+				seen[s.ID] = true
 				t, berr := BuildAgentXTrace(&s, split)
 				if berr != nil {
 					return nil, fmt.Errorf("line %d: %w", lineNo, berr)

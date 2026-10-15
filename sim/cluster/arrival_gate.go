@@ -50,3 +50,28 @@ func (cs *ClusterSimulator) gateArrival(req *sim.Request, now int64) bool {
 	}
 	return send
 }
+
+// SetUnservedHook installs a callback told of every request the cluster itself ends
+// without serving -- admission and routing rejections, flow-control rejections, sheds,
+// TTL expiries, in-flight evictions and P/D decode-KV drops: every site that records the
+// request as unserved (recordUnserved). The engine's own refusals and every completion
+// still reach onRequestDone. Follow-ups it returns are routed like onRequestDone's. Must be
+// called before Run(); nil clears it.
+func (cs *ClusterSimulator) SetUnservedHook(h func(req *sim.Request, now int64) []*sim.Request) {
+	if cs.hasRun {
+		panic("ClusterSimulator: SetUnservedHook must be called before Run()")
+	}
+	cs.unservedHook = h
+}
+
+// Horizon returns the simulation horizon in effect.
+func (cs *ClusterSimulator) Horizon() int64 { return cs.config.Horizon }
+
+func (cs *ClusterSimulator) notifyUnserved(req *sim.Request) {
+	if cs.unservedHook == nil || req == nil {
+		return
+	}
+	for _, m := range cs.unservedHook(req, cs.clock) {
+		cs.pushArrival(m, m.ArrivalTime)
+	}
+}

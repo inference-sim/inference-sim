@@ -218,6 +218,8 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		MinRatio:         lo,
 		MaxRatio:         hi,
 		RequestTimeoutUs: simworkload.AgentXRequestTimeoutUs,
+		MaxModelLen:      maxModelLen,
+		HorizonCapUs:     horizonCap(cmd),
 	})
 	if err != nil {
 		logrus.Fatalf("agentic replay: %v", err)
@@ -257,6 +259,14 @@ func agentXBuildKey() string {
 	}
 	// Unknown build: a key no other process shares, so the cache is never reused.
 	return fmt.Sprintf("unknown-%d-%d", os.Getpid(), time.Now().UnixNano())
+}
+
+// horizonCap is a user --horizon the replay must not run past, or 0.
+func horizonCap(cmd *cobra.Command) int64 {
+	if cmd.Flags().Changed("horizon") {
+		return simulationHorizon
+	}
+	return 0
 }
 
 // summary is the results file's agentic block.

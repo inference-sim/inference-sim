@@ -634,7 +634,8 @@ Example:
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		if agx != nil {
 			cs.SetArrivalGate(agx.driver.Gate)
-			agx.driver.SetHorizon = cs.SetHorizon
+			cs.SetUnservedHook(agx.driver.OnUnserved)
+			agx.driver.BindHorizon(cs.SetHorizon)
 		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
@@ -684,7 +685,7 @@ Example:
 		// emitted on the aggregate below (#1517).
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), cs.Horizon(), totalKVBlocks, ""); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}

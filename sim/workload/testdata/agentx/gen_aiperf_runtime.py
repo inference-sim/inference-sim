@@ -37,6 +37,9 @@ import types
 
 import orjson
 
+_PHASES = {}
+_DEBUG = None
+
 # ---------------------------------------------------------------- virtual clock
 _VT = [1000.0]
 
@@ -93,7 +96,30 @@ _tail = itertools.count(1)
 
 
 def service_s(n_in, n_out):
-    return 0.5 + n_in / 200000.0 + n_out / 100.0
+    """Service time in seconds, rounded to the microsecond as BLIS's clock is."""
+    return round((0.5 + n_in / 200000.0 + n_out / 100.0) * 1e6) / 1e6
+
+
+def canonical_messages(segs):
+    """One string per prompt: each message's role and content, block tokens grouped into
+    h<hash>.<first offset>-<last offset+1> stretches and synthetic tail tokens into t<n>."""
+    out = []
+    for role, toks in segs:
+        items = []
+        for v in toks:
+            if v >= 0:
+                h, i = divmod(v, BS)
+                if items and items[-1][0] == "h" and items[-1][1] == h and items[-1][3] == i:
+                    items[-1][3] = i + 1
+                else:
+                    items.append(["h", h, i, i + 1])
+            elif items and items[-1][0] == "t":
+                items[-1][1] += 1
+            else:
+                items.append(["t", 1])
+        body = ",".join(f"h{it[1]}.{it[2]}-{it[3]}" if it[0] == "h" else f"t{it[1]}" for it in items)
+        out.append(f"{role[0]}:{body}")
+    return "|".join(out)
 
 
 def build_conversations(path):
@@ -119,7 +145,7 @@ def build_conversations(path):
     orig = weka_synth_buf.ConversationReconstructor.turn_delta
 
     def turn_delta(self):
-        prompts.append([t for s in self._segments for t in s.tokens])
+        prompts.append([(s.role, list(s.tokens)) for s in self._segments])
         return orig(self)
 
     weka_synth_buf.ConversationReconstructor.turn_delta = turn_delta
@@ -135,15 +161,12 @@ def build_conversations(path):
     it = iter(prompts)
     for c in convs:
         for k, _ in enumerate(c.turns):
-            toks = next(it)
-            blocks = []
-            for b in range(len(toks) // BS):
-                blk = toks[b * BS:(b + 1) * BS]
-                h = blk[0] // BS if blk[0] >= 0 else None
-                if h is None or blk != [h * BS + i for i in range(BS)]:
-                    break
-                blocks.append(h)
-            layout[(c.session_id, k)] = (len(toks), blocks)
+            segs = next(it)
+            canon = canonical_messages(segs)
+            if _DEBUG and c.session_id.startswith(_DEBUG[0]) and k == _DEBUG[1]:
+                print(canon[:150] + " ... " + canon[-150:], file=sys.stderr)
+            layout[(c.session_id, k)] = (sum(len(t) for _, t in segs), len(segs),
+                                         hashlib.sha256(canon.encode()).hexdigest()[:16])
     return convs, layout
 
 
@@ -162,12 +185,12 @@ class StubRouter:
         pass
 
     async def send_credit(self, credit):
-        n_in, blocks = self.layout[(credit.conversation_id, credit.turn_index)]
+        n_in, n_msgs, msgs_sha = self.layout[(credit.conversation_id, credit.turn_index)]
         n_out = credit.max_tokens_override or self.meta[credit.conversation_id].turns[credit.turn_index].max_tokens
         rec = {"t": _VT[0], "phase": str(credit.phase), "conv": credit.conversation_id,
                "turn": credit.turn_index, "depth": credit.agent_depth,
                "root": credit.root_correlation_id or credit.x_correlation_id,
-               "in": n_in, "out": n_out, "blocks": blocks, "done": None, "cancelled": False}
+               "in": n_in, "out": n_out, "msgs": n_msgs, "msgs_sha": msgs_sha, "done": None, "cancelled": False}
         self.log.append(rec)
         loop = asyncio.get_running_loop()
         h = loop.call_later(service_s(n_in, n_out), self._finish, credit, rec, False)
@@ -192,6 +215,13 @@ class StubRouter:
 
 
 class StubPublisher:
+    """Records each phase's start and completion (lifecycle started_at / requests_end)."""
+
+    async def publish_phase_complete(self, phase_stats, *a, **k):
+        if "PROFILING" in str(phase_stats.phase).upper():
+            _PHASES["profiling_start_ns"] = phase_stats.start_ns
+            _PHASES["profiling_requests_end_ns"] = phase_stats.requests_end_ns
+
     def __getattr__(self, name):
         async def _noop(*a, **k):
             return None
@@ -216,17 +246,23 @@ async def run(path, conc, dur):
     t0 = _VT[0]
     src = orch.conversation_source
     lanes = [{"trace": tr.conversation_id, "t_star_ms": tr.snapshot.t_star_ms.hex()} for tr in src.trajectories]
+    tree_of = {}
+    for i, tr in enumerate(src.trajectories):
+        tree_of[tr.snapshot.states[0].root_correlation_id] = i
     await orch._execute_phases()
     sends = []
     for r in log:
+        if r["root"] not in tree_of:
+            tree_of[r["root"]] = len(tree_of)  # recycled trees, in the order they first send
         sends.append({
             "t": r["t"] - t0, "phase": "warmup" if "warmup" in r["phase"] else "profile",
+            "tree": tree_of[r["root"]],
             "conv": r["conv"], "turn": r["turn"], "depth": r["depth"], "in": r["in"], "out": r["out"],
-            "nblocks": len(r["blocks"]),
-            "blocks_sha": hashlib.sha256(",".join(map(str, r["blocks"])).encode()).hexdigest()[:16],
-            "cancelled": r["cancelled"] or r["done"] is None,
+            "msgs": r["msgs"], "msgs_sha": r["msgs_sha"],
+            "done": None if r["done"] is None or r["cancelled"] else r["done"] - t0,
         })
-    return {"concurrency": conc, "duration_s": dur, "grace_s": 30.0, "lanes": lanes, "sends": sends}
+    return {"concurrency": conc, "duration_s": dur, "grace_s": 30.0, "lanes": lanes, "sends": sends,
+            "t0_ns": int(t0 * 1e9)}
 
 
 def main():
@@ -234,6 +270,9 @@ def main():
     loop = VirtualLoop()
     asyncio.set_event_loop(loop)
     out = loop.run_until_complete(run(path, conc, dur))
+    t0 = out.pop("t0_ns")
+    for k, v in _PHASES.items():
+        out[k.replace("_ns", "_s")] = None if v is None else (v - t0) / 1e9
     json.dump(out, sys.stdout, separators=(",", ":"))
 
 
