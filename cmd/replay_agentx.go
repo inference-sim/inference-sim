@@ -55,29 +55,37 @@ type agentXRun struct {
 	limit  int
 }
 
-// loadReplaySpec reads a replay workload document: a bare Replay or a scenario-shaped
-// document with workload.replay.
+// loadReplaySpec reads a replay workload document: a bare Replay or a document with a
+// replay: or workload.replay: key. A reference to a catalog replay workload is refused:
+// the replay must be stated inline.
 func loadReplaySpec(path string) (*workload.Replay, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var doc struct {
-		Replay   *workload.Replay `yaml:"replay"`
-		Workload *struct {
-			Replay *workload.Replay `yaml:"replay"`
-		} `yaml:"workload"`
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := yaml.Unmarshal(b, &doc); err == nil {
-		switch {
-		case doc.Replay != nil:
-			return doc.Replay, nil
-		case doc.Workload != nil && doc.Workload.Replay != nil:
-			return doc.Workload.Replay, nil
+	node := any(doc)
+	if r, ok := doc["replay"]; ok {
+		node = r
+	} else if w, ok := doc["workload"].(map[string]any); ok {
+		if r, ok := w["replay"]; ok {
+			node = r
 		}
 	}
+	if m, ok := node.(map[string]any); ok {
+		if name, ok := m["workload"]; ok {
+			return nil, fmt.Errorf("%s names catalog replay workload %v; state the replay inline", path, name)
+		}
+	}
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return nil, err
+	}
 	var r workload.Replay
-	if err := yaml.Unmarshal(b, &r); err != nil {
+	if err := yaml.Unmarshal(raw, &r); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &r, nil
@@ -91,9 +99,6 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 		var err error
 		if r, err = loadReplaySpec(agxWorkloadSpec); err != nil {
 			return nil, err
-		}
-		if r.Workload != "" {
-			return nil, fmt.Errorf("--workload-spec names catalog replay workload %q; state the replay inline", r.Workload)
 		}
 	}
 	if agxScenarioFlag != "" {
@@ -201,6 +206,18 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		logrus.Warnf("agentic replay: built %d lanes for concurrency %d (too few spawnable traces)", drv.Lanes(), spec.Concurrency)
 	}
 	return &agentXRun{spec: spec, corpus: corpus, driver: drv, limit: limit}, drv.Start()
+}
+
+// emitOptions are the agentic replay's additions to the results file: the measured-window
+// hook (#1938: the profiling phase's start and completion) and the agentic block. Nil for
+// any other replay.
+func (a *agentXRun) emitOptions(m *sim.Metrics) []sim.EmitOption {
+	if a == nil {
+		return nil
+	}
+	ps, pe := a.driver.Window()
+	m.MeasuredWindow = &sim.MeasuredWindow{StartUs: ps, EndUs: pe}
+	return []sim.EmitOption{sim.WithAgentic(a.summary())}
 }
 
 // summary is the results file's agentic block.

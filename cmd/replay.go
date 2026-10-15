@@ -722,15 +722,9 @@ Example:
 		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
 		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
 		// (INV-6).
-		emitOpts := resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot)
-		if agx != nil {
-			// The measured-window hook (#1938): aiperf's profiling phase start (the
-			// warm-up drained) and completion.
-			ps, pe := agx.driver.Window()
-			aggregated.MeasuredWindow = &sim.MeasuredWindow{StartUs: ps, EndUs: pe}
-			emitOpts = append(emitOpts, sim.WithAgentic(agx.summary()))
-		}
-		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath, emitOpts...); err != nil {
+		// An agentic replay (#1937) adds the measured window and its agentic block.
+		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
+			append(resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot), agx.emitOptions(aggregated)...)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 

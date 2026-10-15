@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.2.0
-	github.com/inference-sim/blis-schemas v0.3.0
+	github.com/inference-sim/blis-schemas v0.3.1-0.20261015015314-148d08ee663e
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.7.0
@@ -22,5 +22,3 @@ require (
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )
-
-replace github.com/inference-sim/blis-schemas => /Users/sri/Documents/Projects/.worktrees/dsv41-h100/repos/blis-schemas

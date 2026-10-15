@@ -500,6 +500,54 @@ model names are dropped during conversion (same routing-safety reason as OTel).
     re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
     sentinel was resolved in #1608 — see the non-lossy note above.)
 
+### Weka subagent replay as aiperf runs it: `--agentic-scenario inferencex-agentx-mvp` (#1937)
+
+`blis convert weka` keeps only the main agent. To replay a Weka v7 corpus **with** its
+subagents, exactly as aiperf 0.12.0's `aiperf profile --scenario inferencex-agentx-mvp`
+does, give replay the raw corpus instead of a TraceV2 file:
+
+```bash
+blis replay --agentic-scenario inferencex-agentx-mvp \
+  --corpus traces.jsonl --corpus-sha256 <hex> \
+  --concurrency 64 --seed 42 --benchmark-duration 900s --grace-period 30s \
+  --max-context-length max_model_len \
+  --scenario <scenario.yaml> --scenarios <dir> --registry <blis-registry> \
+  --metrics-path out.json
+```
+
+or `--workload-spec <file>` with a blis-schemas replay descriptor (`replay:`), which the
+flags override; the descriptor is validated as aiperf's scenario validator validates the
+scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
+refused). The corpus is streamed once and refused on a digest mismatch.
+
+What is replayed, each step a port of aiperf's code and checked send for send against
+aiperf's own runtime (`TestAgentXRuntimeMatchesAiperf`):
+
+- **Session trees.** Each trace is rebuilt as aiperf rebuilds it: flattened-agent chain
+  detection on the top-level requests and inside every subagent, SPAWN branches and
+  SPAWN_JOIN gates, end-to-start delays `max(0, t_k - t_{k-1} - api_{k-1})`, and the
+  recorded cross-stream replay barriers. Traces whose peak `in + max(out, 1)` (parent and
+  subagents) exceeds `--max-context-length` are dropped; `max_model_len` is the
+  deployment's resolved value.
+- **Lanes.** `--concurrency` counts session trees, not requests. Lane *i* replays root
+  `pool[i mod N]` from a snapshot instant t* drawn as aiperf draws it (numpy
+  `default_rng(sha256("{seed}:{trace}:{lane}")[:8]).uniform` over the trace's span). A
+  drained tree recycles its lane into the next root at turn 0.
+- **Warm-up, window, grace.** Every stream live at t* first sends its last pre-t* request
+  with max_tokens 1, aligned so every lane reaches t* together; profiling starts when the
+  warm-up drains and sends for `--benchmark-duration`; requests in flight then have
+  `--grace-period` to finish, after which they are cancelled and leave no aiperf record.
+  A 10 s global idle cap pulls in pending timers whenever nothing is in flight.
+- **Prompts.** Exactly `in` tokens: the request's hash blocks (shared within one tree
+  instance, never across trees: aiperf's per-tree cache-bust marker) and a unique tail.
+  Outputs are `max(out, 1)` tokens (ignore_eos); generated tokens are never fed back.
+
+Every request carries `Phase` (`warmup` / `profile`, `grace` once it completes after the
+window) and an `agentic` tag (lane, tree, trace, stream, kind, turn, outcome:
+`completed`, `error`, `context_overflow`, `cancelled`), echoed per request in the results
+file, which also gets the measured window (the profiling phase's start and completion) and an
+`agentic` summary block. The laws are INV-AX1 … INV-AX4 in the invariant registry.
+
 ### Faithful high-concurrency replay: `--session-mode fixed-accumulate` (#1692)
 
 An accumulate corpus can be replayed three ways. Only the third is faithful at

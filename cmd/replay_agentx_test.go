@@ -188,3 +188,33 @@ func TestReplayAgentX_Refusals(t *testing.T) {
 		}
 	}
 }
+
+// TestReplayAgentX_WorkloadSpecWithFlagOverrides: a blis-schemas replay descriptor states
+// the workload; a flag overrides the field it names.
+func TestReplayAgentX_WorkloadSpecWithFlagOverrides(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "replay.yaml")
+	doc := "workload:\n  replay:\n    scenario: inferencex-agentx-mvp\n    harness_version: 0.12.0\n" +
+		"    corpus:\n      loader: semianalysis_cc_traces_weka_062126_256k\n      format: weka-trace-v7\n      encoding: jsonl\n" +
+		"      source:\n        huggingface: semianalysisai/cc-traces-weka-062126-256k\n        revision: test\n" +
+		"      sha256: " + agentXSliceSHA(t) + "\n" +
+		"    concurrency: 2\n    benchmark_duration_s: 900\n    max_context_length: max_model_len\n"
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args  []string
+		lanes int
+	}{
+		{[]string{"--workload-spec", spec}, 2},
+		{[]string{"--workload-spec", spec, "--concurrency", "1"}, 1},
+	} {
+		_, f := runAgentXReplay(t, tc.args...)
+		var m agentXFile
+		if err := json.Unmarshal(f, &m); err != nil {
+			t.Fatal(err)
+		}
+		if m.Agentic.Lanes != tc.lanes || m.Agentic.MaxContextLength <= 0 {
+			t.Errorf("%v: %d lanes (want %d), max_context_length %d", tc.args, m.Agentic.Lanes, tc.lanes, m.Agentic.MaxContextLength)
+		}
+	}
+}
