@@ -131,6 +131,12 @@ type Request struct {
 	// Request construction site needs updating. Reset to 0 on preemption (alongside
 	// ProgressIndex) and at completion.
 	specDecodeCarry float64
+
+	// scheduledTokens is what this step debited from the batched-token budget for the
+	// request: NumNewTokens, except for a speculating decode, which schedules its whole
+	// verify width however many drafts are later accepted (#1627). Set by FormBatch; read
+	// when a preemption returns the debit.
+	scheduledTokens int64
 }
 
 // This method returns a human-readable string representation of a Request.

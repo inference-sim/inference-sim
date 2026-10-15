@@ -433,8 +433,8 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 					}
 				} else {
 					o.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
-					if !o.gpu.chargeFixedBlocksIfRoom(req.ID) {
-						// No room for its fixed per-sequence blocks (#1941): undo the commit,
+					if !o.gpu.chargeSequenceIfRoom(req.ID, endIndex) {
+						// No room for its fixed blocks (#1941) or slots (#1627): undo the commit,
 						// which returns the reloaded blocks to the free list with their hashes.
 						o.gpu.ReleaseKVBlocks(req)
 						return false

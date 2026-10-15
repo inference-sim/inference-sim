@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // KVCacheConfig groups KV cache parameters for KV store construction.
@@ -30,6 +31,24 @@ type KVCacheConfig struct {
 	// indexer state, bounded recurrent state) in whole blocks (#1941). Charged when a sequence
 	// is admitted and freed with it; 0 charges nothing. Set via WithSequenceFixedBlocks.
 	SequenceFixedBlocks int64
+
+	// Speculative is the KV side of speculative decoding (#1627); its zero value is off.
+	// NewInstanceSimulator sets it from the SpeculativeConfig, so the two cannot disagree.
+	Speculative KVSpeculation
+}
+
+// KVSpeculation is how a speculating engine reserves KV slots (#1627), as vLLM v0.31.0's
+// KVCacheManager.allocate_slots does: a request holds slots for its computed tokens, every
+// token scheduled this step -- the whole verify width, accepted or not -- and
+// LookaheadTokens more that the drafter writes past them (num_tokens_need_slot,
+// vllm/v1/core/kv_cache_manager.py).
+type KVSpeculation struct {
+	// Enabled sizes each allocation by its end index plus LookaheadTokens rather than by the
+	// tokens stored, so the slots of rejected drafts stay held.
+	Enabled bool
+	// LookaheadTokens is vLLM's VllmConfig.num_lookahead_tokens (see
+	// SpeculativeConfig.LookaheadTokens).
+	LookaheadTokens int64
 }
 
 // KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
@@ -224,6 +243,31 @@ func (c SpeculativeConfig) Validate() error {
 		return nil
 	}
 	return nil
+}
+
+// LookaheadTokens is the KV slots a speculating engine reserves past the tokens it schedules
+// for a request, vLLM v0.31.0's VllmConfig.num_lookahead_tokens (vllm/config/vllm.py:630-654):
+// K + 1 for DFlash (one bonus query plus K mask queries), K for the methods that draft from the
+// target's hidden states or a draft model (eagle, eagle3, mtp and the model-specific *_mtp
+// names vLLM folds into it, dspark, draft_model), and 0 for the rest (ngram, ngram_gpu,
+// suffix, medusa, mlp_speculator, extract_hidden_states, custom_class). 0 when off.
+func (c SpeculativeConfig) LookaheadTokens() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch m := c.Method; {
+	case m == "dflash":
+		return int64(c.K) + 1
+	case m == "eagle", m == "eagle3", m == "dspark", m == "draft_model", strings.HasSuffix(m, "mtp"):
+		return int64(c.K)
+	default:
+		return 0
+	}
+}
+
+// KV is the KV-slot reservation the config implies (#1627).
+func (c SpeculativeConfig) KV() KVSpeculation {
+	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens()}
 }
 
 // IsEnabled reports whether speculative decoding is active (K>0).

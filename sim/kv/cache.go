@@ -53,6 +53,14 @@ type KVCacheState struct {
 	// they carry no tokens and no hash, so prefix caching never sees them.
 	SequenceFixedBlocks int64
 	FixedBlocks         map[string][]int64
+
+	// Speculative sizes each allocation by vLLM's slot count rather than by the tokens
+	// stored (#1627): a request holds blocks for endIndex + LookaheadTokens slots, endIndex
+	// being its computed tokens plus everything scheduled this step (the whole verify width
+	// for a speculating decode). Blocks held past its stored tokens are SpareBlocks, blank,
+	// and the first used when its tokens need a new block. Zero value: off.
+	Speculative sim.KVSpeculation
+	SpareBlocks map[string][]int64
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -70,6 +78,7 @@ func NewKVCacheState(totalBlocks int64, blockSizeTokens int64) *KVCacheState {
 		RequestMap:      make(map[string][]int64),
 		HashToBlock:     make(map[string]int64),
 		FixedBlocks:     make(map[string][]int64),
+		SpareBlocks:     make(map[string][]int64),
 	}
 	for i := int64(0); i < totalBlocks; i++ {
 		blk := &KVBlock{ID: i}
@@ -228,9 +237,14 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 			}
 		}
 
-		if numNewBlocks+cachedFromFreeList+fixedNeed > kvc.countFreeBlocks() {
-			logrus.Debugf("KV cache full: cannot allocate %d new + %d cached + %d fixed blocks for req %s",
-				numNewBlocks, cachedFromFreeList, fixedNeed, req.ID)
+		held := int64(len(kvc.RequestMap[reqID]))
+		if held == 0 && len(newTokens) > 0 {
+			held = util.Len64(cachedBlocks) // claimed below, on a first allocation
+		}
+		fromFree := cachedFromFreeList + fixedNeed + kvc.slotBlocksFromFree(reqID, endIndex, held, numNewBlocks)
+		if fromFree > kvc.countFreeBlocks() {
+			logrus.Debugf("KV cache full: cannot allocate %d new + %d cached + %d fixed blocks (%d from free) for req %s",
+				numNewBlocks, cachedFromFreeList, fixedNeed, fromFree, req.ID)
 			return false
 		}
 	} else {
@@ -251,17 +265,18 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		// A request not yet charged its fixed per-sequence blocks (#1941) needs those too.
 		if ids, hasBlocks := kvc.RequestMap[reqID]; hasBlocks && len(ids) > 0 {
 			lastBlk := kvc.Blocks[ids[len(ids)-1]]
-			need := fixedNeed
+			var newBlk int64
 			if util.Len64(lastBlk.Tokens) == kvc.BlockSizeTokens {
-				need++
+				newBlk = 1
 			}
+			need := fixedNeed + kvc.slotBlocksFromFree(reqID, endIndex, int64(len(ids)), newBlk)
 			if need > kvc.countFreeBlocks() {
 				logrus.Debugf("KV cache full: cannot allocate decode block for req %s (%d needed, %d free)", reqID, need, kvc.countFreeBlocks())
 				return false
 			}
 		} else {
 			// No existing blocks — need 1 new block for this decode token.
-			if 1+fixedNeed > kvc.countFreeBlocks() {
+			if fixedNeed+kvc.slotBlocksFromFree(reqID, endIndex, 0, 1) > kvc.countFreeBlocks() {
 				logrus.Debugf("KV cache full: cannot allocate decode block for req %s (no existing blocks, %d free)", reqID, kvc.countFreeBlocks())
 				return false
 			}
@@ -336,7 +351,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 			}
 
 			for i := int64(0); i < numNewBlocks; i++ {
-				blk := kvc.popFreeBlock()
+				blk := kvc.takeBlock(reqID)
 				if blk == nil {
 					panic(fmt.Sprintf("popFreeBlock returned nil after pre-check passed for req %s: INV-4 violation", reqID))
 				}
@@ -381,20 +396,23 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	}
 	// Charged last: a cached prefix block can sit on the free list, and is claimed above.
 	kvc.chargeFixedBlocks(reqID, fixedNeed)
+	kvc.reserveSlots(reqID, endIndex)
 
 	return true
 }
 
-// chargeFixedBlocksIfRoom charges a request its fixed per-sequence blocks when it does not
-// yet hold them, and reports false, charging nothing, when the free list cannot supply them.
-// For an offload tier that admits a request by committing reloaded blocks alone, without
-// AllocateKVBlocks.
-func (kvc *KVCacheState) chargeFixedBlocksIfRoom(reqID string) bool {
+// chargeSequenceIfRoom charges a request the fixed per-sequence blocks it does not yet hold
+// and tops up its slot reservation for endIndex, or reports false, charging nothing, when the
+// free list cannot supply them. For an offload tier that admits a request by committing
+// reloaded blocks alone, without AllocateKVBlocks.
+func (kvc *KVCacheState) chargeSequenceIfRoom(reqID string, endIndex int64) bool {
 	need := kvc.fixedBlocksNeeded(reqID)
-	if need > kvc.countFreeBlocks() {
+	slots := kvc.slotBlocksFromFree(reqID, endIndex, util.Len64(kvc.RequestMap[reqID]), 0)
+	if need+slots > kvc.countFreeBlocks() {
 		return false
 	}
 	kvc.chargeFixedBlocks(reqID, need)
+	kvc.reserveSlots(reqID, endIndex)
 	return true
 }
 
@@ -410,22 +428,74 @@ func (kvc *KVCacheState) fixedBlocksNeeded(reqID string) int64 {
 	return kvc.SequenceFixedBlocks
 }
 
+// slotTarget is the blocks a speculating request must hold once endIndex tokens are
+// scheduled: vLLM's num_tokens_need_slot = computed + new + num_lookahead_tokens, in blocks
+// (vllm/v1/core/kv_cache_manager.py allocate_slots at v0.31.0). 0 when the reservation is off.
+func (kvc *KVCacheState) slotTarget(endIndex int64) int64 {
+	if !kvc.Speculative.Enabled {
+		return 0
+	}
+	slots := endIndex + kvc.Speculative.LookaheadTokens
+	return (slots + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
+}
+
+// slotBlocksFromFree is how many blocks an allocation takes off the free list for a
+// request's tokens and slot reservation: its newBlocks token blocks, less the spare blocks it
+// already holds, plus whatever more the reservation needs past the heldAfter+newBlocks token
+// blocks it will hold. Without a reservation it is newBlocks.
+func (kvc *KVCacheState) slotBlocksFromFree(reqID string, endIndex, heldTokenBlocks, newBlocks int64) int64 {
+	spare := util.Len64(kvc.SpareBlocks[reqID])
+	fromSpare := min(spare, newBlocks)
+	topUp := max(kvc.slotTarget(endIndex)-(heldTokenBlocks+newBlocks)-(spare-fromSpare), 0)
+	return newBlocks - fromSpare + topUp
+}
+
+// takeBlock returns the block a request's next tokens go in: one of its spare blocks when it
+// holds any, else one off the free list.
+func (kvc *KVCacheState) takeBlock(reqID string) *KVBlock {
+	if spare := kvc.SpareBlocks[reqID]; len(spare) > 0 {
+		blk := kvc.Blocks[spare[0]]
+		if len(spare) == 1 {
+			delete(kvc.SpareBlocks, reqID)
+		} else {
+			kvc.SpareBlocks[reqID] = spare[1:]
+		}
+		return blk
+	}
+	return kvc.popFreeBlock()
+}
+
+// reserveSlots tops a request's spare blocks up to its slot target. The caller's pre-check
+// guarantees the free list can supply them.
+func (kvc *KVCacheState) reserveSlots(reqID string, endIndex int64) {
+	short := kvc.slotTarget(endIndex) - util.Len64(kvc.RequestMap[reqID]) - util.Len64(kvc.SpareBlocks[reqID])
+	for i := int64(0); i < short; i++ {
+		kvc.SpareBlocks[reqID] = append(kvc.SpareBlocks[reqID], kvc.takeBlankBlock(reqID).ID)
+	}
+}
+
+// takeBlankBlock takes a block off the free list to hold no tokens yet. Its stale hash is
+// dropped at once, so no prefix may match it while it is held.
+func (kvc *KVCacheState) takeBlankBlock(reqID string) *KVBlock {
+	blk := kvc.popFreeBlock()
+	if blk == nil {
+		panic(fmt.Sprintf("popFreeBlock returned nil reserving blocks for req %s after the pre-check passed: INV-4 violation", reqID))
+	}
+	if blk.Hash != "" {
+		delete(kvc.HashToBlock, blk.Hash)
+		blk.Hash = ""
+	}
+	blk.RefCount = 1
+	blk.InUse = true
+	return blk
+}
+
 // chargeFixedBlocks takes n blocks off the free list for a request's fixed per-sequence
 // state. The caller's pre-check guarantees they are free. A taken block's stale hash is
 // dropped at once: it will hold no tokens, so no prefix may match it.
 func (kvc *KVCacheState) chargeFixedBlocks(reqID string, n int64) {
 	for i := int64(0); i < n; i++ {
-		blk := kvc.popFreeBlock()
-		if blk == nil {
-			panic(fmt.Sprintf("popFreeBlock returned nil charging fixed blocks for req %s: INV-4 violation", reqID))
-		}
-		if blk.Hash != "" {
-			delete(kvc.HashToBlock, blk.Hash)
-			blk.Hash = ""
-		}
-		blk.RefCount = 1
-		blk.InUse = true
-		kvc.FixedBlocks[reqID] = append(kvc.FixedBlocks[reqID], blk.ID)
+		kvc.FixedBlocks[reqID] = append(kvc.FixedBlocks[reqID], kvc.takeBlankBlock(reqID).ID)
 	}
 }
 
@@ -481,15 +551,17 @@ func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) 
 // ReleaseKVBlocks deallocates blocks used by a completed request.
 // Each block's refcount is decremented and may be returned to the free list.
 func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
-	// The fixed per-sequence blocks hold nothing reusable, so they are freed first and are
-	// the first of this request's blocks to be reused.
-	for _, id := range kvc.FixedBlocks[req.ID] {
-		blk := kvc.Blocks[id]
-		blk.RefCount = 0
-		blk.InUse = false
-		kvc.appendToFreeList(blk)
+	// The fixed per-sequence and spare blocks hold nothing reusable, so they are freed first
+	// and are the first of this request's blocks to be reused.
+	for _, blank := range []map[string][]int64{kvc.FixedBlocks, kvc.SpareBlocks} {
+		for _, id := range blank[req.ID] {
+			blk := kvc.Blocks[id]
+			blk.RefCount = 0
+			blk.InUse = false
+			kvc.appendToFreeList(blk)
+		}
+		delete(blank, req.ID)
 	}
-	delete(kvc.FixedBlocks, req.ID)
 	ids := kvc.RequestMap[req.ID]
 	delete(kvc.RequestMap, req.ID)
 	// From https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html

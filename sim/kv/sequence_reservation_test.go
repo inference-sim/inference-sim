@@ -158,3 +158,104 @@ func TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed(t *testing.T) 
 	}
 	assertBlockConservation(t, kvc)
 }
+
+// held is every block a request holds: its token blocks, spare slot blocks and fixed blocks.
+func held(kvc *KVCacheState, id string) int64 {
+	return int64(len(kvc.RequestMap[id]) + len(kvc.SpareBlocks[id]) + len(kvc.FixedBlocks[id]))
+}
+
+// #1627: a speculating request holds blocks for vLLM's slot count -- its computed tokens,
+// everything scheduled this step (the whole verify width) and the drafter's lookahead -- not
+// for the tokens it has stored. Over random prefill chunks and verify-width decode steps that
+// advance by a random accepted count, after every successful allocation the request holds
+// exactly max(token blocks, ceil((end + lookahead) / block)) besides its fixed blocks; a
+// refusal changes nothing; the pool is conserved throughout (INV-4) and a release returns
+// every block.
+func TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		bs := rapid.Int64Range(1, 16).Draw(rt, "blockSize")
+		k := rapid.Int64Range(1, 6).Draw(rt, "k")
+		lookahead := rapid.SampledFrom([]int64{0, k, k + 1}).Draw(rt, "lookahead")
+		total := rapid.Int64Range(4, 256).Draw(rt, "total")
+		fixed := rapid.Int64Range(0, 2).Draw(rt, "fixed")
+		kvc := NewKVCacheState(total, bs)
+		kvc.SequenceFixedBlocks = fixed
+		kvc.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: lookahead}
+
+		input := rapid.IntRange(1, 40).Draw(rt, "input")
+		output := rapid.IntRange(1, 40).Draw(rt, "output")
+		req := promptRequest("s", input)
+		req.OutputTokens = make([]sim.TokenID, output)
+		end := int64(input + output - 1)
+		for step := 0; req.ProgressIndex < end && step < 200; step++ {
+			var hi, advance int64
+			if req.ProgressIndex < int64(input) {
+				hi = min(req.ProgressIndex+rapid.Int64Range(1, 12).Draw(rt, "chunk"), int64(input))
+				advance = hi - req.ProgressIndex
+			} else {
+				hi = req.ProgressIndex + k + 1 // the verify width is scheduled
+				advance = min(rapid.Int64Range(1, k+1).Draw(rt, "accepted"), end-req.ProgressIndex)
+			}
+			before := held(kvc, "s")
+			freeBefore := kvc.countFreeBlocks()
+			if !kvc.AllocateKVBlocks(req, req.ProgressIndex, hi, nil) {
+				if held(kvc, "s") != before || kvc.countFreeBlocks() != freeBefore {
+					rt.Fatalf("a refused allocation changed the hold %d->%d or free %d->%d",
+						before, held(kvc, "s"), freeBefore, kvc.countFreeBlocks())
+				}
+				break
+			}
+			if err := kvc.verifyBlockConservation(); err != nil {
+				rt.Fatal(err)
+			}
+			tokenBlocks := int64(len(kvc.RequestMap["s"]))
+			want := max(tokenBlocks, (hi+lookahead+bs-1)/bs) + fixed
+			if got := held(kvc, "s"); got != want {
+				rt.Fatalf("step %d to end %d (lookahead %d, block %d): holds %d blocks, want %d",
+					step, hi, lookahead, bs, got, want)
+			}
+			if got := kvc.UsedBlocks(); got != want {
+				rt.Fatalf("pool reports %d used, the request holds %d", got, want)
+			}
+			req.ProgressIndex += advance
+		}
+		kvc.ReleaseKVBlocks(req)
+		if kvc.UsedBlocks() != 0 || len(kvc.SpareBlocks) != 0 {
+			rt.Fatalf("release left %d blocks used, spare %v", kvc.UsedBlocks(), kvc.SpareBlocks)
+		}
+		if err := kvc.verifyBlockConservation(); err != nil {
+			rt.Fatal(err)
+		}
+	})
+}
+
+// Spare slot blocks are the first a request's next tokens use, so the reservation never
+// double-counts: a decode that fills a block draws it from the request's own spares, leaving
+// the free list untouched.
+func TestSpeculativeSlots_TokensFillTheReservedBlocksFirst(t *testing.T) {
+	kvc := NewKVCacheState(16, 4)
+	kvc.Speculative = sim.KVSpeculation{Enabled: true, LookaheadTokens: 5}
+	req := promptRequest("s", 4)
+	req.OutputTokens = make([]sim.TokenID, 20)
+	if !kvc.AllocateKVBlocks(req, 0, 4, nil) {
+		t.Fatal("prefill refused")
+	}
+	// 4 prompt tokens + 5 lookahead slots = 9 slots = 3 blocks: 1 token block, 2 spare.
+	if got := held(kvc, "s"); got != 3 {
+		t.Fatalf("after prefill holds %d blocks, want 3", got)
+	}
+	spare := append([]int64(nil), kvc.SpareBlocks["s"]...)
+	req.ProgressIndex = 4
+	free := kvc.countFreeBlocks()
+	// A decode at 4 scheduling 1 token: slots to 4+1+5 = 10, still 3 blocks; its token needs a
+	// new block (the prompt block is full) and takes a spare.
+	if !kvc.AllocateKVBlocks(req, 4, 5, nil) {
+		t.Fatal("decode refused")
+	}
+	if kvc.countFreeBlocks() != free {
+		t.Errorf("the decode took %d blocks off the free list; its spare should have served", free-kvc.countFreeBlocks())
+	}
+	if ids := kvc.RequestMap["s"]; ids[len(ids)-1] != spare[0] {
+		t.Errorf("the decode token landed in block %d, not the first spare %d", ids[len(ids)-1], spare[0])
+	}
+}

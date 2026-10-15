@@ -65,6 +65,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
 | [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
 | [INV-K3](#inv-k3-every-resident-sequence-holds-its-fixed-blocks) Every resident sequence holds its fixed blocks | Subsystem | KV cache |
+| [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -294,6 +295,14 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (pre-check and charge), `ReleaseKVBlocks`; the offload tiers' reload-only admission (`chargeFixedBlocksIfRoom`). The block count is `sim/kernelmodel` `KVBudget.SequenceFixedBlocks`.
 
 **Verification:** `TestSequenceFixedBlocks_LowerTheAdmissionCeilingByTheFixedTerm` (rapid), `TestSequenceFixedBlocks_ChargedOnceAndFreedWithTheSequence`, `TestSequenceFixedBlocks_RefusalIsSideEffectFree`, `TestSequenceFixedBlocks_DoNotTakeTheCachedPrefixBeingClaimed` (`sim/kv`); `TestTheBudgetChargesTheKernelsAdmissionReservationInWholeBlocks`, `TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling`, and the golden `TestKVCapacityMatchesTheEnginesLoggedFigure` (in vLLM's logged 61.18 GiB pool a BLIS sequence's blocks give vLLM's 28,706,997-token capacity for V4.1 on H200 tp8 at 1M context) (`sim/kernelmodel`).
+
+#### INV-K4: A Speculating Request Holds Its Verify Width and Lookahead
+
+**Statement:** On a speculating instance (`K > 0`), after any allocation a request holds `max(token blocks, ceil((end + L) / block))` blocks besides its INV-K3 fixed blocks, where `end` is its computed tokens plus everything scheduled this step and `L` is vLLM's `num_lookahead_tokens` for the method (vLLM v0.31.0 `allocate_slots`, `num_tokens_need_slot`); a speculating decode schedules and debits `1 + K` of `max_num_batched_tokens` (fewer only when the budget or `max_model_len` leaves less), never less than it advances; a preemption returns what the victim debited. Progress is still the accepted count (INV-K2). A run without speculation reserves nothing extra and is byte-identical.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); `sim/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); `cluster.NewInstanceSimulator` derives the reservation from the `SpeculativeConfig` (`SpeculativeConfig.KV`).
+
+**Verification:** `TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead` (rapid), `TestSpeculativeSlots_TokensFillTheReservedBlocksFirst` (`sim/kv`); `TestSpecDecode_ADecodeDebitsItsVerifyWidthFromTheTokenBudget`, `TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth`, `TestSpecDecode_TheSimulatorSchedulesTheVerifyWidth`, `TestSpecDecode_LookaheadReservationPreemptsEarlierUnderKVPressure`, `TestSpecDecode_ReservationPropertiesAroundSaturation` (rapid; used blocks cover every running request's computed tokens plus lookahead after every event, tokens conserved across K), `TestSpecDecode_AcceptanceLengthOneChangesPriceNotProgress`, `TestLookaheadTokensFollowVLLMsNumLookaheadTokens` (`sim`); `TestInstanceKVReservesTheSpeculativeConfigsSlots` (`sim/cluster`).
 
 ### Batch formation
 

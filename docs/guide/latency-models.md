@@ -170,11 +170,16 @@ output-token count, and a closed-loop `accumulate` session's context growth, are
 identical to a `K=0` run. Under speculation raw ITL percentiles are per verification step;
 use TPOT for per-token latency.
 
-**Known limitation ([#1627](https://github.com/inference-sim/inference-sim/issues/1627)).**
-KV and token-budget occupancy are accounted by the accepted count `g`, not the speculative
-footprint. vLLM reserves `K` lookahead KV slots per running request per step and consumes
-about `K+1` of `max_num_batched_tokens`, so above KV saturation BLIS over-predicts batch size
-and under-predicts preemption. Below saturation the two agree.
+**Occupancy: the speculative footprint (#1627).** As vLLM v0.31.0 does, a speculating decode
+schedules its whole verify width, `1 + K` tokens, and debits all of it from
+`max_num_batched_tokens` whatever is later accepted, and every allocation holds KV slots for the
+request's computed tokens, everything scheduled this step, and the drafter's lookahead past them
+(`num_lookahead_tokens`: `K` for DSpark, EAGLE, MTP and draft models, `K + 1` for DFlash, 0 for
+n-gram, suffix and Medusa). Progress still advances by the accepted count. Below saturation
+nothing binds and results match the accepted-count accounting; under KV pressure fewer requests
+fit and preemption starts earlier, as in the engine. Not modelled: vLLM's second budget,
+`input_budget`, which also debits `max_num_new_slots_for_drafting` (`K - 1` for DSpark) per
+request.
 
 ## Per-sequence fixed memory (#1941)
 
@@ -208,7 +213,6 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 ## What it does not yet do
 
 - Predict speculative acceptance (it is an input).
-- Account the speculative KV/token-budget footprint (#1627, above).
 - Price shared prefill-decode or encode instances.
 - Make concurrent P/D handoffs share fabric bandwidth: each is priced as if alone (#1922).
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
