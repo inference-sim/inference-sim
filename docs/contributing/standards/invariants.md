@@ -73,6 +73,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
 | [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
 | [INV-K6](#inv-k6-the-offload-tiers-hold-whole-chunks) The offload tiers hold whole chunks | Subsystem | KV cache / offload |
+| [INV-K7](#inv-k7-a-cpu-tier-hit-waits-for-its-load) A CPU-tier hit waits for its load | Subsystem | KV cache / offload |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -335,6 +336,14 @@ vLLM v0.31.0 sources:
 **Enforced:** `sim/kv/offload_chunks.go` (`tailOf`, `cpuRun`, `loadableBlocks`) through `consultAndReload`, `ReloadablePrefixEnd`, `classifyFetch`, `MirrorToCPU` and the CPU-tier prefix counts; `KVOffloadConfig.CPUChunkCapacity` / `CheckFitsOneChunk` (refused at the CLI, run, replay and per P/D pool).
 
 **Verification:** `TestOffloadChunks_LoadsAreWholeChunksAndTheQueryIsTheCommit` (rapid), `TestOffloadChunks_AlignedPromptReloadsTheSameAtEveryWidth` (metamorphic), `TestOffloadChunks_StoreWholeChunksKeyedByTheirLastBlock`, `TestOffloadChunks_ReloadWholeChunksAndNeverLessThanOne`, `TestOffloadChunks_LRUEvictsWholeChunks`, `TestOffloadChunks_TransfersMoveWholeChunks`, `TestNewOffloadCache_Validation` (`sim/kv`); `TestKVOffloadConfig_CPUTierHoldsWholeChunks` (`sim`); `TestRunCmd_ScenarioOffloadBlock` (`cmd`: `blocks_per_chunk 4` beside a scenario block, run and replay). All existing offload tests run at `b = 1`.
+
+#### INV-K7: A CPU-Tier Hit Waits for Its Load
+
+**Statement:** A new prefill admission whose prefix is CPU-resident is not scheduled until its CPU->GPU load lands: the load moves the blocks of its loadable chunks not already on the GPU, is priced by the kernel at the catalog `cpu_dram` device and the host link (`TierTime`, the slower binds), and starts no earlier than the previous load ends, so a hit waits at least `bytes / host-device bandwidth`. The request is admitted on the first step at or after the load lands; other requests are scheduled meanwhile, and its chunks stay pinned until then. vLLM v0.31.0 reports every offload hit as an async load (`offloading/scheduler.py:1036-1094`), holds the request in `WAITING_FOR_REMOTE_KVS` (`scheduler.py:1258-1275`, `3052-3106`), and chains the copies on the handler's streams (`kv_offload/cpu/gpu_worker.py:676-752`). A store without a `CPULoadTime` keeps the same-step reload and is byte-identical.
+
+**Enforced:** `sim/kv` `OffloadCache.beginCPULoad` / `cpuLoadPlan` / `PollDeferred` (`deferLoading`); `cmd` `priceOffload` installs `KVOffloadConfig.CPULoadTime`.
+
+**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins` (`sim/kv`); `TestRunCmd_KernelBackend_CPUTierReloadIsPricedByTheHostTier` (`cmd`: halving `cpu_dram` read bandwidth strictly raises mean TTFT at a non-zero CPU-tier hit rate).
 
 ### Batch formation
 

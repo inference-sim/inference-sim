@@ -52,6 +52,10 @@ const (
 	// (either this request's own Read job, or a block another request is already
 	// promoting). Resolves when the awaited keys become CPU-readable (cpuHit).
 	deferPromoting
+	// deferLoading: the CPU->GPU load of a CPU-resident prefix is in flight (INV-K7). Resolves
+	// when the clock reaches readyAt; its chunks stay pinned until then, as vLLM holds a
+	// loading chunk's ref_cnt (kv_offload/cpu/manager.py:197-240 at v0.31.0).
+	deferLoading
 )
 
 // deferralState is the per-request record of an in-progress secondary-tier fetch.
@@ -66,6 +70,8 @@ type deferralState struct {
 	startTick int64            // when the episode began (for the maxDeferTicks backstop)
 	resolved  bool             // awaited keys are CPU-readable; admit on next examination
 	recompute bool             // fetch refused/lost; admit as a miss (recompute) on next examination
+	loadKeys  []kvkey.BlockKey // deferLoading: the pinned chunks being loaded
+	readyAt   int64            // deferLoading: when the load lands
 }
 
 // fetchKind classifies what a new request's needed prefix requires beyond its
@@ -220,6 +226,11 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 					st.recompute = true // evictable gate refused (locked tier) → recompute
 				}
 			}
+		case deferLoading:
+			if now >= st.readyAt {
+				o.endCPULoad(st)
+				st.resolved = true
+			}
 		case deferPromoting:
 			switch o.awaitedState(st.keys) {
 			case cpuHit:
@@ -231,6 +242,7 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 		}
 		if !st.resolved && !st.recompute {
 			if now-st.startTick > maxDeferTicks {
+				o.endCPULoad(st)
 				st.recompute = true // R19 defensive backstop (never trips for legitimate configs)
 			} else {
 				still = append(still, id)
@@ -275,6 +287,9 @@ func (o *OffloadCache) IsDeferred(id string) bool {
 // (they become an evictable CPU block that a later request can use) — dropping the
 // map entry only stops re-polling a request that is gone.
 func (o *OffloadCache) ClearDeferred(id string) {
+	if st, ok := o.deferred[id]; ok {
+		o.endCPULoad(st)
+	}
 	delete(o.deferred, id)
 }
 
@@ -289,3 +304,86 @@ func (o *OffloadCache) DeferralsStarted() int64 { return o.deferralsStarted }
 // reloaded blocks are exactly those whose prefill this PR bills as a cache hit rather
 // than a recompute (#1699). 0 for a run where no CPU-resident prefix was ever reloaded.
 func (o *OffloadCache) ReloadsPerformed() int64 { return o.reloadCount }
+
+// beginCPULoad starts the CPU->GPU load of a new admission's CPU-resident prefix past
+// startBlock and sets the request aside until it lands (INV-K7), reporting whether it did.
+//
+// vLLM's OffloadingConnector reports every CPU hit as an async load
+// (get_num_new_matched_tokens returns (hits, True), offloading/scheduler.py:1036-1094 at
+// v0.31.0): the request waits in WAITING_FOR_REMOTE_KVS (scheduler.py:1258-1275) while the
+// worker copies the chunks on its own stream, each transfer chained after the previous one
+// (kv_offload/cpu/gpu_worker.py:676-724), and is scheduled on the first step after
+// get_finished sees the copy done (gpu_worker.py:737-752; scheduler.py:3052-3106). So the
+// load is priced at the bytes of the blocks not already on the GPU, queued behind earlier
+// loads, and it stalls only its own request. The blocks land on the GPU when the request is
+// admitted (allocateThroughChain), where vLLM allocates them at the start of the load.
+//
+// It is a no-op without a CPULoadTime, with nothing to load, and for an episode that has
+// already loaded (one load per episode, so the wait is bounded, R19).
+func (o *OffloadCache) beginCPULoad(reqID string, tokens []sim.TokenID, startBlock int64, prevHash string) bool {
+	if o.cpuLoadTime == nil {
+		return false
+	}
+	st := o.deferred[reqID]
+	if st != nil && st.phase == deferLoading {
+		return false
+	}
+	keys, blocks := o.cpuLoadPlan(tokens, startBlock, prevHash)
+	if blocks == 0 {
+		return false
+	}
+	o.loadBusyUntil = max(o.clock, o.loadBusyUntil) + o.cpuLoadTime(blocks*o.perBlockBytes)
+	for _, k := range keys {
+		o.cpu.pin(k)
+	}
+	if st == nil {
+		st = &deferralState{tier: -1, startTick: o.clock}
+		o.deferred[reqID] = st
+	}
+	st.phase, st.loadKeys, st.readyAt = deferLoading, keys, o.loadBusyUntil
+	st.resolved, st.recompute = false, false
+	o.cpuLoadsStarted++
+	return true
+}
+
+// endCPULoad releases a load's pinned chunks. Idempotent; a no-op for any other episode.
+func (o *OffloadCache) endCPULoad(st *deferralState) {
+	for _, k := range st.loadKeys {
+		o.cpu.unpin(k)
+	}
+	st.loadKeys = nil
+}
+
+// cpuLoadPlan is what a load from startBlock would move, as consultAndReload walks it: the
+// keys of the CPU-resident chunks in the loadable run and how many of their blocks are not on
+// the GPU. A pure query; (nil, 0) when less than one chunk is loadable.
+func (o *OffloadCache) cpuLoadPlan(tokens []sim.TokenID, startBlock int64, prevHash string) ([]kvkey.BlockKey, int64) {
+	tail, ok := o.tailOf(tokens, startBlock, prevHash)
+	if !ok {
+		return nil, 0
+	}
+	chunks, _ := o.cpuRun(tail)
+	if tail.loadableBlocks(chunks) == 0 {
+		return nil, 0
+	}
+	var keys []kvkey.BlockKey
+	var blocks int64
+	for c := tail.firstChunk; c < tail.firstChunk+chunks; c++ {
+		lo, hi := tail.blocks(c)
+		missing := int64(0)
+		for i := lo; i < hi; i++ {
+			if _, onGPU := o.gpu.HashToBlock[string(tail.blockKey(i))]; !onGPU {
+				missing++
+			}
+		}
+		if missing > 0 {
+			keys = append(keys, tail.key(c))
+			blocks += missing
+		}
+	}
+	return keys, blocks
+}
+
+// CPULoadsStarted is the cumulative count of new admissions that waited for a priced CPU->GPU
+// load (INV-K7); 0 without a CPULoadTime.
+func (o *OffloadCache) CPULoadsStarted() int64 { return o.cpuLoadsStarted }
