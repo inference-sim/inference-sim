@@ -170,8 +170,15 @@ func TestMeasuredAccountingClosesOverDisaggregatedRuns(t *testing.T) {
 		config := newTestDisaggDeploymentConfig(4, 2, 2)
 		config.Horizon = rapid.Int64Range(5_000, 3_000_000).Draw(rt, "horizon")
 		config.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 400)
-		if rapid.Bool().Draw(rt, "tightKV") { // decode-side KV drops
-			config.KVCacheConfig = sim.NewKVCacheConfig(int64(rapid.IntRange(26, 60).Draw(rt, "blocks")), 16, 0, 0, 0, 0)
+		// Decode-side KV drops. A handoff that finds the decode KV merely full waits for it
+		// (#1940 review), so a drop needs a prompt the decode KV can never hold: the decode
+		// pool gets as few as 10 blocks while the prefill pool admits every prompt, and no
+		// max_model_len (which would need the decode KV to hold it) bounds the prompt.
+		if rapid.Bool().Draw(rt, "tightKV") {
+			config.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0)
+			config.KVCacheConfig = sim.NewKVCacheConfig(int64(rapid.IntRange(10, 60).Draw(rt, "blocks")), 16, 0, 0, 0, 0)
+			prefillBlocks := int64(100)
+			config.PrefillOverrides.TotalKVBlocks = &prefillBlocks
 		}
 		measured := 0
 		for _, r := range requests {

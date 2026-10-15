@@ -147,6 +147,10 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		}
 		advance = max(advance, d)
 	}
+	// No rank starts another step before this one ends, whatever wakes it (#1944).
+	for _, r := range g.ranks {
+		r.busyUntil = now + advance
+	}
 
 	for i, r := range g.ranks {
 		if !active[i] {

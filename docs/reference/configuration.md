@@ -134,7 +134,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--kv-cpu-blocks` | int64 | 0 | Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU on the legacy `--kv-cpu-blocks` path. Range [0, 1]. |
-| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. KV offload combined with P/D disaggregation is refused. See [KV Cache Management](../guide/kv-cache.md). |
+| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
 
 ## Batch Formation
 
@@ -163,8 +163,9 @@ With `--num-instances 1` (the default), BLIS runs a single-instance simulation �
 | `--prefill-instances` | int | 0 | Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with `prefill` and `decode` pools, and must not exceed the prefill pool's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)). |
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
 | `--pd-decider` | string | "never" | P/D disaggregation decider: `never`, `always`, `prefix-threshold`. |
+| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the kernel's `PDTransferDemand`. A handoff alone still takes exactly `PDTransferTime`. Run and replay alike (INV-13). |
 
-**P/D disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or encode instances.
+**P/D disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block (or `--kv-offload-config`) gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
 
 ## Admission Policy
 
@@ -523,7 +524,7 @@ lora:
 | **Latency** | `--speculative-acceptance-rate` (everything else: scenario + registry, priced by blis-latency-kernel) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
+| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--pd-transfer-contention`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 

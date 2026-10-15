@@ -138,6 +138,13 @@ type Request struct {
 	// Set by KVTransferCompletedEvent before the request is routed and enqueued.
 	IsDecodeSubRequest bool
 
+	// RetainKVOnFinish keeps the request's KV blocks allocated when it finishes, for an owner
+	// that releases them later. A P/D prefill sub-request sets it: NIXL keeps a finished
+	// prefill's blocks until the decode side has pulled them or the lease expires
+	// (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:247-266 at
+	// v0.31.0), and the cluster releases them then (#1934). False releases them at completion.
+	RetainKVOnFinish bool
+
 	// Flow control timestamps (issue #882). Zero when flow control is disabled.
 	GatewayEnqueueTime  int64 // microseconds: when request entered the gateway queue
 	GatewayDispatchTime int64 // microseconds: when request was dispatched from the gateway queue

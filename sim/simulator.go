@@ -121,7 +121,11 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
-	stepCount                 int
+	// busyUntil is when the last executed step ends (its start plus its duration). A step
+	// that empties the running batch leaves stepEvent nil at that step's START, so an
+	// arrival during the step must not start the next one before this (idleStepTime).
+	busyUntil int64
+	stepCount int
 	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
 	// independent engine.
 	lockstep *LockstepGroup
@@ -516,9 +520,12 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	}
 }
 
-// scheduleStepAt arms this instance's next step at time t. A data-parallel rank in a
-// lockstep group (#1909) asks its group instead, which steps every rank together.
+// scheduleStepAt arms this instance's next step at time t, or at the end of the step still
+// executing (idleStepTime, #1944). A data-parallel rank in a lockstep group (#1909) asks its
+// group instead, which steps every rank together; a group step sets every rank's busyUntil,
+// so neither path starts a step while one is running.
 func (sim *Simulator) scheduleStepAt(t int64) {
+	t = sim.idleStepTime(t)
 	if sim.lockstep != nil {
 		sim.lockstep.wake(t)
 		return
@@ -708,6 +715,12 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	}
 }
 
+// idleStepTime is the earliest a step triggered at t by new work on an idle instance may
+// start: t, or the end of the step still executing when the batch it ran emptied. The engine
+// runs one forward pass at a time, so work arriving during a step waits for it to end, as it
+// does whenever the batch is not empty (scheduleNextStep).
+func (sim *Simulator) idleStepTime(t int64) int64 { return max(t, sim.busyUntil) }
+
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
 func (sim *Simulator) recordQueueSnapshots() {
@@ -865,6 +878,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	sim.busyUntil = now + currStepAdvance
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
 	// Runs after execution (new full blocks exist) and before completions
 	// (completing requests' blocks are still in-use and can be mirrored).
@@ -1223,7 +1237,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// the decode pre-check returns false before any state mutation (check-then-act
 			// pattern, matching vLLM kv_cache_manager.py:334-336), so RequestMap is
 			// preserved and Release frees all blocks from prior successful allocations.
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1285,7 +1299,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// InstanceSimulator.EvictRequest writes StateCompleted as a tombstone
 			// rather than a completion — see the note there.
 			req.State = StateCompleted
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1305,6 +1319,59 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 		}
 	}
 	return remaining
+}
+
+// ReserveRemoteKV allocates the prompt KV of a P/D decode sub-request whose KV a NIXL pull is
+// about to bring (vLLM's WAITING_FOR_REMOTE_KVS) and returns how many prompt tokens the pull
+// must move. As vLLM's decode engine does, it first takes the prompt's local prefix-cache hit
+// -- full blocks, capped below the prompt's last token (kv_cache_manager.py:290-299 at
+// v0.31.0) -- and the connector is then asked only for the rest (sched/scheduler.py:525-537
+// and 949): NIXL pulls the blocks the decode cache lacks (nixl/pull_scheduler.py:149-177), and
+// the decode engine's own CPU offload tier is not consulted, nor are the blocks visible to the
+// prefix cache until the pull lands (sim.RemoteKVReserver). On
+// success ProgressIndex is set past the prompt so the request decodes once the pull lands.
+// Returns ok=false, allocating nothing, when the blocks do not fit.
+func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
+	inputLen := req.InputLen()
+	if inputLen == 0 {
+		req.ProgressIndex = 0
+		return 0, true
+	}
+	bs := sim.KVCache.BlockSize()
+	var cached []int64
+	if !sim.prefixCachingDisabled {
+		cached = sim.KVCache.GetCachedBlocks(req.FullInputTokens())
+		for int64(len(cached))*bs > inputLen-1 {
+			cached = cached[:len(cached)-1]
+		}
+	}
+	local := int64(len(cached)) * bs
+	if !sim.remoteKVReserver().AllocateRemoteKV(req, local, inputLen, cached) {
+		return 0, false
+	}
+	req.ProgressIndex = inputLen
+	return inputLen - local, true
+}
+
+// CacheRemoteKV registers a decode sub-request's pulled blocks in the prefix cache once its
+// pull has landed (sim.RemoteKVReserver). Until then no other request hits on them.
+func (sim *Simulator) CacheRemoteKV(req *Request) { sim.remoteKVReserver().CacheRemoteKV(req.ID) }
+
+func (sim *Simulator) remoteKVReserver() RemoteKVReserver {
+	r, ok := sim.KVCache.(RemoteKVReserver)
+	if !ok {
+		panic(fmt.Sprintf("KV store %T cannot reserve KV for a remote pull (sim.RemoteKVReserver)", sim.KVCache))
+	}
+	return r
+}
+
+// releaseFinishedKV frees a finished request's KV blocks, unless the request's owner keeps
+// them past completion (Request.RetainKVOnFinish) and will release them itself.
+func (sim *Simulator) releaseFinishedKV(req *Request) {
+	if req.RetainKVOnFinish {
+		return
+	}
+	sim.KVCache.ReleaseKVBlocks(req)
 }
 
 // scheduleNextStep handles Phase 4: schedules the next step event based on

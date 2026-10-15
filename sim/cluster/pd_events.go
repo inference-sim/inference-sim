@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -159,29 +160,100 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	if decodeInst == nil {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances — routing invariant violated; dropping request",
 			decodeInstID, e.parentReq.ID)
-		e.dropAtStart(cs)
+		e.dropAtStart(cs, holdUntilLease)
 		return
 	}
 	if !decodeInst.IsRoutable() {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer start — request dropped",
 			decodeInstID, e.parentReq.ID)
-		e.dropAtStart(cs)
+		// The decode engine never received the request, so nothing tells the prefill side to
+		// free: its blocks wait out the lease.
+		e.dropAtStart(cs, holdUntilLease)
 		return
 	}
-
-	if ok := decodeInst.ReserveTransferredKV(decodeSubReq); !ok {
-		logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens) at transfer start",
-			decodeInstID, decodeSubReq.ID, decodeSubReq.InputLen())
-		e.dropAtStart(cs)
+	// A prompt larger than the decode instance's whole KV cache can never be reserved: the
+	// decode side rejects it, and the abort notifies the prefill side to free at once
+	// (pull_scheduler.py:219-232).
+	if e.parentReq.NumKVBlocks > decodeInst.TotalKVBlocks() {
+		logrus.Warnf("[cluster] decode instance %s: %s needs %d KV blocks, more than its %d — request dropped",
+			decodeInstID, decodeSubReq.ID, e.parentReq.NumKVBlocks, decodeInst.TotalKVBlocks())
+		e.dropAtStart(cs, freeNow)
 		return
 	}
-
-	// Reservation succeeded: attach the sub-request to the parent. The
-	// KVTransferCompletedEvent promotes it to StateQueued and enqueues
-	// without re-allocating KV.
-	e.parentReq.DecodeSubReq = decodeSubReq
-	scheduleTransferCompletion(cs, e.parentReq, e.time)
+	cs.awaitDecodeKV(decodeInst, e.parentReq, decodeSubReq)
+	cs.serveDecodeKVWaiters(decodeInst, e.time)
 }
+
+// decodeKVWaiter is a decode sub-request whose NIXL pull cannot start yet because its decode
+// instance has no free KV for it. vLLM leaves such a request in the decode engine's waiting
+// queue -- the scheduler retries its allocation every step and stops at the first request that
+// does not fit (sched/scheduler.py) -- while the decode side heartbeats the prefill side's
+// lease, so the prefill KV stays held.
+type decodeKVWaiter struct {
+	parent *ParentRequest
+	req    *sim.Request
+}
+
+// awaitDecodeKV queues a handoff behind the decode instance's earlier waiters (FCFS).
+func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *ParentRequest, req *sim.Request) {
+	id := string(inst.ID())
+	cs.decodeKVWaiters[id] = append(cs.decodeKVWaiters[id], decodeKVWaiter{parent: parent, req: req})
+}
+
+// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs, in arrival order,
+// for as long as the head's blocks fit; the head that does not fit blocks those behind it, as
+// vLLM's waiting queue does. A waiter whose decode instance has become unroutable is dropped:
+// its decode engine had taken the request, so the prefill side frees when the lease, last
+// renewed now, runs out. Called when a handoff starts waiting and whenever the instance may
+// have freed KV.
+func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now int64) {
+	id := string(inst.ID())
+	q := cs.decodeKVWaiters[id]
+	for len(q) > 0 {
+		w := q[0]
+		if !inst.IsRoutable() {
+			(&KVTransferStartedEvent{time: now, parentReq: w.parent}).dropAtStart(cs, holdUntilLeaseRenewed)
+			q = q[1:]
+			continue
+		}
+		pulled, ok := inst.ReserveTransferredKV(w.req)
+		if !ok {
+			break
+		}
+		q = q[1:]
+		w.parent.DecodeSubReq = w.req
+		w.parent.PulledKVBlocks = (pulled + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
+		scheduleTransferCompletion(cs, w.parent, now)
+	}
+	if len(q) == 0 {
+		delete(cs.decodeKVWaiters, id)
+	} else {
+		cs.decodeKVWaiters[id] = q
+	}
+}
+
+// DecodeKVWaiting reports how many handoffs wait for decode KV right now.
+func (cs *ClusterSimulator) DecodeKVWaiting() int {
+	n := 0
+	for _, q := range cs.decodeKVWaiters {
+		n += len(q)
+	}
+	return n
+}
+
+// prefillRelease is when a dropped handoff's prefill KV is freed (INV-PD-7).
+type prefillRelease int
+
+const (
+	// freeNow: the decode engine aborted a request it had received, which notifies the
+	// prefill side (pull_scheduler.py:219-232).
+	freeNow prefillRelease = iota
+	// holdUntilLease: the decode engine never received the request, so no notice comes and
+	// no heartbeat renews the lease: freed at prefill completion + lease.
+	holdUntilLease
+	// holdUntilLeaseRenewed: the decode engine had the request and heartbeated until now.
+	holdUntilLeaseRenewed
+)
 
 // dropAtStart records a drop-at-transfer-start outcome: decode pod
 // unroutable or reservation failed. The parent's TransferStartTime and
@@ -198,7 +270,15 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 // that event detects the drop via DecodeSubReq == nil and returns after
 // incrementing transfersCompleted, without attempting to release KV
 // (nothing was reserved) or promote state.
-func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator) {
+func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, release prefillRelease) {
+	switch release {
+	case freeNow:
+		cs.releasePrefillHold(e.parentReq)
+	case holdUntilLease:
+		cs.expirePrefillLease(e.parentReq, e.parentReq.PrefillCompleteTime+cs.pdKVLeaseUs())
+	case holdUntilLeaseRenewed:
+		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
+	}
 	cs.droppedAtDecodeKV++
 	cs.recordUnserved(e.parentReq.OriginalRequest)
 	cs.transfersInitiated++
@@ -225,18 +305,84 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	parentReq.TransferStartTime = startTime
 
 	// The latency backend prices the handoff (NewClusterSimulator refuses a PD deployment
-	// without one), each one as if alone on the fabric: concurrent handoffs do not share
-	// bandwidth (INV-P2-2 not modelled yet, #1922). The KV moves in whole blocks, so the token
-	// count priced is the blocks' capacity.
-	numBlocks := parentReq.NumKVBlocks
-	duration := max(1, cs.config.PDTransferTime(numBlocks*cs.config.BlockSizeTokens,
-		parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
+	// without one). The KV moves in whole blocks, so the token count priced is the blocks'
+	// capacity. Without contention every handoff takes its price, as if alone on the fabric;
+	// with it, the handoff's demand joins the link arbiter, which decides when it completes.
+	numBlocks := parentReq.PulledKVBlocks
+	tokens := numBlocks * cs.config.BlockSizeTokens
+	duration := max(1, cs.config.PDTransferTime(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
+	parentReq.TransferAloneTicks = duration
+	if cs.pdLinks != nil {
+		flow := cs.config.PDTransferDemand(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID)
+		if alone := kvtransfer.AloneTicks(flow); alone != duration {
+			// blis-schemas kernel.PDTransferDemand: alone, a demand costs exactly PDTransferTime.
+			panic(fmt.Sprintf("KV handoff of %s: its demand costs %d ticks alone but its price is %d; "+
+				"the latency backend breaks the PDTransferTime == PDTransferDemand.AloneTime law",
+				parentReq.ID, alone, duration))
+		}
+		cs.pdLinkFlows[cs.pdLinks.Start(startTime, flow)] = parentReq
+		logrus.Debugf("[cluster] KV transfer started for %s at %d: %d blocks, %d μs alone, sharing links with %d others",
+			parentReq.ID, startTime, numBlocks, duration, cs.pdLinks.InFlight()-1)
+		cs.scheduleLinkWake()
+		return
+	}
 	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
 		parentReq.ID, numBlocks, duration)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
 		seqID: cs.nextSeqID(),
 	})
+}
+
+// scheduleLinkWake schedules the link arbiter's next drain or completion, superseding any wake
+// scheduled before: a handoff starting can move every other handoff's completion.
+func (cs *ClusterSimulator) scheduleLinkWake() {
+	at, ok := cs.pdLinks.NextWake()
+	if !ok {
+		return
+	}
+	cs.pdLinkWakeGen++
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &PDLinkWakeEvent{time: at, gen: cs.pdLinkWakeGen},
+		seqID: cs.nextSeqID(),
+	})
+}
+
+// PDLinkWakeEvent advances the link arbiter to its next drain or completion and completes the
+// handoffs that finished, in the order they started. Only the latest scheduled wake acts.
+// Priority 6, the completion it stands for.
+type PDLinkWakeEvent struct {
+	time int64
+	gen  int64
+}
+
+func (e *PDLinkWakeEvent) Timestamp() int64 { return e.time }
+func (e *PDLinkWakeEvent) Priority() int    { return 6 }
+
+// Execute completes the finished handoffs through KVTransferCompletedEvent at this tick, so a
+// contended handoff completes by exactly the path an uncontended one does.
+func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
+	if e.gen != cs.pdLinkWakeGen {
+		return
+	}
+	for _, id := range cs.pdLinks.Advance(e.time) {
+		parent := cs.pdLinkFlows[id]
+		delete(cs.pdLinkFlows, id)
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &KVTransferCompletedEvent{time: e.time, parentReq: parent},
+			seqID: cs.nextSeqID(),
+		})
+	}
+	cs.scheduleLinkWake()
+}
+
+// PDLinkPeakConcurrent is, per link, the most handoffs ever in flight on it together; nil when
+// contention is off.
+func (cs *ClusterSimulator) PDLinkPeakConcurrent() map[string]int {
+	if cs.pdLinks == nil {
+		return nil
+	}
+	return cs.pdLinks.PeakConcurrent()
 }
 
 // KVTransferCompletedEvent fires after transfer duration elapses.
@@ -305,6 +451,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
+		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
 		return
 	}
 	if !decodeInst.IsRoutable() {
@@ -317,8 +464,18 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
+		// A decode side that went away mid-pull sends no completion notice and no more
+		// heartbeats, so the prefill side frees its blocks only when the lease runs out.
+		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
+		cs.serveDecodeKVWaiters(decodeInst, e.time)
 		return
 	}
+	// The pull is complete: the decode side notifies the prefill side, which frees the
+	// blocks it held (finished_sending, nixl/base_worker.py:2902-3031).
+	cs.releasePrefillHold(e.parentReq)
+	// And the decode engine caches the blocks it has received, which only now may serve
+	// another request's prefix (_update_waiting_for_remote_kv, sched/scheduler.py:3052-3085).
+	decodeInst.CacheRemoteKV(decodeSubReq)
 
 	// Promote StateWaitingForRemoteKVs → StateQueued. KV blocks remain
 	// allocated; EnqueueDecodeSubRequest (via InjectDecodeOnline) does not
@@ -347,6 +504,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			TransferStartTime: e.parentReq.TransferStartTime,
 			TransferDuration:  transferDuration,
 			NumKVBlocks:       e.parentReq.NumKVBlocks,
+			PulledKVBlocks:    e.parentReq.PulledKVBlocks,
 			PrefillInstanceID: string(e.parentReq.PrefillInstanceID),
 			DecodeInstanceID:  decodeInstID,
 		})

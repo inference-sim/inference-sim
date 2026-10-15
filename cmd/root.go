@@ -92,6 +92,7 @@ var (
 	schedulerSource           string                 // what chose the scheduler: "--scheduler", "--policy-config", "" = the scenario
 	preemptionSource          string                 // likewise for the preemption policy
 	scenarioDisaggregated     bool                   // the scenario states prefill and decode pools (each pool records its own overrides)
+	scenarioOffload           *deployment.Offload    // the scenario deployment's offload block, nil when it states none (#1910)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
@@ -179,6 +180,7 @@ var (
 	prefillDecodeInstances int    // Number of shared-role instances (both prefill and decode), issue #1276
 	pdDecider              string // Disaggregation decider name
 	pdPrefixThreshold      int    // Non-cached token threshold for prefix-threshold decider
+	pdTransferContention   bool   // concurrent P/D handoffs share the links they cross (#1922)
 	prefillRoutingScorers  string // Scorer weights for prefill pool routing
 	decodeRoutingScorers   string // Scorer weights for decode pool routing
 
@@ -655,14 +657,9 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		logrus.Fatalf("scenario %q states %d colocated pools; a run simulates one colocated "+
 			"engine, so state one pool and scale it with --num-instances", kernelScenario, len(shape.Roles))
 	}
-	// The scenario's offload block and --kv-offload-config describe the same tiers in two
-	// formats that are not yet one (#1910). Simulating without a hierarchy the scenario states
-	// would drop it silently (R1), so it is refused until the scenario is the one source.
-	if shape.StatesOffload {
-		logrus.Fatalf("scenario %q states a deployment offload block, which BLIS does not "+
-			"read yet (#1910); describe the tiers with --kv-offload-config and remove the block "+
-			"from the scenario", kernelScenario)
-	}
+	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
+	// may only restate it (resolveKVOffloadConfig).
+	scenarioOffload = shape.Offload
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
@@ -1178,6 +1175,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
 	cmd.Flags().IntVar(&prefillDecodeInstances, "prefill-decode-instances", 0, "Number of shared-role instances serving both prefill and decode (llm-d 'prefill-decode'/'both' parity; 0 = disabled). Must satisfy --prefill-instances + --decode-instances + --prefill-decode-instances <= --num-instances.")
 	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
+	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Concurrent P/D KV handoffs share the fabric links they cross (#1922): each link's bandwidth is divided max-min fairly among the handoffs on it, from the kernel's PDTransferDemand, and re-divided as handoffs start and finish. A handoff alone still takes exactly the kernel's PDTransferTime. Default off: every handoff is priced as if alone.")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 16, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value. Default 16 matches llm-d's shipped P/D configs (deploy/config/pd-epp-config.yaml).")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
@@ -1226,7 +1224,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
 	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
 	// read only when some tier actually names a class.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. Absent => offload subsystem inert. On replay the trace header is authoritative.")
+	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. When the scenario states an offload block, that block is the configuration and this file may only restate it (a file resolving differently is refused). Absent, with no scenario block => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
@@ -1937,10 +1935,7 @@ var runCmd = &cobra.Command{
 		// The instance counts are final (DP-as-placement applied): every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
-		var pdTransferTime func(int64, cluster.InstanceID, cluster.InstanceID) int64
-		if kernelPD != nil {
-			pdTransferTime = kernelPD.transferTime()
-		}
+		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -1985,6 +1980,9 @@ var runCmd = &cobra.Command{
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
 			PDTransferTime:                  pdTransferTime,
+			PDTransferContention:            pdTransferContention,
+			PDTransferDemand:                pdTransferDemand,
+			PDPrefillKVHold:                 kernelPD.holdsPrefillKV(),
 			PrefillScorerConfigs:            prefillScorerCfgs,
 			DecodeScorerConfigs:             decodeScorerCfgs,
 			PrefillOverrides:                prefillOverrides,
@@ -2184,8 +2182,10 @@ var runCmd = &cobra.Command{
 		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
 		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
 		// (INV-6). Same shared helper on the replay path (INV-13).
+		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
+		pdMetrics := cs.PDMetrics()
 		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
-			resultsFileEmitOptions(metricsPath, resolvedCatalogRoot)...); err != nil {
+			append(resultsFileEmitOptions(metricsPath, resolvedCatalogRoot), sim.WithPD(pdMetrics.Output()))...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -2200,12 +2200,7 @@ var runCmd = &cobra.Command{
 			cs.InjectedByClass(),
 		)
 
-		rawMetrics.PD = cluster.CollectPDMetrics(
-			cs.ParentRequests(),
-			cs.AggregatedMetrics(),
-			cs.PoolMembership(),
-			cs.PerInstanceMetricsByID(),
-		)
+		rawMetrics.PD = pdMetrics
 		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
@@ -2460,6 +2455,28 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	if pd.TransferDuration.Count > 0 {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
+	// The lines below print only when their feature is active, so a run without contention,
+	// hold or CPU-tier hits prints the section it always did.
+	if pd.LinkPeakConcurrent != nil && pd.TransferQueueDelay.Count > 0 {
+		_, _ = fmt.Fprintf(w, "KV Transfer Queueing Delay (us): mean=%.1f p50=%.1f p90=%.1f p99=%.1f\n",
+			pd.TransferQueueDelay.Mean, pd.TransferQueueDelay.P50, pd.TransferQueueDelayP90, pd.TransferQueueDelay.P99)
+		links := make([]string, 0, len(pd.LinkPeakConcurrent))
+		for l := range pd.LinkPeakConcurrent {
+			links = append(links, l)
+		}
+		sort.Strings(links)
+		for _, l := range links {
+			_, _ = fmt.Fprintf(w, "  Peak Concurrent Transfers (%s): %d\n", l, pd.LinkPeakConcurrent[l])
+		}
+	}
+	if pd.PrefillKVHoldPeakTokens > 0 {
+		_, _ = fmt.Fprintf(w, "Prefill KV Hold Peak (tokens): %d\n", pd.PrefillKVHoldPeakTokens)
+	}
+	for _, pool := range []string{"prefill", "decode"} {
+		if r := pd.CPUTierHitRate[pool]; r > 0 {
+			_, _ = fmt.Fprintf(w, "CPU Tier Hit Rate (%s pool): %.4f\n", pool, r)
+		}
 	}
 }
 

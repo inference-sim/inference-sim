@@ -130,7 +130,7 @@ type ClusterArrivalEvent struct {
 }
 
 func (e *ClusterArrivalEvent) Timestamp() int64 { return e.time }
-func (e *ClusterArrivalEvent) Priority() int     { return 0 }
+func (e *ClusterArrivalEvent) Priority() int    { return 0 }
 
 // Execute schedules an AdmissionDecisionEvent with the configured admission latency.
 // Records the request as injected on its SLO class BEFORE any admission/routing
@@ -163,7 +163,7 @@ type AdmissionDecisionEvent struct {
 }
 
 func (e *AdmissionDecisionEvent) Timestamp() int64 { return e.time }
-func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
+func (e *AdmissionDecisionEvent) Priority() int    { return 1 }
 
 // Execute processes the admission decision for an incoming request.
 // Checks admission policy with full RouterState (BC-8: includes snapshots).
@@ -273,7 +273,7 @@ type RoutingDecisionEvent struct {
 }
 
 func (e *RoutingDecisionEvent) Timestamp() int64 { return e.time }
-func (e *RoutingDecisionEvent) Priority() int     { return 2 }
+func (e *RoutingDecisionEvent) Priority() int    { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
 // Dispatches to executeDisaggregatedRouting when pool topology is configured (PD
@@ -299,7 +299,7 @@ type GatewayEvictionEvent struct {
 }
 
 func (e *GatewayEvictionEvent) Timestamp() int64 { return e.time }
-func (e *GatewayEvictionEvent) Priority() int     { return 5 }
+func (e *GatewayEvictionEvent) Priority() int    { return 5 }
 
 func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	logrus.Debugf("[cluster] gateway eviction: req %s evicted from instance %s at tick %d",
@@ -345,7 +345,7 @@ type GatewayQueueTTLEvent struct {
 }
 
 func (e *GatewayQueueTTLEvent) Timestamp() int64 { return e.time }
-func (e *GatewayQueueTTLEvent) Priority() int     { return 6 }
+func (e *GatewayQueueTTLEvent) Priority() int    { return 6 }
 
 func (e *GatewayQueueTTLEvent) Execute(cs *ClusterSimulator) {
 	req := cs.gatewayQueue.RemoveByRequestID(e.requestID)
@@ -373,7 +373,7 @@ type GatewayDispatchTickEvent struct {
 }
 
 func (e *GatewayDispatchTickEvent) Timestamp() int64 { return e.At }
-func (e *GatewayDispatchTickEvent) Priority() int     { return 7 }
+func (e *GatewayDispatchTickEvent) Priority() int    { return 7 }
 
 func (e *GatewayDispatchTickEvent) Execute(cs *ClusterSimulator) {
 	if cs.gatewayQueue == nil {
@@ -405,7 +405,7 @@ type DisaggregationDecisionEvent struct {
 }
 
 func (e *DisaggregationDecisionEvent) Timestamp() int64 { return e.time }
-func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
+func (e *DisaggregationDecisionEvent) Priority() int    { return 3 }
 
 // Execute implements the llm-d decode-first routing order:
 // 1. Select a decode pod first (via decode pool routing).
@@ -510,17 +510,18 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	// sub-request views the same underlying token buffer, no flatten. If
 	// Request.InputTokens ever becomes lazy/chained, this site must update.
 	prefillSubReq := &sim.Request{
-		ID:           parent.PrefillSubReqID,
-		InputTokens:  e.request.InputTokens,
-		MaxOutputLen: e.request.MaxOutputLen,
-		Deadline:     e.request.Deadline,
-		PrefixGroup:  e.request.PrefixGroup,
-		State:        sim.StateQueued,
-		ArrivalTime:  e.request.ArrivalTime,
-		TenantID:     e.request.TenantID,
-		SLOClass:     e.request.SLOClass,
-		Model:        e.request.Model,
-		Phase:        e.request.Phase,
+		ID:               parent.PrefillSubReqID,
+		InputTokens:      e.request.InputTokens,
+		MaxOutputLen:     e.request.MaxOutputLen,
+		Deadline:         e.request.Deadline,
+		PrefixGroup:      e.request.PrefixGroup,
+		State:            sim.StateQueued,
+		ArrivalTime:      e.request.ArrivalTime,
+		TenantID:         e.request.TenantID,
+		SLOClass:         e.request.SLOClass,
+		Model:            e.request.Model,
+		Phase:            e.request.Phase,
+		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
 
@@ -548,7 +549,7 @@ type ScalingTickEvent struct {
 }
 
 func (e *ScalingTickEvent) Timestamp() int64 { return e.At }
-func (e *ScalingTickEvent) Priority() int     { return 8 }
+func (e *ScalingTickEvent) Priority() int    { return 8 }
 
 // Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → stabilization window gate
 // → schedule ScaleActuationEvent → schedule next ScalingTickEvent.
@@ -570,7 +571,7 @@ type ScaleActuationEvent struct {
 }
 
 func (e *ScaleActuationEvent) Timestamp() int64 { return e.At }
-func (e *ScaleActuationEvent) Priority() int     { return 9 }
+func (e *ScaleActuationEvent) Priority() int    { return 9 }
 
 // Execute calls Actuator.Apply(decisions).
 // Full actuator logic is wired in US3 (T019–T023).

@@ -165,6 +165,8 @@ type TieredKVCache struct {
 var (
 	_ sim.KVStore                = (*TieredKVCache)(nil)
 	_ sim.ReloadReportingKVStore = (*TieredKVCache)(nil)
+	_ sim.RequestBlockReporter   = (*TieredKVCache)(nil)
+	_ sim.RemoteKVReserver       = (*TieredKVCache)(nil)
 )
 
 // NewTieredKVCache creates a TieredKVCache.
@@ -409,6 +411,18 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 	}
 	return reloaded
 }
+
+// RequestBlocks implements sim.RequestBlockReporter from the GPU tier.
+func (t *TieredKVCache) RequestBlocks(reqID string) []int64 { return t.gpu.RequestBlocks(reqID) }
+
+// AllocateRemoteKV implements sim.RemoteKVReserver on the GPU tier alone: a remotely
+// prefilled prompt is NIXL's to load, so no offload tier is consulted.
+func (t *TieredKVCache) AllocateRemoteKV(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	return t.gpu.AllocateRemoteKV(req, startIndex, endIndex, cachedBlocks)
+}
+
+// CacheRemoteKV implements sim.RemoteKVReserver from the GPU tier.
+func (t *TieredKVCache) CacheRemoteKV(reqID string) { t.gpu.CacheRemoteKV(reqID) }
 
 func (t *TieredKVCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return t.gpu.GetCachedBlocks(tokens)

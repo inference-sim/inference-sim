@@ -788,8 +788,15 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
 		{"a per-role MoE comm flag", "unknown flag: --decode-moe-comm-backend",
 			pd(plain, append(topology, "--decode-moe-comm-backend", "naive")...)},
-		{"a scenario stating an offload hierarchy", "states a deployment offload block",
-			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
+		// The scenario's offload block is read (#1910); a field the offload model does not
+		// implement is refused by name rather than dropped.
+		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
+			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
+		// qwen3.5's linear-attention layers carry recurrent state, so NIXL's prefill backs off
+		// one token for the decode side to recompute (nixl/base_scheduler.py:385-407), which
+		// BLIS does not model.
+		{"a model whose NIXL prefill backs off", "BLIS does not model that recompute",
+			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
@@ -903,7 +910,10 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 // tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
 // completes, and its exported trace replays byte-identically (INV-13).
 func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
-	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--pd-decider", "always",
+	// An offload tier beside the NIXL handoff runs only through a MultiConnector
+	// (vllm/config/vllm.py:1124-1158).
+	multi := writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector")
+	common := []string{"--scenarios", multi, "--scenario", "variant.yaml", "--pd-decider", "always",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
 		"--horizon", "600000000"}
 	for _, tt := range []struct {
@@ -948,7 +958,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
 	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
-	pools := &kernelPools{}
+	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector
 	for _, c := range []struct {
 		role deployment.Role
 		dst  **kernelmodel.Model

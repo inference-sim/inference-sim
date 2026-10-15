@@ -130,8 +130,53 @@ exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pc
 
 Refused: a P/D topology over a colocated scenario; a disaggregated scenario run without
 `--prefill-instances`/`--decode-instances`; pools that differ in block size, dp or draft
-configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or
+configuration; a handoff connector other than NIXL's; shared (`--prefill-decode-instances`) or
 encode instances.
+
+The handoff follows vLLM v0.31.0's NIXL protocol, so the scenario's `pd_transfer.connector`
+must be `NixlConnector`, `NixlPullConnector`, `NixlPushConnector` or a `MultiConnector` over
+one; any other connector is refused. Three further rules follow from vLLM:
+
+- **An offload tier needs a MultiConnector.** With a tier, `pd_transfer.connector` must be
+  `MultiConnector`: setting `kv_offloading_size` replaces `kv_connector` with the
+  OffloadingConnector (`vllm/config/vllm.py:1124-1158`), so a plain NIXL connector and a
+  tier cannot run together.
+- **A MultiConnector is assumed to list NixlConnector first.** The first connector in config
+  order that reports tokens loads them (`multi_connector.py:134-141, 429-448`). blis-schemas
+  states neither the children nor their order, so BLIS assumes llm-d's composition and says
+  so on stderr.
+- **A model whose NIXL prefill backs off is refused.** That covers Mamba-state models and
+  multi-module MTP drafting K > 1: the decode side recomputes the trailing prompt tokens
+  (`_prefill_backoff`, `nixl/base_scheduler.py:385-407`), which BLIS does not model. DSpark
+  backs off nothing: its prefill lookahead is 1 (`config/vllm.py:657-678`).
+
+- **Decode-side load (INV-PD-8).** The decode instance takes its own prefix-cache hit first
+  (whole blocks, never the prompt's last token) and reserves the rest
+  (`WAITING_FOR_REMOTE_KVS`). The handoff moves and is priced for only those blocks, so a
+  session's later turn on the same decode instance pulls only its new blocks.
+- **Prefill KV hold (INV-PD-7).** The prefill instance keeps a finished request's blocks,
+  which count against its KV capacity, until the pull completes. They are freed at once if
+  the decode side never took the request, and at NIXL's 30 s lease expiry if the decode
+  instance went away mid-pull.
+- **Contention (INV-P2-2, `--pd-transfer-contention`, default off).** Concurrent handoffs
+  share the links they cross. The links come from the kernel's `PDTransferDemand`: the
+  sender's NIC egress and the receiver's NIC ingress across nodes, or the NVLink domain on
+  one node. Each link is divided max-min fairly and re-divided as handoffs start and finish.
+  The floor is never shared. A handoff alone still takes exactly `PDTransferTime`. With
+  contention off, every handoff is priced as if alone.
+- **Offload tiers (#1940).** The scenario's `offload` block (or `--kv-offload-config`, see
+  [KV offload](#kv-offload)) gives every pool its own tier of that size: llm-d's
+  MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
+  what its engine computes. The prefill pool's tier serves prefix hits before compute. The
+  decode pool's tier serves the requests the decode pool runs itself (those the decider
+  does not disaggregate), but never a remotely prefilled prompt, which NIXL, listed first,
+  loads. A 0-byte tier is refused, as vLLM refuses it.
+
+The PD section on stdout, and the results file's `pd` block, report the handoffs, their p50
+and p90 durations, the queueing delay contention added (duration minus the uncontended
+price), each link's peak concurrent handoffs, the prefill KV hold's peak, and each pool's
+CPU-tier hit rate.
+
 
 ## Data and expert parallelism (MoE)
 
@@ -253,6 +298,29 @@ and under-predicts preemption. Below saturation the two agree.
 
 ## KV offload
 
+The scenario's `offload` block is the run's KV offload configuration (#1910). It maps onto
+vLLM's OffloadingConnector:
+
+- **Tiers.** A `cpu_dram` tier of `bytes` is the CPU tier (`cpu_bytes_to_use`). vLLM's
+  defaults apply to everything the schema does not state: block size, `offload_prompt_only`,
+  `tokens_per_hash`.
+- **Accepted settings.** `connector` may be `OffloadingConnector` or left out; `spec` may be
+  `CPUOffloadingSpec`, `TieringOffloadingSpec`, or left out; `eviction_policy` may be `lru`.
+- **Refused by name:**
+  - another connector or spec;
+  - `prefetch_depth`;
+  - `arc`;
+  - a secondary tier (blis-schemas does not state the fs tier's `root_dir`, `direct_io` and
+    thread counts; describe those with `--kv-offload-config` instead);
+  - an offload block with no `cpu_dram` tier.
+- **0 bytes.** blis-schemas refuses a 0-byte tier, as vLLM refuses `cpu_bytes_to_use: 0`.
+- **Per engine.** The block is deployment-level and the schema has no per-pool form, while
+  `cpu_bytes_to_use` belongs to one engine's connector. So every engine gets its own tier of
+  the stated bytes: the colocated pool, and each prefill and each decode engine.
+- **The flag only restates.** `--kv-offload-config` may restate the scenario's block; it must
+  then resolve identically, or the run is refused naming the fields that differ. With no
+  scenario block, the flag alone configures the offload.
+
 `--kv-offload-config` tiers must each name a catalog `device_class`; the kernel prices every
 transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit
 `read_bandwidth`, `write_bandwidth` and `base_latency` in the tier config are refused.
@@ -271,7 +339,8 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 - Predict speculative acceptance (it is an input).
 - Account the speculative KV/token-budget footprint (#1627, above).
 - Price shared prefill-decode or encode instances.
-- Make concurrent P/D handoffs share fabric bandwidth: each is priced as if alone (#1922).
+- Model vLLM's async scheduling: an engine runs one forward pass at a time and schedules the
+  next only when the current one ends (INV-8), with no overlap of scheduling and execution.
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
   registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
 

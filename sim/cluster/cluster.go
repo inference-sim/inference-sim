@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -81,12 +82,27 @@ type ClusterSimulator struct {
 	// successful promotions, late drops (decode pod became non-routable
 	// mid-transfer), and degenerate completions scheduled by dropAtStart.
 	transfersCompleted      int
-	pdPrefillCompletedCount int               // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
-	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
+	pdPrefillCompletedCount int // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount  int // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount   int // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV       int // requests dropped due to insufficient KV at decode
+	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
+	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
+	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
+	pdLinks       *kvtransfer.LinkArbiter
+	pdLinkFlows   map[kvtransfer.FlowID]*ParentRequest
+	pdLinkWakeGen int64
+	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
+	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
+	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
+	// heldKVPeakTokens is each instance's peak of distinct held tokens.
+	prefillHolds map[string][]int64
+	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
+	decodeKVWaiters      map[string][]decodeKVWaiter
+	heldBlockRefs        map[string]map[int64]int
+	heldKVPeakTokens     map[string]int64
+	prefillRoutingPolicy sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy  sim.RoutingPolicy // nil = use main routingPolicy
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
@@ -160,13 +176,13 @@ type ClusterSimulator struct {
 	// Determinism (INV-6): the hook sees requests in the same monotonic
 	// non-decreasing ArrivalTime order the cluster enqueues them.
 	// fireArrivalHook() panics on a regression.
-	arrivalHook         func(*sim.Request)
+	arrivalHook func(*sim.Request)
 	// arrivalGate, when set, decides at each arrival whether the client sends it
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
 	arrivalGate ArrivalGate
 	// unservedHook, when set, is told of every request the cluster refuses or drops
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
-	unservedHook func(req *sim.Request, now int64) []*sim.Request
+	unservedHook        func(req *sim.Request, now int64) []*sim.Request
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
@@ -231,8 +247,17 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
 		}
 	}
-	// Concurrent handoffs are priced independently: overlapping transfers do not share fabric
-	// bandwidth. Per-link contention is not modelled yet (INV-P2-2, #1922).
+	// With contention on, concurrent handoffs share the links they cross (INV-P2-2, #1922), so
+	// each needs the demand behind its price; the simulator has no link model of its own.
+	if config.PDTransferContention {
+		if config.PrefillInstances == 0 && config.SharedInstances == 0 {
+			panic("ClusterSimulator: PDTransferContention is set but the deployment is not disaggregated")
+		}
+		if config.PDTransferDemand == nil {
+			panic("ClusterSimulator: PDTransferContention requires DeploymentConfig.PDTransferDemand: " +
+				"the latency backend states each handoff's links and rates, and the simulator has none of its own")
+		}
+	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
@@ -311,6 +336,14 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
+		cs.prefillHolds = make(map[string][]int64)
+		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
+		if config.PDTransferContention {
+			cs.pdLinks = kvtransfer.NewLinkArbiter()
+			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
+		}
+		cs.heldBlockRefs = make(map[string]map[int64]int)
+		cs.heldKVPeakTokens = make(map[string]int64)
 
 		// Per-pool routing policies and the disaggregation decider are created after
 		// the construction loop (both need cacheQueryFn from instances).
@@ -1040,6 +1073,7 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 		}
 		if role.Has(PoolRoleDecode) {
 			c.detectDecodeCompletions(inst)
+			c.serveDecodeKVWaiters(inst, c.clock)
 		}
 	}
 }
@@ -1358,6 +1392,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
 		c.pdPrefillCompletedCount++
+		c.startPrefillHold(parent)
 
 		// Schedule KV transfer
 		heap.Push(&c.clusterEvents, clusterEventEntry{
@@ -2472,17 +2507,18 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// sub-request views the same underlying token buffer, no flatten. If
 	// Request.InputTokens ever becomes lazy/chained, this site must update.
 	prefillSubReq := &sim.Request{
-		ID:           parent.PrefillSubReqID,
-		InputTokens:  req.InputTokens,
-		MaxOutputLen: req.MaxOutputLen,
-		Deadline:     req.Deadline,
-		PrefixGroup:  req.PrefixGroup,
-		State:        sim.StateQueued,
-		ArrivalTime:  req.ArrivalTime,
-		TenantID:     req.TenantID,
-		SLOClass:     req.SLOClass,
-		Model:        req.Model,
-		Phase:        req.Phase,
+		ID:               parent.PrefillSubReqID,
+		InputTokens:      req.InputTokens,
+		MaxOutputLen:     req.MaxOutputLen,
+		Deadline:         req.Deadline,
+		PrefixGroup:      req.PrefixGroup,
+		State:            sim.StateQueued,
+		ArrivalTime:      req.ArrivalTime,
+		TenantID:         req.TenantID,
+		SLOClass:         req.SLOClass,
+		Model:            req.Model,
+		Phase:            req.Phase,
+		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
 

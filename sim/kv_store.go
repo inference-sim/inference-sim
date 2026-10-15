@@ -30,6 +30,32 @@ type ThrashCounter interface {
 	ThrashCounts() ThrashCounts
 }
 
+// RequestBlockReporter is the optional capability a KVStore implements to report the GPU
+// blocks a request holds, in allocation order. Every production store implements it (the
+// offload stores report their GPU tier's). The cluster reads it to count, without double
+// counting a prefix-shared block, the KV a P/D prefill instance holds for decode pulls
+// (INV-PD-7). The slice is the store's own: callers must not modify it.
+type RequestBlockReporter interface {
+	RequestBlocks(reqID string) []int64
+}
+
+// RemoteKVReserver is the capability a KVStore implements to reserve a P/D decode
+// sub-request's prompt KV for an incoming NIXL pull. Every production store implements it.
+//
+//   - AllocateRemoteKV allocates on the GPU tier alone, consulting no offload tier: under a
+//     MultiConnector of NIXL and the OffloadingConnector, the KV of a remotely prefilled request
+//     is loaded by the first connector that reports tokens, which is NIXL, so the decode
+//     engine's own CPU tier never serves that prompt
+//     (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:134-141 and 429-448 at
+//     v0.31.0). It also registers none of the blocks in the prefix cache: vLLM allocates with
+//     delay_cache_blocks (sched/scheduler.py:1216) so no request hits on KV still in flight.
+//   - CacheRemoteKV registers them once the pull has landed (_update_waiting_for_remote_kv,
+//     sched/scheduler.py:3052-3085).
+type RemoteKVReserver interface {
+	AllocateRemoteKV(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+	CacheRemoteKV(reqID string)
+}
+
 // DeferrableKVStore is the optional capability a KVStore implements when it can
 // defer a new prefill admission that needs KV blocks resident only on a secondary
 // (disk/object-store) offload tier, and re-poll it at each scheduler step instead

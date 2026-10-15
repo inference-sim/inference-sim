@@ -136,6 +136,9 @@ type identity struct {
 	gpusPerRack int
 	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
 	rankGPUs int
+	// prefillBackoff is NIXL's _prefill_backoff for this pool: the trailing prompt tokens a
+	// disaggregated prefill does not compute and the decode side recomputes.
+	prefillBackoff int
 }
 
 func identityOf(in latencykernel.Inputs) identity {
@@ -160,8 +163,33 @@ func identityOf(in latencykernel.Inputs) identity {
 		gpusPerNode:   in.Scenario.Cluster.GPUsPerNode,
 		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
 		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
+		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
 	}
 }
+
+// prefillBackoffOf is vLLM v0.31.0's NixlConnector _prefill_backoff
+// (nixl/base_scheduler.py:385-398): max(1 if the model has Mamba-style recurrent layers,
+// num_prefill_lookahead_tokens - 1). The lookahead (config/vllm.py:657-678) is 0 without an
+// Eagle-family drafter, num_speculative_tokens for multi-module MTP (method mtp with
+// min(draft layers, K) > 1, config/speculative.py:1973-1979), and 1 for every other Eagle-family
+// drafter -- DSpark included (speculative.py:1938-1942) -- so DSpark backs off nothing.
+func prefillBackoffOf(g *model.Graph, sp *deployment.Speculative) int {
+	backoff := 0
+	g.EachNode(func(_ string, n model.Node) {
+		if n.Op == model.OpRecurrentUpdate {
+			backoff = 1
+		}
+	})
+	if sp != nil && sp.Method == "mtp" && g.Speculator != nil &&
+		min(g.Speculator.Stack.Layers(), sp.NumSpecTokens) > 1 {
+		backoff = max(backoff, sp.NumSpecTokens-1)
+	}
+	return backoff
+}
+
+// PrefillBackoffTokens is the pool's NIXL prefill backoff (prefillBackoffOf): under P/D the
+// decode side recomputes this many trailing prompt tokens instead of pulling them.
+func (m *Model) PrefillBackoffTokens() int { return m.id.prefillBackoff }
 
 // expertCounts returns the routed expert count and top-k of the first routed layer kind,
 // or zeros for a dense model. A layer kind carrying a GroupedGEMM node is what makes a
@@ -557,6 +585,10 @@ type Deployment struct {
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+	// PDConnector is the deployment's pd_transfer.connector, "" when it states none.
+	PDConnector string
+	// Offload is the deployment's offload block, nil when it states none.
+	Offload *deployment.Offload
 }
 
 // ShapeOf reads a scenario's Shape.
@@ -566,6 +598,14 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		return Shape{}, err
 	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	if dep.PDTransfer != nil {
+		sh.PDConnector = dep.PDTransfer.Connector
+	}
+	if dep.Offload != nil {
+		o := *dep.Offload
+		o.Tiers = append([]deployment.Tier(nil), dep.Offload.Tiers...)
+		sh.Offload = &o
+	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
 	}

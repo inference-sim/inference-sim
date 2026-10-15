@@ -23,6 +23,8 @@ var (
 	_ sim.KVStore                = (*OffloadCache)(nil)
 	_ sim.DeferrableKVStore      = (*OffloadCache)(nil)
 	_ sim.ReloadReportingKVStore = (*OffloadCache)(nil)
+	_ sim.RequestBlockReporter   = (*OffloadCache)(nil)
+	_ sim.RemoteKVReserver       = (*OffloadCache)(nil)
 )
 
 // OffloadOption configures an OffloadCache at construction.
@@ -206,6 +208,19 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 }
 
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
+
+// RequestBlocks implements sim.RequestBlockReporter from the GPU tier.
+func (o *OffloadCache) RequestBlocks(reqID string) []int64 { return o.gpu.RequestBlocks(reqID) }
+
+// AllocateRemoteKV implements sim.RemoteKVReserver on the GPU tier alone: a remotely
+// prefilled prompt is NIXL's to load, so no offload tier is consulted.
+func (o *OffloadCache) AllocateRemoteKV(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	return o.gpu.AllocateRemoteKV(req, startIndex, endIndex, cachedBlocks)
+}
+
+// CacheRemoteKV implements sim.RemoteKVReserver from the GPU tier.
+func (o *OffloadCache) CacheRemoteKV(reqID string) { o.gpu.CacheRemoteKV(reqID) }
+
 func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
 func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
 func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
