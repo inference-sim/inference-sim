@@ -9,13 +9,13 @@ the release and point `--catalog` / `BLIS_CATALOG` at it
 
 | path | what | read by |
 |---|---|---|
-| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 20 models | the HF-config backends, the kernel, the catalog gate |
+| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 21 models | the HF-config backends, the kernel, the catalog gate |
 | `hardware/`, `networks/` | chip and fabric descriptors | the kernel, the catalog gate |
 | `devices/storage.yaml` | KV-offload storage tiers | `--kv-offload-config` device classes, the legacy CPU tier |
 | `workloads/` | the four named presets | `run --workload`, `observe --workload`, `convert preset` |
 
-The models are those the cmd tests name plus the nine the blis-latency-kernel scenario fixtures
-use. Every file format is blis-schemas', and BLIS reads each through that package's own loaders.
+The models are those the cmd tests name, the nine the blis-latency-kernel scenario fixtures
+use, and deepseek-v4.1-flash for `testdata/scenarios/deepseek-v4.1-flash-h100-tp8-dspark5.yaml`. Every file format is blis-schemas', and BLIS reads each through that package's own loaders.
 
 The release is not chosen here. blis-latency-kernel's `testdata/upstream.lock` pins the catalog
 and registry its fixtures resolve against, and

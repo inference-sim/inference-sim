@@ -435,7 +435,9 @@ func TestNewSpeculativeConfig_Validate(t *testing.T) {
 		{name: "alpha Inf", k: 3, acceptance: math.Inf(1), method: "", wantErr: true},
 		{name: "dangling acceptance k zero", k: 0, acceptance: 0.5, method: "", wantErr: true},
 		{name: "dangling method k zero", k: 0, acceptance: 0, method: "mtp", wantErr: true},
-		{name: "unknown method", k: 5, acceptance: 0.5, method: "bogus", wantErr: true},
+		// The method list is the engine release's, checked by its rules pack where the scenario
+		// is opened (kernelmodel), so the library takes any label, e.g. DeepSeek-V4.1's DSpark.
+		{name: "a release-listed method sim keeps no list of", k: 5, acceptance: 0.5, method: "dspark", wantErr: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

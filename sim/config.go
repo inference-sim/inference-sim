@@ -151,27 +151,6 @@ func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold i
 // GLM-5.2 MTP is 5) while leaving a wide safety margin.
 const MaxSpeculativeTokens = 1024
 
-// isValidSpeculativeMethod reports whether label is an accepted speculative method
-// (the scenario's engine.speculative method). The label does not change the step-time math in the current model
-// (throughput and verify-width cost are driven by K and α); it is informational
-// provenance and the extension point for future per-method behavior. Implemented as
-// a function over a switch (not a package-level map) so there is no shared mutable
-// state (R8).
-//
-// These are BLIS labels, not verbatim vLLM method strings. "mtp", "eagle", "medusa",
-// and "ngram" match vLLM's SpeculativeMethod literals exactly; "draft" is a BLIS
-// shorthand for vLLM's "draft_model". Since the label is pure provenance today, the
-// abbreviation is harmless — but this is the spot to reconcile names if a future
-// per-method cost model needs to key off the exact vLLM string.
-func isValidSpeculativeMethod(label string) bool {
-	switch label {
-	case "mtp", "eagle", "medusa", "ngram", "draft":
-		return true
-	default:
-		return false
-	}
-}
-
 // SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
 // parameters (#1528). It is a MODEL-LEVEL attribute (one speculative config per
 // served model), not per-request. Its zero value (K=0) is inert: the feature is off
@@ -187,7 +166,11 @@ func isValidSpeculativeMethod(label string) bool {
 type SpeculativeConfig struct {
 	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
 	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
-	Method     string  // informational label: "mtp","eagle","medusa","ngram","draft". "" when off.
+	// Method is the scenario's engine.speculative.method, "" when off. It is provenance here:
+	// cost and progress are driven by K and α. Which methods exist is a fact of the engine
+	// release, so the scenario's rules pack validates it where the scenario is opened
+	// (kernelmodel.OpenPool), not a list in this package.
+	Method string
 }
 
 // NewSpeculativeConfig is the canonical constructor (R4). Returns the config and a
@@ -223,11 +206,6 @@ func (c SpeculativeConfig) Validate() error {
 			return fmt.Errorf("speculative: method %q set but the engine drafts no tokens (num_speculative_tokens 0)", c.Method)
 		}
 		return nil
-	}
-	if c.Method != "" {
-		if !isValidSpeculativeMethod(c.Method) {
-			return fmt.Errorf("speculative: unknown method %q (valid: mtp, eagle, medusa, ngram, draft)", c.Method)
-		}
 	}
 	return nil
 }

@@ -62,6 +62,8 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
 | [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
+| [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
+| [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
@@ -436,6 +438,22 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Hypothesis family:** Structural model — session lifecycle completeness.
 
 ### Latency model
+
+#### INV-K1: No BLIS-side Draft Cost
+
+**Statement:** For a speculating pool (`engine.speculative.num_spec_tokens = K > 0`), the adapter's step time for a batch equals `max(1, NoOverlap)` of blis-latency-kernel's `StepTime` for the verify-width batch: each decode scheduling `1 + K`, each prefill chunk its own tokens, under a decode threshold of at least `1 + K`. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside `StepTime`, and its weights and caches in `FixedBytes`, so any BLIS-side draft cost would count them twice.
+
+**Enforced:** `sim/kernelmodel` `batchOf` (the only place a BLIS batch becomes a kernel batch) and `Model.StepTime`.
+
+**Verification:** `TestNoDraftCostIsAddedOnTheBLISSide` (property test on the DeepSeek-V4.1-Flash DSpark scenario: BLIS's price equals the kernel's price of an independently built verify-width batch, and that price exceeds the same batch on the same deployment without a drafter); `TestTheDecodeThresholdCoversTheVerifyWidth`.
+
+#### INV-K2: Rejected Drafts Do Not Advance Computed
+
+**Statement:** After a speculative decode step, a request's `ProgressIndex` (the kernel's `ReqShape.Computed` on the next step) advances by the tokens granted as accepted (`1 <= g <= 1 + K`, the mean `1 + α·K` through the fractional carry), never by the verify width. The kernel reads `Computed` for KV reads, ring sizes, sparse selections and drafting eligibility, so a verify-width advance would price every later step at a context the engine rolled back.
+
+**Enforced:** `sim/simulator.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
+
+**Verification:** `TestRejectedDraftsDoNotAdvanceComputed` (`sim/kernelmodel`; a real DSpark simulation at α = 0.502); `TestSpecDecode_OutputTokenConservation` (`sim`).
 
 #### Retired latency-model invariants
 

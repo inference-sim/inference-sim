@@ -54,10 +54,13 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
 
@@ -198,6 +201,15 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	return fromInputs(in)
+}
+
+// fromInputs builds and adapts the kernel for loaded Inputs, refusing a speculative method
+// the scenario's engine release does not accept first.
+func fromInputs(in latencykernel.Inputs) (*Model, error) {
+	if err := checkSpeculativeMethod(in); err != nil {
+		return nil, err
+	}
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
@@ -206,12 +218,16 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 }
 
 func newModel(k kernel.Kernel, id identity) *Model {
+	spec := specTokensOf(k)
 	return &Model{
-		k:                k,
-		id:               id,
-		decodeThreshold:  DecodeThreshold,
+		k:  k,
+		id: id,
+		// vLLM classifies a verify of up to 1 + K tokens as a decode (reorder_batch_threshold
+		// is raised to it; for V4.1, vllm/models/deepseek_v41/sparse_mla.py:160), so a
+		// speculating pool widens the threshold to cover its verify width (#1932).
+		decodeThreshold:  max(DecodeThreshold, 1+spec),
 		smBudget:         id.smCount,
-		specTokens:       specTokensOf(k),
+		specTokens:       spec,
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
 	}
@@ -332,6 +348,11 @@ func (m *Model) PostDecodeFixedOverhead() int64 { return m.completionTicks }
 // acceptance rate -- which decides how far the request moves, not what the forward pass
 // cost. So a decode's Scheduled is the verify width here, and NumNewTokens keeps its
 // meaning for the simulator.
+//
+// INV-K1 (no BLIS-side draft cost): the step price is the kernel's StepTime of exactly this
+// verify-width batch, floored at one tick, and nothing else. blis-latency-kernel v0.2.0 prices
+// the drafter's passes, its context stack and its head inside StepTime, so a draft term added
+// here, or a Scheduled widened past 1 + K, would charge the drafts twice.
 func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
 	b := kernel.Batch{
 		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
@@ -533,4 +554,37 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		sh.Roles[i] = p.Role
 	}
 	return sh, nil
+}
+
+// checkSpeculativeMethod refuses a pool whose engine.speculative.method the scenario's engine
+// release does not accept, read from that release's blis-schemas rules pack
+// (rules.Pack.SpeculativeMethods), so the accepted set moves with engine_version: dspark is
+// accepted at vLLM 0.31.0 because that release ships it.
+//
+// The kernel does not check it itself. It refuses a method the model graph's speculator
+// does not describe, and a combination vLLM refuses (MTP on DeepSeek-V4.1), but it applies
+// only the field layer of blis-schemas validation, so on a graph with no speculator any
+// label would price. The whole rule layer is not applied here either: it also checks the
+// graph's own speculator name against the release, which refuses committed fixtures that do
+// not speculate at all.
+func checkSpeculativeMethod(in latencykernel.Inputs) error {
+	sp := in.Deployment.Pools[in.PoolIndex].Engine.Speculative
+	if sp == nil {
+		return nil
+	}
+	pack, ok := in.Rules.(*rules.Pack)
+	if !ok || pack == nil {
+		return fmt.Errorf("engine.speculative.method %q cannot be checked: the engine rules for "+
+			"version %q are not a blis-schemas rules pack", sp.Method, in.Scenario.EngineVersion)
+	}
+	if !pack.SpeculativeMethods[sp.Method] {
+		accepted := make([]string, 0, len(pack.SpeculativeMethods))
+		for m := range pack.SpeculativeMethods {
+			accepted = append(accepted, m)
+		}
+		sort.Strings(accepted)
+		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
+			sp.Method, pack.Version, strings.Join(accepted, ", "))
+	}
+	return nil
 }

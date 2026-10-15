@@ -145,11 +145,24 @@ A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` to
 step. Pass `--speculative-acceptance-rate α` (required when the scenario drafts): BLIS does
 not predict acceptance, since it runs no draft model.
 
+- **Method: the engine release's list.** `method` is checked against the rules pack of the
+  scenario's `engine_version` (blis-schemas `rules.Pack.SpeculativeMethods`), not a list in
+  BLIS, so vLLM 0.31.0 accepts `dspark` (DeepSeek-V4.1's DSpark), `dflash`, `eagle3`,
+  `suffix` and the rest of that release's methods. A method the model graph's speculator
+  does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
+  by the kernel. `testdata/scenarios/deepseek-v4.1-flash-h100-tp8-dspark5.yaml` is a DSpark
+  example (#1932).
 - **Cost: verify width `w = K+1`.** Every decoding request's forward pass is priced by the
-  kernel at the full verify width, whatever is later accepted. Step time is independent of
-  `α` and non-decreasing in `K`.
+  kernel at the full verify width, whatever is later accepted. The kernel's step time
+  includes the drafter's passes (autoregressive `K x 1`, or DSpark's parallel block `1 x K`
+  with its context stack and head), and the drafter's weights and caches are in its fixed
+  memory, so BLIS adds no draft cost of its own (INV-K1). The decode threshold the kernel
+  classifies by is widened to `1 + K`, as vLLM widens `reorder_batch_threshold`. Step time
+  is independent of `α` and non-decreasing in `K`.
 - **Progress: `g = 1 + α·K` tokens per step** (mean), applied deterministically through a
   per-request fractional carry (no RNG), so runs stay byte-identical for a seed (INV-6).
+  Rejected drafts do not advance the request: the next step's context is the previous one
+  plus the accepted tokens, never plus the verify width (INV-K2).
 
 Progress stops at the completion boundary: the final step is granted only the tokens the
 request still needs, as vLLM trims the accepted tail once `check_stop` fires. A request's
