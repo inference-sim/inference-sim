@@ -539,6 +539,7 @@ Example:
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				LoRAConfig:           loraCfg,
 				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
+				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.
 				LatencyModel: lr.KernelModel,

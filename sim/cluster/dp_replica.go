@@ -114,6 +114,26 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 	}
 	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
+	// A replica endpoint renders on its own API servers, dp of them unless stated
+	// (vllm/entrypoints/cli/serve.py:105-127), before the balancer picks a rank (INV-R1).
+	// An external-balancer or P/D-pool rank keeps the render stage it was built with: its
+	// own endpoint's servers.
+	for _, rep := range replicas {
+		if cs.endpointReplica(rep.ranks[0]) == nil {
+			continue
+		}
+		apiServers := config.Frontend.APIServerCount
+		if apiServers == 0 {
+			apiServers = dp
+		}
+		sims := make([]*sim.Simulator, len(rep.ranks))
+		for k, inst := range rep.ranks {
+			sims[k] = inst.sim
+		}
+		if err := sim.ShareRenderer(sims, apiServers); err != nil {
+			return fmt.Errorf("replica %s: %w", rep.id, err)
+		}
+	}
 	return nil
 }
 
