@@ -238,7 +238,7 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		// The scenario's own setting, so a sweep with no measurement and no vLLM resolution
 		// (a non-vLLM engine) runs what its scenario states rather than caching by default.
 		PrefixCachingDisabled: dep.PrefixCachingDisabled,
-		MaxModelLen:           eng.MaxModelLen,
+		MaxModelLen:           int(eng.MaxModelLen),
 		GPUMemoryUtilization:  eng.GPUMemoryUtilization,
 		EnableExpertParallel:  dep.ExpertParallel,
 		SeqsFrom:              SourceScenario,

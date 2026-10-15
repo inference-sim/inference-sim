@@ -1,6 +1,6 @@
 package kernelmodel
 
-import "fmt"
+import "github.com/inference-sim/blis-schemas/spec/deployment"
 
 // Settings is everything a simulator sizes one engine from, every value answered by the
 // kernel for the pool it prices. It exists so no consumer re-derives any of it: the KV
@@ -23,9 +23,12 @@ type Settings struct {
 	BlockSize           int
 	MaxNumSeqs          int
 	MaxNumBatchedTokens int
-	// MaxModelLen is the pool's stated context window, or 0 when it states none.
-	MaxModelLen  int
-	DataParallel int
+	// MaxModelLen is the window the engine serves (see resolvedMaxModelLen), or 0 when
+	// neither the deployment nor the model graph states one.
+	MaxModelLen int
+	// MaxModelLenFrom says which of the three resolutions gave MaxModelLen.
+	MaxModelLenFrom string
+	DataParallel    int
 
 	PrefixCachingDisabled bool
 
@@ -58,15 +61,36 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 		BlockSize:             e.BlockSize,
 		MaxNumSeqs:            e.MaxNumSeqs,
 		MaxNumBatchedTokens:   e.MaxNumBatchedTokens,
-		MaxModelLen:           e.MaxModelLen,
 		DataParallel:          m.DataParallelWidth(),
 		PrefixCachingDisabled: d.PrefixCachingDisabled,
 	}
 	if sp := e.Speculative; sp != nil && sp.NumSpecTokens > 0 {
 		s.SpeculativeTokens, s.SpeculativeMethod = sp.NumSpecTokens, sp.Method
 	}
-	if s.MaxModelLen < 0 {
-		return Settings{}, fmt.Errorf("kernelmodel: deployment states max_model_len %d", s.MaxModelLen)
-	}
+	s.MaxModelLen, s.MaxModelLenFrom = m.resolvedMaxModelLen(e.MaxModelLen, b.PerRankBlocks*int64(e.BlockSize))
 	return s, nil
+}
+
+// resolvedMaxModelLen is the window vLLM v0.31.0 starts the engine with:
+//
+//   - a stated count is the window;
+//   - unstated, the window derived from the model configuration, which the graph states as
+//     its context window (vllm/config/model.py _get_and_verify_max_len);
+//   - auto, that derived window shrunk to the longest one rankTokens of KV cache holds
+//     (vllm/v1/core/kv_cache_utils.py). The kernel takes auto at the derived cap because it
+//     cannot see the KV budget; the simulator can, so it applies the fit.
+//
+// A window one rank cannot hold is not refused here; the caller refuses it as vLLM does.
+func (m *Model) resolvedMaxModelLen(stated deployment.MaxModelLen, rankTokens int64) (int, string) {
+	if n, ok := stated.Stated(); ok {
+		return n, "stated"
+	}
+	w := m.id.defaultWindow
+	if !stated.Auto() {
+		return w, "unstated: the model graph's context window"
+	}
+	if int64(w) > rankTokens {
+		return int(rankTokens), "auto: fitted to one rank's KV cache"
+	}
+	return w, "auto: the model graph's context window, which one rank's KV cache holds"
 }

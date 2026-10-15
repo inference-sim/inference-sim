@@ -681,11 +681,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	speculativeMethod = settings.SpeculativeMethod
 	logrus.Infof("deployment from scenario %s -- model %s, hardware %s, "+
 		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
-		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d, prefix caching %t, "+
+		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d (%s), prefix caching %t, "+
 		"speculative tokens %d",
 		kernelScenario, model, gpu,
 		tensorParallelism, dataParallelism, enableExpertParallel,
-		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen,
+		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, settings.MaxModelLenFrom,
 		!noEnablePrefixCaching, numSpeculativeTokens)
 }
 

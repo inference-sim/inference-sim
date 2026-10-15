@@ -92,7 +92,7 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 	e.BlockSize = pc.BlockSize
 	enabled := !pc.PrefixCachingDisabled
 	e.EnablePrefixCaching = &enabled
-	e.MaxModelLen = pc.MaxModelLen
+	e.MaxModelLen = deployment.MaxModelLen(pc.MaxModelLen)
 	e.GPUMemoryUtilization = pc.GPUMemoryUtilization
 	pool.Parallel.EnableExpertParallel = pc.EnableExpertParallel
 }

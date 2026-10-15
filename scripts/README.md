@@ -342,8 +342,8 @@ and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 ```bash
 # One-time setup: catalog and registry at their pinned releases
 # (see docs/getting-started/installation.md#catalog-compatibility)
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 
 # Sweep 0.5..100 req/s on the chatbot preset
@@ -358,7 +358,7 @@ SCENARIO=... SCENARIOS=... REGISTRY=... \
 ```
 
 The kernel module's own scenarios are at
-`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`;
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`;
 any directory of scenario YAMLs works.
 
 ### Inputs (all environment variables)

@@ -163,19 +163,19 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	return o
 }
 
-// requireWindowFits refuses an engine whose stated window one request could not fit in, as
-// vLLM does at startup, and an engine that states no window at all: unstated, vLLM derives it
-// from the model's max_position_embeddings, which no document the kernel reads carries.
+// requireWindowFits refuses an engine whose window one request could not fit in, as vLLM does
+// at startup, and one with no window at all: neither the deployment nor the model graph
+// states one, and vLLM would derive it from an HF config no document the kernel reads carries.
 func requireWindowFits(what string, s kernelmodel.Settings) {
 	if s.MaxModelLen <= 0 {
-		logrus.Fatalf("scenario %q's %s states no engine.max_model_len; state the "+
-			"window the engine serves", kernelScenario, what)
+		logrus.Fatalf("scenario %q's %s states no engine.max_model_len and its model graph no "+
+			"context window; state the window the engine serves", kernelScenario, what)
 	}
 	if capacity := s.KVBlocks * int64(s.BlockSize); int64(s.MaxModelLen) > capacity {
-		logrus.Fatalf("scenario %q's %s states max_model_len %d, but one rank's KV "+
+		logrus.Fatalf("scenario %q's %s serves max_model_len %d (%s), but one rank's KV "+
 			"budget holds %d tokens (%d blocks of %d); vLLM refuses to start such an engine. Lower "+
-			"max_model_len in the scenario", kernelScenario, what,
-			s.MaxModelLen, capacity, s.KVBlocks, s.BlockSize)
+			"max_model_len in the scenario, or set it to auto", kernelScenario, what,
+			s.MaxModelLen, s.MaxModelLenFrom, capacity, s.KVBlocks, s.BlockSize)
 	}
 }
 

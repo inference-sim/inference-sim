@@ -113,6 +113,9 @@ type identity struct {
 	smCount       int
 	experts       int
 	expertsPerTok int
+	// defaultWindow is the graph's derived context window (GlobalShape.DefaultWindow), what an
+	// unstated or auto max_model_len starts from; 0 when the graph states none.
+	defaultWindow int
 
 	// The pool's extent in the cluster, which places its instances. A deployment's pools fill
 	// the cluster's nodes exactly (blis-schemas' placement contract); BLIS places them in
@@ -141,6 +144,7 @@ func identityOf(in latencykernel.Inputs) identity {
 		smCount:       in.Chip.SMCount,
 		experts:       experts,
 		expertsPerTok: topK,
+		defaultWindow: in.Model.Global.DefaultWindow(),
 		role:          pool.Role,
 		firstNode:     first,
 		poolNodes:     pool.Nodes,
