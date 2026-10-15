@@ -576,6 +576,9 @@ func (c *ClusterSimulator) Run() error {
 
 	// 1. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
+	if c.gateway == nil && newDefaultGateway != nil {
+		c.gateway = newDefaultGateway()
+	}
 	if c.gateway == nil {
 		panic("ClusterSimulator.Run: no gateway installed (SetGateway)")
 	}

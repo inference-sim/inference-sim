@@ -97,6 +97,10 @@ type GatewayHost interface {
 	Evict(req *sim.Request) bool
 }
 
+// newDefaultGateway, when set, supplies the gateway of a cluster that has none at Run. Only this
+// package's tests set it (a small fake); production code always installs the llm-d router.
+var newDefaultGateway func() Gateway
+
 // callbackPriorityBase orders gateway callbacks after the cluster's request-path events
 // (priorities 0-9) at one timestamp.
 const callbackPriorityBase = 10
