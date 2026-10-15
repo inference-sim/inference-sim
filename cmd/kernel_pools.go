@@ -265,6 +265,7 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
 		SequenceState: &state,
 	}
+	poolEngineKnobs(m, &o)
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
 	// one for the run, which then applies to every pool and is recorded where it departs.
 	stated := enginePolicyOf(m)

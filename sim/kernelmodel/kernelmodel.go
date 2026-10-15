@@ -478,6 +478,12 @@ func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() 
 // configuration chosen against a scenario, not part of the immutable problem it states.
 // The error text says "deployment" for the same reason -- a reader told the scenario lacks
 // a block_size would look in the wrong document.
+// DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
+// internal; blis-schemas#76).
+func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
+	return m.k.Deployment().Parallel.DataParallelLoadBalancing
+}
+
 func (m *Model) Engine() (deployment.Engine, error) {
 	e := m.k.Deployment().Engine
 	if e.BlockSize <= 0 {

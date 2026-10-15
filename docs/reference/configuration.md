@@ -41,7 +41,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 2. `--policy-config` YAML bundle — loads all policy settings from one file
 3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
 
-**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block when the scenario states it (blis-schemas#75); `--long-prefill-token-threshold` then may only restate it, and applies on its own only to a scenario that states none. `--preemption-policy` remains on the CLI.
+**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. `--long-prefill-token-threshold` is a run-wide override: it applies to every pool and must agree with every value a pool states, or the run is refused. `--preemption-policy` remains on the CLI.
 
 ### Known Unit Gotchas
 
@@ -111,7 +111,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76; or `--dp-load-balancing external` for a scenario that states no mode, which the flag may otherwise only restate) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing` is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
 
 **Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
 
