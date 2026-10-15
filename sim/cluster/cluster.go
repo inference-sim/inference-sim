@@ -42,13 +42,13 @@ type ClusterSimulator struct {
 	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + flow-control rejections and expiries + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass       map[string]int64
-	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
-	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
-	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
-	gatewayEvicted        int                       // INV-1: requests the gateway evicted in flight
-	gatewayExpired        int                       // INV-1: requests that expired in flow control
-	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
+	injectedByClass  map[string]int64
+	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
+	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	gatewayEvicted   int                    // INV-1: requests the gateway evicted in flight
+	gatewayExpired   int                    // INV-1: requests that expired in flow control
+	poolMembership   map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
 
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
@@ -67,10 +67,10 @@ type ClusterSimulator struct {
 	// successful promotions, late drops (decode pod became non-routable
 	// mid-transfer), and degenerate completions scheduled by dropAtStart.
 	transfersCompleted      int
-	pdPrefillCompletedCount int               // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
+	pdPrefillCompletedCount int // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount  int // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount   int // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV       int // requests dropped due to insufficient KV at decode
 
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
@@ -823,8 +823,8 @@ func (c *ClusterSimulator) Run() error {
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
-			logrus.Warnf("[cluster] all %d requests rejected by admission policy %q — no requests completed",
-				c.rejectedRequests, c.config.AdmissionPolicy)
+			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
+				c.rejectedRequests)
 		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,

@@ -14,21 +14,10 @@ func float64Ptr(v float64) *float64 { return &v }
 
 func TestLoadPolicyBundle_ValidYAML(t *testing.T) {
 	yaml := `
-admission:
-  policy: token-bucket
-  token_bucket_capacity: 5000
-  token_bucket_refill_rate: 500
-routing:
-  policy: weighted
-  scorers:
-    - name: queue-depth
-      weight: 2.0
-    - name: kv-utilization
-      weight: 2.0
-    - name: load-balance
-      weight: 1.0
 priority:
   policy: slo-based
+  slo_priorities:
+    critical: 9
 scheduler: priority-fcfs
 `
 	path := writeTempYAML(t, yaml)
@@ -36,64 +25,13 @@ scheduler: priority-fcfs
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if bundle.Admission.Policy != "token-bucket" {
-		t.Errorf("expected admission policy 'token-bucket', got %q", bundle.Admission.Policy)
-	}
-	if bundle.Admission.TokenBucketCapacity == nil || *bundle.Admission.TokenBucketCapacity != 5000 {
-		t.Errorf("expected capacity 5000, got %v", bundle.Admission.TokenBucketCapacity)
-	}
-	if bundle.Routing.Policy != "weighted" {
-		t.Errorf("expected routing policy 'weighted', got %q", bundle.Routing.Policy)
-	}
-	if len(bundle.Routing.Scorers) != 3 {
-		t.Fatalf("expected 3 scorers, got %d", len(bundle.Routing.Scorers))
-	}
-	assert.Equal(t, "queue-depth", bundle.Routing.Scorers[0].Name)
-	assert.Equal(t, 2.0, bundle.Routing.Scorers[0].Weight)
-	assert.Equal(t, "kv-utilization", bundle.Routing.Scorers[1].Name)
-	assert.Equal(t, "load-balance", bundle.Routing.Scorers[2].Name)
+	assert.Equal(t, 9, bundle.Priority.SLOPriorities["critical"])
 	if bundle.Priority.Policy != "slo-based" {
 		t.Errorf("expected priority policy 'slo-based', got %q", bundle.Priority.Policy)
 	}
 	if bundle.Scheduler != "priority-fcfs" {
 		t.Errorf("expected scheduler 'priority-fcfs', got %q", bundle.Scheduler)
 	}
-}
-
-func TestLoadPolicyBundle_ScorersAbsent_IsNil(t *testing.T) {
-	yaml := `
-routing:
-  policy: weighted
-`
-	path := writeTempYAML(t, yaml)
-	bundle, err := LoadPolicyBundle(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Scorers not specified → nil (will use defaults at factory level)
-	assert.Nil(t, bundle.Routing.Scorers)
-}
-
-func TestLoadPolicyBundle_EmptyFields(t *testing.T) {
-	yaml := `
-routing:
-  policy: least-loaded
-`
-	path := writeTempYAML(t, yaml)
-	bundle, err := LoadPolicyBundle(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if bundle.Admission.Policy != "" {
-		t.Errorf("expected empty admission policy, got %q", bundle.Admission.Policy)
-	}
-	if bundle.Routing.Policy != "least-loaded" {
-		t.Errorf("expected 'least-loaded', got %q", bundle.Routing.Policy)
-	}
-	if bundle.Scheduler != "" {
-		t.Errorf("expected empty scheduler, got %q", bundle.Scheduler)
-	}
-	assert.Nil(t, bundle.Routing.Scorers)
 }
 
 func TestLoadPolicyBundle_NonexistentFile(t *testing.T) {
@@ -118,21 +56,18 @@ func TestLoadPolicyBundle_OldFieldsRejected(t *testing.T) {
 		name string
 		yaml string
 	}{
-		{"cache_weight", `
-routing:
-  policy: weighted
-  cache_weight: 0.6
+		// Admission, routing, flow control and tenant budgets are the llm-d router's.
+		{"admission", `
+admission:
+  policy: token-bucket
 `},
-		{"load_weight", `
+		{"routing", `
 routing:
   policy: weighted
-  load_weight: 0.4
 `},
-		{"both old fields", `
-routing:
-  policy: weighted
-  cache_weight: 0.6
-  load_weight: 0.4
+		{"tenant_budgets", `
+tenant_budgets:
+  a: 0.5
 `},
 		{"old_scale_up_cooldown_us", `
 autoscaler:
@@ -159,14 +94,6 @@ autoscaler:
 
 func TestPolicyBundle_Validate_ValidPolicies(t *testing.T) {
 	bundle := &PolicyBundle{
-		Admission: AdmissionConfig{Policy: "token-bucket", TokenBucketCapacity: float64Ptr(100)},
-		Routing: RoutingConfig{
-			Policy: "weighted",
-			Scorers: []ScorerConfig{
-				{Name: "queue-depth", Weight: 2.0},
-				{Name: "load-balance", Weight: 1.0},
-			},
-		},
 		Priority:  PriorityConfig{Policy: "slo-based"},
 		Scheduler: "priority-fcfs",
 	}
@@ -187,8 +114,6 @@ func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
 		name   string
 		bundle PolicyBundle
 	}{
-		{"bad admission", PolicyBundle{Admission: AdmissionConfig{Policy: "invalid"}}},
-		{"bad routing", PolicyBundle{Routing: RoutingConfig{Policy: "invalid"}}},
 		{"bad scheduler", PolicyBundle{Scheduler: "invalid"}},
 		{"bad preemption", PolicyBundle{Preemption: PreemptionConfig{Policy: "random"}}},
 	}
@@ -201,134 +126,6 @@ func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
 	}
 }
 
-func TestPolicyBundle_Validate_NegativeParameters(t *testing.T) {
-	tests := []struct {
-		name   string
-		bundle PolicyBundle
-	}{
-		{"negative capacity", PolicyBundle{Admission: AdmissionConfig{
-			Policy: "token-bucket", TokenBucketCapacity: float64Ptr(-1),
-		}}},
-		{"negative refill rate", PolicyBundle{Admission: AdmissionConfig{
-			Policy: "token-bucket", TokenBucketRefillRate: float64Ptr(-1),
-		}}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.bundle.Validate(); err == nil {
-				t.Error("expected validation error for negative parameter")
-			}
-		})
-	}
-}
-
-// TestPolicyBundle_Validate_InvalidScorerName verifies BC-17-4: unknown scorer name rejected.
-func TestPolicyBundle_Validate_InvalidScorerName(t *testing.T) {
-	bundle := &PolicyBundle{
-		Routing: RoutingConfig{
-			Policy:  "weighted",
-			Scorers: []ScorerConfig{{Name: "unknown-scorer", Weight: 1.0}},
-		},
-	}
-	err := bundle.Validate()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown scorer")
-}
-
-// TestPolicyBundle_Validate_InvalidScorerWeight verifies BC-17-4: bad weights rejected.
-func TestPolicyBundle_Validate_InvalidScorerWeight(t *testing.T) {
-	tests := []struct {
-		name   string
-		weight float64
-	}{
-		{"zero weight", 0.0},
-		{"negative weight", -1.0},
-		{"NaN weight", math.NaN()},
-		{"Inf weight", math.Inf(1)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			bundle := &PolicyBundle{
-				Routing: RoutingConfig{
-					Policy:  "weighted",
-					Scorers: []ScorerConfig{{Name: "queue-depth", Weight: tt.weight}},
-				},
-			}
-			err := bundle.Validate()
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "weight must be")
-		})
-	}
-}
-
-// TestPolicyBundle_Validate_DuplicateScorer verifies duplicate scorer names are rejected.
-func TestPolicyBundle_Validate_DuplicateScorer(t *testing.T) {
-	bundle := &PolicyBundle{
-		Routing: RoutingConfig{
-			Policy: "weighted",
-			Scorers: []ScorerConfig{
-				{Name: "queue-depth", Weight: 1.0},
-				{Name: "queue-depth", Weight: 2.0},
-			},
-		},
-	}
-	err := bundle.Validate()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate scorer")
-}
-
-// TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy verifies scorers are validated
-// even when attached to a non-weighted policy (validation catches config mistakes early).
-func TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy(t *testing.T) {
-	bundle := &PolicyBundle{
-		Routing: RoutingConfig{
-			Policy:  "round-robin",
-			Scorers: []ScorerConfig{{Name: "unknown", Weight: 1.0}},
-		},
-	}
-	err := bundle.Validate()
-	assert.Error(t, err, "invalid scorers should be caught even on non-weighted policy")
-}
-
-// TestPolicyBundle_Validate_TenantBudgets verifies BC-TB-1: invalid tenant budget values are rejected.
-func TestPolicyBundle_Validate_TenantBudgets(t *testing.T) {
-	tests := []struct {
-		name    string
-		budgets map[string]float64
-		wantErr bool
-	}{
-		{"valid: zero", map[string]float64{"alice": 0.0}, false},
-		{"valid: one", map[string]float64{"alice": 1.0}, false},
-		{"valid: fraction", map[string]float64{"alice": 0.3, "bob": 0.7}, false},
-		{"invalid: negative", map[string]float64{"alice": -0.1}, true},
-		{"invalid: greater than one", map[string]float64{"alice": 1.5}, true},
-		{"invalid: NaN", map[string]float64{"alice": math.NaN()}, true},
-		{"invalid: +Inf", map[string]float64{"alice": math.Inf(1)}, true},
-		{"invalid: -Inf", map[string]float64{"alice": math.Inf(-1)}, true},
-		{"nil map: no enforcement", nil, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			bundle := &PolicyBundle{TenantBudgets: tt.budgets}
-			err := bundle.Validate()
-			if tt.wantErr {
-				assert.Error(t, err, "expected validation error for budgets=%v", tt.budgets)
-			} else {
-				assert.NoError(t, err, "unexpected validation error for budgets=%v", tt.budgets)
-			}
-		})
-	}
-}
-
-// TestPolicyBundle_Validate_EmptyScorersIsValid verifies nil/empty scorers list is acceptable.
-func TestPolicyBundle_Validate_EmptyScorersIsValid(t *testing.T) {
-	bundle := &PolicyBundle{
-		Routing: RoutingConfig{Policy: "weighted"},
-	}
-	err := bundle.Validate()
-	assert.NoError(t, err, "empty scorers list should be valid (defaults used at factory)")
-}
-
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -337,22 +134,6 @@ func writeTempYAML(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-func TestValidAdmissionPolicyNames_ReturnsAllNames(t *testing.T) {
-	// BC-7: Names derived from authoritative map
-	names := ValidAdmissionPolicyNames()
-	assert.Contains(t, names, "always-admit")
-	assert.Contains(t, names, "token-bucket")
-	assert.Contains(t, names, "reject-all")
-	assert.NotContains(t, names, "")
-}
-
-func TestValidRoutingPolicyNames_Sorted(t *testing.T) {
-	names := ValidRoutingPolicyNames()
-	for i := 1; i < len(names); i++ {
-		assert.True(t, names[i-1] < names[i], "names must be sorted: %q >= %q", names[i-1], names[i])
-	}
 }
 
 func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
@@ -445,8 +226,7 @@ node_pools:
 func TestLoadPolicyBundle_AutoscalerAbsent_IsZero(t *testing.T) {
 	// Existing policy-config files without autoscaler section must parse cleanly (backward compat).
 	yaml := `
-admission:
-  policy: always-admit
+scheduler: fcfs
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)
@@ -591,8 +371,7 @@ instance_lifecycle:
 
 func TestLoadPolicyBundle_InstanceLifecycleAbsent_IsZero(t *testing.T) {
 	yaml := `
-admission:
-  policy: always-admit
+scheduler: fcfs
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)

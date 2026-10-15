@@ -342,6 +342,7 @@ func TestInstanceLifecycleConfig_Validation(t *testing.T) {
 		})
 	}
 }
+
 // ─── INV-14 clause 2: the seeding carve-out ──────────────────────────────────
 
 // TestINV14_SeedingCarveOutAcceptsAnyFirstTransition covers the clause the

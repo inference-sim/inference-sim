@@ -23,9 +23,9 @@ type InstanceID string
 type InstanceSimulator struct {
 	// onTransition, when set, is called after every lifecycle transition.
 	onTransition func(*InstanceSimulator)
-	id     InstanceID
-	sim    *sim.Simulator
-	hasRun bool
+	id           InstanceID
+	sim          *sim.Simulator
+	hasRun       bool
 
 	// Phase 1A: lifecycle and placement fields.
 	// All zero-value safe (backward-compatible with no-node-pool mode).
@@ -555,7 +555,9 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 }
 
 // EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
-func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics { return i.sim.EngineMetricsAt(t) }
+func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
+	return i.sim.EngineMetricsAt(t)
+}
 
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
 func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }

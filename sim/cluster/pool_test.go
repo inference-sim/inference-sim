@@ -472,9 +472,9 @@ func TestPoolRoleEncode_BitmaskIdentity(t *testing.T) {
 // TestValidatePoolTopology_Encode verifies the encode-instances validation rules.
 func TestValidatePoolTopology_Encode(t *testing.T) {
 	tests := []struct {
-		name                                           string
-		prefill, decode, shared, encode, total         int
-		wantErr                                        bool
+		name                                   string
+		prefill, decode, shared, encode, total int
+		wantErr                                bool
 	}{
 		{"valid 1p/1d/0s/1e in total=3", 1, 1, 0, 1, 3, false},
 		{"decode-only + encode rejected by PD pair rule (shared=0 requires both p and d)", 0, 2, 0, 1, 3, true},

@@ -3,6 +3,7 @@ package cluster
 import (
 	"container/heap"
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -306,13 +307,49 @@ func (cs *ClusterSimulator) recordRouting(req *sim.Request, p Placement) {
 		return
 	}
 	cs.trace.RecordAdmission(trace.AdmissionRecord{RequestID: req.ID, Clock: cs.clock, Admitted: true})
-	cs.trace.RecordRouting(trace.RoutingRecord{
+	record := trace.RoutingRecord{
 		RequestID:      req.ID,
 		Clock:          cs.clock,
 		ChosenInstance: string(p.Decode),
 		Reason:         "llm-d",
 		Scores:         copyScores(p.Scores),
+	}
+	if k := cs.trace.Config.CounterfactualK; k > 0 && len(p.Scores) > 0 {
+		record.Candidates, record.Regret = cs.counterfactual(string(p.Decode), p.Scores, k)
+	}
+	cs.trace.RecordRouting(record)
+}
+
+// counterfactual ranks the endpoints the router scored and reports the top k with their state,
+// and the regret of the choice: the best score minus the chosen endpoint's score.
+func (cs *ClusterSimulator) counterfactual(chosen string, scores map[string]float64, k int) ([]trace.CandidateScore, float64) {
+	ids := make([]string, 0, len(scores))
+	for id := range scores {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if scores[ids[i]] != scores[ids[j]] {
+			return scores[ids[i]] > scores[ids[j]]
+		}
+		return ids[i] < ids[j]
 	})
+	regret := 0.0
+	if len(ids) > 0 {
+		regret = max(0, scores[ids[0]]-scores[chosen])
+	}
+	var out []trace.CandidateScore
+	for _, id := range ids[:min(k, len(ids))] {
+		c := trace.CandidateScore{InstanceID: id, Score: scores[id]}
+		if inst := cs.instanceByID(InstanceID(id)); inst != nil {
+			c.QueueDepth = inst.QueueDepth()
+			c.BatchSize = inst.BatchSize()
+			c.InFlightRequests = cs.inFlightRequests[id]
+			c.KVUtilization = inst.KVUtilization()
+			c.FreeKVBlocks = inst.FreeKVBlocks()
+		}
+		out = append(out, c)
+	}
+	return out, regret
 }
 
 func (cs *ClusterSimulator) recordRejection(req *sim.Request, why Rejection, reason string) {

@@ -128,10 +128,10 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 	var requests []*sim.Request
 	for i := 0; i < 40; i++ {
 		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("req_sheddable_%d", i),
-			ArrivalTime:  int64(i) * 50_000, // spread over 2_000_000µs to trigger periodic snapshots
-			SLOClass:     "sheddable",
-			InputTokens:  make([]sim.TokenID, 50),
+			ID:          fmt.Sprintf("req_sheddable_%d", i),
+			ArrivalTime: int64(i) * 50_000, // spread over 2_000_000µs to trigger periodic snapshots
+			SLOClass:    "sheddable",
+			InputTokens: make([]sim.TokenID, 50),
 			// 200 decode steps keep each admitted request in flight far longer than the
 			// 50 ms inter-arrival gap, so later arrivals see load > 0 and are shed.
 			OutputTokens: make([]sim.TokenID, 200),

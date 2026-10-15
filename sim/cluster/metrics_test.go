@@ -522,9 +522,9 @@ func TestDetectHOLBlocking_AllTrafficOneInstance_Detected(t *testing.T) {
 	// GIVEN 4 instances where only instance 0 has traffic
 	perInstance := []*sim.Metrics{
 		makeMetricsWithQueueDepth([]int{50, 50, 50, 50}), // instance 0: all traffic
-		makeMetricsWithQueueDepth([]int{}),                // instance 1: no traffic
-		makeMetricsWithQueueDepth([]int{}),                // instance 2: no traffic
-		makeMetricsWithQueueDepth([]int{}),                // instance 3: no traffic
+		makeMetricsWithQueueDepth([]int{}),               // instance 1: no traffic
+		makeMetricsWithQueueDepth([]int{}),               // instance 2: no traffic
+		makeMetricsWithQueueDepth([]int{}),               // instance 3: no traffic
 	}
 
 	// WHEN detecting HOL blocking
@@ -543,8 +543,8 @@ func TestDetectHOLBlocking_PartialConcentration_Detected(t *testing.T) {
 	perInstance := []*sim.Metrics{
 		makeMetricsWithQueueDepth([]int{40, 40, 40}), // instance 0: heavy traffic
 		makeMetricsWithQueueDepth([]int{5, 5, 5}),    // instance 1: light traffic
-		makeMetricsWithQueueDepth([]int{}),            // instance 2: no traffic
-		makeMetricsWithQueueDepth([]int{}),            // instance 3: no traffic
+		makeMetricsWithQueueDepth([]int{}),           // instance 2: no traffic
+		makeMetricsWithQueueDepth([]int{}),           // instance 3: no traffic
 	}
 
 	// WHEN detecting HOL blocking

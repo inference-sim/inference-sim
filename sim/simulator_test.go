@@ -2009,15 +2009,8 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatal("INV-9 file globs matched nothing — the scan proves nothing")
 	}
 	for _, required := range []string{
-		"admission.go",
 		"router_state.go",
 		"routing.go",
-		"routing_nohit_lru_scorer.go",
-		"routing_precise_prefix_scorer.go",
-		"routing_prefix_scorer.go",
-		"disaggregation.go",
-		"routing_scorers.go",
-		"saturation.go",
 		"scheduler.go",
 		"slo_priority.go",
 	} {
@@ -2048,17 +2041,22 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		}
 	}
 
-	// Cluster control-plane files that handle *Request in the routing pipeline.
-	// These stay an explicit list rather than a glob: they are large mixed files that
-	// legitimately carry the TotalOutputTokens metric aggregate, so they need
-	// line-level scanning with that exclusion, and no glob shape separates them from
-	// the rest of sim/cluster. A new cluster control-plane file therefore still has
-	// to be added here by hand — the inverse of the sim/ default, and a known gap.
+	// Cluster and router-adapter control-plane files that handle *Request on its way to and
+	// from the llm-d router. These stay an explicit list rather than a glob: they are large
+	// mixed files that legitimately carry the TotalOutputTokens metric aggregate, so they need
+	// line-level scanning with that exclusion, and no glob shape separates them from the rest
+	// of their packages. A new control-plane file therefore still has to be added here by
+	// hand — the inverse of the sim/ default, and a known gap. The router adapter is listed
+	// because everything it hands the router (request body, usage, metrics) must come from
+	// what a real client and model server know: the prompt, the output budget and the tokens
+	// actually generated.
 	clusterControlPlaneFiles := []string{
 		"cluster/cluster.go",
 		"cluster/cluster_event.go",
-		"cluster/snapshot.go",
-		"cluster/counterfactual.go",
+		"cluster/gateway.go",
+		"llmd/gateway.go",
+		"llmd/server.go",
+		"llmd/manifests.go",
 	}
 
 	for _, filename := range clusterControlPlaneFiles {

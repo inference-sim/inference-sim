@@ -16,12 +16,12 @@ func newTierTestRequests(n int, sloClass string) []*sim.Request {
 	reqs := make([]*sim.Request, n)
 	for i := range reqs {
 		reqs[i] = &sim.Request{
-			ID:          fmt.Sprintf("req_%s_%d", sloClass, i),
-			ArrivalTime: int64(i) * 100,
-			SLOClass:    sloClass,
-			InputTokens: make([]sim.TokenID, 50),
+			ID:           fmt.Sprintf("req_%s_%d", sloClass, i),
+			ArrivalTime:  int64(i) * 100,
+			SLOClass:     sloClass,
+			InputTokens:  make([]sim.TokenID, 50),
 			OutputTokens: make([]sim.TokenID, 20),
-			State:       sim.StateQueued,
+			State:        sim.StateQueued,
 		}
 	}
 	return reqs

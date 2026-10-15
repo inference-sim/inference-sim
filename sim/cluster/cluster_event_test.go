@@ -174,7 +174,6 @@ func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 	}
 }
 
-
 // TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots verifies that:
 // (a) a Loading instance does NOT appear in RouterState.Snapshots (IsRoutable guard preserved)
 // (b) a Loading instance DOES appear in RouterState.LoadingSnapshots

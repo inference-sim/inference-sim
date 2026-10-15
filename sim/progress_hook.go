@@ -26,8 +26,8 @@ type ProgressSnapshot struct {
 	// completions) is applied only during post-simulation aggregation.
 	TotalCompleted int
 
-	TotalTimedOut   int
-	TotalDropped    int
+	TotalTimedOut    int
+	TotalDropped     int
 	TotalInputTokens int
 
 	// TotalOutputTokens is incremented at request completion, not per decode step.
@@ -42,7 +42,6 @@ type ProgressSnapshot struct {
 	RejectedRequests  int
 	RoutingRejections int
 	GatewayQueueDepth int
-	GatewayQueueShed  int
 	GatewayEvicted    int
 	GatewayExpired    int
 	// ShedByTier: per-SLO-class cumulative count of admission rejections + gateway queue shed + in-flight evictions + TTL expirations.
@@ -63,13 +62,13 @@ type ProgressSnapshot struct {
 // InstanceSnapshot captures per-instance state at a point in time.
 // All fields are value types — safe to hold indefinitely.
 type InstanceSnapshot struct {
-	ID        string
-	QueueDepth int
-	BatchSize  int
-	KVUtilization float64
-	KVFreeBlocks  int64
-	KVTotalBlocks int64
-	CacheHitRate  float64
+	ID                string
+	QueueDepth        int
+	BatchSize         int
+	KVUtilization     float64
+	KVFreeBlocks      int64
+	KVTotalBlocks     int64
+	CacheHitRate      float64
 	PreemptionCount   int64
 	CompletedRequests int
 

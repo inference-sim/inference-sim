@@ -1,7 +1,6 @@
 package cluster
 
 import (
-
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -128,7 +127,7 @@ type ClusterArrivalEvent struct {
 }
 
 func (e *ClusterArrivalEvent) Timestamp() int64 { return e.time }
-func (e *ClusterArrivalEvent) Priority() int     { return 0 }
+func (e *ClusterArrivalEvent) Priority() int    { return 0 }
 
 // Execute hands the request to the gateway.
 // Records the request as injected on its SLO class BEFORE any admission/routing
@@ -158,7 +157,7 @@ type ScalingTickEvent struct {
 }
 
 func (e *ScalingTickEvent) Timestamp() int64 { return e.At }
-func (e *ScalingTickEvent) Priority() int     { return 8 }
+func (e *ScalingTickEvent) Priority() int    { return 8 }
 
 // Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → stabilization window gate
 // → schedule ScaleActuationEvent → schedule next ScalingTickEvent.
@@ -180,7 +179,7 @@ type ScaleActuationEvent struct {
 }
 
 func (e *ScaleActuationEvent) Timestamp() int64 { return e.At }
-func (e *ScaleActuationEvent) Priority() int     { return 9 }
+func (e *ScaleActuationEvent) Priority() int    { return 9 }
 
 // Execute calls Actuator.Apply(decisions).
 // Full actuator logic is wired in US3 (T019–T023).

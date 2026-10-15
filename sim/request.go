@@ -42,7 +42,7 @@ type Request struct {
 
 	InputTokens  []TokenID // Prompt tokens
 	OutputTokens []TokenID // Pre-specified output tokens (already known for the simulation)
-	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
+	MaxOutputLen int       // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
 	State         RequestState // queued, running, completed
 	ProgressIndex int64        // Total number of input tokens processed so far + number of output tokens generated so far
@@ -59,7 +59,7 @@ type Request struct {
 	// GeneratedTokens is the number of output tokens the engine generated, set when the request
 	// completes; it is what a model server reports as usage.completion_tokens.
 	GeneratedTokens int
-	Priority         float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
+	Priority        float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
 	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
 	// not recomputed per step.
 

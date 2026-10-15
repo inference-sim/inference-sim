@@ -108,10 +108,11 @@ func ValidatePoolTopology(prefill, decode, shared, encode, total int) error {
 // Caller must validate prefill+decode+shared+encode <= total before calling.
 //
 // Index layout:
-//   [0, prefill)                          — prefill-only
-//   [prefill, prefill+decode)             — decode-only
-//   [prefill+decode, prefill+decode+shared) — shared-role (PoolRolePrefillDecode)
-//   [prefill+decode+shared, prefill+decode+shared+encode) — encode-only (PoolRoleEncode)
+//
+//	[0, prefill)                          — prefill-only
+//	[prefill, prefill+decode)             — decode-only
+//	[prefill+decode, prefill+decode+shared) — shared-role (PoolRolePrefillDecode)
+//	[prefill+decode+shared, prefill+decode+shared+encode) — encode-only (PoolRoleEncode)
 func BuildPoolMembershipFromIndices(total, prefill, decode, shared, encode int) map[string]PoolRole {
 	if prefill+decode+shared+encode > total {
 		panic(fmt.Sprintf("BuildPoolMembershipFromIndices: prefill(%d)+decode(%d)+shared(%d)+encode(%d)=%d exceeds total(%d)",

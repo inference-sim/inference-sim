@@ -16,36 +16,9 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
-	// Online routing pipeline configuration (PR4+)
-	AdmissionPolicy       string  // "always-admit" (default) or "token-bucket"
-	AdmissionLatency      int64   // microseconds, default 0
-	RoutingLatency        int64   // microseconds, default 0
-	TokenBucketCapacity   float64 // max tokens, default 10000
-	TokenBucketRefillRate float64 // tokens/second, default 1000
-
-	// Routing policy configuration (PR6, evolved in PR17)
-	RoutingPolicy        string             // "round-robin" (default), "least-loaded", "weighted", "always-busiest"
-	RoutingScorerConfigs []sim.ScorerConfig // for weighted routing scorer pipeline (nil = use defaults)
-
 	// Decision trace configuration (PR13)
 	TraceLevel      string // "none" (default), "decisions"
-	CounterfactualK int    // number of counterfactual candidates, default 0
-
-	// Snapshot staleness configuration (H3 experiment, unified in #463)
-	// When > 0, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization)
-	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
-	SnapshotRefreshInterval int64
-
-	// Cache signal propagation delay for precise prefix cache scoring (issue #919).
-	// Only affects routing when precise-prefix-cache or no-hit-lru scorers are active;
-	// has no observable effect on other routing policies (round-robin, least-loaded, etc.).
-	// When > 0, those scorers query a periodically-refreshed stale snapshot of each
-	// instance's KV cache block hash map instead of live state.
-	// Models the asynchronous KV event propagation delay in production llm-d.
-	// Default: DefaultCacheSignalDelay (50ms). Feeds into ObservabilityConfig.CacheBlocks.
-	// 0 = oracle mode (scorers read live cache state with zero delay).
-	// Units: microseconds of simulated time.
-	CacheSignalDelay int64
+	CounterfactualK int    // routing trace: top-k scored endpoints per decision, 0 = off
 
 	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
 	// When non-empty, activates PlacementManager for GPU inventory tracking.
@@ -66,15 +39,12 @@ type DeploymentConfig struct {
 	// prefill+decode+shared <= total, and BuildPoolMembershipFromIndices
 	// assigns PoolRolePrefillDecode to the last `shared` indices after
 	// the prefill-only and decode-only ranges.
-	SharedInstances   int
-	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
-	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
+	SharedInstances int
 
 	// E/P/D disaggregation configuration (GAP-4, issue #1264).
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
 	// pipeline is byte-identical to the pre-PR simulator (BC-EPD-1).
-	EncodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
-	EncodeDecider   string // Encode decider: "", "never" (default), "always", "multimodal"
+	EncodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
 
 	// PD KV transfer configuration (PR2).
 	//
@@ -84,11 +54,6 @@ type DeploymentConfig struct {
 	// and the KV geometry) and the simulator owns only when it happens. Required whenever
 	// PD disaggregation is enabled; NewClusterSimulator refuses a PD deployment without it.
 	PDTransferTime func(tokens int64, from, to InstanceID) int64
-
-	// Per-pool routing scorer configuration (PR2)
-	// When nil, both pools use the main RoutingScorerConfigs.
-	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
-	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
 
 	// Per-pool hardware overrides
 	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
@@ -105,40 +70,6 @@ type DeploymentConfig struct {
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
 	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
-
-	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
-	// TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload.
-	// Set to 3 (Standard) for Standard-and-above protection, or -3 to admit all.
-	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
-	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
-
-	// GAIE-legacy admission thresholds (issue #1014). Only used when AdmissionPolicy = "gaie-legacy".
-	GAIEQDThreshold float64 // queue depth threshold per instance (default 5)
-	GAIEKVThreshold float64 // KV cache utilization threshold (default 0.8)
-
-	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
-	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
-	// Zero value is safe: nil = no enforcement (all tenants unlimited).
-	TenantBudgets map[string]float64 `yaml:"tenant_budgets,omitempty"`
-
-	// Flow control configuration (issue #882, GIE parity).
-	// When FlowControlEnabled is false (default), the gateway queue is bypassed
-	// and requests flow directly from admission to routing (BC-1 pass-through).
-	FlowControlEnabled              bool    `yaml:"flow_control_enabled,omitempty"`
-	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`                // "never" (default), "utilization", "concurrency"
-	FlowControlDispatchOrder        string           `yaml:"flow_control_dispatch_order,omitempty"`  // "fifo" (default), "priority", "slo-deadline"
-	FlowControlSLOTargets           map[string]int64 `yaml:"flow_control_slo_targets,omitempty"`     // SLO class → TTFT target µs for slo-deadline ordering
-	FlowControlMaxQueueDepth        int              `yaml:"flow_control_max_queue_depth,omitempty"` // 0 = unlimited
-	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
-	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
-	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
-	FlowControlPerBandCapacity      int     `yaml:"flow_control_per_band_capacity,omitempty"`       // 0 = unlimited; max requests per priority band
-	FlowControlUsageLimitThreshold  float64 `yaml:"flow_control_usage_limit_threshold,omitempty"`   // per-band HoL blocking ceiling (1.0=no HoL, <1.0 gates lower bands earlier)
-	FlowControlFairnessPolicy       string  `yaml:"flow_control_fairness_policy,omitempty"`         // "global-strict" (default), "round-robin"
-	FlowControlRequestTTL           int64   `yaml:"flow_control_request_ttl,omitempty"`             // microseconds; 0 = disabled (default). GIE parity: DefaultRequestTTL.
-	FlowControlQueueShedding        bool    `yaml:"flow_control_queue_shedding,omitempty"`          // BLIS-extra: cross-band shedding on full queue (not in llm-d). Default false.
-	FlowControlDispatchTickInterval int64   `yaml:"flow_control_dispatch_tick_interval,omitempty"`  // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity). 0 = use default.
-	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

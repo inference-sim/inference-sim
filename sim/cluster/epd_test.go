@@ -10,10 +10,11 @@ import (
 // newTestEPDDeploymentConfig is an E/P/D test harness layered on top of
 // newTestDisaggDeploymentConfig. It adds an encode pool of `encode` instances
 // and an encode decider. Pool layout (via BuildPoolMembershipFromIndices):
-//   [0, prefill)                       — prefill-only
-//   [prefill, prefill+decode)          — decode-only
-//   [prefill+decode, +shared)          — shared-role (zero here)
-//   [+shared, +encode)                 — encode-only
+//
+//	[0, prefill)                       — prefill-only
+//	[prefill, prefill+decode)          — decode-only
+//	[prefill+decode, +shared)          — shared-role (zero here)
+//	[+shared, +encode)                 — encode-only
 //
 // Tracing is enabled so tests can inspect EncodeRoutingRecord emission.
 func newTestEPDDeploymentConfig(prefill, decode, encode int, encodeDecider string) DeploymentConfig {

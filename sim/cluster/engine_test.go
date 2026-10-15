@@ -12,12 +12,12 @@ func TestUnlimitedEngineOptimize(t *testing.T) {
 	engine := &UnlimitedEngine{}
 
 	tests := []struct {
-		name       string
-		results    []AnalyzerResult
-		wantLen    int
-		wantDelta  int    // expected delta for first decision (-1 or +1)
-		wantModel  string // expected ModelID for first decision
-		wantGPU    string // expected GPU type for first decision
+		name      string
+		results   []AnalyzerResult
+		wantLen   int
+		wantDelta int    // expected delta for first decision (-1 or +1)
+		wantModel string // expected ModelID for first decision
+		wantGPU   string // expected GPU type for first decision
 	}{
 		{
 			name:    "no signal — no decisions",
@@ -195,7 +195,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 				ModelID:          "m1",
 				RequiredCapacity: 50,
 				VariantCapacities: []VariantCapacity{
-					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 5, Supply: 0, ReplicaCount: 0},    // cheapest, inactive
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 5, Supply: 0, ReplicaCount: 0},   // cheapest, inactive
 					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 30, ReplicaCount: 3}, // active
 				},
 			}},

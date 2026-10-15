@@ -9,10 +9,10 @@ import (
 // TestNewParentRequest_NumKVBlocks verifies ceiling-division math for KV block computation.
 func TestNewParentRequest_NumKVBlocks(t *testing.T) {
 	tests := []struct {
-		name           string
-		inputLen       int
-		blockSize      int64
-		wantNumBlocks  int64
+		name          string
+		inputLen      int
+		blockSize     int64
+		wantNumBlocks int64
 	}{
 		{"empty input", 0, 16, 0},
 		{"one token", 1, 16, 1},
