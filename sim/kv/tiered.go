@@ -389,10 +389,7 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		// (cache.go lazy deletion). Without this, HashToBlock retains a stale
 		// entry mapping the old hash to this block's ID even though the block
 		// is about to be overwritten with different content.
-		if gpuBlk.Hash != "" {
-			delete(t.gpu.HashToBlock, gpuBlk.Hash)
-			gpuBlk.Hash = ""
-		}
+		t.gpu.dropHash(gpuBlk)
 
 		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
 		gpuBlk.Hash = h

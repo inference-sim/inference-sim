@@ -361,10 +361,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// semantics (block_pool.py:331-356). Hash was preserved in
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
-				if blk.Hash != "" {
-					delete(kvc.HashToBlock, blk.Hash)
-					blk.Hash = ""
-				}
+				kvc.dropHash(blk)
 
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
@@ -481,10 +478,7 @@ func (kvc *KVCacheState) takeBlankBlock(reqID string) *KVBlock {
 	if blk == nil {
 		panic(fmt.Sprintf("popFreeBlock returned nil reserving blocks for req %s after the pre-check passed: INV-4 violation", reqID))
 	}
-	if blk.Hash != "" {
-		delete(kvc.HashToBlock, blk.Hash)
-		blk.Hash = ""
-	}
+	kvc.dropHash(blk)
 	blk.RefCount = 1
 	blk.InUse = true
 	return blk
@@ -497,6 +491,21 @@ func (kvc *KVCacheState) chargeFixedBlocks(reqID string, n int64) {
 	for i := int64(0); i < n; i++ {
 		kvc.FixedBlocks[reqID] = append(kvc.FixedBlocks[reqID], kvc.takeBlankBlock(reqID).ID)
 	}
+}
+
+// dropHash clears a block's prefix hash before it is reused, removing the index entry only
+// when the entry still names this block: another block may have taken the hash over since --
+// a fully cached prompt recomputes its last block (#1943) -- and that live mapping must
+// survive the stale copy's reuse. vLLM's BlockHashToBlockMap.pop(key, block_id) likewise
+// removes only the popped block's entry (vllm/v1/core/block_pool.py:101-118 at v0.31.0).
+func (kvc *KVCacheState) dropHash(blk *KVBlock) {
+	if blk.Hash == "" {
+		return
+	}
+	if id, ok := kvc.HashToBlock[blk.Hash]; ok && id == blk.ID {
+		delete(kvc.HashToBlock, blk.Hash)
+	}
+	blk.Hash = ""
 }
 
 // popFreeBlock evicts a block from the free list and prepares it for reuse.

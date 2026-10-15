@@ -259,3 +259,42 @@ func TestSpeculativeSlots_TokensFillTheReservedBlocksFirst(t *testing.T) {
 		t.Errorf("the decode token landed in block %d, not the first spare %d", ids[len(ids)-1], spare[0])
 	}
 }
+
+// A prefix hash names one block in the index at a time: when a fully cached prompt
+// recomputes its last block (#1943) the new block takes over the hash while the old, free
+// copy still carries it. Reusing that stale copy must not drop the live mapping -- vLLM keys
+// cached_block_hash_to_block by block id and evicts only the entry for the block it pops
+// (vllm/v1/core/block_pool.py _maybe_evict_cached_block at v0.31.0). Two fully hit prompts,
+// then a third, longer one with the same prefix still hits both of its blocks.
+func TestReusingAStaleHashedBlockKeepsTheLiveMapping(t *testing.T) {
+	kvc := NewKVCacheState(6, 4)
+	prompt := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8}
+	a := &sim.Request{ID: "a", InputTokens: append([]sim.TokenID(nil), prompt...)}
+	if !kvc.AllocateKVBlocks(a, 0, 8, nil) {
+		t.Fatal("a refused")
+	}
+	kvc.ReleaseKVBlocks(a)
+
+	// b hits only its first block (the hit is capped at InputLen-1) and recomputes the
+	// second into a fresh block, which now owns the second block's hash.
+	b := &sim.Request{ID: "b", InputTokens: append([]sim.TokenID(nil), prompt...)}
+	cached := kvc.GetCachedBlocks(prompt)[:1]
+	if !kvc.AllocateKVBlocks(b, 4, 8, cached) {
+		t.Fatal("b refused")
+	}
+	live := kvc.RequestMap["b"][1]
+	kvc.ReleaseKVBlocks(b)
+
+	// A filler takes the stale copy of the second block off the free list.
+	filler := promptRequest("filler", 16)
+	if !kvc.AllocateKVBlocks(filler, 0, 16, nil) {
+		t.Fatal("filler refused")
+	}
+
+	c := append(append([]sim.TokenID(nil), prompt...), 9, 10, 11, 12)
+	got := kvc.GetCachedBlocks(c)
+	if len(got) != 2 || got[1] != live {
+		t.Errorf("a prompt extending the cached one hits %v; want both blocks, the second being %d", got, live)
+	}
+	assertBlockConservation(t, kvc)
+}
