@@ -172,3 +172,33 @@ func (h *peakTokensHook) OnProgress(sim.ProgressSnapshot) {
 		}
 	}
 }
+
+// Byte and per-band caps (llm-d flowControl maxBytes / priorityBands): a request
+// that would exceed a cap is rejected, the byte counters return to zero as
+// requests leave by any path, and the length counters stay consistent (INV-16).
+func TestGatewayQueue_ByteAndBandCaps(t *testing.T) {
+	q := NewGatewayQueue("fifo", 0, nil)
+	q.SetByteCapacity(4*250, 0)   // global: 250 prompt tokens' worth
+	q.SetBandLimits(3, 2, 0, nil) // the "standard" band (priority 3) holds 2
+	mk := func(id string, tokens int) *sim.Request {
+		return &sim.Request{ID: id, InputTokens: make([]sim.TokenID, tokens), SLOClass: "standard"}
+	}
+	if out, _ := q.Enqueue(mk("a", 100), 1); out != Enqueued {
+		t.Fatalf("a: %v", out)
+	}
+	if out, _ := q.Enqueue(mk("b", 200), 2); out != Rejected {
+		t.Errorf("b exceeds the byte cap: %v", out)
+	}
+	if out, _ := q.Enqueue(mk("c", 150), 3); out != Enqueued {
+		t.Errorf("c fits exactly: %v", out)
+	}
+	if out, _ := q.Enqueue(mk("d", 1), 4); out != Rejected {
+		t.Errorf("d exceeds the band's 2-request cap: %v", out)
+	}
+	assertINV16(t, q, "enqueue")
+	q.RemoveByRequestID("a")
+	if q.DequeueGated(0) == nil || q.totalBytes != 0 {
+		t.Errorf("bytes after draining: %d", q.totalBytes)
+	}
+	assertINV16(t, q, "drain")
+}
