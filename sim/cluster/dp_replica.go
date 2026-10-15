@@ -189,6 +189,10 @@ func (cs *ClusterSimulator) endpointSnapshot(rep *dpReplica) sim.RoutingSnapshot
 	agg.TTFT, agg.ITL = ttft/n, itl/n
 	agg.AvgInTokens, agg.AvgOutTokens = avgIn/n, avgOut/n
 	agg.CacheHitRate = hit / n
+	// The EPP charges in-flight tokens to the endpoint it picked, the replica (#1907/#1908).
+	if cs.flowInFlightLoad != nil {
+		agg.InFlightTokens = cs.flowInFlightLoad.Tokens(rep.id)
+	}
 	lead := rep.ranks[0]
 	agg.Model = lead.Model
 	agg.GPUType = lead.GPU()

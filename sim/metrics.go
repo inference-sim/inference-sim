@@ -427,6 +427,7 @@ type emitOptions struct {
 	versions   *BuildVersions
 	agentic    any
 	pd         *PDOutput
+	epp        *EPPProvenance
 }
 
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
@@ -439,6 +440,13 @@ func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
 // two builds of one commit can differ in them, so they stay off stdout (INV-6).
 func WithBuildVersions(v *BuildVersions) EmitOption {
 	return func(o *emitOptions) { o.versions = v }
+}
+
+// WithEPPProvenance records the ingested llm-d EndpointPickerConfig (#1930: config
+// sha256, plugins and their BLIS mapping, the scheduling profile, flow control) in
+// the --metrics-path file only, like WithCatalogProvenance. Nil leaves it absent.
+func WithEPPProvenance(p *EPPProvenance) EmitOption {
+	return func(o *emitOptions) { o.epp = p }
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -503,6 +511,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// resolved, or a caller that passed no option) leaves the block absent.
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
+		output.EPP = resolvedOpts.epp
 		output.Agentic = resolvedOpts.agentic
 		output.PD = resolvedOpts.pd
 		if resolvedOpts.provenance != nil {

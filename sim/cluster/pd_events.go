@@ -27,6 +27,10 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] prefill req %s: no routable instances in prefill pool — request rejected at routing", e.request.ID)
+		if cs.routingPipeline != nil {
+			cs.routingPipeline.Discard(e.parentReq.ID)
+		}
+		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.routingRejections++
 		cs.recordUnserved(e.request)
 		return
@@ -38,6 +42,17 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		policy = cs.routingPolicy
 	}
 	decision := policy.Route(e.request, state)
+	if decision.TargetInstance == "" {
+		// llm-d main: a required prefill profile with no result fails the request
+		// (disagg_profile_handler.go:536-540 at 981acb8a). The v0.10.0 decode-only
+		// fallback is refused at --epp-config load time.
+		logrus.Debugf("[cluster] prefill req %s: rejected at routing (%s)", e.request.ID, decision.Reason)
+		cs.eppRejected(e.parentReq.OriginalRequest)
+		return
+	}
+	if cs.routingPipeline != nil {
+		cs.routingPipeline.Commit(e.parentReq.ID) // decode and prefill picked: PreRequest
+	}
 
 	logrus.Debugf("[cluster] prefill req %s → instance %s", e.request.ID, decision.TargetInstance)
 
@@ -222,6 +237,10 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 		}
 		q = q[1:]
 		w.parent.DecodeSubReq = w.req
+		// llm-d in-flight load: the client stream is now the decode sub-request.
+		for _, t := range cs.inFlightLoadTrackers {
+			t.SetStream(w.parent.ID, w.req)
+		}
 		w.parent.PulledKVBlocks = (pulled + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
 		scheduleTransferCompletion(cs, w.parent, now)
 	}
@@ -271,6 +290,7 @@ const (
 // incrementing transfersCompleted, without attempting to release KV
 // (nothing was reserved) or promote state.
 func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, release prefillRelease) {
+	cs.releaseInFlightGroup(e.parentReq.ID)
 	switch release {
 	case freeNow:
 		cs.releasePrefillHold(e.parentReq)
@@ -447,6 +467,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	if decodeInst == nil {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances at transfer complete — routing invariant violated; KV cannot be released",
 			decodeInstID, e.parentReq.ID)
+		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		e.parentReq.CompletionTime = e.time
@@ -460,6 +481,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq)
+		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		e.parentReq.CompletionTime = e.time

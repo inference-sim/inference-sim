@@ -281,6 +281,9 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 | `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
 | `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
+| `--epp-config` | string | "" | llm-d `EndpointPickerConfig` ingested verbatim; owns routing, P/D routing and flow control. See [Routing: llm-d EndpointPickerConfig](../guide/routing.md#llm-d-endpointpickerconfig-epp-config). |
+| `--epp-cpu-tier-view` | string | "" | BLIS opt-in (a deviation from llm-d): the named approx-prefix-cache-producer of `--epp-config` reports each instance's CPU-offload-tier-resident prefix instead of llm-d's router-side LRU estimate. |
+| `--epp-version` | string | "main@981acb8a" | llm-d-router release `--epp-config` follows: `main@981acb8a` (alias `main`) or `v0.10.0`. |
 | `--snapshot-refresh-interval` | int64 | 50000 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. Default 50ms = llm-d parity. 0 = immediate/oracle mode. |
 
 ### Scorer Configuration
@@ -291,7 +294,7 @@ When using `--routing-policy weighted`, the `--routing-scorers` flag configures 
 --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
 ```
 
-Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`.
+Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`, `prefix-cache`, `token-load`. `prefix-cache` and `token-load` read llm-d's default approx prefix producer and inflight-load-producer, created with llm-d's defaults when used from this flag.
 
 Default (when `--routing-scorers` is empty): `precise-prefix-cache:2, queue-depth:1, kv-utilization:1` (llm-d parity).
 

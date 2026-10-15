@@ -29,8 +29,9 @@ type flowQueue struct {
 // priorityBand groups all flow queues at the same priority level.
 type priorityBand struct {
 	priority int
-	flows    map[string]*flowQueue // tenantID -> per-flow queue
-	totalLen int
+	flows      map[string]*flowQueue // tenantID -> per-flow queue
+	totalLen   int
+	totalBytes int64 // estimated request bytes held (only tracked when a byte limit is set)
 }
 
 // EnqueueOutcome represents the result of enqueuing a request.
@@ -152,6 +153,93 @@ type GatewayQueue struct {
 	fairnessPolicy       FairnessPolicy
 	requestIndex         map[string]requestLocation // request ID → flow coordinates for TTL removal
 	sheddingEnabled      bool                       // BLIS-extra: cross-band shedding on enqueue (not in llm-d). Requires --queue-shedding.
+	bandLimits           map[int]bandLimit          // per-priority overrides of the band caps and fairness (llm-d priorityBands)
+	uniformCeiling       float64                    // >0: one saturation ceiling for every band (llm-d static-usage-limit-policy)
+	maxBytes             int64                      // 0 = unlimited (global estimated request bytes)
+	maxBandBytes         int64                      // 0 = unlimited (per-band estimated request bytes)
+	totalBytes           int64
+}
+
+// gatewayBytesPerToken estimates a request body's size from its prompt length,
+// llm-d's averageCharactersPerToken (approximateprefix/plugin.go:297, v0.10.0).
+// llm-d's flow-control byte limits count request body bytes (registry/config.go).
+const gatewayBytesPerToken = 4
+
+func requestBytes(req *sim.Request) int64 {
+	return int64(gatewayBytesPerToken) * int64(len(req.InputTokens))
+}
+
+// bandLimit is one llm-d priority band's configuration.
+type bandLimit struct {
+	maxRequests int
+	maxBytes    int64
+	fairness    FairnessPolicy // nil = the queue's policy
+}
+
+// SetBandLimits configures one priority band: its request and byte caps and,
+// when fairness is non-nil, its intra-band fairness (llm-d flowControl.priorityBands:
+// pkg/epp/flowcontrol/registry/config.go). Bands without limits use the queue-wide
+// per-band caps. Panics on negative caps (R3).
+func (q *GatewayQueue) SetBandLimits(priority, maxRequests int, maxBytes int64, fairness FairnessPolicy) {
+	if maxRequests < 0 || maxBytes < 0 {
+		panic(fmt.Sprintf("GatewayQueue.SetBandLimits: caps must be >= 0, got requests=%d bytes=%d", maxRequests, maxBytes))
+	}
+	if q.bandLimits == nil {
+		q.bandLimits = make(map[int]bandLimit)
+	}
+	q.bandLimits[priority] = bandLimit{maxRequests: maxRequests, maxBytes: maxBytes, fairness: fairness}
+}
+
+func (q *GatewayQueue) bandCaps(priority int) (int, int64) {
+	if l, ok := q.bandLimits[priority]; ok {
+		return l.maxRequests, l.maxBytes
+	}
+	return q.maxBandCapacity, q.maxBandBytes
+}
+
+// SetUniformCeiling gives every priority band the same saturation ceiling t
+// (llm-d static-usage-limit-policy: pkg/epp/framework/plugins/flowcontrol/
+// usagelimits/usagelimitpolicy.go:35-66), replacing the rank interpolation of
+// SetUsageLimitThreshold. Panics unless 0 < t <= 1 (R3).
+func (q *GatewayQueue) SetUniformCeiling(t float64) {
+	if !(t > 0 && t <= 1) {
+		panic(fmt.Sprintf("GatewayQueue.SetUniformCeiling: ceiling must be in (0, 1], got %v", t))
+	}
+	q.uniformCeiling = t
+}
+
+// SetByteCapacity bounds the queue's estimated request bytes globally and per band
+// (llm-d flowControl maxBytes and the priority band MaxBytes). 0 = unlimited.
+// Panics on negative values (R3).
+func (q *GatewayQueue) SetByteCapacity(global, perBand int64) {
+	if global < 0 || perBand < 0 {
+		panic(fmt.Sprintf("GatewayQueue.SetByteCapacity: limits must be >= 0, got global=%d perBand=%d", global, perBand))
+	}
+	q.maxBytes = global
+	q.maxBandBytes = perBand
+}
+
+func (q *GatewayQueue) tracksBytes() bool {
+	if q.maxBytes > 0 || q.maxBandBytes > 0 {
+		return true
+	}
+	for _, l := range q.bandLimits {
+		if l.maxBytes > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// accountRemoval decrements the length (and byte) counters for a removed request.
+func (q *GatewayQueue) accountRemoval(band *priorityBand, req *sim.Request) {
+	band.totalLen--
+	q.totalLen--
+	if q.tracksBytes() {
+		b := requestBytes(req)
+		band.totalBytes -= b
+		q.totalBytes -= b
+	}
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -268,9 +356,21 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	// Step 1: Per-band capacity check.
 	// Within a band all entries share the same priority and new arrivals have higher
 	// seqIDs, so displacement is never possible — reject directly when band is full.
-	if q.maxBandCapacity > 0 && band.totalLen >= q.maxBandCapacity {
+	bandCap, bandBytesCap := q.bandCaps(priority)
+	if bandCap > 0 && band.totalLen >= bandCap {
 		q.rejectedCount++
 		return Rejected, nil
+	}
+	// Byte capacity (llm-d registry MaxBytes, global and per band): reject when the
+	// request would not fit.
+	var reqBytes int64
+	if q.tracksBytes() {
+		reqBytes = requestBytes(req)
+		if (bandBytesCap > 0 && band.totalBytes+reqBytes > bandBytesCap) ||
+			(q.maxBytes > 0 && q.totalBytes+reqBytes > q.maxBytes) {
+			q.rejectedCount++
+			return Rejected, nil
+		}
 	}
 
 	// Step 2: Global capacity check.
@@ -301,6 +401,8 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	flow.requests = append(flow.requests, flowEntry{request: req, seqID: seqID})
 	band.totalLen++
 	q.totalLen++
+	band.totalBytes += reqBytes
+	q.totalBytes += reqBytes
 	q.requestIndex[req.ID] = requestLocation{bandPriority: priority, tenantID: tenantID}
 
 	if shedVictim != nil {
@@ -373,10 +475,10 @@ func (q *GatewayQueue) removeEntryByIndex(flow *flowQueue, band *priorityBand, i
 	if idx != last {
 		panic(fmt.Sprintf("removeEntryByIndex: idx=%d != last=%d — INV-17 violation: shed victim must be flow tail (seqID ordering violated)", idx, last))
 	}
-	delete(q.requestIndex, flow.requests[idx].request.ID)
+	victim := flow.requests[idx].request
+	delete(q.requestIndex, victim.ID)
 	flow.requests = flow.requests[:last]
-	band.totalLen--
-	q.totalLen--
+	q.accountRemoval(band, victim)
 
 	// Clean up empty flow.
 	if len(flow.requests) == 0 {
@@ -431,7 +533,10 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		// Position 0 (highest) = 1.0, position N-1 (lowest) = usageLimitThreshold.
 		// Single band always gets ceiling 1.0.
 		ceiling := 1.0
-		if numBands > 1 {
+		switch {
+		case q.uniformCeiling > 0:
+			ceiling = q.uniformCeiling
+		case numBands > 1:
 			ceiling = 1.0 - float64(i)*(1.0-q.usageLimitThreshold)/float64(numBands-1)
 		}
 
@@ -503,8 +608,7 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 	// Remove head (index 0).
 	delete(q.requestIndex, req.ID)
 	bestFlow.requests = bestFlow.requests[1:]
-	bestBand.totalLen--
-	q.totalLen--
+	q.accountRemoval(bestBand, req)
 	if len(bestFlow.requests) == 0 {
 		delete(bestBand.flows, bestFlow.key.TenantID)
 	}
@@ -513,15 +617,18 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 
 // dequeueFromBand delegates within-band flow selection to the configured FairnessPolicy.
 func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
-	flow := q.fairnessPolicy.Pick(band)
+	policy := q.fairnessPolicy
+	if l, ok := q.bandLimits[band.priority]; ok && l.fairness != nil {
+		policy = l.fairness
+	}
+	flow := policy.Pick(band)
 	if flow == nil {
 		return nil
 	}
 	req := flow.requests[0].request
 	delete(q.requestIndex, req.ID)
 	flow.requests = flow.requests[1:]
-	band.totalLen--
-	q.totalLen--
+	q.accountRemoval(band, req)
 	if len(flow.requests) == 0 {
 		delete(band.flows, flow.key.TenantID)
 	}
@@ -578,8 +685,7 @@ func (q *GatewayQueue) dequeueFromBandSLODeadline(band *priorityBand) *sim.Reque
 	req := entry.request
 	delete(q.requestIndex, req.ID)
 	flow.requests = append(flow.requests[:bestIdx], flow.requests[bestIdx+1:]...)
-	band.totalLen--
-	q.totalLen--
+	q.accountRemoval(band, req)
 	if len(flow.requests) == 0 {
 		delete(band.flows, flow.key.TenantID)
 	}
@@ -656,8 +762,7 @@ func (q *GatewayQueue) RemoveByRequestID(id string) *sim.Request {
 			// Arbitrary-position removal: shift elements to preserve seqID ordering.
 			flow.requests = append(flow.requests[:i], flow.requests[i+1:]...)
 			delete(q.requestIndex, id)
-			band.totalLen--
-			q.totalLen--
+			q.accountRemoval(band, req)
 			if len(flow.requests) == 0 {
 				delete(band.flows, flow.key.TenantID)
 			}

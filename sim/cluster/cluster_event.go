@@ -86,6 +86,9 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		}
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
+		if cs.flowInFlightLoad != nil {
+			snap.InFlightTokens = cs.flowInFlightLoad.Tokens(string(inst.ID()))
+		}
 		snap.Model = inst.Model
 		snap.GPUType = inst.GPU()
 		snap.TPDegree = inst.TPDegree
@@ -281,6 +284,11 @@ func (e *RoutingDecisionEvent) Priority() int    { return 2 }
 // ClusterSimulator so the fork happens inside one event type rather than at the
 // two pre-existing call sites in AdmissionDecisionEvent and tryDispatchFromGatewayQueue.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
+	// llm-d main: the dispatch reservation ends once routing publishes the request's
+	// in-flight load (flowcontrol/controller/controller.go:324-330 at 981acb8a).
+	if t, ok := cs.saturationDetector.(sim.DispatchReservationTracker); ok {
+		t.ReleaseDispatch(e.request.ID)
+	}
 	if cs.poolsConfigured() {
 		cs.executeDisaggregatedRouting(e.request, e.time)
 	} else {
@@ -320,6 +328,7 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	if cs.inFlightRequests[e.targetInstance] < 0 {
 		cs.inFlightRequests[e.targetInstance] = 0
 	}
+	cs.releaseInFlightLoad(e.request)
 
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnComplete(e.request.TenantID)
