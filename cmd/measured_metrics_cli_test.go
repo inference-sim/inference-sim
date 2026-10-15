@@ -120,6 +120,18 @@ func TestVersionsFromBuildInfo(t *testing.T) {
 	if local.BLIS != "v1.2.3" || local.Kernel != "replace:../blis-latency-kernel" || local.Schemas != "unknown" {
 		t.Errorf("a filesystem replace must be reported as such, got %+v", *local)
 	}
+	// A worktree build carries no VCS settings; the -ldflags revision names the commit, and a
+	// stamped revision wins over it.
+	saved := buildRevision
+	t.Cleanup(func() { buildRevision = saved })
+	buildRevision = "def456-dirty"
+	if w := versionsFrom(&debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}); w.BLIS != "(devel)+def456-dirty" {
+		t.Errorf("an injected revision must be reported, got %q", w.BLIS)
+	}
+	if s := versionsFrom(info); s.BLIS != "(devel)+abc123-dirty" {
+		t.Errorf("a stamped revision must win over an injected one, got %q", s.BLIS)
+	}
+	buildRevision = ""
 	if none := versionsFrom(nil); none.BLIS != "unknown" || none.Kernel != "unknown" || none.Schemas != "unknown" {
 		t.Errorf("versionsFrom(nil) = %+v, want every pin unknown", *none)
 	}
