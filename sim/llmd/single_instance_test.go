@@ -27,7 +27,7 @@ func TestSingleInstance_RouterDoesNotChangeLatency(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reqs := testRequests(200, 21, 700, 48)
 			cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
-			flags := append([]string{}, DefaultEPPFlags...)
+			flags := DefaultEPPFlags()
 			if cfg != "" {
 				flags = append(flags, "--config-text="+cfg)
 			}

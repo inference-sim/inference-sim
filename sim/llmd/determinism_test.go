@@ -3,6 +3,7 @@ package llmd
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,8 +16,9 @@ import (
 // determinismChildEnv selects the child half of TestDeterminism_AcrossProcesses.
 const determinismChildEnv = "LLMD_DETERMINISM_CHILD"
 
-// routingDigest runs a flow-controlled P/D-free cluster and a P/D cluster and digests every
-// request's placement, dispatch time and latency.
+// routingDigest runs the default router, two flow-control configurations, tied multi-tenant
+// arrivals in two priority bands, and a P/D cluster, and digests every request's placement,
+// dispatch time and latency.
 func routingDigest(t *testing.T) string {
 	h := sha256.New()
 	for _, cfg := range []string{"", softCeilingConfig, boundedQueueConfig} {
@@ -24,7 +26,7 @@ func routingDigest(t *testing.T) string {
 		dep := testDeployment(3)
 		dep.BatchConfig = sim.NewBatchConfig(8, 2048, 0)
 		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
-		flags := append([]string{}, DefaultEPPFlags...)
+		flags := DefaultEPPFlags()
 		if cfg != "" {
 			flags = append(flags, "--allow-experimental-plugins", "--config-text="+cfg)
 		}
@@ -38,7 +40,65 @@ func routingDigest(t *testing.T) string {
 		}
 		_, _ = fmt.Fprintf(h, "rej %d %d %d\n", cs.RejectedRequests(), cs.GatewayQueueRejected(), cs.GatewayExpired())
 	}
+	digestTiedTenants(t, h)
+	digestPD(t, h)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// digestTiedTenants: four tenants whose requests arrive at the same microsecond, in two priority
+// bands (InferenceObjectives), under global-strict fairness, which breaks ties between flows by
+// the registry's queue order: the case where a flow registry on the wall clock and sync.Map order
+// diverged across processes.
+func digestTiedTenants(t *testing.T, h io.Writer) {
+	reqs := testRequests(600, 4, 0, 16) // 150 ms of arrivals, across several scrapes
+	for i, r := range reqs {
+		r.ArrivalTime = int64(i/8) * 2000 // eight requests per microsecond instant, every 2 ms
+		r.TenantID = fmt.Sprintf("tenant-%d", i%4)
+		r.SLOClass = map[bool]string{true: "critical", false: "sheddable"}[i%3 == 0]
+	}
+	dep := testDeployment(2)
+	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs.SetGateway(New(Options{
+		Model:     "test-model",
+		EPPFlags:  []string{"--pool-name=vllm", "--config-text=" + globalStrictConfig},
+		Manifests: []byte(poolManifests),
+		PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
+	}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("tied tenants: Run: %v", err)
+	}
+	held := 0
+	for _, r := range reqs {
+		if r.GatewayDispatchTime > r.ArrivalTime {
+			held++
+		}
+		_, _ = fmt.Fprintf(h, "tt %s %s %d\n", r.ID, r.AssignedInstance, r.GatewayDispatchTime)
+	}
+	if held == 0 {
+		t.Fatal("tied tenants: no request waited in flow control, so fairness never broke a tie")
+	}
+}
+
+// digestPD digests a disaggregated run: prefill and decode placement and transfer timing.
+func digestPD(t *testing.T, h io.Writer) {
+	reqs := testRequests(60, 3, 1000, 0)
+	dep := testDeployment(4)
+	dep.PrefillInstances, dep.DecodeInstances = 2, 2
+	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs.SetGateway(New(Options{Model: "test-model", PodLabels: roleLabels,
+		EPPFlags: append(DefaultEPPFlags(), "--config-text="+pdConfig)}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("P/D: Run: %v", err)
+	}
+	m := cs.AggregatedMetrics()
+	for _, p := range cs.ParentRequests() {
+		_, _ = fmt.Fprintf(h, "pd %s %s %s %v\n", p.ID, p.PrefillInstanceID, p.DecodeInstanceID, m.RequestTTFTs[p.OriginalRequest.ID])
+	}
+	if len(cs.ParentRequests()) == 0 {
+		t.Fatal("P/D: nothing disaggregated")
+	}
 }
 
 func TestDeterminism_ChildProcess(t *testing.T) {
@@ -56,7 +116,7 @@ func TestDeterminism_AcrossProcesses(t *testing.T) {
 		t.Skip("spawns child test processes")
 	}
 	var digests []string
-	for _, procs := range []string{"1", "8", "8"} {
+	for _, procs := range []string{"1", "8", "8", "1", "8"} {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestDeterminism_ChildProcess$", "-test.count=1")
 		cmd.Env = append(os.Environ(), determinismChildEnv+"=1", "GOMAXPROCS="+procs)
 		out, err := cmd.CombinedOutput()

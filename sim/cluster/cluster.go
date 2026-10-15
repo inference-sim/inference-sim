@@ -16,6 +16,8 @@ import (
 // Events from all instances are processed in global timestamp order;
 // ties are broken by lowest instance index for determinism.
 type ClusterSimulator struct {
+	// abortErr is the error the gateway aborted the run with (GatewayHost.Abort).
+	abortErr          error
 	config            DeploymentConfig
 	instances         []*InstanceSimulator
 	rng               *sim.PartitionedRNG
@@ -48,6 +50,7 @@ type ClusterSimulator struct {
 	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
 	gatewayEvicted   int                    // INV-1: requests the gateway evicted in flight
 	gatewayExpired   int                    // INV-1: requests that expired in flow control
+	gatewayTimedOut  int                    // INV-1: requests whose client deadline passed in the gateway (counted in TimedOutRequests)
 	poolMembership   map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
 
 	// PD disaggregation state (PR2)
@@ -645,11 +648,14 @@ func (c *ClusterSimulator) Run() error {
 			if c.gateway.Pending() == 0 {
 				break
 			}
-			// The gateway still holds requests and only its own timers can release them.
-			if len(c.clusterEvents) == 0 || c.clock-lastProgress > gatewayStallLimitUs {
-				logrus.Warnf("[cluster] gateway holds %d request(s) and nothing has happened for %d µs of simulated time; ending the run",
+			// The gateway still holds requests and only its own timers can release them. A run that
+			// cannot make progress is an error, never a result (R1).
+			if len(c.clusterEvents) == 0 {
+				return fmt.Errorf("gateway holds %d request(s) and no event can release them", c.gateway.Pending())
+			}
+			if c.clock-lastProgress > gatewayStallLimitUs {
+				return fmt.Errorf("gateway holds %d request(s) and nothing but its own timers has happened for %d µs of simulated time",
 					c.gateway.Pending(), gatewayStallLimitUs)
-				break
 			}
 		} else if clusterTime == math.MaxInt64 && instanceIdx == -1 {
 			break
@@ -660,6 +666,9 @@ func (c *ClusterSimulator) Run() error {
 		if instanceIdx == -1 && clusterTime != math.MaxInt64 {
 			c.maybeFastForward()
 			clusterTime = c.clusterEvents[0].event.Timestamp()
+		}
+		if c.abortErr != nil {
+			return fmt.Errorf("gateway: %w", c.abortErr)
 		}
 		if clusterTime <= instanceTime {
 			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
@@ -753,6 +762,9 @@ func (c *ClusterSimulator) Run() error {
 
 		c.maybeDeliverProgressSnapshot(false)
 	}
+	if c.abortErr != nil {
+		return fmt.Errorf("gateway: %w", c.abortErr)
+	}
 
 	c.maybeDeliverProgressSnapshot(true)
 
@@ -778,6 +790,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	c.aggregatedMetrics = c.aggregateMetrics()
+	c.aggregatedMetrics.TimedOutRequests += c.gatewayTimedOut // client deadlines that passed while the gateway held the request
 
 	// R1/INV-1: PD disaggregation conservation correction.
 	// Each disaggregated request generates two sub-requests (prefill + decode) that

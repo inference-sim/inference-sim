@@ -69,6 +69,7 @@ Example:
 			logrus.Fatalf("Invalid log level: %s", logLevel)
 		}
 		logrus.SetLevel(level)
+		validateRouterFlags()
 
 		// Validate required inputs (BC-6, BC-8)
 		if traceHeaderPath == "" {
@@ -540,7 +541,8 @@ Example:
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		// INV-13: the router the trace was recorded with, unless the command line names one.
 		router := reconcileReplayRouter(cmd, traceData.Header.Router)
-		cs.SetGateway(newGateway(router, model))
+		gw := newGateway(router, model)
+		cs.SetGateway(gw)
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
 		// report path fails fast (#1516 single detector, #1519 bank).
@@ -789,7 +791,7 @@ Example:
 				// forward keeps it available to a downstream calibrate and never
 				// silently drops it.
 				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
-				Router:            router.header(),
+				Router:            router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

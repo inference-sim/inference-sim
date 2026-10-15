@@ -105,6 +105,9 @@ type TraceRouterConfig struct {
 	PodLabels        map[string]string `yaml:"pod_labels,omitempty"`
 	GatewayLatencyUs int64             `yaml:"gateway_latency_us,omitempty"`
 	ScrapeJitterUs   int64             `yaml:"scrape_jitter_us,omitempty"`
+	// Seed is the seed the router ran with (its random streams and the prompts it was shown);
+	// a replay runs its router with it. Absent in traces BLIS did not record.
+	Seed *int64 `yaml:"seed,omitempty"`
 }
 
 // TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM

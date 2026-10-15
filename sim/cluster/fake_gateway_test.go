@@ -24,6 +24,12 @@ type fakeGateway struct {
 	// on it (a stand-in for a gateway queue delay).
 	holdUs int64
 	held   int
+	// swallow, when set, holds every request forever (a router that never decides), with a
+	// daemon tick every tickUs when positive.
+	swallow bool
+	tickUs  int64
+	// abortWith, when set, aborts the run on the first arrival.
+	abortWith error
 }
 
 func init() {
@@ -37,6 +43,18 @@ func (g *fakeGateway) Start(host GatewayHost) error {
 }
 
 func (g *fakeGateway) OnArrival(req *sim.Request) {
+	if g.abortWith != nil {
+		g.host.Abort(g.abortWith)
+	}
+	if g.swallow {
+		g.held++
+		if g.tickUs > 0 && g.held == 1 {
+			var tick func()
+			tick = func() { g.host.Schedule(g.host.Now()+g.tickUs, PriorityGatewayBackground, true, tick) }
+			tick()
+		}
+		return
+	}
 	if g.holdUs > 0 {
 		g.held++
 		g.host.Schedule(g.host.Now()+g.holdUs, PriorityGatewayRequest, false, func() {

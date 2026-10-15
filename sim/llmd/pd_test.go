@@ -1,6 +1,7 @@
 package llmd
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -63,7 +64,16 @@ func TestPD_DisaggProfileHandlerPlacesPrefillAndDecode(t *testing.T) {
 	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", PodLabels: roleLabels,
-		EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--config-text="+pdConfig)})
+		EPPFlags: append(DefaultEPPFlags(), "--config-text="+pdConfig)})
+	usage := map[string]int{}
+	gw.observe = func(kind, detail string) {
+		if kind == "usage" {
+			var id string
+			var n int
+			_, _ = fmt.Sscanf(detail, "%s %d", &id, &n)
+			usage[id] = n
+		}
+	}
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -82,6 +92,12 @@ func TestPD_DisaggProfileHandlerPlacesPrefillAndDecode(t *testing.T) {
 		if !role[string(p.PrefillInstanceID)].Has(cluster.PoolRolePrefill) || !role[string(p.DecodeInstanceID)].Has(cluster.PoolRoleDecode) {
 			t.Fatalf("parent %s: prefill on %s (%v), decode on %s (%v)", p.ID, p.PrefillInstanceID, role[string(p.PrefillInstanceID)],
 				p.DecodeInstanceID, role[string(p.DecodeInstanceID)])
+		}
+	}
+	for _, p := range parents {
+		// The router's response usage reports the tokens the decode child generated.
+		if want := len(p.OriginalRequest.OutputTokens); usage[p.OriginalRequest.ID] != want {
+			t.Errorf("parent %s: router saw completion_tokens %d, want %d", p.ID, usage[p.OriginalRequest.ID], want)
 		}
 	}
 	t.Logf("%d of 60 requests disaggregated", len(parents))

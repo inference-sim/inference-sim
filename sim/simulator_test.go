@@ -1904,10 +1904,8 @@ var simControlPlaneGlobs = []string{
 	"slo*.go",
 	"saturation*.go",
 	"router_state.go",
-	// Self-cites INV-9 in both decider contracts ("Implementations must not read
-	// Request.OutputTokens"), so a new decider reading the oracle is exactly what this
-	// scan is for. Its name matches no pattern above, so it is listed explicitly.
-	"disaggregation.go",
+	// The engine metrics the router scrapes: what a real vLLM server publishes, never the oracle.
+	"engine_metrics.go",
 }
 
 // simControlPlaneExemptions names files the globs match that are legitimately
@@ -2054,10 +2052,23 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		"cluster/cluster.go",
 		"cluster/cluster_event.go",
 		"cluster/gateway.go",
-		"llmd/gateway.go",
-		"llmd/server.go",
-		"llmd/manifests.go",
 	}
+	// Every file of the embedded router's host: all of it feeds the router.
+	llmdFiles, err := filepath.Glob("llmd/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range llmdFiles {
+		if !strings.HasSuffix(f, "_test.go") {
+			clusterControlPlaneFiles = append(clusterControlPlaneFiles, f)
+		}
+	}
+	if !slices.Contains(clusterControlPlaneFiles, "llmd/runtime.go") || !slices.Contains(clusterControlPlaneFiles, "llmd/gateway.go") {
+		t.Fatalf("INV-9: the sim/llmd glob missed runtime.go or gateway.go: %v", clusterControlPlaneFiles)
+	}
+	// Deliberately not scanned: cluster/pd_events.go builds the decode sub-request the engine
+	// executes, which carries the oracle OutputTokens as execution input (like any request the
+	// engine runs); it hands nothing to the router.
 
 	for _, filename := range clusterControlPlaneFiles {
 		data, err := os.ReadFile(filename)

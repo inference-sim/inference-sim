@@ -383,3 +383,65 @@ func TestCheckPrimedRefusesAnUndrainedWarmup(t *testing.T) {
 		}
 	}
 }
+
+// On a data-parallel point (dp=2) the harness's router places like vLLM's DP balancer: the
+// prefix-caching warm-up leaves request 0's prompt on every replica (Run checks it is served
+// from the cache), the main phase spreads across the replicas instead of herding onto one, and
+// the score is deterministic.
+func TestADataParallelPointPlacesLikeVLLMsBalancer(t *testing.T) {
+	const scenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
+	enabled := true
+	sw := Sweep{Scenario: scenario, Label: "1k1k", Workload: "1024:1024", Framework: "vllm", Serving: "aggregated",
+		SpecMethod: "none", Points: []Point{{Concurrency: 8}}}
+	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: scenario, Label: sw.Label,
+		ByConcurrency: map[string]*PointSettings{"8": {Passed: PassedSettings{EnablePrefixCaching: &enabled}}}}}}
+	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42, EngineSettings: set}
+
+	m, err := kernelmodel.Open(scenario, cfg.Repos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Deployment().DP != 2 {
+		t.Fatalf("%s: dp=%d, want 2", scenario, m.Deployment().DP)
+	}
+	a, err := Run(sw, 8, cfg)
+	if err != nil {
+		t.Fatal(err) // includes checkPrimed: request 0 must be served from its cached prompt
+	}
+	b, err := Run(sw, 8, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Primed || a.Completed != 80 || a != b {
+		t.Fatalf("primed=%v completed=%d, repeat equal=%v", a.Primed, a.Completed, a == b)
+	}
+
+	ws, err := cfg.workloads()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := ws.At(1024, 1024, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := m.Engine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := runBlis(cfg, scenario, resolveAdmission(sw, 8, eng, m.Deployment(), cfg.EngineSettings), mainPhase(pl))
+	if err != nil {
+		t.Fatal(err)
+	}
+	per := map[string]int{}
+	for _, r := range out.Requests {
+		per[r.HandledBy]++
+	}
+	if len(per) != 2 {
+		t.Fatalf("main phase used replicas %v, want both", per)
+	}
+	for id, n := range per {
+		if n < 30 || n > 50 {
+			t.Errorf("replica %s served %d of 80 requests; balancing by requests in flight keeps them near 40 (%v)", id, n, per)
+		}
+	}
+}

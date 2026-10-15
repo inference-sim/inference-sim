@@ -55,7 +55,7 @@ func runBurst(t *testing.T, config string, n, numReqs int) runResult {
 	dep := testDeployment(n)
 	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0) // small batches: queues build and pools saturate
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
-	gw := New(Options{Model: "test-model", EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--allow-experimental-plugins", "--config-text="+config)})
+	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)})
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -139,7 +139,7 @@ func TestFlowControl_INV1_UnderCapacityRejectionAndTTLExpiry(t *testing.T) {
 	dep := testDeployment(2)
 	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
-	gw := New(Options{Model: "test-model", EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--config-text="+boundedQueueConfig)})
+	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+boundedQueueConfig)})
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -195,7 +195,7 @@ func TestFlowControl_SLODeadlineOrdersBySimulatedTargets(t *testing.T) {
 		dep := testDeployment(2)
 		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
 		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
-		gw := New(Options{Model: "test-model", EPPFlags: append(append([]string{}, DefaultEPPFlags...), "--config-text="+orderingConfig(policy))})
+		gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+orderingConfig(policy))})
 		cs.SetGateway(gw)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("%s: Run: %v", policy, err)
@@ -237,4 +237,43 @@ func TestFlowControl_QueueDelayRecorded(t *testing.T) {
 			t.Fatalf("%s: enqueue time %d without flow control", r.ID, r.GatewayEnqueueTime)
 		}
 	}
+}
+
+// TestFlowControl_ClientDeadlineWhileQueued: a request whose client deadline passes while flow
+// control holds it leaves the queue at its deadline and counts as timed out, not as a router
+// expiry or capacity rejection.
+func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
+	reqs := testRequests(150, 11, 1000, 0)
+	for _, r := range reqs {
+		r.Deadline = r.ArrivalTime + 20000 // the client waits at most 20 ms
+	}
+	dep := testDeployment(2)
+	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+globalStrictConfig)})
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	res := runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}
+	assertConservation(t, res, len(reqs))
+	if cs.GatewayExpired() != 0 || cs.GatewayQueueRejected() != 0 {
+		t.Errorf("client deadlines counted as router outcomes: expired %d, rejected %d", cs.GatewayExpired(), cs.GatewayQueueRejected())
+	}
+	timedOutInGateway := 0
+	for _, r := range reqs {
+		if r.AssignedInstance == "" {
+			timedOutInGateway++
+		}
+		if r.GatewayDispatchTime > r.Deadline {
+			t.Errorf("%s dispatched at %d, after its client deadline %d", r.ID, r.GatewayDispatchTime, r.Deadline)
+		}
+	}
+	if timedOutInGateway == 0 {
+		t.Fatal("no request timed out while held in flow control; the test does not exercise the path")
+	}
+	if res.metrics.TimedOutRequests < timedOutInGateway {
+		t.Errorf("timed_out_requests %d < %d requests whose deadline passed in the gateway", res.metrics.TimedOutRequests, timedOutInGateway)
+	}
+	t.Logf("%d timed out in the gateway, %d timed out in total", timedOutInGateway, res.metrics.TimedOutRequests)
 }

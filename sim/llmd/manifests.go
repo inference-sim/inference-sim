@@ -69,7 +69,7 @@ func (r *resources) objects() []client.Object {
 // real deployment's manifest set carries them too; unknown group-versions are an error. Custom
 // resources get their CRD defaults, as on admission to an API server.
 func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*resources, error) {
-	decoder := serializer.NewCodecFactory(scheme).UniversalDeserializer()
+	decoder := serializer.NewCodecFactory(scheme, serializer.EnableStrict).UniversalDeserializer() // unknown or duplicate fields are errors, as with strict field validation on admission
 	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(docs)))
 	defaults, err := newCRDDefaulter()
 	if err != nil {

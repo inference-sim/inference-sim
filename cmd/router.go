@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"reflect"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/go-logr/logr/funcr"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -35,10 +33,10 @@ var (
 
 // registerRouterFlags registers the router inputs on run and replay (INV-13).
 func registerRouterFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&eppFlagsPath, "epp-flags", "", "File holding the llm-d router's (EPP's) command-line flags, verbatim: a YAML list of flags, or a YAML map of flag name to value as in the router Helm chart's epp.flags. Default: a standalone router whose pool is every simulated pod ("+strings.Join(llmd.DefaultEPPFlags, " ")+")")
+	cmd.Flags().StringVar(&eppFlagsPath, "epp-flags", "", "File holding the llm-d router's (EPP's) command-line flags, verbatim: a YAML list of flags, or a YAML map of flag name to value as in the router Helm chart's epp.flags. Default: a standalone router whose pool is every simulated pod ("+strings.Join(llmd.DefaultEPPFlags(), " ")+")")
 	cmd.Flags().StringVar(&eppConfigPath, "epp-config", "", "EndpointPickerConfig file for the llm-d router, as passed to the EPP with --config-file. Default: the router's built-in default configuration")
 	cmd.Flags().StringSliceVar(&eppManifestPaths, "epp-manifests", nil, "Kubernetes manifest files (comma-separated or repeated). The router reads InferencePool, InferenceObjective and InferenceModelRewrite objects; other kinds are ignored")
-	cmd.Flags().StringSliceVar(&podLabelPairs, "pod-labels", nil, "Extra labels on every simulated model-server pod, key=value (comma-separated or repeated), so an InferencePool selector from a real deployment matches")
+	cmd.Flags().StringSliceVar(&podLabelPairs, "pod-labels", nil, "Extra labels on the simulated model-server pods, so an InferencePool selector or label filter from a real deployment matches: key=value on every pod, or role:key=value on the pods of one P/D role (prefill, decode, prefill-decode, encode); comma-separated or repeated. llm-d.ai/role comes from the scenario's pools")
 	cmd.Flags().Int64Var(&gatewayLatencyUs, "gateway-latency", 0, "Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker)")
 	cmd.Flags().Int64Var(&scrapeJitterUs, "epp-scrape-jitter", 0, "Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase")
 }
@@ -51,17 +49,25 @@ type routerInputs struct {
 	PodLabels        map[string]string
 	GatewayLatencyUs int64
 	ScrapeJitterUs   int64
+	// Seed is the router seed a replay takes from its trace; nil derives it from the run seed.
+	Seed *int64
 }
 
-// resolveRouterInputs reads the router inputs the command line names.
-func resolveRouterInputs() routerInputs {
-	in := routerInputs{GatewayLatencyUs: gatewayLatencyUs, ScrapeJitterUs: scrapeJitterUs}
+// validateRouterFlags refuses invalid router timing flags. run and replay call it with their other
+// flag checks, before any simulation state is built (R3).
+func validateRouterFlags() {
 	if gatewayLatencyUs < 0 {
 		logrus.Fatalf("--gateway-latency must be >= 0, got %d", gatewayLatencyUs)
 	}
 	if scrapeJitterUs < 0 {
 		logrus.Fatalf("--epp-scrape-jitter must be >= 0, got %d", scrapeJitterUs)
 	}
+}
+
+// resolveRouterInputs reads the router inputs the command line names.
+func resolveRouterInputs() routerInputs {
+	in := routerInputs{GatewayLatencyUs: gatewayLatencyUs, ScrapeJitterUs: scrapeJitterUs}
+	validateRouterFlags()
 	if eppFlagsPath != "" {
 		flags, err := readEPPFlags(eppFlagsPath)
 		if err != nil {
@@ -69,7 +75,7 @@ func resolveRouterInputs() routerInputs {
 		}
 		in.EPPFlags = flags
 	} else {
-		in.EPPFlags = append([]string(nil), llmd.DefaultEPPFlags...)
+		in.EPPFlags = append([]string(nil), llmd.DefaultEPPFlags()...)
 	}
 	if eppConfigPath != "" {
 		for _, f := range in.EPPFlags {
@@ -98,7 +104,16 @@ func resolveRouterInputs() routerInputs {
 		for _, kv := range podLabelPairs {
 			k, v, ok := strings.Cut(kv, "=")
 			if !ok || k == "" {
-				logrus.Fatalf("--pod-labels: %q is not key=value", kv)
+				logrus.Fatalf("--pod-labels: %q is not [role:]key=value", kv)
+			}
+			role, key, scoped := strings.Cut(k, ":")
+			if !scoped {
+				key = k
+			} else if !podRoles[role] {
+				logrus.Fatalf("--pod-labels: %q scopes a label to role %q; the roles are prefill, decode, prefill-decode and encode", kv, role)
+			}
+			if key == roleLabel {
+				logrus.Fatalf("--pod-labels: %s is set by BLIS from the scenario's pools and cannot be given", roleLabel)
 			}
 			in.PodLabels[k] = v
 		}
@@ -183,14 +198,15 @@ func routerFlagsChanged(cmd *cobra.Command) bool {
 	return false
 }
 
-// routerHeader is the TraceV2 header record of the router inputs.
-func (in routerInputs) header() *workload.TraceRouterConfig {
+// header is the TraceV2 header record of the router inputs and the seed the router ran with.
+func (in routerInputs) header(seed int64) *workload.TraceRouterConfig {
 	return &workload.TraceRouterConfig{
 		EPPFlags:         in.EPPFlags,
 		Manifests:        in.Manifests,
 		PodLabels:        in.PodLabels,
 		GatewayLatencyUs: in.GatewayLatencyUs,
 		ScrapeJitterUs:   in.ScrapeJitterUs,
+		Seed:             &seed,
 	}
 }
 
@@ -204,7 +220,7 @@ func reconcileReplayRouter(cmd *cobra.Command, h *workload.TraceRouterConfig) ro
 	}
 	fromHeader := routerInputs{
 		EPPFlags: h.EPPFlags, Manifests: h.Manifests, PodLabels: h.PodLabels,
-		GatewayLatencyUs: h.GatewayLatencyUs, ScrapeJitterUs: h.ScrapeJitterUs,
+		GatewayLatencyUs: h.GatewayLatencyUs, ScrapeJitterUs: h.ScrapeJitterUs, Seed: h.Seed,
 	}
 	if !routerFlagsChanged(cmd) {
 		return fromHeader
@@ -215,10 +231,13 @@ func reconcileReplayRouter(cmd *cobra.Command, h *workload.TraceRouterConfig) ro
 	return fromHeader
 }
 
+// normalizeRouter is the part of the router inputs a command line can name: the seed comes from
+// the trace alone.
 func normalizeRouter(in routerInputs) routerInputs {
 	if len(in.PodLabels) == 0 {
 		in.PodLabels = nil
 	}
+	in.Seed = nil
 	return in
 }
 
@@ -231,26 +250,46 @@ func newGateway(in routerInputs, model string) *llmd.Gateway {
 		PodLabels:        podLabelFunc(in.PodLabels),
 		GatewayLatencyUs: in.GatewayLatencyUs,
 		ScrapeJitter:     time.Duration(in.ScrapeJitterUs) * time.Microsecond,
+		Seed:             in.Seed,
 		Logger:           routerLogger(),
 	})
 }
 
-// podLabelFunc labels each pod with its llm-d role (llm-d.ai/role) and the extra labels.
+// roleLabel is the llm-d pod label naming a pod's P/D role.
+const roleLabel = "llm-d.ai/role"
+
+// podRoles are the llm-d.ai/role values; --pod-labels may scope a label to one of them.
+var podRoles = map[string]bool{"prefill": true, "decode": true, "prefill-decode": true, "encode": true}
+
+// podLabelFunc labels each pod with its llm-d role (llm-d.ai/role, from the scenario's pools) and
+// the extra labels: an unscoped key=value on every pod, a role:key=value on the pods of that role,
+// where it overrides an unscoped label with the same key.
 func podLabelFunc(extra map[string]string) func(cluster.InstanceID, cluster.PoolRole) map[string]string {
 	return func(_ cluster.InstanceID, role cluster.PoolRole) map[string]string {
 		labels := map[string]string{}
+		for k, v := range extra {
+			if !strings.Contains(k, ":") {
+				labels[k] = v
+			}
+		}
+		name := ""
 		switch role {
 		case cluster.PoolRolePrefill:
-			labels["llm-d.ai/role"] = "prefill"
+			name = "prefill"
 		case cluster.PoolRoleDecode:
-			labels["llm-d.ai/role"] = "decode"
+			name = "decode"
 		case cluster.PoolRolePrefillDecode:
-			labels["llm-d.ai/role"] = "prefill-decode"
+			name = "prefill-decode"
 		case cluster.PoolRoleEncode:
-			labels["llm-d.ai/role"] = "encode"
+			name = "encode"
 		}
-		for k, v := range extra {
-			labels[k] = v
+		if name != "" {
+			labels[roleLabel] = name
+			for k, v := range extra {
+				if r, key, ok := strings.Cut(k, ":"); ok && r == name {
+					labels[key] = v
+				}
+			}
 		}
 		return labels
 	}
@@ -266,16 +305,53 @@ func routerLogger() logr.Logger {
 	case logrus.TraceLevel:
 		verbosity = 5
 	}
-	if verbosity < 0 {
-		return logr.Discard()
+	return logr.New(&routerLogSink{verbosity: verbosity})
+}
+
+// routerLogSink writes the router's errors to stderr at every log level (a router error is never
+// silent) and its informational messages at BLIS's debug and trace levels.
+type routerLogSink struct {
+	verbosity int
+	name      string
+	values    []any
+}
+
+func (s *routerLogSink) Init(logr.RuntimeInfo)  {}
+func (s *routerLogSink) Enabled(level int) bool { return level <= s.verbosity }
+
+func (s *routerLogSink) Info(_ int, msg string, kv ...any) {
+	logrus.Debug(s.format(msg, nil, kv))
+}
+
+func (s *routerLogSink) Error(err error, msg string, kv ...any) {
+	logrus.Warn(s.format(msg, err, kv))
+}
+
+func (s *routerLogSink) WithValues(kv ...any) logr.LogSink {
+	c := *s
+	c.values = append(append([]any(nil), s.values...), kv...)
+	return &c
+}
+
+func (s *routerLogSink) WithName(name string) logr.LogSink {
+	c := *s
+	c.name = strings.TrimPrefix(s.name+"/"+name, "/")
+	return &c
+}
+
+func (s *routerLogSink) format(msg string, err error, kv []any) string {
+	var b strings.Builder
+	b.WriteString("[llm-d] ")
+	if s.name != "" {
+		b.WriteString(s.name + ": ")
 	}
-	return funcr.New(func(prefix, args string) {
-		var b bytes.Buffer
-		b.WriteString("[llm-d] ")
-		if prefix != "" {
-			b.WriteString(prefix + ": ")
-		}
-		b.WriteString(args)
-		logrus.Debug(b.String())
-	}, funcr.Options{Verbosity: verbosity})
+	b.WriteString(msg)
+	if err != nil {
+		fmt.Fprintf(&b, " error=%q", err.Error())
+	}
+	all := append(append([]any(nil), s.values...), kv...)
+	for i := 0; i+1 < len(all); i += 2 {
+		fmt.Fprintf(&b, " %v=%v", all[i], all[i+1])
+	}
+	return b.String()
 }

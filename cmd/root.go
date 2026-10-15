@@ -1096,6 +1096,7 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Invalid log level: %s", logLevel)
 		}
 		logrus.SetLevel(level)
+		validateRouterFlags()
 
 		// The deployment comes from the scenario, so that resolution runs BEFORE the
 		// gates below: those refuse a run whose deployment nobody chose, and the scenario
@@ -1616,7 +1617,8 @@ var runCmd = &cobra.Command{
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
 		router := resolveRouterInputs()
-		cs.SetGateway(newGateway(router, model))
+		gw := newGateway(router, model)
+		cs.SetGateway(gw)
 
 		// Arrival hook: capture trace-emission references at the cluster's
 		// single arrival boundary so the trace exporter no longer relies on
@@ -1713,7 +1715,7 @@ var runCmd = &cobra.Command{
 				// without multi-node placement writes a byte-identical header (INV-6).
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 				// INV-13: the router the run routed with, so a replay rebuilds it.
-				Router: router.header(),
+				Router: router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

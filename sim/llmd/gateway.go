@@ -50,6 +50,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
 	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
 	poolutil "github.com/llm-d/llm-d-router/pkg/epp/util/pool"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,6 +85,9 @@ type Options struct {
 	GatewayLatencyUs int64
 	// ScrapeJitter bounds the seeded phase offset of each endpoint's metrics collection.
 	ScrapeJitter time.Duration
+	// Seed, when set, seeds the router's random streams and its prompt canonicalization. Unset,
+	// the seed is derived from the run seed. A replay passes the seed its trace recorded.
+	Seed *int64
 	// Logger receives the router's logs. The zero value discards them. It must never write to
 	// stdout (INV-6).
 	Logger logr.Logger
@@ -91,7 +95,9 @@ type Options struct {
 
 // DefaultEPPFlags are the router flags BLIS uses when a deployment supplies none: a standalone
 // router whose pool is every BLIS pod.
-var DefaultEPPFlags = []string{"--endpoint-selector=" + DefaultPoolLabel + "=" + DefaultPoolLabelValue, "--endpoint-target-ports=8000"}
+func DefaultEPPFlags() []string {
+	return []string{"--endpoint-selector=" + DefaultPoolLabel + "=" + DefaultPoolLabelValue, "--endpoint-target-ports=8000"}
+}
 
 // DefaultPoolLabel is the pod label BLIS sets on every instance so the default standalone pool
 // selects it.
@@ -116,6 +122,10 @@ type Gateway struct {
 
 	eppOpts *runserver.Options
 	emb     *runner.Embedded
+	canon   *promptCanon
+	// observe, set only by tests, sees each scrape ("scrape", endpoint), each request the router
+	// receives ("request", ID) and the usage of each completed response ("usage", "ID tokens").
+	observe func(kind, detail string)
 	server  *handlers.StreamingServer
 	pool    *datalayer.EndpointPool
 	gknn    common.GKNN
@@ -142,23 +152,29 @@ type endpoint struct {
 
 // flight is one request between its arrival and the end of its response.
 type flight struct {
-	req        *sim.Request
-	reqCtx     *handlers.RequestContext
-	ctx        context.Context
-	cancel     context.CancelFunc
-	stream     bool
-	held       bool // counted in Pending: arrived and neither dispatched nor rejected
-	dispatched bool
-	headersOut bool
-	firstOut   bool
-	done       bool
+	req    *sim.Request
+	reqCtx *handlers.RequestContext
+	ctx    context.Context
+	cancel context.CancelFunc
+	stream bool
+	prompt []uint32 // the prompt as the router sees it (promptCanon)
+	// stopDeadline cancels the client-deadline event (nil without a deadline).
+	stopDeadline func()
+	held         bool // counted in Pending: arrived and neither dispatched nor rejected
+	dispatched   bool
+	headersOut   bool
+	firstOut     bool
+	done         bool
 }
+
+// Seed is the seed the router runs with. It is valid once the router has started.
+func (g *Gateway) Seed() int64 { return g.rt.seed }
 
 // New builds an embedded router. The router itself is assembled in Start, when the instances
 // exist.
 func New(opts Options) *Gateway {
 	if len(opts.EPPFlags) == 0 {
-		opts.EPPFlags = DefaultEPPFlags
+		opts.EPPFlags = DefaultEPPFlags()
 	}
 	return &Gateway{opts: opts, endpoints: map[cluster.InstanceID]*endpoint{}, byIP: map[string]cluster.InstanceID{}, flights: map[string]*flight{}}
 }
@@ -202,13 +218,24 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		return perr
 	}
 	g.eppOpts = eppOpts
+	inert, err := checkEPPFlags(g.opts.EPPFlags)
+	if err != nil {
+		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
+	}
+	if len(inert) > 0 {
+		logrus.Warnf("[llm-d] EPP flags with no effect in a simulation (transport, replicas, telemetry): %s", strings.Join(inert, " "))
+	}
 	config := []byte(eppOpts.ConfigText)
 	if eppOpts.ConfigFile != "" {
 		if config, err = os.ReadFile(eppOpts.ConfigFile); err != nil {
 			return fmt.Errorf("EPP flag --config-file: %w", err)
 		}
 	}
-	if err := checkMetricSpecs(config); err != nil {
+	var podLabels []map[string]string
+	for _, inst := range host.Instances() {
+		podLabels = append(podLabels, g.podLabels(inst.ID(), host.PoolRole(inst.ID())))
+	}
+	if err := checkRawConfig(config, podLabels); err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
 
@@ -220,21 +247,41 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	if err := g.resolvePool(eppOpts, res); err != nil {
 		return err
 	}
+	if len(g.pool.TargetPorts) > 1 {
+		// Several target ports make each pod several endpoints (data-parallel ranks behind one
+		// pod). BLIS simulates each rank as its own instance and pod (DP placement), so the ports
+		// would name endpoints no engine serves.
+		return fmt.Errorf("the pool has %d target ports %v; BLIS simulates each data-parallel rank as its own pod "+
+			"with one port, so give the pool a single target port", len(g.pool.TargetPorts), g.pool.TargetPorts)
+	}
 
-	g.rt = newDESRuntime(host, streamSeed(host.RNG()), g.gknn.String(), g.opts.ScrapeJitter)
+	seed := streamSeed(host.RNG())
+	if g.opts.Seed != nil {
+		seed = *g.opts.Seed
+	}
+	g.rt = newDESRuntime(host, seed, g.gknn.String(), g.opts.ScrapeJitter)
+	var kvBlocks int64
+	for _, inst := range host.Instances() {
+		kvBlocks += inst.TotalKVBlocks()
+	}
+	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), int(2*kvBlocks))
 	g.rt.server = &modelServers{g: g, rendered: map[cluster.InstanceID]renderedMetrics{}}
 	ctx := hosting.Into(log.IntoContext(context.Background(), g.logger), g.rt)
 	g.ctx, g.cancel = context.WithCancel(ctx)
 
 	embedMu.Lock()
 	ctrl.SetLogger(g.logger)
-	emb, eerr := runner.Embed(g.ctx, runner.EmbedOptions{Options: eppOpts, Pool: g.pool})
+	emb, eerr := runner.Embed(g.ctx, runner.EmbedOptions{Options: eppOpts, Pool: g.pool, AfterRegister: refuseUnsupportedFactories})
 	embedMu.Unlock()
 	if eerr != nil {
 		return fmt.Errorf("llm-d router: %w", eerr)
 	}
 	g.emb = emb
-	if err := validateEmbedded(emb); err != nil {
+	// A backstop: every plugin the configuration holds, by any path, is a supported type.
+	if err := validateEmbedded(emb.Config, emb.Handle); err != nil {
+		return err
+	}
+	if err := validateTopology(emb, host); err != nil {
 		return err
 	}
 	if emb.RequestEvictor != nil {
@@ -375,6 +422,17 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 	g.rt.co.settle()
 }
 
+// podLabels are the labels of an instance's pod: the default pool label and Options.PodLabels.
+func (g *Gateway) podLabels(id cluster.InstanceID, role cluster.PoolRole) map[string]string {
+	labels := map[string]string{DefaultPoolLabel: DefaultPoolLabelValue}
+	if g.opts.PodLabels != nil {
+		for k, v := range g.opts.PodLabels(id, role) {
+			labels[k] = v
+		}
+	}
+	return labels
+}
+
 func (g *Gateway) newEndpoint(inst *cluster.InstanceSimulator) *endpoint {
 	idx := len(g.endpoints)
 	ip := fmt.Sprintf("10.%d.%d.%d", 1+idx/65536, (idx/256)%256, idx%256)
@@ -382,13 +440,7 @@ func (g *Gateway) newEndpoint(inst *cluster.InstanceSimulator) *endpoint {
 	if len(g.pool.TargetPorts) > 0 {
 		port = g.pool.TargetPorts[0]
 	}
-	role := g.host.PoolRole(inst.ID())
-	labels := map[string]string{DefaultPoolLabel: DefaultPoolLabelValue}
-	if g.opts.PodLabels != nil {
-		for k, v := range g.opts.PodLabels(inst.ID(), role) {
-			labels[k] = v
-		}
-	}
+	labels := g.podLabels(inst.ID(), g.host.PoolRole(inst.ID()))
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: podName(inst.ID()), Namespace: g.gknn.Namespace, Labels: labels},
 		Status:     corev1.PodStatus{PodIP: ip, HostIP: ip, Phase: corev1.PodRunning},
@@ -468,18 +520,48 @@ func (g *Gateway) OnArrival(req *sim.Request) {
 	f := &flight{req: req, held: true, stream: req.Streaming}
 	g.flights[req.ID] = f
 	g.host.Schedule(g.host.Now()+g.opts.GatewayLatencyUs, PriorityRequest, false, func() { g.handleRequest(f) })
+	if req.Deadline > 0 {
+		// The client gives up at its deadline. While the router still holds the request (flow
+		// control), that cancels the request's context, as a client disconnect does; once it is
+		// dispatched, the engine's own timeout applies. A daemon event: it never prolongs a run.
+		f.stopDeadline = g.host.Schedule(max(req.Deadline, g.host.Now()), PriorityRequest, true, func() { g.clientDeadline(f) })
+	}
+}
+
+// clientDeadline ends a request whose client deadline passed before the router dispatched it.
+func (g *Gateway) clientDeadline(f *flight) {
+	f.stopDeadline = nil
+	if f.dispatched || f.done {
+		return
+	}
+	if f.ctx == nil { // still on its way to the router (gateway latency)
+		f.held = false
+		g.pending--
+		g.host.Reject(f.req, cluster.RejectedClientTimeout, "client deadline passed before the router received the request")
+		g.endFlight(f)
+		return
+	}
+	f.cancel()
+	g.rt.co.settle()
 }
 
 // handleRequest runs the request phase exactly as the router's ext_proc server does for a
 // request whose headers and body have arrived: the header handler, the body parser, then the
 // Director, which may wait in flow control.
 func (g *Gateway) handleRequest(f *flight) {
+	if f.done { // its client deadline passed on the way to the router
+		return
+	}
 	f.ctx, f.cancel = context.WithCancel(g.ctx)
 	reqCtx := &handlers.RequestContext{
 		Request:  &handlers.Request{ID: f.req.ID, Headers: map[string]string{}, Metadata: map[string]any{}},
 		Response: &handlers.Response{Headers: map[string]string{}},
 	}
 	f.reqCtx = reqCtx
+	f.prompt = g.canon.canonical(f.req.InputTokens)
+	if g.observe != nil {
+		g.observe("request", f.req.ID)
+	}
 	body := g.requestBody(f)
 	if err := g.server.HandleRequestHeaders(f.ctx, reqCtx, requestHeaders(g.requestHeaderMap(f))); err != nil {
 		g.finishRequest(f, err)
@@ -540,6 +622,10 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 		panic(err.Error())
 	}
 	f.dispatched = true
+	if f.stopDeadline != nil {
+		f.stopDeadline()
+		f.stopDeadline = nil
+	}
 	g.host.Dispatch(f.req, p)
 }
 
@@ -559,36 +645,60 @@ func (g *Gateway) instanceScores(scores map[string]float64) map[string]float64 {
 	return out
 }
 
-// reject maps a router error onto the INV-1 bucket of the outcome it describes.
+// reject maps a router error onto the INV-1 bucket of the outcome it describes. An error that
+// matches no known router outcome aborts the run: it means BLIS mistranslated something, and
+// counting it as shedding would hide that (R1).
 func (g *Gateway) reject(f *flight, err error) {
-	why, reason := classify(err)
+	why, reason, ok := classify(err)
+	if !ok {
+		g.host.Abort(fmt.Errorf("request %s: the router returned an outcome BLIS cannot classify: %w", f.req.ID, err))
+		why = cluster.RejectedRouting // keep the books balanced until the run stops
+	}
 	g.host.Reject(f.req, why, reason)
 	g.endFlight(f)
 }
 
-func classify(err error) (cluster.Rejection, string) {
+// classify maps the router's rejection of a request onto its INV-1 bucket. The outcomes are an
+// explicit allow-list, keyed on the router's status code and its x-llm-d-request-dropped-reason:
+//
+//   - rejected-no-endpoints: no endpoint could serve it (routing);
+//   - rejected-ttl-expired: it waited in flow control past its queue-wait budget;
+//   - rejected-saturated: flow control's queues were at capacity;
+//   - rejected-context-cancelled: the client gave up while the router held it (its deadline);
+//   - ResourceExhausted with no drop reason: an admission check refused it (the legacy admission
+//     controller shedding a sheddable request, or an admitter plugin);
+//   - ServiceUnavailable with no drop reason: no endpoint could serve it.
+//
+// Anything else is not a routing outcome and is reported as unclassified.
+func classify(err error) (why cluster.Rejection, reason string, ok bool) {
 	var e errcommon.Error
 	if !errors.As(err, &e) {
-		return cluster.RejectedAdmission, err.Error()
+		return 0, err.Error(), false
 	}
-	reason := e.Headers[errcommon.RequestDroppedReasonHeaderKey]
-	switch errcommon.RequestDroppedReason(reason) {
-	case errcommon.RequestDroppedReasonNoEndpoints:
-		return cluster.RejectedRouting, e.Msg
-	case errcommon.RequestDroppedReasonTTLExpired:
-		return cluster.RejectedGatewayExpired, e.Msg
-	}
-	switch {
-	case reason == string(errcommon.RequestDroppedReasonSaturated) && strings.Contains(e.Msg, "sheddable request dropped"):
-		return cluster.RejectedAdmission, e.Msg // the legacy admission controller shed it
-	case reason == string(errcommon.RequestDroppedReasonSaturated):
-		return cluster.RejectedGatewayCapacity, e.Msg // flow control: queue at capacity
+	switch dropped, hasReason := e.Headers[errcommon.RequestDroppedReasonHeaderKey]; {
+	case hasReason:
+		switch errcommon.RequestDroppedReason(dropped) {
+		case errcommon.RequestDroppedReasonNoEndpoints:
+			return cluster.RejectedRouting, e.Msg, true
+		case errcommon.RequestDroppedReasonTTLExpired:
+			return cluster.RejectedGatewayExpired, e.Msg, true
+		case errcommon.RequestDroppedReasonSaturated:
+			return cluster.RejectedGatewayCapacity, e.Msg, true
+		case errcommon.RequestDroppedReasonContextCancelled:
+			return cluster.RejectedClientTimeout, e.Msg, true
+		}
+	case e.Code == errcommon.ResourceExhausted && !strings.HasPrefix(e.Msg, schedulerFallbackMsg):
+		return cluster.RejectedAdmission, e.Msg, true
 	case e.Code == errcommon.ServiceUnavailable:
-		return cluster.RejectedRouting, e.Msg
-	default:
-		return cluster.RejectedAdmission, e.Msg
+		return cluster.RejectedRouting, e.Msg, true
 	}
+	return 0, e.Msg, false
 }
+
+// schedulerFallbackMsg starts the Director's message for a scheduler failure that carries no
+// typed error (requestcontrol/director.go). It shares ResourceExhausted with admission denials but
+// is not one; no supported configuration produces it, so it is reported as unclassified.
+const schedulerFallbackMsg = "failed to find target endpoint"
 
 // OnDispatched implements cluster.Gateway. A streaming response's headers leave the model
 // server as soon as it accepts the request.
@@ -647,6 +757,9 @@ func (g *Gateway) endResponse(f *flight, outcome cluster.DoneOutcome) {
 	}
 	if outcome == cluster.DoneCompleted {
 		usage := usageOf(f.req)
+		if g.observe != nil {
+			g.observe("usage", fmt.Sprintf("%s %d", f.req.ID, usage.CompletionTokens))
+		}
 		g.responseHeaders(f)
 		if f.stream {
 			if !f.firstOut {
@@ -678,6 +791,10 @@ func terminationCause(o cluster.DoneOutcome) fwkrc.TerminationCause {
 
 func (g *Gateway) endFlight(f *flight) {
 	f.done = true
+	if f.stopDeadline != nil {
+		f.stopDeadline()
+		f.stopDeadline = nil
+	}
 	if f.cancel != nil {
 		f.cancel()
 	}
@@ -729,11 +846,7 @@ func (g *Gateway) requestBody(f *flight) []byte {
 	if f.req.Adapter != "" {
 		model = f.req.Adapter
 	}
-	prompt := make([]uint32, len(f.req.InputTokens))
-	for i, t := range f.req.InputTokens {
-		prompt[i] = uint32(t)
-	}
-	body := map[string]any{"model": model, "prompt": prompt, "stream": f.stream}
+	body := map[string]any{"model": model, "prompt": f.prompt, "stream": f.stream}
 	if f.req.MaxOutputLen > 0 {
 		body["max_tokens"] = f.req.MaxOutputLen
 	}

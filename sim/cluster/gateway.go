@@ -63,6 +63,7 @@ const (
 	RejectedRouting                          // no endpoint could serve the request
 	RejectedGatewayCapacity                  // flow control rejected it: queues at capacity
 	RejectedGatewayExpired                   // it waited in flow control past its TTL
+	RejectedClientTimeout                    // its client deadline passed while the gateway held it
 )
 
 // Placement is where the gateway sends a request. Decode is the endpoint that serves the
@@ -103,6 +104,9 @@ type GatewayHost interface {
 	// Evict terminates a dispatched request on the instance serving it. It reports whether the
 	// request was still running there.
 	Evict(req *sim.Request) bool
+	// Abort ends the run with err: the gateway met an outcome it cannot account for. Run returns
+	// the first error aborted with.
+	Abort(err error)
 }
 
 // newDefaultGateway, when set, supplies the gateway of a cluster that has none at Run. Only this
@@ -218,10 +222,19 @@ func (cs *ClusterSimulator) Reject(req *sim.Request, why Rejection, reason strin
 		cs.gatewayRejected++
 	case RejectedGatewayExpired:
 		cs.gatewayExpired++
+	case RejectedClientTimeout:
+		cs.gatewayTimedOut++
 	default:
 		panic(fmt.Sprintf("ClusterSimulator.Reject: unknown rejection %d", why))
 	}
 	cs.recordRejection(req, why, reason)
+}
+
+// Abort implements GatewayHost.
+func (cs *ClusterSimulator) Abort(err error) {
+	if cs.abortErr == nil {
+		cs.abortErr = err
+	}
 }
 
 // Evict implements GatewayHost.
@@ -281,6 +294,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 		TenantID:     req.TenantID,
 		SLOClass:     req.SLOClass,
 		Model:        req.Model,
+		Adapter:      req.Adapter, // the router may have rewritten it (InferenceModelRewrite)
 	}
 	parent.PrefillSubReq = prefillSubReq
 	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
@@ -311,6 +325,11 @@ func (cs *ClusterSimulator) parentDone(parent *ParentRequest, at int64, outcome 
 		return
 	}
 	parent.gatewayDone = true
+	if parent.DecodeSubReq != nil {
+		// The tokens the client received are the decode child's (INV-9: what was generated, never
+		// the oracle OutputTokens).
+		parent.OriginalRequest.GeneratedTokens = parent.DecodeSubReq.GeneratedTokens
+	}
 	cs.gateway.OnDone(parent.OriginalRequest, at, outcome)
 }
 

@@ -72,3 +72,15 @@ func TestCRDDefaulter_AppliesAPIServerDefaults(t *testing.T) {
 		t.Errorf("InferencePool endpointPickerRef.kind = %q, want the CRD default Service", got)
 	}
 }
+
+// TestParseManifests_StrictFields: a misspelled field in a router resource is an error, not
+// silently dropped.
+func TestParseManifests_StrictFields(t *testing.T) {
+	bad := strings.Replace(poolManifests, "  priority: 4\n", "  priorty: 4\n", 1)
+	if bad == poolManifests {
+		t.Fatal("fixture substitution did not apply")
+	}
+	if _, err := parseManifests(newScheme(), []byte(bad), defaultNamespace); err == nil || !strings.Contains(err.Error(), "priorty") {
+		t.Fatalf("want the misspelled field rejected, got %v", err)
+	}
+}

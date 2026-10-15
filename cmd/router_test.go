@@ -127,8 +127,8 @@ func routerCmd(t *testing.T, args ...string) *cobra.Command {
 func TestResolveRouterInputs_DefaultsAndEPPConfig(t *testing.T) {
 	saveRouterVars(t)
 	routerCmd(t)
-	if got := resolveRouterInputs(); !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags) || got.Manifests != "" || got.PodLabels != nil {
-		t.Errorf("no router flags: got %+v, want the default EPP flags %q and nothing else", got, llmd.DefaultEPPFlags)
+	if got := resolveRouterInputs(); !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags()) || got.Manifests != "" || got.PodLabels != nil {
+		t.Errorf("no router flags: got %+v, want the default EPP flags %q and nothing else", got, llmd.DefaultEPPFlags())
 	}
 
 	const body = "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\n"
@@ -136,7 +136,7 @@ func TestResolveRouterInputs_DefaultsAndEPPConfig(t *testing.T) {
 		"--gateway-latency", "250", "--epp-scrape-jitter", "40")
 	got := resolveRouterInputs()
 	want := routerInputs{
-		EPPFlags:         append(append([]string(nil), llmd.DefaultEPPFlags...), "--config-text="+body),
+		EPPFlags:         append(append([]string(nil), llmd.DefaultEPPFlags()...), "--config-text="+body),
 		PodLabels:        map[string]string{"app": "vllm", "tier": "gpu"},
 		GatewayLatencyUs: 250,
 		ScrapeJitterUs:   40,
@@ -163,7 +163,7 @@ func TestReconcileReplayRouter(t *testing.T) {
 	t.Run("no header: the command line", func(t *testing.T) {
 		c := routerCmd(t, "--gateway-latency", "9")
 		got := reconcileReplayRouter(c, nil)
-		if got.GatewayLatencyUs != 9 || !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags) {
+		if got.GatewayLatencyUs != 9 || !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags()) {
 			t.Errorf("got %+v, want the command line's router (gateway latency 9, default EPP flags)", got)
 		}
 	})
@@ -192,7 +192,7 @@ func TestReconcileReplayRouter_ContradictingFlagsFatal(t *testing.T) {
 		if err := c.ParseFlags([]string{"--gateway-latency", "5"}); err != nil {
 			os.Exit(2)
 		}
-		reconcileReplayRouter(c, &workload.TraceRouterConfig{EPPFlags: llmd.DefaultEPPFlags, GatewayLatencyUs: 100})
+		reconcileReplayRouter(c, &workload.TraceRouterConfig{EPPFlags: llmd.DefaultEPPFlags(), GatewayLatencyUs: 100})
 		os.Exit(0) // must Fatalf before here
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestReconcileReplayRouter_ContradictingFlagsFatal$")
@@ -224,14 +224,17 @@ func TestPodLabelFunc_RoleLabels(t *testing.T) {
 		}
 	}
 
-	extra := map[string]string{"app": "vllm", "llm-d.ai/role": "decode"}
+	extra := map[string]string{"app": "vllm", "decode:app": "vllm-decode", "prefill:tier": "fast"}
 	labels := podLabelFunc(extra)
-	if got := labels("instance_1", 0); !reflect.DeepEqual(got, extra) {
-		t.Errorf("colocated pod: got %v, want only the extra labels %v", got, extra)
+	if got := labels("instance_1", 0); !reflect.DeepEqual(got, map[string]string{"app": "vllm"}) {
+		t.Errorf("colocated pod: got %v, want only the unscoped labels", got)
 	}
 	got := labels("instance_2", cluster.PoolRolePrefill)
-	if got["app"] != "vllm" || got["llm-d.ai/role"] != "decode" {
-		t.Errorf("prefill pod with extra labels: got %v; the extra labels apply on top of the role label", got)
+	if want := (map[string]string{"app": "vllm", "tier": "fast", "llm-d.ai/role": "prefill"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("prefill pod: got %v, want %v", got, want)
+	}
+	if got := labels("instance_4", cluster.PoolRoleDecode); got["app"] != "vllm-decode" || got["tier"] != "" {
+		t.Errorf("decode pod: got %v; a role-scoped label overrides the unscoped one and applies to its role only", got)
 	}
 	got["mutated"] = "x"
 	if _, leaked := labels("instance_3", cluster.PoolRolePrefill)["mutated"]; leaked {
@@ -350,12 +353,62 @@ func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
 			t.Errorf("trace header does not record %q", want)
 		}
 	}
+	// No --seed: the router seed comes from the header, and the router is shown canonical prompts,
+	// so the replay's own placeholder tokens do not matter.
 	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
-		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--seed", "7", "--horizon", horizon)
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
 	if replayOut != runOut {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
+	}
+}
+
+// TestINV13_RunReplayParity_PrefixSharingWorkload: with the default router (whose prefix-cache
+// scorer reads prompt content) on a workload where most requests share a prefix, a replay given
+// the same scenario and no other flags reproduces a four-instance run byte for byte.
+func TestINV13_RunReplayParity_PrefixSharingWorkload(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	horizon := "9223372036854775807"
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon, "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
+	}
+	if ids := instanceIDs(t, runOut); len(ids) != 4 {
+		t.Fatalf("want 4 instances, got %v", ids)
+	}
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if replayOut != runOut {
+		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
+	}
+}
+
+// TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved: --pod-labels accepts role-scoped
+// labels; an unknown role, or an explicit llm-d.ai/role (which comes from the scenario's pools), is
+// refused.
+func TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved(t *testing.T) {
+	saved := podLabelPairs
+	t.Cleanup(func() { podLabelPairs = saved })
+	podLabelPairs = []string{"app=vllm", "decode:app=vllm-decode"}
+	if got := resolveRouterInputs().PodLabels; !reflect.DeepEqual(got, map[string]string{"app": "vllm", "decode:app": "vllm-decode"}) {
+		t.Errorf("got %v", got)
+	}
+	for _, bad := range []string{"llm-d.ai/role=decode", "gpu:app=x", "decode:llm-d.ai/role=prefill"} {
+		if os.Getenv("BLIS_POD_LABELS_LEG") == bad {
+			podLabelPairs = []string{bad}
+			resolveRouterInputs()
+			return
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved$")
+		cmd.Env = append(os.Environ(), "BLIS_POD_LABELS_LEG="+bad)
+		if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "--pod-labels") {
+			t.Errorf("--pod-labels %s: want a fatal refusal, got err=%v\n%s", bad, err, out)
+		}
 	}
 }

@@ -101,6 +101,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		TenantID:           orig.TenantID,
 		SLOClass:           orig.SLOClass,
 		Model:              orig.Model,
+		Adapter:            orig.Adapter,
 		IsDecodeSubRequest: true,
 	}
 

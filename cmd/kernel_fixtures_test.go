@@ -122,6 +122,6 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, b
 // needs a gateway (ClusterSimulator.Run refuses to start without one).
 func newRoutedCluster(cfg cluster.DeploymentConfig, reqs []*sim.Request) *cluster.ClusterSimulator {
 	cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(reqs), nil)
-	cs.SetGateway(newGateway(routerInputs{EPPFlags: append([]string(nil), llmd.DefaultEPPFlags...)}, cfg.Model))
+	cs.SetGateway(newGateway(routerInputs{EPPFlags: append([]string(nil), llmd.DefaultEPPFlags()...)}, cfg.Model))
 	return cs
 }

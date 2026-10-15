@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feature/**']
+    branches: [main, 'feature/**', llm-d-r]
   # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
   # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
   # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
@@ -22,7 +22,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
       - name: Build
@@ -73,7 +73,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
       - name: Test ${{ matrix.name }}

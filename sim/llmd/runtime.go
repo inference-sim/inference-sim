@@ -52,8 +52,9 @@ type desRuntime struct {
 	clk          *desClock
 	server       *modelServers
 	scrapeJitter time.Duration
-	// warm makes collectors started now take their first sample immediately: endpoints that
-	// exist when the simulation starts have been scraped by a router that was already running.
+	// warm makes collectors started now take their first sample synchronously, before any
+	// simulation event: endpoints that exist when the simulation starts have been scraped by a
+	// router that was already running. Their periodic scrapes keep their jitter phase.
 	warm bool
 	// periodics are the router's repeating loops (Every and tickers), in creation order.
 	periodics []*periodic
@@ -116,17 +117,21 @@ func (rt *desRuntime) Rand(stream string) hosting.Rand {
 }
 
 // Every runs fn every interval on the simulation clock while ctx is live. The first call is one
-// interval after Every (plus a seeded phase offset below the scrape jitter for collectors).
+// interval after Every (plus a seeded phase offset below the scrape jitter for collectors); a
+// collector started during warm startup also samples once immediately.
 func (rt *desRuntime) Every(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
 	if interval <= 0 {
 		panic(fmt.Sprintf("llmd: Every(%q) with non-positive interval %v", name, interval))
 	}
 	step := toMicros(interval)
 	first := step
-	if rt.warm && isCollector(name) {
-		first = 0
-	} else if rt.scrapeJitter > 0 && isCollector(name) {
+	if rt.scrapeJitter > 0 && isCollector(name) {
 		first += int64(rt.Rand("scrape-phase/"+name).Float64() * float64(toMicros(rt.scrapeJitter)))
+	}
+	if rt.warm && isCollector(name) {
+		// Sample now, during startup, so that requests arriving at time zero already see it.
+		fn(ctx)
+		rt.co.settle()
 	}
 	prio := PriorityHousekeeper
 	if isCollector(name) {

@@ -2,22 +2,31 @@ package llmd
 
 import (
 	"cmp"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/spf13/pflag"
 	"sigs.k8s.io/yaml"
 
 	"github.com/llm-d/llm-d-router/cmd/epp/runner"
+	"github.com/llm-d/llm-d-router/pkg/epp/config"
+	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
+	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
+
+	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
-// Supported lists the router plugin types a simulation runs faithfully. Each one was audited in
+// supported lists the router plugin types a simulation runs faithfully. Each one was audited in
 // the fork: every clock read, background loop, blocking wait and random draw it makes goes
 // through the hosting runtime, and every signal it consumes is produced by the simulated
 // engines. A configuration that instantiates any other type is refused at startup with the
-// reason from Unsupported (or a generic one): the simulation never runs a plugin it cannot run
+// reason from unsupported (or a generic one): the simulation never runs a plugin it cannot run
 // as llm-d does.
-var Supported = map[string]bool{
+var supported = map[string]bool{
 	// profile handlers and pickers
 	"single-profile-handler": true,
 	"disagg-profile-handler": true,
@@ -81,7 +90,7 @@ var Supported = map[string]bool{
 }
 
 // Unsupported gives the reason a plugin type cannot be simulated faithfully.
-var Unsupported = map[string]string{
+var unsupported = map[string]string{
 	"burst-prefix-cache-producer":               "it blocks a request on a sealing timer the hosting runtime does not model",
 	"precise-prefix-cache-producer":             "it consumes vLLM KV-cache events, which the simulated engines do not publish yet",
 	"predicted-latency-producer":                "it calls an external latency-predictor service",
@@ -142,14 +151,13 @@ var Unsupported = map[string]string{
 // validateEmbedded refuses a router whose plugins (including the producers the router created
 // for them) include a type that cannot be simulated, and a router that needs services the
 // simulation cannot provide.
-func validateEmbedded(e *runner.Embedded) error {
+func validateEmbedded(cfg *config.Config, handle fwkplugin.Handle) error {
 	var problems []string
-	for name, p := range e.Handle.GetAllPluginsWithNames() {
-		typ := p.TypedName().Type
-		if Supported[typ] {
+	for name, typ := range embeddedPlugins(cfg, handle) {
+		if supported[typ] {
 			continue
 		}
-		reason := Unsupported[typ]
+		reason := unsupported[typ]
 		if reason == "" {
 			reason = "it has not been audited for the hosting runtime"
 		}
@@ -162,13 +170,80 @@ func validateEmbedded(e *runner.Embedded) error {
 	return nil
 }
 
-// checkMetricSpecs refuses a configuration whose core-metrics-extractor requires an engine series
-// the simulated engines do not publish. The simulated model servers carry no engine-type label,
-// so the extractor reads them with its default engine's mapping.
-func checkMetricSpecs(config []byte) error {
-	if len(config) == 0 {
-		return nil // the router's default configuration reads the vLLM mapping
+// embeddedPlugins returns every plugin the embedded router holds, by name, with its type: the
+// handle's named plugins and every plugin the loaded configuration references (a flow-control
+// policy or saturation detector named by a ref, a data source, ...), found by walking the
+// configuration, so that a plugin reached by any path is validated.
+func embeddedPlugins(cfg *config.Config, handle fwkplugin.Handle) map[string]string {
+	out := map[string]string{}
+	for name, p := range handle.GetAllPluginsWithNames() {
+		out[name] = p.TypedName().Type
 	}
+	pluginType := reflect.TypeFor[fwkplugin.Plugin]()
+	seen := map[uintptr]bool{}
+	var walk func(v reflect.Value)
+	walk = func(v reflect.Value) {
+		if !v.IsValid() {
+			return
+		}
+		if v.Kind() == reflect.Pointer || v.Kind() == reflect.Map || v.Kind() == reflect.Slice {
+			if v.IsNil() {
+				return
+			}
+			if v.Kind() != reflect.Slice {
+				if seen[v.Pointer()] {
+					return
+				}
+				seen[v.Pointer()] = true
+			}
+		}
+		if v.Kind() == reflect.Interface {
+			if v.IsNil() {
+				return
+			}
+			v = v.Elem()
+		}
+		if v.CanInterface() && v.Type().Implements(pluginType) {
+			if p, ok := v.Interface().(fwkplugin.Plugin); ok && (v.Kind() != reflect.Pointer || !v.IsNil()) {
+				tn := p.TypedName()
+				out[cmp.Or(tn.Name, tn.Type)] = tn.Type
+				return // a plugin's internals are its own
+			}
+		}
+		switch v.Kind() {
+		case reflect.Pointer:
+			walk(v.Elem())
+		case reflect.Struct:
+			for i := range v.NumField() {
+				if v.Type().Field(i).IsExported() {
+					walk(v.Field(i))
+				}
+			}
+		case reflect.Slice, reflect.Array:
+			for i := range v.Len() {
+				walk(v.Index(i))
+			}
+		case reflect.Map:
+			for it := v.MapRange(); it.Next(); {
+				walk(it.Value())
+			}
+		}
+	}
+	walk(reflect.ValueOf(cfg))
+	return out
+}
+
+// checkRawConfig refuses, before the router is built, a configuration the simulation cannot host
+// as configured:
+//   - a core-metrics-extractor that reads, for some pod, an engine's series the simulated engines
+//     do not publish: the extractor picks each pod's mapping by its engine label
+//     (engineLabelKey, default llm-d.ai/engine-type) or else defaultEngine (default vllm), and
+//     the simulated engines publish vLLM's series. The router's default configuration has the
+//     default extractor;
+//   - a token-producer whose vLLM backend discovers endpoints (vllm.endpointDiscovery): it probes
+//     pods on its own schedule, outside the hosting runtime;
+//   - a metrics-data-source scraping another path than vLLM's /metrics, which would read nothing.
+func checkRawConfig(config []byte, podLabels []map[string]string) error {
 	var doc struct {
 		Plugins []struct {
 			Type       string         `json:"type"`
@@ -176,19 +251,55 @@ func checkMetricSpecs(config []byte) error {
 			Parameters map[string]any `json:"parameters"`
 		} `json:"plugins"`
 	}
-	if err := yaml.Unmarshal(config, &doc); err != nil {
-		return nil // the router's own loader reports a malformed configuration
+	if len(config) > 0 {
+		if err := yaml.Unmarshal(config, &doc); err != nil {
+			return nil // the router's own loader reports a malformed configuration
+		}
 	}
+	extractors := 0
 	for _, p := range doc.Plugins {
-		if p.Type != "core-metrics-extractor" {
-			continue
+		name := cmp.Or(p.Name, p.Type)
+		switch p.Type {
+		case "token-producer":
+			if v, _ := p.Parameters["vllm"].(map[string]any); v != nil && v["endpointDiscovery"] != nil {
+				return fmt.Errorf("plugin %q discovers render endpoints (vllm.endpointDiscovery), probing pods on its own "+
+					"schedule outside the simulation; give its vLLM backend a fixed url, or use the estimate backend", name)
+			}
+		case "metrics-data-source":
+			if path, _ := p.Parameters["path"].(string); path != "" && path != "/metrics" {
+				return fmt.Errorf("plugin %q scrapes %q; the simulated vLLM servers serve their metrics at /metrics", name, path)
+			}
+		case "core-metrics-extractor":
+			extractors++
+			if err := checkExtractor(name, p.Parameters, podLabels); err != nil {
+				return err
+			}
 		}
-		engine, _ := p.Parameters["defaultEngine"].(string)
-		if engine == "" {
-			engine = "vllm"
+	}
+	if extractors == 0 { // the default data layer's extractor
+		return checkExtractor("core-metrics-extractor", nil, podLabels)
+	}
+	return nil
+}
+
+func checkExtractor(name string, params map[string]any, podLabels []map[string]string) error {
+	labelKey, _ := params["engineLabelKey"].(string)
+	labelKey = cmp.Or(labelKey, "llm-d.ai/engine-type")
+	defaultEngine, _ := params["defaultEngine"].(string)
+	engines := map[string]bool{cmp.Or(defaultEngine, "vllm"): true}
+	for _, labels := range podLabels {
+		if e := labels[labelKey]; e != "" {
+			engines[e] = true
 		}
+	}
+	names := make([]string, 0, len(engines))
+	for e := range engines {
+		names = append(names, e)
+	}
+	sort.Strings(names)
+	for _, engine := range names {
 		var specs map[string]any
-		if list, ok := p.Parameters["engineConfigs"].([]any); ok {
+		if list, ok := params["engineConfigs"].([]any); ok {
 			for _, ec := range list {
 				if m, ok := ec.(map[string]any); ok && m["name"] == engine {
 					specs = m
@@ -197,8 +308,8 @@ func checkMetricSpecs(config []byte) error {
 		}
 		if specs == nil {
 			if engine != "vllm" {
-				return fmt.Errorf("plugin %q reads the %q engine's metrics; the simulated engines publish vLLM's series (%s)",
-					cmp.Or(p.Name, p.Type), engine, strings.Join(publishedSeries, ", "))
+				return fmt.Errorf("plugin %q reads the %q engine's metrics (pod label %s or defaultEngine); the simulated engines publish vLLM's series (%s)",
+					name, engine, labelKey, strings.Join(publishedSeries, ", "))
 			}
 			continue // the built-in vLLM mapping
 		}
@@ -219,8 +330,106 @@ func checkMetricSpecs(config []byte) error {
 		}
 		if len(missing) > 0 {
 			return fmt.Errorf("plugin %q requires engine series the simulated engines do not publish: %s (published: %s)",
-				cmp.Or(p.Name, p.Type), strings.Join(missing, ", "), strings.Join(publishedSeries, ", "))
+				name, strings.Join(missing, ", "), strings.Join(publishedSeries, ", "))
 		}
 	}
 	return nil
+}
+
+// refuseUnsupportedFactories replaces the factory of every registered plugin type the simulation
+// does not support with one that refuses it, with the reason. The router instantiates every plugin
+// through its factory, whether the configuration names it under plugins:, reaches it only through
+// a reference (a flow-control fairnessPolicyRef, ...), or adds it as a default, so an unsupported
+// plugin is refused before its real constructor runs: before it starts a goroutine, a timer or any
+// external work. Runs as runner.EmbedOptions.AfterRegister, under embedMu.
+func refuseUnsupportedFactories() error {
+	for typ := range fwkplugin.Registry {
+		if supported[typ] {
+			continue
+		}
+		reason := cmp.Or(unsupported[typ], "it has not been audited for the hosting runtime")
+		fwkplugin.Registry[typ] = func(name string, _ *json.Decoder, _ fwkplugin.Handle) (fwkplugin.Plugin, error) {
+			return nil, fmt.Errorf("the router configuration cannot be simulated faithfully: plugin %q (type %s): %s", name, typ, reason)
+		}
+	}
+	return nil
+}
+
+// IsSupported reports whether a simulation runs router plugins of type typ.
+func IsSupported(typ string) bool { return supported[typ] }
+
+// UnsupportedReason is why plugins of type typ are refused, or "" for a type with no recorded
+// reason (refused as not audited) or a supported one.
+func UnsupportedReason(typ string) string { return unsupported[typ] }
+
+// validateTopology refuses a deployment whose pools the router configuration cannot serve as
+// that deployment: a P/D deployment needs a disaggregating profile handler, or the router would
+// treat the prefill and decode pods as one flat pool; encode pools need encoder placement, which
+// BLIS does not read from the router (x-llm-d-encoder-hosts-ports).
+func validateTopology(e *runner.Embedded, host cluster.GatewayHost) error {
+	var prefill, decode, encode bool
+	for _, inst := range host.Instances() {
+		role := host.PoolRole(inst.ID())
+		prefill = prefill || role.Has(cluster.PoolRolePrefill)
+		decode = decode || role.Has(cluster.PoolRoleDecode)
+		encode = encode || role.Has(cluster.PoolRoleEncode)
+	}
+	if encode {
+		return errors.New("the deployment cannot be simulated faithfully: it has an encode pool, and BLIS does not " +
+			"place encode work where the router directs it (x-llm-d-encoder-hosts-ports)")
+	}
+	if !prefill || !decode {
+		return nil
+	}
+	for _, p := range e.Handle.GetAllPluginsWithNames() {
+		if p.TypedName().Type == "disagg-profile-handler" {
+			return nil
+		}
+	}
+	return errors.New("the deployment has prefill and decode pools, but the router configuration has no " +
+		"disagg-profile-handler, so the router would serve every request from one flat pool; pass a " +
+		"disaggregating configuration with --epp-config (for example examples/llm-d/pd.yaml)")
+}
+
+// inertEPPFlags are router flags that change how a deployed router is served or observed
+// (transport, TLS, replicas, shutdown, telemetry), never what it decides. A simulation has none of
+// that, so they are accepted and have no effect; a run that sets one says so on stderr.
+var inertEPPFlags = map[string]bool{
+	"ha-enable-leader-election": true, "ha-lease-name": true, "ha-lease-duration": true, "ha-renew-deadline": true,
+	"ha-retry-period": true, "drain-timeout": true, "grpc-max-recv-msg-size": true, "grpc-max-send-msg-size": true,
+	"grpc-port": true, "grpc-health-port": true, "metrics-port": true, "emit-endpoint-scores": true,
+	"refresh-prometheus-metrics-interval": true, "tracing": true, "health-checking": true, "enable-pprof": true,
+	"cert-path": true, "enable-cert-reload": true, "enable-grpc-stream-metrics": true, "fairness-id-metric-label-limit": true,
+	"secure-serving": true, "tls-min-version": true, "metrics-endpoint-auth": true, "metrics-client-ca-file": true,
+	"metrics-cert-dir": true,
+}
+
+// legacyMetricFlags name the engine series the router reads when its configuration does not.
+var legacyMetricFlags = []string{
+	"total-queued-requests-metric", "total-running-requests-metric", "kv-cache-usage-percentage-metric",
+	"lora-info-metric", "cache-info-metric",
+}
+
+// checkEPPFlags refuses router flags that name an engine series the simulated engines do not
+// publish, and returns the flags that have no effect in a simulation.
+func checkEPPFlags(args []string) (inert []string, err error) {
+	opts := runserver.NewOptions()
+	fs := pflag.NewFlagSet("epp", pflag.ContinueOnError)
+	opts.AddFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return nil, err // ParseEPPFlags reports it
+	}
+	for _, name := range legacyMetricFlags {
+		if f := fs.Lookup(name); f != nil && fs.Changed(name) && f.Value.String() != "" && !isPublished(f.Value.String()) {
+			return nil, fmt.Errorf("EPP flag --%s=%s names an engine series the simulated engines do not publish (%s)",
+				name, f.Value.String(), strings.Join(publishedSeries, ", "))
+		}
+	}
+	fs.Visit(func(f *pflag.Flag) {
+		if inertEPPFlags[f.Name] {
+			inert = append(inert, "--"+f.Name)
+		}
+	})
+	sort.Strings(inert)
+	return inert, nil
 }

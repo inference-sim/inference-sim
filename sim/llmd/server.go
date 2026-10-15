@@ -38,6 +38,9 @@ func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/metrics":
 		inst := m.g.instanceAt(r.URL.Host)
+		if m.g.observe != nil {
+			m.g.observe("scrape", r.URL.Host)
+		}
 		if inst == nil {
 			return respond(r, http.StatusServiceUnavailable, "text/plain", []byte("no such model server\n")), nil
 		}

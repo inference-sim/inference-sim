@@ -31,7 +31,7 @@ func TestFastForwardIdle_IsExact(t *testing.T) {
 				dep := testDeployment(3)
 				dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
 				cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
-				flags := append([]string{}, DefaultEPPFlags...)
+				flags := DefaultEPPFlags()
 				if cfg != "" {
 					flags = append(flags, "--allow-experimental-plugins", "--config-text="+cfg)
 				}
@@ -57,5 +57,55 @@ func TestFastForwardIdle_IsExact(t *testing.T) {
 				t.Fatalf("%d of 120 requests completed", len(ttft1))
 			}
 		})
+	}
+}
+
+// TestFastForwardIdle_IsExactWithStatefulUsageLimit: soft-reflective-ceiling-policy keeps a tick
+// counter that advances on dispatch cycles while some band is in its alternating regime. With two
+// priority bands and saturating bursts separated by long idle gaps, the fast-forward must still
+// give the routing, dispatch times and latencies of ticking through every gap: an idle pool is
+// below the alternating regime, so the skipped cycles leave the counter unchanged.
+func TestFastForwardIdle_IsExactWithStatefulUsageLimit(t *testing.T) {
+	run := func(neverSkip bool) (map[string]string, map[string]float64) {
+		var reqs []*sim.Request
+		for b, start := range []int64{0, 40_000_000, 130_000_000} {
+			for i, r := range testRequests(300, int64(7+b), 1000, 32) { // 300 ms bursts, across several scrapes
+				r.ID = fmt.Sprintf("%s_b%d", r.ID, b)
+				r.ArrivalTime += start
+				r.SLOClass = map[bool]string{true: "critical", false: "sheddable"}[i%2 == 0]
+				reqs = append(reqs, r)
+			}
+		}
+		dep := testDeployment(2)
+		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		gw := New(Options{
+			Model:     "test-model",
+			EPPFlags:  []string{"--pool-name=vllm", "--allow-experimental-plugins", "--config-text=" + softCeilingConfig},
+			Manifests: []byte(poolManifests),
+			PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
+		})
+		gw.neverSkipIdle = neverSkip
+		cs.SetGateway(gw)
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		placed := map[string]string{}
+		held := 0
+		for _, r := range reqs {
+			placed[r.ID] = fmt.Sprintf("%s@%d", r.AssignedInstance, r.GatewayDispatchTime)
+			if r.GatewayDispatchTime > r.ArrivalTime {
+				held++
+			}
+		}
+		if held == 0 {
+			t.Fatal("no request waited in flow control; the bursts do not exercise the usage limit")
+		}
+		return placed, cs.AggregatedMetrics().RequestTTFTs
+	}
+	p1, ttft1 := run(false)
+	p2, ttft2 := run(true)
+	if !reflect.DeepEqual(p1, p2) || !reflect.DeepEqual(ttft1, ttft2) {
+		t.Fatal("the idle fast-forward changed routing or latency with a stateful usage-limit policy and two bands")
 	}
 }
