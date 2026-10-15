@@ -593,6 +593,11 @@ type Shape struct {
 	PDConnector string
 	// Offload is the deployment's offload block, nil when it states none.
 	Offload *deployment.Offload
+	// LongPrefillTokenThresholds and DPLoadBalancings are each pool's
+	// engine.long_prefill_token_threshold (blis-schemas#75; 0 = unstated) and
+	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
+	LongPrefillTokenThresholds []int
+	DPLoadBalancings           []deployment.DPLoadBalancing
 
 	Model           string
 	Acceptance      *acceptance.Pin
@@ -617,6 +622,8 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
+		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, p.Engine.LongPrefillTokenThreshold)
+		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
 	}
 	return sh, nil
 }

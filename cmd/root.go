@@ -660,6 +660,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
 	// may only restate it (resolveKVOffloadConfig).
 	scenarioOffload = shape.Offload
+	adoptScenarioEngineKnobs(cmd, shape)
 	scenarioShape = shape
 	acceptanceRecord = nil
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
