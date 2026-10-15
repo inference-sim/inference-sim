@@ -16,6 +16,13 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
+	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
+	// many consecutive instances is one replica whose ranks step in lockstep and share one
+	// router endpoint, behind vLLM's internal DP load balancer. 0 or 1 = every instance is an
+	// independent engine and its own endpoint. NumInstances and every pool count must be a
+	// multiple of it.
+	DPLockstepRanks int
+
 	// Online routing pipeline configuration (PR4+)
 	AdmissionPolicy       string  // "always-admit" (default) or "token-bucket"
 	AdmissionLatency      int64   // microseconds, default 0
