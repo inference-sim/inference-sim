@@ -22,6 +22,19 @@ type ConformanceEndpoint struct {
 	InFlightTokens                      int64
 	WaitingQueue, RunningRequests       int
 	KVUtilization                       float64
+	// Role is the llm-d.ai/role label ("prefill", "decode", or "" for none).
+	Role string
+}
+
+// ConformanceRequest describes the request and data-layer shape of a case.
+type ConformanceRequest struct {
+	InputTokens int
+	// MaxOutputLen is the client output cap (vLLM max_tokens); 0 = none.
+	MaxOutputLen int
+	// NoInFlight runs without an inflight-load-producer (the InFlightLoad and
+	// UncachedRequestTokens attributes are absent on every endpoint).
+	NoInFlight bool
+	InFlight   InFlightLoadConfig
 }
 
 // ConformanceHarness holds BLIS's data layer for one request over a candidate set.
@@ -51,27 +64,125 @@ func (f *fixedPrefixProducer) record(*Request, string, int64) {}
 // name; the inflight producer is llm-d's default for the version (inflight
 // tokens taken from the endpoints).
 func NewConformanceHarness(v EPPVersion, inputTokens int, eps []ConformanceEndpoint, inflight InFlightLoadConfig) *ConformanceHarness {
-	p := NewRoutingPipeline(&RoutingPipelineConfig{Version: v, InFlightLoads: []InFlightLoadConfig{inflight}},
-		RoutingEnv{FilterRNG: rand.New(rand.NewSource(1))}, nil)
+	return NewConformanceHarnessFor(v, ConformanceRequest{InputTokens: inputTokens, InFlight: inflight}, eps)
+}
+
+// NewConformanceHarnessFor builds the harness for a request shape.
+func NewConformanceHarnessFor(v EPPVersion, r ConformanceRequest, eps []ConformanceEndpoint) *ConformanceHarness {
+	cfg := &RoutingPipelineConfig{Version: v}
+	if !r.NoInFlight {
+		cfg.InFlightLoads = []InFlightLoadConfig{r.InFlight}
+	}
+	roles := map[string]string{}
+	for _, e := range eps {
+		roles[e.ID] = e.Role
+	}
+	p := NewRoutingPipeline(cfg, RoutingEnv{FilterRNG: rand.New(rand.NewSource(1)), Role: func(id string) string { return roles[id] }}, nil)
 	fixed := &fixedPrefixProducer{info: map[string]prefixMatchInfo{}}
 	p.producers[LLMDApproxPrefixProducer] = fixed
 	p.producerNames = append(p.producerNames, LLMDApproxPrefixProducer)
-	t := p.inflight[0]
 	snaps := make([]RoutingSnapshot, len(eps))
 	for i, e := range eps {
 		if e.HasPrefixInfo {
 			fixed.info[e.ID] = prefixMatchInfo{match: e.MatchBlocks, total: e.TotalBlocks, blockSize: e.BlockSize, cached: e.CachedBlocks}
 		}
-		t.tokens[e.ID] = e.InFlightTokens
 		s := NewRoutingSnapshot(e.ID)
-		s.InFlightRequests, s.InFlightTokens = e.InFlightRequests, e.InFlightTokens
+		s.InFlightRequests = e.InFlightRequests
+		if !r.NoInFlight {
+			p.inflight[0].tokens[e.ID] = e.InFlightTokens
+			s.InFlightTokens = e.InFlightTokens
+		}
 		s.QueueDepth, s.BatchSize, s.KVUtilization = e.WaitingQueue, e.RunningRequests, e.KVUtilization
 		snaps[i] = s
 	}
-	req := &Request{ID: "conformance", InputTokens: make([]TokenID, inputTokens)}
+	req := &Request{ID: "conformance", InputTokens: make([]TokenID, r.InputTokens), MaxOutputLen: r.MaxOutputLen}
 	p.begin(req, snaps, 0)
 	return &ConformanceHarness{p: p, req: req, snaps: snaps}
 }
+
+// Filter runs one profile filter.
+func (h *ConformanceHarness) Filter(f FilterConfig) []string {
+	return ids(h.p.buildFilter(f)(h.req, h.snaps))
+}
+
+// Route runs a whole profile (filters, weighted scorers, max-score pick) and
+// returns the tied maxima ("" set = the filters emptied the candidates).
+func (h *ConformanceHarness) Route(filters []FilterConfig, scorers []ScorerConfig) (maxima []string, rejected bool) {
+	ws := newWeightedScoring(scorers, filters, 16, rand.New(rand.NewSource(1)), nil, h.p)
+	h.p.SetDeferred(true) // a conformance route must not record
+	d := ws.Route(h.req, &RouterState{Snapshots: h.snaps})
+	if d.TargetInstance == "" {
+		return nil, true
+	}
+	best := -1.0
+	for _, sc := range d.Scores {
+		if sc > best {
+			best = sc
+		}
+	}
+	for id, sc := range d.Scores {
+		if sc == best {
+			maxima = append(maxima, id)
+		}
+	}
+	sort.Strings(maxima)
+	return maxima, false
+}
+
+// ConformanceLedger replays the in-flight load lifecycle (routing, first token,
+// end of stream) on BLIS's tracker.
+type ConformanceLedger struct {
+	t       *InFlightLoadTracker
+	streams map[string]*Request // request ID → client stream request
+	inst    map[string]string   // request ID → stream (decode/primary) endpoint
+	n       int
+}
+
+// NewConformanceLedger starts an empty ledger.
+func NewConformanceLedger(cfg InFlightLoadConfig) *ConformanceLedger {
+	return &ConformanceLedger{t: newInFlightLoadTracker(cfg), streams: map[string]*Request{}, inst: map[string]string{}}
+}
+
+// Route charges a request routed to primary (and, for P/D, prefill), with the
+// uncached-token estimates of harness h (the request's endpoint state).
+func (l *ConformanceLedger) Route(reqID string, h *ConformanceHarness, primary, prefill string) {
+	est := newInFlightLoadTracker(l.t.cfg)
+	tokens := func(ep string) int64 {
+		if info, ok := h.p.matchInfo("", ep); ok {
+			return est.estimate(h.req, &info, h.p.role(ep))
+		}
+		return est.estimate(h.req, nil, h.p.role(ep))
+	}
+	parent := &Request{ID: reqID, InputTokens: h.req.InputTokens, MaxOutputLen: h.req.MaxOutputLen}
+	l.t.charge(parent, primary, tokens(primary))
+	l.streams[reqID], l.inst[reqID] = parent, primary
+	if prefill != "" {
+		l.t.AliasPrefill(reqID+"_prefill", reqID)
+		l.t.charge(&Request{ID: reqID + "_prefill"}, prefill, tokens(prefill))
+		decode := &Request{ID: reqID + "_decode"}
+		l.t.SetStream(reqID, decode)
+		l.streams[reqID] = decode
+	}
+}
+
+// FirstToken delivers the request's first output token (StartOfStream).
+func (l *ConformanceLedger) FirstToken(reqID string) {
+	if s, ok := l.streams[reqID]; ok {
+		s.TTFTSet = true
+		l.t.ObserveInstance(l.inst[reqID])
+	}
+}
+
+// End completes the request (EndOfStream).
+func (l *ConformanceLedger) End(reqID string) {
+	if s, ok := l.streams[reqID]; ok {
+		s.State = StateCompleted
+		l.t.OnRequestDone(s)
+	}
+}
+
+// Tokens returns an endpoint's in-flight tokens.
+func (l *ConformanceLedger) Tokens(ep string) int64 { return l.t.Tokens(ep) }
 
 func ids(s []RoutingSnapshot) []string {
 	out := make([]string, len(s))
@@ -104,6 +215,9 @@ func (h *ConformanceHarness) ConcurrencySaturation(cfg ConcurrencyDetectorConfig
 // UncachedTokens returns the inflight producer's per-endpoint UncachedRequestTokens.
 func (h *ConformanceHarness) UncachedTokens() map[string]int64 {
 	out := map[string]int64{}
+	if len(h.p.inflight) == 0 {
+		return out
+	}
 	t := h.p.inflight[0]
 	for _, s := range h.snaps {
 		out[s.ID] = h.p.uncachedTokens(t, h.req, s.ID)
@@ -129,7 +243,7 @@ func (h *ConformanceHarness) PDDecide(cfg LLMDPrefixPDDeciderConfig, selected st
 	return NewLLMDPrefixPDDecider(cfg, h.p).Decide(h.req, &RouterState{Snapshots: h.snaps, SelectedInstance: selected}).Disaggregate
 }
 
-// MaxScoreCandidates returns the endpoints a max-score pick may choose for the
+// MaxScoreCandidates (single scorer list, no filters) returns the endpoints a max-score pick may choose for the
 // weighted, clamped scores: the tied maxima, sorted. BLIS picks one uniformly with
 // its seeded router RNG (llm-d: a shuffle, then rotation by a request counter).
 func (h *ConformanceHarness) MaxScoreCandidates(scorers []ScorerConfig) []string {
