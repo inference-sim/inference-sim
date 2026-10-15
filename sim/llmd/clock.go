@@ -35,41 +35,28 @@ func (c *desClock) NewTicker(d time.Duration) clock.Ticker {
 	if d <= 0 {
 		panic(fmt.Sprintf("llmd: NewTicker with non-positive interval %v", d))
 	}
-	t := &desTicker{rt: c.rt, ch: make(chan time.Time, 1), step: toMicros(d)}
-	t.arm()
+	t := &desTicker{ch: make(chan time.Time, 1)}
+	rt := c.rt
+	step := toMicros(d)
+	t.p = rt.startPeriodic(rt.host.Now()+step, step, PriorityTimer, func() bool {
+		select { // like time.Ticker, a slow reader drops ticks
+		case t.ch <- rt.Now():
+		default:
+		}
+		rt.co.settle()
+		return true
+	})
 	return t
 }
 
 type desTicker struct {
-	rt      *desRuntime
-	ch      chan time.Time
-	step    int64
-	stopped bool
-	cancel  func()
+	ch chan time.Time
+	p  *periodic
 }
 
 func (t *desTicker) C() <-chan time.Time { return t.ch }
 
-func (t *desTicker) arm() {
-	t.cancel = t.rt.host.Schedule(t.rt.host.Now()+t.step, PriorityTimer, true, func() {
-		if t.stopped {
-			return
-		}
-		select { // like time.Ticker, a slow reader drops ticks
-		case t.ch <- t.rt.Now():
-		default:
-		}
-		t.arm()
-		t.rt.co.settle()
-	})
-}
-
-func (t *desTicker) Stop() {
-	t.stopped = true
-	if t.cancel != nil {
-		t.cancel()
-	}
-}
+func (t *desTicker) Stop() { t.p.stop() }
 
 type desTimer struct {
 	rt     *desRuntime

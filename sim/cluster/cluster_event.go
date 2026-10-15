@@ -10,7 +10,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 4-6=PD, 8=ScalingTick, 9=ScaleActuation, 10+=gateway callbacks
 	Execute(*ClusterSimulator)
 }
 

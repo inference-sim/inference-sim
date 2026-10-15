@@ -103,11 +103,11 @@ func (o capOut) num(k string) float64 { return o.cluster[k] }
 
 // arrivals is every request the run accounted for: those that reached an instance plus every
 // request turned away before one -- admission, routing, and the gateway queue's rejections,
-// sheds, TTL expiries, in-flight evictions and requests still queued at the horizon.
+// TTL expiries, in-flight evictions and requests still queued at the horizon.
 func (o capOut) arrivals() int {
 	n := int(o.num("injected_requests"))
 	for _, k := range []string{"Rejected Requests (Admission)", "Rejected Requests (Routing)",
-		"Gateway Queue Rejected", "Gateway Queue Shed", "Gateway Expired (TTL)", "Gateway Queue Depth (horizon)",
+		"Gateway Queue Rejected", "Gateway Expired (TTL)", "Gateway Queue Depth (horizon)",
 		"Gateway Evicted (in-flight)"} {
 		n += o.anomalies[k]
 	}
@@ -125,29 +125,6 @@ func (o capOut) conserves(t *testing.T, generated int) {
 	if o.num("completed_requests") <= 0 {
 		t.Errorf("no request completed")
 	}
-}
-
-// maxShare is the largest fraction of completions any one instance served.
-func (o capOut) maxShare() float64 {
-	var total, peak float64
-	for _, in := range o.instances {
-		c := in["completed_requests"]
-		total += c
-		peak = max(peak, c)
-	}
-	if total == 0 {
-		return 0
-	}
-	return peak / total
-}
-
-// split is each instance's completed count, in output order.
-func (o capOut) split() []int {
-	var s []int
-	for _, in := range o.instances {
-		s = append(s, int(in["completed_requests"]))
-	}
-	return s
 }
 
 // capRunReplay runs `blis run runOnly... common...` with a trace export, replays the trace with
@@ -264,18 +241,6 @@ func meanTTFTBy(rows []capRequest, key func(capRequest) string) (mean map[string
 }
 
 func bySLOClass(r capRequest) string { return r.SLOClass }
-func byTenant(r capRequest) string   { return r.TenantID }
-
-// instancesServing is how many distinct instances served the requests of tenant.
-func instancesServing(rows []capRequest, tenant string) int {
-	seen := map[string]bool{}
-	for _, r := range rows {
-		if r.TenantID == tenant && r.HandledBy != "" {
-			seen[r.HandledBy] = true
-		}
-	}
-	return len(seen)
-}
 
 // classMix is a burst of three SLO classes on one engine, enough to queue: critical (30%),
 // sheddable (40%) and batch (30%), 120 requests of 2000 prompt and 128 output tokens.
@@ -293,232 +258,9 @@ func tenantMix(t *testing.T, class string) string {
 		capClient("light", class, 0.15, 2000, 128, ""))
 }
 
-// prefixMix is 60 requests from two tenants: "a" shares a 1024-token prefix group, "b" does not.
-func prefixMix(t *testing.T) string {
-	return capSpec(t, 30, 60,
-		capClient("a", "standard", 0.5, 1500, 64, "    prefix_group: g1\n    prefix_length: 1024\n"),
-		capClient("b", "standard", 0.5, 600, 200, ""))
-}
-
-// gated is flow control in front of every instance, saturating at four requests in flight.
-var gated = []string{"--flow-control", "--saturation-detector", "concurrency", "--max-concurrency", "4"}
-
 // TestCapabilityMatrix_Policies is section 6 of the PR: each policy, on the kernel, conserves
 // its requests and has the effect it exists for.
 func TestCapabilityMatrix_Policies(t *testing.T) {
-	t.Run("routing/always-busiest concentrates load that round-robin spreads", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(4), burst(40, 40, 512, 64)...)
-		rr := capRun(t, runArgs(base, "--routing-policy", "round-robin")...)
-		busiest := capRun(t, runArgs(base, "--routing-policy", "always-busiest")...)
-		rr.conserves(t, 40)
-		busiest.conserves(t, 40)
-		if busiest.maxShare() <= rr.maxShare() {
-			t.Errorf("always-busiest's largest instance share %.2f is not above round-robin's %.2f",
-				busiest.maxShare(), rr.maxShare())
-		}
-	})
-
-	t.Run("routing/load scorers balance what always-busiest piles on one instance", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(4), "--workload-spec", prefixMix(t))
-		busiest := capRun(t, runArgs(base, "--routing-policy", "always-busiest")...)
-		if busiest.maxShare() != 1 {
-			t.Fatalf("always-busiest spread its load: %v", busiest.split())
-		}
-		for _, policy := range [][]string{
-			{"--routing-policy", "least-loaded"},
-			{"--routing-policy", "weighted", "--routing-scorers", "queue-depth:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "kv-utilization:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "load-balance:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "active-requests:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "running-requests:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "load-aware:1"},
-			{"--routing-policy", "weighted", "--routing-scorers", "vllm-dp:1"},
-		} {
-			o := capRun(t, runArgs(base, policy...)...)
-			o.conserves(t, 60)
-			if o.maxShare() > 0.4 {
-				t.Errorf("%v: one instance served %.0f%% of the load (%v); a load signal must spread it",
-					policy, 100*o.maxShare(), o.split())
-			}
-		}
-	})
-
-	t.Run("routing/prefix scorers keep a prefix group together that round-robin scatters", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(4), "--workload-spec", prefixMix(t))
-		_, rr := capRunRows(t, runArgs(base, "--routing-policy", "round-robin")...)
-		if got := instancesServing(rr, "t-a"); got != 4 {
-			t.Fatalf("round-robin served the prefix group from %d instances, want all 4", got)
-		}
-		for _, scorer := range []string{"prefix-affinity:1", "precise-prefix-cache:1"} {
-			o, rows := capRunRows(t, runArgs(base, "--routing-policy", "weighted", "--routing-scorers", scorer)...)
-			o.conserves(t, 60)
-			if got := instancesServing(rows, "t-a"); got > 2 {
-				t.Errorf("%s served the prefix group from %d of 4 instances; it must keep it together", scorer, got)
-			}
-		}
-		// no-hit-lru steers requests with no cached prefix to the least recently used
-		// instance, so the prefix-free tenant is spread over every instance.
-		o, rows := capRunRows(t, runArgs(base, "--routing-policy", "weighted", "--routing-scorers", "no-hit-lru:1")...)
-		o.conserves(t, 60)
-		if got := instancesServing(rows, "t-b"); got != 4 {
-			t.Errorf("no-hit-lru served cache-miss requests from %d of 4 instances", got)
-		}
-	})
-
-	t.Run("routing/lora-affinity keeps each adapter's requests where it is resident", func(t *testing.T) {
-		t.Parallel()
-		lora := capFile(t, "lora.yaml", "lora:\n  adapter_capacity: 2\n  adapters:\n    - id: a0\n      rank: 16\n    - id: a1\n      rank: 16\n")
-		spec := capSpec(t, 20, 60,
-			strings.Replace(capClient("a0", "standard", 0.5, 800, 64, ""), "    rate_fraction:", "    adapter: a0\n    rate_fraction:", 1),
-			strings.Replace(capClient("a1", "standard", 0.5, 800, 64, ""), "    rate_fraction:", "    adapter: a1\n    rate_fraction:", 1))
-		base := with(colocated(4), "--workload-spec", spec, "--lora-config", lora)
-		_, rr := capRunRows(t, runArgs(base, "--routing-policy", "round-robin")...)
-		o, la := capRunRows(t, runArgs(base, "--routing-policy", "weighted", "--routing-scorers", "lora-affinity:1")...)
-		o.conserves(t, 60)
-		for _, tenant := range []string{"t-a0", "t-a1"} {
-			if got, spread := instancesServing(la, tenant), instancesServing(rr, tenant); got > 2 || spread != 4 {
-				t.Errorf("adapter %s served from %d instances under lora-affinity, %d under round-robin", tenant, got, spread)
-			}
-		}
-	})
-
-	t.Run("routing/signal delays: a stale cache signal blinds the prefix scorer, stale snapshots slow load routing", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(4), "--workload-spec", prefixMix(t), "--routing-policy", "weighted")
-		_, fresh := capRunRows(t, runArgs(base, "--routing-scorers", "precise-prefix-cache:1", "--cache-signal-delay", "0")...)
-		_, stale := capRunRows(t, runArgs(base, "--routing-scorers", "precise-prefix-cache:1", "--cache-signal-delay", "5000000")...)
-		if instancesServing(stale, "t-a") <= instancesServing(fresh, "t-a") {
-			t.Errorf("the prefix group spread over %d instances with a 5 s cache-signal delay, %d with none; "+
-				"a scorer that cannot see the cache must scatter it", instancesServing(stale, "t-a"), instancesServing(fresh, "t-a"))
-		}
-		oracle := capRun(t, runArgs(base, "--routing-scorers", "queue-depth:1", "--snapshot-refresh-interval", "0")...)
-		lagged := capRun(t, runArgs(base, "--routing-scorers", "queue-depth:1", "--snapshot-refresh-interval", "2000000")...)
-		oracle.conserves(t, 60)
-		lagged.conserves(t, 60)
-		if lagged.num("ttft_mean_ms") <= oracle.num("ttft_mean_ms") {
-			t.Errorf("queue-depth routing on 2 s-old snapshots gave mean TTFT %.1f ms, no worse than %.1f on live ones",
-				lagged.num("ttft_mean_ms"), oracle.num("ttft_mean_ms"))
-		}
-	})
-
-	t.Run("admission/each policy turns away load it should and conserves the rest", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), "--workload-spec", classMix(t))
-		all, allRows := capRunRows(t, runArgs(base)...)
-		all.conserves(t, 120)
-		_, admitted := meanTTFTBy(allRows, bySLOClass)
-		if all.anomalies["Rejected Requests (Admission)"] != 0 {
-			t.Fatalf("always-admit rejected %d", all.anomalies["Rejected Requests (Admission)"])
-		}
-		none := capRun(t, runArgs(base, "--admission-policy", "reject-all")...)
-		if none.num("injected_requests") != 0 || none.anomalies["Rejected Requests (Admission)"] != 120 {
-			t.Errorf("reject-all admitted %v and rejected %d of 120", none.num("injected_requests"),
-				none.anomalies["Rejected Requests (Admission)"])
-		}
-		for _, policy := range [][]string{
-			{"--admission-policy", "token-bucket", "--token-bucket-capacity", "20000", "--token-bucket-refill-rate", "20000"},
-			{"--admission-policy", "gaie-legacy"},
-		} {
-			o := capRun(t, runArgs(base, policy...)...)
-			o.conserves(t, 120)
-			if o.anomalies["Rejected Requests (Admission)"] == 0 {
-				t.Errorf("%v rejected nothing from a burst four times the cluster's capacity", policy)
-			}
-		}
-		// tier-shed sheds by SLO tier: under the same burst critical requests are all served,
-		// and the lower tiers are shed.
-		o, rows := capRunRows(t, runArgs(base, "--admission-policy", "tier-shed")...)
-		o.conserves(t, 120)
-		_, served := meanTTFTBy(rows, bySLOClass)
-		if served["critical"] != admitted["critical"] || o.anomalies["Rejected Requests (Admission)"] == 0 {
-			t.Errorf("tier-shed served %d of %d critical requests and shed %d; want every critical "+
-				"request served and the lower tiers shed", served["critical"], admitted["critical"],
-				o.anomalies["Rejected Requests (Admission)"])
-		}
-	})
-
-	t.Run("admission/tenant budgets shed an over-budget tenant's sheddable requests", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), "--workload-spec", tenantMix(t, "sheddable"))
-		free := capRun(t, runArgs(base)...)
-		free.conserves(t, 120)
-		bundle := capFile(t, "budgets.yaml", "tenant_budgets:\n  t-heavy: 0.1\n  t-light: 0.9\n")
-		o, rows := capRunRows(t, runArgs(base, "--policy-config", bundle)...)
-		o.conserves(t, 120)
-		_, served := meanTTFTBy(rows, byTenant)
-		_, freeServed := capRunRows(t, runArgs(base)...)
-		_, freeN := meanTTFTBy(freeServed, byTenant)
-		if served["t-heavy"] >= freeN["t-heavy"] {
-			t.Errorf("a 10%% budget left the heavy tenant %d served requests, %d without budgets",
-				served["t-heavy"], freeN["t-heavy"])
-		}
-		if served["t-light"] != freeN["t-light"] {
-			t.Errorf("the within-budget tenant lost requests: %d served, %d without budgets",
-				served["t-light"], freeN["t-light"])
-		}
-	})
-
-	t.Run("flow control/queue depth, TTL, per-band capacity, shedding and eviction each act", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), "--workload-spec", classMix(t))
-		open := capRun(t, runArgs(base, gated...)...)
-		open.conserves(t, 120)
-		for _, tt := range []struct {
-			flags   []string
-			counter string
-		}{
-			{[]string{"--max-gateway-queue-depth", "10"}, "Gateway Queue Rejected"},
-			{[]string{"--request-ttl", "200000"}, "Gateway Expired (TTL)"},
-			{[]string{"--per-band-capacity", "5"}, "Gateway Queue Rejected"},
-			{[]string{"--max-gateway-queue-depth", "10", "--queue-shedding"}, "Gateway Queue Shed"},
-			{[]string{"--in-flight-eviction"}, "Gateway Evicted (in-flight)"},
-		} {
-			o := capRun(t, runArgs(base, append(slices.Clone(gated), tt.flags...)...)...)
-			o.conserves(t, 120)
-			if o.anomalies[tt.counter] == 0 || open.anomalies[tt.counter] != 0 {
-				t.Errorf("%v: %s is %d (and %d without it); the control must act on this burst",
-					tt.flags, tt.counter, o.anomalies[tt.counter], open.anomalies[tt.counter])
-			}
-		}
-	})
-
-	t.Run("flow control/a usage limit below 1 favours the urgent bands", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), "--workload-spec", classMix(t))
-		_, full := capRunRows(t, runArgs(base, append(slices.Clone(gated), "--usage-limit-threshold", "1.0")...)...)
-		_, half := capRunRows(t, runArgs(base, append(slices.Clone(gated), "--usage-limit-threshold", "0.5")...)...)
-		f, _ := meanTTFTBy(full, bySLOClass)
-		h, _ := meanTTFTBy(half, bySLOClass)
-		if !(h["critical"] < f["critical"] && h["sheddable"] > f["sheddable"]) {
-			t.Errorf("usage limit 0.5 against 1.0: critical TTFT %.0f vs %.0f ms, sheddable %.0f vs %.0f ms; "+
-				"gating lower bands earlier must help critical and cost sheddable", h["critical"], f["critical"],
-				h["sheddable"], f["sheddable"])
-		}
-	})
-
-	t.Run("flow control/round-robin fairness protects a light tenant inside a band", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), append(slices.Clone(gated), "--workload-spec", tenantMix(t, "standard"))...)
-		_, strict := capRunRows(t, runArgs(base, "--fairness-policy", "global-strict")...)
-		_, fair := capRunRows(t, runArgs(base, "--fairness-policy", "round-robin")...)
-		s, _ := meanTTFTBy(strict, byTenant)
-		f, _ := meanTTFTBy(fair, byTenant)
-		if f["t-light"] >= s["t-light"] {
-			t.Errorf("round-robin fairness left the light tenant's TTFT at %.0f ms against %.0f under "+
-				"global-strict", f["t-light"], s["t-light"])
-		}
-	})
-
-	t.Run("flow control/a gated run replays byte-identically", func(t *testing.T) {
-		t.Parallel()
-		common := with(colocated(2), append(slices.Clone(gated), "--max-gateway-queue-depth", "10")...)
-		o := capRunReplay(t, common, []string{"--workload-spec", classMix(t)}, nil)
-		o.conserves(t, 120)
-	})
-
 	t.Run("schedulers/priority-fcfs serves critical first; reverse-priority last", func(t *testing.T) {
 		t.Parallel()
 		base := with(colocated(2), "--workload-spec", classMix(t))
@@ -553,46 +295,6 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 			} else {
 				prev = ttft
 			}
-		}
-	})
-
-	t.Run("P/D deciders/always and never, and the prefix threshold at both ends", func(t *testing.T) {
-		t.Parallel()
-		pd := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--num-instances", "4",
-			"--prefill-instances", "3", "--decode-instances", "1", "--seed", "11", "--horizon", "900000000"}
-		load := with(burst(30, 4, 2000, 64), "--prefix-tokens", "1500")
-		for _, tt := range []struct {
-			decider []string
-			want    string
-		}{
-			{[]string{"--pd-decider", "always"}, "30"},
-			{[]string{"--pd-decider", "never"}, ""},
-			{[]string{"--pd-decider", "prefix-threshold", "--pd-prefix-threshold", "0"}, "30"},
-			{[]string{"--pd-decider", "prefix-threshold", "--pd-prefix-threshold", "100000"}, ""},
-		} {
-			o := capRun(t, runArgs(with(pd, load...), tt.decider...)...)
-			o.conserves(t, 30)
-			if got := o.pd["Disaggregated Requests"]; got != tt.want {
-				t.Errorf("%v: %q requests disaggregated, want %q", tt.decider, got, tt.want)
-			}
-		}
-	})
-
-	t.Run("P/D per-pool scorers route the prefill pool by their own signal", func(t *testing.T) {
-		t.Parallel()
-		pd := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--num-instances", "4",
-			"--prefill-instances", "3", "--decode-instances", "1", "--seed", "11", "--horizon", "900000000",
-			"--pd-decider", "always"}
-		load := with(burst(30, 4, 2000, 64), "--prefix-tokens", "1500")
-		spread := capRun(t, runArgs(with(pd, load...), "--prefill-routing-scorers", "queue-depth:1")...)
-		packed := capRun(t, runArgs(with(pd, load...), "--prefill-routing-scorers", "precise-prefix-cache:1")...)
-		spread.conserves(t, 30)
-		packed.conserves(t, 30)
-		// The three prefill instances come first; the decode instance serves every request.
-		prefillPeak := func(o capOut) int { return slices.Max(o.split()[:3]) }
-		if prefillPeak(packed) <= prefillPeak(spread) {
-			t.Errorf("prefill split %v under the prefix scorer, %v under queue depth; the shared "+
-				"prefix must pull prefills together", packed.split()[:3], spread.split()[:3])
 		}
 	})
 
@@ -679,7 +381,7 @@ func capVariant(t *testing.T, file string, edits ...string) string {
 
 // pdBase is the committed 3P1D scenario's topology, with dir/file naming the scenario.
 func pdBase(dir, file string) []string {
-	return []string{"--scenarios", dir, "--scenario", file, "--pd-decider", "always", "--num-instances", "4",
+	return []string{"--scenarios", dir, "--scenario", file, "--epp-config", pdAlwaysEPPConfig, "--num-instances", "4",
 		"--prefill-instances", "3", "--decode-instances", "1", "--seed", "11", "--horizon", "900000000"}
 }
 
@@ -695,6 +397,37 @@ func wekaSessions(t *testing.T, n int) string {
 	}
 	return capFile(t, "weka.jsonl", strings.Join(lines, "\n")+"\n")
 }
+
+// capLoadOnlyEPPConfig is an llm-d router that scores endpoints by queue depth alone.
+const capLoadOnlyEPPConfig = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: queue-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+  - pluginRef: max-score-picker
+`
+
+// capPrefixAwareEPPConfig is an llm-d router that also scores each endpoint's cached prefix.
+const capPrefixAwareEPPConfig = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: approx-prefix-cache-producer
+- type: prefix-cache-scorer
+- type: queue-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: prefix-cache-scorer
+    weight: 3
+  - pluginRef: queue-scorer
+    weight: 1
+  - pluginRef: max-score-picker
+`
 
 // TestCapabilityMatrix_Compositions is the multi-feature compositions a review asked to see
 // run together: each conserves its requests and keeps every feature's effect.
@@ -756,7 +489,7 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		}
 	})
 
-	t.Run("converted agentic replay: weka and otel sessions, prefix-aware against round-robin routing", func(t *testing.T) {
+	t.Run("converted agentic replay: weka and otel sessions, prefix-aware against load-only routing", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		weka := filepath.Join(dir, "weka")
@@ -767,8 +500,10 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			return capRunRows(t, append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv",
 				"--session-mode", "closed-loop"}, with(colocated(4), routing...)...)...)
 		}
-		rr, rrRows := replay(weka, "--routing-policy", "round-robin")
-		pa, paRows := replay(weka, "--routing-policy", "weighted", "--routing-scorers", "precise-prefix-cache:1")
+		// The two routers are llm-d EndpointPickerConfigs: one that scores load alone, one that
+		// also scores each endpoint's cached prefix.
+		rr, rrRows := replay(weka, "--epp-config", capFile(t, "load-only.yaml", capLoadOnlyEPPConfig))
+		pa, paRows := replay(weka, "--epp-config", capFile(t, "prefix-aware.yaml", capPrefixAwareEPPConfig))
 		rr.conserves(t, 24)
 		pa.conserves(t, 24)
 		spread := func(rows []capRequest) int { // sessions served by more than one instance
@@ -788,7 +523,7 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			return n
 		}
 		if spread(paRows) >= spread(rrRows) || spread(rrRows) == 0 {
-			t.Errorf("sessions split across instances: %d under the prefix scorer, %d under round-robin; "+
+			t.Errorf("sessions split across instances: %d under the prefix scorer, %d under load-only routing; "+
 				"a session's growing prefix must keep it on its instance", spread(paRows), spread(rrRows))
 		}
 		if pa.num("ttft_mean_ms") >= rr.num("ttft_mean_ms") {
@@ -829,11 +564,14 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		}
 	})
 
-	t.Run("autoscaler with node pools: runs and conserves (its analyzer is inert, #1916)", func(t *testing.T) {
+	t.Run("autoscaler with node pools: runs and conserves", func(t *testing.T) {
 		t.Parallel()
+		// The analyzer reads each replica's live KV capacity (#1916), so on an idle start it
+		// would drain every replica at the first tick; the Kubernetes HPA default scale-down
+		// stabilization window (5 min) holds them through this short run.
 		bundle := capFile(t, "autoscale.yaml", "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n"+
 			"    gpu_memory_gib: 141\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
-			"autoscaler:\n  interval_us: 1000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
+			"autoscaler:\n  interval_us: 1000000\n  scale_down_stabilization_window_us: 300000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
 			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
 		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
 		o.conserves(t, 60)

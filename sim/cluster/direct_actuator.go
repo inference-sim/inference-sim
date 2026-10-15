@@ -96,10 +96,10 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		// deferred paths). Single-node instances are unchanged (1×).
 		instCost := a.cluster.placement.InstanceCostPerHour(gpuIDs, costPerHour)
 
-		// Construct, register, and activate the instance. GPU release on snapshotProvider
-		// failure is handled inside addLiveInstance.
+		// Construct, register, and activate the instance; the gateway sees its pod when it
+		// becomes ready.
 		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost) {
-			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered (snapshotProvider nil)", d.ModelID, id)
+			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered", d.ModelID, id)
 			continue
 		}
 

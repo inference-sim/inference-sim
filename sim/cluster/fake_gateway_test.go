@@ -6,7 +6,9 @@ import (
 
 // fakeGateway is the unit-test stand-in for the llm-d router: it dispatches every request on
 // arrival, round-robin over the routable instances that serve the request's model. With P/D
-// pools it disaggregates when disaggregate is set, round-robin over each pool. It holds no
+// pools it disaggregates when disaggregate is set, round-robin over each pool (the default
+// gateway sets it, so a P/D deployment disaggregates every request unless a test installs
+// &fakeGateway{} to keep requests on the decode pool). It holds no
 // state between requests beyond the round-robin positions, so cluster behavior tests see the
 // cluster's own mechanics, not routing policy.
 type fakeGateway struct {
@@ -15,10 +17,17 @@ type fakeGateway struct {
 	disaggregate bool
 	// reject, when set, decides per request whether to reject it as an admission rejection.
 	reject func(*sim.Request) bool
+	// scores, when set, is reported as Placement.Scores on every dispatch (the decision
+	// trace's counterfactual ranks them). It does not influence the choice.
+	scores map[string]float64
+	// holdUs, when positive, holds every request that long after arrival before deciding
+	// on it (a stand-in for a gateway queue delay).
+	holdUs int64
+	held   int
 }
 
 func init() {
-	newDefaultGateway = func() Gateway { return &fakeGateway{} }
+	newDefaultGateway = func() Gateway { return &fakeGateway{disaggregate: true} }
 }
 
 func (g *fakeGateway) Start(host GatewayHost) error {
@@ -28,6 +37,18 @@ func (g *fakeGateway) Start(host GatewayHost) error {
 }
 
 func (g *fakeGateway) OnArrival(req *sim.Request) {
+	if g.holdUs > 0 {
+		g.held++
+		g.host.Schedule(g.host.Now()+g.holdUs, PriorityGatewayRequest, false, func() {
+			g.held--
+			g.decide(req)
+		})
+		return
+	}
+	g.decide(req)
+}
+
+func (g *fakeGateway) decide(req *sim.Request) {
 	if g.reject != nil && g.reject(req) {
 		g.host.Reject(req, RejectedAdmission, "fake gateway")
 		return
@@ -41,7 +62,7 @@ func (g *fakeGateway) OnArrival(req *sim.Request) {
 	}
 	if !pooled {
 		if id, ok := g.pick(req, 0); ok {
-			g.host.Dispatch(req, Placement{Decode: id})
+			g.host.Dispatch(req, Placement{Decode: id, Scores: g.scores})
 			return
 		}
 		g.host.Reject(req, RejectedRouting, "no routable instance")
@@ -52,7 +73,7 @@ func (g *fakeGateway) OnArrival(req *sim.Request) {
 		g.host.Reject(req, RejectedRouting, "no routable decode instance")
 		return
 	}
-	p := Placement{Decode: decode}
+	p := Placement{Decode: decode, Scores: g.scores}
 	if g.disaggregate {
 		prefill, ok := g.pick(req, PoolRolePrefill)
 		if !ok {
@@ -91,5 +112,5 @@ func (g *fakeGateway) OnDispatched(*sim.Request, int64)        {}
 func (g *fakeGateway) OnFirstToken(*sim.Request, int64)        {}
 func (g *fakeGateway) OnDone(*sim.Request, int64, DoneOutcome) {}
 func (g *fakeGateway) OnInstanceChange(*InstanceSimulator)     {}
-func (g *fakeGateway) Pending() int                            { return 0 }
+func (g *fakeGateway) Pending() int                            { return g.held }
 func (g *fakeGateway) Stop()                                   {}

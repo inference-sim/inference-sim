@@ -133,43 +133,6 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 	}
 }
 
-// TestPDTrace_DisaggMode_Counterfactual verifies BC-PD-19:
-// per-pool routing records have counterfactual candidates when k > 0.
-func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
-	// GIVEN disaggregated simulation with k=2, 2 prefill + 2 decode instances
-	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	config.TraceLevel = "decisions"
-	config.CounterfactualK = 2
-	config.RoutingPolicy = "weighted"
-	config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
-	requests := newTestRequests(3)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-
-	mustRun(t, cs)
-
-	tr := cs.Trace()
-	if tr == nil {
-		t.Fatal("expected non-nil trace")
-	}
-
-	// THEN prefill routing records have candidates (BC-PD-19)
-	for i, r := range tr.PrefillRoutings {
-		if len(r.Candidates) == 0 {
-			t.Errorf("PrefillRoutings[%d]: expected candidates with k=2, got none", i)
-		}
-		if len(r.Candidates) > 2 {
-			t.Errorf("PrefillRoutings[%d]: expected ≤2 candidates, got %d", i, len(r.Candidates))
-		}
-		if r.Regret < 0 {
-			t.Errorf("PrefillRoutings[%d]: Regret=%f, want ≥0", i, r.Regret)
-		}
-	}
-	// DecodeRoutings is empty (no second routing decision); counterfactual not applicable.
-	if len(tr.DecodeRoutings) != 0 {
-		t.Errorf("expected 0 DecodeRoutings (no second routing decision), got %d", len(tr.DecodeRoutings))
-	}
-}
-
 // TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
 // with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers).
 // DecodeRoutings is always 0 because the decode pod is pre-selected at executeDisaggregatedRouting
@@ -294,52 +257,43 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	}
 }
 
-// TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords verifies that when PDDecider="never"
-// is configured alongside pool topology, executeDisaggregatedRouting still records
-// disaggregation decisions, but all Disaggregate=false so no PrefillRouting, KVTransfer,
-// or DecodeRouting records are emitted.
-func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
-	// GIVEN pools configured but disaggregation decider set to "never"
+// TestPDTrace_NonDisaggregated_WithPools_NoPDRecords verifies that when the gateway does not
+// disaggregate on a P/D deployment, no request is traced as disaggregated and no PrefillRouting,
+// KVTransfer or DecodeRouting records are emitted, while every request gets a standard routing
+// record.
+func TestPDTrace_NonDisaggregated_WithPools_NoPDRecords(t *testing.T) {
+	// GIVEN pools configured but a gateway that never disaggregates
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	config.PDDecider = "never"
 	config.TraceLevel = "decisions"
 	const numRequests = 4
 	requests := newTestRequests(numRequests)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs.SetGateway(&fakeGateway{})
 
 	// WHEN run
 	mustRun(t, cs)
 
-	// THEN executeDisaggregatedRouting records a disaggregation decision for every request
 	tr := cs.Trace()
 	if tr == nil {
 		t.Fatal("expected non-nil trace with trace-level decisions")
 	}
-	if len(tr.Disaggregations) != numRequests {
-		t.Errorf("expected %d disaggregation records, got %d", numRequests, len(tr.Disaggregations))
-	}
-	// All decisions are false
 	for i, r := range tr.Disaggregations {
 		if r.Disaggregate {
-			t.Errorf("Disaggregations[%d]: Disaggregate=true, want false (NeverDisaggregate)", i)
-		}
-		if r.RequestID == "" {
-			t.Errorf("Disaggregations[%d]: RequestID empty", i)
+			t.Errorf("Disaggregations[%d]: Disaggregate=true for %s, want no disaggregated request", i, r.RequestID)
 		}
 	}
-	// No downstream PD records emitted
 	if len(tr.PrefillRoutings) != 0 {
-		t.Errorf("expected 0 PrefillRoutings with NeverDisaggregate, got %d", len(tr.PrefillRoutings))
+		t.Errorf("expected 0 PrefillRoutings without disaggregation, got %d", len(tr.PrefillRoutings))
 	}
 	if len(tr.KVTransfers) != 0 {
-		t.Errorf("expected 0 KVTransfers with NeverDisaggregate, got %d", len(tr.KVTransfers))
+		t.Errorf("expected 0 KVTransfers without disaggregation, got %d", len(tr.KVTransfers))
 	}
 	if len(tr.DecodeRoutings) != 0 {
-		t.Errorf("expected 0 DecodeRoutings with NeverDisaggregate, got %d", len(tr.DecodeRoutings))
+		t.Errorf("expected 0 DecodeRoutings without disaggregation, got %d", len(tr.DecodeRoutings))
 	}
 	// Standard routing still fires for every request (BC-TRACE-COMPAT)
 	if len(tr.Routings) != numRequests {
-		t.Errorf("expected %d standard routing records with NeverDisaggregate, got %d", numRequests, len(tr.Routings))
+		t.Errorf("expected %d standard routing records, got %d", numRequests, len(tr.Routings))
 	}
 }
 

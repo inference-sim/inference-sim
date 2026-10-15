@@ -37,6 +37,14 @@ type Gateway interface {
 	Stop()
 }
 
+// IdleFastForwarder is implemented by a gateway whose background work can be advanced over a
+// period in which no request is anywhere in the cluster.
+type IdleFastForwarder interface {
+	// FastForwardIdle is called when the next request work is at target and nothing runs before
+	// it but the gateway's own background events.
+	FastForwardIdle(target int64)
+}
+
 // DoneOutcome is how a dispatched request ended.
 type DoneOutcome int
 
@@ -74,8 +82,8 @@ type GatewayHost interface {
 	// Now returns the current simulated time (µs).
 	Now() int64
 	// Schedule runs fn at time at (>= Now) as a cluster event. Events at one timestamp run in
-	// priority order and then in scheduling order, after the cluster's own events at that
-	// timestamp. A daemon event does not keep the simulation alive.
+	// priority order (PriorityGatewayRequest, or PriorityGatewayBackground and above), then in
+	// scheduling order. A daemon event does not keep the simulation alive.
 	Schedule(at int64, priority int, daemon bool, fn func()) (cancel func())
 	// Instances returns every instance in index order, routable or not.
 	Instances() []*InstanceSimulator
@@ -101,9 +109,15 @@ type GatewayHost interface {
 // package's tests set it (a small fake); production code always installs the llm-d router.
 var newDefaultGateway func() Gateway
 
-// callbackPriorityBase orders gateway callbacks after the cluster's request-path events
-// (priorities 0-9) at one timestamp.
-const callbackPriorityBase = 10
+// Cluster-event priorities of gateway callbacks at one timestamp.
+const (
+	// PriorityGatewayRequest is the request path: after the arrival (0), before P/D transfer
+	// (4-6) and autoscaling (8), where the cluster's routing decision always ran.
+	PriorityGatewayRequest = 2
+	// PriorityGatewayBackground and above is the router's background work (metrics
+	// collection, timers, housekeeping), after every cluster event at the timestamp.
+	PriorityGatewayBackground = 10
+)
 
 // CallbackEvent runs a gateway callback.
 type CallbackEvent struct {
@@ -115,7 +129,7 @@ type CallbackEvent struct {
 }
 
 func (e *CallbackEvent) Timestamp() int64 { return e.at }
-func (e *CallbackEvent) Priority() int    { return callbackPriorityBase + e.priority }
+func (e *CallbackEvent) Priority() int    { return e.priority }
 
 func (e *CallbackEvent) Execute(cs *ClusterSimulator) {
 	if e.daemon {
@@ -146,6 +160,9 @@ func (cs *ClusterSimulator) PoolRole(id InstanceID) PoolRole { return cs.poolMem
 func (cs *ClusterSimulator) Schedule(at int64, priority int, daemon bool, fn func()) func() {
 	if at < cs.clock {
 		panic(fmt.Sprintf("ClusterSimulator.Schedule: time %d is before the clock %d (INV-3)", at, cs.clock))
+	}
+	if priority != PriorityGatewayRequest && priority < PriorityGatewayBackground {
+		panic(fmt.Sprintf("ClusterSimulator.Schedule: priority %d is reserved for cluster events", priority))
 	}
 	ev := &CallbackEvent{at: at, priority: priority, daemon: daemon, fn: fn}
 	if daemon {
@@ -357,7 +374,9 @@ func (cs *ClusterSimulator) counterfactual(chosen string, scores map[string]floa
 }
 
 func (cs *ClusterSimulator) recordRejection(req *sim.Request, why Rejection, reason string) {
-	if why != RejectedRouting {
+	// Shedding is a decision to turn work away under load: an admission denial or a queue-wait
+	// expiry. A request no endpoint could serve, or one that found the queues full, is not shed.
+	if why == RejectedAdmission || why == RejectedGatewayExpired {
 		cs.recordShed(req)
 	}
 	if cs.trace != nil {

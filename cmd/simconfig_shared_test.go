@@ -22,8 +22,8 @@ func TestResolveLatencyConfig_SignatureCheck(t *testing.T) {
 // TestResolvePolicies_SignatureCheck is a compile-time guard: if resolvePolicies
 // is removed or its signature changes, this file will not compile.
 func TestResolvePolicies_SignatureCheck(t *testing.T) {
-	// Compile-time assertion: resolvePolicies(cmd) returns []sim.ScorerConfig.
-	_ = resolvePolicies
+	// Compile-time assertion: resolvePolicies(cmd) returns *sim.PolicyBundle.
+	var _ func(*cobra.Command) *sim.PolicyBundle = resolvePolicies
 }
 
 // TestNoR23CommentSyncMarkersInReplay verifies that after the refactor,
@@ -93,26 +93,13 @@ func TestBothCommands_EngineAndDeploymentKnobsAreNotFlags(t *testing.T) {
 	}
 }
 
-// TestResolvePolicies_InvalidAdmissionPolicy_Fatal verifies that resolvePolicies
-// rejects unknown admission policy names (BC-2).
-func TestResolvePolicies_InvalidAdmissionPolicy_Fatal(t *testing.T) {
-	// GIVEN an invalid admission policy name
-	// WHEN IsValidAdmissionPolicy is called (the predicate used by resolvePolicies)
-	// THEN it must return false — confirming resolvePolicies would fatalf
-	assert.False(t, sim.IsValidAdmissionPolicy("nonexistent-policy"),
-		"resolvePolicies must reject unknown admission policy names")
-}
-
 // TestResolvePolicies_PolicyFlagsRegisteredInBothCommands verifies that all flags
 // consumed by resolvePolicies are registered in both runCmd and replayCmd (BC-2).
 func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
-		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
-		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
-		"kv-cpu-blocks", "kv-offload-threshold", "snapshot-refresh-interval",
-		"admission-latency", "routing-latency", "trace-level",
+		"scheduler", "preemption-policy",
+		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"cache-signal-delay",
 	}
 	for _, name := range policyFlags {
 		assert.NotNilf(t, runCmd.Flags().Lookup(name),
@@ -148,8 +135,6 @@ func TestReplayCmd_SourceContainsNoPolicyInlineBlocks(t *testing.T) {
 	assert.NoError(t, err)
 	content := string(data)
 
-	assert.NotContains(t, content, `sim.IsValidAdmissionPolicy(`,
-		"replay.go must not inline admission policy validation; use resolvePolicies(cmd)")
 	assert.NotContains(t, content, `sim.LoadPolicyBundle(`,
 		"replay.go must not inline policy bundle loading; use resolvePolicies(cmd)")
 }
@@ -160,19 +145,14 @@ func TestReplayCmd_SourceContainsNoPolicyInlineBlocks(t *testing.T) {
 func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 	sharedFlags := []string{
 		"scenario", "scenarios", "registry", "catalog",
-		"admission-policy", "routing-policy", "scheduler", "preemption-policy",
-		"routing-scorers", "lora-scorer-weight", "token-bucket-capacity", "token-bucket-refill-rate",
-		"kv-cpu-blocks", "kv-offload-threshold", "snapshot-refresh-interval",
-		"admission-latency", "routing-latency", "trace-level",
+		"scheduler", "preemption-policy",
+		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"num-instances",
-		"long-prefill-token-threshold", "cache-signal-delay",
-		"flow-control", "saturation-detector", "dispatch-order",
-		"max-gateway-queue-depth", "queue-depth-threshold",
-		"kv-cache-util-threshold", "max-concurrency",
-		"per-band-capacity", "usage-limit-threshold",
-		"queue-shedding", "dispatch-tick-interval",
-		"in-flight-eviction",
+		"num-instances", "long-prefill-token-threshold",
+		// llm-d router inputs (cmd/router.go): replay must accept the same router
+		// configuration run does (INV-13).
+		"epp-flags", "epp-config", "epp-manifests", "pod-labels",
+		"gateway-latency", "epp-scrape-jitter",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

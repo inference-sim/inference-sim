@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
 // Epoch is the wall-clock instant that simulated time zero maps to. It is a fixed constant so
@@ -28,14 +29,14 @@ type Host interface {
 	Schedule(at int64, priority int, daemon bool, fn func()) (cancel func())
 }
 
-// Event priorities of router work at one timestamp. All of them run after the cluster's request
-// events at that timestamp (see cluster.CallbackEvent).
+// Event priorities of router work at one timestamp. The request path runs where the cluster's
+// routing decision always ran; background work runs after every cluster event at the timestamp.
 const (
-	PriorityKVEvents    = 0 // KV-event delivery
-	PriorityScrape      = 1 // metrics collection
-	PriorityTimer       = 2 // tickers, deadlines and other runtime timers
-	PriorityRequest     = 3 // request-path hand-offs between BLIS and the router
-	PriorityHousekeeper = 4 // cleanup loops
+	PriorityRequest     = cluster.PriorityGatewayRequest        // request-path hand-offs between BLIS and the router
+	PriorityKVEvents    = cluster.PriorityGatewayBackground     // KV-event delivery
+	PriorityScrape      = cluster.PriorityGatewayBackground + 1 // metrics collection
+	PriorityTimer       = cluster.PriorityGatewayBackground + 2 // tickers, deadlines and other runtime timers
+	PriorityHousekeeper = cluster.PriorityGatewayBackground + 3 // cleanup loops
 )
 
 // desRuntime is the hosting.Runtime of a router embedded in the DES. Every router action runs on
@@ -54,6 +55,8 @@ type desRuntime struct {
 	// warm makes collectors started now take their first sample immediately: endpoints that
 	// exist when the simulation starts have been scraped by a router that was already running.
 	warm bool
+	// periodics are the router's repeating loops (Every and tickers), in creation order.
+	periodics []*periodic
 }
 
 var _ hosting.Runtime = (*desRuntime)(nil)
@@ -129,18 +132,74 @@ func (rt *desRuntime) Every(ctx context.Context, name string, interval time.Dura
 	if isCollector(name) {
 		prio = PriorityScrape
 	}
-	var tick func()
-	tick = func() {
+	rt.startPeriodic(rt.host.Now()+first, step, prio, func() bool {
 		if ctx.Err() != nil {
-			return
+			return false
 		}
 		fn(ctx)
 		rt.co.settle()
-		if ctx.Err() == nil {
-			rt.host.Schedule(rt.host.Now()+step, prio, true, tick)
+		return ctx.Err() == nil
+	})
+}
+
+// periodic is a repeating daemon event: a router loop's ticks.
+type periodic struct {
+	due    int64 // time of the next tick
+	step   int64
+	prio   int
+	fire   func() bool // runs one tick; false ends the loop
+	cancel func()
+	done   bool
+}
+
+func (rt *desRuntime) startPeriodic(first, step int64, prio int, fire func() bool) *periodic {
+	p := &periodic{due: first, step: step, prio: prio, fire: fire}
+	rt.periodics = append(rt.periodics, p)
+	rt.armPeriodic(p)
+	return p
+}
+
+func (rt *desRuntime) armPeriodic(p *periodic) {
+	p.cancel = rt.host.Schedule(p.due, p.prio, true, func() {
+		if p.done {
+			return
+		}
+		if !p.fire() {
+			p.stop()
+			return
+		}
+		p.due += p.step
+		rt.armPeriodic(p)
+	})
+}
+
+func (p *periodic) stop() {
+	p.done = true
+	if p.cancel != nil {
+		p.cancel()
+	}
+}
+
+// fastForward moves every live periodic loop to its last two ticks before target, keeping each
+// loop's phase. The caller guarantees the router is idle until target: no request is anywhere in
+// the router or the engines, so the published metrics a scrape reads do not change and every
+// background loop's effect over the skipped ticks is what its last ticks produce (a scrape of
+// unchanged metrics, TTL reaping and garbage collection are idempotent over an idle period;
+// two ticks cover loops that mark on one pass and sweep on the next).
+func (rt *desRuntime) fastForward(target int64) {
+	live := rt.periodics[:0]
+	for _, p := range rt.periodics {
+		if p.done {
+			continue
+		}
+		live = append(live, p)
+		if last := p.due + (target-1-p.due)/p.step*p.step; p.due < target && last-p.step > p.due {
+			p.cancel()
+			p.due = last - p.step
+			rt.armPeriodic(p)
 		}
 	}
-	rt.host.Schedule(rt.host.Now()+first, prio, true, tick)
+	rt.periodics = live
 }
 
 func isCollector(name string) bool {

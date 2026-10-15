@@ -126,9 +126,6 @@ func setProvenanceRunVars(catalogDir, defaultsPath string) {
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -202,14 +199,12 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 	origTraceHeader, origTraceData := traceHeaderPath, traceDataPath
 	origSessionMode, origThinkMs, origThinkDist := replaySessionMode, replayThinkTimeMs, replayThinkTimeDist
 	origReplayTraceOut, origReplayMetrics := replayTraceOutput, replayMetricsPath
-	origCacheSignalDelay, origFlowControl := cacheSignalDelay, flowControlEnabled
 	origResolvedCatalog := resolvedCatalogRoot
 	defer func() {
 		orig.restore()
 		traceHeaderPath, traceDataPath = origTraceHeader, origTraceData
 		replaySessionMode, replayThinkTimeMs, replayThinkTimeDist = origSessionMode, origThinkMs, origThinkDist
 		replayTraceOutput, replayMetricsPath = origReplayTraceOut, origReplayMetrics
-		cacheSignalDelay, flowControlEnabled = origCacheSignalDelay, origFlowControl
 		resolvedCatalogRoot = origResolvedCatalog
 	}()
 
@@ -224,8 +219,6 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 	replayThinkTimeDist = ""
 	replayTraceOutput = ""
 	replayMetricsPath = metricsFile
-	cacheSignalDelay = 0
-	flowControlEnabled = false
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)

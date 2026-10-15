@@ -61,8 +61,8 @@ import (
 const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 
 // knownConfigTag is a config key a production struct really binds (cluster.DeploymentConfig's
-// flow-control switch). BC-1 uses it only to prove its tag extraction sees tag names.
-const knownConfigTag = "flow_control_enabled"
+// autoscaler tick interval). BC-1 uses it only to prove its tag extraction sees tag names.
+const knownConfigTag = "model_autoscaler_interval_us"
 
 // fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
 // bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).

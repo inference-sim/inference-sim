@@ -42,6 +42,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
 	"github.com/llm-d/llm-d-router/pkg/epp/controller"
 	"github.com/llm-d/llm-d-router/pkg/epp/datalayer"
+	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
 	fwkrc "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
 	"github.com/llm-d/llm-d-router/pkg/epp/handlers"
 	"github.com/llm-d/llm-d-router/pkg/epp/metadata"
@@ -123,7 +124,10 @@ type Gateway struct {
 	byIP      map[string]cluster.InstanceID
 	flights   map[string]*flight
 	pending   int
-	evictable bool
+	// skipIdle is whether idle periods may be fast-forwarded (see FastForwardIdle);
+	// neverSkipIdle disables it, for the test that proves it exact.
+	skipIdle      bool
+	neverSkipIdle bool
 }
 
 type endpoint struct {
@@ -214,9 +218,21 @@ func (g *Gateway) Start(host cluster.GatewayHost) error {
 		return fmt.Errorf("llm-d router: %w", err)
 	}
 	g.emb = emb
-	g.evictable = emb.RequestEvictor != nil
 	if err := validateEmbedded(emb); err != nil {
 		return err
+	}
+	if emb.RequestEvictor != nil {
+		return errors.New("the router configuration cannot be simulated faithfully: flow-control in-flight eviction " +
+			"(enableEviction) revokes dispatched requests, and the simulation does not model that revocation yet")
+	}
+	g.skipIdle = true
+	if emb.Config != nil && emb.Config.DataConfig != nil {
+		for _, src := range emb.Config.DataConfig.Sources {
+			if disp, ok := src.Plugin.(fwkdl.PollingDispatcher); ok && disp.Interval() > 0 {
+				// A source with its own cadence counts base ticks; skipping ticks would shift it.
+				g.skipIdle = false
+			}
+		}
 	}
 	g.server = handlers.NewStreamingServer(emb.Datastore, emb.Director, emb.Parsers, 0)
 	g.server.SetResponders(nil)
@@ -330,8 +346,9 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 	}
 	ep.pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: status}}
 	if ok {
-		if err := g.kube.Update(g.ctx, ep.pod); err != nil {
-			panic(fmt.Sprintf("llmd: update pod %s: %v", ep.pod.Name, err))
+		// Readiness is pod status, a subresource: a plain Update does not change it.
+		if err := g.kube.Status().Update(g.ctx, ep.pod); err != nil {
+			panic(fmt.Sprintf("llmd: update pod status %s: %v", ep.pod.Name, err))
 		}
 	} else if err := g.kube.Create(g.ctx, ep.pod); err != nil {
 		panic(fmt.Sprintf("llmd: create pod %s: %v", ep.pod.Name, err))
@@ -394,6 +411,19 @@ func (g *Gateway) servedModel(inst *cluster.InstanceSimulator) string {
 
 // Pending implements cluster.Gateway.
 func (g *Gateway) Pending() int { return g.pending }
+
+// FastForwardIdle implements cluster.IdleFastForwarder. While no request is anywhere in the router
+// or the engines, nothing the router reads changes, so its background loops (metrics collection
+// of unchanged engine state, cleanup, flow-control ticks over empty queues) have the effect over
+// an idle period that their last ticks have. The cluster calls this when the next request work
+// is at target; the router's loops then run only their last ticks before it, each keeping its
+// phase. It is skipped when a data source polls at its own cadence.
+func (g *Gateway) FastForwardIdle(target int64) {
+	if !g.skipIdle || g.neverSkipIdle || len(g.flights) > 0 || g.pending > 0 {
+		return
+	}
+	g.rt.fastForward(target)
+}
 
 // Stop implements cluster.Gateway: it ends every router loop and every coroutine.
 func (g *Gateway) Stop() {

@@ -45,9 +45,8 @@ type ParentRequest struct {
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 
-	// EncodeInstanceID is set by the encode routing stage in executeDisaggregatedRouting
-	// when an encode decider approves. Zero value (empty) = encode did not fire for this
-	// request. GAP-4, issue #1264.
+	// EncodeInstanceID is the encode endpoint the gateway chose, empty when the request was
+	// not encoded. GAP-4, issue #1264.
 	EncodeInstanceID InstanceID
 }
 

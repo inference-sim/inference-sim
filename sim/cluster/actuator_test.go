@@ -142,7 +142,7 @@ func TestDirectActuatorApply(t *testing.T) {
 
 	t.Run("scale_up_creates_live_instance", func(t *testing.T) {
 		// GIVEN: a cluster with 0 initial instances and 1 Ready node (2 GPU slots, TP=1).
-		// The snapshotProvider is initialized empty by NewClusterSimulator.
+		// Initial instances are cleared below to simulate scale-up from empty.
 		base := newTestDeploymentConfig(1)
 		base.Model = "test-model"
 		base.NodePools = []NodePoolConfig{
@@ -187,9 +187,9 @@ func TestDirectActuatorApply(t *testing.T) {
 			t.Errorf("inFlightRequests[%q] = %d ok=%v, want 0/true", id, v, ok)
 		}
 
-		// THEN: instance registered with snapshotProvider so it is routable.
-		if !cs.snapshotProvider.HasInstance(inst.ID()) {
-			t.Errorf("instance %q not registered with snapshotProvider (routing blind spot)", inst.ID())
+		// THEN: instance is visible to the gateway (GatewayHost.Instances) so it can be routed to.
+		if !containsInstance(cs.Instances(), inst.ID()) {
+			t.Errorf("instance %q not visible through Instances() (routing blind spot)", inst.ID())
 		}
 	})
 
@@ -216,8 +216,8 @@ func TestDirectActuatorApply(t *testing.T) {
 			t.Fatalf("len(cs.instances) = %d, want 2", len(cs.instances))
 		}
 		for _, inst := range cs.instances {
-			if !cs.snapshotProvider.HasInstance(inst.ID()) {
-				t.Errorf("instance %q not registered with snapshotProvider", inst.ID())
+			if !containsInstance(cs.Instances(), inst.ID()) {
+				t.Errorf("instance %q not visible through Instances()", inst.ID())
 			}
 		}
 	})
@@ -247,4 +247,14 @@ func TestDirectActuatorApply(t *testing.T) {
 			t.Errorf("len(cs.instances) = %d, want 1 (first placement should succeed)", len(cs.instances))
 		}
 	})
+}
+
+// containsInstance reports whether insts holds an instance with the given ID.
+func containsInstance(insts []*InstanceSimulator, id InstanceID) bool {
+	for _, inst := range insts {
+		if inst.ID() == id {
+			return true
+		}
+	}
+	return false
 }

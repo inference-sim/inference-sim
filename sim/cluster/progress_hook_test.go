@@ -128,19 +128,17 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 	var requests []*sim.Request
 	for i := 0; i < 40; i++ {
 		requests = append(requests, &sim.Request{
-			ID:          fmt.Sprintf("req_sheddable_%d", i),
-			ArrivalTime: int64(i) * 50_000, // spread over 2_000_000µs to trigger periodic snapshots
-			SLOClass:    "sheddable",
-			InputTokens: make([]sim.TokenID, 50),
-			// 200 decode steps keep each admitted request in flight far longer than the
-			// 50 ms inter-arrival gap, so later arrivals see load > 0 and are shed.
+			ID:           fmt.Sprintf("req_sheddable_%d", i),
+			ArrivalTime:  int64(i) * 50_000, // spread over 2_000_000µs to trigger periodic snapshots
+			SLOClass:     "sheddable",
+			InputTokens:  make([]sim.TokenID, 50),
 			OutputTokens: make([]sim.TokenID, 200),
 			State:        sim.StateQueued,
 		})
 	}
 
-	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 → sheddable is rejected
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
+	cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(requests), nil)
+	cs.SetGateway(rejectEveryOtherGateway())
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
@@ -175,7 +173,7 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 		}
 	}
 
-	// Conservation invariant: sum(ShedByTier) == RejectedRequests + GatewayQueueShed + GatewayEvicted + GatewayExpired.
+	// Conservation invariant: sum(ShedByTier) == RejectedRequests + GatewayEvicted + GatewayExpired.
 	for i, snap := range snapshots {
 		if snap.ShedByTier == nil {
 			continue
@@ -184,10 +182,10 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 		for _, count := range snap.ShedByTier {
 			sum += count
 		}
-		expected := snap.RejectedRequests + snap.GatewayQueueShed + snap.GatewayEvicted + snap.GatewayExpired
+		expected := snap.RejectedRequests + snap.GatewayEvicted + snap.GatewayExpired
 		if sum != expected {
-			t.Errorf("snapshot[%d]: sum(ShedByTier)=%d != RejectedRequests(%d)+GatewayQueueShed(%d)+GatewayEvicted(%d)+GatewayExpired(%d)=%d",
-				i, sum, snap.RejectedRequests, snap.GatewayQueueShed, snap.GatewayEvicted, snap.GatewayExpired, expected)
+			t.Errorf("snapshot[%d]: sum(ShedByTier)=%d != RejectedRequests(%d)+GatewayEvicted(%d)+GatewayExpired(%d)=%d",
+				i, sum, snap.RejectedRequests, snap.GatewayEvicted, snap.GatewayExpired, expected)
 		}
 	}
 
@@ -248,8 +246,8 @@ func TestClusterSimulator_ProgressHook_ShedByTierDeterminism(t *testing.T) {
 	}
 
 	run := func(withHook bool) map[string]int {
-		cfg := newTierShedConfig(0, 3)
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(makeRequests()), nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(makeRequests()), nil)
+		cs.SetGateway(rejectEveryOtherGateway())
 		if withHook {
 			var snapshots []sim.ProgressSnapshot
 			cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
@@ -299,4 +297,14 @@ func TestClusterSimulator_ProgressHook_Determinism(t *testing.T) {
 	if without.TotalOutputTokens != with.TotalOutputTokens {
 		t.Errorf("TotalOutputTokens differs: %d vs %d", without.TotalOutputTokens, with.TotalOutputTokens)
 	}
+}
+
+// rejectEveryOtherGateway is a fake gateway that rejects every second request it sees as an
+// admission rejection and dispatches the rest, so a run has both sheds and completions.
+func rejectEveryOtherGateway() *fakeGateway {
+	n := 0
+	return &fakeGateway{reject: func(*sim.Request) bool {
+		n++
+		return n%2 == 0
+	}}
 }

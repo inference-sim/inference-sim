@@ -28,7 +28,7 @@ const pdDPScenario = "minimax-m2.5-gb200-1p1d-dp2.yaml"
 func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
 	const n = 20
 	prefix := filepath.Join(t.TempDir(), "trace")
-	common := []string{"--scenarios", pdScenarios, "--scenario", pdDPScenario, "--pd-decider", "always",
+	common := []string{"--scenarios", pdScenarios, "--scenario", pdDPScenario, "--epp-config", pdAlwaysEPPConfig,
 		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--seed", "11",
 		"--horizon", "600000000"}
 	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", strconv.Itoa(n), "--rate", "8",

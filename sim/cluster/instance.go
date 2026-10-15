@@ -172,8 +172,7 @@ func (i *InstanceSimulator) BatchSize() int {
 }
 
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
-// instance, or nil when the LoRA subsystem is inert. Read by the snapshot provider
-// to populate RoutingSnapshot.ResidentAdapters for the lora-affinity scorer (#1469).
+// instance, or nil when the LoRA subsystem is inert.
 func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 	if i.sim == nil {
 		return nil

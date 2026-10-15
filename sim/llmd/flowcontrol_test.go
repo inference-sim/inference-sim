@@ -114,7 +114,6 @@ func assertConservation(t *testing.T, res runResult, total int) {
 	}
 }
 
-
 // boundedQueueConfig caps flow control at 10 queued requests with a 150 ms queue-wait budget,
 // so an overload both rejects at capacity and expires queued requests.
 const boundedQueueConfig = `apiVersion: llm-d.ai/v1

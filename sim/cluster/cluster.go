@@ -657,6 +657,10 @@ func (c *ClusterSimulator) Run() error {
 
 		// BC-4: Cluster events at time T processed before instance events at time T
 		// Using <= ensures cluster events drain first when timestamps are equal
+		if instanceIdx == -1 && clusterTime != math.MaxInt64 {
+			c.maybeFastForward()
+			clusterTime = c.clusterEvents[0].event.Timestamp()
+		}
 		if clusterTime <= instanceTime {
 			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
 			c.clock = entry.event.Timestamp()
@@ -838,6 +842,28 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	return nil
+}
+
+// maybeFastForward lets an idle gateway advance its background work to the next request work
+// when nothing but gateway background events comes before it.
+func (c *ClusterSimulator) maybeFastForward() {
+	ff, ok := c.gateway.(IdleFastForwarder)
+	if !ok {
+		return
+	}
+	if cb, ok := c.clusterEvents[0].event.(*CallbackEvent); !ok || !cb.daemon {
+		return
+	}
+	next := int64(math.MaxInt64)
+	for _, e := range c.clusterEvents {
+		if cb, ok := e.event.(*CallbackEvent); ok && cb.daemon {
+			continue
+		}
+		next = min(next, e.event.Timestamp())
+	}
+	if next != math.MaxInt64 && next > c.clock {
+		ff.FastForwardIdle(next)
+	}
 }
 
 // gatewayStallLimitUs bounds how long a run continues on router timers alone while the gateway

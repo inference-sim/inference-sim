@@ -10,8 +10,8 @@ import (
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
-// PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
-// Priority 4: after RoutingDecisionEvent (2), before KV transfer events.
+// PrefillRoutingEvent injects a prefill sub-request on the prefill instance the gateway chose.
+// Priority 4: before KV transfer events.
 type PrefillRoutingEvent struct {
 	time      int64
 	request   *sim.Request // Prefill sub-request

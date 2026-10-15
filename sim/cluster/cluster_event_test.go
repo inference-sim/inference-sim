@@ -63,19 +63,6 @@ func TestClusterEventQueue_Ordering(t *testing.T) {
 			},
 		},
 		{
-			name: "full pipeline ordering at same timestamp",
-			events: []eventSpec{
-				{timestamp: 100, priority: 2, seqID: 2}, // Routing
-				{timestamp: 100, priority: 1, seqID: 1}, // Admission
-				{timestamp: 100, priority: 0, seqID: 0}, // Arrival
-			},
-			expected: []eventSpec{
-				{timestamp: 100, priority: 0, seqID: 0}, // Arrival first
-				{timestamp: 100, priority: 1, seqID: 1}, // Admission second
-				{timestamp: 100, priority: 2, seqID: 2}, // Routing last
-			},
-		},
-		{
 			name: "mixed timestamps and priorities",
 			events: []eventSpec{
 				{timestamp: 200, priority: 0, seqID: 3},
@@ -100,15 +87,7 @@ func TestClusterEventQueue_Ordering(t *testing.T) {
 			heap.Init(q)
 
 			for _, e := range tc.events {
-				var event ClusterEvent
-				switch e.priority {
-				case 0:
-					event = &ClusterArrivalEvent{time: e.timestamp, request: &sim.Request{}}
-				case 1:
-					event = &AdmissionDecisionEvent{time: e.timestamp, request: &sim.Request{}}
-				case 2:
-					event = &RoutingDecisionEvent{time: e.timestamp, request: &sim.Request{}}
-				}
+				event := &fixedPriorityEvent{at: e.timestamp, priority: e.priority}
 				heap.Push(q, clusterEventEntry{event: event, seqID: e.seqID})
 			}
 
@@ -140,8 +119,13 @@ func TestClusterEventPriorities(t *testing.T) {
 		wantPrio int
 	}{
 		{"ClusterArrivalEvent", &ClusterArrivalEvent{time: 0}, 0},
-		{"AdmissionDecisionEvent", &AdmissionDecisionEvent{time: 0}, 1},
-		{"RoutingDecisionEvent", &RoutingDecisionEvent{time: 0}, 2},
+		{"PrefillRoutingEvent", &PrefillRoutingEvent{time: 0}, 4},
+		{"KVTransferStartedEvent", &KVTransferStartedEvent{}, 5},
+		{"KVTransferCompletedEvent", &KVTransferCompletedEvent{}, 6},
+		{"ScalingTickEvent", &ScalingTickEvent{}, 8},
+		{"ScaleActuationEvent", &ScaleActuationEvent{}, 9},
+		{"CallbackEvent (request path)", &CallbackEvent{priority: PriorityGatewayRequest}, 2},
+		{"CallbackEvent (background)", &CallbackEvent{priority: PriorityGatewayBackground + 1}, 11},
 	}
 
 	for _, tc := range tests {
@@ -247,3 +231,14 @@ func TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
 		t.Errorf("LoadingSnapshots: got %d, want 1 (only Loading instance)", len(state.LoadingSnapshots))
 	}
 }
+
+// fixedPriorityEvent is a no-op ClusterEvent with a chosen timestamp and priority, for
+// exercising the queue's (timestamp, priority, seqID) ordering independent of event types.
+type fixedPriorityEvent struct {
+	at       int64
+	priority int
+}
+
+func (e *fixedPriorityEvent) Timestamp() int64            { return e.at }
+func (e *fixedPriorityEvent) Priority() int               { return e.priority }
+func (e *fixedPriorityEvent) Execute(_ *ClusterSimulator) {}
