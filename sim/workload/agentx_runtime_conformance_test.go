@@ -149,19 +149,23 @@ func decodePrompt(t agxTB, in *agxInstance, toks []sim.TokenID) (canon string, m
 			lastEnd++
 			continue
 		}
+		// Of the candidates whose next tokens (up to 3, within the block) all match, take the
+		// one that verifies the most: a candidate at a block's last offsets has little or no
+		// lookahead, so a 30-bit collision there would otherwise win over the true block's
+		// first token (seen on the full corpus at C=128).
 		var hi [2]int64
-		ok := false
+		ok, best := false, int64(-1)
 		for _, cand := range ix[tok] {
-			match := true
+			match, verified := true, int64(0)
 			for j := int64(1); j < 4 && i+int(j) < len(body) && cand[1]+j < agxBlockSize; j++ {
 				if body[i+int(j)] != agxBlockToken(in.trace, cand[0], int32(cand[1]+j)) {
 					match = false
 					break
 				}
+				verified++
 			}
-			if match {
-				hi, ok = cand, true
-				break
+			if match && verified > best {
+				hi, ok, best = cand, true, verified
 			}
 		}
 		if !ok {
