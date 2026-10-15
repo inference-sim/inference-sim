@@ -113,7 +113,8 @@ kv_offload:
   cpu_bytes_to_use: 17179869184     # required when the block is present
   block_size: 16                    # optional; default = GPU block size (mutually
                                     #   exclusive with blocks_per_chunk)
-  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
+  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1); > 1 coalesces
+                                    #   GPU blocks into offload chunks (INV-K6)
   eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
   offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
                                     #   full decode blocks are offloaded and reused too (see below)
@@ -147,6 +148,15 @@ sizes the tiers by its own bytes per block and prices them with its own kernel. 
 `offload` block is the deployment's tier configuration (#1910): its `cpu_dram` tier is the CPU
 tier, and `--kv-offload-config` may only restate it (a disagreement is refused, naming the
 fields). See [Latency models](latency-models.md#kv-offload) for the mapping and what it refuses.
+
+**Chunks (`blocks_per_chunk`, INV-K6).** The tiers hold vLLM's offload chunks: `blocks_per_chunk` GPU
+blocks keyed by their last block's hash. The CPU tier holds `cpu_bytes_to_use // (bytes per block ×
+blocks_per_chunk)` chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk.
+A load starts at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when
+it is shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk
+is refused at startup. blis-schemas' `offload` block cannot yet state the width (the proposed field
+is `offload.blocks_per_chunk`), so `--kv-offload-config` supplies it beside a scenario block. Every
+other field must still agree.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config

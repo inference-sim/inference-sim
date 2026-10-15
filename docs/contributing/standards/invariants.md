@@ -72,6 +72,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K3](#inv-k3-a-sequences-bounded-state-is-held-on-demand-and-gated-at-admission) A sequence's bounded state is held on demand and gated at admission | Subsystem | KV cache |
 | [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
 | [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
+| [INV-K6](#inv-k6-the-offload-tiers-hold-whole-chunks) The offload tiers hold whole chunks | Subsystem | KV cache / offload |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -314,6 +315,26 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 **Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); `sim/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); `cluster.NewInstanceSimulator` derives the reservation from the `SpeculativeConfig` (`SpeculativeConfig.KV`).
 
 **Verification:** `TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead` (rapid), `TestSpeculativeSlots_TokensFillTheReservedBlocksFirst`, `TestSpeculativeSlotsStopAtMaxModelLen`, and `TestEveryRunningRequestHoldsKVForItsComputedTokens` (rapid: the exact hold after every allocation under every store with state, speculation, max_model_len and preemption at once) (`sim/kv`); `TestSpecDecode_ADecodeDebitsItsVerifyWidthFromTheTokenBudget`, `TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth`, `TestSpecDecode_TheSimulatorSchedulesTheVerifyWidth`, `TestSpecDecode_LookaheadReservationPreemptsEarlierUnderKVPressure`, `TestSpecDecode_ReservationPropertiesAroundSaturation` (rapid; tokens conserved across K), `TestSpecDecode_AcceptanceLengthOneChangesPriceNotProgress`, `TestLookaheadTokensFollowVLLMsNumLookaheadTokens`, `TestSpecDecode_ParallelDraftSlotsDebitTheInputBudget`, `TestDraftSlotsFollowVLLMsMaxNumNewSlotsForDrafting`, `TestSpecDecode_TheSimulatorChargesTheDraftersSlots` (`sim`); `TestInstanceKVReservesTheSpeculativeConfigsSlots` (`sim/cluster`).
+
+#### INV-K6: The Offload Tiers Hold Whole Chunks
+
+**Statement:** With `blocks_per_chunk = b`, the offload tiers behave as follows.
+- *Keys.* Each tier entry is one chunk of `b` GPU blocks, keyed by the hash of its last block. The chunk keyspace is therefore a subset of the GPU block hashes.
+- *Capacity.* The CPU tier holds at most `cpu_bytes_to_use // (per_block_bytes × b)` chunks and evicts whole chunks in LRU order.
+- *Transfers.* Every tier transfer (cascade write, promotion read) moves `b × per_block_bytes`.
+- *Loads.* A load (CPU→GPU reload, or the reloadable boundary batch formation credits) starts at the chunk containing the GPU-cached boundary. It ends on a chunk boundary, spans at least one chunk past the boundary or is empty, and the pure query and the commit reach the same boundary.
+- *Stores.* A store offers only whole chunks of the offloadable (prompt-clamped) range.
+- *b = 1* is block-granular offload, byte-identical to the pre-chunk mechanism.
+
+vLLM v0.31.0 sources:
+- `offloading/scheduler.py:418-436` (`update_offload_keys`);
+- `:448-479` (`storable_chunks`);
+- `:818-821`, `:841`, `:888-891` (lookup start and "less than a chunk" skip);
+- `kv_offload/cpu/spec.py:108-121` (chunk sizing).
+
+**Enforced:** `sim/kv/offload_chunks.go` (`tailOf`, `cpuRun`, `loadableBlocks`) through `consultAndReload`, `ReloadablePrefixEnd`, `classifyFetch`, `MirrorToCPU` and the CPU-tier prefix counts; `KVOffloadConfig.CPUChunkCapacity` / `CheckFitsOneChunk` (refused at the CLI, run, replay and per P/D pool).
+
+**Verification:** `TestOffloadChunks_LoadsAreWholeChunksAndTheQueryIsTheCommit` (rapid), `TestOffloadChunks_AlignedPromptReloadsTheSameAtEveryWidth` (metamorphic), `TestOffloadChunks_StoreWholeChunksKeyedByTheirLastBlock`, `TestOffloadChunks_ReloadWholeChunksAndNeverLessThanOne`, `TestOffloadChunks_LRUEvictsWholeChunks`, `TestOffloadChunks_TransfersMoveWholeChunks`, `TestNewOffloadCache_Validation` (`sim/kv`); `TestKVOffloadConfig_CPUTierHoldsWholeChunks` (`sim`); `TestRunCmd_ScenarioOffloadBlock` (`cmd`: `blocks_per_chunk 4` beside a scenario block, run and replay). All existing offload tests run at `b = 1`.
 
 ### Batch formation
 

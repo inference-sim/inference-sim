@@ -162,6 +162,23 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if err != nil || both != scen {
 				t.Errorf("an agreeing flag beside the scenario block must change nothing: err=%v\n%s", err, lastLines(stderr, 3))
 			}
+			// The scenario cannot state blocks_per_chunk (no blis-schemas field), so a flag beside
+			// the block supplies it, exactly as the flag alone does; it runs and replays.
+			chunked := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1099511627776\n  blocks_per_chunk: 4\n")
+			c4, stderr, err := run(withBlock, filepath.Join(tmp, "c4"), "--kv-offload-config", chunked)
+			if err != nil {
+				t.Fatalf("blocks_per_chunk 4 beside the scenario block: %v\n%s", err, lastLines(stderr, 3))
+			}
+			if h := readFile(t, filepath.Join(tmp, "c4.yaml")); !strings.Contains(h, "blocks_per_chunk: 4") {
+				t.Errorf("the trace header does not record blocks_per_chunk 4:\n%s", h)
+			}
+			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || alone != c4 {
+				t.Errorf("blocks_per_chunk 4 from the flag alone differs from the flag beside the scenario block: err=%v", err)
+			}
+			if rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "c4.yaml"),
+				"--trace-data", filepath.Join(tmp, "c4.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario, "--kv-offload-config", chunked)...); err != nil || rep != c4 {
+				t.Errorf("the blocks_per_chunk 4 run's replay differs: err=%v\n%s", err, lastLines(stderr, 3))
+			}
 			if _, stderr, err := run(withBlock, filepath.Join(tmp, "bad"), "--kv-offload-config", other); err == nil ||
 				!strings.Contains(stderr, "disagrees with scenario") || !strings.Contains(stderr, "CPUBytesToUse") {
 				t.Errorf("a disagreeing flag must be refused naming the field: err=%v\n%s", err, lastLines(stderr, 3))

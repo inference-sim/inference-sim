@@ -84,12 +84,8 @@ type OffloadCache struct {
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
-	// blocksPerChunk is vLLM blocks_per_chunk (== 1 at H1; NewOffloadCache panics otherwise).
-	// It lets the offloadable-token floor-divide read as vLLM's tokens_per_chunk =
-	// bs*blocksPerChunk rather than hard-coding the block size (mechanism fidelity). It does
-	// NOT by itself make the chain correct at blocks_per_chunk > 1 — the read side
-	// (consultAndReload) is block-granular and chunk keys are a disjoint keyspace; enabling
-	// > 1 is a separate follow-up.
+	// blocksPerChunk is vLLM blocks_per_chunk: the tiers hold, look up, evict and move whole
+	// chunks of this many GPU blocks, keyed by their last block's hash (offload_chunks.go).
 	blocksPerChunk int64
 	clock          int64
 
@@ -111,8 +107,8 @@ type OffloadCache struct {
 
 // NewOffloadCache builds the tier chain from a resolved, enabled KVOffloadConfig.
 // It panics on a config the mechanism cannot honor — the derived PerBlockBytes
-// (required, > 0), the H1 restrictions (BlocksPerChunk == 1, eviction_policy
-// "lru"), and a CPU budget too small for one block. Panic (not logrus.Fatalf) is
+// (required, > 0), a non-positive BlocksPerChunk, eviction_policy other than
+// "lru", and a CPU budget too small for one chunk. Panic (not logrus.Fatalf) is
 // the library convention here (R6); the CLI validates first so these are
 // defense-in-depth invariants.
 func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...OffloadOption) *OffloadCache {
@@ -125,15 +121,16 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 	if cfg.PerBlockBytes <= 0 {
 		panic(fmt.Sprintf("NewOffloadCache: PerBlockBytes must be > 0 (derived from the model KV size), got %d", cfg.PerBlockBytes))
 	}
-	if cfg.BlocksPerChunk != 1 {
-		panic(fmt.Sprintf("NewOffloadCache: H1 supports blocks_per_chunk == 1 only (block-granular offload); blocks_per_chunk > 1 (chunk coalescing) is a follow-up, got %d", cfg.BlocksPerChunk))
+	if cfg.BlocksPerChunk <= 0 {
+		panic(fmt.Sprintf("NewOffloadCache: blocks_per_chunk must be > 0, got %d", cfg.BlocksPerChunk))
 	}
 	if cfg.EvictionPolicy != "lru" {
 		panic(fmt.Sprintf("NewOffloadCache: H1 supports eviction_policy \"lru\" only; %q (e.g. arc) is a follow-up", cfg.EvictionPolicy))
 	}
-	capacity := cfg.CPUBytesToUse / cfg.PerBlockBytes
+	capacity := cfg.CPUChunkCapacity()
 	if capacity < 1 {
-		panic(fmt.Sprintf("NewOffloadCache: cpu_bytes_to_use (%d) is smaller than one block (%d bytes); no CPU offload block fits", cfg.CPUBytesToUse, cfg.PerBlockBytes))
+		panic(fmt.Sprintf("NewOffloadCache: cpu_bytes_to_use (%d) is smaller than one offload chunk (%d blocks of %d bytes); no CPU offload chunk fits",
+			cfg.CPUBytesToUse, cfg.BlocksPerChunk, cfg.PerBlockBytes))
 	}
 
 	oc := &OffloadCache{
@@ -246,11 +243,7 @@ func (o *OffloadCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (
 	}
 	bs := o.gpu.BlockSize()
 	tokens := req.FullInputTokens()
-	n := util.Len64(tokens) / bs
 	startBlock := startIndex / bs
-	if startBlock >= n {
-		return startIndex, false
-	}
 	// Seed the hash chain just past the GPU-cached prefix so only the uncached tail is
 	// keyed (hot-path parity with consultAndReload). startIndex is block-aligned (a GPU
 	// prefix boundary), so startBlock*bs == startIndex.
@@ -260,20 +253,14 @@ func (o *OffloadCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (
 			prevHash = o.gpu.Blocks[cached[startBlock-1]].Hash
 		}
 	}
-	tailKeys := kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:], int(bs))
-	reloadable := int64(0)
-	for i := startBlock; i < n; i++ {
-		key := tailKeys[i-startBlock]
-		if _, inGPU := o.gpu.HashToBlock[string(key)]; inGPU {
-			reloadable++ // already GPU-resident: part of the same-step-available prefix
-			continue
-		}
-		if o.cpu.lookup(key) != cpuHit {
-			break // cpuHitPending / cpuMiss (secondary or genuine miss): not same-step reloadable
-		}
-		reloadable++
+	tail, ok := o.tailOf(tokens, startBlock, prevHash)
+	if !ok {
+		return startIndex, false
 	}
-	reloadableEnd := startIndex + reloadable*bs
+	// Whole chunks, each GPU-resident or CPU-readable, up to the first pending or missing
+	// one (a secondary-only chunk defers via H3); nothing when that is under one chunk.
+	chunks, _ := o.cpuRun(tail)
+	reloadableEnd := startIndex + tail.loadableBlocks(chunks)*bs
 	return reloadableEnd, reloadableEnd > startIndex
 }
 
@@ -499,68 +486,70 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 	return ok
 }
 
-// consultAndReload walks the prefix blocks from startBlock. It reloads every
-// CPU-resident (ready) block onto the GPU free list (returning true if any
-// reload happened), stops at a HIT_PENDING block (a promotion already in flight),
-// and — on the first CPU-miss whose block is secondary-resident — initiates one
-// async promotion of the contiguous same-tier run and stops (the run is not
-// available to this request). It is the offload analogue of TieredKVCache's
-// reloadPrefixFromCPU: block-granular (BlocksPerChunk==1), keyed through
-// sim/internal/kvkey so the CPU/secondary keyspace is byte-identical to the GPU
-// block hashes (BC-K1).
+// consultAndReload walks the uncached tail from startBlock in offload chunks
+// (offload_chunks.go). It reloads every CPU-readable chunk's missing blocks onto the GPU
+// free list (returning true if any reload happened), stops at a HIT_PENDING chunk (a
+// promotion already in flight), and -- on the first CPU-miss chunk that is
+// secondary-resident -- initiates one async promotion of the contiguous same-tier run and
+// stops (the run is not available to this request). A run shorter than one chunk past
+// startBlock is not loaded, as vLLM loads nothing then. It is the offload analogue of
+// TieredKVCache's reloadPrefixFromCPU, keyed through sim/internal/kvkey so the
+// CPU/secondary keyspace is a subset of the GPU block hashes (BC-K1).
 func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, prevHash string) bool {
-	bs := o.gpu.BlockSize()
-	n := util.Len64(tokens) / bs
-	if startBlock >= n {
+	tail, ok := o.tailOf(tokens, startBlock, prevHash)
+	if !ok {
 		return false
 	}
-	// Key ONLY the uncached tail [startBlock, n), seeded by prevHash, so the
-	// already-cached prefix is never re-hashed (hot-path parity). tailKeys[j] is the
-	// key for block startBlock+j, byte-identical to that GPU block hash (BC-K1).
-	tailKeys := kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:], int(bs))
-	maxReloads := o.gpu.countFreeBlocks() // never re-pop the same free block
+	bs := o.gpu.BlockSize()
+	chunks, stop := o.cpuRun(tail)
 	reloaded := false
-	var reloadCount int64
-	for i := startBlock; i < n; i++ {
-		key := tailKeys[i-startBlock]
-		h := string(key)
-		if _, inGPU := o.gpu.HashToBlock[h]; inGPU {
-			continue // already on GPU
-		}
-		switch o.cpu.lookup(key) {
-		case cpuHit:
-			if reloadCount >= maxReloads {
-				return reloaded
+	if tail.loadableBlocks(chunks) > 0 {
+		maxReloads := o.gpu.countFreeBlocks() // never re-pop the same free block
+		var reloadCount int64
+		for c := tail.firstChunk; c < tail.firstChunk+chunks; c++ {
+			lo, hi := tail.blocks(c)
+			var missing []int64
+			for i := lo; i < hi; i++ {
+				if _, inGPU := o.gpu.HashToBlock[string(tail.blockKey(i))]; !inGPU {
+					missing = append(missing, i)
+				}
 			}
-			gpuBlk := o.gpu.popFreeBlock()
-			if gpuBlk == nil {
-				return reloaded
+			if len(missing) == 0 {
+				continue // already on GPU
 			}
-			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
-			o.gpu.dropHash(gpuBlk)
-			start := i * bs
-			gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
-			gpuBlk.Hash = h
-			gpuBlk.RefCount = 0
-			gpuBlk.InUse = false
-			o.gpu.HashToBlock[h] = gpuBlk.ID
-			o.gpu.appendToFreeList(gpuBlk)
-			o.cpu.touchKey(key) // block is hot: refresh LRU recency
-			o.reloadCount++
+			if reloadCount+int64(len(missing)) > maxReloads {
+				return reloaded // a chunk loads whole or not at all
+			}
+			for _, i := range missing {
+				gpuBlk := o.gpu.popFreeBlock()
+				if gpuBlk == nil {
+					return reloaded
+				}
+				// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
+				o.gpu.dropHash(gpuBlk)
+				h := string(tail.blockKey(i))
+				start := i * bs
+				gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
+				gpuBlk.Hash = h
+				gpuBlk.RefCount = 0
+				gpuBlk.InUse = false
+				o.gpu.HashToBlock[h] = gpuBlk.ID
+				o.gpu.appendToFreeList(gpuBlk)
+				o.reloadCount++
+				reloadCount++
+			}
+			o.cpu.touchKey(tail.key(c)) // chunk is hot: refresh LRU recency
 			reloaded = true
-			reloadCount++
-		case cpuHitPending:
-			return reloaded // promotion in flight for this block; stop (hierarchical)
-		case cpuMiss:
-			o.maybePromoteFromSecondary(tailKeys, int(i-startBlock))
-			return reloaded // stop after initiating (or refusing) one promotion
 		}
+	}
+	if stop == cpuMiss {
+		o.maybePromoteFromSecondary(tail, tail.firstChunk+chunks)
 	}
 	return reloaded
 }
 
 // maybePromoteFromSecondary initiates one async promotion (secondary→CPU) for the
-// contiguous run of not-yet-CPU-resident blocks, starting at tailKeys[localIdx],
+// contiguous run of not-yet-CPU-resident chunks, starting at chunk c,
 // that are all held by the SAME first-matching secondary tier. It allocates
 // NOT-READY CPU slots (prepareStore, all-or-nothing under the BC-C5 evictable
 // gate) and submits a single Read job for the run. If the gate refuses the run the
@@ -572,40 +561,39 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 // the promotion populates CPU for a later lookup). NEW prefill admissions instead
 // DEFER (H3, #1591): see classifyFetch/registerDeferral, which reuse the same
 // gatherSecondaryRun + firePromotionRun helpers.
-func (o *OffloadCache) maybePromoteFromSecondary(tailKeys []kvkey.BlockKey, localIdx int) {
-	run, tier, ok := o.gatherSecondaryRun(tailKeys, localIdx)
+func (o *OffloadCache) maybePromoteFromSecondary(tail offloadTail, c int64) {
+	run, tier, ok := o.gatherSecondaryRun(tail, c)
 	if !ok {
 		return // no station/tiers, or a genuine miss (absent from every secondary tier)
 	}
 	o.firePromotionRun(run, tier)
 }
 
-// gatherSecondaryRun returns the contiguous run of not-yet-CPU-resident blocks
-// starting at tailKeys[localIdx] that are all held by the SAME first-matching
-// secondary tier, plus that tier index. ok is false when there is no station/tier
-// or the starting block is absent from every secondary tier (a genuine miss). It is
-// read-only (no allocation, no submission) so both the H1 promote path and the H3
-// deferral classifier can use it.
-func (o *OffloadCache) gatherSecondaryRun(tailKeys []kvkey.BlockKey, localIdx int) ([]kvkey.BlockKey, int, bool) {
-	if o.station == nil || len(o.secondary) == 0 {
+// gatherSecondaryRun returns the keys of the contiguous run of not-yet-CPU-resident chunks
+// starting at chunk c that are all held by the SAME first-matching secondary tier, plus
+// that tier index. ok is false when there is no station/tier or chunk c is absent from
+// every secondary tier (a genuine miss). It is read-only (no allocation, no submission) so
+// both the H1 promote path and the H3 deferral classifier can use it.
+func (o *OffloadCache) gatherSecondaryRun(tail offloadTail, c int64) ([]kvkey.BlockKey, int, bool) {
+	if o.station == nil || len(o.secondary) == 0 || c >= tail.endChunk {
 		return nil, 0, false
 	}
-	tier, ok := lookupSecondary(o.secondary, tailKeys[localIdx])
+	tier, ok := lookupSecondary(o.secondary, tail.key(c))
 	if !ok {
 		return nil, 0, false // genuine miss (absent from every secondary tier)
 	}
-	run := []kvkey.BlockKey{tailKeys[localIdx]}
-	for j := localIdx + 1; j < len(tailKeys); j++ {
-		if _, inGPU := o.gpu.HashToBlock[string(tailKeys[j])]; inGPU {
+	run := []kvkey.BlockKey{tail.key(c)}
+	for j := c + 1; j < tail.endChunk; j++ {
+		if o.onGPU(tail, j) {
 			break
 		}
-		if o.cpu.lookup(tailKeys[j]) != cpuMiss {
+		if o.cpu.lookup(tail.key(j)) != cpuMiss {
 			break // already CPU-resident or a promotion in flight
 		}
-		if tj, okj := lookupSecondary(o.secondary, tailKeys[j]); !okj || tj != tier {
+		if tj, okj := lookupSecondary(o.secondary, tail.key(j)); !okj || tj != tier {
 			break
 		}
-		run = append(run, tailKeys[j])
+		run = append(run, tail.key(j))
 	}
 	return run, tier, true
 }
@@ -625,7 +613,7 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 	id, accepted := o.station.Submit(kvtransfer.TransferJob{
 		Tier:         tier,
 		Direction:    kvtransfer.Read,
-		Bytes:        int64(granted) * o.perBlockBytes,
+		Bytes:        int64(granted) * o.chunkBytes(),
 		SubmitTick:   o.clock,
 		JitterFactor: o.drawJitterFactor(tier),
 	})
@@ -665,6 +653,7 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 // perturb GPU-tier behavior. Uses the stored clock (SetClock ran earlier this step).
 func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 	bs := o.gpu.BlockSize()
+	bpc := o.blocksPerChunk
 	for _, req := range batch {
 		blockIDs, ok := o.gpu.RequestMap[req.ID]
 		if !ok {
@@ -672,21 +661,19 @@ func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 		}
 		// Offloadable-token clamp (single decision point). The chunk stride derives from
 		// the actual gpu.BlockSize(), NOT cfg.BlockSize (they can differ in test fixtures).
-		tokensPerChunk := bs * o.blocksPerChunk
 		numOffloadableTokens := int64(len(blockIDs)) * bs
 		if o.offloadPromptOnly {
 			numOffloadableTokens = min(numOffloadableTokens, req.InputLen()) // vLLM prompt-only clamp
 		}
-		maxOffloadBlocks := (numOffloadableTokens / tokensPerChunk) * o.blocksPerChunk
-		for i, blockID := range blockIDs {
-			if int64(i) >= maxOffloadBlocks {
-				break // outside the offloadable chunk range (prompt-only tail / decode)
+		storableChunks := numOffloadableTokens / (bs * bpc) // storable_chunks, whole chunks only
+	chunks:
+		for c := int64(0); c < storableChunks; c++ {
+			for i := c * bpc; i < (c+1)*bpc; i++ {
+				if blk := o.gpu.Blocks[blockIDs[i]]; blk.Hash == "" || util.Len64(blk.Tokens) < bs {
+					continue chunks // only full, hashed chunks are offloadable
+				}
 			}
-			blk := o.gpu.Blocks[blockID]
-			if blk.Hash == "" || util.Len64(blk.Tokens) < bs {
-				continue // only full, hashed blocks are offloadable
-			}
-			key := kvkey.BlockKey(blk.Hash)
+			key := kvkey.BlockKey(o.gpu.Blocks[blockIDs[(c+1)*bpc-1]].Hash) // the last block's hash
 			if o.cpu.lookup(key) != cpuMiss {
 				o.cpu.touchKey(key) // already resident: refresh recency, no re-cascade
 				continue
@@ -714,7 +701,7 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 		id, accepted := o.station.Submit(kvtransfer.TransferJob{
 			Tier:         tier,
 			Direction:    kvtransfer.Write,
-			Bytes:        o.perBlockBytes,
+			Bytes:        o.chunkBytes(),
 			SubmitTick:   o.clock,
 			JitterFactor: o.drawJitterFactor(tier),
 		})
@@ -751,35 +738,34 @@ func (o *OffloadCache) CPUTierPrefixBlockCountAt(tokens []sim.TokenID, at int64)
 		panic("OffloadCache.CPUTierPrefixBlockCountAt: EnableCPUTierHistory not called")
 	}
 	j.prune(at)
-	bs := int(o.gpu.BlockSize())
-	n := len(tokens) / bs
-	prev := ""
-	count := 0
-	for i := 0; i < n; i++ {
-		prev = hash.HashBlock(prev, tokens[i*bs:(i+1)*bs])
-		if !j.readableAtTime(kvkey.BlockKey(prev), at) {
-			break
-		}
-		count++
-	}
-	return count
+	return o.cpuPrefixBlocks(tokens, func(k kvkey.BlockKey) bool { return j.readableAtTime(k, at) })
 }
 
 // CPUTierPrefixBlockCount returns the number of leading full blocks of tokens that
-// are readable in the CPU offload tier (cpuHit), stopping at the first block that
-// is not. A pure query: no tier state or recency changes. It is the CPU-tier
+// are readable in the CPU offload tier (cpuHit), in whole chunks, stopping at the first
+// chunk that is not. A pure query: no tier state or recency changes. It is the CPU-tier
 // analogue of GetCachedBlocks for the router's CPU-tier prefix view (#1912).
 func (o *OffloadCache) CPUTierPrefixBlockCount(tokens []sim.TokenID) int {
+	return o.cpuPrefixBlocks(tokens, func(k kvkey.BlockKey) bool { return o.cpu.lookup(k) == cpuHit })
+}
+
+// cpuPrefixBlocks counts the leading blocks of tokens in whole chunks whose key readable
+// accepts.
+func (o *OffloadCache) cpuPrefixBlocks(tokens []sim.TokenID, readable func(kvkey.BlockKey) bool) int {
 	bs := int(o.gpu.BlockSize())
-	n := len(tokens) / bs
+	bpc := int(o.blocksPerChunk)
+	n := len(tokens) / bs / bpc * bpc
 	prev := ""
 	count := 0
 	for i := 0; i < n; i++ {
 		prev = hash.HashBlock(prev, tokens[i*bs:(i+1)*bs])
-		if o.cpu.lookup(kvkey.BlockKey(prev)) != cpuHit {
+		if (i+1)%bpc != 0 {
+			continue
+		}
+		if !readable(kvkey.BlockKey(prev)) {
 			break
 		}
-		count++
+		count += bpc
 	}
 	return count
 }

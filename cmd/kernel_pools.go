@@ -476,9 +476,10 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 			"so state pd_transfer.connector: MultiConnector", kernelScenario, p.connector)
 	}
 	for _, c := range []struct {
-		m   *kernelmodel.Model
-		dst *cluster.PoolOverrides
-	}{{p.prefill, prefill}, {p.decode, decode}} {
+		role string
+		m    *kernelmodel.Model
+		dst  *cluster.PoolOverrides
+	}{{"prefill", p.prefill, prefill}, {"decode", p.decode, decode}} {
 		pool := cfg
 		// Each pool gets its own tier slice: priceOffload installs a per-pool ServiceTime.
 		pool.Tiers = append([]sim.KVOffloadTier(nil), cfg.Tiers...)
@@ -486,6 +487,9 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 		// hold different bytes per block, and the tiers' block capacity and job sizes follow.
 		if pool.IsEnabled() {
 			pool.PerBlockBytes = c.m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+			if err := pool.CheckFitsOneChunk(); err != nil {
+				logrus.Fatalf("%s pool: %v", c.role, err)
+			}
 		}
 		ticks := priceOffload(c.m, &pool)
 		c.dst.KVOffload = &pool

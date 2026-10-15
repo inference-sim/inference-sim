@@ -365,7 +365,10 @@ Example:
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
 		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
-			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, kvOffloadCfg.BlockSize)
+			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
+			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
+				logrus.Fatalf("%v", err)
+			}
 		}
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and

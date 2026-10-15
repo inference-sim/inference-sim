@@ -247,3 +247,23 @@ func validatePositiveFinite(v float64, index int, field string) error {
 	}
 	return nil
 }
+
+// CPUChunkCapacity is the CPU tier's size in offload chunks, as vLLM's CPU spec sizes it:
+// cpu_bytes_to_use // (kv_bytes_per_block * blocks_per_chunk)
+// (vllm/v1/kv_offload/cpu/spec.py:108-121 at v0.31.0). 0 until PerBlockBytes is resolved.
+func (c KVOffloadConfig) CPUChunkCapacity() int64 {
+	if c.PerBlockBytes <= 0 || c.BlocksPerChunk <= 0 {
+		return 0
+	}
+	return c.CPUBytesToUse / (c.PerBlockBytes * c.BlocksPerChunk)
+}
+
+// CheckFitsOneChunk refuses an enabled config, PerBlockBytes resolved, whose CPU budget holds
+// no whole chunk: vLLM would size a zero-chunk tier. A non-positive width is Validate's to refuse.
+func (c KVOffloadConfig) CheckFitsOneChunk() error {
+	if !c.Enabled || c.BlocksPerChunk <= 0 || c.PerBlockBytes <= 0 || c.CPUChunkCapacity() >= 1 {
+		return nil
+	}
+	return fmt.Errorf("kv_offload: cpu_bytes_to_use (%d) is smaller than one offload chunk "+
+		"(blocks_per_chunk %d x %d bytes per block)", c.CPUBytesToUse, c.BlocksPerChunk, c.PerBlockBytes)
+}
