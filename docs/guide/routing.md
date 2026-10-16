@@ -268,7 +268,9 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 
 Also outside the model: conditional decode (`Prefer: if-available`), and the P/D sidecar's
 MoRIIO parallel prefill-and-decode dispatch (BLIS always runs prefill, then the KV transfer,
-then decode).
+then decode). BLIS hosts the router's Endpoint Picker only: llm-d's coordinator and its E/P/D
+`pipeline:` (multimodal encode, then prefill, then decode, as in llm-d's coordinator
+disaggregation guide) are not simulated, so E/P/D parity is the EPP's decisions alone.
 
 ## From BLIS's former routing features
 
