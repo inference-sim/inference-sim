@@ -637,7 +637,7 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 
 	t.Run("lifecycle/a loading delay turns away what arrives before an instance is ready", func(t *testing.T) {
 		t.Parallel()
-		pools := "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n    gpu_memory_gib: 141\n" +
+		pools := "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n    gpu_memory_gib: 139.80072021\n" +
 			"    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"
 		base := with(colocated(2), burst(60, 10, 1000, 100)...)
 		warm := capRun(t, runArgs(base, "--policy-config", capFile(t, "warm.yaml", pools))...)
@@ -841,7 +841,7 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 	t.Run("autoscaler with node pools: runs and conserves (its analyzer is inert, #1916)", func(t *testing.T) {
 		t.Parallel()
 		bundle := capFile(t, "autoscale.yaml", "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n"+
-			"    gpu_memory_gib: 141\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
+			"    gpu_memory_gib: 139.80072021\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
 			"autoscaler:\n  interval_us: 1000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
 			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
 		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)

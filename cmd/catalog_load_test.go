@@ -271,7 +271,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 		{
 			name: "hardware entry omits a required chip fact",
 			mutate: func(t *testing.T, root string) {
-				body := strings.Replace(validHardwareEntry, "MemoryGiB: 80.0\n", "", 1)
+				body := strings.Replace(validHardwareEntry, "MemoryGiB: 79.1895752\n", "", 1)
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), body)
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),

@@ -96,7 +96,7 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 	}
 	// The accepted neighbours: the plain fixture, and a node pool of the scenario's chip at
 	// the catalog chip's memory.
-	for _, args := range [][]string{run(plain), run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "141"))} {
+	for _, args := range [][]string{run(plain), run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "139.80072021"))} {
 		if out, stderr, err := runKernelCLI(t, args...); err != nil || !strings.Contains(out, `"completed_requests": 4`) {
 			t.Errorf("%v was not served: %v\n%s", args, err, lastLines(stderr, 3))
 		}
