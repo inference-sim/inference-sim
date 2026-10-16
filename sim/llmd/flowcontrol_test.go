@@ -215,6 +215,52 @@ func TestFlowControl_SLODeadlineOrdersBySimulatedTargets(t *testing.T) {
 	}
 }
 
+// TestFlowControl_RequestTTLHeaderOrdersByClientDeadlines: a request's client lifetime reaches
+// the router as x-llm-d-inference-ttl, so edf-ordering-policy (earliest enqueue + TTL first)
+// dispatches requests with a deadline ahead of requests without one, where fcfs-ordering-policy
+// does not (the header only shortens the configured budget, 60 s by default); no deadline is
+// reached, and the run is deterministic.
+func TestFlowControl_RequestTTLHeaderOrdersByClientDeadlines(t *testing.T) {
+	run := func(policy string) (float64, runResult) {
+		reqs := testRequests(120, 11, 1000, 0)
+		for i, r := range reqs {
+			if i%2 == 1 {
+				r.Deadline = r.ArrivalTime + 30_000_000 // shorter than the 60 s default TTL; never reached
+			}
+		}
+		dep := testDeployment(2)
+		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
+		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+orderingConfig(policy))})
+		cs.SetGateway(gw)
+		if err := cs.Run(); err != nil {
+			t.Fatalf("%s: Run: %v", policy, err)
+		}
+		res := runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}
+		assertConservation(t, res, len(reqs))
+		if res.metrics.CompletedRequests != len(reqs) {
+			t.Fatalf("%s: completed %d of %d", policy, res.metrics.CompletedRequests, len(reqs))
+		}
+		var wait [2]float64
+		for i, r := range reqs {
+			wait[i%2] += float64(r.GatewayDispatchTime - r.ArrivalTime)
+		}
+		return (wait[0] - wait[1]) / float64(len(reqs)/2), res // no-deadline minus deadline mean wait, µs
+	}
+	fcfs, _ := run("fcfs-ordering-policy")
+	edf, a := run("edf-ordering-policy")
+	_, b := run("edf-ordering-policy")
+	t.Logf("mean wait advantage of requests with a deadline: fcfs %.0f µs, edf %.0f µs", fcfs, edf)
+	if edf <= 0 || edf <= fcfs {
+		t.Errorf("edf-ordering-policy gave requests with a deadline no advantage over fcfs (%.0f vs %.0f µs)", edf, fcfs)
+	}
+	for i := range a.reqs {
+		if a.reqs[i].GatewayDispatchTime != b.reqs[i].GatewayDispatchTime || a.reqs[i].AssignedInstance != b.reqs[i].AssignedInstance {
+			t.Fatalf("%s: dispatched differently in two identical runs", a.reqs[i].ID)
+		}
+	}
+}
+
 // TestFlowControl_QueueDelayRecorded: under flow control each dispatched request carries the
 // time it entered the router's queue, so gateway_queue_delay_ms is reported; without flow control
 // there is no queue and no enqueue time.

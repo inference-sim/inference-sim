@@ -905,6 +905,13 @@ func (g *Gateway) requestHeaderMap(f *flight) map[string]string {
 		// The header is whole milliseconds; round up so a sub-millisecond target stays a target.
 		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt((f.req.SLOTargetUs+999)/1000, 10)
 	}
+	if left := f.req.Deadline - f.req.ArrivalTime; f.req.Deadline > 0 && left > 0 {
+		// The client's lifetime for the request, as it sends it: flow control's queue budget
+		// becomes the shorter of this and the configured one (an EDF ordering policy orders by
+		// it). The router counts from its own enqueue, no earlier than the send, so the client
+		// still gives up first, at its deadline (clientDeadline).
+		h[metadata.InferenceTTLHeaderKey] = (time.Duration(left) * time.Microsecond).String()
+	}
 	return h
 }
 

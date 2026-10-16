@@ -105,8 +105,12 @@ Everything the router reads comes from the simulated engines, with real engine s
   `/v1/completions` body whose `prompt` is the request's tokens, with `max_tokens` and `stream`.
   The model is the deployment's model, or the request's LoRA adapter. The headers carry
   `x-llm-d-inference-objective` (the request's SLO class), `x-llm-d-inference-fairness-id` (its
-  tenant) and, when the request has a TTFT target, `x-llm-d-slo-ttft-ms`. The router's request
-  handler, parser and Director process it exactly as in a deployment.
+  tenant), when the request has a TTFT target `x-llm-d-slo-ttft-ms`, and when it has a client
+  timeout `x-llm-d-inference-ttl`: its lifetime (deadline minus arrival) as a Go duration. Flow
+  control takes the shorter of that and the configured queue budget (60 s by default), and an
+  `edf-ordering-policy` orders by it; the client still gives up at its deadline, counted as
+  timed out. The router's request handler, parser and Director process it exactly as in a
+  deployment.
 - **Prompt content.** BLIS token values are placeholders: a workload models prompt lengths and
   which prompts share a prefix, nothing more, and a replayed trace draws new placeholder values.
   The router, which hashes prompt content, is therefore shown canonical tokens: each KV block of

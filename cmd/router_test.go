@@ -452,3 +452,26 @@ func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
+
+// TestINV13_RunReplayParity_RequestTTL: flow control ordered by edf-ordering-policy, with one
+// client's requests carrying a 20 s lifetime (x-llm-d-inference-ttl) and the other's none; the
+// trace records each request's deadline, so a replay with no router flags reproduces the run
+// byte for byte.
+func TestINV13_RunReplayParity_RequestTTL(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	horizon := "9223372036854775807"
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--workload-spec", "testdata/request-ttl-workload.yaml", "--seed", "1", "--horizon", horizon,
+		"--epp-config", "testdata/epp/edf.yaml", "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
+	}
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if replayOut != runOut {
+		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
+	}
+}
