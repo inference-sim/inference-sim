@@ -1,10 +1,10 @@
 package kv
 
 import (
-	"sort"
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
@@ -69,7 +69,10 @@ type OffloadCache struct {
 	gpu       *KVCacheState
 	cpu       *offloadCPUTier
 	secondary []*secondaryTier
-	station   *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
+	// secondaryNames are the secondary tiers' KV-event tier names; secondaryEvents which publish.
+	secondaryNames  []string
+	secondaryEvents []bool
+	station         *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
 
 	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
 
@@ -153,6 +156,8 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 		oc.jitterStddev = make([]float64, len(cfg.Tiers))
 		for i, t := range cfg.Tiers {
 			oc.secondary = append(oc.secondary, newSecondaryTier())
+			oc.secondaryNames = append(oc.secondaryNames, kvEventMedium(t.Type))
+			oc.secondaryEvents = append(oc.secondaryEvents, t.EnableKVEvents)
 			oc.jitterStddev[i] = t.LatencyJitterStddev
 			if t.LatencyJitterStddev > 0 && oc.rng == nil {
 				panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
@@ -694,12 +699,52 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 	}
 }
 
-// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so does
-// the CPU tier (Tier "cpu"; its keys are the GPU block hashes), in one ordered stream. Secondary
-// tiers behind the CPU tier publish nothing.
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so do
+// the CPU tier (Tier "cpu"; its keys are the GPU block hashes) and every secondary tier whose
+// enable_kv_events is set (Tier = the medium its vLLM backend publishes, kvEventMedium), in one
+// ordered stream.
 func (o *OffloadCache) EnableKVEvents() {
 	o.gpu.EnableKVEvents()
 	o.cpu.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier("cpu", string(key), removed) }
+	for i, tier := range o.secondary {
+		if !o.secondaryEvents[i] {
+			continue // vLLM's enable_kv_events is off for this tier: it publishes nothing
+		}
+		name := o.secondaryNames[i]
+		tier.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier(name, string(key), removed) }
+	}
+}
+
+// kvEventMedium is the medium a secondary tier's KV events carry: llm-d's filesystem offload
+// backend (llmd_fs_backend) publishes "SHARED_STORAGE", which the router indexes as
+// "shared_storage".
+func kvEventMedium(tierType string) string {
+	if tierType == "fs" {
+		return "shared_storage"
+	}
+	return tierType
+}
+
+// TierBlockHashes returns the hashes of the blocks the secondary tiers publishing as medium hold,
+// sorted (nil when none does).
+func (o *OffloadCache) TierBlockHashes(medium string) []string {
+	held := map[kvkey.BlockKey]bool{}
+	for i, n := range o.secondaryNames {
+		if n == medium {
+			for k := range o.secondary[i].holds {
+				held[k] = true
+			}
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(held))
+	for k := range held {
+		out = append(out, string(k))
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TakeKVEvents implements sim.KVEventSource.

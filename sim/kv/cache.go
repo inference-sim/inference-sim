@@ -5,8 +5,8 @@
 package kv
 
 import (
-	"sort"
 	"fmt"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -23,13 +23,13 @@ import (
 // Each block stores a fixed number of tokens and is tracked by a prefix hash.
 // A block becomes eligible for caching once it is full.
 type KVBlock struct {
-	ID       int64    // Unique ID of the block
-	RefCount int      // Number of active requests referencing this block
-	InUse    bool     // Whether the block is currently in use by an active (batched) request
-	Hash     string   // Prefix hash identifying this block's content and its lineage (if full)
+	ID       int64         // Unique ID of the block
+	RefCount int           // Number of active requests referencing this block
+	InUse    bool          // Whether the block is currently in use by an active (batched) request
+	Hash     string        // Prefix hash identifying this block's content and its lineage (if full)
 	Tokens   []sim.TokenID // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
-	PrevFree *KVBlock // LRU doubly linked list: previous free block
-	NextFree *KVBlock // LRU doubly linked list: next free block
+	PrevFree *KVBlock      // LRU doubly linked list: previous free block
+	NextFree *KVBlock      // LRU doubly linked list: next free block
 }
 
 // KVCacheState maintains global KV cache status across all requests.

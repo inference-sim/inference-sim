@@ -49,18 +49,17 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 	if len(g.kvIngest) == 0 {
 		return
 	}
-	held := map[string]int{}
-	g.kvHeld[inst.ID()] = held
+	g.kvHeld[inst.ID()] = map[string]int{}
 	inst.SetKVEventSink(func(at int64, events []sim.KVEvent) {
-		// Pin the chains the engine now caches, at publication: their canonical tokens must not
-		// change while any engine holds the block (promptCanon).
+		held := g.kvHeld[inst.ID()]
+		if held == nil {
+			return // the router has cleared the pod: nothing it publishes is delivered
+		}
+		// Pin each chain the engine stores, at publication: its canonical tokens must not change
+		// while the router may still index the block (promptCanon). A removal unpins only when
+		// the router receives it (deliverKVEvents).
 		for _, e := range events {
-			if e.Removed {
-				if held[e.Hash] > 0 {
-					held[e.Hash]--
-					g.canon.unpin(e.Hash)
-				}
-			} else {
+			if !e.Removed {
 				held[e.Hash]++
 				g.canon.pin(e.Hash)
 			}
@@ -77,8 +76,18 @@ func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, eve
 	}
 	if g.observe != nil {
 		g.observe("kvdeliver", fmt.Sprintf("%s %d", inst.ID(), at))
+		for _, e := range events {
+			g.observe("kvevent", fmt.Sprintf("%s %q %s %v", inst.ID(), e.Tier, e.Hash, e.Removed))
+		}
 	}
 	batch := g.kvEventBatch(at, events)
+	held := g.kvHeld[inst.ID()]
+	for _, e := range events {
+		if e.Removed && held[e.Hash] > 0 {
+			held[e.Hash]--
+			g.canon.unpin(e.Hash)
+		}
+	}
 	pod := net.JoinHostPort(ep.ip, strconv.Itoa(ep.port))
 	for _, p := range g.kvIngest {
 		if err := p.HostedIngest(g.ctx, pod, g.servedModel(inst), batch); err != nil {
@@ -89,7 +98,8 @@ func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, eve
 	g.rt.co.settle()
 }
 
-// clearKVEvents tells the router that inst's prefix cache is gone (its pod was removed).
+// clearKVEvents tells the router that inst's prefix cache is gone (its pod was removed), and
+// releases every chain the instance still pins: removals delivered after the clear are dropped.
 func (g *Gateway) clearKVEvents(ep *endpoint) {
 	ep.kvCleared = true
 	held := g.kvHeld[ep.inst.ID()]

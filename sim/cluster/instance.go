@@ -576,6 +576,15 @@ func (i *InstanceSimulator) CPUBlockHashes() []string {
 	return nil
 }
 
+// TierBlockHashes returns the hashes of the blocks the secondary KV-offload tiers publishing as
+// medium (e.g. "shared_storage" for a filesystem tier) hold, sorted (nil without one).
+func (i *InstanceSimulator) TierBlockHashes(name string) []string {
+	if src, ok := i.sim.KVCache.(interface{ TierBlockHashes(string) []string }); ok {
+		return src.TierBlockHashes(name)
+	}
+	return nil
+}
+
 // SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
 func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
 	i.sim.SetKVEventSink(sink)

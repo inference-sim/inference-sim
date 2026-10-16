@@ -402,3 +402,183 @@ func TestPrecisePrefix_CachedBlockSurvivesCanonicalizerChurn(t *testing.T) {
 		t.Fatalf("the repeated prefix went to %s (score %q), not %s where it is cached", again.AssignedInstance, score, first.AssignedInstance)
 	}
 }
+
+// TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey (review 6206561059): an engine evicts a cached
+// prefix while unique prompts churn the prompt canonicalizer far past its capacity, and the
+// removal's delivery is delayed. Until it arrives the router still indexes the prefix, so a
+// matching request still matches it; after it arrives, one no longer does. The probes are too
+// long ever to fit the engine's cache, so they are routed and then dropped, caching nothing.
+func TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey(t *testing.T) {
+	const delay = 1_000_000
+	group := prefixGroups(1, 1, 256, 0)
+	reqs := []*sim.Request{group[0]}
+	for i, r := range testRequests(12, 77, 20000, 320) { // each needs most of the cache
+		r.ID = fmt.Sprintf("unique_%d", i)
+		r.ArrivalTime += 2_000_000 // after the prefix's store has reached the router
+		reqs = append(reqs, r)
+	}
+	probe := func(id string, at int64) *sim.Request {
+		r := *group[0]
+		r.ID, r.ArrivalTime, r.State = id, at, sim.StateQueued
+		r.InputTokens = append(append([]sim.TokenID{}, group[0].InputTokens[:256]...), make([]sim.TokenID, 700)...)
+		return &r
+	}
+	reqs = append(reqs, probe("before", 2_500_000), probe("after", 4_500_000))
+
+	dep := testDeployment(1)
+	dep.KVCacheConfig = sim.NewKVCacheConfig(40, 16, 0, 0, 0, 0)
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", KVEventDelayUs: delay, EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
+	gw.canonCapacity = 20
+	var prefixBlocks []string
+	scores := map[string]string{}
+	gw.observe = func(kind, detail string) {
+		switch kind {
+		case "request":
+			inst := cs.Instances()[0]
+			switch detail {
+			case "unique_0":
+				prefixBlocks = inst.CachedBlockHashes() // the first request's blocks
+			case "before":
+				cached := map[string]bool{}
+				for _, h := range inst.CachedBlockHashes() {
+					cached[h] = true
+				}
+				for _, h := range prefixBlocks {
+					if cached[h] {
+						t.Errorf("the engine still caches the prefix when %q arrives; the check would be vacuous", detail)
+						break
+					}
+				}
+			}
+		case "score":
+			f := strings.Fields(detail)
+			scores[f[0]] = f[2]
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(prefixBlocks) == 0 {
+		t.Fatal("the first request cached nothing")
+	}
+	if scores["before"] == "0" || scores["after"] != "0" {
+		t.Fatalf("prefix score before the removal arrives %s (want > 0), after %s (want 0)", scores["before"], scores["after"])
+	}
+	if m := cs.AggregatedMetrics(); m.DroppedUnservable != 2 {
+		t.Fatalf("%d requests dropped as unservable, want the 2 probes", m.DroppedUnservable)
+	}
+}
+
+// TestPrecisePrefix_IndexFollowsAFilesystemTier (review 6206521350): with a filesystem offload
+// tier, prefixes cycle through GPU and CPU eviction, survive on the tier, and are promoted back
+// to CPU. When the tier publishes KV events (vLLM's per-tier enable_kv_events; medium
+// shared_storage, as llm-d's filesystem backend), the router's index holds, per pod and per tier,
+// exactly the blocks the engine holds there, and a recurring prefix is routed to the pod whose
+// tiers hold it; when it does not, the router indexes nothing on the tier and never a block the
+// engine does not hold.
+func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
+	for _, events := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enable_kv_events=%v", events), func(t *testing.T) {
+			off := sim.KVOffloadConfig{
+				Enabled: true, CPUBytesToUse: 24 * 4096, PerBlockBytes: 4096,
+				BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
+				Tiers: []sim.KVOffloadTier{{
+					Type: "fs", RootDir: "/mnt", NReadThreads: 4, NWriteThreads: 4, EnableKVEvents: events,
+					DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
+				}},
+			}
+			dep := testDeployment(2)
+			dep.KVCacheConfig = sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0, sim.WithKVOffload(off)) // small GPU
+			reqs := prefixGroups(16, 4, 48, 2000)                                                // 16 three-block prefixes, cycled 4 times
+			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+			gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
+			cpuGone := map[string]bool{} // instance+hash whose CPU copy the router saw removed
+			promoted := 0
+			scores := map[string]string{}
+			gw.observe = func(kind, detail string) {
+				if kind == "score" {
+					f := strings.Fields(detail)
+					scores[f[0]] = f[2]
+				}
+				if kind != "kvevent" {
+					return
+				}
+				f := strings.Fields(detail)
+				key := f[0] + " " + f[2]
+				switch {
+				case f[1] == `"cpu"` && f[3] == "true":
+					cpuGone[key] = true
+				case f[1] == `"cpu"` && cpuGone[key]:
+					promoted++ // back on CPU after leaving it: read from the fs tier
+					delete(cpuGone, key)
+				}
+			}
+			cs.SetGateway(gw)
+			if err := cs.Run(); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			fsBlocks := 0
+			for _, inst := range cs.Instances() {
+				ep := gw.endpoints[inst.ID()]
+				pod := ep.ip + ":" + fmt.Sprint(ep.port)
+				want := map[string][]string{"gpu": inst.CachedBlockHashes(), "cpu": inst.CPUBlockHashes(), "shared_storage": inst.TierBlockHashes("shared_storage")}
+				fsBlocks += len(want["shared_storage"])
+				if !events {
+					want["shared_storage"] = nil
+				}
+				for _, tier := range []string{"gpu", "cpu", "shared_storage"} {
+					got, err := gw.kvIngest[0].HostedPodTierBlocks(pod, tier)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !events {
+						// The router loses a block whose only copy is on the silent tier: its
+						// promotion back to CPU is a location-only store of a key the router no
+						// longer maps (llm-d's handleDeviceTierUpdate skips it). It never indexes a
+						// block the engine does not hold.
+						engine := map[uint64]bool{}
+						for _, h := range want[tier] {
+							engine[engineKey(h)] = true
+						}
+						for k := range got {
+							if !engine[k] {
+								t.Errorf("%s %s: the router indexes a block the engine does not hold", inst.ID(), tier)
+								break
+							}
+						}
+						t.Logf("%s %s: the router indexes %d of the engine's %d blocks", inst.ID(), tier, len(got), len(want[tier]))
+						continue
+					}
+					if len(got) != len(want[tier]) {
+						t.Errorf("%s %s: the router indexes %d blocks, want %d", inst.ID(), tier, len(got), len(want[tier]))
+						continue
+					}
+					for _, h := range want[tier] {
+						if !got[engineKey(h)] {
+							t.Errorf("%s %s: block %s is not in the router's index", inst.ID(), tier, h[:12])
+							break
+						}
+					}
+				}
+			}
+			if fsBlocks == 0 {
+				t.Fatal("no block reached the fs tier; the check would be vacuous")
+			}
+			if !events {
+				return
+			}
+			if promoted == 0 {
+				t.Fatal("no block was promoted back to CPU; the check would be vacuous")
+			}
+			// By the last cycle every prefix has run before, and the fs tier keeps what it is given:
+			// the router finds each one on some tier of the pod that holds it.
+			for _, r := range reqs {
+				if strings.HasSuffix(r.ID, "_3") && scores[r.ID] == "0" {
+					t.Errorf("%s: no pod's index holds its prefix (score 0)", r.ID)
+				}
+			}
+		})
+	}
+}

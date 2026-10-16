@@ -1,9 +1,9 @@
 package kv
 
 import (
-	"sort"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 

@@ -15,14 +15,34 @@ import "github.com/inference-sim/inference-sim/sim/internal/kvkey"
 // eviction is not a spill-chain.
 type secondaryTier struct {
 	holds map[kvkey.BlockKey]struct{}
+	// notify, when set (the tier publishes KV events, vLLM's per-tier enable_kv_events), is told
+	// each block that lands in (removed=false) or leaves the tier.
+	notify func(key kvkey.BlockKey, removed bool)
 }
 
 func newSecondaryTier() *secondaryTier {
 	return &secondaryTier{holds: make(map[kvkey.BlockKey]struct{})}
 }
 
-func (s *secondaryTier) store(key kvkey.BlockKey) { s.holds[key] = struct{}{} }
-func (s *secondaryTier) drop(key kvkey.BlockKey)  { delete(s.holds, key) }
+func (s *secondaryTier) store(key kvkey.BlockKey) {
+	if _, had := s.holds[key]; had {
+		return
+	}
+	s.holds[key] = struct{}{}
+	if s.notify != nil {
+		s.notify(key, false)
+	}
+}
+
+func (s *secondaryTier) drop(key kvkey.BlockKey) {
+	if _, had := s.holds[key]; !had {
+		return
+	}
+	delete(s.holds, key)
+	if s.notify != nil {
+		s.notify(key, true)
+	}
+}
 
 func (s *secondaryTier) has(key kvkey.BlockKey) bool {
 	_, ok := s.holds[key]
