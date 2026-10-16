@@ -372,7 +372,12 @@ func (o *OffloadCache) SetClock(clock int64) {
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
 	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before any tier
 	// is consulted or a deferral registered, so the refusal has no side effect.
-	if !o.gpu.sequenceFits(req, startIndex, endIndex, cachedBlocks) {
+	stateStart := startIndex
+	if o.gpu.SequenceState.Hold != nil {
+		end, ok := o.ReloadablePrefixEnd(req, startIndex)
+		stateStart = o.gpu.loadedStateStart(req, startIndex, endIndex, end, ok)
+	}
+	if !o.gpu.sequenceFits(req, startIndex, stateStart, endIndex, cachedBlocks) {
 		return false
 	}
 	// Defer only genuinely-new prefill admissions. A running-request continuation
@@ -407,7 +412,7 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 			// it never re-enters defer). Clear the episode only once actually admitted;
 			// on GPU pressure the entry persists so the next step retries without
 			// resetting state (no re-defer, backstop preserved).
-			ok := o.allocateThroughChain(req, startIndex, endIndex, cachedBlocks)
+			ok := o.allocateThroughChain(req, startIndex, stateStart, endIndex, cachedBlocks)
 			if ok {
 				delete(o.deferred, req.ID)
 			}
@@ -422,7 +427,7 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 			return false // waits for its CPU->GPU load, re-polled each step (INV-K7)
 		}
 	}
-	return o.allocateThroughChain(req, startIndex, endIndex, cachedBlocks)
+	return o.allocateThroughChain(req, startIndex, stateStart, endIndex, cachedBlocks)
 }
 
 // allocateThroughChain is the H1 (#1590) allocate path: reload CPU-resident prefix
@@ -432,7 +437,7 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 // for THIS call. The GPU commit/allocate structure mirrors the legacy TieredKVCache
 // path (INV-4 GPU conservation, hash-chain correctness). H3 deferral wraps this in
 // AllocateKVBlocks; for a resolved deferral this reloads the now-CPU-resident run.
-func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, stateStart, endIndex int64, cachedBlocks []int64) bool {
 	// Resume the consult past the prefix the caller already matched on GPU, and
 	// past what a running request already owns (its partially-filled last block
 	// must not be reloaded — same running-request trap as TieredKVCache). The
@@ -468,7 +473,7 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, endInd
 				// Its bounded state (#1941) and slots (#1627), on every allocation as vLLM
 				// passes num_lookahead_tokens to every allocate_slots
 				// (scheduler.py:745-751, 1214 at v0.31.0); room was checked before the reload.
-				o.gpu.chargeSequence(req.ID, startIndex, endIndex)
+				o.gpu.chargeSequence(req.ID, stateStart, endIndex)
 				return true
 			}
 			// Partial improvement: commit the reloaded prefix, then allocate the tail.
