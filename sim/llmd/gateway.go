@@ -135,6 +135,8 @@ type Gateway struct {
 	// kvHeld counts, per instance, the published holdings (tiers) of each block hash, to release
 	// the canonicalizer's pins when the instance's cache is cleared.
 	kvHeld map[cluster.InstanceID]map[string]int
+	// kvLastDelivery is when the router last receives each instance's KV stream (kvDeliveryTime).
+	kvLastDelivery map[cluster.InstanceID]int64
 	// canonCapacity, set only by tests, overrides the canonicalizer's chain capacity.
 	canonCapacity int
 	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
@@ -321,6 +323,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	}
 	g.kvIngest = kvIngesters(emb.Handle)
 	g.kvHeld = map[cluster.InstanceID]map[string]int{}
+	g.kvLastDelivery = map[cluster.InstanceID]int64{}
 	for _, inst := range host.Instances() {
 		if err := g.checkPreciseLoRA(inst); err != nil {
 			return err
@@ -458,7 +461,7 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 		// Its prefix cache is gone with it. The clear travels the same delayed stream as its
 		// events, so a batch already in flight cannot arrive after it and repopulate the index.
 		ep.cleared = true
-		g.host.Schedule(g.host.Now()+g.opts.KVEventDelayUs, PriorityKVEvents, true, func() { g.clearKVEvents(ep) })
+		g.host.Schedule(g.kvDeliveryTime(inst.ID(), g.host.Now()), PriorityKVEvents, true, func() { g.clearKVEvents(ep) })
 	}
 	ready := inst.IsRoutable()
 	if ok && ready == ep.ready {

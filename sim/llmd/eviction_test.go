@@ -73,13 +73,16 @@ type evictionSetup struct {
 	// kvBound runs every sheddable request at once on a small KV cache, so the pool saturates on
 	// KV utilization and the victims are running.
 	kvBound bool
+	// sharedPrefix gives every sheddable request one prefix of that many tokens, so a revoked
+	// transfer's reservation duplicates a prefix its decode engine already caches.
+	sharedPrefix int
 }
 
 // runEviction runs long sheddable requests that saturate the pool, then a burst of critical ones.
 func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) {
 	t.Helper()
 	var reqs []*sim.Request
-	for i, r := range testRequests(40, 5, 1000, 0) {
+	for i, r := range testRequests(40, 5, 1000, s.sharedPrefix) {
 		r.ID, r.SLOClass, r.Adapter = fmt.Sprintf("sheddable_%d", i), "sheddable", s.adapter
 		r.OutputTokens = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(int64(i))), 2000) // long-running
 		r.MaxOutputLen = len(r.OutputTokens)
@@ -284,4 +287,15 @@ func TestFlowControl_InFlightEvictionDisaggregated(t *testing.T) {
 // none in the router's index.
 func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
 	checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true})
+}
+
+// TestFlowControl_InFlightEvictionDisaggregatedSharedPrefix: with a prefix every sheddable request
+// shares, revoked transfers reserve blocks for a prefix their decode engine already caches;
+// revoking them keeps that prefix cached, in the engine and in the router's index (which
+// checkEviction compares block for block).
+func TestFlowControl_InFlightEvictionDisaggregatedSharedPrefix(t *testing.T) {
+	victims := checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true, sharedPrefix: 256})
+	if len(victims) == 0 {
+		t.Fatal("nothing evicted")
+	}
 }

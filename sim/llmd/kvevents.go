@@ -64,8 +64,20 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 				g.canon.pin(e.Hash)
 			}
 		}
-		g.host.Schedule(at+g.opts.KVEventDelayUs, PriorityKVEvents, true, func() { g.deliverKVEvents(inst, at, events) })
+		// The router receives an engine's batches in the order the engine published them, as over
+		// vLLM's ordered event stream: a batch is delivered no earlier than the one before it (a
+		// step can be timed to end before the previous one's end when it starts on an engine that
+		// looked idle), so a block's store never reaches the router ahead of its parent's.
+		g.host.Schedule(g.kvDeliveryTime(inst.ID(), at), PriorityKVEvents, true, func() { g.deliverKVEvents(inst, at, events) })
 	})
+}
+
+// kvDeliveryTime is when the router receives what instance id publishes at time at: after the
+// delivery delay, and no earlier than anything it published before (subscribeKVEvents).
+func (g *Gateway) kvDeliveryTime(id cluster.InstanceID, at int64) int64 {
+	t := max(at+g.opts.KVEventDelayUs, g.kvLastDelivery[id])
+	g.kvLastDelivery[id] = t
+	return t
 }
 
 // deliverKVEvents hands one engine step's events to the router.

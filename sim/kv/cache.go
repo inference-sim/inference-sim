@@ -392,8 +392,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
 				if blk.Hash != "" {
-					kvc.dropHash(blk.Hash)
+					h := blk.Hash
 					blk.Hash = ""
+					kvc.releaseHash(h, blk.ID)
 				}
 
 				// start and end are the range of tokens in blk
@@ -499,8 +500,8 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 }
 
 // AbortKVBlocks releases req's blocks like ReleaseKVBlocks, for KV that never arrived (a transfer
-// cancelled before it completed): a released block's content was never computed, so the prefix
-// cache forgets its hash (a removed KV event) instead of keeping it for reuse.
+// cancelled before it completed): a released block's content was never computed, so it gives up
+// its hash (releaseHash) -- kept cached when an earlier block still holds the content.
 func (kvc *KVCacheState) AbortKVBlocks(req *sim.Request) {
 	ids := kvc.RequestMap[req.ID]
 	kvc.ReleaseKVBlocks(req)
@@ -509,11 +510,36 @@ func (kvc *KVCacheState) AbortKVBlocks(req *sim.Request) {
 		if blk.RefCount > 0 || blk.Hash == "" {
 			continue
 		}
-		if kvc.HashToBlock[blk.Hash] == id {
-			kvc.dropHash(blk.Hash)
-		}
+		h := blk.Hash
 		blk.Hash, blk.Tokens = "", nil
+		kvc.releaseHash(h, id)
 	}
+}
+
+// releaseHash is block id giving up content hash h (its slot is reused, or its KV never
+// arrived). A hash maps to one block, but several may hold the same content (a transfer reserves
+// blocks without reusing cached ones); as vLLM, which keeps every block of a hash, the content
+// stays cached while any block holds it: the hash moves to another holder, with no event, and is
+// forgotten (a removed KV event) only with its last holder.
+func (kvc *KVCacheState) releaseHash(h string, id int64) {
+	if owner, ok := kvc.HashToBlock[h]; !ok || owner != id {
+		return
+	}
+	if other, ok := kvc.blockHolding(h); ok {
+		kvc.HashToBlock[h] = other
+		return
+	}
+	kvc.dropHash(h)
+}
+
+// blockHolding returns the lowest-numbered block whose content has hash h, if any.
+func (kvc *KVCacheState) blockHolding(h string) (int64, bool) {
+	for _, blk := range kvc.Blocks {
+		if blk.Hash == h {
+			return blk.ID, true
+		}
+	}
+	return 0, false
 }
 
 // BlockSize returns the number of tokens per block.
