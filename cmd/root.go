@@ -1134,7 +1134,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// setting -- block size, sequence and token caps, max_model_len, prefix caching, cache
 	// dtype, speculation -- is the scenario's, and the KV budget is the kernel's.
 	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
-	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false). Unset, it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
+	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false), over the scenario's engine.swa_bounded_replay. Unset, the pool states it or it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
 	registerFrontendFlags(cmd)
 
 	// The deployment: a blis-schemas scenario (model, hardware, fabric, pools, engines)

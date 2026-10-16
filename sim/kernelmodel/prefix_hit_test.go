@@ -80,3 +80,41 @@ type fixedDeployment struct {
 }
 
 func (f fixedDeployment) Deployment() deployment.Pool { return f.pool }
+
+// A pool's engine.swa_bounded_replay is vLLM's CacheConfig.swa_bounded_replay: false turns
+// the replay off, true still yields to the V1 runner (attention.py:519-526), and the
+// --swa-bounded-replay override replaces both. Each resolution names what decided it.
+func TestPrefixHit_ThePoolsStatedBoundedReplayIsTheCacheConfig(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		stated       *bool
+		v1, override *bool
+		bounded      bool
+		from         string
+	}{
+		{"unstated", nil, nil, nil, true, "v0.31.0 default"},
+		{"stated false", boolPtr(false), nil, nil, false, "engine.swa_bounded_replay"},
+		{"stated true", boolPtr(true), nil, nil, true, "engine.swa_bounded_replay"},
+		{"stated true under the V1 runner", boolPtr(true), boolPtr(true), nil, false,
+			"V1 model runner (attention.py:520-526)"},
+		{"stated false under the V1 runner", boolPtr(false), boolPtr(true), nil, false, "engine.swa_bounded_replay"},
+		{"the flag over a stated false", boolPtr(false), nil, boolPtr(true), true, "--swa-bounded-replay"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64, SWABoundedReplay: tt.stated}}
+			if tt.v1 != nil {
+				pool.Engine.DBO = &deployment.DBO{Enabled: true}
+			}
+			m := &Model{k: fixedDeployment{pool: pool}, id: identity{prefix: prefixLayout{
+				known: true, v41: true, window: 128, windowBlock: 32, pcp: 1}}}
+			got := m.PrefixHit(tt.override)
+			if got.BoundedReplay == nil || *got.BoundedReplay != tt.bounded || got.BoundedReplayFrom != tt.from {
+				t.Fatalf("bounded replay %v from %q, want %v from %q", got.BoundedReplay,
+					got.BoundedReplayFrom, tt.bounded, tt.from)
+			}
+			if tt.bounded != (got.Hit.ReplayTokens == 128) {
+				t.Errorf("layout %+v does not follow bounded replay %v", got.Hit, tt.bounded)
+			}
+		})
+	}
+}

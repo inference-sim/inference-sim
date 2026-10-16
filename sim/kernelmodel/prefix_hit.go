@@ -143,9 +143,11 @@ type PrefixHitResolution struct {
 
 // PrefixHit is how the pool's KV cache groups cut a prefix-cache hit in vLLM v0.31.0.
 // DeepSeek-V4.1's SWA bounded replay (cache.py:242, on by default) is kept only under the V2
-// model runner and without prefill context parallelism (deepseek_v41/attention.py:519-546);
-// override, when non-nil, replaces that resolution (an engine build before the feature runs
-// as false).
+// model runner and without prefill context parallelism (deepseek_v41/attention.py:519-546).
+// The pool's engine.swa_bounded_replay, when stated, is CacheConfig.swa_bounded_replay:
+// false turns it off, and true still yields to those two conditions, as in vLLM. override
+// (the --swa-bounded-replay flag), when non-nil, replaces the whole resolution (an engine
+// build before the feature runs as false).
 func (m *Model) PrefixHit(override *bool) PrefixHitResolution {
 	l := m.id.prefix
 	r := PrefixHitResolution{Note: l.note}
@@ -165,9 +167,13 @@ func (m *Model) PrefixHit(override *bool) PrefixHitResolution {
 		return r
 	}
 	bounded, from := true, "v0.31.0 default"
+	if stated := m.k.Deployment().Engine.SWABoundedReplay; stated != nil {
+		bounded, from = *stated, "engine.swa_bounded_replay"
+	}
 	switch {
 	case override != nil:
 		bounded, from = *override, "--swa-bounded-replay"
+	case !bounded:
 	case r.Runner != "v2":
 		bounded, from = false, "V1 model runner (attention.py:520-526)"
 	case l.pcp > 1:
