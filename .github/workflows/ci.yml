@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feature/**']
+    branches: [main, 'feature/**', llm-d-r]
   # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
   # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
   # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
@@ -22,7 +22,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
       - name: Build
@@ -60,6 +60,11 @@ jobs:
           - name: "scripts"
             packages: "./scripts"
             timeout: "5m"
+          # The embedded llm-d router: determinism across processes, run/replay inputs, flow
+          # control, P/D and the single-instance identity contract.
+          - name: "llm-d router"
+            packages: "./sim/llmd"
+            timeout: "10m"
 
     steps:
       - name: Checkout code
@@ -68,7 +73,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
       - name: Test ${{ matrix.name }}
@@ -80,16 +85,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # The module targets Go 1.27 (the llm-d router requires it). golangci-lint refuses a module
+      # newer than the Go that built it and the published binaries are built with an older Go,
+      # so the linter is built from source with the module's Go.
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: go.mod
           cache: true
 
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.9.0
+          version: v2.14.0
+          install-mode: goinstall
 
   # A NEW job, not a step added to an existing shard: renaming a required check blocks PRs, so the
   # size guard gets its own name. Path-independent backstop for the CLAUDE.md charter — it catches

@@ -64,20 +64,6 @@ func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	assert.Contains(t, output, "completed_requests", "metrics JSON must be on stdout")
 }
 
-func TestRunCmd_SnapshotRefreshInterval_FlagRegistered(t *testing.T) {
-	// Verify --snapshot-refresh-interval flag exists with a valid (non-negative) default.
-	// Note: BC-5 (negative value rejection via logrus.Fatalf) is validated by code
-	// inspection — the validation follows the same pattern as --kv-transfer-base-latency.
-	// Testing logrus.Fatalf requires subprocess execution, which is out of scope here.
-	flag := runCmd.Flags().Lookup("snapshot-refresh-interval")
-	assert.NotNil(t, flag, "snapshot-refresh-interval flag must be registered")
-
-	defVal, err := strconv.ParseInt(flag.DefValue, 10, 64)
-	assert.NoError(t, err, "default must be a valid int64")
-	assert.GreaterOrEqual(t, defVal, int64(0),
-		"default snapshot-refresh-interval must be >= 0")
-}
-
 func TestConvertCmd_NoCSVTraceSubcommand(t *testing.T) {
 	// GIVEN the convert cobra command
 	// WHEN listing its subcommands
@@ -730,9 +716,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -776,9 +759,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -887,9 +867,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -932,9 +909,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1123,19 +1097,19 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal           string
-	defaultsFile                                                                          string
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency int64
-	threshold, maxModelLen                                                                int64
-	offload, bandwidth                                                                    float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix              int
-	rateV                                                                                 float64
-	seedV                                                                                 int64
-	traceLvl, workloadT, admission, routing, sched, workloadSpec                          string
-	promptMean, promptStdev, promptMin, promptMax                                         int
-	outputMean, outputStdev, outputMin, outputMax                                         int
-	requestTimeout                                                                        int
-	lazy                                                                                  bool
+	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal string
+	defaultsFile                                                                string
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency    int64
+	threshold, maxModelLen                                                      int64
+	offload, bandwidth                                                          float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix    int
+	rateV                                                                       float64
+	seedV                                                                       int64
+	traceLvl, workloadT, sched, workloadSpec                                    string
+	promptMean, promptStdev, promptMin, promptMax                               int
+	outputMean, outputStdev, outputMin, outputMax                               int
+	requestTimeout                                                              int
+	lazy                                                                        bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
@@ -1145,8 +1119,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed, results: resultsPath,
 		threshold: longPrefillTokenThreshold, kvCPU: kvCPUBlocks, offload: kvOffloadThreshold,
 		bandwidth: kvTransferBandwidth, baseLatency: kvTransferBaseLatency,
-		snapRefresh: snapshotRefreshInterval, admission: admissionPolicy,
-		routing: routingPolicy, sched: scheduler, policyConfig: policyConfigPath,
+		sched: scheduler, policyConfig: policyConfigPath,
 		maxModelLen: maxModelLen, traceLvl: traceLevel, counterfactualK: counterfactualK,
 		simHorizon: simulationHorizon, workloadT: workloadType, rateV: rate,
 		numReqs: numRequests, concurrencyV: concurrency, thinkTime: thinkTimeMs,
@@ -1176,9 +1149,6 @@ func (o origCmdLevelVars) restore() {
 	kvOffloadThreshold = o.offload
 	kvTransferBandwidth = o.bandwidth
 	kvTransferBaseLatency = o.baseLatency
-	snapshotRefreshInterval = o.snapRefresh
-	admissionPolicy = o.admission
-	routingPolicy = o.routing
 	scheduler = o.sched
 	policyConfigPath = o.policyConfig
 	maxModelLen = o.maxModelLen

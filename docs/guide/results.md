@@ -122,7 +122,8 @@ written by both `blis run --metrics-path` and `blis replay --metrics-path`:
 ### Saturation Detection
 
 Post-hoc saturation analysis classifies a completed run as `STABLE`, `BACKLOGGED` or
-`OVERLOADED`. It is distinct from the real-time flow-control detector. Select detectors with
+`OVERLOADED`. It is distinct from the llm-d router's saturation detector, which gates admission
+and flow control during the run. Select detectors with
 `--detectors <name|comma-list|all>` (`composite`, `threshold`, `backlog-drift`, `peak-rate`),
 tune them with `--saturation-config`, and write the per-event verdict trace with
 `--saturation-report`:
@@ -155,7 +156,7 @@ When the `requests` array is non-empty, each entry contains:
 | `handled_by` | string | Instance ID that processed the request — omitted if empty |
 | `model` | string | Model tag — omitted if empty |
 | `length_capped` | bool | `true` if request was force-completed at `MaxModelLen` — omitted when `false` |
-| `gateway_queue_delay_ms` | ms | Time spent in the gateway queue — omitted when flow control is disabled |
+| `gateway_queue_delay_ms` | ms | Time from the router enqueuing the request in flow control to its dispatch — omitted when flow control (`featureGates: [flowControl]`) is off |
 | `session_id` | string | Multi-turn session link — omitted for single-turn requests |
 | `round_index` | int | Round within session (`0` = first turn); always present, defaults to `0` for non-session requests |
 
@@ -167,14 +168,19 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 |---------|--------------|--------|
 | **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
-| **Rejected Requests (Admission)** | Admission policy rejected the request at cluster ingress | Check token bucket capacity or admission policy |
-| **Shed (tier)** | Per-SLO-class breakdown of admission rejections under overload — printed as indented sub-items beneath Rejected Requests (Admission) | Adjust `slo_priorities` in the policy bundle or raise admission thresholds |
-| **Rejected Requests (Routing)** | No routable instances for the request's model — all instances are `Loading` or `Draining` | Increase `initial_nodes`, reduce `loading_delay.mean`, or stagger drain operations |
+| **Rejected Requests (Admission)** | The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | Check the `InferenceObjective` priorities and the saturation detector's parameters; see [Admission Control](admission.md) |
+| **Shed (tier)** | Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission) | Raise the class's `InferenceObjective` priority, or the detector's thresholds |
+| **Rejected Requests (Routing)** | No endpoint could serve the request: no ready candidates (all instances `Loading` or `Draining`), or every filter eliminated all | Increase `initial_nodes`, reduce `loading_delay.mean`, stagger drain operations, or check the router configuration's filters |
 | **Dropped Unservable** | Request exceeds the context window (the scenario's `max_model_len`) or needs more KV blocks than exist | Check the scenario's `max_model_len`; deploy more GPUs per instance or reduce max input tokens |
 | **Timed Out Requests** | Request exceeded its client deadline before completing | Increase `--timeout` or reduce load |
 | **Length-Capped Requests** | Request was force-completed when it reached `MaxModelLen` tokens during decode | Expected if workloads push against the scenario's `max_model_len` |
-| **Gateway Queue Depth (horizon)** | Requests still waiting in the gateway queue when the simulation ended — printed only when `> 0` | Reduce arrival rate or increase cluster capacity |
-| **Gateway Queue Shed** | Requests shed from the gateway queue because it was full — printed only when `> 0` | Increase `--max-gateway-queue-depth` or enable `--flow-control` with a saturation detector |
+| **Gateway Queue Depth (horizon)** | Requests still waiting in the router's flow control when the simulation ended — printed only when `> 0` | Reduce arrival rate or increase cluster capacity |
+| **Gateway Queue Rejected** | Requests flow control rejected because its queues were at capacity — printed only when `> 0` | Raise `flowControl.maxRequests` or the priority band's capacity in the EndpointPickerConfig |
+| **Gateway Expired (TTL)** | Requests that waited in flow control past their queue-wait budget — printed only when `> 0` | Raise `flowControl.defaultRequestTTL`, or add capacity |
+| **Encode Routing Rejections** | Requests rejected at an encode stage — printed only when `> 0` | — |
+
+Each counter is one INV-1 bucket; see [Admission Control](admission.md) for how router outcomes
+map onto them.
 
 !!! note "Stdout-only vs JSON counters"
     **Dropped Unservable**, **Timed Out Requests**, and **Length-Capped Requests** also appear as fields in the `--metrics-path` JSON output (see [Primary Metrics](#primary-metrics-json-output): `dropped_unservable`, `timed_out_requests`, `length_capped_requests`).
@@ -248,7 +254,7 @@ When a workload contains multi-turn sessions (requests with `session_id`), BLIS 
 | **TTFT warm (round≥1)** | TTFT distribution for follow-up rounds — benefits from cached context |
 | **Session duration** | End-to-end duration from session start (first round arrival) to last round completion |
 
-Cold vs. warm TTFT split reveals prefix cache effectiveness: if `TTFT warm` ≈ `TTFT cold`, prefix caching is not activating for continuations — check `--cache-signal-delay` and scorer configuration.
+Cold vs. warm TTFT split reveals prefix cache effectiveness: if `TTFT warm` ≈ `TTFT cold`, prefix caching is not activating for continuations — check that the router configuration includes the `prefix-cache-scorer` and that its weight is not dominated by load scorers.
 
 ## PD Disaggregation Metrics
 
@@ -294,13 +300,16 @@ As arrival rate increases past per-instance service capacity (μ ≈ 1/step_time
 
 P99 diverges from mean sharply near saturation. A workload at 90% capacity may show 2x mean TTFT but 10x P99 TTFT.
 
-### Snapshot Staleness Effects
+### Metrics Staleness Effects
 
-With `kv-utilization` scorer alone at `--snapshot-refresh-interval 100ms`: +354% TTFT degradation. The default composite scorer mitigates ~99% of this effect.
+The router scores endpoints from metrics it scrapes every `--refresh-metrics-interval` (an EPP
+flag). Between scrapes it sees stale queue and KV-cache values, so load-only configurations can
+send bursts to the same endpoint. Shorten the interval in `--epp-flags`, or add a scorer fed by the
+router's own in-flight accounting (`active-request-scorer`), to reduce the effect.
 
-### Policy Equivalence at Low Load
+### Configuration Equivalence at Low Load
 
-All routing policies produce equivalent results (within 5%) at low utilization. Differentiation requires moderate-to-high load where queueing dynamics dominate.
+Router configurations produce near-equivalent results at low utilization. Differentiation requires moderate-to-high load where queueing dynamics dominate.
 
 ### Host Overhead
 

@@ -100,17 +100,16 @@ type RawMetrics struct {
 	TokensPerSec   float64
 
 	// Anomaly counters
-	PriorityInversions   int
-	HOLBlockingEvents    int
-	RejectedRequests     int            // admission rejections
-	ShedByTier                map[string]int // per-SLOClass breakdown of all shedding events: admission rejections + gateway queue evictions (unconditional)
+	PriorityInversions int
+	HOLBlockingEvents  int
+	RejectedRequests   int            // admission rejections
+	ShedByTier         map[string]int // per-SLOClass breakdown of all shedding events: admission rejections + gateway queue evictions (unconditional)
 	// InjectedByClass: per-SLOClass arrival counter; populated by ClusterArrivalEvent.Execute
 	// before any drop/route decision. Used as the goodput denominator (issue #1409, BC-6).
 	// Empty SLOClass requests appear under the "" key.
 	InjectedByClass map[string]int64
 	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_shed + gw_rejected + gw_evicted + gw_expired + encode_routing_rejections
 	GatewayQueueDepth       int // Requests still in gateway queue at horizon (issue #882)
-	GatewayQueueShed        int // Requests shed (evicted victims) from gateway queue (issue #882)
 	GatewayQueueRejected    int // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
 	GatewayEvicted          int // Requests evicted in-flight from instances (#1228)
 	GatewayExpired          int // Requests expired from gateway queue via TTL (#1193)
@@ -948,4 +947,3 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 		SessionDuration: NewDistribution(durationMs),
 	}
 }
-

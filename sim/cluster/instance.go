@@ -21,9 +21,11 @@ type InstanceID string
 //
 // Thread-safety: NOT thread-safe. All methods must be called from the same goroutine.
 type InstanceSimulator struct {
-	id     InstanceID
-	sim    *sim.Simulator
-	hasRun bool
+	// onTransition, when set, is called after every lifecycle transition.
+	onTransition func(*InstanceSimulator)
+	id           InstanceID
+	sim          *sim.Simulator
+	hasRun       bool
 
 	// Phase 1A: lifecycle and placement fields.
 	// All zero-value safe (backward-compatible with no-node-pool mode).
@@ -170,8 +172,7 @@ func (i *InstanceSimulator) BatchSize() int {
 }
 
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
-// instance, or nil when the LoRA subsystem is inert. Read by the snapshot provider
-// to populate RoutingSnapshot.ResidentAdapters for the lora-affinity scorer (#1469).
+// instance, or nil when the LoRA subsystem is inert.
 func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 	if i.sim == nil {
 		return nil
@@ -449,6 +450,9 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q — INV-14 violation", i.id, i.State, state))
 	}
 	i.State = state
+	if i.onTransition != nil {
+		i.onTransition(i)
+	}
 }
 
 // ReserveTransferredKV reserves KV cache blocks on this instance for a decode
@@ -470,7 +474,9 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 		req.ProgressIndex = 0
 		return true
 	}
-	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
+	// The blocks are reserved for KV still in transfer: not cached until it arrives
+	// (CommitTransferredKV), so no request can hit them, as in vLLM.
+	ok := i.pendingKV().ReservePendingKVBlocks(req)
 	if ok {
 		req.ProgressIndex = inputLen
 	}
@@ -483,6 +489,28 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 // no blocks.
 func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// AbortReservedKV cancels a reservation whose transfer was evicted before it completed at time
+// now: its blocks are freed (they were never cached, ReserveTransferredKV), and the engine
+// publishes its state after the abort.
+func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
+	i.sim.KVCache.ReleaseKVBlocks(req)
+	i.sim.NoteAbort(now)
+}
+
+// CommitTransferredKV caches a decode sub-request's reserved prompt blocks once its KV transfer
+// has completed.
+func (i *InstanceSimulator) CommitTransferredKV(req *sim.Request) {
+	i.pendingKV().CommitPendingKVBlocks(req)
+}
+
+func (i *InstanceSimulator) pendingKV() sim.PendingKVStore {
+	p, ok := i.sim.KVCache.(sim.PendingKVStore)
+	if !ok {
+		panic(fmt.Sprintf("KV cache %T cannot reserve KV for a transfer", i.sim.KVCache))
+	}
+	return p
 }
 
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
@@ -513,7 +541,15 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // the sole CompletedRequests++ in sim/simulator.go. So INV-2's `-> completed` edge
 // does not describe this line; reading StateCompleted as "completed" here would
 // double-count an evicted request.
-func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
+func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
+	if !i.evictRequest(req) {
+		return false
+	}
+	i.sim.NoteAbort(now) // the engine's next step publishes the state after the eviction
+	return true
+}
+
+func (i *InstanceSimulator) evictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
 		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
 		i.sim.KVCache.ReleaseKVBlocks(req)
@@ -540,7 +576,6 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 				req.State = sim.StateCompleted
 				if len(i.sim.RunningBatch.Requests) == 0 {
 					i.sim.RunningBatch = nil
-					i.sim.ScheduleStepIfIdle(i.sim.CurrentClock())
 				}
 				return true
 			}
@@ -548,3 +583,46 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	}
 	return false
 }
+
+// UsedKVBlocks returns the KV blocks the instance's engine has allocated.
+func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVCache.UsedBlocks() }
+
+// EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
+func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
+	return i.sim.EngineMetricsAt(t)
+}
+
+// CachedBlockHashes returns the hashes of the blocks the instance's prefix cache can serve,
+// sorted (nil for a KV cache that does not track them).
+func (i *InstanceSimulator) CachedBlockHashes() []string {
+	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
+		return src.CachedBlockHashes()
+	}
+	return nil
+}
+
+// CPUBlockHashes returns the hashes of the blocks the instance's CPU KV tier holds, sorted (nil
+// without one).
+func (i *InstanceSimulator) CPUBlockHashes() []string {
+	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
+		return src.CPUBlockHashes()
+	}
+	return nil
+}
+
+// TierBlockHashes returns the hashes of the blocks the secondary KV-offload tiers publishing as
+// medium (e.g. "shared_storage" for a filesystem tier) hold, sorted (nil without one).
+func (i *InstanceSimulator) TierBlockHashes(name string) []string {
+	if src, ok := i.sim.KVCache.(interface{ TierBlockHashes(string) []string }); ok {
+		return src.TierBlockHashes(name)
+	}
+	return nil
+}
+
+// SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
+func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
+	i.sim.SetKVEventSink(sink)
+}
+
+// AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
+func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }

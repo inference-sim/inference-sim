@@ -3,6 +3,7 @@ package kv
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -23,6 +24,8 @@ type cpuBlock struct {
 // cpuTier is an LRU cache of mirrored GPU blocks, keyed by content hash.
 // All operations are O(1) via hash map + doubly-linked list.
 type cpuTier struct {
+	// notify, when set, is told each block that enters (removed=false) or leaves the tier.
+	notify    func(hash string, removed bool)
 	blocks    map[string]*cpuBlock // hash → block, O(1) lookup
 	lruHead   *cpuBlock            // oldest (evict first)
 	lruTail   *cpuBlock            // newest (most recently stored/touched)
@@ -80,6 +83,9 @@ func (c *cpuTier) store(hash string, tokens []sim.TokenID) {
 	c.blocks[hash] = blk
 	c.appendToTail(blk)
 	c.used++
+	if c.notify != nil {
+		c.notify(hash, false)
+	}
 }
 
 // touch moves an existing block to the LRU tail (most recently used).
@@ -108,6 +114,9 @@ func (c *cpuTier) evictHead() {
 	delete(c.blocks, victim.hash)
 	c.used--
 	c.evictionCount++
+	if c.notify != nil {
+		c.notify(victim.hash, true)
+	}
 	// Return token slice to pool
 	c.freeTokenSlices = append(c.freeTokenSlices, victim.tokens)
 	victim.tokens = nil
@@ -383,16 +392,12 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		// (cache.go lazy deletion). Without this, HashToBlock retains a stale
 		// entry mapping the old hash to this block's ID even though the block
 		// is about to be overwritten with different content.
-		if gpuBlk.Hash != "" {
-			delete(t.gpu.HashToBlock, gpuBlk.Hash)
-			gpuBlk.Hash = ""
-		}
+		t.gpu.uncacheBlock(gpuBlk)
 
 		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
-		gpuBlk.Hash = h
 		gpuBlk.RefCount = 0
 		gpuBlk.InUse = false
-		t.gpu.HashToBlock[h] = gpuBlk.ID
+		t.gpu.cacheBlock(gpuBlk, prevHash, h)
 		t.gpu.appendToFreeList(gpuBlk)
 
 		// Accumulate transfer latency through the checked shared boundary. The constructor
@@ -419,6 +424,14 @@ func (t *TieredKVCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	return t.gpu.SnapshotCachedBlocksFn()
 }
+
+// ReservePendingKVBlocks implements sim.PendingKVStore: a transfer's destination is GPU blocks.
+func (t *TieredKVCache) ReservePendingKVBlocks(req *sim.Request) bool {
+	return t.gpu.ReservePendingKVBlocks(req)
+}
+
+// CommitPendingKVBlocks implements sim.PendingKVStore.
+func (t *TieredKVCache) CommitPendingKVBlocks(req *sim.Request) { t.gpu.CommitPendingKVBlocks(req) }
 
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
@@ -545,4 +558,27 @@ func (t *TieredKVCache) MirrorToCPU(batch []*sim.Request) {
 			}
 		}
 	}
+}
+
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so does
+// the CPU tier (Tier "cpu"), in one ordered stream.
+func (t *TieredKVCache) EnableKVEvents() {
+	t.gpu.EnableKVEvents()
+	t.cpu.notify = func(h string, removed bool) { t.gpu.recordTier("cpu", h, removed) }
+}
+
+// TakeKVEvents implements sim.KVEventSource.
+func (t *TieredKVCache) TakeKVEvents() []sim.KVEvent { return t.gpu.TakeKVEvents() }
+
+// CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
+func (t *TieredKVCache) CachedBlockHashes() []string { return t.gpu.CachedBlockHashes() }
+
+// CPUBlockHashes implements sim.KVEventSource.
+func (t *TieredKVCache) CPUBlockHashes() []string {
+	out := make([]string, 0, len(t.cpu.blocks))
+	for h := range t.cpu.blocks {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
 }

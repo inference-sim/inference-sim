@@ -87,9 +87,6 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 1000000
@@ -226,8 +223,6 @@ func TestReplayFixedAccumulate_RejectsConcurrentSessions(t *testing.T) {
 		maxNumBatchedTokens = 4096
 		numInstances = 1
 		seed = 1
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		maxModelLen = 1000000
 		traceLevel = "none"
@@ -297,8 +292,6 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 1
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		maxModelLen = 0
 		traceLevel = "none"
@@ -363,8 +356,6 @@ func TestReplayFixedAccumulate_RejectsThinkTime(t *testing.T) {
 		maxNumBatchedTokens = 4096
 		numInstances = 1
 		seed = 1
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		maxModelLen = 1000000
 		traceLevel = "none"

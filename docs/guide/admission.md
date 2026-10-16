@@ -1,334 +1,145 @@
 # Admission Control
 
-Admission control is the first gate in the cluster pipeline. It decides whether to accept or reject incoming requests before they reach the routing stage. Admission only applies in cluster mode (`--num-instances` > 1) -- single-instance simulations skip directly to the wait queue.
+Admission and flow control in a cluster simulation are the llm-d router's. BLIS runs the
+router's own admission controller and flow-control layer (see [Routing](routing.md)); it has no
+admission logic of its own. This page covers how the router admits, queues and sheds simulated
+requests, how BLIS SLO classes reach it, and how its outcomes are counted. Single-instance runs
+have no router and admit every request.
+
+The mapping from each removed BLIS admission and flow-control flag to its llm-d configuration
+is the table in [Routing: From BLIS's former routing features](routing.md#from-bliss-former-routing-features).
+
+## Request priority: SLO classes and InferenceObjectives
+
+Each request carries an SLO class (`slo_class` on its workload client). The router receives it
+as the `x-llm-d-inference-objective` header and the request's tenant as
+`x-llm-d-inference-fairness-id`. The router turns the objective name into a priority by looking
+up the `InferenceObjective` of that name; a request whose objective it does not know gets
+priority 0. A priority below 0 makes a request **sheddable**.
+
+The router reconciles `InferenceObjective` objects only for an `InferencePool`, so priorities
+apply when the EPP flags select a pool with `--pool-name` and the manifests (`--epp-manifests`)
+carry the pool and its objectives. With the default standalone pool (`--endpoint-selector`),
+every request has priority 0 and nothing is sheddable.
+`examples/llm-d/inferencepool.yaml` holds a pool over every simulated pod and one objective per
+BLIS SLO class, at the same priorities as BLIS's engine SLO priority map; select it with
+`examples/llm-d/pool-flags.yaml`:
 
 ```bash
-# Rate-limit a 4-instance cluster with token bucket admission
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 4 --rate 500 --num-requests 2000 \
-  --admission-policy token-bucket \
-  --token-bucket-capacity 10000 --token-bucket-refill-rate 1000
+  --registry $PWD/blis-registry --num-instances 2 --workload-spec my-workload.yaml \
+  --epp-flags examples/llm-d/pool-flags.yaml --epp-manifests examples/llm-d/inferencepool.yaml
 ```
 
-## Available Policies
-
-| Policy | Flag Value | Behavior |
-|--------|-----------|----------|
-| **Always-admit** | `--admission-policy always-admit` (default) | Accepts all requests unconditionally. No filtering. |
-| **Token-bucket** | `--admission-policy token-bucket` | Rate-limiting. Each request consumes tokens equal to its input token count. Tokens refill at a constant rate. Rejects when the bucket is empty. |
-| **Tier-shed** | `--admission-policy tier-shed` | SLO-aware shedding. Under overload, rejects requests whose SLO tier priority is below `tier_shed_min_priority`. See [SLO Tier Priorities](#slo-tier-priorities) below. |
-| **GAIE-legacy** | `--admission-policy gaie-legacy` | Saturation-based shedding matching production llm-d/GAIE behavior. Non-sheddable requests always pass; sheddable requests (priority < 0) rejected when pool-average saturation >= 1.0. See [GAIE-Legacy Admission](#gaie-legacy-admission) below. |
-| **Reject-all** | `--admission-policy reject-all` | Rejects all requests unconditionally. Pathological template for testing. |
-
-## Token Bucket Mechanics
-
-The token bucket policy controls throughput by treating each request's input token count as a cost:
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--token-bucket-capacity` | Maximum number of tokens the bucket can hold | 10000 |
-| `--token-bucket-refill-rate` | Tokens added per second of simulation time | 1000 |
-
-How it works:
-
-1. **Bucket starts full.** At initialization, the bucket holds `capacity` tokens.
-2. **Refill is continuous.** On each admission decision, the bucket refills proportionally to elapsed simulation time: `refill = elapsed_microseconds * refill_rate / 1,000,000`.
-3. **Cost per request = number of input tokens.** A request with 512 input tokens costs 512 tokens from the bucket.
-4. **Admission check.** If `current_tokens >= cost`, the request is admitted and the cost is subtracted. Otherwise the request is rejected with reason `"insufficient tokens"`.
-5. **Capacity cap.** Tokens never accumulate beyond `capacity`, even after long idle periods.
-
-!!! example "Sizing the bucket"
-    With `--token-bucket-capacity 10000 --token-bucket-refill-rate 1000` and requests averaging 512 input tokens, the sustained admission rate is roughly `1000 / 512 ~ 1.95 req/s`. The bucket's capacity of 10000 tokens allows a burst of up to `10000 / 512 ~ 19` requests before rate-limiting kicks in.
-
-Rejected requests are counted in the output anomaly counters (`Rejected Requests`) and in the full pipeline conservation formula (`num_requests == injected_requests + rejected_requests`), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class `ShedByTier` counter, so you can see which request classes are being rejected (e.g., `{"batch": 12, "sheddable": 8}`). `ShedByTier` is also exposed in periodic `ProgressSnapshot` callbacks, allowing live monitoring of per-tier shedding rates during simulation.
-
-## When to Use Admission Control
-
-- **Overload protection.** When the arrival rate significantly exceeds service capacity, unbounded queues grow without limit. Admission shedding keeps queue depth manageable.
-- **Cost control.** Limit total token throughput to match a token budget or downstream rate limit.
-- **Graceful degradation.** Shed excess load to protect latency for admitted requests. Under extreme overload, routing distributes load and scheduling orders within instances, but neither can reduce total queue depth — admission is the lever that can. The **tier-shed** policy provides SLO-aware shedding — rejecting lower-priority classes (batch, sheddable, background) before higher-priority ones (critical, standard).
-- **Testing rejection paths.** The `reject-all` policy verifies that rejection counting, trace recording, and conservation invariants hold when no requests are admitted.
-
-!!! tip "Admission is the third lever"
-    Routing distributes load across instances. Scheduling orders requests within each instance. But when total arrival rate exceeds total service capacity, neither routing nor scheduling can reduce the queue -- they can only redistribute it. Admission control is the mechanism that actually reduces inbound volume.
-
-## SLO Tier Priorities
-
-Every request carries an `SLOClass` label that determines its priority throughout the admission pipeline. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority means sheddable**.
-
-### Default Priorities
-
-| SLO Class | Priority | Sheddable? |
-|-----------|----------|------------|
+| SLO class | Objective priority | Sheddable |
+|---|---|---|
 | `critical` | 4 | No |
-| `standard` | 3 | No (also the default for empty/unknown classes) |
+| `standard` | 3 | No |
 | `batch` | -1 | Yes |
 | `sheddable` | -2 | Yes |
 | `background` | -3 | Yes |
 
-The sheddable/non-sheddable boundary is `priority < 0`. This matches the `IsSheddable` contract from llm-d's gateway implementation.
+The router reconciles both served `InferenceObjective` versions, `llm-d.ai/v1` (`spec.poolRefs`) and `llm-d.ai/v1alpha2` (`spec.poolRef`), with their CRD defaults applied (see [Routing](routing.md#the-routers-inputs)).
 
-### Customizing Priorities
+## Legacy admission (flow control off)
 
-Override specific priorities via the `slo_priorities` field in a policy bundle YAML:
+With the `flowControl` feature gate off (the default), the router's legacy admission
+controller checks each request before scheduling: a sheddable request is rejected when the
+saturation detector reports the pool saturated (saturation >= 1). Non-sheddable requests are
+never rejected by it. The saturation detector is `utilization-detector` unless the
+configuration names another (`concurrency-detector`, `max-saturation-detector`); the
+utilization detector's thresholds are its `queueDepthThreshold` (default 5 waiting requests)
+and `kvCacheUtilThreshold` (default 0.8) parameters. It reads the metrics the router scrapes
+from the simulated engines, so its view is as old as the last scrape
+(`--refresh-metrics-interval`).
+
+An admitter plugin (`probabilistic-admitter`) can reject requests in addition.
+
+## Flow control
+
+With `featureGates: [flowControl]` in the EndpointPickerConfig, the router queues requests
+instead of shedding them. Requests are grouped into priority bands (one per objective
+priority, from the reconciled InferenceObjectives) and, within a band, into flows by fairness
+ID. A request is dispatched when the saturation detector reports capacity; otherwise it waits.
+The `flowControl` block configures:
+
+| Setting | What it does |
+|---|---|
+| `maxRequests`, `maxBytes` | Global capacity. A request arriving at a full queue is rejected. |
+| `priorityBands[]` (`priority`, `maxRequests`, `maxBytes`, `defaultRequestTTL`, `fairnessPolicyRef`, `orderingPolicyRef`) | Per-band capacity, queue-wait budget and policies. `defaultPriorityBand` and `defaultNegativePriorityBand` set the bands not listed. |
+| `defaultRequestTTL` | Queue-wait budget (default 60s). A request that cannot dispatch within it is shed. `0s` disables it. |
+| `saturationDetector.pluginRef` | The detector that gates dispatch. |
+| `usageLimitPolicyPluginRef` | `static-usage-limit-policy`, `soft-reflective-ceiling-policy` |
+| `bandSelectionPolicyPluginRef` | `strict-band-selection-policy`, `priority-holdback-policy` |
+
+Fairness policies are `global-strict-fairness-policy` and `round-robin-fairness-policy`;
+ordering policies are `fcfs-ordering-policy`, `edf-ordering-policy` and
+`slo-deadline-ordering-policy`. The dispatch tick (1 ms) and the expiry sweep (1 s) are the
+router's own. With in-flight eviction (`enableEviction`), when higher-priority requests are
+blocked by saturation the router revokes in-flight sheddable (priority < 0) requests: BLIS
+observes the router's eviction signal, aborts the request on its engine in a fresh event (its KV
+blocks and adapter pin are released), ends the router's response with the eviction cause, and
+counts it as `Gateway Evicted (in-flight)` (INV-1). A victim not on an engine at that instant
+is retried at the router's next step; one that completes first is not revoked.
 
 ```yaml
-admission:
-  policy: "tier-shed"
-  tier_shed_min_priority: 3
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+flowControl:
+  maxRequests: "200"
+  defaultRequestTTL: 10s
+  defaultPriorityBand:
+    fairnessPolicyRef: round-robin-fairness-policy
+plugins:
+- type: round-robin-fairness-policy
+- type: queue-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+  - pluginRef: max-score-picker
+```
+
+## Outcomes and INV-1
+
+Every request the router does not dispatch lands in one bucket of request conservation
+([INV-1](../contributing/standards/invariants.md#inv-1-request-conservation)):
+
+| Router outcome | Bucket | Anomaly counter |
+|---|---|---|
+| Legacy admission shed a sheddable request, or an admitter rejected it | `rejected_requests` | `Rejected Requests (Admission)` |
+| No endpoint can serve it | `routing_rejections` | `Rejected Requests (Routing)` |
+| Flow control rejected it: queues at capacity | `gateway_queue_rejected` | `Gateway Queue Rejected` |
+| It waited in flow control past its TTL | `gateway_expired` | `Gateway Expired (TTL)` |
+| It is still queued in flow control at the end of the run | `gateway_queue_depth` | -- |
+
+Admission rejections and TTL expiries are also counted per SLO class (`Shed (<class>)`). See
+[Results](results.md) for the output format.
+
+## Engine-level priority
+
+Separately from the router, each instance's scheduler uses an engine priority derived from the
+SLO class through `SLOPriorityMap`: `critical` 4, `standard` 3 (also for an empty or unknown
+class), `batch` -1, `sheddable` -2, `background` -3. Priority scheduling and priority
+preemption use it (see [Scheduling & Priority](scheduling.md)). Override classes in the
+policy bundle (`--policy-config`), in the range -100 to 100; unlisted classes keep their
+defaults:
+
+```yaml
+priority:
   slo_priorities:
-    batch: 0       # promote batch to non-sheddable
-    critical: 10   # widen the gap between critical and standard
+    batch: 0       # raise batch above the other negative classes
+    critical: 10
 ```
 
-Unspecified classes retain their GAIE defaults. The `slo_priorities` map merges on top of defaults — you only need to specify the classes you want to change.
+`priority.slo_priorities` affects only the engines. The router's priorities come from the
+InferenceObjectives, so to change both, change both.
 
-### Where Priorities Are Used
+## Further reading
 
-Priorities affect three components:
-
-1. **Tier-shed admission** (`sim/admission.go`): Under overload, rejects requests with `Priority(class) < MinAdmitPriority`. With the default `tier_shed_min_priority: 3`, this admits critical (4) and standard (3), while rejecting batch (-1), sheddable (-2), and background (-3).
-
-2. **Tenant budget enforcement** (`sim/cluster/cluster_event.go`): When a tenant exceeds their capacity budget, only sheddable requests (`IsSheddable = priority < 0`) are shed. Critical and standard traffic is always protected regardless of budget.
-
-3. **Gateway queue dispatch** (`sim/cluster/gateway_queue.go`): In `priority` dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the request is **rejected** by default (llm-d parity). With `--queue-shedding`, the lowest-priority sheddable request is evicted instead (BLIS-extra experimental feature, not in llm-d).
-
-## Tier-Shed Admission
-
-The `tier-shed` policy sheds lower-priority SLO tiers under cluster overload. It activates when the maximum per-instance in-flight load exceeds `tier_shed_threshold`:
-
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 4 --rate 500 --num-requests 2000 \
-  --admission-policy tier-shed \
-  --policy-config policies.yaml
-```
-
-Where `policies.yaml` contains:
-
-```yaml
-admission:
-  policy: "tier-shed"
-  tier_shed_threshold: 0        # 0 = shed at any load level
-  tier_shed_min_priority: 3     # admit standard(3)+critical(4), shed the rest
-```
-
-Under overload, any request with `Priority(class) < tier_shed_min_priority` is rejected. Under normal load (below threshold), all requests are admitted regardless of priority.
-
-!!! tip "Choosing tier_shed_min_priority"
-    - `3` (default): Admits critical and standard. Sheds batch, sheddable, background.
-    - `0`: Admits all non-sheddable classes (priority >= 0). Sheds only negative-priority classes.
-    - `-3`: Admits everything (effectively disables tier-shed). Useful when you want tenant budget enforcement but not tier-level shedding.
-
-## GAIE-Legacy Admission
-
-The `gaie-legacy` policy replicates the saturation-based admission behavior from production llm-d's [Gateway API Inference Extension (GAIE)](https://github.com/kubernetes-sigs/gateway-api-inference-extension). It uses a two-tier decision tree:
-
-1. **Non-sheddable requests** (priority >= 0: critical, standard) are **always admitted**, regardless of cluster saturation.
-2. **Sheddable requests** (priority < 0: batch, sheddable, background) are rejected when pool-average saturation >= 1.0.
-
-### Saturation Formula
-
-The saturation formula averages per-instance utilization ratios across the cluster, taking the most constrained resource (compute queue or memory) for each instance:
-
-```
-saturation = avg across instances of max(queueDepth / qdThreshold, kvUtilization / kvThreshold)
-```
-
-This matches the production GAIE implementation in `gateway-api-inference-extension/pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization/detector.go:115-137`.
-
-When saturation >= 1.0, the cluster is considered overloaded and sheddable traffic is rejected. When saturation < 1.0, all requests pass.
-
-### Configuration
-
-Configure via `--policy-config` YAML (no CLI flags for thresholds, consistent with tier-shed):
-
-```yaml
-admission:
-  policy: "gaie-legacy"
-  gaie_qd_threshold: 5     # queue depth threshold per instance (default: 5)
-  gaie_kv_threshold: 0.8   # KV cache utilization threshold, in (0, 1.0] (default: 0.8)
-```
-
-| YAML Field | Type | Default | Description |
-|------------|------|---------|-------------|
-| `gaie_qd_threshold` | float | 5 | Per-instance queue depth at which the QD component reaches 1.0. Must be > 0. |
-| `gaie_kv_threshold` | float | 0.8 | Per-instance KV cache utilization at which the KV component reaches 1.0. Must be in (0, 1.0]. |
-
-### Default Justification
-
-Both defaults come directly from the GAIE production source code:
-
-- **`gaie_qd_threshold = 5`**: From `DefaultQueueDepthThreshold` in `saturationdetector/utilization/config.go:31`. Represents the "ideal" queue capacity for a single endpoint — at 5 queued requests per instance, the compute resource is considered at capacity.
-- **`gaie_kv_threshold = 0.8`**: From `DefaultKVCacheUtilThreshold` in `saturationdetector/utilization/config.go:33`. At 80% KV cache utilization, the memory resource is considered at capacity, leaving 20% headroom for continuous batching dynamics.
-
-### Edge Cases
-
-!!! note "Empty cluster"
-    When there are no instance snapshots (e.g., all instances are still loading), saturation defaults to 1.0 — a conservative choice matching GAIE's behavior where stale or missing metrics are treated as fully saturated (`detector.go:116-118`). Non-sheddable requests still pass; sheddable requests are rejected.
-
-!!! note "Stale metrics"
-    GAIE production treats stale per-pod metrics (older than `MetricsStalenessThreshold`, default 200ms) as score=1.0. BLIS does not model per-snapshot staleness — signal freshness is controlled globally via `--snapshot-refresh-interval` (INV-7). This is a deliberate simplification: BLIS controls the simulator clock, so signal freshness is deterministic.
-
-!!! tip "Choosing thresholds"
-    The default thresholds (QD=5, KV=0.8) match production llm-d. Lower `gaie_qd_threshold` makes the policy more aggressive about shedding under queue buildup. Lower `gaie_kv_threshold` makes it more sensitive to KV cache pressure. Both thresholds follow the same validation as GAIE: `QD > 0` (strictly positive), `KV in (0, 1.0]`. Extreme values (e.g., `gaie_qd_threshold: 0.001`) are accepted as long as they pass validation — BLIS does not clamp or warn. Use the GAIE defaults unless you have a specific reason to change them.
-
-### Comparison with Tier-Shed
-
-| Aspect | `tier-shed` | `gaie-legacy` |
-|--------|-------------|---------------|
-| **Signal** | Max per-instance effective load (QueueDepth + BatchSize) | Pool-average saturation (QD and KV ratios) |
-| **Granularity** | Configurable priority threshold (`tier_shed_min_priority`) | Binary: sheddable (priority < 0) vs non-sheddable |
-| **Activation** | When any instance exceeds `tier_shed_threshold` | When pool-average saturation >= 1.0 |
-| **Production parity** | BLIS-specific | Matches llm-d/GAIE |
-
-## Flow Control Admission
-
-When `--flow-control` is enabled, the `FlowControlAdmission` policy replaces the configured
-admission policy. In this mode, admission and queuing are a single step -- the queue IS the
-admission decision, matching llm-d's `FlowControlAdmissionController`.
-
-### llm-d Parity Summary
-
-BLIS's default flow control behavior matches llm-d's `ShardProcessor`. BLIS-extra features are off by default and require explicit flags.
-
-| Behavior | llm-d | BLIS default | BLIS opt-in flag |
-|----------|-------|-------------|-----------------|
-| Queue full → reject | Yes | **Yes** | — |
-| Queue full → shed victim | No | No | `--queue-shedding` |
-| Dispatch on enqueue | Yes | **Yes** | — |
-| Dispatch via periodic tick (1ms) | Yes | **Yes** | `--dispatch-tick-interval` to tune |
-| Dispatch on completion | No | No | — |
-| Dispatch on eviction/TTL | No | No | — |
-| Band ceilings: constant | Yes | **Yes** | — |
-| Band ceilings: interpolated | Interface only, no impl | No | `--usage-limit-threshold < 1.0` |
-| Fairness: global-strict | Yes (plugin) | **Yes** | — |
-| Fairness: round-robin | Yes (plugin) | No | `--fairness-policy round-robin` |
-
-**Bold** = llm-d parity. BLIS-extra features are documented in code comments and only activate when explicitly enabled.
-
-### How It Works
-
-1. Incoming request is enqueued into a per-priority-band, per-flow queue
-2. Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band
-3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands; with `slo-deadline`, dispatches the request with the earliest SLO deadline within each flow (see [SLO-Deadline Dispatch Ordering](#slo-deadline-dispatch-ordering) below)
-4. Within a band, `--fairness-policy` controls flow selection: `global-strict` (default) picks the earliest arrival (lowest sequence ID); `round-robin` cycles through tenants in sorted key order
-5. Saturation gating: dispatch only when cluster saturation < 1.0
-6. Dispatch triggers (llm-d parity): on-enqueue dispatch + periodic dispatch tick (default 1ms, configurable via `--dispatch-tick-interval`). The tick is demand-driven — only active while the queue is non-empty.
-
-### Fairness Policy
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--fairness-policy` | Intra-band dispatch fairness: `global-strict`, `round-robin` | `global-strict` |
-
-- **global-strict**: Picks the flow head with the earliest sequence ID (arrival order). Matches GIE's GlobalStrict.
-- **round-robin**: Cycles through tenants in sorted key order, skipping empty flows. Maintains a per-band cursor.
-
-### Per-Band Capacity
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--per-band-capacity` | Max requests per priority band (0=unlimited) | 0 |
-
-When a band reaches its capacity limit, incoming requests for that band are rejected
-(all entries in a band share the same priority, so displacement is never possible).
-The global `--max-gateway-queue-depth` limit applies across all bands. When at capacity,
-requests are **rejected** by default (llm-d parity). With `--queue-shedding`, cross-band
-shedding of sheddable entries is enabled (BLIS-extra experimental feature).
-
-### Queue Shedding and Dispatch Tick
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--queue-shedding` | Enable cross-band victim shedding when queue is full (BLIS-extra, not in llm-d) | `false` |
-| `--dispatch-tick-interval` | Microseconds between periodic dispatch ticks | `1000` (1ms, llm-d parity) |
-
-**Queue shedding** (`--queue-shedding`): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.
-
-**Dispatch tick** (`--dispatch-tick-interval`): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms `dispatchTicker`. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.
-
-### Example
-
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --flow-control --saturation-detector utilization \
-  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
-  --per-band-capacity 100 --max-gateway-queue-depth 500
-```
-
-### SLO-Deadline Dispatch Ordering
-
-With `--dispatch-order slo-deadline`, the gateway queue dispatches the request with the earliest SLO deadline first within each flow. This matches GIE's `slo-deadline-ordering-policy`.
-
-**How it works:**
-
-1. Fairness policy picks the flow (same as priority mode)
-2. Within the picked flow, dequeue the request with the earliest SLO deadline
-3. Deadline = `GatewayEnqueueTime + SLOTargetUs`
-4. Fallback hierarchy: per-request `SLOTargetUs` → per-tier `--slo-targets` → far-future (FCFS)
-5. Equal deadlines use arrival order (seqID) as tiebreaker
-
-**Setting SLO targets:**
-
-- **Per-request** (workload spec): `slo_target_us: 200000` on a cohort (200ms TTFT target)
-- **Per-tier** (CLI flag): `--slo-targets critical=100000,standard=500000` (fallback when workload spec doesn't set per-request targets)
-- **Per-tier** (policy bundle): `admission.slo_targets` in YAML
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--dispatch-order slo-deadline` | Enable SLO-deadline ordering | `fifo` |
-| `--slo-targets` | Per-SLO-class TTFT targets in µs (e.g., `critical=100000,standard=500000`) | none |
-
-**Example:**
-
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --flow-control --saturation-detector utilization \
-  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
-  --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
-```
-
-**Observe integration** (`blis observe` is deprecated, #1901): When `slo_target_us > 0`, `blis observe` injects the `x-slo-ttft-ms` HTTP header on outgoing requests, matching GIE's header convention.
-
-### In-Flight Eviction
-
-When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This is a BLIS-extra feature, not present in llm-d (llm-d's `RequestEvictor`/`EvictN` exists in code but has zero non-test callers in the production dispatch path).
-
-**How it works:**
-
-1. When saturation >= 1.0 and a non-sheddable request is waiting in the gateway queue
-2. The eviction trigger selects the most-evictable in-flight request:
-    - Lowest priority first (background=-3 before sheddable=-2 before batch=-1)
-    - Among equal priority: newest dispatch time first (minimizes wasted compute)
-3. The selected request is terminated on its instance (KV freed, resources released)
-4. The freed capacity allows the waiting higher-priority request to dispatch
-
-**Key properties:**
-
-- Only sheddable requests (priority < 0) can be evicted — critical and standard are always protected
-- Disabled by default (llm-d parity). Enable with `--in-flight-eviction` (requires `--flow-control`)
-- Evicted requests appear in the `Gateway Evicted (in-flight)` anomaly counter
-- This is a terminal state — evicted requests are not requeued
-- Eviction is distinct from instance-level KV preemption (`--preemption-policy`), which handles memory pressure and requeues victims
-
-### Comparison with Legacy Admission
-
-| Aspect | Legacy (AlwaysAdmit, TierShed, etc.) | FlowControlAdmission |
-|--------|--------------------------------------|---------------------|
-| Admission | Separate from queuing | Queue IS admission |
-| Queue structure | None (admit/reject then route directly) | Per-priority-band, per-flow |
-| Dispatch order | N/A (no queue) | `--dispatch-order` (fifo/priority/slo-deadline) |
-| Capacity | N/A (no queue) | Per-band + global |
-
-## Pipeline Latency
-
-The `--admission-latency` and `--routing-latency` flags model real network and processing overhead between gateway and backend (gRPC hops, service mesh serialization, queue dispatch). These are pipeline concerns that affect both admission and routing stages. See [Cluster Simulation](cluster.md#admission-and-routing-latency) for details on configuring pipeline latency.
-
-## Further Reading
-
-- [Cluster Simulation](cluster.md) -- full pipeline overview
-- [Routing Policies](routing.md) -- the next stage after admission
-- [Cluster Architecture](../concepts/architecture.md#admission-pipeline) -- architectural details
+- [Routing](routing.md) -- the router's inputs, supported plugins and the feature mapping table
+- [Cluster Simulation](cluster.md) -- the pipeline around the router
+- [Results](results.md) -- anomaly counters and per-SLO output

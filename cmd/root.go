@@ -8,7 +8,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -103,24 +102,7 @@ var (
 	// cluster config
 	numInstances int // Number of instances in the cluster
 
-	// online routing pipeline config
-	admissionPolicy       string             // Admission policy name
-	admissionLatency      int64              // Admission latency in microseconds
-	routingLatency        int64              // Routing latency in microseconds
-	tokenBucketCapacity   float64            // Token bucket capacity
-	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
-	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
-	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
-	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
-	sloPriorityOverrides  map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
-	sloTargetsMap         map[string]int64   // SLO class → TTFT target µs for slo-deadline ordering (nil = disabled)
-	gaieQDThreshold       float64            // GAIE-legacy queue depth threshold per instance (default 5)
-	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
-
-	// routing policy config (PR 6, evolved in PR17)
-	routingPolicy    string  // Routing policy name
-	routingScorers   string  // Comma-separated name:weight pairs for weighted routing
-	loraScorerWeight float64 // Weight of the lora-affinity scorer; 0 (default) ⇒ off (#1469)
+	sloPriorityOverrides map[string]int // SLO class → engine priority overrides (nil = defaults)
 
 	// Scheduler and preemption config
 	scheduler        string // Scheduler name
@@ -164,45 +146,21 @@ var (
 	lazyGeneration   bool   // --lazy-generation: stream requests from generator (alpha, #1441)
 
 	// Tiered KV cache config (PR12)
-	kvCPUBlocks             int64
-	kvOffloadThreshold      float64
-	kvTransferBandwidth     float64 // no flag sets it: the kernel prices the legacy CPU tier (KVTransferTicksPerBlock)
-	kvTransferBaseLatency   int64   // no flag sets it, for the same reason
-	snapshotRefreshInterval int64
-	cacheSignalDelay        int64
+	kvCPUBlocks           int64
+	kvOffloadThreshold    float64
+	kvTransferBandwidth   float64 // no flag sets it: the kernel prices the legacy CPU tier (KVTransferTicksPerBlock)
+	kvTransferBaseLatency int64   // no flag sets it, for the same reason
 
 	// PD disaggregation config
-	prefillInstances       int    // Number of instances dedicated to prefill
-	decodeInstances        int    // Number of instances dedicated to decode
-	prefillDecodeInstances int    // Number of shared-role instances (both prefill and decode), issue #1276
-	pdDecider              string // Disaggregation decider name
-	pdPrefixThreshold      int    // Non-cached token threshold for prefix-threshold decider
-	prefillRoutingScorers  string // Scorer weights for prefill pool routing
-	decodeRoutingScorers   string // Scorer weights for decode pool routing
+	prefillInstances       int // Number of instances dedicated to prefill
+	decodeInstances        int // Number of instances dedicated to decode
+	prefillDecodeInstances int // Number of shared-role instances (both prefill and decode), issue #1276
 
 	// E/P/D disaggregation config (GAP-4, issue #1264)
-	encodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
-	encodeDecider   string // Encode decider name: "never" (default), "always", "multimodal"
+	encodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
 
 	// Autoscaler config (Phase 1C)
 	modelAutoscalerIntervalUs float64 // tick interval in μs; 0 = disabled
-
-	// Flow control config (issue #882, GIE parity)
-	flowControlEnabled              bool
-	flowControlDetector             string
-	flowControlDispatchOrder        string
-	flowControlSLOTargets           string
-	flowControlMaxQueueDepth        int
-	flowControlQueueDepthThreshold  float64
-	flowControlKVCacheUtilThreshold float64
-	flowControlMaxConcurrency       int
-	flowControlPerBandCapacity      int
-	flowControlUsageLimitThreshold  float64
-	flowControlFairnessPolicy       string
-	flowControlRequestTTL           int64
-	flowControlQueueShedding        bool
-	flowControlDispatchTickInterval int64
-	flowControlInFlightEviction     bool
 
 	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
 	requestTimeoutSecs int
@@ -750,48 +708,16 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	}
 }
 
-// composeLoRAScorer appends the lora-affinity scorer at the given weight to the
-// effective weighted-routing profile (#1469). When base is empty (no explicit
-// --routing-scorers or bundle), it materializes the default profile first so the
-// LoRA scorer composes alongside the standard dimensions rather than replacing
-// them. Returns an error for a non-finite/non-positive weight or when base already
-// declares lora-affinity (double-specification via both --routing-scorers and
-// --lora-scorer-weight). The returned slice never aliases base's backing array.
-func composeLoRAScorer(base []sim.ScorerConfig, weight float64) ([]sim.ScorerConfig, error) {
-	if weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
-		return nil, fmt.Errorf("weight must be a finite positive number, got %v", weight)
-	}
-	if len(base) == 0 {
-		base = sim.DefaultScorerConfigs()
-	}
-	for _, sc := range base {
-		if sc.Name == "lora-affinity" {
-			return nil, fmt.Errorf("lora-affinity already present in the scorer profile; set its weight via --routing-scorers OR --lora-scorer-weight, not both")
-		}
-	}
-	composed := make([]sim.ScorerConfig, 0, len(base)+1)
-	composed = append(composed, base...)
-	composed = append(composed, sim.ScorerConfig{Name: "lora-affinity", Weight: weight})
-	return composed, nil
-}
-
-// resolvePolicies resolves admission/routing/priority/scheduler policy configuration
-// from CLI flags and an optional policy bundle YAML file. It is called by both runCmd
-// and replayCmd to ensure a single validation code path (R23: code path parity).
+// resolvePolicies resolves the engine-level policy configuration (instance scheduler,
+// preemption, SLO priority mapping) and the decision-trace settings from CLI flags and an
+// optional policy bundle YAML file. It is called by both runCmd and replayCmd to ensure a
+// single validation code path (R23: code path parity). Admission, routing and flow control
+// are the llm-d router's (see router.go).
 //
-// Precondition: adoptKernelDeployment must be called first. blockSizeTokens comes from the
-// scenario, validated by the kernel when it opens; resolvePolicies does not re-validate it.
+// Precondition: adoptKernelDeployment must be called first.
 //
-// Side effects: may write admissionPolicy, routingPolicy, scheduler,
-// tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
-// tenantBudgets package-level vars (from policy bundle).
-//
-// Returns the parsed scorer configs for weighted routing (caller uses these in
-// DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
-// Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
-// in runCmd.
-func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle) {
-	var bundleScorerConfigs []sim.ScorerConfig
+// Returns the loaded policy bundle (nil if none).
+func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 	var loadedBundle *sim.PolicyBundle
 
 	// Load policy bundle if specified (R18: CLI flags override YAML values)
@@ -804,29 +730,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 			logrus.Fatalf("Invalid policy config: %v", err)
 		}
 		loadedBundle = bundle
-		// Apply bundle values as defaults; CLI flags override via Changed().
-		if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
-			admissionPolicy = bundle.Admission.Policy
-		}
-		if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
-			tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
-		}
-		if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
-			tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
-		}
-		if bundle.Admission.TierShedThreshold != nil {
-			tierShedThreshold = *bundle.Admission.TierShedThreshold
-		}
-		if bundle.Admission.TierShedMinPriority != nil {
-			tierShedMinPriority = *bundle.Admission.TierShedMinPriority
-		} else if bundle.Admission.Policy == "tier-shed" && bundle.Admission.TierShedMinPriority == nil {
-			tierShedMinPriority = 3 // default: protect Critical (4) and Standard (3)
-		}
-		if bundle.TenantBudgets != nil {
-			tenantBudgets = bundle.TenantBudgets
-		}
-		if bundle.Admission.SLOPriorities != nil {
-			sloPriorityOverrides = bundle.Admission.SLOPriorities
+		if bundle.Priority.SLOPriorities != nil {
+			sloPriorityOverrides = bundle.Priority.SLOPriorities
 			// Validate at CLI boundary (R3) before reaching library-level panic in NewSLOPriorityMap.
 			for k, v := range sloPriorityOverrides {
 				if v < -100 || v > 100 {
@@ -834,19 +739,6 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 				}
 			}
 		}
-		if bundle.Admission.SLOTargets != nil && sloTargetsMap == nil {
-			sloTargetsMap = bundle.Admission.SLOTargets
-		}
-		if bundle.Admission.GAIEQDThreshold != nil {
-			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
-		}
-		if bundle.Admission.GAIEKVThreshold != nil {
-			gaieKVThreshold = *bundle.Admission.GAIEKVThreshold
-		}
-		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
-			routingPolicy = bundle.Routing.Policy
-		}
-		bundleScorerConfigs = bundle.Routing.Scorers
 		if bundle.Priority.Policy != "" && bundle.Priority.Policy != "constant" {
 			logrus.Warnf("bundle priority.policy=%q has no effect: --priority-policy was removed in PR #1216. "+
 				"Request priority is now static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
@@ -864,37 +756,6 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
-	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
-	if gaieQDThreshold == 0 {
-		gaieQDThreshold = 5
-	}
-	if gaieKVThreshold == 0 {
-		gaieKVThreshold = 0.8
-	}
-
-	// Policy name validation (R3: validate at CLI boundary before passing to library)
-	if admissionPolicy == "token-bucket" {
-		if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
-			logrus.Fatalf("--token-bucket-capacity must be a finite value > 0, got %v", tokenBucketCapacity)
-		}
-		if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
-			logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
-		}
-	}
-	if admissionPolicy == "gaie-legacy" {
-		if gaieQDThreshold <= 0 || math.IsNaN(gaieQDThreshold) || math.IsInf(gaieQDThreshold, 0) {
-			logrus.Fatalf("gaie_qd_threshold must be > 0, got %v", gaieQDThreshold)
-		}
-		if gaieKVThreshold <= 0 || gaieKVThreshold > 1.0 || math.IsNaN(gaieKVThreshold) || math.IsInf(gaieKVThreshold, 0) {
-			logrus.Fatalf("gaie_kv_threshold must be in (0, 1.0], got %v", gaieKVThreshold)
-		}
-	}
-	if !sim.IsValidAdmissionPolicy(admissionPolicy) {
-		logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
-	}
-	if !sim.IsValidRoutingPolicy(routingPolicy) {
-		logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
-	}
 	if !sim.IsValidScheduler(scheduler) {
 		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
 	}
@@ -922,145 +783,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
 		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
 	}
-	if snapshotRefreshInterval < 0 {
-		logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
-	}
-	if cacheSignalDelay < 0 {
-		logrus.Fatalf("--cache-signal-delay must be >= 0, got %d", cacheSignalDelay)
-	}
-	if admissionLatency < 0 {
-		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
-	}
-	if routingLatency < 0 {
-		logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
-	}
-	// Flow control validation (R3: validate at CLI boundary before passing to library)
-	if flowControlEnabled {
-		if !sim.IsValidSaturationDetector(flowControlDetector) {
-			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
-		}
-		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" && flowControlDispatchOrder != "slo-deadline" {
-			logrus.Fatalf("--dispatch-order must be 'fifo', 'priority', or 'slo-deadline', got %q", flowControlDispatchOrder)
-		}
-		if flowControlMaxQueueDepth < 0 {
-			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
-		}
-		if flowControlPerBandCapacity < 0 {
-			logrus.Fatalf("--per-band-capacity must be >= 0, got %d", flowControlPerBandCapacity)
-		}
-		if flowControlUsageLimitThreshold <= 0 || flowControlUsageLimitThreshold > 1.0 {
-			logrus.Fatalf("--usage-limit-threshold must be in (0, 1.0], got %v", flowControlUsageLimitThreshold)
-		}
-		if flowControlFairnessPolicy != "global-strict" && flowControlFairnessPolicy != "round-robin" {
-			logrus.Fatalf("--fairness-policy must be 'global-strict' or 'round-robin', got %q", flowControlFairnessPolicy)
-		}
-		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
-			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
-		}
-		// Parse --slo-targets into map (e.g. "critical=100000,standard=500000")
-		if flowControlSLOTargets != "" {
-			sloTargetsMap = make(map[string]int64)
-			for _, pair := range strings.Split(flowControlSLOTargets, ",") {
-				parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
-				if len(parts) != 2 {
-					logrus.Fatalf("--slo-targets: invalid format %q (expected key=value)", pair)
-				}
-				key := strings.TrimSpace(parts[0])
-				if key == "" {
-					logrus.Fatalf("--slo-targets: empty key in pair %q (expected key=value)", pair)
-				}
-				v, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
-				if parseErr != nil || v <= 0 {
-					logrus.Fatalf("--slo-targets: value for %q must be a positive integer (µs), got %s", key, strings.TrimSpace(parts[1]))
-				}
-				sloTargetsMap[key] = v
-			}
-		}
-		if sloTargetsMap != nil && flowControlDispatchOrder != "slo-deadline" {
-			logrus.Warnf("--slo-targets has no effect without --dispatch-order slo-deadline")
-		}
-		// Validate only parameters consumed by the selected detector
-		switch flowControlDetector {
-		case "utilization":
-			if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
-				logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
-			}
-			if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
-				logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
-			}
-		case "concurrency":
-			if flowControlMaxConcurrency <= 0 {
-				logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
-			}
-		case "", "never":
-			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
-		}
-	}
-	if flowControlRequestTTL < 0 {
-		logrus.Fatalf("--request-ttl must be >= 0, got %d", flowControlRequestTTL)
-	}
-	if flowControlRequestTTL > 0 && !flowControlEnabled {
-		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
-	}
-	if flowControlDispatchTickInterval < 0 {
-		logrus.Fatalf("--dispatch-tick-interval must be >= 0, got %d", flowControlDispatchTickInterval)
-	}
-	if flowControlQueueShedding && !flowControlEnabled {
-		logrus.Warnf("--queue-shedding has no effect without --flow-control")
-	}
-	if flowControlInFlightEviction && !flowControlEnabled {
-		logrus.Warnf("--in-flight-eviction has no effect without --flow-control")
-	}
 
-	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
-		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
-
-	// Parse scorer configuration for weighted routing
-	var parsedScorerConfigs []sim.ScorerConfig
-	if routingPolicy == "weighted" {
-		if routingScorers != "" {
-			var err error
-			parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
-			if err != nil {
-				logrus.Fatalf("Invalid --routing-scorers: %v", err)
-			}
-		} else if len(bundleScorerConfigs) > 0 {
-			parsedScorerConfigs = bundleScorerConfigs
-		}
-		// Compose the lora-affinity scorer (#1469). Left unset the flag is inert, so
-		// routing is byte-identical to today (INV-6). When set (to a positive weight;
-		// an explicit non-positive value is rejected by composeLoRAScorer), append it
-		// to the effective profile — materializing the default base when no explicit
-		// --routing-scorers/bundle profile was given — so the LoRA scorer participates
-		// alongside the existing dimensions.
-		if cmd.Flags().Changed("lora-scorer-weight") {
-			composed, err := composeLoRAScorer(parsedScorerConfigs, loraScorerWeight)
-			if err != nil {
-				logrus.Fatalf("Invalid --lora-scorer-weight: %v", err)
-			}
-			parsedScorerConfigs = composed
-		}
-		activeScorerConfigs := parsedScorerConfigs
-		if len(activeScorerConfigs) == 0 {
-			activeScorerConfigs = sim.DefaultScorerConfigs()
-		}
-		scorerStrs := make([]string, len(activeScorerConfigs))
-		for i, sc := range activeScorerConfigs {
-			scorerStrs[i] = fmt.Sprintf("%s:%.1f", sc.Name, sc.Weight)
-		}
-		logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
-	}
-	if routingPolicy != "weighted" && routingScorers != "" {
-		logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
-	}
-	if routingPolicy != "weighted" && cmd.Flags().Changed("lora-scorer-weight") {
-		logrus.Warnf("--lora-scorer-weight has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
-	}
-	if admissionPolicy == "token-bucket" {
-		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
-	}
-
-	return parsedScorerConfigs, loadedBundle
+	logrus.Infof("Policy config: scheduler=%s, preemption=%s", scheduler, preemptionPolicy)
+	return loadedBundle
 }
 
 // batchConfigFromCLI is the single run/replay wiring seam for vLLM batch settings.
@@ -1095,17 +820,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
-	// Online routing pipeline config
-	cmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: "+strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
-	cmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
-	cmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
-	cmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
-	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
-
-	// Routing policy config
-	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
-	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
-	cmd.Flags().Float64Var(&loraScorerWeight, "lora-scorer-weight", 0, "Weight of the lora-affinity routing scorer, composed into the weighted profile. Leave unset to keep routing unchanged; must be a finite positive number when set. Requires --routing-policy weighted (#1469)")
+	// The llm-d router: its own inputs, and the environment around it (router.go).
+	registerRouterFlags(cmd)
 
 	// Scheduler and preemption config
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
@@ -1119,45 +835,21 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// Decision trace config (PR13)
 	cmd.Flags().StringVar(&traceLevel, "trace-level", "none", "Trace verbosity: none, decisions")
-	cmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Number of counterfactual candidates per routing decision")
+	cmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Record the top-k endpoints the router scored, with their state, per routing decision")
 	cmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
 
 	// Tiered KV cache (PR12)
 	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of the kernel's per-rank GPU KV blocks")
 	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 50000, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate/oracle mode, default 50ms = llm-d parity)")
-	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 50ms. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
 
 	// PD disaggregation config
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
 	cmd.Flags().IntVar(&prefillDecodeInstances, "prefill-decode-instances", 0, "Number of shared-role instances serving both prefill and decode (llm-d 'prefill-decode'/'both' parity; 0 = disabled). Must satisfy --prefill-instances + --decode-instances + --prefill-decode-instances <= --num-instances.")
-	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
-	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 16, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value. Default 16 matches llm-d's shipped P/D configs (deploy/config/pd-epp-config.yaml).")
-	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
-	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
 	// E/P/D disaggregation (GAP-4, issue #1264). Registered on both run and replay.
 	cmd.Flags().IntVar(&encodeInstances, "encode-instances", 0, "Number of instances dedicated to encoding multimodal input (0 = encode pool disabled, default)")
-	cmd.Flags().StringVar(&encodeDecider, "encode-decider", "never", "Encode decider: never (default), always, multimodal")
-
-	// Flow control config (issue #882, GIE parity)
-	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
-	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
-	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority, slo-deadline")
-	cmd.Flags().StringVar(&flowControlSLOTargets, "slo-targets", "", "Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., critical=100000,standard=500000)")
-	cmd.Flags().IntVar(&flowControlMaxQueueDepth, "max-gateway-queue-depth", 0, "Max gateway queue depth (0=unlimited)")
-	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
-	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
-	cmd.Flags().IntVar(&flowControlMaxConcurrency, "max-concurrency", 100, "Max concurrency per instance for concurrency detector")
-	cmd.Flags().IntVar(&flowControlPerBandCapacity, "per-band-capacity", 0, "Max requests per priority band when --flow-control is enabled (0=unlimited)")
-	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
-	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
-	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
-	cmd.Flags().BoolVar(&flowControlQueueShedding, "queue-shedding", false, "Enable cross-band victim shedding when gateway queue is full (BLIS-extra, not in llm-d; default: reject)")
-	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (0 = use default 1ms; llm-d parity)")
-	cmd.Flags().BoolVar(&flowControlInFlightEviction, "in-flight-eviction", false, "Enable in-flight eviction of sheddable requests when saturated (BLIS-extra, not in llm-d; requires --flow-control)")
 
 	// LoRA control-plane config (#1464). Registered on both run and replay (INV-13
 	// parity). All optional; absence => subsystem inert (INV-6). The adapter registry
@@ -1404,6 +1096,7 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Invalid log level: %s", logLevel)
 		}
 		logrus.SetLevel(level)
+		validateRouterFlags()
 
 		// The deployment comes from the scenario, so that resolution runs BEFORE the
 		// gates below: those refuse a run whose deployment nobody chose, and the scenario
@@ -1685,7 +1378,7 @@ var runCmd = &cobra.Command{
 
 		// Resolve policy configuration (single code path shared with replayCmd).
 		// Per-pool scorer configs (PD disaggregation) remain inline below.
-		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		bundle := resolvePolicies(cmd)
 
 		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
 		var (
@@ -1767,34 +1460,11 @@ var runCmd = &cobra.Command{
 		if prefillDecodeInstances < 0 {
 			logrus.Fatalf("--prefill-decode-instances must be >= 0, got %d", prefillDecodeInstances)
 		}
-		if !sim.IsValidDisaggregationDecider(pdDecider) {
-			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
-		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
-		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
-			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
-		}
-		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
-			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
-		}
-		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
-			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
-		}
-
-		// E/P/D disaggregation validation (GAP-4, issue #1264).
 		if encodeInstances < 0 {
 			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
-		}
-		if !sim.IsValidEncodeDecider(encodeDecider) {
-			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
-		}
-		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
-			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
-		}
-		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
-			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
 		}
 
 		// Each P/D role's engine is its own pool's, from its own kernel.
@@ -1803,22 +1473,6 @@ var runCmd = &cobra.Command{
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 		}
 
-		// Parse per-pool scorer configs (PD disaggregation — not in resolvePolicies)
-		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
-		if prefillRoutingScorers != "" {
-			var err error
-			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
-			if err != nil {
-				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
-			}
-		}
-		if decodeRoutingScorers != "" {
-			var err error
-			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
-			if err != nil {
-				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
-			}
-		}
 		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
 		// the KV HBM reservation); here we cross-validate every workload adapter
 		// reference against the declared registry (unknown id / base-model mismatch =>
@@ -1919,57 +1573,23 @@ var runCmd = &cobra.Command{
 				// The kernel prices every step.
 				LatencyModel: lr.KernelModel,
 			},
-			NumInstances:                    numInstances,
-			AdmissionPolicy:                 admissionPolicy,
-			AdmissionLatency:                admissionLatency,
-			RoutingLatency:                  routingLatency,
-			TokenBucketCapacity:             tokenBucketCapacity,
-			TokenBucketRefillRate:           tokenBucketRefillRate,
-			RoutingPolicy:                   routingPolicy,
-			RoutingScorerConfigs:            parsedScorerConfigs,
-			TraceLevel:                      traceLevel,
-			CounterfactualK:                 counterfactualK,
-			SnapshotRefreshInterval:         snapshotRefreshInterval,
-			CacheSignalDelay:                cacheSignalDelay,
-			PrefillInstances:                prefillInstances,
-			DecodeInstances:                 decodeInstances,
-			SharedInstances:                 prefillDecodeInstances,
-			EncodeInstances:                 encodeInstances,
-			EncodeDecider:                   encodeDecider,
-			PDDecider:                       pdDecider,
-			PDPrefixThreshold:               pdPrefixThreshold,
-			PDTransferTime:                  pdTransferTime,
-			PrefillScorerConfigs:            prefillScorerCfgs,
-			DecodeScorerConfigs:             decodeScorerCfgs,
-			PrefillOverrides:                prefillOverrides,
-			DecodeOverrides:                 decodeOverrides,
-			TierShedThreshold:               tierShedThreshold,
-			TierShedMinPriority:             tierShedMinPriority,
-			GAIEQDThreshold:                 gaieQDThreshold,
-			GAIEKVThreshold:                 gaieKVThreshold,
-			TenantBudgets:                   tenantBudgets,
-			FlowControlEnabled:              flowControlEnabled,
-			FlowControlDetector:             flowControlDetector,
-			FlowControlDispatchOrder:        flowControlDispatchOrder,
-			FlowControlSLOTargets:           sloTargetsMap,
-			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
-			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
-			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
-			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
-			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
-			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
-			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
-			FlowControlRequestTTL:           flowControlRequestTTL,
-			FlowControlQueueShedding:        flowControlQueueShedding,
-			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
-			FlowControlInFlightEviction:     flowControlInFlightEviction,
-			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
-			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
-			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,
-			HPAScrapeDelay:                  cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
-			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
-			NodePools:                       bundleNodePools,
-			InstanceLifecycle:               bundleInstanceLifecycle,
+			NumInstances:                   numInstances,
+			TraceLevel:                     traceLevel,
+			CounterfactualK:                counterfactualK,
+			PrefillInstances:               prefillInstances,
+			DecodeInstances:                decodeInstances,
+			SharedInstances:                prefillDecodeInstances,
+			EncodeInstances:                encodeInstances,
+			PDTransferTime:                 pdTransferTime,
+			PrefillOverrides:               prefillOverrides,
+			DecodeOverrides:                decodeOverrides,
+			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
+			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
+			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
+			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
+			AutoscalerAnalyzerConfig:       bundleAnalyzerCfg,
+			NodePools:                      bundleNodePools,
+			InstanceLifecycle:              bundleInstanceLifecycle,
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
@@ -1996,6 +1616,9 @@ var runCmd = &cobra.Command{
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
+		router := resolveRouterInputs()
+		gw := newGateway(router, model)
+		cs.SetGateway(gw)
 
 		// Arrival hook: capture trace-emission references at the cluster's
 		// single arrival boundary so the trace exporter no longer relies on
@@ -2091,6 +1714,8 @@ var runCmd = &cobra.Command{
 				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
 				// without multi-node placement writes a byte-identical header (INV-6).
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
+				// INV-13: the router the run routed with, so a replay rebuilds it.
+				Router: router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -2162,7 +1787,6 @@ var runCmd = &cobra.Command{
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
 		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
@@ -2190,7 +1814,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -2211,9 +1835,6 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.GatewayQueueDepth > 0 {
 				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
-			}
-			if rawMetrics.GatewayQueueShed > 0 {
-				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
 			}
 			if rawMetrics.GatewayQueueRejected > 0 {
 				fmt.Printf("Gateway Queue Rejected: %d\n", rawMetrics.GatewayQueueRejected)

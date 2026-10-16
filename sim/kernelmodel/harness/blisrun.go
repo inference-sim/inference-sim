@@ -9,6 +9,7 @@ package harness
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,9 +111,11 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 // session is admitted at the completion tick, which is the client's zero-wait behaviour at
 // --request-rate inf. No per-request deadline: the trace states none (deadline_us 0), as the
 // client sets no timeout on a request.
-func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath string, sessions, concurrency int) []string {
+func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath, eppConfigPath string, sessions, concurrency int) []string {
 	return []string{
 		"replay",
+		// The router places like vLLM's own data-parallel balancer (vllm-dp-lb.epp.yaml).
+		"--epp-config", eppConfigPath,
 		"--scenario", scenarioName,
 		"--scenarios", scenarioDir,
 		"--catalog", cfg.Repos.Catalog,
@@ -187,10 +190,10 @@ func mainPhase(pl PointLengths) replayRun {
 //
 // The pool is CONC + copies, so the first CONC main requests start together at
 // primeMainStartUs, in trace order, exactly as the cold main phase starts at 0, and each later
-// one is admitted at a main completion. copies is the deployment's dp width: round-robin
-// routing puts copy j on replica j and then main request i on replica (copies + i) mod dp =
-// i mod dp, the replica it has in the cold run, and main request 0 lands on a replica holding
-// its prompt.
+// one is admitted at a main completion. copies is the deployment's dp width: the harness's
+// router places by requests in flight (vllm-dp-lb.epp.yaml), so each copy goes to a replica not
+// yet holding one, every replica ends up holding request 0's prompt, and the main phase starts
+// on idle replicas as in the cold run.
 const (
 	primeMainStartUs = int64(10_000_000_000)    // 10^4 s: after any single warm-up copy completes
 	primeHoldUs      = int64(1_000_000_000_000) // 10^6 s: after any main phase completes
@@ -220,6 +223,13 @@ func primedPhase(pl PointLengths, copies int) replayRun {
 	return replayRun{header: h, records: records, sessions: n + copies, pool: pl.Concurrency + copies}
 }
 
+// vllmDPLoadBalancer is the router configuration of every point: vLLM's data-parallel load
+// balancer sends a request to the rank with the fewest requests in flight, and BLIS simulates
+// each rank as a replica behind the llm-d router, so the router places by requests in flight.
+//
+//go:embed vllm-dp-lb.epp.yaml
+var vllmDPLoadBalancer []byte
+
 // runBlis runs one point through `blis replay` in a fresh temporary directory and returns the
 // --metrics-path output.
 func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*sim.MetricsOutput, error) {
@@ -239,8 +249,12 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*s
 		return nil, err
 	}
 	metricsPath := filepath.Join(dir, "metrics.json")
+	eppConfigPath := filepath.Join(dir, "vllm-dp-lb.epp.yaml")
+	if err := os.WriteFile(eppConfigPath, vllmDPLoadBalancer, 0o644); err != nil {
+		return nil, err
+	}
 
-	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath,
+	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath, eppConfigPath,
 		run.sessions, run.pool)...)
 	// From the repository root, as a user runs it: the command reads its bundled defaults.yaml
 	// relative to the working directory, and scorer tests run from their package directory.

@@ -325,8 +325,8 @@ const dpFixtureNumRequests = 40
 // equality holds for any input and catches nothing. That tautology is what this used to
 // assert (#1720).
 //
-// Nor can it check the canonical twelve-term equation. Seven buckets are invisible here
-// — GatewayQueueDepth, GatewayQueueShed, GatewayQueueRejected, GatewayEvicted,
+// Nor can it check the canonical eleven-term equation. Six buckets are invisible here
+// — GatewayQueueDepth, GatewayQueueRejected, GatewayEvicted,
 // GatewayExpired, RoutingRejections and EncodeRoutingRejections live on
 // cluster.RawMetrics and are never serialised into sim.MetricsOutput. #1746 tracks
 // exposing them. Until then a CLI-level conservation check is only meaningful for
@@ -334,7 +334,7 @@ const dpFixtureNumRequests = 40
 // encode pool, which is the case for every caller below.
 //
 // In-process cluster tests must use assertClusterINV1Conservation
-// (sim/cluster/inv1_conservation_test.go), which checks all twelve.
+// (sim/cluster/inv1_conservation_test.go), which checks all eleven.
 func clusterConservationHolds(t *testing.T, stdout string, expected int) {
 	t.Helper()
 	found := false

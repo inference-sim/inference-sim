@@ -1904,10 +1904,8 @@ var simControlPlaneGlobs = []string{
 	"slo*.go",
 	"saturation*.go",
 	"router_state.go",
-	// Self-cites INV-9 in both decider contracts ("Implementations must not read
-	// Request.OutputTokens"), so a new decider reading the oracle is exactly what this
-	// scan is for. Its name matches no pattern above, so it is listed explicitly.
-	"disaggregation.go",
+	// The engine metrics the router scrapes: what a real vLLM server publishes, never the oracle.
+	"engine_metrics.go",
 }
 
 // simControlPlaneExemptions names files the globs match that are legitimately
@@ -2009,15 +2007,8 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatal("INV-9 file globs matched nothing — the scan proves nothing")
 	}
 	for _, required := range []string{
-		"admission.go",
 		"router_state.go",
 		"routing.go",
-		"routing_nohit_lru_scorer.go",
-		"routing_precise_prefix_scorer.go",
-		"routing_prefix_scorer.go",
-		"disaggregation.go",
-		"routing_scorers.go",
-		"saturation.go",
 		"scheduler.go",
 		"slo_priority.go",
 	} {
@@ -2048,18 +2039,36 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		}
 	}
 
-	// Cluster control-plane files that handle *Request in the routing pipeline.
-	// These stay an explicit list rather than a glob: they are large mixed files that
-	// legitimately carry the TotalOutputTokens metric aggregate, so they need
-	// line-level scanning with that exclusion, and no glob shape separates them from
-	// the rest of sim/cluster. A new cluster control-plane file therefore still has
-	// to be added here by hand — the inverse of the sim/ default, and a known gap.
+	// Cluster and router-adapter control-plane files that handle *Request on its way to and
+	// from the llm-d router. These stay an explicit list rather than a glob: they are large
+	// mixed files that legitimately carry the TotalOutputTokens metric aggregate, so they need
+	// line-level scanning with that exclusion, and no glob shape separates them from the rest
+	// of their packages. A new control-plane file therefore still has to be added here by
+	// hand — the inverse of the sim/ default, and a known gap. The router adapter is listed
+	// because everything it hands the router (request body, usage, metrics) must come from
+	// what a real client and model server know: the prompt, the output budget and the tokens
+	// actually generated.
 	clusterControlPlaneFiles := []string{
 		"cluster/cluster.go",
 		"cluster/cluster_event.go",
-		"cluster/snapshot.go",
-		"cluster/counterfactual.go",
+		"cluster/gateway.go",
 	}
+	// Every file of the embedded router's host: all of it feeds the router.
+	llmdFiles, err := filepath.Glob("llmd/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range llmdFiles {
+		if !strings.HasSuffix(f, "_test.go") {
+			clusterControlPlaneFiles = append(clusterControlPlaneFiles, f)
+		}
+	}
+	if !slices.Contains(clusterControlPlaneFiles, "llmd/runtime.go") || !slices.Contains(clusterControlPlaneFiles, "llmd/gateway.go") {
+		t.Fatalf("INV-9: the sim/llmd glob missed runtime.go or gateway.go: %v", clusterControlPlaneFiles)
+	}
+	// Deliberately not scanned: cluster/pd_events.go builds the decode sub-request the engine
+	// executes, which carries the oracle OutputTokens as execution input (like any request the
+	// engine runs); it hands nothing to the router.
 
 	for _, filename := range clusterControlPlaneFiles {
 		data, err := os.ReadFile(filename)

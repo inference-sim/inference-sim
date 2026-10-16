@@ -1,45 +1,51 @@
 # BLIS Prefix-Affinity Demo Workload
 #
-# This workload demonstrates the prefix-affinity scorer's effect on routing.
+# This workload demonstrates prefix-cache-aware routing by the llm-d router.
 # 80% of requests share a long system prompt (256 tokens = 16 blocks at
 # block_size=16), simulating multi-turn chat with a shared context window.
 #
 # With prefix_length: 256, the prefix match ratio is ~80% (16 blocks out of
-# ~20 total), giving the prefix-affinity scorer a strong signal.
+# ~20 total), giving the router's prefix-cache-scorer a strong signal.
 #
 # ============================================================================
 # TRY IT: Compare prefix-affinity vs load-only routing
 # ============================================================================
 #
-#   # Prefix-affinity dominant (requests cluster onto cached instances)
+#   # Prefix-cache scorer dominant (requests cluster onto cached instances)
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "prefix-affinity:5,queue-depth:1" \
+#     --num-instances 4 --epp-config examples/llm-d/prefix-affinity.yaml \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-#   # Load-only (no prefix awareness — requests spread uniformly)
+#   # Load-only (no prefix awareness; requests spread across instances)
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "queue-depth:1" \
+#     --num-instances 4 --epp-config examples/llm-d/load-only.yaml \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-#   # Default profile (balanced llm-d parity)
+#   # The router's built-in default configuration (no --epp-config)
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
+#     --num-instances 4 \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-# Expected: prefix-affinity dominant concentrates shared-prefix requests
-# onto fewer instances (visible in Target Distribution). Load-only spreads
-# them uniformly. The default profile balances both signals.
+# Expected: prefix-affinity.yaml concentrates shared-prefix requests onto
+# fewer instances (visible in Target Distribution); load-only.yaml spreads
+# them across instances. Both configurations are llm-d EndpointPickerConfigs;
+# see docs/guide/routing.md.
+#
+# Reading the result: with a single hot prefix, affinity sends almost every
+# shared-prefix request to one instance. Its prefix cache then serves them all
+# (per block, the cluster's hits rise slightly), but that instance carries most
+# of the load, so TTFT is higher than with load-only. The summary's Cache Hit
+# Rate is the plain mean of the instances' rates, so the near-idle instances
+# pull it down; weight the per-instance rates by blocks to compare the two.
 
 version: "2"
 seed: 42

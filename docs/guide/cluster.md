@@ -1,6 +1,6 @@
 # Cluster Simulation
 
-This guide covers running multi-instance BLIS simulations — the full pipeline from request arrival through admission, routing, scheduling, and metrics aggregation.
+This guide covers running multi-instance BLIS simulations — the full pipeline from request arrival through the llm-d router, per-instance scheduling, and metrics aggregation. Admission, routing and flow control are made by the llm-d router embedded in the simulator; see [Routing with the llm-d Router](routing.md).
 
 ```bash
 # Quick example: 4-instance cluster with tracing
@@ -14,25 +14,33 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 
 | Setting | Behavior |
 |---------|----------|
-| `--num-instances 1` (default) | Single-instance: requests go directly to the wait queue, no admission or routing |
-| `--num-instances N` (N > 1) | Cluster mode: requests pass through admission → routing → per-instance queues |
+| `--num-instances 1` (default) | One instance behind the llm-d router: the router can only pick that instance, but its admission and flow control apply. With the default configuration it admits every request at once, and results equal a run without a router |
+| `--num-instances N` (N > 1) | Every request passes through the llm-d router, which admits, queues (flow control) and routes it to an instance |
 
 ## The Pipeline
 
 ```
-Request → Admission → Routing → Instance WaitQueue → Batch Formation → Step → Completion
-                                                          ↓
-                                                    KV Allocation + Latency Estimation
+Arrival → gateway latency → llm-d router → dispatch → Instance WaitQueue → Batch Formation → Step → Completion
+                                 ↓                                              ↓
+                              rejection                          KV Allocation + Latency Estimation
 ```
 
-Each stage is configurable:
+1. A request arrives at the cluster.
+2. After `--gateway-latency` microseconds (default 0) the llm-d router sees it, as the
+   Endpoint Picker would see a request Envoy hands it.
+3. The router runs its admission, flow control (when the `flowControl` feature gate is on) and
+   scheduling profiles, and either picks an endpoint or rejects the request. A rejection lands
+   in exactly one INV-1 bucket; see [Admission Control](admission.md).
+4. The picked instance enqueues the request; its own scheduler and batch formation take over.
 
-| Stage | Controls | Key Flags |
-|-------|----------|-----------|
-| **Admission** | Whether to accept the request | `--admission-policy`, `--token-bucket-capacity` |
-| **Routing** | Which instance receives it | `--routing-policy`, `--routing-scorers` |
-| **Scheduling** | What order within the instance | `--scheduler`, `--priority-policy` |
+| Stage | Controls | Configured by |
+|-------|----------|---------------|
+| **Admission, flow control, routing** | Whether the request is admitted, how long it waits, which instance receives it | The llm-d router's inputs: `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels` (or the deployment's `router:` block); see [the router's inputs](routing.md#the-routers-inputs) |
+| **Scheduling** | What order within the instance | `--scheduler`, the policy bundle's `priority` section |
 | **Batch Formation** | Which requests form the next batch | scenario `max_num_seqs`, `max_num_batched_tokens` |
+
+With no router inputs, the router uses its built-in default configuration over every
+simulated pod.
 
 ## Deployment Shape: Parallelism, DP and P/D
 
@@ -52,16 +60,23 @@ each sized as one vLLM EngineCore (its own KV budget and batch limits). `dp > 1`
 is refused.
 
 **Prefill/decode disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per
-pool. Choose the topology with `--prefill-instances` and `--decode-instances` (whose sum must not exceed `--num-instances`) and `--pd-decider`;
+pool. Choose the topology with `--prefill-instances` and `--decode-instances` (whose sum must not exceed `--num-instances`);
 each must not exceed its pool's rank capacity, `nodes × gpus_per_node / (pp × tp × pcp)`. The KV
 handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two
-instances' placements. This repository's `testdata/scenarios/glm-5-h200-3p1d-ib.yaml` is a 3P1D
-example:
+instances' placements.
+
+Which requests are disaggregated is the router's decision: give it an EndpointPickerConfig with
+the `disagg-profile-handler`, a P/D decider (`always-disagg-pd-decider` or
+`prefix-based-pd-decider`) and `prefill` and `decode` scheduling profiles. BLIS labels prefill and
+decode pods with `llm-d.ai/role`, so the `prefill-filter` and `decode-filter` plugins select them.
+`examples/llm-d/pd.yaml` disaggregates every request. This repository's
+`testdata/scenarios/glm-5-h200-3p1d-ib.yaml` is a 3P1D example:
 
 ```bash
 ./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
-  --num-instances 4 --prefill-instances 3 --decode-instances 1 --pd-decider always \
+  --num-instances 4 --prefill-instances 3 --decode-instances 1 \
+  --epp-config examples/llm-d/pd.yaml \
   --rate 10 --num-requests 100
 ```
 
@@ -100,22 +115,18 @@ At sub-saturation (excess ≤ 0): TTFT converges to its unloaded baseline and fu
 
 ## Admission Control
 
-For rate-limiting and traffic shaping policies, see the [Admission Control](admission.md) page.
+Admission and flow control are the llm-d router's; see [Admission Control](admission.md).
 
-## Admission and Routing Latency
+## Gateway Latency
 
-Model real network/processing overhead between gateway and backend:
-
-```bash
---admission-latency 1000   # 1ms admission decision overhead
---routing-latency 500      # 0.5ms routing decision overhead
-```
-
-These add simulated delays to the admission and routing pipeline, modeling gRPC overhead, service mesh hops, and queue serialization in production deployments.
+`--gateway-latency` (µs, default 0) models the network and proxy hops between a request's
+arrival and the router's first look at it. The router itself takes zero simulated time to
+decide. `--epp-scrape-jitter` (µs, default 0) bounds a seeded phase offset of each endpoint's
+metrics collection.
 
 ## Decision Tracing
 
-Log every routing decision for offline analysis:
+Log every routing decision, with the scores the router's primary scheduling profile gave every endpoint:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
@@ -126,10 +137,12 @@ Log every routing decision for offline analysis:
 
 The trace summary shows:
 - **Target Distribution** — how many requests went to each instance
-- **Mean/Max Regret** — how much better an alternative routing decision could have been
+- **Mean/Max Regret** — the best alternative endpoint's score minus the chosen endpoint's score
 
-!!! info "Counterfactual regret for weighted policies"
-    For score-based policies (weighted, least-loaded), counterfactual regret is **structurally zero** — the chosen instance is always the highest-scoring one. Regret is only meaningful for non-score-based policies like round-robin.
+`--counterfactual-k` ranks the top-k endpoints by those scores.
+
+!!! info "Regret under the max-score picker"
+    With `max-score-picker` the chosen endpoint is always the highest-scoring one, so regret is zero. Regret is non-zero only with pickers that may choose a lower-scoring endpoint (`random-picker`, `weighted-random-picker`).
 
 ## Event Ordering
 
@@ -146,5 +159,5 @@ BLIS is work-conserving (INV-8): it never idles while requests wait. After every
 ## Further Reading
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop
-- [Routing Policies](routing.md) — scorer composition and signal freshness
+- [Routing with the llm-d Router](routing.md) — the router's inputs, supported plugins and the signals it sees
 - [Metrics & Results](results.md) — understanding trace summaries and per-SLO metrics

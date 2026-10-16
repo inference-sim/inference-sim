@@ -6,6 +6,7 @@ package kv
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -22,13 +23,13 @@ import (
 // Each block stores a fixed number of tokens and is tracked by a prefix hash.
 // A block becomes eligible for caching once it is full.
 type KVBlock struct {
-	ID       int64    // Unique ID of the block
-	RefCount int      // Number of active requests referencing this block
-	InUse    bool     // Whether the block is currently in use by an active (batched) request
-	Hash     string   // Prefix hash identifying this block's content and its lineage (if full)
+	ID       int64         // Unique ID of the block
+	RefCount int           // Number of active requests referencing this block
+	InUse    bool          // Whether the block is currently in use by an active (batched) request
+	Hash     string        // Prefix hash identifying this block's content and its lineage (if full)
 	Tokens   []sim.TokenID // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
-	PrevFree *KVBlock // LRU doubly linked list: previous free block
-	NextFree *KVBlock // LRU doubly linked list: next free block
+	PrevFree *KVBlock      // LRU doubly linked list: previous free block
+	NextFree *KVBlock      // LRU doubly linked list: next free block
 }
 
 // KVCacheState maintains global KV cache status across all requests.
@@ -46,6 +47,72 @@ type KVCacheState struct {
 	FreeBlockCnt    int64              // Direct count of blocks in free list (vLLM parity)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
+	// events records changes to HashToBlock's key set once EnableKVEvents is called (nil: off).
+	events *[]sim.KVEvent
+	// holders are, per content hash, the blocks holding that content (their Hash): HashToBlock
+	// maps a hash to one of them. Several hold the same content when a block is filled without
+	// reusing a cached one (a KV transfer's destination).
+	holders map[string]map[int64]struct{}
+	// pending suppresses hashing while a KV transfer's destination blocks are reserved: their KV
+	// has not arrived (ReservePendingKVBlocks).
+	pending bool
+}
+
+// EnableKVEvents implements sim.KVEventSource.
+func (kvc *KVCacheState) EnableKVEvents() {
+	if kvc.events == nil {
+		kvc.events = &[]sim.KVEvent{}
+	}
+}
+
+// TakeKVEvents implements sim.KVEventSource.
+func (kvc *KVCacheState) TakeKVEvents() []sim.KVEvent {
+	if kvc.events == nil || len(*kvc.events) == 0 {
+		return nil
+	}
+	out := *kvc.events
+	*kvc.events = nil
+	return out
+}
+
+// CachedBlockHashes implements sim.KVEventSource.
+func (kvc *KVCacheState) CachedBlockHashes() []string {
+	out := make([]string, 0, len(kvc.HashToBlock))
+	for h := range kvc.HashToBlock {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// recordTier records that the block with hash h became cached on (or left) another tier.
+func (kvc *KVCacheState) recordTier(tier, h string, removed bool) {
+	if kvc.events != nil {
+		*kvc.events = append(*kvc.events, sim.KVEvent{Removed: removed, Hash: h, Tier: tier})
+	}
+}
+
+// CPUBlockHashes implements sim.KVEventSource: a GPU-only cache has no CPU tier.
+func (kvc *KVCacheState) CPUBlockHashes() []string { return nil }
+
+// storeHash maps h to block id. A hash that was not in the map is a stored block (KVEvent); an
+// overwrite of a present hash changes no key, so it publishes nothing.
+func (kvc *KVCacheState) storeHash(parent, h string, id int64, tokens []sim.TokenID) {
+	_, had := kvc.HashToBlock[h]
+	kvc.HashToBlock[h] = id
+	if !had && kvc.events != nil {
+		*kvc.events = append(*kvc.events, sim.KVEvent{Hash: h, Parent: parent, Tokens: append([]sim.TokenID(nil), tokens...)})
+	}
+}
+
+// dropHash removes h from the map; removing a present hash is a removed block (KVEvent).
+func (kvc *KVCacheState) dropHash(h string) {
+	if _, had := kvc.HashToBlock[h]; had {
+		delete(kvc.HashToBlock, h)
+		if kvc.events != nil {
+			*kvc.events = append(*kvc.events, sim.KVEvent{Removed: true, Hash: h})
+		}
+	}
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -300,8 +367,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					prevHash = kvc.Blocks[ids[len(ids)-2]].Hash
 				}
 				h := hash.HashBlock(prevHash, latestBlk.Tokens)
-				latestBlk.Hash = h
-				kvc.HashToBlock[h] = latestBlk.ID
+				kvc.cacheBlock(latestBlk, prevHash, h)
 			}
 		} else {
 			// latest block is full or request is coming in for the first time.
@@ -331,10 +397,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// semantics (block_pool.py:331-356). Hash was preserved in
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
-				if blk.Hash != "" {
-					delete(kvc.HashToBlock, blk.Hash)
-					blk.Hash = ""
-				}
+				kvc.uncacheBlock(blk)
 
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
@@ -349,13 +412,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.InUse = true
 				kvc.CacheMisses++
 
-				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() && !kvc.pending {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).
 					h := hash.HashBlock(prevHash, blk.Tokens)
-					blk.Hash = h
-					kvc.HashToBlock[h] = blk.ID
+					kvc.cacheBlock(blk, prevHash, h)
 					prevHash = h
 				}
 				// allocated is the block IDs allocated for this request
@@ -435,6 +497,75 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 			blk.InUse = false
 			kvc.appendToFreeList(blk)
 		}
+	}
+}
+
+// cacheBlock makes blk, full with content hash h chained from parent, a cached prefix block.
+func (kvc *KVCacheState) cacheBlock(blk *KVBlock, parent, h string) {
+	blk.Hash = h
+	if kvc.holders == nil {
+		kvc.holders = map[string]map[int64]struct{}{}
+	}
+	if kvc.holders[h] == nil {
+		kvc.holders[h] = map[int64]struct{}{}
+	}
+	kvc.holders[h][blk.ID] = struct{}{}
+	kvc.storeHash(parent, h, blk.ID, blk.Tokens)
+}
+
+// uncacheBlock is blk giving up its content (its slot is reused). A hash maps to one block, but
+// several may hold the same content; as vLLM, which keeps every block of a hash, the content
+// stays cached while any block holds it: the hash moves to the lowest-numbered remaining holder,
+// with no event, and is forgotten (a removed KV event) only with its last holder.
+func (kvc *KVCacheState) uncacheBlock(blk *KVBlock) {
+	h := blk.Hash
+	if h == "" {
+		return
+	}
+	blk.Hash = ""
+	held := kvc.holders[h]
+	delete(held, blk.ID)
+	if len(held) == 0 {
+		delete(kvc.holders, h)
+	}
+	if owner, ok := kvc.HashToBlock[h]; !ok || owner != blk.ID {
+		return
+	}
+	if len(held) == 0 {
+		kvc.dropHash(h)
+		return
+	}
+	next := int64(-1)
+	for id := range held {
+		if next < 0 || id < next {
+			next = id
+		}
+	}
+	kvc.HashToBlock[h] = next
+}
+
+// ReservePendingKVBlocks allocates req's prompt blocks [0, inputLen) for KV a transfer will
+// deliver, filled but not cached: until the KV arrives (CommitPendingKVBlocks) no request can hit
+// them, and none of them is published. Released before then (an aborted transfer), they leave
+// the prefix cache as it was.
+func (kvc *KVCacheState) ReservePendingKVBlocks(req *sim.Request) bool {
+	kvc.pending = true
+	defer func() { kvc.pending = false }()
+	return kvc.AllocateKVBlocks(req, 0, req.InputLen(), nil)
+}
+
+// CommitPendingKVBlocks caches req's reserved prompt blocks once their KV has arrived, in prompt
+// order, as vLLM caches a remote-KV request's blocks when their load completes.
+func (kvc *KVCacheState) CommitPendingKVBlocks(req *sim.Request) {
+	prevHash := ""
+	for _, id := range kvc.RequestMap[req.ID] {
+		blk := kvc.Blocks[id]
+		if util.Len64(blk.Tokens) < kvc.BlockSizeTokens {
+			return // only full prompt blocks are cached
+		}
+		h := hash.HashBlock(prevHash, blk.Tokens)
+		kvc.cacheBlock(blk, prevHash, h)
+		prevHash = h
 	}
 }
 

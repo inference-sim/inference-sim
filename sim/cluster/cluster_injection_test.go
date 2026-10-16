@@ -11,11 +11,18 @@ import (
 // decision.
 func TestClusterArrivalEvent_IncrementsInjectedByClass(t *testing.T) {
 	cs := &ClusterSimulator{
-		injectedByClass:  make(map[string]int64),
-		clusterEvents:    make(ClusterEventQueue, 0),
-		admissionLatency: 0,
-		pendingArrivals:  3,
+		injectedByClass: make(map[string]int64),
+		shedByTier:      make(map[string]int),
+		clusterEvents:   make(ClusterEventQueue, 0),
+		pendingArrivals: 3,
 	}
+	// The arrival hands each request to the gateway; one that rejects everything keeps the
+	// hand-built cluster free of instances.
+	gw := &fakeGateway{reject: func(*sim.Request) bool { return true }}
+	if err := gw.Start(cs); err != nil {
+		t.Fatal(err)
+	}
+	cs.gateway = gw
 	req1 := &sim.Request{ID: "r1", SLOClass: "critical"}
 	req2 := &sim.Request{ID: "r2", SLOClass: "critical"}
 	req3 := &sim.Request{ID: "r3", SLOClass: ""} // empty class — counted under ""

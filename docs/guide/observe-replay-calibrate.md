@@ -230,7 +230,13 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts the shared simulation flags `blis run` keeps — the llm-d router inputs (`--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter`), scheduling, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
+
+A trace exported by `blis run` records the router inputs in its header (with any
+`--config-file` inlined). Replay rebuilds that router when no router flag is given; router
+flags that differ from the recorded router are refused. A trace without a recorded router (one
+from `blis observe` or `blis convert`) routes with the router the command line names, or the
+router's default configuration.
 
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from
@@ -383,8 +389,7 @@ subsetting tip below for the selection semantics.
 Each round is an independent HTTP request, so a session-aware gateway/EPP
 (session-affinity or predictive-least-loaded pinning) needs the session id on
 the wire to keep a session's rounds on one instance (issue #1505). `blis observe`
-emits it on the `--session-id-header` header — default `x-session-id`, matching
-the current custom scorers — for every request carrying a session id:
+emits it on the `--session-id-header` header — default `x-session-id` — for every request carrying a session id:
 
 ```bash
 blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
@@ -723,15 +728,18 @@ The report uses two levels of analysis because they catch different problems. **
 
 - Scheduling delay is already **factored into E2E and TTFT**. A real server's TTFT includes queue wait implicitly — it cannot be decomposed from execution time externally. Mathematically, `SchedulingDelay = (batch selection time) − ArrivalTime` and `TTFT ≥ SchedulingDelay` always (per INV-5 Causality: `arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time`). `blis calibrate` compares E2E and TTFT end-to-end; a good MAPE on those metrics confirms the scheduling model is correct, even without a direct scheduling delay comparison.
 - **Do not expect** `SchedulingDelay` to appear as a separately calibratable field in the calibration report. `blis calibrate` compares E2E and TTFT only — `scheduling_delay_ms` is not in `SimResult` (the format `blis replay` writes to `--results-path`). It is a simulator-internal diagnostic only.
-- **When scheduling delay matters:** If `blis run` or `blis replay` shows high scheduling delay (e.g., P99 > 500ms — exact thresholds are workload-dependent) **and** calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. Enable flow control to add explicit queue depth gating that better models servers with admission backpressure, then re-calibrate:
+- **When scheduling delay matters:** If `blis run` or `blis replay` shows high scheduling delay (e.g., P99 > 500ms — exact thresholds are workload-dependent) **and** calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. When the observed deployment runs llm-d flow control, replay it in a cluster with the same
+  EndpointPickerConfig (`featureGates: [flowControl]` and the deployment's `utilization-detector`
+  parameters, e.g. `queueDepthThreshold: 5`, `kvCacheUtilThreshold: 0.8`), then re-calibrate:
 
     ```bash
     ./blis replay --trace-header trace.yaml --trace-data trace.csv \
       --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
       --scenarios <dir of scenario files> --registry $PWD/blis-registry \
-      --flow-control --saturation-detector utilization \
-      --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
+      --num-instances 2 --epp-config flow-control.yaml
     ```
+
+    See [Admission Control](admission.md) for the flow-control configuration.
 
 ---
 
@@ -843,6 +851,12 @@ When observing an llm-d cluster with [Gateway Inference Extension (GIE)](https:/
 | `x-gateway-inference-fairness-id` | `tenant_id` | Tenant key for per-tenant fair-share scheduling. Fairness is enforced between requests of the same priority level. |
 
 Headers are only sent when the field is non-empty, so non-GIE servers are unaffected.
+
+These are the router's deprecated header names, which it still accepts as aliases of
+`x-llm-d-inference-objective` and `x-llm-d-inference-fairness-id`. The simulated cluster's
+embedded llm-d router receives the same two fields under the current names and takes
+priorities from the `InferenceObjective` manifests it is given; see
+[Admission Control](admission.md).
 
 ### How GIE resolves priority
 

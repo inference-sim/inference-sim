@@ -34,12 +34,9 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: cluster config
 		"num-instances",
 
-		// registerSimConfigFlags: online routing pipeline
-		"admission-policy", "admission-latency", "routing-latency",
-		"token-bucket-capacity", "token-bucket-refill-rate",
-
-		// registerSimConfigFlags: routing policy
-		"routing-policy", "routing-scorers",
+		// registerSimConfigFlags: the llm-d router's inputs (cmd/router.go)
+		"epp-flags", "epp-config", "epp-manifests", "pod-labels",
+		"gateway-latency", "epp-scrape-jitter",
 
 		// registerSimConfigFlags: priority, scheduler, and preemption
 		"scheduler", "preemption-policy",
@@ -55,18 +52,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 
 		// registerSimConfigFlags: tiered KV cache
 		"kv-cpu-blocks", "kv-offload-threshold",
-		"snapshot-refresh-interval",
-
-		// registerSimConfigFlags: cache signal delay
-		"cache-signal-delay",
-
-		// registerSimConfigFlags: flow control
-		"flow-control", "saturation-detector", "dispatch-order",
-		"max-gateway-queue-depth", "queue-depth-threshold",
-		"kv-cache-util-threshold", "max-concurrency",
-		"per-band-capacity", "usage-limit-threshold",
-		"queue-shedding", "dispatch-tick-interval",
-		"in-flight-eviction",
 
 		// replay-specific: results
 		"results-path",
@@ -428,9 +413,6 @@ warm_up_requests: 0
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -440,14 +422,6 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -469,9 +443,6 @@ warm_up_requests: 0
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -481,14 +452,6 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -512,9 +475,6 @@ warm_up_requests: 0
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -639,9 +599,6 @@ warm_up_requests: 0
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -651,14 +608,6 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -680,9 +629,6 @@ warm_up_requests: 0
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -692,14 +638,6 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -756,9 +694,6 @@ warm_up_requests: 0
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -859,9 +794,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -871,14 +803,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -900,9 +824,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -912,14 +833,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -942,9 +855,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -1021,9 +931,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origOffload := kvOffloadThreshold
 		origBandwidth := kvTransferBandwidth
 		origBaseLatency := kvTransferBaseLatency
-		origSnapRefresh := snapshotRefreshInterval
-		origAdmission := admissionPolicy
-		origRouting := routingPolicy
 		origScheduler := scheduler
 		origPolicyConfig := policyConfigPath
 		origMaxModelLen := maxModelLen
@@ -1033,14 +940,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origTraceData := traceDataPath
 		origSimHorizon := simulationHorizon
 		origTraceOutput := replayTraceOutput
-		origCacheSignalDelay := cacheSignalDelay
-		origFlowControlEnabled := flowControlEnabled
-		origFlowControlDetector := flowControlDetector
-		origFlowControlDispatchOrder := flowControlDispatchOrder
-		origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-		origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-		origFlowControlMaxConcurrency := flowControlMaxConcurrency
 		origCatalogPath := catalogPath
 		origGPU := gpu
 		origTP := tensorParallelism
@@ -1062,9 +961,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			kvOffloadThreshold = origOffload
 			kvTransferBandwidth = origBandwidth
 			kvTransferBaseLatency = origBaseLatency
-			snapshotRefreshInterval = origSnapRefresh
-			admissionPolicy = origAdmission
-			routingPolicy = origRouting
 			scheduler = origScheduler
 			policyConfigPath = origPolicyConfig
 			maxModelLen = origMaxModelLen
@@ -1074,14 +970,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			traceDataPath = origTraceData
 			simulationHorizon = origSimHorizon
 			replayTraceOutput = origTraceOutput
-			cacheSignalDelay = origCacheSignalDelay
-			flowControlEnabled = origFlowControlEnabled
-			flowControlDetector = origFlowControlDetector
-			flowControlDispatchOrder = origFlowControlDispatchOrder
-			flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-			flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-			flowControlMaxConcurrency = origFlowControlMaxConcurrency
 			catalogPath = origCatalogPath
 			gpu = origGPU
 			tensorParallelism = origTP
@@ -1104,9 +992,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1197,9 +1082,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -1209,14 +1091,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1238,9 +1112,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1250,14 +1121,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1280,9 +1143,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -1296,14 +1156,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	gpu = "H100"
 	tensorParallelism = 1
 	defaultsFilePath = "../defaults.yaml"
-	cacheSignalDelay = 0
-	flowControlEnabled = false
-	flowControlDetector = "utilization"
-	flowControlDispatchOrder = "fifo"
-	flowControlMaxQueueDepth = 0
-	flowControlQueueDepthThreshold = 5.0
-	flowControlKVCacheUtilThreshold = 0.8
-	flowControlMaxConcurrency = 0
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -1367,9 +1219,6 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = bundlePath
 		maxModelLen = 0
@@ -1448,9 +1297,6 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = bundlePath
 		maxModelLen = 0
@@ -1523,18 +1369,10 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origPrefillInstances := prefillInstances
 	origDecodeInstances := decodeInstances
 	origSharedInstances := prefillDecodeInstances
-	origPDDecider := pdDecider
-	origPDPrefixThreshold := pdPrefixThreshold
-	origPrefillScorers := prefillRoutingScorers
-	origDecodeScorers := decodeRoutingScorers
 	defer func() {
 		prefillInstances = origPrefillInstances
 		decodeInstances = origDecodeInstances
 		prefillDecodeInstances = origSharedInstances
-		pdDecider = origPDDecider
-		pdPrefixThreshold = origPDPrefixThreshold
-		prefillRoutingScorers = origPrefillScorers
-		decodeRoutingScorers = origDecodeScorers
 	}()
 
 	// Save/restore standard vars.
@@ -1551,9 +1389,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origOffload := kvOffloadThreshold
 	origBandwidth := kvTransferBandwidth
 	origBaseLatency := kvTransferBaseLatency
-	origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy
-	origRouting := routingPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -1563,14 +1398,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
-	origFlowControlDetector := flowControlDetector
-	origFlowControlDispatchOrder := flowControlDispatchOrder
-	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
-	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
-	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
-	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	origCatalogPath := catalogPath
 	origGPU := gpu
 	origTP := tensorParallelism
@@ -1592,9 +1419,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		kvOffloadThreshold = origOffload
 		kvTransferBandwidth = origBandwidth
 		kvTransferBaseLatency = origBaseLatency
-		snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission
-		routingPolicy = origRouting
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1604,14 +1428,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
-		flowControlDetector = origFlowControlDetector
-		flowControlDispatchOrder = origFlowControlDispatchOrder
-		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
-		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
-		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
-		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		catalogPath = origCatalogPath
 		gpu = origGPU
 		tensorParallelism = origTP
@@ -1635,9 +1451,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -1654,23 +1467,11 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	replaySessionMode = "fixed"
 	replayThinkTimeMs = 0
 	replayThinkTimeDist = ""
-	cacheSignalDelay = 0
-	flowControlEnabled = false
-	flowControlDetector = "utilization"
-	flowControlDispatchOrder = "fifo"
-	flowControlMaxQueueDepth = 0
-	flowControlQueueDepthThreshold = 5.0
-	flowControlKVCacheUtilThreshold = 0.8
-	flowControlMaxConcurrency = 0
 
 	// PD config: 1 prefill + 1 decode.
 	prefillInstances = 1
 	decodeInstances = 1
 	prefillDecodeInstances = 0
-	pdDecider = "always"
-	pdPrefixThreshold = 0
-	prefillRoutingScorers = ""
-	decodeRoutingScorers = ""
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -1681,7 +1482,7 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--num-instances", "4",
 		"--prefill-instances", "3", "--decode-instances", "1",
-		"--pd-decider", "always",
+		"--epp-config", pdAlwaysEPPConfig,
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
@@ -1719,9 +1520,6 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1796,9 +1594,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 25.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1816,7 +1611,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		prefillInstances = 4
 		decodeInstances = 0
 		prefillDecodeInstances = 0
-		pdDecider = "always"
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)
@@ -1827,7 +1621,7 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--num-instances", "2",
 			"--prefill-instances", "4", "--decode-instances", "0",
-			"--pd-decider", "always",
+			"--epp-config", pdAlwaysEPPConfig,
 			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
@@ -1983,7 +1777,7 @@ func TestReplayCmd_SessionPoolFlags(t *testing.T) {
 //
 // registerSimConfigFlags(testCmd) on a fresh *cobra.Command DOES reset its
 // own bound globals (scenario, scenarios, registry, num-instances,
-// admission/routing policy, scheduler, PD/encode/flow-control fields, etc.)
+// router inputs, scheduler, PD/encode pool sizes, etc.)
 // to their registration-time defaults as a side effect of pflag's *Var
 // constructors — so those do not need manual resetting here.
 func runReplayCaptureStdout(t *testing.T, args []string) string {
@@ -1998,11 +1792,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origGoodputTTFT := goodputSLOTTFT
 	origGoodputITL := goodputSLOITL
 	origGoodputE2E := goodputSLOE2E
-	origTenantBudgets := tenantBudgets
 	origSLOPriorityOverrides := sloPriorityOverrides
-	origSLOTargetsMap := sloTargetsMap
-	origTierShedThreshold := tierShedThreshold
-	origTierShedMinPriority := tierShedMinPriority
 	origSessionMode := replaySessionMode
 	origThinkTimeMs := replayThinkTimeMs
 	origThinkTimeDist := replayThinkTimeDist
@@ -2019,11 +1809,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		goodputSLOTTFT = origGoodputTTFT
 		goodputSLOITL = origGoodputITL
 		goodputSLOE2E = origGoodputE2E
-		tenantBudgets = origTenantBudgets
 		sloPriorityOverrides = origSLOPriorityOverrides
-		sloTargetsMap = origSLOTargetsMap
-		tierShedThreshold = origTierShedThreshold
-		tierShedMinPriority = origTierShedMinPriority
 		replaySessionMode = origSessionMode
 		replayThinkTimeMs = origThinkTimeMs
 		replayThinkTimeDist = origThinkTimeDist
@@ -2039,10 +1825,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	saturationConfigPath = ""
 	saturationFinalWindow = ""
 	goodputSLOTTFT, goodputSLOITL, goodputSLOE2E = "", "", ""
-	tenantBudgets = nil
 	sloPriorityOverrides = nil
-	sloTargetsMap = nil
-	tierShedThreshold, tierShedMinPriority = 0, 0
 	replaySessionMode = "fixed"
 	replayThinkTimeMs = 0
 	replayThinkTimeDist = ""
@@ -2334,9 +2117,6 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -2468,9 +2248,6 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		kvOffloadThreshold = 0.9
 		kvTransferBandwidth = 100.0
 		kvTransferBaseLatency = 0
-		snapshotRefreshInterval = 0
-		admissionPolicy = "always-admit"
-		routingPolicy = "round-robin"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0

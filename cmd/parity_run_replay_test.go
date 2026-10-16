@@ -509,8 +509,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	origThinkMs := replayThinkTimeMs
 	origThinkDist := replayThinkTimeDist
 	origReplayTraceOut := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled
 	defer func() {
 		traceHeaderPath = origTraceHeader
 		traceDataPath = origTraceData
@@ -518,8 +516,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 		replayThinkTimeMs = origThinkMs
 		replayThinkTimeDist = origThinkDist
 		replayTraceOutput = origReplayTraceOut
-		cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled
 	}()
 
 	model = "qwen/qwen3-14b"
@@ -534,9 +530,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	kvOffloadThreshold = 0.9
 	kvTransferBandwidth = 100.0
 	kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0
-	admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -552,8 +545,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	replayThinkTimeMs = 0
 	replayThinkTimeDist = ""
 	replayTraceOutput = ""
-	cacheSignalDelay = 0
-	flowControlEnabled = false
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)

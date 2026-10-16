@@ -18,7 +18,6 @@ import (
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
-// Sets DefaultCacheSignalDelay for production-fidelity defaults.
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -29,8 +28,7 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			LatencyModel:        testFakeLatency(),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
-		NumInstances:     numInstances,
-		CacheSignalDelay: DefaultCacheSignalDelay,
+		NumInstances: numInstances,
 	}
 }
 
@@ -71,9 +69,8 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 2, 1, false, 0),
 			PolicyConfig:        sim.NewPolicyConfig("priority-fcfs", ""),
 		},
-		NumInstances:    3,
-		AdmissionPolicy: "token-bucket",
-		TraceLevel:      "decisions",
+		NumInstances: 3,
+		TraceLevel:   "decisions",
 	}
 
 	sc := dc.ToSimConfig()
@@ -637,14 +634,13 @@ func TestClusterSimulator_AggregatedMetrics_BeforeRun_Panics(t *testing.T) {
 }
 
 // TestClusterSimulator_HandledBy_PopulatedInMetrics verifies #181:
-// GIVEN a 3-instance cluster with round-robin routing and 15 requests
+// GIVEN a 3-instance cluster and 15 requests
 // WHEN the simulation completes
 // THEN every completed request's metrics has a non-empty HandledBy field
 // AND each HandledBy value matches a valid instance ID
 // AND per-instance metrics only contain requests handled by that instance
 func TestClusterSimulator_HandledBy_PopulatedInMetrics(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	config.RoutingPolicy = "round-robin"
 	requests := newTestRequests(15)
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
@@ -704,70 +700,6 @@ func TestClusterSimulator_HandledBy_SingleInstance(t *testing.T) {
 		if rm.HandledBy != "instance_0" {
 			t.Errorf("request %s: HandledBy=%q, want %q", reqID, rm.HandledBy, "instance_0")
 		}
-	}
-}
-
-// === Routing Policy Tests ===
-
-// TestClusterSimulator_RoutingPolicy_RoundRobinDefault verifies BC-6 (backward compatibility).
-func TestClusterSimulator_RoutingPolicy_RoundRobinDefault(t *testing.T) {
-	config := newTestDeploymentConfig(3)
-	config.RoutingPolicy = "round-robin"
-	requests := newTestRequests(10)
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	// Requests distributed evenly: 4, 3, 3 (or variant)
-	counts := make(map[InstanceID]int)
-	for _, inst := range cs.Instances() {
-		counts[inst.ID()] = inst.Metrics().CompletedRequests
-	}
-
-	total := 0
-	for _, count := range counts {
-		total += count
-		if count < 3 || count > 4 {
-			t.Errorf("Expected 3-4 requests per instance, got %d", count)
-		}
-	}
-	if total != 10 {
-		t.Errorf("Expected 10 total completed requests, got %d", total)
-	}
-}
-
-// TestClusterSimulator_RoutingPolicy_LeastLoaded verifies load-aware routing completes.
-func TestClusterSimulator_RoutingPolicy_LeastLoaded(t *testing.T) {
-	config := newTestDeploymentConfig(2)
-	config.RoutingPolicy = "least-loaded"
-	requests := newTestRequests(5)
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	if cs.AggregatedMetrics().CompletedRequests == 0 {
-		t.Errorf("Expected non-zero completed requests, got 0")
-	}
-}
-
-// TestClusterSimulator_AllRoutingPolicies_Smoke verifies all policies are exercisable.
-func TestClusterSimulator_AllRoutingPolicies_Smoke(t *testing.T) {
-	policies := []string{"round-robin", "least-loaded", "weighted"}
-
-	for _, policyName := range policies {
-		t.Run(policyName, func(t *testing.T) {
-			config := newTestDeploymentConfig(2)
-			config.RoutingPolicy = policyName
-			config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
-			requests := newTestRequests(5)
-
-			cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-			mustRun(t, cs)
-
-			if cs.AggregatedMetrics().CompletedRequests == 0 {
-				t.Errorf("Policy %q: expected non-zero completed requests", policyName)
-			}
-		})
 	}
 }
 
@@ -1044,31 +976,25 @@ func meanMapValues(m map[string]float64) float64 {
 }
 
 // TestClusterSimulator_Conservation_PolicyMatrix verifies INV-1 at cluster level
-// across 10 policy combinations (promoted from H12 hypothesis experiment):
-// GIVEN each policy combination with infinite horizon and ample resources
+// across scheduler and cluster-size combinations (promoted from H12 hypothesis experiment):
+// GIVEN each combination with infinite horizon and ample resources
 // WHEN the cluster simulation completes
-// THEN the twelve-term conservation equation holds against an independent count, with
+// THEN the eleven-term conservation equation holds against an independent count, with
 // no rejections permitted,
 // AND all requests complete (infinite horizon, no resource pressure).
 func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	matrix := []struct {
-		name            string
-		numInstances    int
-		routingPolicy   string
-		scorerConfigs   []sim.ScorerConfig
-		scheduler       string
-		priorityPolicy  string
-		admissionPolicy string
+		name         string
+		numInstances int
+		scheduler    string
 	}{
-		{"round-robin/fcfs/2inst", 2, "round-robin", nil, "fcfs", "constant", "always-admit"},
-		{"least-loaded/fcfs/3inst", 3, "least-loaded", nil, "fcfs", "constant", "always-admit"},
-		{"weighted/fcfs/2inst", 2, "weighted", sim.DefaultScorerConfigs(), "fcfs", "constant", "always-admit"},
-		{"round-robin/sjf/3inst", 3, "round-robin", nil, "sjf", "constant", "always-admit"},
-		{"round-robin/priority-fcfs/slo/2inst", 2, "round-robin", nil, "priority-fcfs", "slo-based", "always-admit"},
-		{"least-loaded/priority-fcfs/slo/3inst", 3, "least-loaded", nil, "priority-fcfs", "slo-based", "always-admit"},
-		{"weighted/sjf/4inst", 4, "weighted", sim.DefaultScorerConfigs(), "sjf", "constant", "always-admit"},
-		{"round-robin/fcfs/token-bucket/2inst", 2, "round-robin", nil, "fcfs", "constant", "token-bucket"},
-		{"least-loaded/fcfs/4inst", 4, "least-loaded", nil, "fcfs", "constant", "always-admit"},
+		{"fcfs/2inst", 2, "fcfs"},
+		{"fcfs/3inst", 3, "fcfs"},
+		{"fcfs/4inst", 4, "fcfs"},
+		{"sjf/3inst", 3, "sjf"},
+		{"sjf/4inst", 4, "sjf"},
+		{"priority-fcfs/2inst", 2, "priority-fcfs"},
+		{"priority-fcfs/3inst", 3, "priority-fcfs"},
 	}
 
 	const numRequests = 50
@@ -1076,15 +1002,7 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	for _, tc := range matrix {
 		t.Run(tc.name, func(t *testing.T) {
 			config := newTestDeploymentConfig(tc.numInstances)
-			config.RoutingPolicy = tc.routingPolicy
-			config.RoutingScorerConfigs = tc.scorerConfigs
 			config.Scheduler = tc.scheduler
-			config.AdmissionPolicy = tc.admissionPolicy
-			// Token bucket with generous capacity so all requests are admitted
-			if tc.admissionPolicy == "token-bucket" {
-				config.TokenBucketCapacity = 1e6
-				config.TokenBucketRefillRate = 1e6
-			}
 
 			requests := newTestRequests(numRequests)
 			cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
@@ -1112,75 +1030,13 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical verifies INV-6
-// for weighted routing with stateful scorers that use internal maps (promoted from H13):
-// GIVEN identical config with weighted routing (includes prefix-affinity scorer)
-// WHEN run twice with same seed
-// THEN per-request metrics JSON is byte-identical.
-//
-// This specifically targets the PrefixCacheIndex LRU which uses map iteration internally.
-// Non-deterministic map iteration in scoring or eviction would cause divergence here.
-func TestClusterSimulator_Determinism_WeightedPrefixScorer_ByteIdentical(t *testing.T) {
-	policies := []struct {
-		name          string
-		routingPolicy string
-		scorerConfigs []sim.ScorerConfig
-	}{
-		{"weighted-default", "weighted", sim.DefaultScorerConfigs()},
-	}
-
-	for _, pol := range policies {
-		t.Run(pol.name, func(t *testing.T) {
-			mkSim := func() *ClusterSimulator {
-				config := newTestDeploymentConfig(3)
-				config.RoutingPolicy = pol.routingPolicy
-				config.RoutingScorerConfigs = pol.scorerConfigs
-				// Use prefix tokens to exercise the prefix cache index
-				requests := testGenerateRequests(42, math.MaxInt64, 10.0/1e6, 30,
-					32, 100, 20, 10, 200, 50, 10, 10, 100)
-				cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-				mustRun(t, cs)
-				return cs
-			}
-
-			cs1 := mkSim()
-			cs2 := mkSim()
-
-			m1 := cs1.AggregatedMetrics()
-			m2 := cs2.AggregatedMetrics()
-
-			// Integer fields must match exactly
-			if m1.CompletedRequests != m2.CompletedRequests {
-				t.Errorf("CompletedRequests: %d vs %d", m1.CompletedRequests, m2.CompletedRequests)
-			}
-			if m1.TotalInputTokens != m2.TotalInputTokens {
-				t.Errorf("TotalInputTokens: %d vs %d", m1.TotalInputTokens, m2.TotalInputTokens)
-			}
-			if m1.TotalOutputTokens != m2.TotalOutputTokens {
-				t.Errorf("TotalOutputTokens: %d vs %d", m1.TotalOutputTokens, m2.TotalOutputTokens)
-			}
-			if m1.SimEndedTime != m2.SimEndedTime {
-				t.Errorf("SimEndedTime: %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
-			}
-
-			// Per-request metrics must be byte-identical (sorted JSON)
-			j1, _ := json.Marshal(sortedRequestMetrics(m1.Requests))
-			j2, _ := json.Marshal(sortedRequestMetrics(m2.Requests))
-			if !bytes.Equal(j1, j2) {
-				t.Error("INV-6 violated: per-request metrics JSON differs between runs " +
-					"(likely non-deterministic map iteration in prefix cache or scorer)")
-			}
-		})
-	}
-}
-
 // TestClusterSimulator_OverloadConservation verifies INV-1 under 10x overload
 // (promoted from H-Overload hypothesis experiment, PR #335):
 // GIVEN a 4-instance cluster at extreme overload rate
 // WHEN the simulation runs to a finite horizon
 // THEN conservation holds:
-//   - always-admit: completed + still_queued + still_running == injected
-//   - token-bucket: completed + still_queued + still_running + rejected == total_generated
+//   - admit-all: completed + still_queued + still_running == injected
+//   - reject-half: completed + still_queued + still_running + rejected == total_generated
 //
 // AND no panics occur (BC-5).
 func TestClusterSimulator_OverloadConservation(t *testing.T) {
@@ -1188,14 +1044,11 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 	// With 4 instances and max-running=256, capacity is very high due to batching. A rate of 500 req/s with only 200 requests and a short
 	// horizon creates a burst that overloads the system.
 	cases := []struct {
-		name            string
-		admissionPolicy string
-		// Token bucket params (only used when admission is "token-bucket")
-		tbCapacity   float64
-		tbRefillRate float64
+		name    string
+		gateway func() *fakeGateway
 	}{
-		{"always-admit", "always-admit", 0, 0},
-		{"token-bucket", "token-bucket", 5000, 10000},
+		{"always-admit", func() *fakeGateway { return &fakeGateway{} }},
+		{"reject-half", rejectEveryOtherGateway},
 	}
 
 	const (
@@ -1213,23 +1066,18 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			config := newTestDeploymentConfig(numInstances)
 			config.Horizon = horizon
 			config.MaxNumSeqs = maxRunning
-			config.AdmissionPolicy = tc.admissionPolicy
-			config.RoutingPolicy = "least-loaded"
 			config.Scheduler = "fcfs"
-			if tc.admissionPolicy == "token-bucket" {
-				config.TokenBucketCapacity = tc.tbCapacity
-				config.TokenBucketRefillRate = tc.tbRefillRate
-			}
 
 			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
 				0, 100, 20, 10, 200, 50, 10, 10, 100)
 
 			cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+			cs.SetGateway(tc.gateway())
 			mustRun(t, cs)
 
 			agg := cs.AggregatedMetrics()
 
-			assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), tc.admissionPolicy)
+			assertClusterINV1Conservation(t, cs, numRequests, cs.RejectedRequests(), tc.name)
 
 			// The full-pipeline clause, against an observation independent of the
 			// counters: the Metrics.Requests map. The helper cannot do this — it
@@ -1249,15 +1097,17 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 					injected, cs.RejectedRequests(), injected+cs.RejectedRequests(), numRequests)
 			}
 
-			if tc.admissionPolicy == "always-admit" {
+			if tc.name == "always-admit" {
 				if rejected := cs.RejectedRequests(); rejected != 0 {
 					t.Errorf("always-admit should have 0 rejections, got %d", rejected)
 				}
+			} else if cs.RejectedRequests() == 0 {
+				t.Error("reject-half gateway rejected nothing, so the rejected term is untested")
 			}
 
 			// Verify overload: under finite horizon, not all requests should complete
 			// (this confirms the test is actually exercising overload, not a trivial case)
-			if agg.CompletedRequests == numRequests && tc.admissionPolicy == "always-admit" {
+			if agg.CompletedRequests == numRequests && tc.name == "always-admit" {
 				t.Logf("warning: all %d requests completed — overload may not be genuine (increase rate or decrease horizon)", numRequests)
 			}
 		})
@@ -1296,8 +1146,6 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 			config := newTestDeploymentConfig(numInstances)
 			config.Horizon = math.MaxInt64 // Infinite horizon — all requests must complete
 			config.MaxNumSeqs = maxRunning
-			config.RoutingPolicy = "least-loaded"
-			config.AdmissionPolicy = "always-admit"
 			config.Scheduler = tc.scheduler
 
 			// Mixed workload: varying prompt and output sizes to exercise scheduler ordering
@@ -1327,14 +1175,14 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_AdmissionLatency_ExactOffset verifies that admission
-// latency creates an exact additive offset in TTFT and E2E
-// (promoted from H26 experiment, PR #372, issue #378):
+// TestClusterSimulator_GatewayHold_ExactOffset verifies that time a request spends in the
+// gateway before dispatch creates an exact additive offset in TTFT and E2E, which are measured
+// from arrival (promoted from H26 experiment, PR #372, issue #378):
 // GIVEN constant token lengths, low rate (no queuing), and deterministic seed
-// WHEN the cluster runs with AdmissionLatency=0, 10000 (10ms), and 50000 (50ms)
-// THEN TTFT and E2E deltas MUST match the admission latency exactly (within 0.1ms)
+// WHEN the gateway holds each request 0, 10000 (10ms), and 50000 (50ms) before dispatch
+// THEN TTFT and E2E deltas MUST match the hold exactly (within 0.1ms)
 // AND the linearity ratio (50ms/10ms) MUST equal 5.0 (within 0.01).
-func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
+func TestClusterSimulator_GatewayHold_ExactOffset(t *testing.T) {
 	const (
 		numRequests  = 50
 		numInstances = 4
@@ -1351,9 +1199,8 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 
 	runWithLatency := func(latencyUS int64) *sim.Metrics {
 		config := newTestDeploymentConfig(numInstances)
-		config.RoutingPolicy = "least-loaded"
-		config.AdmissionLatency = latencyUS
 		cs := NewClusterSimulator(config, NewSliceRequestSource(mkRequests()), nil)
+		cs.SetGateway(&fakeGateway{holdUs: latencyUS})
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -1415,16 +1262,13 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 }
 
 // TestClusterSimulator_FullStackConservation verifies INV-1 conservation
-// across the full policy stack: weighted routing + admission control +
-// priority scheduling (promoted from H25 experiment, PR #372, issue #379):
-// GIVEN weighted routing (DefaultScorerConfigs: precise-prefix-cache:2,queue-depth:1,kv-utilization:1),
-//
-//	priority-FCFS scheduling, and multiple admission/KV configurations
-//
+// across the full stack: gateway rejections + priority scheduling + KV pressure
+// (promoted from H25 experiment, PR #372, issue #379):
+// GIVEN priority-FCFS scheduling and multiple gateway/KV configurations
 // WHEN the simulation completes
 // THEN conservation holds: completed + still_queued + still_running == len(Requests)
 // AND preemptions are triggered in the constrained-KV config (stress path exercised)
-// AND pipeline conservation holds for token-bucket: len(Requests) + rejected == total.
+// AND pipeline conservation holds with gateway rejections: len(Requests) + rejected == total.
 func TestClusterSimulator_FullStackConservation(t *testing.T) {
 	const (
 		numRequests  = 50
@@ -1439,10 +1283,7 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 
 	mkFullStackConfig := func() DeploymentConfig {
 		config := newTestDeploymentConfig(numInstances)
-		config.RoutingPolicy = "weighted"
-		config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
 		config.Scheduler = "priority-fcfs"
-		config.AdmissionPolicy = "always-admit"
 		return config
 	}
 
@@ -1498,19 +1339,17 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		}
 	})
 
-	t.Run("token-bucket", func(t *testing.T) {
+	t.Run("gateway-rejections", func(t *testing.T) {
 		// BC-5: Pipeline conservation with admission rejections
 		config := mkFullStackConfig()
-		config.AdmissionPolicy = "token-bucket"
-		config.TokenBucketCapacity = 500
-		config.TokenBucketRefillRate = 300
 		cs := NewClusterSimulator(config, NewSliceRequestSource(mkRequests()), nil)
+		cs.SetGateway(rejectEveryOtherGateway())
 		mustRun(t, cs)
 
 		agg := cs.AggregatedMetrics()
 		rejected := cs.RejectedRequests()
 
-		assertClusterINV1Conservation(t, cs, numRequests, rejected, "token-bucket")
+		assertClusterINV1Conservation(t, cs, numRequests, rejected, "gateway-rejections")
 
 		// The full-pipeline clause against the Metrics.Requests map, independent of
 		// the counters the helper reads. Sound here only because nothing is dropped and
@@ -1527,9 +1366,9 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 				injected, rejected, injected+rejected, numRequests)
 		}
 
-		// Sanity: token-bucket should reject some requests (not all admitted)
-		if rejected == 0 {
-			t.Error("expected some rejections with token-bucket(cap=500,refill=300) at rate=200, got 0")
+		// Sanity: the gateway rejects every other request
+		if rejected != numRequests/2 {
+			t.Errorf("expected %d rejections from the reject-every-other gateway, got %d", numRequests/2, rejected)
 		}
 	})
 }
@@ -1643,144 +1482,18 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_FlowControl_NeverSaturated_PassThrough verifies BC-1:
-// NeverSaturated produces identical completed request counts to no flow control.
-func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
-	configNoFC := newTestDeploymentConfig(2)
-	configWithFC := newTestDeploymentConfig(2)
-	configWithFC.FlowControlEnabled = true
-	configWithFC.FlowControlDetector = "never"
-	configWithFC.FlowControlDispatchOrder = "fifo"
-
-	requests := newTestRequests(10)
-	// Deep copy for the second run
-	requestsCopy := make([]*sim.Request, len(requests))
-	for i, r := range requests {
-		cp := *r
-		cp.InputTokens = make([]sim.TokenID, len(r.InputTokens))
-		copy(cp.InputTokens, r.InputTokens)
-		cp.OutputTokens = make([]sim.TokenID, len(r.OutputTokens))
-		copy(cp.OutputTokens, r.OutputTokens)
-		requestsCopy[i] = &cp
-	}
-
-	csNoFC := NewClusterSimulator(configNoFC, NewSliceRequestSource(requests), nil)
-	csWithFC := NewClusterSimulator(configWithFC, NewSliceRequestSource(requestsCopy), nil)
-	mustRun(t, csNoFC)
-	mustRun(t, csWithFC)
-
-	mNoFC := csNoFC.AggregatedMetrics()
-	mWithFC := csWithFC.AggregatedMetrics()
-	if mNoFC.CompletedRequests != mWithFC.CompletedRequests {
-		t.Errorf("pass-through: CompletedRequests %d != %d", mNoFC.CompletedRequests, mWithFC.CompletedRequests)
-	}
-	if mNoFC.DroppedUnservable != mWithFC.DroppedUnservable {
-		t.Errorf("pass-through: DroppedUnservable %d != %d", mNoFC.DroppedUnservable, mWithFC.DroppedUnservable)
-	}
-	if mNoFC.StillQueued != mWithFC.StillQueued {
-		t.Errorf("pass-through: StillQueued %d != %d", mNoFC.StillQueued, mWithFC.StillQueued)
-	}
-	if mNoFC.StillRunning != mWithFC.StillRunning {
-		t.Errorf("pass-through: StillRunning %d != %d", mNoFC.StillRunning, mWithFC.StillRunning)
-	}
-	if mNoFC.TimedOutRequests != mWithFC.TimedOutRequests {
-		t.Errorf("pass-through: TimedOutRequests %d != %d", mNoFC.TimedOutRequests, mWithFC.TimedOutRequests)
-	}
-	// NeverSaturated pass-through must not shed or hold any requests
-	if csWithFC.GatewayQueueDepth() != 0 {
-		t.Errorf("pass-through: GatewayQueueDepth should be 0, got %d", csWithFC.GatewayQueueDepth())
-	}
-	if csWithFC.GatewayQueueShed() != 0 {
-		t.Errorf("pass-through: GatewayQueueShed should be 0, got %d", csWithFC.GatewayQueueShed())
-	}
-}
-
-// TestClusterSimulator_FlowControl_GatewayQueueDelay verifies BC-8:
-// Requests dispatched through gateway queue under saturation gating have nonzero GatewayQueueDelay.
-func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
+// TestClusterSimulator_GatewayAccessors_ZeroWithoutGatewayQueue verifies the gateway-queue
+// accessors read zero when the gateway holds nothing.
+func TestClusterSimulator_GatewayAccessors_ZeroWithoutGatewayQueue(t *testing.T) {
 	config := newTestDeploymentConfig(1)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "concurrency"
-	config.FlowControlDispatchOrder = "fifo"
-	config.FlowControlMaxConcurrency = 1 // only 1 in-flight at a time — forces queuing
-
-	// Stagger arrivals so that by the time later requests are admitted,
-	// earlier ones have been routed and incremented inFlightRequests.
-	// RoutingLatency=0 in test config, so routing happens at admission time.
-	// We need enough spacing that RoutingDecisionEvent fires before the next arrival.
-	requests := newTestRequests(5)
-	for i, req := range requests {
-		req.ArrivalTime = int64(i) * 100 // 100 ticks apart
-	}
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	agg := cs.AggregatedMetrics()
-	if agg.CompletedRequests == 0 {
-		t.Fatal("expected some completed requests")
-	}
-
-	// With maxConcurrency=1 and all requests arriving at once, only the first dispatches
-	// immediately. The rest must wait in the gateway queue until completions free capacity.
-	foundEnqueued := false
-	foundNonZeroDelay := false
-	for _, req := range requests {
-		if req.GatewayEnqueueTime > 0 {
-			foundEnqueued = true
-		}
-		if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime > 0 {
-			foundNonZeroDelay = true
-		}
-	}
-	if !foundEnqueued {
-		t.Error("BC-8: expected at least one request with GatewayEnqueueTime > 0")
-	}
-	if !foundNonZeroDelay {
-		t.Error("BC-8: expected at least one request with nonzero gateway queue delay when concurrency-gated")
-	}
-}
-
-// TestClusterSimulator_FlowControl_Conservation verifies BC-10:
-// INV-1 holds with flow control enabled.
-func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
-	config := newTestDeploymentConfig(2)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "utilization"
-	config.FlowControlDispatchOrder = "priority"
-	config.FlowControlMaxQueueDepth = 5
-	config.FlowControlQueueDepthThreshold = 2
-	config.FlowControlKVCacheUtilThreshold = 0.5
-
-	requests := newTestRequests(20)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "flow control conservation")
-
-	// Note: gwRejected is included in the conservation formula but may be 0 here.
-	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
-	// in TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted and related tests.
-	// Triggering it in an integration test requires the saturation detector to hold requests
-	// in the queue long enough for overflow, which depends on DES event ordering and timing
-	// that this configuration does not guarantee.
-}
-
-// TestClusterSimulator_FlowControl_Accessors_BeforeRun verifies zero values
-// when flow control is disabled or before run.
-func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	// flow control NOT enabled
 	cs := NewClusterSimulator(config, NewSliceRequestSource(newTestRequests(3)), nil)
 	mustRun(t, cs)
 
 	if cs.GatewayQueueDepth() != 0 {
-		t.Errorf("GatewayQueueDepth should be 0 when disabled, got %d", cs.GatewayQueueDepth())
-	}
-	if cs.GatewayQueueShed() != 0 {
-		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
+		t.Errorf("GatewayQueueDepth should be 0 when the gateway holds nothing, got %d", cs.GatewayQueueDepth())
 	}
 	if cs.GatewayQueueRejected() != 0 {
-		t.Errorf("GatewayQueueRejected should be 0 when disabled, got %d", cs.GatewayQueueRejected())
+		t.Errorf("GatewayQueueRejected should be 0 when the gateway holds nothing, got %d", cs.GatewayQueueRejected())
 	}
 }
 
@@ -1967,16 +1680,10 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 		}
 	}
 
-	// THEN: instance is registered with snapshotProvider and routable (SC-003).
-	// Verify AddInstance was called by querying Snapshot — a registered instance returns
-	// a snapshot with matching ID; an unregistered instance would panic or return wrong ID.
-	if cs.snapshotProvider != nil {
-		for _, inst := range cs.instances {
-			snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
-			if snap.ID != string(inst.ID()) {
-				t.Errorf("instance %s not registered with snapshotProvider: Snapshot().ID = %q, want %q (deferred instance must be routable)",
-					inst.ID(), snap.ID, string(inst.ID()))
-			}
+	// THEN: the deferred instance is visible to the gateway and routable (SC-003).
+	for _, inst := range cs.instances {
+		if !containsInstance(cs.Instances(), inst.ID()) || !inst.IsRoutable() {
+			t.Errorf("deferred instance %s is not visible through Instances() as routable", inst.ID())
 		}
 	}
 }
@@ -2678,226 +2385,4 @@ func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 			}
 		}
 	}
-}
-
-// TestClusterSimulator_FlowControl_RoundRobinWiring verifies that the
-// round-robin fairness policy is correctly wired from DeploymentConfig.
-func TestClusterSimulator_FlowControl_RoundRobinWiring(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "concurrency"
-	config.FlowControlMaxConcurrency = 1 // force queuing
-	config.FlowControlDispatchOrder = "priority"
-	config.FlowControlFairnessPolicy = "round-robin"
-
-	requests := newTestRequests(6)
-	// Assign alternating tenants: first 3 = A, last 3 = B
-	for i, r := range requests {
-		if i < 3 {
-			r.TenantID = "A"
-		} else {
-			r.TenantID = "B"
-		}
-		r.SLOClass = "standard"
-		r.MaxOutputLen = len(r.OutputTokens)
-	}
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	m := cs.AggregatedMetrics()
-	if m.CompletedRequests != 6 {
-		t.Fatalf("expected 6 completions, got %d", m.CompletedRequests)
-	}
-
-	// Verify the policy was wired (not panicking, runs to completion).
-	// The concurrency=1 gate forces queuing; round-robin should alternate.
-	if cs.GatewayQueueDepth() != 0 {
-		t.Errorf("expected empty gateway queue at end, got %d", cs.GatewayQueueDepth())
-	}
-}
-
-// TestClusterSimulator_FlowControl_Eviction_Conservation verifies that in-flight
-// gateway eviction preserves INV-1 (request conservation with gw_evicted bucket).
-func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "concurrency"
-	config.FlowControlMaxConcurrency = 1
-	config.FlowControlDispatchOrder = "priority"
-	config.FlowControlMaxQueueDepth = 100
-	config.FlowControlInFlightEviction = true
-
-	// Mix of sheddable and critical requests. Sheddable arrive first to fill capacity,
-	// then critical arrive and trigger eviction.
-	requests := make([]*sim.Request, 0, 10)
-	// Sheddable requests with long output (occupy instance for a long time)
-	longOutput := make([]sim.TokenID, 200)
-	for j := range longOutput {
-		longOutput[j] = sim.TokenID(j + 1)
-	}
-	for i := 0; i < 3; i++ {
-		out := make([]sim.TokenID, len(longOutput))
-		copy(out, longOutput)
-		r := &sim.Request{
-			ID:           fmt.Sprintf("shed-%d", i),
-			ArrivalTime:  int64(i * 1000), // arrive close together
-			SLOClass:     "sheddable",
-			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
-			OutputTokens: out,
-		}
-		requests = append(requests, r)
-	}
-	// Critical requests arrive while sheddable is occupying the instance
-	for i := 0; i < 3; i++ {
-		r := &sim.Request{
-			ID:           fmt.Sprintf("crit-%d", i),
-			ArrivalTime:  int64(50000 + i*1000), // arrive after sheddables are running
-			SLOClass:     "critical",
-			InputTokens:  []sim.TokenID{1, 2, 3},
-			OutputTokens: []sim.TokenID{1, 2, 3},
-		}
-		requests = append(requests, r)
-	}
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	m := cs.AggregatedMetrics()
-	gwEvicted := cs.GatewayEvicted()
-
-	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "in-flight eviction")
-
-	// BC-1: eviction must actually fire — a silent regression that disables eviction
-	// would still pass INV-1 trivially (gwEvicted=0 doesn't break the sum).
-	if gwEvicted == 0 {
-		t.Errorf("expected gwEvicted > 0 (eviction should fire when saturated with sheddable in-flight and critical waiting)")
-	}
-
-	// BC-6: non-sheddable requests must never be evicted. All 3 critical requests
-	// must complete. Since eviction only targets sheddable, completed must be >= 3
-	// (all critical) + some sheddable that finished before eviction.
-	// With gwEvicted sheddable removed and 3 critical completing:
-	// completed + gwEvicted should equal total injected (minus any in other buckets).
-	criticalCompleted := 0
-	for id := range m.Requests {
-		if strings.HasPrefix(id, "crit-") {
-			criticalCompleted++
-		}
-	}
-	if criticalCompleted != 3 {
-		t.Errorf("BC-6: expected all 3 critical requests in completed metrics, got %d", criticalCompleted)
-	}
-
-	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d criticalCompleted=%d",
-		m.CompletedRequests, gwEvicted, cs.GatewayQueueShed(), cs.GatewayQueueDepth(), criticalCompleted)
-}
-
-// TestClusterSimulator_FlowControl_NoEviction_Default verifies that in-flight
-// eviction does not fire when FlowControlInFlightEviction is false (default, llm-d parity).
-func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "concurrency"
-	config.FlowControlMaxConcurrency = 1
-	config.FlowControlDispatchOrder = "priority"
-	config.FlowControlMaxQueueDepth = 100
-	// FlowControlInFlightEviction defaults to false
-
-	requests := make([]*sim.Request, 0, 6)
-	longOutput := make([]sim.TokenID, 200)
-	for j := range longOutput {
-		longOutput[j] = sim.TokenID(j + 1)
-	}
-	for i := 0; i < 3; i++ {
-		out := make([]sim.TokenID, len(longOutput))
-		copy(out, longOutput)
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("shed-%d", i),
-			ArrivalTime:  int64(i * 1000),
-			SLOClass:     "sheddable",
-			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
-			OutputTokens: out,
-		})
-	}
-	for i := 0; i < 3; i++ {
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("crit-%d", i),
-			ArrivalTime:  int64(50000 + i*1000),
-			SLOClass:     "critical",
-			InputTokens:  []sim.TokenID{1, 2, 3},
-			OutputTokens: []sim.TokenID{1, 2, 3},
-		})
-	}
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	gwEvicted := cs.GatewayEvicted()
-	if gwEvicted != 0 {
-		t.Errorf("expected gwEvicted=0 when in-flight eviction disabled (llm-d parity), got %d", gwEvicted)
-	}
-
-	m := cs.AggregatedMetrics()
-
-	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "eviction disabled")
-
-	if m.CompletedRequests != len(requests) {
-		t.Errorf("expected all %d requests to complete when eviction disabled, got %d completed", len(requests), m.CompletedRequests)
-	}
-}
-
-// TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
-// works when requests are routed through the PD disaggregation path (non-disaggregated).
-func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
-	config := newTestDisaggDeploymentConfig(2, 1, 1)
-	config.FlowControlEnabled = true
-	config.FlowControlDetector = "concurrency"
-	config.FlowControlMaxConcurrency = 1 // saturation = totalInFlight / (numInstances * maxConcurrency) — saturates at 2 in-flight
-	config.FlowControlDispatchOrder = "priority"
-	config.FlowControlMaxQueueDepth = 100
-	config.FlowControlInFlightEviction = true
-	config.PDDecider = "never" // non-disaggregated: requests go directly to decode pod
-
-	longOutput := make([]sim.TokenID, 200)
-	for j := range longOutput {
-		longOutput[j] = sim.TokenID(j + 1)
-	}
-
-	// Need enough sheddable to saturate: 2 instances × maxConcurrency=1 → saturates at 2 in-flight
-	requests := make([]*sim.Request, 0, 8)
-	for i := 0; i < 4; i++ {
-		out := make([]sim.TokenID, len(longOutput))
-		copy(out, longOutput)
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("pd-shed-%d", i),
-			ArrivalTime:  int64(i * 1000),
-			SLOClass:     "sheddable",
-			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
-			OutputTokens: out,
-		})
-	}
-	for i := 0; i < 4; i++ {
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("pd-crit-%d", i),
-			ArrivalTime:  int64(50000 + i*1000),
-			SLOClass:     "critical",
-			InputTokens:  []sim.TokenID{1, 2, 3},
-			OutputTokens: []sim.TokenID{1, 2, 3},
-		})
-	}
-
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	m := cs.AggregatedMetrics()
-	gwEvicted := cs.GatewayEvicted()
-
-	assertClusterINV1Conservation(t, cs, len(requests), cs.RejectedRequests(), "PD + flow control")
-
-	if gwEvicted == 0 {
-		t.Errorf("expected gwEvicted > 0 in PD+flow-control mode")
-	}
-
-	t.Logf("PD+FC results: completed=%d gwEvicted=%d", m.CompletedRequests, gwEvicted)
 }

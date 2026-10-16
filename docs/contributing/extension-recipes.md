@@ -2,48 +2,23 @@
 
 Step-by-step guides for extending BLIS. Each recipe lists the exact files to touch, the order, and examples to follow.
 
-## Adding New Policy Templates
+## Routing, Admission and Flow Control
 
-To add a new policy template (e.g., a new routing algorithm):
+BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process ([Routing](../guide/routing.md)). New routing, admission or flow-control behavior belongs in [llm-d-router](https://github.com/llm-d/llm-d-router), as a plugin or configuration, not in this repository.
 
-1. **Implement the interface** in the corresponding file:
-   - `AdmissionPolicy` → `sim/admission.go` (cluster-level: receives `*RouterState` with snapshots + clock)
-   - `RoutingPolicy` → `sim/routing.go` (cluster-level: receives `*RouterState` with snapshots + clock)
-   - `InstanceScheduler` → `sim/scheduler.go` (instance-level: receives `requests` + `clock` only)
-   - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
+A new llm-d plugin type becomes usable in BLIS once it is audited and added to the supported list in `sim/llmd/support.go`: read every clock read, goroutine, blocking wait, random draw and map iteration it makes, route the decision-relevant ones through the hosting runtime in the fork, check that every signal it consumes is produced by the simulated engines, and add a test in `sim/llmd`. Until then it is refused at startup with the reason in the unsupported list. See [The llm-d router fork](llm-d-router-fork.md).
 
-2. **Register in two places** (both required):
-   - Add policy name to valid names map in `sim/bundle.go` (e.g., `validRoutingPolicies`) and corresponding `IsValid*` function
-   - Add `case` to factory function in the same policy file (e.g., `NewRoutingPolicy` in `sim/routing.go`)
-   - CLI error messages auto-derive from `ValidAdmissionPolicyNames()` etc. — no manual update needed
+## Adding New Instance Schedulers
 
-3. **Add tests** following BDD naming: `TestMyPolicy_Scenario_Behavior`
-   - Test observable behavior, not internal structure
-   - Include empty-snapshots panic test for routing policies (defensive programming convention)
-   - Use `&RouterState{Snapshots: snapshots, Clock: clock}` in test setup
+To add a new instance-level scheduler (wait-queue ordering):
 
-4. **Update documentation**: the relevant `docs/` guide and README policy lists. Touch `CLAUDE.md` only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.
-
-**Important:** For composite load signals, use `snap.EffectiveLoad()` — never compute `QueueDepth + BatchSize + InFlightRequests` inline. For queue-depth-only signals, use `snap.QueueDepth` directly.
+1. **Implement the `InstanceScheduler` interface** in `sim/scheduler.go` (receives `requests` + `clock` only).
+2. **Register in two places** (both required): add the name to `validSchedulers` in `sim/bundle.go`, and add a `case` to `NewScheduler` in `sim/scheduler.go`. CLI error messages derive from `ValidSchedulerNames()`.
+3. **Add tests** following BDD naming: `TestMyScheduler_Scenario_Behavior`. Test observable behavior, not internal structure.
+4. **Update documentation**: the relevant `docs/` guide. Touch `CLAUDE.md` only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.
 
 Examples:
-- See `RejectAll` in `sim/admission.go` for a simple admission template (constant return)
-- See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go` for a stateful scorer with observer-based state updates (the prefix-affinity scorer uses a router-side `PrefixCacheIndex` to track per-instance block hash history)
-
-## Adding New Scorers (Weighted Routing)
-
-To add a new scoring dimension for the `weighted` routing policy (e.g., predicted-latency):
-
-1. **Implement the scorer function** in `sim/routing_scorers.go` (stateless) or a new file (stateful) — a `scorerFunc` that takes `(*Request, []RoutingSnapshot)` and returns `map[string]float64` with scores in [0,1] per instance. Stateful scorers also return an `observerFunc` called after each routing decision.
-2. **Register the scorer** in `sim/routing_scorers.go`: add to `validScorerNames` map + `newScorerWithObserver` factory switch
-3. **Add behavioral tests** — monotonicity, boundary values, INV-1/INV-2 conformance
-4. Extension friction: **2 touch points** (implementation + registration in `newScorerWithObserver`). Stateful scorers (like prefix-affinity) may use a separate file (e.g., `sim/routing_prefix_scorer.go`) but the registration point is the same `newScorerWithObserver` switch in `sim/routing_scorers.go`.
-5. **Stateful scorers** return an `observerFunc` alongside the `scorerFunc` from `newScorerWithObserver`. The `observerFunc` signature is `func(req *Request, targetInstance string)` and is called after each routing decision to update scorer state. The scorer and observer share state via closure.
-
-Examples:
-- See `scoreLoadBalance` in `sim/routing_scorers.go` for a simple stateless scorer
-- See `scoreQueueDepth` for a scorer with edge case handling (uniform load)
-- See `newPrefixAffinityScorer` in `sim/routing_prefix_scorer.go` for a stateful scorer with observer and router-side cache
+- See `PriorityFCFSScheduler` and `SJFScheduler` in `sim/scheduler.go`.
 
 ## Extending KV Cache Tiers
 
@@ -71,14 +46,14 @@ To add a new trace record type (e.g., `ScaleRecord` for autoscaling events):
 1. **Define the record struct** in `sim/trace/record.go` (pure data, no `sim/` dependency)
 2. **Add a slice field** to `SimulationTrace` in `sim/trace/trace.go` (e.g., `Scales []ScaleRecord`)
 3. **Add a recording method** to `SimulationTrace` (e.g., `RecordScale(ScaleRecord)`)
-4. **Hook recording** into the cluster event pipeline in `sim/cluster/cluster_event.go` (guard with `if cs.trace != nil` for zero-overhead default)
+4. **Hook recording** into the cluster pipeline (e.g. `sim/cluster/gateway.go` for router decisions, `sim/cluster/cluster_event.go` for scaling events; guard with `if cs.trace != nil` for zero-overhead default)
 5. **Update `Summarize()`** in `sim/trace/summary.go` to aggregate the new record type
 6. **Add behavioral tests** in `sim/trace/*_test.go`
 
 Examples:
 - See `AdmissionRecord` in `sim/trace/record.go` for a simple record
 - See `RoutingRecord` with `CandidateScore` for a record with nested counterfactual data
-- See `computeCounterfactual()` in `sim/cluster/counterfactual.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`) because it needs `sim.RoutingSnapshot`
+- See `counterfactual()` in `sim/cluster/gateway.go` for derived computation that lives in `sim/cluster/` (not `sim/trace/`): it ranks the scores the router's primary scheduling profile gave every endpoint
 
 ## Adding Fields to TraceV2 Format
 
@@ -179,9 +154,9 @@ To add a new field to per-request JSON output (appears in `--metrics-path` outpu
 1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
 2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
 3. **Update `NewRequestMetrics()` constructor** in `sim/metrics_utils.go` to propagate the new field from `Request` to `RequestMetrics`
-4. **Set the field** at the appropriate event (e.g., `RoutingDecisionEvent` for cluster-level, or completion for computed metrics)
+4. **Set the field** at the appropriate point (e.g., dispatch in `sim/cluster/gateway.go` for cluster-level, or completion for computed metrics)
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
 Examples:
-- See `HandledBy` (#181) — set by `RoutingDecisionEvent`, zero-value when used outside cluster pipeline (suppressed from JSON via `omitempty`)
+- See `HandledBy` (#181) — derived from the instance a request was dispatched to, zero-value outside the cluster pipeline (suppressed from JSON via `omitempty`)
 - See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection

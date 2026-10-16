@@ -69,6 +69,7 @@ Example:
 			logrus.Fatalf("Invalid log level: %s", logLevel)
 		}
 		logrus.SetLevel(level)
+		validateRouterFlags()
 
 		// Validate required inputs (BC-6, BC-8)
 		if traceHeaderPath == "" {
@@ -374,27 +375,15 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
-		// E/P/D validation (GAP-4, issue #1264). Per INV-13 (run/replay parity,
-		// PR #1305), encode pool flags are supported in replay the same way PD
-		// disaggregation is: validate the decider name and the encode-instances /
-		// encode-decider pairing, then wire them into DeploymentConfig below.
+		// E/P/D topology (GAP-4, issue #1264), validated as runCmd does (INV-13).
 		if encodeInstances < 0 {
 			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
-		}
-		if !sim.IsValidEncodeDecider(encodeDecider) {
-			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
-		}
-		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
-			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
-		}
-		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
-			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
 		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Autoscaler and node-pool configs are not supported in replay — fail fast
 		// rather than silently producing divergent results (INV-13, Track B).
-		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		bundle := resolvePolicies(cmd)
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
 		}
@@ -425,20 +414,8 @@ Example:
 		if prefillDecodeInstances < 0 {
 			logrus.Fatalf("--prefill-decode-instances must be >= 0, got %d", prefillDecodeInstances)
 		}
-		if !sim.IsValidDisaggregationDecider(pdDecider) {
-			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
-		}
 		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
-		}
-		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
-			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
-		}
-		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
-			logrus.Fatalf("--pd-prefix-threshold=%d has no effect when --pd-decider=%q (only applies to the prefix-threshold decider); remove the flag or set --pd-decider=prefix-threshold", pdPrefixThreshold, pdDecider)
-		}
-		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
-			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
 		}
 
 		// DP-as-placement plan DECISION (#1531/#1556, #1553), as runCmd makes it.
@@ -461,23 +438,6 @@ Example:
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
 			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
-		}
-
-		// Parse per-pool scorer configs (same as runCmd).
-		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
-		if prefillRoutingScorers != "" {
-			var err error
-			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
-			if err != nil {
-				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
-			}
-		}
-		if decodeRoutingScorers != "" {
-			var err error
-			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
-			if err != nil {
-				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
-			}
 		}
 
 		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
@@ -526,51 +486,17 @@ Example:
 				// The kernel prices every step.
 				LatencyModel: lr.KernelModel,
 			},
-			NumInstances:                    numInstances,
-			AdmissionPolicy:                 admissionPolicy,
-			AdmissionLatency:                admissionLatency,
-			RoutingLatency:                  routingLatency,
-			TokenBucketCapacity:             tokenBucketCapacity,
-			TokenBucketRefillRate:           tokenBucketRefillRate,
-			RoutingPolicy:                   routingPolicy,
-			RoutingScorerConfigs:            parsedScorerConfigs,
-			TraceLevel:                      traceLevel,
-			CounterfactualK:                 counterfactualK,
-			SnapshotRefreshInterval:         snapshotRefreshInterval,
-			CacheSignalDelay:                cacheSignalDelay,
-			PrefillInstances:                prefillInstances,
-			DecodeInstances:                 decodeInstances,
-			SharedInstances:                 prefillDecodeInstances,
-			EncodeInstances:                 encodeInstances,
-			EncodeDecider:                   encodeDecider,
-			PDDecider:                       pdDecider,
-			PDPrefixThreshold:               pdPrefixThreshold,
-			PDTransferTime:                  pdTransferTime,
-			PrefillScorerConfigs:            prefillScorerCfgs,
-			DecodeScorerConfigs:             decodeScorerCfgs,
-			PrefillOverrides:                prefillOverrides,
-			DecodeOverrides:                 decodeOverrides,
-			FlowControlEnabled:              flowControlEnabled,
-			FlowControlDetector:             flowControlDetector,
-			FlowControlDispatchOrder:        flowControlDispatchOrder,
-			FlowControlSLOTargets:           sloTargetsMap,
-			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
-			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
-			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
-			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
-			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
-			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
-			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
-			FlowControlRequestTTL:           flowControlRequestTTL,
-			FlowControlQueueShedding:        flowControlQueueShedding,
-			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
-			FlowControlInFlightEviction:     flowControlInFlightEviction,
-			TierShedThreshold:               tierShedThreshold,
-			TierShedMinPriority:             tierShedMinPriority,
-			GAIEQDThreshold:                 gaieQDThreshold,
-			GAIEKVThreshold:                 gaieKVThreshold,
-			TenantBudgets:                   tenantBudgets,
-			InstanceLifecycle:               bundleInstanceLifecycle,
+			NumInstances:      numInstances,
+			TraceLevel:        traceLevel,
+			CounterfactualK:   counterfactualK,
+			PrefillInstances:  prefillInstances,
+			DecodeInstances:   decodeInstances,
+			SharedInstances:   prefillDecodeInstances,
+			EncodeInstances:   encodeInstances,
+			PDTransferTime:    pdTransferTime,
+			PrefillOverrides:  prefillOverrides,
+			DecodeOverrides:   decodeOverrides,
+			InstanceLifecycle: bundleInstanceLifecycle,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -613,6 +539,10 @@ Example:
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+		// INV-13: the router the trace was recorded with, unless the command line names one.
+		router := reconcileReplayRouter(cmd, traceData.Header.Router)
+		gw := newGateway(router, model)
+		cs.SetGateway(gw)
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
 		// report path fails fast (#1516 single detector, #1519 bank).
@@ -717,13 +647,12 @@ Example:
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
 		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -744,9 +673,6 @@ Example:
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.GatewayQueueDepth > 0 {
 				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
-			}
-			if rawMetrics.GatewayQueueShed > 0 {
-				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
 			}
 			if rawMetrics.GatewayQueueRejected > 0 {
 				fmt.Printf("Gateway Queue Rejected: %d\n", rawMetrics.GatewayQueueRejected)
@@ -865,6 +791,7 @@ Example:
 				// forward keeps it available to a downstream calibrate and never
 				// silently drops it.
 				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
+				Router:            router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

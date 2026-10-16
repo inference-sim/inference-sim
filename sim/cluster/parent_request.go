@@ -5,6 +5,7 @@ import "github.com/inference-sim/inference-sim/sim"
 // ParentRequest tracks the disaggregated lifecycle of a request that was split
 // into prefill and decode sub-requests. Owned by ClusterSimulator.
 type ParentRequest struct {
+	gatewayDone     bool         // the gateway has been told the request ended
 	ID              string       // Original request ID
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string
@@ -44,10 +45,9 @@ type ParentRequest struct {
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 
-	// EncodeInstanceID is set by the encode routing stage in executeDisaggregatedRouting
-	// when an encode decider approves. Zero value (empty) = encode did not fire for this
-	// request. GAP-4, issue #1264.
-	EncodeInstanceID InstanceID
+	// EncodeInstanceIDs are the encoders the router chose for a multimodal request, in the
+	// router's order (x-llm-d-encoder-hosts-ports), empty when it was not encoded.
+	EncodeInstanceIDs []InstanceID
 }
 
 // NewParentRequest creates a ParentRequest from the original request.

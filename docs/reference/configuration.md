@@ -35,11 +35,13 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 !!! note
     `--seed`, `--horizon`, and `--num-requests` are exceptions — they override the workload-spec YAML values even when `--workload-spec` is set. `--rate` does NOT override `aggregate_rate` in the YAML (see [Common Pitfalls](#common-pitfalls)).
 
-**Routing, admission, scheduling, and preemption** (`--routing-policy`, `--admission-policy`, `--scheduler`, `--preemption-policy`, etc.):
+**Scheduling and preemption** (`--scheduler`, `--preemption-policy`):
 
 1. Explicit CLI flags
-2. `--policy-config` YAML bundle — loads all policy settings from one file
-3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
+2. `--policy-config` YAML bundle
+3. The scenario's engine settings, then the default `fcfs`
+
+**Routing, admission and flow control** are the embedded llm-d router's, configured by the [router flags](#router) and the files they name. See [Routing](../guide/routing.md).
 
 **Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. Only `--long-prefill-token-threshold` and `--preemption-policy` remain on the CLI.
 
@@ -53,7 +55,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | `scheduling_delay_ms` (per-request JSON) | milliseconds | Converted from ticks by dividing by 1,000. Historically was in ticks (μs) despite the `_ms` suffix — fixed by BC-14. Old hypothesis scripts (pre-fix) divide by 1,000 again unnecessarily. |
 | `scheduling_delay_p99_ms` (aggregate) | milliseconds | Always was in milliseconds |
 | `--horizon` | ticks (μs) | Simulation time limit. 1,000,000 = 1 second |
-| `--admission-latency`, `--routing-latency` | ticks (μs) | Decision latency injected into the DES event queue |
+| `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` | ticks (μs) | Gateway hop before the router; scrape phase-offset bound; KV-event delivery delay |
 | `think_time_us` (workload YAML) | microseconds | Inter-round delay in multi-turn sessions. 5,000,000 = 5 seconds |
 | `aggregate_rate`, `--rate` | requests/second | Not ticks — real-world time unit |
 
@@ -143,7 +145,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
 ## Latency Model
 
@@ -155,146 +157,60 @@ BLIS prices every step with [blis-latency-kernel](https://github.com/inference-s
 
 ## Cluster Configuration
 
-With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With `--num-instances N` (N > 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
+With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no router. With `--num-instances N` (N > 1), the cluster simulation runs: every request passes through the embedded llm-d router (admission, flow control, endpoint picking) before reaching a per-instance wait queue. See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode with admission and routing. Must not exceed the scenario's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)); `testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml` allows up to 8. |
+| `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode behind the llm-d router. Must not exceed the scenario's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)); `testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml` allows up to 8. |
 | `--prefill-instances` | int | 0 | Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with `prefill` and `decode` pools, and must not exceed the prefill pool's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)). |
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
-| `--pd-decider` | string | "never" | P/D disaggregation decider: `never`, `always`, `prefix-threshold`. |
 
-**P/D disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or encode instances.
+**P/D disaggregation.** Whether a request is disaggregated is the router's decision: the EndpointPickerConfig needs a `disagg-profile-handler` with a P/D decider (`always-disagg-pd-decider` or `prefix-based-pd-decider`); prefill and decode pods carry `llm-d.ai/role` labels automatically. See [Routing](../guide/routing.md). A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or encode instances.
 
-## Admission Policy
+## Router
 
-Controls which requests enter the routing pipeline. See [Cluster Architecture: Admission](../concepts/architecture.md#admission-pipeline).
+Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. These flags are registered on `run` and `replay`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md) for the supported plugins, what is refused at startup, the corresponding deployment-schema keys, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`, `tier-shed`, `gaie-legacy`. |
-| `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
-| `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
-| `--token-bucket-refill-rate` | float64 | 1000 | Token bucket refill rate in tokens/second. Required > 0 when using `token-bucket`. |
+| `--epp-flags` | string | "" | File holding the llm-d router's (EPP's) command-line flags, verbatim: a YAML list of flags, or a YAML map of flag name to value as in the router Helm chart's `epp.flags`. Default: a standalone router whose pool is every simulated pod (`--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`). |
+| `--epp-config` | string | "" | EndpointPickerConfig file for the llm-d router, as passed to the EPP with `--config-file`. Default: the router's built-in default configuration. Refused together with an EPP flag `--config-file` or `--config-text`. |
+| `--epp-manifests` | string slice | — | Kubernetes manifest files (comma-separated or repeated). The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. |
+| `--pod-labels` | string slice | — | Extra labels on the simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches: `key=value` on every pod, or `role:key=value` on the pods of one P/D role (`prefill`, `decode`, `prefill-decode`, `encode`), overriding an unscoped label with the same key. Comma-separated or repeated. |
+| `--gateway-latency` | int64 | 0 | Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker). Must be >= 0. |
+| `--epp-scrape-jitter` | int64 | 0 | Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase. Must be >= 0. |
+| `--kv-event-delay` | int64 | 0 | Microseconds from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them. Must be >= 0. Recorded in the trace header. |
 
-**Tier-shed admission** (`--admission-policy tier-shed`): Sheds lower-priority SLO tiers under overload. Configured via `--policy-config` YAML only:
+**Recorded in the trace.** The router inputs are written to the TraceV2 header (`--trace-output`); a `--config-file` EPP flag is inlined as `--config-text` so the header carries the configuration itself. `blis replay` rebuilds the recorded router from the header. A replay command line that names router flags must describe the same router, or replay is refused (INV-13).
 
-| YAML field | Type | Default | Description |
-|------------|------|---------|-------------|
-| `admission.tier_shed_threshold` | int | 0 | Per-instance in-flight threshold above which shedding activates. 0 = shed at any load. |
-| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed sheddable tiers (priority < 0). No range constraint (GAIE priorities are arbitrary integers). |
-| `admission.slo_priorities` | map[string]int | nil | Custom SLO class priority overrides. Merges on top of GAIE defaults. See [SLO Tier Priorities](#slo-tier-priorities) below. |
+**Pod labels.** BLIS sets `llm-d.ai/inference-serving=true` on every pod and `llm-d.ai/role` (`prefill`, `decode`, `prefill-decode`, `encode`) from the scenario's pools, in addition to `--pod-labels`; `llm-d.ai/role` cannot be given with `--pod-labels`.
 
-**GAIE-legacy admission** (`--admission-policy gaie-legacy`): Saturation-based shedding matching production llm-d/GAIE. Non-sheddable requests always pass; sheddable requests rejected when pool-average saturation >= 1.0. Saturation = `avg(max(qd/qdThreshold, kvUtil/kvThreshold))` across instances. Configured via `--policy-config` YAML only:
-
-| YAML field | Type | Default | Source | Description |
-|------------|------|---------|--------|-------------|
-| `admission.gaie_qd_threshold` | float64 | 5 | GAIE `DefaultQueueDepthThreshold` (`config.go:31`) | Per-instance queue depth threshold. Must be > 0. |
-| `admission.gaie_kv_threshold` | float64 | 0.8 | GAIE `DefaultKVCacheUtilThreshold` (`config.go:33`) | Per-instance KV cache utilization threshold. Must be in (0, 1.0]. |
-| `admission.slo_priorities` | map[string]int | nil | — | Custom SLO class priority overrides (shared with tier-shed). |
+**Objectives.** Request priorities come from the `InferenceObjective` objects in the manifests, which the router reconciles only for an `InferencePool` (`--pool-name`); a request whose objective has none gets priority 0. `examples/llm-d/inferencepool.yaml` (with `examples/llm-d/pool-flags.yaml`) defines a pool and one objective per SLO class (`critical` 4, `standard` 3, `batch` -1, `sheddable` -2, `background` -3). Each request carries its SLO class in the `x-llm-d-inference-objective` header and its tenant in `x-llm-d-inference-fairness-id`. See [Admission and Flow Control](../guide/admission.md).
 
 ### SLO Tier Priorities
 
-Each SLO class has an integer priority that determines admission ordering, shedding decisions, gateway queue dispatch, and (with `--preemption-policy priority`) preemption victim selection. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+Each SLO class has an integer priority. Engine-side, the mapping drives priority scheduling (`--scheduler priority-fcfs`) and, with `--preemption-policy priority`, preemption victim selection. It follows the GAIE convention where **negative priority = sheddable**. Router-side priorities come from `InferenceObjective` objects (above), not from this mapping.
 
-`slo_priorities` overrides affect both admission (tier-shed, GAIE-legacy) and preemption (`--preemption-policy priority`). Both subsystems share the same priority mapping.
+**Default priorities:**
 
-**Default priorities (GAIE-compatible):**
+| SLO Class | Priority | Sheddable? |
+|-----------|----------|------------|
+| `critical` | 4 | No |
+| `standard` | 3 | No (default for an empty or unknown class) |
+| `batch` | -1 | Yes |
+| `sheddable` | -2 | Yes |
+| `background` | -3 | Yes |
 
-| SLO Class | Priority | Sheddable? | Description |
-|-----------|----------|------------|-------------|
-| `critical` | 4 | No | Highest priority. Never shed by tier-shed or tenant budgets. |
-| `standard` | 3 | No | Default for empty/unknown SLO class. Protected from shedding. |
-| `batch` | -1 | Yes | Offline/batch workloads. Shed under overload or tenant budget pressure. |
-| `sheddable` | -2 | Yes | Explicitly sheddable workloads. |
-| `background` | -3 | Yes | Lowest priority. First to be shed. |
-
-**Key semantic:** `IsSheddable(class) = Priority(class) < 0`. This matches llm-d's `sheddable.go` contract. Classes with priority >= 0 are protected from tenant budget shedding and are shed by tier-shed only when their priority is below `tier_shed_min_priority`.
-
-**Custom overrides:** Override specific priorities via the policy bundle YAML. Unspecified classes retain defaults.
+**Custom overrides:** set `priority.slo_priorities` in the policy bundle. Unspecified classes keep their defaults; values must be in [-100, 100].
 
 ```yaml
-admission:
-  policy: "tier-shed"
+priority:
   slo_priorities:
-    batch: 0       # make batch non-sheddable (protected like standard)
-    critical: 10   # increase critical priority gap
+    batch: 0       # batch is no longer sheddable for engine scheduling
+    critical: 10
 ```
 
-**Where priorities are used in the codebase:**
-
-| Component | File | How priorities are used |
-|-----------|------|----------------------|
-| Tier-shed admission | `sim/admission.go` | Rejects requests with `Priority(class) < MinAdmitPriority` under overload |
-| Tenant budget enforcement | `sim/cluster/cluster_event.go` | Sheds over-budget requests where `IsSheddable(class)` is true (priority < 0) |
-| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered or SLO-deadline dispatch: higher priority dequeued first (priority mode), earliest SLO deadline within flow (slo-deadline mode); capacity shedding evicts lowest priority |
-| Backward compatibility | `sim/admission.go` | `SLOTierPriority()` delegates to `DefaultSLOPriorityMap().Priority()` |
-
-**Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have sheddable requests (`IsSheddable(class) = priority < 0`) preferentially shed, while non-sheddable traffic (critical, standard) is always protected. Configured via `--policy-config` YAML only (no CLI flag):
-
-| YAML field | Type | Default | Description |
-|------------|------|---------|-------------|
-| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxNumSeqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1]. |
-
-Example:
-
-```yaml
-admission:
-  policy: "tier-shed"
-  tier_shed_threshold: 0
-  tier_shed_min_priority: 3  # admit standard(3) and critical(4); shed sheddable tiers (priority < 0)
-  slo_priorities:             # optional: override specific priorities
-    batch: 0                  # promote batch to non-sheddable
-  slo_targets:                # optional: per-class TTFT targets in µs for slo-deadline ordering
-    critical: 100000          # 100ms TTFT target
-    standard: 500000          # 500ms TTFT target
-
-tenant_budgets:
-  alice: 0.3   # alice may use at most 30% of total cluster capacity
-  bob: 0.7     # bob may use at most 70% of total cluster capacity
-```
-
-## Flow Control (Gateway Queue)
-
-When `--flow-control` is enabled, admission IS the queue — requests are enqueued into per-priority-band, per-tenant flow queues and dispatched under saturation gating. See [Admission: Flow Control](../guide/admission.md#flow-control-mode).
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--flow-control` | bool | false | Enable flow-control admission (replaces legacy admission) |
-| `--saturation-detector` | string | "never" | Saturation detection: `utilization`, `concurrency`, `never` |
-| `--queue-depth-threshold` | int | 5 | Queue depth threshold for utilization-based saturation |
-| `--kv-cache-util-threshold` | float64 | 0.8 | KV cache utilization threshold for saturation |
-| `--max-concurrency` | int | 100 | Max in-flight requests for concurrency-based saturation |
-| `--dispatch-order` | string | "fifo" | Cross-band dispatch: `fifo` (globally-earliest), `priority` (highest band first), `slo-deadline` (earliest SLO deadline within flow) |
-| `--slo-targets` | string | "" | Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., `critical=100000,standard=500000`) |
-| `--fairness-policy` | string | "global-strict" | Intra-band flow selection: `global-strict` (earliest seqID), `round-robin` (tenant cycling) |
-| `--per-band-capacity` | int | 0 | Max requests per priority band (0=unlimited) |
-| `--max-gateway-queue-depth` | int | 0 | Global queue depth limit (0=unlimited) |
-
-## Routing Policy
-
-Controls how admitted requests are assigned to instances. See [Cluster Architecture: Routing](../concepts/architecture.md#routing-pipeline).
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
-| `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
-| `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
-| `--snapshot-refresh-interval` | int64 | 50000 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. Default 50ms = llm-d parity. 0 = immediate/oracle mode. |
-
-### Scorer Configuration
-
-When using `--routing-policy weighted`, the `--routing-scorers` flag configures which scorers are used and their relative weights:
-
-```bash
---routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
-```
-
-Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`.
-
-Default (when `--routing-scorers` is empty): `precise-prefix-cache:2, queue-depth:1, kv-utilization:1` (llm-d parity).
-
-See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#scorer-composition) for details on each scorer.
+The mapping lives in `sim/slo_priority.go` (`SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
 ## Scheduling and Priority
 
@@ -403,26 +319,12 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 
 ## Policy Bundle
 
-The `--policy-config` flag loads admission, routing, priority, and scheduling configuration from a single YAML file:
+The `--policy-config` flag loads engine-level policy and infrastructure configuration from a single YAML file. Strict parsing rejects unknown keys. Admission, routing and flow control are not part of a bundle; they are the llm-d router's ([Router](#router)).
 
 ```yaml
-admission:
-  policy: "always-admit"
-  token_bucket_capacity: 10000.0
-  token_bucket_refill_rate: 1000.0
-
-routing:
-  policy: "weighted"
-  scorers:
-    - name: "prefix-affinity"
-      weight: 3.0
-    - name: "queue-depth"
-      weight: 2.0
-    - name: "kv-utilization"
-      weight: 2.0
-
 priority:
-  policy: "constant"
+  slo_priorities:       # optional: override engine-level SLO class priorities
+    batch: 0            # defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3
 
 scheduler: "fcfs"
 
@@ -453,24 +355,9 @@ instance_lifecycle:
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
-
-# SLO priority overrides (optional; omit for GAIE defaults)
-# GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3
-# Negative priority = sheddable. Override to change which classes are sheddable.
-# admission:
-#   slo_priorities:
-#     batch: 0    # make batch non-sheddable
-
-# Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)
-# Each value is a fraction of total cluster capacity (NumInstances × MaxNumSeqs).
-# Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].
-# Non-sheddable traffic (priority >= 0: critical, standard) is always protected from budget shedding.
-tenant_budgets:
-  team-a: 0.4
-  team-b: 0.4
 ```
 
-CLI flags override policy bundle values when explicitly set. For example, `--routing-policy least-loaded` overrides the bundle's `routing.policy` setting.
+CLI flags override policy bundle values when explicitly set. For example, `--scheduler sjf` overrides the bundle's `scheduler` setting.
 
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
@@ -480,10 +367,10 @@ CLI flags override policy bundle values when explicitly set. For example, `--rou
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--trace-level` | string | "none" | Trace verbosity: `none` or `decisions`. |
-| `--counterfactual-k` | int | 0 | Number of counterfactual candidates per routing decision. Requires `--trace-level decisions`. |
+| `--counterfactual-k` | int | 0 | Record the top-k endpoints the router scored, with their state, per routing decision. Requires `--trace-level decisions`. |
 | `--summarize-trace` | bool | false | Print trace summary after simulation. Requires `--trace-level decisions`. |
 
-See [Cluster Architecture: Counterfactual Regret](../concepts/architecture.md#counterfactual-regret).
+See [Routing: Decisions](../guide/routing.md#decisions) and [Cluster Architecture](../concepts/architecture.md).
 
 ## Fitness Evaluation
 
@@ -523,7 +410,8 @@ lora:
 | **Latency** | `--speculative-acceptance-rate` (everything else: scenario + registry, priced by blis-latency-kernel) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
+| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
+| **Router** | `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
@@ -588,7 +476,7 @@ Used when `--rate` is set instead of `--workload-spec`. Same flag names and defa
 
 ## blis replay
 
-Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Admission Policy](#admission-policy), [Routing Policy](#routing-policy), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields byte-identical stdout (INV-13).
+Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields byte-identical stdout (INV-13).
 
 ### Replay-Specific Flags
 

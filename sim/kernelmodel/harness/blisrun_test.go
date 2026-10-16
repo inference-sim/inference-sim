@@ -79,14 +79,14 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
 func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	cfg := Config{Repos: testRepos(), Seed: 7}
-	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", 40, 4)
+	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", "/d/epp.yaml", 40, 4)
 	if args[0] != "replay" {
 		t.Fatalf("first argument %q, want replay", args[0])
 	}
 	line := strings.Join(args, " ")
 	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--trace-header /d/t.yaml",
 		"--trace-data /d/t.csv", "--session-mode closed-loop", "--concurrent-sessions 4",
-		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7",
+		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7", "--epp-config /d/epp.yaml",
 		"--catalog " + cfg.Repos.Catalog, "--registry " + cfg.Repos.Registry} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q lacks %q", line, want)

@@ -1,0 +1,34 @@
+# Two clients at a rate that queues in flow control: one with a 20 s timeout (sent to the router
+# as x-llm-d-inference-ttl: 20s), one without a timeout.
+version: "2"
+seed: 7
+category: language
+aggregate_rate: 2000.0
+num_requests: 300
+clients:
+  - id: "interactive"
+    rate_fraction: 0.5
+    timeout: 20000000
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 256
+    output_distribution:
+      type: exponential
+      params:
+        mean: 128
+  - id: "batch"
+    rate_fraction: 0.5
+    timeout: 0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 256
+    output_distribution:
+      type: exponential
+      params:
+        mean: 128

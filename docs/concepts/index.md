@@ -7,7 +7,7 @@ These pages explain BLIS's architecture and core mechanisms at the level needed 
 | Page | Description |
 |------|-------------|
 | [Glossary](glossary.md) | Definitions of BLIS-specific terminology |
-| [Cluster Architecture](architecture.md) | The five BLIS repositories and how they divide the work; multi-instance simulation: admission, routing, scorer composition, snapshot freshness, shared-clock event loop |
+| [Cluster Architecture](architecture.md) | The five BLIS repositories and how they divide the work; multi-instance simulation: the embedded llm-d router, its request path and DES hosting runtime, shared-clock event loop |
 | [Core Engine](core-engine.md) | Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models |
 
 ## Diagrams
@@ -17,7 +17,6 @@ Each concept page includes inline Mermaid diagrams:
 - **[Cluster Data Flow](architecture.md#overview)** — End-to-end cluster pipeline: request arrival through metrics output
 - **[Request Lifecycle](core-engine.md#request-lifecycle)** — Request state machine: states, transitions, and metric recording points
 - **[Event Processing Loop](core-engine.md#event-queue)** — DES event loop: min-heap queue, clock advancement, Step() decomposition
-- **[Scoring Pipeline](architecture.md#weighted-scoring-policy)** — Weighted scorer composition: per-scorer normalization, weight multiplication, argmax selection
 
 ## Reading Order
 

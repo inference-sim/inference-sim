@@ -89,6 +89,26 @@ type TraceHeader struct {
 	// single-node node-pool run does not start emitting a new header key; the coupling is
 	// pinned by TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization.
 	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
+
+	// Router records the inputs of the llm-d router the source run routed with, so a replay
+	// rebuilds the same router (INV-13). Absent from traces of real systems (blis observe)
+	// and from traces written before the router was embedded.
+	Router *TraceRouterConfig `yaml:"router,omitempty"`
+}
+
+// TraceRouterConfig is the trace-header record of the embedded llm-d router's inputs: the
+// EPP command-line flags (with the EndpointPickerConfig inlined as --config-text), the
+// Kubernetes manifests, the extra pod labels, and the environment model around the router.
+type TraceRouterConfig struct {
+	EPPFlags         []string          `yaml:"epp_flags"`
+	Manifests        string            `yaml:"manifests,omitempty"`
+	PodLabels        map[string]string `yaml:"pod_labels,omitempty"`
+	GatewayLatencyUs int64             `yaml:"gateway_latency_us,omitempty"`
+	ScrapeJitterUs   int64             `yaml:"scrape_jitter_us,omitempty"`
+	KVEventDelayUs   int64             `yaml:"kv_event_delay_us,omitempty"`
+	// Seed is the seed the router ran with (its random streams and the prompts it was shown);
+	// a replay runs its router with it. Absent in traces BLIS did not record.
+	Seed *int64 `yaml:"seed,omitempty"`
 }
 
 // TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM

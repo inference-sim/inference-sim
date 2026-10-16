@@ -44,7 +44,7 @@ Check the `responses_per_sec` value in the output. For this deployment with the 
 This means for 40 req/s, you need at minimum `ceil(40/11) = 4` instances. Let's verify with simulation.
 
 !!! info "`--rate` is the total arrival rate"
-    The `--rate` flag specifies the **total** arrival rate across the cluster, not per-instance. With `--rate 40 --num-instances 4`, each instance receives roughly 40/4 = 10 req/s (distributed by the routing policy).
+    The `--rate` flag specifies the **total** arrival rate across the cluster, not per-instance. With `--rate 40 --num-instances 4`, each instance receives roughly 40/4 = 10 req/s (distributed by the llm-d router).
 
 ## Step 2: Baseline — Single Instance at Low Load
 
@@ -106,46 +106,40 @@ Check the output for clues:
 - High `scheduling_delay_p99_ms` → queue saturation (requests waiting in the WaitQ)
 - Low `preemption_count` + low `scheduling_delay` + high TTFT → compute saturation
 
-## Step 5: Compare Routing Policies
+## Step 5: Compare Router Configurations
 
-With 4 instances at 40 req/s (near saturation), compare routing strategies:
+Every cluster run routes with the llm-d router; its configuration is an EndpointPickerConfig
+passed with `--epp-config` (see [Routing](../guide/routing.md)). With 4 instances at 40 req/s
+(near saturation), compare the router's built-in default configuration (queue, KV-cache
+utilization and prefix-cache scorers) with a load-only configuration:
 
 ```bash
-# Round-robin (baseline)
+# The router's built-in default configuration
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --rate 40 --num-requests 4000 \
-  --routing-policy round-robin
+  --num-instances 4 --rate 40 --num-requests 4000
 
-# Weighted (default profile)
+# Load-only: queue-scorer and kv-cache-utilization-scorer
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 40 --num-requests 4000 \
-  --routing-policy weighted
-
-# Least-loaded
-./blis run \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --rate 40 --num-requests 4000 \
-  --routing-policy least-loaded
+  --epp-config examples/llm-d/load-only.yaml
 ```
 
-With uniform workloads (same prompt/output distribution), routing policies produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with **heterogeneous workloads**. Prefix-aware scorers pull same-prefix requests onto the instance that already caches the prefix — which helps when there are many prefix groups, and hurts when there is only one:
+With uniform workloads (same prompt/output distribution), router configurations produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with **heterogeneous workloads**. Prefix-cache scoring pulls same-prefix requests onto the instance that already caches the prefix — which helps when there are many prefix groups, and can hurt when there is only one:
 
 ```bash
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 40 --num-requests 4000 \
-  --routing-policy weighted \
-  --routing-scorers "prefix-affinity:5,queue-depth:1" \
+  --epp-config examples/llm-d/prefix-affinity.yaml \
   --prefix-tokens 512
 ```
 
-Here every request shares the same 512-token prefix, so the heavy prefix weight sends nearly everything to one instance and TTFT p99 climbs to minutes, while round-robin with the same `--prefix-tokens 512` stays near 140ms. Watch for this hot-spotting whenever prefix weights dominate load-balancing weights.
+Here every request shares the same 512-token prefix. When the prefix-cache weight dominates the load-balancing weights, requests concentrate on the instance holding the prefix. Compare `ttft_p99_ms` against the load-only configuration with the same `--prefix-tokens 512`, and watch for this hot-spotting whenever prefix weights dominate load weights.
 
 ## Step 6: Evaluate with Fitness Scores
 
@@ -156,7 +150,6 @@ For automated comparison across many configurations, use fitness evaluation:
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 8 --rate 40 --num-requests 4000 \
-  --routing-policy weighted \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
 ```
 
@@ -176,11 +169,11 @@ From the simulations above, 4 instances already meet the SLO (TTFT p99 ~130ms), 
 1. **Measure capacity under load** — run at high arrival rates (e.g., `--rate 500`) to measure saturated throughput; low-load measurements underestimate capacity due to small batch sizes
 2. **Saturation is non-linear** — TTFT degrades super-linearly as you approach capacity. Scaling from 2→4 instances can cut TTFT p99 by more than 400x, not just 2x, because the per-instance excess rate drops below zero
 3. **Check the bottleneck type** — preemption count, scheduling delay, and raw TTFT tell you whether to add instances, add memory, or tune batch size
-4. **Routing matters for heterogeneous workloads** — with uniform traffic, routing policies produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-aware and load-aware routing differ sharply — in either direction
+4. **Routing matters for heterogeneous workloads** — with uniform traffic, router configurations produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-aware and load-aware configurations differ sharply — in either direction
 5. **Deterministic replay** — use `--seed` to get identical results for A/B comparisons
 
 ## What's Next
 
-- **[Routing Policies](../guide/routing.md)** — deep dive into scorer composition and signal freshness
+- **[Routing with the llm-d Router](../guide/routing.md)** — the router's inputs, supported plugins and the signals it sees
 - **[KV Cache & Memory](../guide/kv-cache.md)** — tune KV blocks, prefix caching, and chunked prefill
 - **[Metrics & Results](../guide/results.md)** — understand all output fields and common patterns

@@ -3,7 +3,7 @@
 # Simulates many concurrent multi-turn chat sessions. Each session has 5
 # rounds with context accumulation (each round prepends all prior context).
 #
-# KEY INSIGHT: With prefix-aware routing (the default precise-prefix-cache scorer),
+# KEY INSIGHT: With prefix-aware routing (the llm-d router's prefix-cache-scorer),
 # sessions stick to one instance,
 # so the KV cache from prior rounds is reused — fewer prefill tokens → lower
 # TTFT for subsequent rounds. With load-only routing, rounds scatter across
@@ -13,11 +13,11 @@
 # TRY IT
 # ============================================================================
 #
-#   # Default profile — precise-prefix-cache dominant (sessions cluster on instances)
+#   # Prefix-cache scorer dominant (sessions cluster on instances)
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
+#     --num-instances 4 --epp-config examples/llm-d/prefix-affinity.yaml \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
@@ -25,12 +25,11 @@
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "queue-depth:1" \
+#     --num-instances 4 --epp-config examples/llm-d/load-only.yaml \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-# Expected: precise-prefix-cache produces lower TTFT because later rounds in each
+# Expected: prefix-affinity.yaml produces lower TTFT because later rounds in each
 # session reuse the prior rounds' KV cache (fewer prefill tokens needed).
 
 version: "2"

@@ -11,7 +11,7 @@ go build -o blis main.go
 # Test
 go test ./...
 
-# Lint (install once: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0)
+# Lint (install once: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0)
 golangci-lint run ./...
 ```
 

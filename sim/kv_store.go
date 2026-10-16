@@ -119,3 +119,36 @@ func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
 	}
 	return NewKVStoreFromConfig(cfg, 0)
 }
+
+// KVEvent is a change to the set of block hashes an engine's prefix cache can serve, as vLLM
+// publishes it (a stored block, or a removed one). A GPU store carries the block's parent hash (""
+// for a first block) and its tokens.
+type KVEvent struct {
+	Removed bool
+	Hash    string
+	Parent  string
+	Tokens  []TokenID
+	// Tier is where the block is cached: "" for the GPU prefix cache, "cpu" for a CPU offload
+	// tier. A CPU event moves or drops one location of a block the GPU events introduced; it
+	// carries no parent or tokens, as vLLM's offloading events do not.
+	Tier string
+}
+
+// KVEventSource is implemented by a KVStore that can record KVEvents. Recording starts at
+// EnableKVEvents and costs nothing before it; TakeKVEvents returns, and forgets, the events since
+// the last call, in order.
+type KVEventSource interface {
+	EnableKVEvents()
+	TakeKVEvents() []KVEvent
+	// CachedBlockHashes returns the hashes of the blocks the GPU prefix cache can serve, sorted.
+	CachedBlockHashes() []string
+	// CPUBlockHashes returns the hashes of the blocks a CPU tier holds ready, sorted (nil without one).
+	CPUBlockHashes() []string
+}
+
+// PendingKVStore is a KV store that can reserve a request's prompt blocks for KV a transfer will
+// deliver without caching them, and cache them once the KV has arrived.
+type PendingKVStore interface {
+	ReservePendingKVBlocks(req *Request) bool
+	CommitPendingKVBlocks(req *Request)
+}

@@ -121,7 +121,9 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
-	stepCount                 int
+	// abortPending is set by NoteAbort until the next step publishes the engine's state.
+	abortPending bool
+	stepCount    int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -156,6 +158,17 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	// OnFirstToken is an optional callback invoked once per prefill completion, when a request's
+	// first output token is produced. at is the simulated time the client receives that token
+	// (ArrivalTime + FirstTokenTime). It must not mutate simulation state. Nil = no callback.
+	OnFirstToken func(req *Request, at int64)
+
+	// engineMetrics is the state this engine publishes on its metrics endpoint.
+	engineMetrics engineMetricsLog
+	// kvEventSink receives the KV events of each step (SetKVEventSink); nil publishes none.
+	kvEventSink     func(at int64, events []KVEvent)
+	adapterCapacity int
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -263,6 +276,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: NewResidentAdapterSetFunc returned nil for capacity %d", *cfg.AdapterCapacity)
 		}
 		s.residentAdapters = rs
+		s.adapterCapacity = *cfg.AdapterCapacity
 		s.adapterCost = ac
 	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
 		// Adapters declared but no capacity: the resident set stays inert and every
@@ -503,6 +517,19 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
+// NoteAbort records that a request was aborted between steps (a gateway eviction). As in vLLM,
+// whose scheduler keeps a finished request until its next step, the engine runs one more step at
+// time now, so its published metrics and KV events show the state after the abort even when
+// nothing is left to run.
+func (sim *Simulator) NoteAbort(now int64) {
+	sim.abortPending = true
+	if sim.stepEvent == nil {
+		step := &StepEvent{time: now}
+		sim.stepEvent = step
+		sim.Schedule(step)
+	}
+}
+
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
 		step := &StepEvent{time: time}
@@ -762,6 +789,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	if outputTokens > 0 {
 		sim.Metrics.TotalOutputTokens += outputTokens
 	}
+	req.GeneratedTokens = max(outputTokens, 0)
 
 	var itlSum int64
 	for _, v := range req.ITL {
@@ -839,8 +867,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 func (sim *Simulator) Step(now int64) {
 	if sim.RunningBatch == nil && sim.WaitQ.Len() == 0 {
 		sim.stepEvent = nil
+		if sim.abortPending {
+			// The step after an abort that left nothing to run: it publishes the engine's
+			// state after the abort (NoteAbort).
+			sim.abortPending = false
+			sim.publishEngineMetrics(now)
+			sim.publishKVEvents(now)
+		}
 		return
 	}
+	sim.abortPending = false
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
@@ -849,6 +885,8 @@ func (sim *Simulator) Step(now int64) {
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, currStepAdvance)
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
+	sim.publishEngineMetrics(now + currStepAdvance)
+	sim.publishKVEvents(now + currStepAdvance)
 }
 
 // scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,
@@ -1135,6 +1173,9 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 

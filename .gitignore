@@ -127,7 +127,7 @@ llm-d-inference-scheduler/
 llm-d-kv-cache/
 llm-d-pd-utils/
 llm-d-routing-sidecar/
-llm-d/
+/llm-d/
 sarathi-serve/
 vidur/
 vllm/

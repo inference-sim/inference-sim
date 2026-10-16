@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
@@ -68,7 +69,10 @@ type OffloadCache struct {
 	gpu       *KVCacheState
 	cpu       *offloadCPUTier
 	secondary []*secondaryTier
-	station   *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
+	// secondaryNames are the secondary tiers' KV-event tier names; secondaryEvents which publish.
+	secondaryNames  []string
+	secondaryEvents []bool
+	station         *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
 
 	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
 
@@ -152,6 +156,8 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 		oc.jitterStddev = make([]float64, len(cfg.Tiers))
 		for i, t := range cfg.Tiers {
 			oc.secondary = append(oc.secondary, newSecondaryTier())
+			oc.secondaryNames = append(oc.secondaryNames, kvEventMedium(t.Type))
+			oc.secondaryEvents = append(oc.secondaryEvents, t.EnableKVEvents)
 			oc.jitterStddev[i] = t.LatencyJitterStddev
 			if t.LatencyJitterStddev > 0 && oc.rng == nil {
 				panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
@@ -206,9 +212,17 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 }
 
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
-func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
+
+// ReservePendingKVBlocks implements sim.PendingKVStore: a transfer's destination is GPU blocks.
+func (o *OffloadCache) ReservePendingKVBlocks(req *sim.Request) bool {
+	return o.gpu.ReservePendingKVBlocks(req)
+}
+
+// CommitPendingKVBlocks implements sim.PendingKVStore.
+func (o *OffloadCache) CommitPendingKVBlocks(req *sim.Request) { o.gpu.CommitPendingKVBlocks(req) }
+func (o *OffloadCache) BlockSize() int64                       { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64                      { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64                   { return o.gpu.TotalCapacity() }
 
 // ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
 // pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the
@@ -497,16 +511,16 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 				return reloaded
 			}
 			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
-			if gpuBlk.Hash != "" {
-				delete(o.gpu.HashToBlock, gpuBlk.Hash)
-				gpuBlk.Hash = ""
-			}
+			o.gpu.uncacheBlock(gpuBlk)
 			start := i * bs
 			gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
-			gpuBlk.Hash = h
 			gpuBlk.RefCount = 0
 			gpuBlk.InUse = false
-			o.gpu.HashToBlock[h] = gpuBlk.ID
+			parent := prevHash
+			if i > startBlock {
+				parent = string(tailKeys[i-startBlock-1])
+			}
+			o.gpu.cacheBlock(gpuBlk, parent, h)
 			o.gpu.appendToFreeList(gpuBlk)
 			o.cpu.touchKey(key) // block is hot: refresh LRU recency
 			o.reloadCount++
@@ -687,4 +701,70 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 		}
 		o.inflight[id] = jobRef{keys: []kvkey.BlockKey{key}, tier: tier, dir: kvtransfer.Write}
 	}
+}
+
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so do
+// the CPU tier (Tier "cpu"; its keys are the GPU block hashes) and every secondary tier whose
+// enable_kv_events is set (Tier = the medium its vLLM backend publishes, kvEventMedium), in one
+// ordered stream.
+func (o *OffloadCache) EnableKVEvents() {
+	o.gpu.EnableKVEvents()
+	o.cpu.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier("cpu", string(key), removed) }
+	for i, tier := range o.secondary {
+		if !o.secondaryEvents[i] {
+			continue // vLLM's enable_kv_events is off for this tier: it publishes nothing
+		}
+		name := o.secondaryNames[i]
+		tier.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier(name, string(key), removed) }
+	}
+}
+
+// kvEventMedium is the medium a secondary tier's KV events carry: llm-d's filesystem offload
+// backend (llmd_fs_backend) publishes "SHARED_STORAGE", which the router indexes as
+// "shared_storage".
+func kvEventMedium(tierType string) string {
+	if tierType == "fs" {
+		return "shared_storage"
+	}
+	return tierType
+}
+
+// TierBlockHashes returns the hashes of the blocks the secondary tiers publishing as medium hold,
+// sorted (nil when none does).
+func (o *OffloadCache) TierBlockHashes(medium string) []string {
+	held := map[kvkey.BlockKey]bool{}
+	for i, n := range o.secondaryNames {
+		if n == medium {
+			for k := range o.secondary[i].holds {
+				held[k] = true
+			}
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(held))
+	for k := range held {
+		out = append(out, string(k))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TakeKVEvents implements sim.KVEventSource.
+func (o *OffloadCache) TakeKVEvents() []sim.KVEvent { return o.gpu.TakeKVEvents() }
+
+// CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
+func (o *OffloadCache) CachedBlockHashes() []string { return o.gpu.CachedBlockHashes() }
+
+// CPUBlockHashes implements sim.KVEventSource: the CPU tier's ready blocks.
+func (o *OffloadCache) CPUBlockHashes() []string {
+	out := make([]string, 0, len(o.cpu.blocks))
+	for k, blk := range o.cpu.blocks {
+		if blk.refCnt >= 0 {
+			out = append(out, string(k))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
