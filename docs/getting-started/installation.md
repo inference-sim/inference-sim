@@ -63,18 +63,28 @@ revision and whether it was dirty — see [Results](../guide/results.md); a `--d
 tag clone still carries the revision, so that provenance is unaffected.)
 
 BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
-clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.1.1`**, the release blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested
-against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
-repository's test suite holds its vendored catalog and registry to it.
+clone for its fitted coefficients (`--registry`, required). Its compatible release is the one
+blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested against; that pair is
+recorded in the kernel's own `testdata/upstream.lock`, and this repository's test suite holds
+its vendored catalog and registry to it.
+
+<!-- Canonical declaration. cmd.TestDocExamplesPinTheRegistryVersion reads the tag from the
+     line below, requires it to equal the registry release blis-latency-kernel's
+     upstream.lock pins, and requires every documented blis-registry clone to pin exactly it,
+     so keep the `**Compatible blis-registry release: `<tag>`**` shape intact when bumping. -->
+
+**Compatible blis-registry release: `v0.1.1`** — [release notes](https://github.com/inference-sim/blis-registry/releases/tag/v0.1.1).
 
 ```bash
 git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
 ```
 
 **Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
-your workload against it, and if it works, bump the tag on the line above — the guard test
-then requires every documented clone command to match, so no page is left behind. Nothing
+your workload against it, and if it works, bump the **Compatible blis-catalog release** line
+above — the guard test then requires every documented clone command to match, so no page is
+left behind. The registry is not upgraded this way: its release is the one the pinned kernel
+is tested against, so it moves only with a `go.mod` kernel bump, and the guard test fails
+until the **Compatible blis-registry release** line follows. Nothing
 stops you pointing `--catalog` at a `main` checkout or a scratch clone of your own; the pin
 is what the *documentation* promises, not a restriction the binary enforces.
 
