@@ -305,3 +305,41 @@ func (c *ConformanceNoHitLRU) Record(reqID, target string) {
 		a()
 	}
 }
+
+// ConformanceMatch is one prefix producer's match attribute on an endpoint.
+type ConformanceMatch struct {
+	MatchBlocks, TotalBlocks, BlockSize, CachedBlocks int
+}
+
+// NewConformanceHarnessFromIngest builds the harness for an ingested EndpointPickerConfig:
+// its producers, in-flight trackers and bindings as BLIS resolved them, with each prefix
+// producer reporting the endpoints' preset attribute under its name (matches[producer]
+// [endpoint]; an endpoint absent there has no attribute from that producer).
+func NewConformanceHarnessFromIngest(in *EPPIngest, r ConformanceRequest, eps []ConformanceEndpoint, matches map[string]map[string]ConformanceMatch) *ConformanceHarness {
+	roles := map[string]string{}
+	for _, e := range eps {
+		roles[e.ID] = e.Role
+	}
+	p := NewRoutingPipeline(in.Pipeline, RoutingEnv{FilterRNG: rand.New(rand.NewSource(1)), Role: func(id string) string { return roles[id] }}, nil)
+	for _, name := range p.producerNames {
+		fixed := &fixedPrefixProducer{info: map[string]prefixMatchInfo{}}
+		for id, m := range matches[name] {
+			fixed.info[id] = prefixMatchInfo{match: m.MatchBlocks, total: m.TotalBlocks, blockSize: m.BlockSize, cached: m.CachedBlocks}
+		}
+		p.producers[name] = fixed
+	}
+	snaps := make([]RoutingSnapshot, len(eps))
+	for i, e := range eps {
+		s := NewRoutingSnapshot(e.ID)
+		s.InFlightRequests = e.InFlightRequests
+		s.InFlightTokens = e.InFlightTokens
+		for _, t := range p.inflight {
+			t.tokens[e.ID] = e.InFlightTokens
+		}
+		s.QueueDepth, s.BatchSize, s.KVUtilization = e.WaitingQueue, e.RunningRequests, e.KVUtilization
+		snaps[i] = s
+	}
+	req := &Request{ID: "conformance", InputTokens: make([]TokenID, r.InputTokens), MaxOutputLen: r.MaxOutputLen}
+	p.begin(req, snaps, 0)
+	return &ConformanceHarness{p: p, req: req, snaps: snaps}
+}

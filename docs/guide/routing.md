@@ -252,9 +252,18 @@ saturation, the P/D decision, the full profile's pick (within BLIS's tied maxima
 and its empty-result failure, and the in-flight ledger over PreRequest /
 ResponseBody sequences. Generators vary per-endpoint block size and totals,
 attribute presence, tier-weighted match, role labels, output estimation and client
-caps, exploration, and endpoint counts down to zero. Not compared differentially:
-the approx producer's index (llm-d updates it asynchronously) and flow-control
-queue internals, which are unit-tested against the cited semantics. Run locally
+caps, exploration, and endpoint counts down to zero. On v0.10.0 two more
+properties run whole configurations: the two deployed colocated routers
+with the campaign's router knobs patched in (affinity peakPrefillThroughput,
+maxTTFTPenaltyMs and threshold; guard maxConcurrency, mode, token cap and
+headroom), ingested by BLIS and built by llm-d's factories from the same YAML; and
+flow control, where llm-d's own FlowController (registry, FCFS, global-strict and
+round-robin fairness, static usage-limit ceiling, capacity checks, HoL-blocking
+dispatch), stepped on a fake clock, and BLIS's gateway queue see one sequence of
+arrivals and dispatch cycles. Not compared differentially: the approx producer's
+index (llm-d updates it asynchronously) and the flow-control TTL, which llm-d
+enforces with real-time context deadlines; both are unit-tested against the cited
+semantics. Run locally
 (needs network access for the modules and the Go toolchain they pin):
 
 ```bash

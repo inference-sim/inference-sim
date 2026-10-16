@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -904,5 +906,55 @@ func TestApproxProducer_CPUTierFormsAreLRUUnlessOptedIn(t *testing.T) {
 	p.begin(eppReq("r", 64*4), eppSnaps("x"), 0)
 	if info, _ := p.matchInfo(opt.Name, "x"); info.match != 3 {
 		t.Errorf("opt-in CPU-tier view: match %d, want the tier's 3 blocks", info.match)
+	}
+}
+
+// peakPrefillThroughput and maxTTFTPenaltyMs on the deployed precise profile (guard, then
+// prefix-cache-affinity-filter, then token-load-scorer). A broken TTFT gate keeps every
+// endpoint and token-load charges a non-sticky endpoint the whole uncached prompt
+// (v0.10.0: prefixcacheaffinity/plugin.go:165-265, tokenload/token_load.go:94-137), so the
+// levers move the pick only when the sticky backlog exceeds the prompt the sticky endpoint
+// has cached; below that every gate setting picks the sticky endpoint.
+func TestPrecisePeakAndPenaltyMovePicksOnlyPastTheCachedPrompt(t *testing.T) {
+	raw, err := os.ReadFile("testdata/epp/precise-gpu.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const prompt = 64 * 64 // fully cached on the sticky endpoint
+	pick := func(peak, penalty string, stickyBacklog int64) string {
+		t.Helper()
+		doc := strings.Replace(strings.Replace(string(raw),
+			"peakPrefillThroughput: 15000", "peakPrefillThroughput: "+peak, 1),
+			"maxTTFTPenaltyMs: 4500", "maxTTFTPenaltyMs: "+penalty, 1)
+		in, err := ParseEndpointPickerConfig([]byte(doc), 64, EPPVersionV0_10_0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eps := []ConformanceEndpoint{{ID: "sticky", InFlightTokens: stickyBacklog}, {ID: "cold"}}
+		matches := map[string]map[string]ConformanceMatch{LLMDPrecisePrefixProducer: {
+			"sticky": {MatchBlocks: 64, TotalBlocks: 64, BlockSize: 64, CachedBlocks: 64},
+			"cold":   {TotalBlocks: 64, BlockSize: 64}}}
+		h := NewConformanceHarnessFromIngest(in, ConformanceRequest{InputTokens: prompt}, eps, matches)
+		maxima, rejected := h.Route(in.Pipeline.Filters, in.Scorers)
+		if rejected || len(maxima) != 1 {
+			t.Fatalf("peak %s penalty %s backlog %d: maxima %v rejected %v", peak, penalty, stickyBacklog, maxima, rejected)
+		}
+		return maxima[0]
+	}
+	// 200k backlog: 13.3 s at 15000 tok/s, past the 4.5 s penalty, so the gate breaks.
+	if got := pick("15000", "4500", 200000); got != "cold" {
+		t.Errorf("template gate: %s, want cold", got)
+	}
+	if got := pick("1000000000", "4500", 200000); got != "sticky" {
+		t.Errorf("a high peak keeps the gate shut: %s, want sticky", got)
+	}
+	if got := pick("15000", "18000", 200000); got != "sticky" {
+		t.Errorf("an 18 s penalty keeps the gate shut: %s, want sticky", got)
+	}
+	// 3k backlog, under the 4096 cached tokens: peak 1 breaks the gate, token-load keeps sticky.
+	for _, peak := range []string{"1", "15000", "1000000000"} {
+		if got := pick(peak, "4500", 3000); got != "sticky" {
+			t.Errorf("peak %s under the cached prompt: %s, want sticky", peak, got)
+		}
 	}
 }
