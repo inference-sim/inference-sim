@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"sort"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/internal/util"
@@ -331,6 +333,33 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		replayTokens = reconciler.PrefixReplayTokens()
 	}
 
+	// A store whose loads hold GPU blocks (vLLM's async loads): the requests it holds blocks for
+	// are drained ahead of the rest of the queue (kv_holding_waiting, sched/scheduler.py:887 at
+	// v0.31.0), and it learns which running requests are still prefilling, whose remaining
+	// blocks a load must leave free (_inflight_prefills, :1194-1205, 1324).
+	holder, _ := ctx.KVCache.(LoadHoldingKVStore)
+	var prefilling []InflightPrefill
+	if holder != nil {
+		holdsAny := false
+		for _, r := range ctx.WaitQ.Items() {
+			if holder.HoldsKV(r.ID) {
+				holdsAny = true
+				break
+			}
+		}
+		if holdsAny {
+			ctx.WaitQ.Reorder(func(q []*Request) {
+				sort.SliceStable(q, func(i, j int) bool { return holder.HoldsKV(q[i].ID) && !holder.HoldsKV(q[j].ID) })
+			})
+		}
+		for _, r := range result.RunningBatch.Requests {
+			if c := ctx.ComputedTokens[r.ID]; c < r.PrefillEnd() {
+				prefilling = append(prefilling, InflightPrefill{Req: r, Computed: c})
+			}
+		}
+		holder.SetInflightPrefills(prefilling)
+	}
+
 	// Phase 2: Dequeue new requests from wait queue.
 	// skipped counts requests set aside this step (offload-deferred). It is the scan
 	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
@@ -452,9 +481,15 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// a request resumed after preemption, or a first admission over another's prefix --
 		// is admitted with no work, claims none of its cached blocks and runs holding no KV
 		// (#1943).
+		// A request whose load has landed holds its blocks and is scheduled from the prefix the
+		// load computed, with no new prefix lookup (sched/scheduler.py:1041-1048 at v0.31.0).
+		loadedTo, loadGPUHit, loaded := int64(0), int64(0), false
+		if holder != nil {
+			loadedTo, loadGPUHit, loaded = holder.LoadedPrefix(next.ID)
+		}
 		maxHitBlocks := max(next.PrefillEnd()-1, 0) / ctx.KVCache.BlockSize()
 		var cachedBlocks []int64
-		if !ctx.PrefixCachingDisabled {
+		if !ctx.PrefixCachingDisabled && !loaded {
 			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
 			if util.Len64(cachedBlocks) > maxHitBlocks {
 				cachedBlocks = cachedBlocks[:maxHitBlocks]
@@ -464,6 +499,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			}
 		}
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+		if loaded {
+			startIndex = loadedTo
+		}
 
 		// #1699/#1706: fold the same-step CPU->GPU-reloadable offload prefix into the
 		// computed baseline BEFORE the chunk/budget clamp, mirroring vLLM's ordering
@@ -480,7 +518,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// stays nil, computedStart == startIndex, and Phase 2 is byte-identical (INV-6).
 		// Secondary-tier-only runs are not counted here — they stay on the H3 deferral path.
 		computedStart := startIndex
-		if reloadReporter != nil {
+		if reloadReporter != nil && !loaded {
 			if reloadableEnd, ok := reloadReporter.ReloadablePrefixEnd(next, startIndex); ok && reloadableEnd > computedStart {
 				// A reload covering the whole prompt still leaves its last token to compute:
 				// vLLM sets a loaded request's num_computed_tokens to num_tokens - 1 when the
@@ -547,6 +585,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				HitTokens:    startIndex,
 				CPUHitTokens: cpuHitTokens,
 			}
+			if loaded {
+				scheduled.Lookup.HitTokens, scheduled.Lookup.CPUHitTokens = loadGPUHit, loadedTo-loadGPUHit
+			}
 		}
 		result.NewlyScheduled = append(result.NewlyScheduled, scheduled)
 
@@ -559,6 +600,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		next.NumNewTokens = int(numNewTokens)
 		next.scheduledTokens = numNewTokens
 		ctx.ComputedTokens[next.ID] = endIndex
+		if holder != nil && endIndex < next.PrefillEnd() {
+			prefilling = append(prefilling, InflightPrefill{Req: next, Computed: endIndex})
+			holder.SetInflightPrefills(prefilling)
+		}
 	}
 
 	return result

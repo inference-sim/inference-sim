@@ -80,6 +80,7 @@ type OffloadCache struct {
 	// models vLLM's async-lookup existence cache: a key present ⇒ its secondary
 	// existence is resolved (warm, skips the RETRY round); absent ⇒ cold (+1 round).
 	deferred       map[string]*deferralState
+	prefilling     []sim.InflightPrefill // SetInflightPrefills: running requests still prefilling
 	existenceKnown map[kvkey.BlockKey]struct{}
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
@@ -370,6 +371,9 @@ func (o *OffloadCache) SetClock(clock int64) {
 // The secondary deferral is inert with no secondary tiers, and the load with no
 // CPULoadTime, so stores without them are byte-identical (INV-6).
 func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+	if st, tracked := o.deferred[req.ID]; tracked && st.holds {
+		return o.admitLoaded(req, st, endIndex)
+	}
 	// A sequence that fails the admission gate, or whose state or slots do not fit, is refused before any tier
 	// is consulted or a deferral registered, so the refusal has no side effect.
 	stateStart := startIndex
@@ -377,7 +381,8 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 		end, ok := o.ReloadablePrefixEnd(req, startIndex)
 		stateStart = o.gpu.loadedStateStart(req, startIndex, endIndex, end, ok)
 	}
-	if !o.gpu.sequenceFits(req, startIndex, stateStart, endIndex, cachedBlocks) {
+	// A load is admitted on its own terms (beginCPULoad); every other path must fit its chunk.
+	if !o.loadDue(req, cachedBlocks) && !o.gpu.sequenceFits(req, startIndex, stateStart, endIndex, cachedBlocks) {
 		return false
 	}
 	// Defer only genuinely-new prefill admissions. A running-request continuation
@@ -404,7 +409,7 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 				return false
 			}
 			// A secondary fetch that landed in CPU still has the CPU->GPU load to make.
-			if o.beginCPULoad(req.ID, req.FullInputTokens(), reloadStartBlock, reloadPrevHash) {
+			if started, refused := o.beginCPULoad(req, startIndex, cachedBlocks, reloadStartBlock, reloadPrevHash); started || refused {
 				return false
 			}
 			// resolved (blocks landed) or recompute (fetch refused/lost): admit through
@@ -423,11 +428,56 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 			o.registerDeferral(req.ID, fc)
 			return false // defer: stays in WaitQ, re-polled next step
 		}
-		if o.beginCPULoad(req.ID, req.FullInputTokens(), reloadStartBlock, reloadPrevHash) {
-			return false // waits for its CPU->GPU load, re-polled each step (INV-K7)
+		if started, refused := o.beginCPULoad(req, startIndex, cachedBlocks, reloadStartBlock, reloadPrevHash); started || refused {
+			return false // waits for its CPU->GPU load holding its blocks, or does not fit (INV-K7)
 		}
+
 	}
 	return o.allocateThroughChain(req, startIndex, stateStart, endIndex, cachedBlocks)
+}
+
+// loadDue reports whether a new request's admission would start a priced CPU->GPU load: a
+// pure query, so the chunk pre-check is skipped only where vLLM admits by the load's own check.
+func (o *OffloadCache) loadDue(req *sim.Request, cachedBlocks []int64) bool {
+	if o.cpuLoadTime == nil || req.IsDecodeSubRequest {
+		return false
+	}
+	if _, running := o.gpu.RequestMap[req.ID]; running {
+		return false
+	}
+	if st, tracked := o.deferred[req.ID]; tracked && (st.phase == deferLoading || (!st.resolved && !st.recompute)) {
+		return false
+	}
+	startBlock := int64(len(cachedBlocks))
+	prevHash := ""
+	if startBlock > 0 {
+		prevHash = o.gpu.Blocks[cachedBlocks[startBlock-1]].Hash
+	}
+	_, blocks := o.cpuLoadPlan(req.FullInputTokens(), startBlock, prevHash)
+	return blocks > 0
+}
+
+// admitLoaded admits a request whose load holds its blocks. Until the load lands it is not
+// schedulable. Then, as vLLM schedules a WAITING request with num_computed_tokens > 0, it is
+// scheduled from the prefix the load computed: the full-sequence gate asks for what it still
+// lacks of its whole sequence (get_num_blocks_to_allocate's held-blocks path,
+// single_type_kv_cache_manager.py:232-238 at v0.31.0), then the chunk is allocated as a
+// running request's is.
+func (o *OffloadCache) admitLoaded(req *sim.Request, st *deferralState, endIndex int64) bool {
+	if !st.loaded {
+		return false
+	}
+	if o.gpu.remainingBlocks(req, st.computed) > o.gpu.countFreeBlocks() {
+		return false
+	}
+	// The tokens up to stored are already in its blocks; a whole-prompt load recomputes its
+	// last token in place.
+	from := min(st.stored, max(endIndex, st.computed))
+	if !o.gpu.allocate(req, from, st.computed, max(endIndex, from), nil) {
+		return false
+	}
+	delete(o.deferred, req.ID)
+	return true
 }
 
 // allocateThroughChain is the H1 (#1590) allocate path: reload CPU-resident prefix
