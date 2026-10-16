@@ -181,13 +181,15 @@ func TestFormBatch_ReloadThenChunkedRemainder(t *testing.T) {
 
 	wq := &WaitQueue{}
 	wq.Enqueue(reloadReq("A", 96))
+	// A second request in the scheduler, so the threshold applies (vLLM skips it for a lone request).
+	wq.Enqueue(reloadReq("B", 16))
 
 	ctx := reloadCtx(wq, kv)
 	ctx.PrefillTokenThreshold = 16
 	bf := NewBatchFormation("")
 	result := bf.FormBatch(ctx)
 
-	if len(result.RunningBatch.Requests) != 1 {
+	if len(result.RunningBatch.Requests) == 0 {
 		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
 	}
 	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 16 {

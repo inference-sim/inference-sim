@@ -93,13 +93,15 @@ func pdKnobVariant(t *testing.T, prefillEng, decodeEng, prefillPar, decodePar st
 // sets it per engine: a threshold stated on the prefill pool alone chunks the prefills
 // exactly as the run-wide flag does, one stated on the decode pool alone reaches no
 // prefill, pools may state different values, and the flag must agree with every stated
-// pool value or the run is refused naming the pool.
+// pool value or the run is refused naming the pool. The prompts are long enough to overlap in the
+// prefill scheduler: vLLM applies the threshold only when another request is there (#57951).
 func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	const threshold = "      long_prefill_token_threshold: 256\n"
 	run := func(dir string, extra ...string) (string, string, error) {
 		return runKernelCLI(t, append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--pd-decider", "always", "--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
-			"--seed", "11", "--horizon", "600000000", "--num-requests", "20", "--rate", "8", "--prompt-tokens", "2000"},
+			"--seed", "11", "--horizon", "600000000", "--num-requests", "20", "--rate", "100000", "--prompt-tokens", "16000",
+			"--prompt-tokens-stdev", "0", "--prompt-tokens-min", "16000", "--prompt-tokens-max", "16000"},
 			extra...)...)
 	}
 	must := func(out, stderr string, err error) string {
@@ -112,7 +114,7 @@ func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	unstated := must(run(pdKnobVariant(t, "", "", "", "")))
 	prefillOnly := must(run(pdKnobVariant(t, threshold, "", "", "")))
 	if prefillOnly == unstated {
-		t.Fatal("non-vacuous: a 256-token prefill threshold changed nothing on 2000-token prompts")
+		t.Fatal("non-vacuous: a 256-token prefill threshold changed nothing on concurrent 16000-token prompts")
 	}
 	if flag := must(run(pdKnobVariant(t, "", "", "", ""), "--long-prefill-token-threshold", "256")); flag != prefillOnly {
 		t.Error("the prefill pool's stated threshold and the run-wide flag differ")

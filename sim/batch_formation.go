@@ -185,6 +185,14 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 
 	bud := &stepBudget{tokens: ctx.MaxNumBatchedTokens, input: ctx.MaxNumBatchedTokens, draftSlots: ctx.DraftSlots}
 
+	// vLLM v0.31.0 drops long_prefill_token_threshold for a step whose scheduler holds one
+	// request, running or waiting: there is nobody for a long prefill to starve
+	// (vllm/v1/core/sched/scheduler.py:611-626, get_request_counts :2549-2551; vLLM #57951).
+	prefillCap := ctx.PrefillTokenThreshold
+	if len(result.RunningBatch.Requests)+ctx.WaitQ.Len() <= 1 {
+		prefillCap = 0
+	}
+
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
 	// restoration when a request is preempted before being visited in this pass.
@@ -210,8 +218,8 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		numNewTokens := req.InputLen() - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
-			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-				numNewTokens = ctx.PrefillTokenThreshold
+			if 0 < prefillCap && prefillCap < numNewTokens {
+				numNewTokens = prefillCap
 			}
 			numNewTokens = min(numNewTokens, bud.room())
 			// Proactive MaxModelLen cap (BC-1): match vLLM scheduler.py:773-774.
@@ -473,8 +481,8 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 
 		numNewTokens := next.InputLen() - computedStart
-		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-			numNewTokens = ctx.PrefillTokenThreshold
+		if 0 < prefillCap && prefillCap < numNewTokens {
+			numNewTokens = prefillCap
 		}
 		numNewTokens = min(numNewTokens, bud.room())
 		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).

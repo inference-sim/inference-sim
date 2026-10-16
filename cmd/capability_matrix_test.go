@@ -540,18 +540,27 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		}
 	})
 
-	t.Run("chunked prefill/a lower chunk threshold spreads one long prefill over more steps", func(t *testing.T) {
+	t.Run("chunked prefill/a lower chunk threshold spreads concurrent long prefills over more steps", func(t *testing.T) {
 		t.Parallel()
-		// One 20000-token prompt alone: each smaller chunk adds a step and its fixed cost, so
-		// TTFT rises monotonically as the threshold falls (0 = no per-request threshold).
-		var prev float64
+		// Two 20000-token prompts at once: each smaller chunk adds a step and its fixed cost, so
+		// TTFT rises monotonically as the threshold falls (0 = no per-request threshold). A
+		// prompt alone in the scheduler takes the whole budget whatever the threshold
+		// (vllm/v1/core/sched/scheduler.py:611-626 at v0.31.0, vLLM #57951).
+		var prev, lone float64
 		for i, threshold := range []string{"0", "2048", "512"} {
-			o := capRun(t, runArgs(colocated(1), with(burst(1, 1, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
-			o.conserves(t, 1)
+			o := capRun(t, runArgs(colocated(1), with(burst(2, 1000, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
+			o.conserves(t, 2)
 			if ttft := o.num("ttft_mean_ms"); i > 0 && ttft <= prev {
 				t.Errorf("chunk threshold %s gave TTFT %.1f ms, no more than %.1f at the previous threshold", threshold, ttft, prev)
 			} else {
 				prev = ttft
+			}
+			alone := capRun(t, runArgs(colocated(1), with(burst(1, 1, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
+			alone.conserves(t, 1)
+			if ttft := alone.num("ttft_mean_ms"); i == 0 {
+				lone = ttft
+			} else if ttft != lone {
+				t.Errorf("chunk threshold %s moved a lone prompt's TTFT from %.1f to %.1f ms", threshold, lone, ttft)
 			}
 		}
 	})
