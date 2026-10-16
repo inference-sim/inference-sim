@@ -2,6 +2,9 @@ package llmd
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,10 +50,12 @@ func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
 		return respond(r, http.StatusOK, "text/plain; version=0.0.4", m.metricsText(inst)), nil
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/completions/render"):
 		return m.renderCompletions(r)
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/chat/completions/render"):
+		return m.renderChat(r)
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/render"):
-		// BLIS requests are token-ID completions; it has no tokenizer to render chat or other
-		// text prompts.
-		return respond(r, http.StatusNotImplemented, "text/plain", []byte("the simulated renderer serves token-ID completions only\n")), nil
+		// BLIS requests are token-ID completions, or chat completions carrying media; it has no
+		// tokenizer to render other prompts.
+		return respond(r, http.StatusNotImplemented, "text/plain", []byte("the simulated renderer serves token-ID completions and BLIS's multimodal chat requests only\n")), nil
 	default:
 		return respond(r, http.StatusNotFound, "text/plain", []byte("not served by the simulated model server\n")), nil
 	}
@@ -86,6 +91,72 @@ func (m *modelServers) renderCompletions(r *http.Request) (*http.Response, error
 		out[i] = rendered{TokenIDs: ids}
 	}
 	b, _ := json.Marshal(out)
+	return respond(r, http.StatusOK, "application/json", b), nil
+}
+
+// renderChat answers vLLM's /v1/chat/completions/render for a multimodal request BLIS sent
+// (Gateway.requestBody): the request's tokens as the router sees them, and, as vLLM's renderer
+// reports them, its media items: per modality the placeholder span its tokens occupy, after the
+// text (as the workload lays them out), and a content hash of that span.
+func (m *modelServers) renderChat(r *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		Messages []struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return respond(r, http.StatusBadRequest, "text/plain", []byte(err.Error())), nil
+	}
+	var f *flight
+	for _, msg := range req.Messages {
+		for _, part := range msg.Content {
+			if id, ok := strings.CutPrefix(part.Text, renderID("")); ok && part.Type == "text" {
+				f = m.g.flights[id]
+			}
+		}
+	}
+	if f == nil {
+		return respond(r, http.StatusNotImplemented, "text/plain", []byte("the simulated renderer serves BLIS's own multimodal requests only\n")), nil
+	}
+	if m.g.observe != nil {
+		m.g.observe("render", f.req.ID)
+	}
+	type placeholder struct {
+		Offset int `json:"offset"`
+		Length int `json:"length"`
+	}
+	hashes := map[string][]string{}
+	spans := map[string][]placeholder{}
+	offset := len(f.prompt) - f.req.ImageTokenCount - f.req.AudioTokenCount - f.req.VideoTokenCount
+	if offset < 0 {
+		return respond(r, http.StatusBadRequest, "text/plain", []byte(fmt.Sprintf("request %s: its media tokens exceed its %d-token prompt\n", f.req.ID, len(f.prompt)))), nil
+	}
+	for _, item := range []struct {
+		modality string
+		n        int
+	}{{"image", f.req.ImageTokenCount}, {"audio", f.req.AudioTokenCount}, {"video", f.req.VideoTokenCount}} {
+		if item.n <= 0 {
+			continue
+		}
+		sum := sha256.New()
+		for _, t := range f.prompt[offset : offset+item.n] {
+			_ = binary.Write(sum, binary.LittleEndian, t)
+		}
+		hashes[item.modality] = []string{hex.EncodeToString(sum.Sum(nil))}
+		spans[item.modality] = []placeholder{{Offset: offset, Length: item.n}}
+		offset += item.n
+	}
+	b, _ := json.Marshal(map[string]any{
+		"token_ids": f.prompt,
+		"features":  map[string]any{"mm_hashes": hashes, "mm_placeholders": spans},
+	})
 	return respond(r, http.StatusOK, "application/json", b), nil
 }
 

@@ -34,10 +34,11 @@ var supported = map[string]bool{
 	"random-picker":          true,
 	"weighted-random-picker": true,
 	// filters
-	"decode-filter":         true,
-	"prefill-filter":        true,
-	"encode-filter":         true,
-	"label-selector-filter": true,
+	"decode-filter":                    true,
+	"prefill-filter":                   true,
+	"encode-filter":                    true,
+	"always-disagg-multimodal-decider": true,
+	"label-selector-filter":            true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -111,7 +112,6 @@ var unsupported = map[string]string{
 	"redis-syncer":                              "it synchronizes through an external Redis",
 	"mm-embeddings-cache-producer":              "the simulated workload carries no multimodal inputs",
 	"mm-embeddings-cache-scorer":                "the simulated workload carries no multimodal inputs",
-	"always-disagg-multimodal-decider":          "the simulated workload carries no multimodal inputs",
 	"p2p-source-producer":                       "peer KV pulls are not modeled by the simulated engines",
 	"selective-kv-policy":                       "peer KV pulls are not modeled by the simulated engines",
 	"dcgm-data-source":                          "the simulated engines publish no DCGM GPU telemetry",
@@ -420,19 +420,13 @@ func UnsupportedReason(typ string) string { return unsupported[typ] }
 
 // validateTopology refuses a deployment whose pools the router configuration cannot serve as
 // that deployment: a P/D deployment needs a disaggregating profile handler, or the router would
-// treat the prefill and decode pods as one flat pool; encode pools need encoder placement, which
-// BLIS does not read from the router (x-llm-d-encoder-hosts-ports).
+// treat the prefill and decode pods as one flat pool.
 func validateTopology(e *runner.Embedded, host cluster.GatewayHost) error {
-	var prefill, decode, encode bool
+	var prefill, decode bool
 	for _, inst := range host.Instances() {
 		role := host.PoolRole(inst.ID())
 		prefill = prefill || role.Has(cluster.PoolRolePrefill)
 		decode = decode || role.Has(cluster.PoolRoleDecode)
-		encode = encode || role.Has(cluster.PoolRoleEncode)
-	}
-	if encode {
-		return errors.New("the deployment cannot be simulated faithfully: it has an encode pool, and BLIS does not " +
-			"place encode work where the router directs it (x-llm-d-encoder-hosts-ports)")
 	}
 	if !prefill || !decode {
 		return nil

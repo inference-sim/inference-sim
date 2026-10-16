@@ -72,7 +72,9 @@ const (
 type Placement struct {
 	Decode  InstanceID
 	Prefill InstanceID
-	Encode  InstanceID
+	// Encode is the encoder the router chose for a multimodal request, or empty. Encoding costs
+	// no simulated time: the choice is recorded (trace, ParentRequest.EncodeInstanceID).
+	Encode InstanceID
 	// Scores maps instance IDs to the scores the primary scheduling profile gave them, for the
 	// decision trace. May be nil.
 	Scores map[string]float64
@@ -415,6 +417,11 @@ func (cs *ClusterSimulator) recordRouting(req *sim.Request, p Placement) {
 		record.Candidates, record.Regret = cs.counterfactual(string(p.Decode), p.Scores, k)
 	}
 	cs.trace.RecordRouting(record)
+	if p.Encode != "" {
+		// The encode stage costs nothing (option A, as BLIS's own encode stage did): the record
+		// is the router's encoder choice.
+		cs.trace.RecordEncodeRouting(trace.EncodeRoutingRecord{ParentRequestID: req.ID, Clock: cs.clock, ChosenInstance: string(p.Encode)})
+	}
 }
 
 // counterfactual ranks the endpoints the router scored and reports the top k with their state,

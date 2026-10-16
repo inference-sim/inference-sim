@@ -111,6 +111,15 @@ Everything the router reads comes from the simulated engines, with real engine s
   `edf-ordering-policy` orders by it; the client still gives up at its deadline, counted as
   timed out. The router's request handler, parser and Director process it exactly as in a
   deployment.
+- **Multimodal requests.** A request carrying image, audio or video tokens is sent as a client
+  sends media: a chat completion (`/v1/chat/completions`) whose message has an `image_url`,
+  `input_audio` or `video_url` part per modality. The router's token producer sees the media
+  items (its estimate backend from the parts; a vLLM render backend from BLIS's simulated
+  renderer, which renders the request's tokens with each modality's placeholder span, after the
+  text, and a hash of that span). With an encode pool, `always-disagg-multimodal-decider` then
+  sends such a request to an encode pod the router picks (`x-llm-d-encoder-hosts-ports`); as in
+  BLIS's own encode stage, encoding takes no simulated time, and the choice is recorded in the
+  decision trace and on the request.
 - **Prompt content.** BLIS token values are placeholders: a workload models prompt lengths and
   which prompts share a prefix, nothing more, and a replayed trace draws new placeholder values.
   The router, which hashes prompt content, is therefore shown canonical tokens: each KV block of
@@ -252,7 +261,7 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, `prefix-cache-affinity-filter` | They call or consume an external latency-predictor service. |
 | `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
 | `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
-| `mm-embeddings-*`, `always-disagg-multimodal-decider` | The simulated workload carries no multimodal inputs. |
+| `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
 | `p2p-source-producer`, `selective-kv-policy` | Peer KV pulls are not modeled by the simulated engines. |
 | `topology-*`, `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no topology labels, custom attributes or GPU telemetry. |
 | `models-data-source`, `models-data-extractor`, `models-responder` | The simulated engines do not serve `/v1/models` yet; the workload sends only completions. |
@@ -260,7 +269,7 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | More than one `InferencePool`; objective or rewrite manifests with `--endpoint-selector` | A run has one router for one pool; in standalone mode the router does not reconcile objectives or rewrites. |
 | A pool with more than one target port | Several ports make each pod several endpoints (data-parallel ranks behind one pod); BLIS simulates each rank as its own pod. |
 | Prefill and decode pools with a configuration that has no `disagg-profile-handler` | The router would serve every request from one flat pool; pass a disaggregating configuration (for example `examples/llm-d/pd.yaml`). |
-| An encode pool | BLIS does not place encode work where the router directs it (`x-llm-d-encoder-hosts-ports`). |
+| An encode pool on the command line (`--encode-instances`) | No scenario describes the engine an encode pod runs (a blis-schemas deployment's roles are colocated, prefill and decode), as on BLIS `main`. Encode pools are available through the Go API (`DeploymentConfig.EncodeInstances`). |
 | A `token-producer` whose vLLM backend discovers endpoints (`vllm.endpointDiscovery`) | It probes pods for model limits on its own schedule, outside the simulation. Use a fixed `url`, or the estimate backend. |
 | A `precise-prefix-cache-producer` whose `tokenProcessorConfig.blockSizeTokens` (default 16) is not the engines' KV block size | Its keys would never match the engines' blocks. |
 | A `precise-prefix-cache-producer` with a Redis or cost-aware index, or non-vLLM `kvEventsConfig.engineType`; with LoRA adapters in the deployment | Redis is an external service; the cost-aware index's lookups have no fixed order; the engines publish vLLM's events and their prefix caches do not key blocks by adapter. |
@@ -298,7 +307,7 @@ to an llm-d configuration or is dropped.
 | `--queue-shedding`, `--dispatch-tick-interval`, `--in-flight-eviction` | Dropped: BLIS-only behaviors. llm-d's dispatch tick is fixed at 1 ms; its in-flight eviction is `flowControl.enableEviction` ([admission](admission.md)). |
 | `--pd-decider always`, `prefix-threshold`; `--pd-prefix-threshold` | `disagg-profile-handler` with `always-disagg-pd-decider` or `prefix-based-pd-decider` (`nonCachedTokens`) |
 | `--prefill-routing-scorers`, `--decode-routing-scorers` | The `prefill` and `decode` scheduling profiles |
-| `--encode-decider` | The disaggregation handler's encode decider; multimodal deciders are refused |
+| `--encode-decider` | The disaggregation handler's encode decider (`always-disagg-multimodal-decider` for `multimodal`) |
 | `--admission-latency`, `--routing-latency` | `--gateway-latency` |
 | `--snapshot-refresh-interval` | The EPP flag `--refresh-metrics-interval`: staleness now comes from the scrape itself |
 | `--cache-signal-delay` | `--kv-event-delay`: a fixed delay from an engine publishing its KV events to the router ingesting them (the old flag refreshed a snapshot of every cache at most every 50 ms) |

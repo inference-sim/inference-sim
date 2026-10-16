@@ -43,6 +43,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/common"
 	errcommon "github.com/llm-d/llm-d-router/pkg/common/error"
 	"github.com/llm-d/llm-d-router/pkg/common/hosting"
+	"github.com/llm-d/llm-d-router/pkg/common/routing"
 	"github.com/llm-d/llm-d-router/pkg/epp/controller"
 	"github.com/llm-d/llm-d-router/pkg/epp/datalayer"
 	fcregistry "github.com/llm-d/llm-d-router/pkg/epp/flowcontrol/registry"
@@ -634,7 +635,7 @@ func (g *Gateway) handleRequest(f *flight) {
 	}
 	reqCtx.Request.RawBody = body
 	reqCtx.RequestSize = len(body)
-	parser, err := g.emb.Parsers.Resolve(completionsPath)
+	parser, err := g.emb.Parsers.Resolve(requestPath(f))
 	if err != nil {
 		g.finishRequest(f, errcommon.Error{Code: errcommon.BadRequest, Msg: err.Error()})
 		return
@@ -682,6 +683,19 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 		}
 		if prefill.ID() != decode.ID() {
 			p.Prefill = prefill.ID()
+		}
+	}
+	for _, name := range routing.HeaderNames(routing.EncoderEndpointsHeader) {
+		if hp, ok := metadata.GetLowerCaseHeaderValue(reqCtx.Request.Headers, name); ok && hp != "" {
+			encode := g.instanceAt(strings.Split(hp, ",")[0])
+			if encode == nil {
+				panic(fmt.Sprintf("llmd: the router picked encoder %q for %s, which is no simulated endpoint", hp, f.req.ID))
+			}
+			p.Encode = encode.ID()
+			if g.observe != nil {
+				g.observe("encode", fmt.Sprintf("%s %s", f.req.ID, encode.ID()))
+			}
+			break
 		}
 	}
 	if err := g.applyModelRewrite(f); err != nil {
@@ -842,7 +856,7 @@ func (g *Gateway) OnFirstToken(req *sim.Request, at int64) {
 			return
 		}
 		g.responseHeaders(f)
-		g.server.HandleResponseBody(f.ctx, f.reqCtx, firstChunk(g.opts.Model, f.req.ID), false)
+		g.server.HandleResponseBody(f.ctx, f.reqCtx, firstChunk(g.opts.Model, f, false), false)
 		g.rt.co.settle()
 	})
 }
@@ -884,11 +898,11 @@ func (g *Gateway) endResponse(f *flight, outcome cluster.DoneOutcome) {
 		if f.stream {
 			if !f.firstOut {
 				f.firstOut = true
-				g.server.HandleResponseBody(f.ctx, f.reqCtx, firstChunk(g.opts.Model, f.req.ID), false)
+				g.server.HandleResponseBody(f.ctx, f.reqCtx, firstChunk(g.opts.Model, f, false), false)
 			}
-			g.server.HandleResponseBody(f.ctx, f.reqCtx, finalChunk(g.opts.Model, f.req.ID, usage), true)
+			g.server.HandleResponseBody(f.ctx, f.reqCtx, firstChunk(g.opts.Model, f, true, usage), true)
 		} else {
-			g.server.HandleResponseBody(f.ctx, f.reqCtx, completionBody(g.opts.Model, f.req.ID, usage), true)
+			g.server.HandleResponseBody(f.ctx, f.reqCtx, completionBody(g.opts.Model, f, usage), true)
 		}
 	} else {
 		f.reqCtx.TerminationCause = terminationCause(outcome)
@@ -937,12 +951,28 @@ func (g *Gateway) applyModelRewrite(f *flight) error {
 
 // --- request and response translation ---
 
-const completionsPath = "/v1/completions"
+const (
+	completionsPath = "/v1/completions"
+	chatPath        = "/v1/chat/completions"
+)
+
+// requestPath is the API a client sends f to: a multimodal request is a chat completion (its
+// media are content parts), any other a token-ID completion.
+func requestPath(f *flight) string {
+	if f.req.IsMultimodal() {
+		return chatPath
+	}
+	return completionsPath
+}
+
+// renderID is the text part of a multimodal request's message: it names the request, so the
+// simulated renderer, which has no tokenizer, renders the request's own tokens (renderChat).
+func renderID(id string) string { return "blis-request " + id }
 
 func (g *Gateway) requestHeaderMap(f *flight) map[string]string {
 	h := map[string]string{
 		":method":      "POST",
-		":path":        completionsPath,
+		":path":        requestPath(f),
 		"content-type": "application/json",
 		"x-request-id": f.req.ID,
 	}
@@ -990,6 +1020,22 @@ func (g *Gateway) requestBody(f *flight) []byte {
 		model = f.req.Adapter
 	}
 	body := map[string]any{"model": model, "prompt": f.prompt, "stream": f.stream}
+	if f.req.IsMultimodal() {
+		// One content part per modality the request carries, after its text, as a client sends
+		// media in a chat message. The renderer gives each its placeholder span (renderChat).
+		parts := []map[string]any{{"type": "text", "text": renderID(f.req.ID)}}
+		if f.req.ImageTokenCount > 0 {
+			parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]any{"url": "blis://image/" + f.req.ID}})
+		}
+		if f.req.AudioTokenCount > 0 {
+			parts = append(parts, map[string]any{"type": "input_audio", "input_audio": map[string]any{"data": "", "format": "wav"}})
+		}
+		if f.req.VideoTokenCount > 0 {
+			parts = append(parts, map[string]any{"type": "video_url", "video_url": map[string]any{"url": "blis://video/" + f.req.ID}})
+		}
+		body = map[string]any{"model": model, "stream": f.stream,
+			"messages": []map[string]any{{"role": "user", "content": parts}}}
+	}
 	if f.req.MaxOutputLen > 0 {
 		body["max_tokens"] = f.req.MaxOutputLen
 	}
@@ -1035,29 +1081,35 @@ func usageOf(req *sim.Request) usage {
 	return usage{PromptTokens: p, CompletionTokens: c, TotalTokens: p + c}
 }
 
-func firstChunk(model, id string) []byte {
-	b, _ := json.Marshal(map[string]any{
-		"id": "cmpl-" + id, "object": "text_completion", "model": model,
-		"choices": []map[string]any{{"index": 0, "text": "", "finish_reason": nil}},
-	})
-	return []byte("data: " + string(b) + "\n\n")
-}
-
-func finalChunk(model, id string, u usage) []byte {
-	b, _ := json.Marshal(map[string]any{
-		"id": "cmpl-" + id, "object": "text_completion", "model": model,
-		"choices": []map[string]any{{"index": 0, "text": "", "finish_reason": "stop"}},
-		"usage":   u,
-	})
+// firstChunk is a streamed response chunk carrying no text: the first, or, final, the last, with
+// the usage and the end of the stream. A chat request's chunks are chat-completion chunks.
+func firstChunk(model string, f *flight, final bool, u ...usage) []byte {
+	choice := map[string]any{"index": 0, "text": "", "finish_reason": nil}
+	object, id := "text_completion", "cmpl-"+f.req.ID
+	if requestPath(f) == chatPath {
+		choice = map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": nil}
+		object, id = "chat.completion.chunk", "chatcmpl-"+f.req.ID
+	}
+	chunk := map[string]any{"id": id, "object": object, "model": model, "choices": []map[string]any{choice}}
+	if !final {
+		b, _ := json.Marshal(chunk)
+		return []byte("data: " + string(b) + "\n\n")
+	}
+	choice["finish_reason"] = "stop"
+	chunk["usage"] = u[0]
+	b, _ := json.Marshal(chunk)
 	return []byte("data: " + string(b) + "\n\ndata: [DONE]\n\n")
 }
 
-func completionBody(model, id string, u usage) []byte {
-	b, _ := json.Marshal(map[string]any{
-		"id": "cmpl-" + id, "object": "text_completion", "model": model,
-		"choices": []map[string]any{{"index": 0, "text": "", "finish_reason": "stop"}},
-		"usage":   u,
-	})
+func completionBody(model string, f *flight, u usage) []byte {
+	choice := map[string]any{"index": 0, "text": "", "finish_reason": "stop"}
+	object, id := "text_completion", "cmpl-"+f.req.ID
+	if requestPath(f) == chatPath {
+		choice = map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": ""}, "finish_reason": "stop"}
+		object, id = "chat.completion", "chatcmpl-"+f.req.ID
+	}
+	b, _ := json.Marshal(map[string]any{"id": id, "object": object, "model": model,
+		"choices": []map[string]any{choice}, "usage": u})
 	return b
 }
 

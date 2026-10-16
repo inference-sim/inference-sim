@@ -53,6 +53,8 @@ func roleLabels(_ cluster.InstanceID, role cluster.PoolRole) map[string]string {
 		return map[string]string{"llm-d.ai/role": "prefill"}
 	case cluster.PoolRoleDecode:
 		return map[string]string{"llm-d.ai/role": "decode"}
+	case cluster.PoolRoleEncode:
+		return map[string]string{"llm-d.ai/role": "encode"}
 	}
 	return nil
 }

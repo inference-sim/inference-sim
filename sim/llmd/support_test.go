@@ -176,17 +176,6 @@ func TestPDTopologyNeedsADisaggregatingConfig(t *testing.T) {
 	}
 }
 
-// TestEncodePoolIsRefused: encode placement is not read from the router, so a deployment with an
-// encode pool is refused.
-func TestEncodePoolIsRefused(t *testing.T) {
-	dep := testDeployment(3)
-	dep.PrefillInstances, dep.DecodeInstances, dep.EncodeInstances = 1, 1, 1
-	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 }
-	if err := refusal(t, dep, pdConfig, roleLabels); err == nil || !strings.Contains(err.Error(), "encode pool") {
-		t.Fatalf("want an encode pool refused, got %v", err)
-	}
-}
-
 // TestCheckRawConfig_EngineLabelsAndEndpointDiscovery: a pod whose engine label selects an engine
 // mapping the simulated engines do not publish is refused, with the default configuration too;
 // and a token-producer that discovers render endpoints is refused before the router is built.
