@@ -132,9 +132,13 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 
 	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
 	if allocatable <= 0 {
+		// vLLM's start-up refusal when nothing is left for the cache
+		// (_check_enough_kv_cache_memory, vllm/v1/core/kv_cache_utils.py:904-913 at v0.31.0).
 		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: no room for KV: a %.1f GiB device at utilization %.2f gives a "+
-				"%.1f GiB budget against %.1f GiB of fixed occupancy per rank",
+			"kernelmodel: No available memory for the cache blocks. Try increasing "+
+				"`gpu_memory_utilization` when initializing the engine (no room for KV: a %.1f GiB "+
+				"device at utilization %.2f gives a %.1f GiB budget against %.1f GiB of fixed "+
+				"occupancy per rank)",
 			float64(deviceBytes)/float64(gibToBytes), util,
 			float64(budget)/float64(gibToBytes), float64(fixed)/float64(gibToBytes))
 	}
@@ -150,7 +154,9 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 	blocks := allocatable / perBlock
 	if blocks <= 0 {
 		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: computed 0 KV blocks (allocatable %.2f GiB, per block %d bytes)",
+			"kernelmodel: No available memory for the cache blocks. Try increasing "+
+				"`gpu_memory_utilization` when initializing the engine (computed 0 KV blocks: "+
+				"allocatable %.2f GiB, per block %d bytes)",
 			float64(allocatable)/float64(gibToBytes), perBlock)
 	}
 
@@ -177,12 +183,9 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		return KVBudget{}, fmt.Errorf(
 			"kernelmodel: per-sequence admission reservation resolved to %d bytes", seqFixed)
 	}
+	// A pool too small for one sequence is refused by Settings, as vLLM refuses it at start-up
+	// (checkEnoughKVCacheMemory).
 	seqFixedBlocks := (seqFixed + perBlock - 1) / perBlock
-	if seqFixedBlocks >= perRank {
-		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: one sequence's fixed occupancy (%d bytes, %d blocks) does not fit a "+
-				"rank's %d-block KV pool", seqFixed, seqFixedBlocks, perRank)
-	}
 
 	return KVBudget{
 		TotalBlocks:             blocks,
