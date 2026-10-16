@@ -123,6 +123,11 @@ func TestBoundedReplayRecomputesTheHitsLastWindow(t *testing.T) {
 			if got := res.NewlyScheduled[0].Lookup.HitTokens; got != 40 {
 				t.Errorf("reported hit %d, want the whole 40-token hit", got)
 			}
+			// The replayed window is recomputed, not reloaded: no CPU-tier share, and never a
+			// negative one.
+			if got := res.NewlyScheduled[0].Lookup.CPUHitTokens; got != 0 {
+				t.Errorf("reported a CPU-tier hit of %d tokens, want 0 (no tier; the replay is not a reload)", got)
+			}
 			if used := kv.UsedBlocks(); used != 12 {
 				t.Errorf("holds %d blocks, want the prompt's 12 (the replay stores nothing)", used)
 			}

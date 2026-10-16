@@ -505,6 +505,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			return n
 		}
 		numNewTokens := chunkFrom(computedStart)
+		// The CPU tier's share of the hit, taken before the bounded-replay rewind below moves
+		// computedStart under startIndex (the replay is recomputed, not reloaded).
+		cpuHitTokens := computedStart - startIndex
 		// SWA bounded replay: the hit's last min(window, hit) tokens are computed again, without
 		// their KV being stored again (sched/scheduler.py:1059-1079, 3038-3050 at v0.31.0), so
 		// they are billed but allocate nothing. Simplification: a chunk the step budget ends
@@ -542,7 +545,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			scheduled.Lookup = PrefixLookup{
 				QueryTokens:  next.InputLen(),
 				HitTokens:    startIndex,
-				CPUHitTokens: computedStart - startIndex,
+				CPUHitTokens: cpuHitTokens,
 			}
 		}
 		result.NewlyScheduled = append(result.NewlyScheduled, scheduled)
