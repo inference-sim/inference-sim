@@ -76,6 +76,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K7](#inv-k7-a-cpu-tier-hit-waits-for-its-load) A CPU-tier hit waits for its load | Subsystem | KV cache / offload |
 | [INV-K8](#inv-k8-a-loaded-prefix-is-computed-not-in-flight) A loaded prefix is computed, not in flight | Subsystem | KV cache / offload |
 | [INV-K9](#inv-k9-the-admission-gate-counts-the-computed-prefix-against-the-window-cap) The admission gate counts the computed prefix against the window cap | Subsystem | KV cache |
+| [INV-K10](#inv-k10-an-engine-starts-only-if-one-max_model_len-request-fits-its-kv-cache) An engine starts only if one max_model_len request fits its KV cache | Code-boundary | CLI / KV budget |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -364,6 +365,14 @@ vLLM v0.31.0 sources:
 **Enforced:** `sim/kv` `KVCacheState.gateState`, used by `admissionGateRefuses` from `AllocateKVBlocks` and `sequenceFits`.
 
 **Verification:** `TestAdmissionGate_AGPUHitCountsAgainstTheWindowCap` (rapid: admitted at exactly vLLM's count, refused one block short), `TestAdmissionGate_ALoadedPrefixCountsAgainstTheWindowCap` (rapid) (`sim/kv`).
+
+#### INV-K10: An Engine Starts Only If One max_model_len Request Fits Its KV Cache
+
+**Statement:** After BLIS sizes each engine's (each DP rank's) KV pool, the run is refused at start-up -- the CLI exits 1 with a `level=fatal` line -- unless one request of `max_model_len` tokens fits: its token pages plus each bounded group at its admission cap, against the pool less the null block. The refusal is vLLM v0.31.0's (`_check_enough_kv_cache_memory`, `vllm/v1/core/kv_cache_utils.py:898-935`, applied per worker at `:2788-2800` after the null block is reserved at `:2779-2786`): "No available memory for the cache blocks ..." when no KV is left, else "To serve at least one request with the model's max seq len (N), (X GiB KV cache is needed, which is larger than the available KV cache memory (Y GiB). Based on the available memory, the estimated maximum model length is M. ..." with M vLLM's binary search (`_estimate_max_model_len_from_groups`, `:2531-2572`) and GiB rounded as `format_gib`. `max_model_len: auto` is fitted by the same search (`_auto_fit_max_model_len`, `:2575-2640`). An engine that fits starts unchanged.
+
+**Enforced:** `sim/kernelmodel` `checkEnoughKVCacheMemory`, `estimateMaxModelLen`, `requestBlocks` in `SettingsReserving`; `KVBudgetReserving` (no memory left).
+
+**Verification:** `TestStartupKVCheck_ExactlyEnoughStartsAndOneBlockShortIsRefused` (rapid boundary), `TestStartupKVCheck_ADEP8RankStartsOnlyWhereOneWindowFits`, `TestStartupKVCheck_ADEP8RankOnTheKVPoolPins` (with `BLIS_KVPOOL_PINS=1`) (`sim/kernelmodel`); `TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart`, `TestRunCmd_KernelBackend_ScenarioRefusals` (`cmd`).
 
 ### Batch formation
 
