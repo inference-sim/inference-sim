@@ -207,7 +207,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 
 	var newTokens []sim.TokenID
 	var numNewBlocks int64
-	if kvc.admissionGateRefuses(req, cachedBlocks) {
+	if kvc.admissionGateRefuses(req, cachedBlocks, 0) {
 		return false
 	}
 	// stateNeed is the change in the request's bounded-state blocks this step (negative when
@@ -433,7 +433,7 @@ func (kvc *KVCacheState) sequenceFits(req *sim.Request, startIndex, stateStart, 
 	if kvc.SequenceState.Hold == nil && !kvc.Speculative.Enabled {
 		return true
 	}
-	if kvc.admissionGateRefuses(req, cachedBlocks) {
+	if kvc.admissionGateRefuses(req, cachedBlocks, stateStart) {
 		return false
 	}
 	reqID := req.ID
@@ -516,7 +516,10 @@ func (kvc *KVCacheState) stateDelta(reqID string, startIndex, endIndex int64) in
 // without bounded state gates on its prompt blocks alone. Without it a long prompt is admitted
 // on its first chunk into a pool that cannot hold the rest, and its next chunk preempts
 // (INV-PD-9's queue-not-thrash law).
-func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []int64) bool {
+//
+// computed is the prefix already computed when the gate runs: the GPU hit, or the end of a
+// prefix an offload tier loads (loadedStateStart). The state charge is gateState of it.
+func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []int64, computed int64) bool {
 	if len(kvc.RequestMap[req.ID]) > 0 || len(kvc.StateBlocks[req.ID]) > 0 {
 		return false
 	}
@@ -529,13 +532,34 @@ func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []i
 	promptBlocks := max((req.InputLen()+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(cachedBlocks), 0)
 	need := claimedFromFree + promptBlocks
 	if kvc.SequenceState.Gate != nil {
-		need += kvc.SequenceState.Gate(req.InputLen())
+		need += kvc.gateState(req.InputLen(), max(util.Len64(cachedBlocks)*kvc.BlockSizeTokens, computed))
 	}
 	if need > kvc.countFreeBlocks() {
 		logrus.Debugf("KV admission gate: req %s needs %d blocks for its full prompt and state, %d free", req.ID, need, kvc.countFreeBlocks())
 		return true
 	}
 	return false
+}
+
+// gateState is the bounded-state blocks the admission gate requires of a tokens-token request
+// whose first computed tokens are already computed (#1955). vLLM gates each window group at
+// max(min(cdiv(num_tokens), max_admission_blocks_per_request) - max(skipped blocks of
+// total_computed_tokens, local computed blocks), 0): the computed prefix's blocks count against
+// the cap, so a long hit needs no window blocks beyond those it claims
+// (get_num_blocks_to_allocate, single_type_kv_cache_manager.py:216-268 at v0.31.0, called
+// with total_computed_tokens by kv_cache_manager.py:519-536), and a
+// state group still needs its one block (CircularBufferManager, :1214-1225). In Gate's terms
+// that is Gate(tokens) - Gate(computed) + Gate(0): Gate(0) is the state groups alone, as a ring
+// that has seen no token holds no page. It is Gate(tokens) without a hit, and never less than
+// Gate(0). A loaded prefix's skipped blocks are taken as all of it, short of vLLM's by the
+// window, which under-charges a loaded admission by at most the window's pages a ring.
+func (kvc *KVCacheState) gateState(tokens, computed int64) int64 {
+	gate := kvc.SequenceState.Gate
+	if computed <= 0 {
+		return gate(tokens)
+	}
+	floor := gate(0)
+	return max(gate(tokens)-gate(min(computed, tokens))+floor, floor)
 }
 
 // slotTarget is the blocks a speculating request must hold once endIndex tokens are
