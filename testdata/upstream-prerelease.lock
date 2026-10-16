@@ -7,4 +7,4 @@
 # the kernel's lock names its release; TestTheVendoredCatalogAndRegistryAreTheLockedReleases
 # fails while a line restates the kernel's lock.
 catalog  https://github.com/inference-sim/blis-catalog  dsv41/agentx-workload  3f8cb20eb028102369d5614538e8e98c2aa3203f
-registry https://github.com/inference-sim/blis-registry dsv41/h100-coefficients 3742c65e7858512f00bf4aea8eda24735a749e3c
+registry https://github.com/inference-sim/blis-registry dsv41/h100-coefficients 78017af310ce12e1aa4c62f5f1f7fca5363924c0
