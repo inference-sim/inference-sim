@@ -489,3 +489,96 @@ func TestLoadedPrefix_TheLegacyTierAdmitsAFittingRequest(t *testing.T) {
 	}
 	assertBlockConservation(t, gpu)
 }
+
+// ringGate is vLLM's admission charge for one window group capped at capBlocks plus a state
+// group of one block: min(cdiv(tokens), cap) + 1, in blocks of bs tokens. It holds nothing
+// past admission, so only the gate decides.
+func ringGate(bs, capBlocks int64) sim.KVSequenceState {
+	return sim.KVSequenceState{
+		Hold: func(int64, int64) int64 { return 0 },
+		Gate: func(tokens int64) int64 { return min((tokens+bs-1)/bs, capBlocks) + 1 },
+	}
+}
+
+// vllmGateState is the state vLLM's full_sequence_must_fit gate requires of an n-block prompt
+// with c blocks computed: max(min(n, cap) - c, 0) for the window group, 1 for the state group
+// (get_num_blocks_to_allocate with apply_admission_cap, single_type_kv_cache_manager.py:216-268;
+// CircularBufferManager, :1214-1225 at v0.31.0).
+func vllmGateState(n, c, capBlocks int64) int64 { return max(min(n, capBlocks)-c, 0) + 1 }
+
+// #1955: the admission gate counts a GPU prefix hit against the window cap, as vLLM does. A
+// request whose prompt hits h of its n blocks is admitted exactly when the free blocks cover
+// the hit blocks it claims off the free list, its n-h new blocks and vLLM's gate state, and
+// refused one block short. Charging the whole cap regardless of the hit refused long, mostly
+// cached prompts on a pool with room for them.
+func TestAdmissionGate_AGPUHitCountsAgainstTheWindowCap(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		bs := rapid.Int64Range(1, 8).Draw(rt, "bs")
+		n := rapid.Int64Range(2, 40).Draw(rt, "promptBlocks")
+		h := rapid.Int64Range(0, n-1).Draw(rt, "hitBlocks")
+		capBlocks := rapid.Int64Range(1, 50).Draw(rt, "cap")
+		short := rapid.Bool().Draw(rt, "oneShort")
+
+		need := h + (n - h) + vllmGateState(n, h, capBlocks) // the hit blocks sit on the free list
+		if short {
+			need--
+		}
+		const filler = 7
+		kvc := NewKVCacheState(need+filler, bs)
+		prompt := seqTokens(1, int(n*bs))
+		if h > 0 {
+			seed := &sim.Request{ID: "seed", InputTokens: prompt[:h*bs], OutputTokens: make([]sim.TokenID, 1)}
+			if !kvc.AllocateKVBlocks(seed, 0, h*bs, nil) {
+				rt.Fatal("seeding the prefix was refused")
+			}
+			kvc.ReleaseKVBlocks(seed)
+		}
+		if !kvc.AllocateKVBlocks(promptRequest("filler", int(filler*bs)), 0, filler*bs, nil) {
+			rt.Fatal("filler refused")
+		}
+		kvc.SequenceState = ringGate(bs, capBlocks)
+
+		req := &sim.Request{ID: "r", InputTokens: prompt, OutputTokens: make([]sim.TokenID, 1)}
+		cached := kvc.GetCachedBlocks(prompt)[:h]
+		got := kvc.AllocateKVBlocks(req, h*bs, n*bs, cached)
+		if got == short {
+			rt.Fatalf("prompt %d blocks, hit %d, cap %d, %d free: admitted=%v, want %v",
+				n, h, capBlocks, need, got, !short)
+		}
+		assertBlockConservation(t, kvc)
+	})
+}
+
+// #1955: a prefix the CPU tier loads counts against the window cap too, as vLLM's gate takes
+// total_computed_tokens, local and external. A request whose prompt the tier holds whole fits a
+// pool of its blocks and vLLM's gate state past the load, and is admitted within its load and
+// one step; the cap charged regardless of the load did not fit it.
+func TestAdmissionGate_ALoadedPrefixCountsAgainstTheWindowCap(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		const bs, perBlock = 2, 4096
+		bpc := rapid.Int64Range(1, 4).Draw(rt, "bpc")
+		chunks := rapid.Int64Range(2, 16).Draw(rt, "chunks")
+		n := chunks * bpc
+		capBlocks := rapid.Int64Range(2, n).Draw(rt, "cap")
+		// The load covers the whole prompt; its last token is computed again (InputLen-1).
+		computed := (n*bs - 1) / bs
+		pool := n + vllmGateState(n, computed, capBlocks)
+		oc := chunkCache(pool, bs, bpc, 64, 0)
+		oc.gpu.SequenceState = ringGate(bs, capBlocks)
+		bw := rapid.Int64Range(1, 20000).Draw(rt, "bytesPerTick")
+		oc.cpuLoadTime = bandwidthLoad(bw)
+		load := oc.cpuLoadTime(n * perBlock)
+		step := rapid.Int64Range(1, 5000).Draw(rt, "step")
+
+		tokens := seqTokens(1, int(n*bs))
+		seedCPU(oc, tokens)
+		at := admitTick(oc, &sim.Request{ID: "r", InputTokens: tokens}, 0, step)
+		if at < 0 || at > load+step {
+			rt.Fatalf("a %d-block prompt loaded whole into a %d-block pool (cap %d): admitted at %d, want by %d",
+				n, pool, capBlocks, at, load+step)
+		}
+		if err := oc.gpu.verifyBlockConservation(); err != nil {
+			rt.Fatal(err)
+		}
+	})
+}

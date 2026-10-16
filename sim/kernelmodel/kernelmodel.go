@@ -410,7 +410,7 @@ func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
 	}
 	for _, req := range batch {
 		r := shapeOf(req)
-		if m.specTokens > 0 && req.ProgressIndex >= req.InputLen() {
+		if m.specTokens > 0 && req.ProgressIndex >= req.PrefillEnd() {
 			r.Scheduled = 1 + m.specTokens
 		}
 		b.Reqs = append(b.Reqs, r)
@@ -435,7 +435,8 @@ func specTokensOf(k kernel.Kernel) int {
 //	                width 1 + num_spec_tokens, which is what the forward pass runs.
 //	Computed     <- ProgressIndex. Tokens already computed. BLIS advances it after the
 //	                step, so at batch formation it is the pre-step value the kernel wants.
-//	PromptLen    <- InputLen(). Computed against PromptLen is what separates a
+//	PromptLen    <- PrefillEnd(): the prompt, and for a request resumed after a preemption
+//	                its re-prefilled output too. Computed against PromptLen is what separates a
 //	                chunked-prefill tail from a decode, and the two use different
 //	                attention laws.
 //	CachedTokens <- 0. A prefix-cache hit is already reflected in Computed: BLIS's
@@ -454,7 +455,7 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 	return kernel.ReqShape{
 		Scheduled:    req.NumNewTokens,
 		Computed:     int(req.ProgressIndex),
-		PromptLen:    int(req.InputLen()),
+		PromptLen:    int(req.PrefillEnd()),
 		CachedTokens: 0,
 	}
 }

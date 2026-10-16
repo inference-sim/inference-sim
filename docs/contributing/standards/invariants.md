@@ -75,6 +75,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K6](#inv-k6-the-offload-tiers-hold-whole-chunks) The offload tiers hold whole chunks | Subsystem | KV cache / offload |
 | [INV-K7](#inv-k7-a-cpu-tier-hit-waits-for-its-load) A CPU-tier hit waits for its load | Subsystem | KV cache / offload |
 | [INV-K8](#inv-k8-a-loaded-prefix-is-computed-not-in-flight) A loaded prefix is computed, not in flight | Subsystem | KV cache / offload |
+| [INV-K9](#inv-k9-the-admission-gate-counts-the-computed-prefix-against-the-window-cap) The admission gate counts the computed prefix against the window cap | Subsystem | KV cache |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -127,6 +128,8 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 **Statement:** Requests transition `queued -> running -> completed`. No invalid transitions. Requests not completed before horizon remain in current state.
 
 **Verification:** State machine assertions in request processing code.
+
+**Preemption edge (running -> queued):** as vLLM v0.31.0's `_preempt_request` (`sched/scheduler.py:1538-1580`), a preempted request frees its blocks and its computed tokens return to 0, but the output it emitted stands: it resumes as one prefill of prompt and output (`Request.PrefillEnd`; vLLM schedules `num_tokens - num_computed_tokens`, `:1084`), whose step samples its next token. Its TTFT is its first prefill's, its inter-token history is kept and the resumed token's interval runs from its last token. `TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill` (`sim`).
 
 **Known weakness (#1721):** this is the thinnest entry in the registry — it names no test, and the three states above are fewer than the request states the code actually distinguishes. Correcting the statement was raised separately and is deliberately out of scope here; it is recorded so a reader does not mistake brevity for a tight specification.
 
@@ -353,6 +356,14 @@ vLLM v0.31.0 sources:
 **Enforced:** `sim/kv` `KVCacheState.loadedStateStart`, used by `OffloadCache.AllocateKVBlocks` and `TieredKVCache.AllocateKVBlocks` for the pre-check (`sequenceFits`) and the full-reload charge (`chargeSequence`).
 
 **Verification:** `TestLoadedPrefix_AFittingRequestIsAdmittedWithinItsLoad` (rapid), `TestLoadedPrefix_TheLegacyTierAdmitsAFittingRequest` (`sim/kv`); `TestInstanceSimulator_Offload_ALoadedRequestIsScheduledOnceThePoolFrees` (invariant), `TestInstanceSimulator_Offload_TheTierStartsEveryRequestTheGPUAloneStarts` (metamorphic) (`sim/cluster`).
+
+#### INV-K9: The Admission Gate Counts the Computed Prefix Against the Window Cap
+
+**Statement:** The admission gate (INV-K3) charges a request's bounded state `Gate(tokens) - Gate(computed) + Gate(0)`, never less than `Gate(0)`, where `computed` is its GPU prefix hit or, when an offload tier loads its prefix, the end of the load (INV-K8). vLLM v0.31.0 gates each window group at `max(min(cdiv(num_tokens), max_admission_blocks_per_request) - max(skipped blocks of total_computed_tokens, local computed blocks), 0)` (`get_num_blocks_to_allocate`, `single_type_kv_cache_manager.py:216-268`, called with `apply_admission_cap` and `total_computed_tokens` by `kv_cache_manager.py:519-536`) and each state group at one block (`:1214-1225`), so a long hit needs no window blocks past those it claims. A request without a hit is gated at `Gate(tokens)` as before. Charging the whole window cap regardless of the hit refused mostly cached long prompts on a DSV4 rank with room for them (at DEP8 C=256 the full 16,425-block cap was charged to a request with 102,976 of its 103,433 tokens cached, on a rank with 17,323 blocks free). Simplification: a loaded prefix's skipped blocks are taken as all of it, which under-charges a loaded admission by at most the window's pages per ring.
+
+**Enforced:** `sim/kv` `KVCacheState.gateState`, used by `admissionGateRefuses` from `AllocateKVBlocks` and `sequenceFits`.
+
+**Verification:** `TestAdmissionGate_AGPUHitCountsAgainstTheWindowCap` (rapid: admitted at exactly vLLM's count, refused one block short), `TestAdmissionGate_ALoadedPrefixCountsAgainstTheWindowCap` (rapid) (`sim/kv`).
 
 ### Batch formation
 

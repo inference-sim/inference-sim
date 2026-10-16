@@ -1181,15 +1181,24 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 	// similar to vLLM's execute_model()
 	// Note: Per-request TTFT fields (FirstTokenTime, RequestTTFTs) are recorded inline
 	// because they are tightly coupled to the prefill/decode state transitions in this
-	// loop. Safety across preemption comes from the !req.TTFTSet guard below (TTFTSet is
-	// reset to false on preemption by batch_formation.go), not from overwrite idempotency —
-	// the guard ensures the block fires exactly once per prefill completion so FirstTokenTime
-	// always reflects the final re-prefill. TTFTSum and TotalOutputTokens are computed at
+	// loop. The !req.TTFTSet guard below fires once: a request preempted after its first token
+	// keeps it (batch_formation.go), as vLLM keeps a preempted request's output, and one
+	// preempted before it prefills again. TTFTSum and TotalOutputTokens are computed at
 	// completion time in recordRequestCompletion to avoid double-counting when a preempted
 	// request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < req.InputLen() {
+		if end := req.PrefillEnd(); req.ProgressIndex < end {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
+			if req.resumeEnd > req.InputLen() && req.ProgressIndex == end {
+				// A resumed prefill samples the request's next token (sched/scheduler.py:1084):
+				// its inter-token gap runs from the last token before the preemption.
+				emittedAt := now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime()
+				last := req.ArrivalTime + req.FirstTokenTime
+				for _, itl := range req.ITL {
+					last += itl
+				}
+				req.ITL = append(req.ITL, max(emittedAt-last, 0))
+			}
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else {
@@ -1211,11 +1220,8 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 				}
 			}
 		}
-		// !req.TTFTSet guard: fires once per prefill completion (including re-prefill after
-		// preemption). TTFTSet is reset to false on preemption (batch_formation.go) so this
-		// block fires again on re-prefill, overwriting FirstTokenTime with the correct
-		// post-preemption TTFT. req.FirstTokenTime is a scalar assignment (not an
-		// accumulation), so overwriting it is safe. TTFTSum is not accumulated here;
+		// !req.TTFTSet guard: fires at the first prefill completion only; a preemption after it
+		// leaves the first token time as it was. TTFTSum is not accumulated here;
 		// it is accumulated exactly once at completion time in recordRequestCompletion.
 		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
