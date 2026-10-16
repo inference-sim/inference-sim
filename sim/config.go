@@ -49,23 +49,24 @@ type KVPrefixHit struct {
 	// FullEagle drops the last block of every full-attention hit: the full-attention group is
 	// an EAGLE group (FullAttentionManager.find_longest_cache_hit,
 	// single_type_kv_cache_manager.py:834-836).
-	FullEagle bool
+	FullEagle bool `json:"full_eagle,omitempty"`
 	// Window is a prefix-cacheable sliding-window group (SlidingWindowManager), 0 when the
 	// model has none or its window caches do not take part in prefix caching. WindowBlock is
 	// its page in tokens.
-	Window, WindowBlock int64
+	Window      int64 `json:"window,omitempty"`
+	WindowBlock int64 `json:"window_block,omitempty"`
 	// WindowEagle: the window group is an EAGLE group, which peeks one window block past a
 	// boundary and drops it (single_type_kv_cache_manager.py:960-971, 1056-1067).
-	WindowEagle bool
+	WindowEagle bool `json:"window_eagle,omitempty"`
 	// EagleBoundaries: some group is an EAGLE group, so the replay boundaries a request
 	// retains window tails at sit one scheduler block below its prompt
 	// (KVCacheCoordinator.get_replay_boundaries, kv_cache_coordinator.py:316-338).
-	EagleBoundaries bool
+	EagleBoundaries bool `json:"eagle_boundaries,omitempty"`
 	// ReplayTokens is DeepSeek-V4.1's SWA bounded replay window (prefix_replay_tokens,
 	// kv_cache_interface.py:953-955): a hit no longer than it is dropped, and the last
 	// min(ReplayTokens, hit) tokens of a hit are computed again (sched/scheduler.py:1016-1026,
 	// 1059-1079, 3038-3050). 0: off.
-	ReplayTokens int64
+	ReplayTokens int64 `json:"replay_tokens,omitempty"`
 }
 
 // WithPrefixHit sets how the KV store reconciles a prefix-cache hit across KV cache groups.

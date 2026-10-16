@@ -40,6 +40,8 @@ type PoolOverrides struct {
 	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
 	// different widths hold different state per sequence and per block (#1941).
 	SequenceState *sim.KVSequenceState
+	// PrefixHit is how the pool's KV cache groups cut a prefix hit (nil = use global).
+	PrefixHit *sim.KVPrefixHit
 
 	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
 	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
@@ -98,7 +100,7 @@ func (o PoolOverrides) IsEmpty() bool {
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
 		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
-		o.SequenceState == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
+		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
 		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
 }
 
@@ -144,6 +146,9 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	}
 	if overrides.SequenceState != nil {
 		resolved.SequenceState = *overrides.SequenceState
+	}
+	if overrides.PrefixHit != nil {
+		resolved.PrefixHit = *overrides.PrefixHit
 	}
 	if overrides.Scheduler != "" {
 		resolved.Scheduler = overrides.Scheduler

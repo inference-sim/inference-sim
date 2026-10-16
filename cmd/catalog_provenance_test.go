@@ -247,9 +247,9 @@ func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 		t.Errorf("no output file path must yield no emit options, got %d", len(opts))
 	}
 	opts := resultsFileEmitOptions(filepath.Join(t.TempDir(), "metrics.json"), catalogRoot)
-	if len(opts) != 5 {
+	if len(opts) != 6 {
 		t.Fatalf("an output file path must yield the catalog-provenance, scenario-override, "+
-			"kernel-provenance, build-version and acceptance options, got %d", len(opts))
+			"kernel-provenance, build-version, acceptance and prefix-cache options, got %d", len(opts))
 	}
 	// The option must carry a populated provenance, not a nil one.
 	m := sim.NewMetrics()

@@ -195,6 +195,21 @@ type MetricsOutput struct {
 	// came from (#1939). File-only, like Catalog (WithAcceptance); omitted when the run does
 	// not speculate.
 	Acceptance *AcceptanceRecord `json:"acceptance,omitempty"`
+
+	// PrefixCache records, per pool role, how prefix hits were cut: the model runner vLLM
+	// v0.31.0 resolves, DeepSeek-V4.1's SWA bounded replay and the KV group layout. File-only
+	// (WithPrefixCache).
+	PrefixCache map[string]PrefixCacheRecord `json:"prefix_cache,omitempty"`
+}
+
+// PrefixCacheRecord is one pool's prefix-hit resolution.
+type PrefixCacheRecord struct {
+	ModelRunner          string      `json:"model_runner"`
+	ModelRunnerForcedBy  []string    `json:"model_runner_v1_forced_by,omitempty"`
+	SWABoundedReplay     *bool       `json:"swa_bounded_replay,omitempty"`
+	SWABoundedReplayFrom string      `json:"swa_bounded_replay_from,omitempty"`
+	Layout               KVPrefixHit `json:"layout"`
+	Note                 string      `json:"note,omitempty"`
 }
 
 // BuildVersions are the module versions a results file was produced by: BLIS itself and the

@@ -259,11 +259,12 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	noCache := s.PrefixCachingDisabled
 	ml := int64(s.MaxModelLen)
 	state := s.SequenceState
+	hit := prefixHitOf(string(m.Role())+" pool", m)
 	logSequenceFixedCharge(string(m.Role())+" pool", s)
 	o := cluster.PoolOverrides{
 		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
-		SequenceState: &state,
+		SequenceState: &state, PrefixHit: &hit,
 	}
 	poolEngineKnobs(m, &o)
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
