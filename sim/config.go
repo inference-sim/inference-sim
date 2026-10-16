@@ -48,6 +48,9 @@ type KVSpeculation struct {
 	// LookaheadTokens is vLLM's VllmConfig.num_lookahead_tokens (see
 	// SpeculativeConfig.LookaheadTokens).
 	LookaheadTokens int64
+	// NumSpecTokens is the drafter's num_speculative_tokens; it sizes the spec-decode step an
+	// async load reserves (Scheduler._spec_decode_step_blocks).
+	NumSpecTokens int64
 	// MaxModelLen caps the slots a request holds, as vLLM caps num_tokens_need_slot at
 	// max_model_len (kv_cache_manager.py:536-538 at v0.31.0); 0 is uncapped.
 	MaxModelLen int64
@@ -304,7 +307,7 @@ func (c SpeculativeConfig) DraftSlots() int64 {
 
 // KV is the KV-slot reservation the config implies (#1627).
 func (c SpeculativeConfig) KV() KVSpeculation {
-	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens()}
+	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens(), NumSpecTokens: int64(c.K)}
 }
 
 // IsEnabled reports whether speculative decoding is active (K>0).

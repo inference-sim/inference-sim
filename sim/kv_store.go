@@ -158,3 +158,23 @@ func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
 	}
 	return NewKVStoreFromConfig(cfg, 0)
 }
+
+// InflightPrefill is a request still prefilling after this step's schedule, with the tokens it
+// will have computed: vLLM's Scheduler._inflight_prefills (sched/scheduler.py:1276, 1324 at
+// v0.31.0).
+type InflightPrefill struct {
+	Req      *Request
+	Computed int64
+}
+
+// LoadHoldingKVStore is the optional capability of a store whose offload loads hold GPU blocks
+// from the moment they start, as vLLM's async loads do (WAITING_FOR_REMOTE_KVS): kv.OffloadCache
+// with a priced CPU load. Batch formation drains the requests it holds blocks for ahead of the
+// waiting queue (kv_holding_waiting, sched/scheduler.py:887), admits a landed one from the
+// prefix its load computed, without a new prefix lookup (:1041-1050), and tells it which
+// requests are still prefilling so a load leaves their remaining blocks free (:1194-1205).
+type LoadHoldingKVStore interface {
+	HoldsKV(id string) bool
+	LoadedPrefix(id string) (computed, gpuHitTokens int64, ok bool)
+	SetInflightPrefills(prefills []InflightPrefill)
+}

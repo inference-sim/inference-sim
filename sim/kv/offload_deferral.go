@@ -72,6 +72,14 @@ type deferralState struct {
 	recompute bool             // fetch refused/lost; admit as a miss (recompute) on next examination
 	loadKeys  []kvkey.BlockKey // deferLoading: the pinned chunks being loaded
 	readyAt   int64            // deferLoading: when the load lands
+	// A load holds the request's GPU blocks from its start (allocateLoad) until the request is
+	// admitted or leaves: req is the request, stored the tokens its blocks hold, computed the
+	// prefix it counts as computed (a whole-prompt load recomputes its last token), gpuHit the
+	// GPU prefix hit it started from, and loaded that the load has landed.
+	req                      *sim.Request
+	holds                    bool
+	loaded                   bool
+	stored, computed, gpuHit int64
 }
 
 // fetchKind classifies what a new request's needed prefix requires beyond its
@@ -229,6 +237,12 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 		case deferLoading:
 			if now >= st.readyAt {
 				o.endCPULoad(st)
+				if st.holds {
+					// The blocks are written: cache them (_update_waiting_for_remote_kv,
+					// sched/scheduler.py:3082-3085 at v0.31.0).
+					o.gpu.CacheRemoteKV(id)
+					st.loaded = true
+				}
 				st.resolved = true
 			}
 		case deferPromoting:
@@ -241,7 +255,9 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 			// cpuHitPending: still in flight — keep waiting.
 		}
 		if !st.resolved && !st.recompute {
-			if now-st.startTick > maxDeferTicks {
+			// A load lands at readyAt however long it takes, as vLLM waits for it; the
+			// backstop guards only the secondary-tier episodes.
+			if st.phase != deferLoading && now-st.startTick > maxDeferTicks {
 				o.endCPULoad(st)
 				st.recompute = true // R19 defensive backstop (never trips for legitimate configs)
 			} else {
@@ -289,6 +305,9 @@ func (o *OffloadCache) IsDeferred(id string) bool {
 func (o *OffloadCache) ClearDeferred(id string) {
 	if st, ok := o.deferred[id]; ok {
 		o.endCPULoad(st)
+		if st.holds {
+			o.gpu.ReleaseKVBlocks(st.req) // vLLM frees a WAITING_FOR_REMOTE_KVS request's blocks
+		}
 	}
 	delete(o.deferred, id)
 }
@@ -305,45 +324,99 @@ func (o *OffloadCache) DeferralsStarted() int64 { return o.deferralsStarted }
 // than a recompute (#1699). 0 for a run where no CPU-resident prefix was ever reloaded.
 func (o *OffloadCache) ReloadsPerformed() int64 { return o.reloadCount }
 
-// beginCPULoad starts the CPU->GPU load of a new admission's CPU-resident prefix past
-// startBlock and sets the request aside until it lands (INV-K7), reporting whether it did.
+// beginCPULoad starts the CPU->GPU load of a new admission's CPU-resident prefix past its GPU
+// hit and sets the request aside until it lands (INV-K7). started reports that it did; refused
+// that a load was due but its blocks do not fit, which stops the admission loop as vLLM's
+// failed allocate_slots does.
 //
 // vLLM's OffloadingConnector reports every CPU hit as an async load
 // (get_num_new_matched_tokens returns (hits, True), offloading/scheduler.py:1036-1094 at
-// v0.31.0): the request waits in WAITING_FOR_REMOTE_KVS (scheduler.py:1258-1275) while the
-// worker copies the chunks on its own stream, each transfer chained after the previous one
-// (kv_offload/cpu/gpu_worker.py:676-724), and is scheduled on the first step after
-// get_finished sees the copy done (gpu_worker.py:737-752; scheduler.py:3052-3106). So the
-// load is priced at the bytes of the blocks not already on the GPU, queued behind earlier
-// loads, and it stalls only its own request. The blocks land on the GPU when the request is
-// admitted (allocateThroughChain), where vLLM allocates them at the start of the load.
+// v0.31.0). The scheduler allocates the request's blocks for its local and external tokens at
+// once -- no new tokens, no lookahead, the full-sequence gate, and reserved_blocks left free
+// for the in-flight prefills and one speculative step (sched/scheduler.py:1177-1220,
+// 3003-3036) -- and parks it in WAITING_FOR_REMOTE_KVS, drained ahead of the waiting queue
+// (:887, 1258-1281, 1343). The worker copies the chunks on its own stream, each transfer
+// chained after the previous one (kv_offload/cpu/gpu_worker.py:676-724); the request is
+// scheduled on the first step after the copy is seen done (gpu_worker.py:737-752;
+// scheduler.py:3052-3106). So the load holds its GPU blocks for the whole transfer, is
+// priced at the bytes of the blocks not already on the GPU, and queues behind earlier loads.
 //
 // It is a no-op without a CPULoadTime, with nothing to load, and for an episode that has
 // already loaded (one load per episode, so the wait is bounded, R19).
-func (o *OffloadCache) beginCPULoad(reqID string, tokens []sim.TokenID, startBlock int64, prevHash string) bool {
+func (o *OffloadCache) beginCPULoad(req *sim.Request, startIndex int64, cachedBlocks []int64, startBlock int64, prevHash string) (started, refused bool) {
 	if o.cpuLoadTime == nil {
-		return false
+		return false, false
 	}
-	st := o.deferred[reqID]
+	st := o.deferred[req.ID]
 	if st != nil && st.phase == deferLoading {
-		return false
+		return false, false
 	}
-	keys, blocks := o.cpuLoadPlan(tokens, startBlock, prevHash)
+	keys, blocks := o.cpuLoadPlan(req.FullInputTokens(), startBlock, prevHash)
 	if blocks == 0 {
-		return false
+		return false, false
+	}
+	end, ok := o.ReloadablePrefixEnd(req, startIndex)
+	computed := min(end, max(req.PrefillEnd()-1, 0)) // a whole-prompt load recomputes its last token (:3095-3096)
+	if !ok || computed <= startIndex {
+		return false, false
+	}
+	if !o.gpu.allocateLoad(req, startIndex, end, computed, o.loadReserve(), cachedBlocks) {
+		return false, true
 	}
 	o.loadBusyUntil = max(o.clock, o.loadBusyUntil) + o.cpuLoadTime(blocks*o.perBlockBytes)
 	for _, k := range keys {
 		o.cpu.pin(k)
+		o.cpu.touchKey(k)
 	}
+	o.reloadCount += blocks
 	if st == nil {
 		st = &deferralState{tier: -1, startTick: o.clock}
-		o.deferred[reqID] = st
+		o.deferred[req.ID] = st
 	}
 	st.phase, st.loadKeys, st.readyAt = deferLoading, keys, o.loadBusyUntil
 	st.resolved, st.recompute = false, false
+	st.req, st.holds, st.loaded, st.computed, st.stored, st.gpuHit = req, true, false, computed, end, startIndex
 	o.cpuLoadsStarted++
-	return true
+	return true, false
+}
+
+// loadReserve is vLLM's reserved_blocks for an async load: what the in-flight prefills -- the
+// running requests still prefilling (SetInflightPrefills) and the loads holding blocks -- still
+// need to hold their whole sequence, one speculative step each, and the new load's own step
+// (sched/scheduler.py:1194-1205, 3003-3036 at v0.31.0).
+func (o *OffloadCache) loadReserve() int64 {
+	step := o.gpu.specStepBlocks()
+	n := step
+	for _, p := range o.prefilling {
+		n += o.gpu.remainingBlocks(p.Req, p.Computed) + step
+	}
+	for _, st := range o.deferred {
+		if st.holds {
+			n += o.gpu.remainingBlocks(st.req, st.computed) + step
+		}
+	}
+	return n
+}
+
+// SetInflightPrefills implements sim.LoadHoldingKVStore: the running requests still
+// prefilling after this step's schedule, which a load must leave room for.
+func (o *OffloadCache) SetInflightPrefills(prefills []sim.InflightPrefill) { o.prefilling = prefills }
+
+// HoldsKV implements sim.LoadHoldingKVStore: the request's load holds GPU blocks and it has
+// not been admitted.
+func (o *OffloadCache) HoldsKV(id string) bool {
+	st, ok := o.deferred[id]
+	return ok && st.holds
+}
+
+// LoadedPrefix implements sim.LoadHoldingKVStore: for a request whose load has landed, the
+// prefix it computed and the GPU hit it started from.
+func (o *OffloadCache) LoadedPrefix(id string) (computed, gpuHitTokens int64, ok bool) {
+	st, tracked := o.deferred[id]
+	if !tracked || !st.holds || !st.loaded {
+		return 0, 0, false
+	}
+	return st.computed, st.gpuHit, true
 }
 
 // endCPULoad releases a load's pinned chunks. Idempotent; a no-op for any other episode.

@@ -202,17 +202,24 @@ func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 // start and endIndex are by original requests' index
 // endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, endIndex int64, cachedBlocks []int64) bool {
+	return kvc.allocate(req, startIndex, startIndex, endIndex, cachedBlocks)
+}
+
+// allocate is AllocateKVBlocks with the bounded state sized from stateStart rather than
+// startIndex: an offload load's tokens [startIndex, stateStart) are computed, not in flight
+// (INV-K8).
+func (kvc *KVCacheState) allocate(req *sim.Request, startIndex, stateStart, endIndex int64, cachedBlocks []int64) bool {
 	reqID := req.ID
 	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, req.InputLen(), startIndex, endIndex)
 
 	var newTokens []sim.TokenID
 	var numNewBlocks int64
-	if kvc.admissionGateRefuses(req, cachedBlocks, 0) {
+	if kvc.admissionGateRefuses(req, cachedBlocks, stateStart) {
 		return false
 	}
 	// stateNeed is the change in the request's bounded-state blocks this step (negative when
 	// its window rings shrink, as remove_skipped_blocks frees them before allocating).
-	stateNeed := kvc.stateDelta(reqID, startIndex, endIndex)
+	stateNeed := kvc.stateDelta(reqID, stateStart, endIndex)
 	if req.ProgressIndex < req.PrefillEnd() {
 		// request is in prefill (could be chunked)
 		newTokens = req.SequenceTokenSlice(startIndex, endIndex)
@@ -295,7 +302,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	// A shrinking state frees its blocks before any are taken, as vLLM's allocate_slots runs
 	// remove_skipped_blocks before it allocates (kv_cache_manager.py:546-556 at v0.31.0).
 	if stateNeed < 0 {
-		kvc.resizeState(reqID, kvc.stateTarget(startIndex, endIndex))
+		kvc.resizeState(reqID, kvc.stateTarget(stateStart, endIndex))
 	}
 	newTokenProgressIndex := int64(0)
 	for newTokenProgressIndex < util.Len64(newTokens) { // non-inclusive endIndex
@@ -414,7 +421,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	}
 	// Grown last: a cached prefix block can sit on the free list, and is claimed above.
 	if stateNeed > 0 {
-		kvc.resizeState(reqID, kvc.stateTarget(startIndex, endIndex))
+		kvc.resizeState(reqID, kvc.stateTarget(stateStart, endIndex))
 	}
 	kvc.reserveSlots(reqID, endIndex)
 
@@ -850,4 +857,63 @@ func (kvc *KVCacheState) verifyBlockConservation() error {
 	}
 
 	return nil
+}
+
+// allocateLoad takes, when an offload load starts, the blocks of a new request's GPU hit and of
+// the tokens [startIndex, stored) the load brings, its state sized from computed (INV-K8), registering none of their hashes until
+// the load lands (CacheRemoteKV). It is vLLM's async-load admission: allocate_slots with no
+// new tokens, no lookahead, the external tokens computed and delay_cache_blocks, refused
+// unless the full-sequence gate passes and reserved blocks stay free besides
+// (sched/scheduler.py:1177-1220, kv_cache_manager.py:519-576 at v0.31.0). A refusal takes
+// nothing.
+func (kvc *KVCacheState) allocateLoad(req *sim.Request, startIndex, stored, computed, reserved int64, cachedBlocks []int64) bool {
+	if kvc.admissionGateRefuses(req, cachedBlocks, computed) {
+		return false
+	}
+	var claimedFromFree int64
+	for _, id := range cachedBlocks {
+		if !kvc.Blocks[id].InUse {
+			claimedFromFree++
+		}
+	}
+	tokenBlocks := max((stored+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(cachedBlocks), 0)
+	if claimedFromFree+tokenBlocks+kvc.stateTarget(computed, stored)+reserved > kvc.countFreeBlocks() {
+		return false
+	}
+	spec := kvc.Speculative
+	kvc.Speculative.LookaheadTokens = 0 // limit_lookahead_tokens (sched/scheduler.py:1177-1181)
+	defer func() { kvc.Speculative = spec }()
+	if kvc.remoteKV == nil {
+		kvc.remoteKV = make(map[string]bool)
+	}
+	kvc.remoteKV[req.ID] = true
+	if !kvc.allocate(req, startIndex, computed, stored, cachedBlocks) {
+		delete(kvc.remoteKV, req.ID)
+		return false
+	}
+	return true
+}
+
+// remainingBlocks is what a request holding blocks still needs to hold its whole sequence once
+// computed tokens are computed: its token blocks past those it holds and its bounded state at
+// the gate past what it holds (Scheduler._request_remaining_blocks without the spec-decode
+// step, sched/scheduler.py:3003-3017 at v0.31.0).
+func (kvc *KVCacheState) remainingBlocks(req *sim.Request, computed int64) int64 {
+	n := req.PrefillEnd()
+	tokens := max((n+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(kvc.RequestMap[req.ID]), 0)
+	var state int64
+	if kvc.SequenceState.Gate != nil {
+		state = max(kvc.gateState(n, computed)-util.Len64(kvc.StateBlocks[req.ID]), 0)
+	}
+	return tokens + state
+}
+
+// specStepBlocks is the blocks one speculative decode step's extra slots take,
+// cdiv(1 + num_spec_tokens + num_lookahead_tokens, block) (Scheduler._spec_decode_step_blocks,
+// sched/scheduler.py:3019-3030 at v0.31.0); 0 without speculation.
+func (kvc *KVCacheState) specStepBlocks() int64 {
+	if !kvc.Speculative.Enabled || kvc.Speculative.NumSpecTokens == 0 {
+		return 0
+	}
+	return (1 + kvc.Speculative.NumSpecTokens + kvc.Speculative.LookaheadTokens + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 }
