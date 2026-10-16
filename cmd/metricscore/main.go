@@ -34,6 +34,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -86,7 +87,13 @@ func main() {
 	seed := flag.Int64("seed", 42, "")
 	blis := flag.String("blis", "", "path of the blis binary every point is simulated with (`go build -o blis main.go`); required")
 	gaps := flag.String("gaps", "", "write the coverage-gap report here (default stderr; never stdout)")
+	jsonOut := flag.String("json", "", "also write every scored point of the simulated arm -- deployment, tier, "+
+		"measured and predicted latency, errors -- as JSON here; the stdout report is unchanged")
 	flag.Parse()
+	if *jsonOut != "" && *framework == "" {
+		fmt.Fprintln(os.Stderr, "-json reports the simulated arm, which runs only with -framework set (BLIS models vllm)")
+		os.Exit(2)
+	}
 	if err := harness.RequireBlis(*blis); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -195,6 +202,7 @@ func main() {
 	byFramework := map[string]map[int]map[harness.Metric][]float64{}
 	byModel := map[string]map[int]map[harness.Metric][]float64{}
 	var failures []string
+	var records []pointRecord // for -json, in corpus order
 	// Every corpus gap: written out beside the score, and read DURING scoring to put each
 	// sweep in its tier (harness.Coverage.TierOf).
 	coverage := harness.AssessCoverage(c, base)
@@ -249,6 +257,8 @@ func main() {
 		// taken whole or not at all.
 		sim := map[harness.Estimator]map[harness.Metric][]float64{}
 		simMape := map[harness.Estimator]map[harness.Metric][]float64{}
+		// The kernel arm's observations, kept for -json: the same ones its errors came from.
+		var kernelObs []harness.Observation
 		ok := true
 		for _, a := range arms {
 			if a.est == "" {
@@ -297,6 +307,9 @@ func main() {
 			}
 			sim[a.est] = per
 			simMape[a.est] = perMape
+			if a.est == harness.EstimatorKernel {
+				kernelObs = obs
+			}
 		}
 		if !ok {
 			continue
@@ -355,6 +368,11 @@ func main() {
 			// The published arms need no configuration from us, so every sweep they can be
 			// scored on is one table.
 			sweepTier = harness.TierApproximate
+		}
+		if *jsonOut != "" && kernelObs != nil {
+			// pointErrors already accepted this sweep inside simulatedErrors, so bad is empty.
+			recs, _ := pointRecords(sw, sweepTier, kernelObs, abs.For(sw), spike)
+			records = append(records, recs...)
 		}
 		sweeps++
 		if sweepTier.In(harness.TierMeasuredOrResolved) {
@@ -426,6 +444,15 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  %s\n", f)
 		}
 		os.Exit(1)
+	}
+	if *jsonOut != "" {
+		if err := writeJSONReport(*jsonOut, jsonReport{
+			SchemaVersion: 1, Framework: *framework, ConfigTier: *tier,
+			Corpus: c.Source, GroundTruth: c.MeasurementSource, Points: records,
+		}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 
 	title := "every chip"
@@ -674,17 +701,54 @@ func family(gpu string) string {
 // sweep's lowest concurrency, that anchor excluded -- against the measured relatives. Both read
 // the same observation per point. TTFT skips the points in spike. A non-positive measured
 // relative makes the sweep unscorable and is returned as bad.
+//
+// It is the pooled view of pointErrors: the same errors, in point order, with each point's
+// absent ones skipped. -json reports the per-point view, so the two can never disagree.
 func simulatedErrors(sw harness.Sweep, obs []harness.Observation, measured *harness.Absolutes,
 	spike map[int]bool) (shape, mape map[harness.Metric][]float64, bad string) {
+	per, bad := pointErrors(sw, obs, measured, spike)
+	if bad != "" {
+		return nil, nil, bad
+	}
 	shape, mape = map[harness.Metric][]float64{}, map[harness.Metric][]float64{}
+	add := func(into map[harness.Metric][]float64, m harness.Metric, v *float64) {
+		if v != nil {
+			into[m] = append(into[m], *v)
+		}
+	}
+	for _, e := range per {
+		add(mape, harness.MetricTPOT, e.TPOTErrorPct)
+		add(mape, harness.MetricTTFT, e.TTFTErrorPct)
+		add(shape, harness.MetricTPOT, e.TPOTShapeErrorPct)
+		add(shape, harness.MetricTTFT, e.TTFTShapeErrorPct)
+	}
+	return shape, mape, ""
+}
+
+// pointError is one simulated point's errors, in percent. Each is nil where the point does not
+// enter that error: no measured absolute latency (mape), the sweep's anchor (shape, zero by
+// construction), or a measured TTFT spike (both TTFT errors).
+type pointError struct {
+	TPOTErrorPct      *float64 `json:"tpot_error_pct"`
+	TTFTErrorPct      *float64 `json:"ttft_error_pct"`
+	TPOTShapeErrorPct *float64 `json:"tpot_shape_error_pct"`
+	TTFTShapeErrorPct *float64 `json:"ttft_shape_error_pct"`
+}
+
+// pointErrors computes simulatedErrors' errors point by point. A non-positive measured relative
+// past the anchor makes the sweep unscorable and is returned as bad.
+func pointErrors(sw harness.Sweep, obs []harness.Observation, measured *harness.Absolutes,
+	spike map[int]bool) ([]pointError, string) {
+	pct := func(v float64) *float64 { v = (v - 1) * 100; return &v }
+	out := make([]pointError, len(obs))
 	var anchorTPOT, anchorTTFT float64
 	for j, p := range sw.Points[:len(obs)] {
-		o := obs[j]
+		o, e := obs[j], &out[j]
 		if v, ok := measured.At(harness.MetricTPOT, p.Concurrency); ok {
-			mape[harness.MetricTPOT] = append(mape[harness.MetricTPOT], (o.MeanTPOTUs/v-1)*100)
+			e.TPOTErrorPct = pct(o.MeanTPOTUs / v)
 		}
 		if v, ok := measured.At(harness.MetricTTFT, p.Concurrency); ok && !spike[j] {
-			mape[harness.MetricTTFT] = append(mape[harness.MetricTTFT], (o.MeanTTFTUs/v-1)*100)
+			e.TTFTErrorPct = pct(o.MeanTTFTUs / v)
 		}
 		if j == 0 {
 			anchorTPOT, anchorTTFT = o.MeanTPOTUs, o.MeanTTFTUs
@@ -693,12 +757,92 @@ func simulatedErrors(sw harness.Sweep, obs []harness.Observation, measured *harn
 		mt, _, _ := p.MetricOf(harness.MetricTPOT)
 		tt, _, _ := p.MetricOf(harness.MetricTTFT)
 		if mt <= 0 || tt <= 0 {
-			return nil, nil, fmt.Sprintf("c=%d: measured TPOT relative %v, TTFT relative %v", p.Concurrency, mt, tt)
+			return nil, fmt.Sprintf("c=%d: measured TPOT relative %v, TTFT relative %v", p.Concurrency, mt, tt)
 		}
-		shape[harness.MetricTPOT] = append(shape[harness.MetricTPOT], (o.MeanTPOTUs/anchorTPOT/mt-1)*100)
+		e.TPOTShapeErrorPct = pct(o.MeanTPOTUs / anchorTPOT / mt)
 		if !spike[j] {
-			shape[harness.MetricTTFT] = append(shape[harness.MetricTTFT], (o.MeanTTFTUs/anchorTTFT/tt-1)*100)
+			e.TTFTShapeErrorPct = pct(o.MeanTTFTUs / anchorTTFT / tt)
 		}
 	}
-	return shape, mape, ""
+	return out, ""
+}
+
+// pointRecord is one scored point of the simulated arm, as -json writes it: the sweep's
+// deployment, the tier the sweep was scored in, the measured and predicted latencies, and
+// pointError's errors. Measured values are nil where -absolutes has none for the point.
+type pointRecord struct {
+	Scenario    string         `json:"scenario"`
+	Model       string         `json:"model"`
+	GPU         string         `json:"gpu"`
+	Workload    string         `json:"workload"`
+	Label       string         `json:"label"`
+	Framework   string         `json:"framework"`
+	Precision   string         `json:"precision"`
+	Serving     string         `json:"serving"`
+	SpecMethod  string         `json:"spec_method"`
+	Parallelism map[string]int `json:"parallelism"`
+	Tier        string         `json:"tier"`
+	Concurrency int            `json:"concurrency"`
+
+	MeasuredTPOTUs  *float64 `json:"measured_tpot_us"`
+	MeasuredTTFTUs  *float64 `json:"measured_ttft_us"`
+	PredictedTPOTUs float64  `json:"predicted_tpot_us"`
+	PredictedTTFTUs float64  `json:"predicted_ttft_us"`
+	// TTFTSpike marks a point whose MEASURED TTFT is an isolated excursion
+	// (harness.Sweep.TTFTSpikeIndices), left out of both TTFT errors for every arm.
+	TTFTSpike bool `json:"ttft_spike"`
+	pointError
+}
+
+// pointRecords is one scored sweep's points for -json, in point order.
+func pointRecords(sw harness.Sweep, tier harness.Tier, obs []harness.Observation,
+	measured *harness.Absolutes, spike map[int]bool) ([]pointRecord, string) {
+	per, bad := pointErrors(sw, obs, measured, spike)
+	if bad != "" {
+		return nil, bad
+	}
+	at := func(m harness.Metric, c int) *float64 {
+		if v, ok := measured.At(m, c); ok {
+			return &v
+		}
+		return nil
+	}
+	out := make([]pointRecord, len(per))
+	for j, e := range per {
+		c := sw.Points[j].Concurrency
+		out[j] = pointRecord{
+			Scenario: sw.Scenario, Model: sw.Model, GPU: sw.GPU, Workload: sw.Workload,
+			Label: sw.Label, Framework: sw.Framework, Precision: sw.Precision,
+			Serving: sw.Serving, SpecMethod: sw.SpecMethod, Parallelism: sw.Parallelism,
+			Tier: tier.String(), Concurrency: c,
+			MeasuredTPOTUs: at(harness.MetricTPOT, c), MeasuredTTFTUs: at(harness.MetricTTFT, c),
+			PredictedTPOTUs: obs[j].MeanTPOTUs, PredictedTTFTUs: obs[j].MeanTTFTUs,
+			TTFTSpike: spike[j], pointError: e,
+		}
+	}
+	return out, ""
+}
+
+// writeJSONReport writes r to path. Points keep corpus order and encoding/json sorts map keys,
+// so the same run writes the same bytes (INV-6).
+func writeJSONReport(path string, r jsonReport) error {
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("-json: encoding: %w", err)
+	}
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+		return fmt.Errorf("-json: %w", err)
+	}
+	return nil
+}
+
+// jsonReport is the document -json writes: the run's framework and configuration-tier filter,
+// the corpus provenance the text report prints, and every scored point of the simulated arm.
+type jsonReport struct {
+	SchemaVersion int           `json:"schema_version"`
+	Framework     string        `json:"framework"`
+	ConfigTier    string        `json:"config_tier"`
+	Corpus        string        `json:"corpus"`
+	GroundTruth   string        `json:"ground_truth"`
+	Points        []pointRecord `json:"points"`
 }
