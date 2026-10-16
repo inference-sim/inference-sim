@@ -72,9 +72,10 @@ const (
 type Placement struct {
 	Decode  InstanceID
 	Prefill InstanceID
-	// Encode is the encoder the router chose for a multimodal request, or empty. Encoding costs
-	// no simulated time: the choice is recorded (trace, ParentRequest.EncodeInstanceID).
-	Encode InstanceID
+	// Encode are the encoders the router chose for a multimodal request, in its order, or none.
+	// Encoding costs no simulated time: the choice is recorded (trace,
+	// ParentRequest.EncodeInstanceIDs).
+	Encode []InstanceID
 	// Scores maps instance IDs to the scores the primary scheduling profile gave them, for the
 	// decision trace. May be nil.
 	Scores map[string]float64
@@ -346,7 +347,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 	parent := NewParentRequest(req, cs.config.BlockSizeTokens)
 	parent.DecodeInstanceID = p.Decode
 	parent.PrefillInstanceID = p.Prefill
-	parent.EncodeInstanceID = p.Encode
+	parent.EncodeInstanceIDs = p.Encode
 	cs.parentRequests[parent.ID] = parent
 
 	// The prefill sub-request computes the prompt and completes without output. InputTokens is
@@ -417,10 +418,10 @@ func (cs *ClusterSimulator) recordRouting(req *sim.Request, p Placement) {
 		record.Candidates, record.Regret = cs.counterfactual(string(p.Decode), p.Scores, k)
 	}
 	cs.trace.RecordRouting(record)
-	if p.Encode != "" {
-		// The encode stage costs nothing (option A, as BLIS's own encode stage did): the record
-		// is the router's encoder choice.
-		cs.trace.RecordEncodeRouting(trace.EncodeRoutingRecord{ParentRequestID: req.ID, Clock: cs.clock, ChosenInstance: string(p.Encode)})
+	// The encode stage costs nothing (option A, as BLIS's own encode stage did): one record per
+	// encoder the router chose, in its order.
+	for _, enc := range p.Encode {
+		cs.trace.RecordEncodeRouting(trace.EncodeRoutingRecord{ParentRequestID: req.ID, Clock: cs.clock, ChosenInstance: string(enc)})
 	}
 }
 

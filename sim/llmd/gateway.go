@@ -686,17 +686,24 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 		}
 	}
 	for _, name := range routing.HeaderNames(routing.EncoderEndpointsHeader) {
-		if hp, ok := metadata.GetLowerCaseHeaderValue(reqCtx.Request.Headers, name); ok && hp != "" {
-			encode := g.instanceAt(strings.Split(hp, ",")[0])
-			if encode == nil {
-				panic(fmt.Sprintf("llmd: the router picked encoder %q for %s, which is no simulated endpoint", hp, f.req.ID))
-			}
-			p.Encode = encode.ID()
-			if g.observe != nil {
-				g.observe("encode", fmt.Sprintf("%s %s", f.req.ID, encode.ID()))
-			}
-			break
+		hp, ok := metadata.GetLowerCaseHeaderValue(reqCtx.Request.Headers, name)
+		if !ok || hp == "" {
+			continue
 		}
+		// Every encoder the router chose, in its order, as the encode sidecar uses them all.
+		var ids []string
+		for _, target := range strings.Split(hp, ",") {
+			encode := g.instanceAt(strings.TrimSpace(target))
+			if encode == nil {
+				panic(fmt.Sprintf("llmd: the router picked encoder %q for %s, which is no simulated endpoint", target, f.req.ID))
+			}
+			p.Encode = append(p.Encode, encode.ID())
+			ids = append(ids, string(encode.ID()))
+		}
+		if g.observe != nil {
+			g.observe("encode", fmt.Sprintf("%s %s", f.req.ID, strings.Join(ids, ",")))
+		}
+		break
 	}
 	if err := g.applyModelRewrite(f); err != nil {
 		panic(err.Error())

@@ -117,7 +117,7 @@ Everything the router reads comes from the simulated engines, with real engine s
   items (its estimate backend from the parts; a vLLM render backend from BLIS's simulated
   renderer, which renders the request's tokens with each modality's placeholder span, after the
   text, and a hash of that span). With an encode pool, `always-disagg-multimodal-decider` then
-  sends such a request to an encode pod the router picks (`x-llm-d-encoder-hosts-ports`); as in
+  sends such a request to the encode pods the router picks (every one in `x-llm-d-encoder-hosts-ports`, in order); as in
   BLIS's own encode stage, encoding takes no simulated time, and the choice is recorded in the
   decision trace and on the request.
 - **Prompt content.** BLIS token values are placeholders: a workload models prompt lengths and

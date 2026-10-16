@@ -45,9 +45,9 @@ type ParentRequest struct {
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 
-	// EncodeInstanceID is the encode endpoint the gateway chose, empty when the request was
-	// not encoded. GAP-4, issue #1264.
-	EncodeInstanceID InstanceID
+	// EncodeInstanceIDs are the encoders the router chose for a multimodal request, in the
+	// router's order (x-llm-d-encoder-hosts-ports), empty when it was not encoded.
+	EncodeInstanceIDs []InstanceID
 }
 
 // NewParentRequest creates a ParentRequest from the original request.
