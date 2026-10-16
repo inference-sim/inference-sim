@@ -2,7 +2,8 @@ Provenance: vendor_spec
 TFlopsPeak: 989.5
 TFlopsFP8: 1979.0
 BwPeakTBs: 3.35
-MemoryGiB: 80.0
+_comment_memory: "MemoryGiB is the device total the CUDA driver reports (torch.cuda total_memory), which is what vLLM v0.31.0 multiplies by gpu_memory_utilization (requested = ceil(total_memory x gmu), vllm/v1/worker/utils.py:539-558), not the datasheet's 80 GB: 85,029,158,912 B = 79.1896 GiB on H100 SXM5 80GB HBM3 (vLLM usage stats 'gpu_memory_per_device': 85029158912, https://github.com/vllm-project/vllm/issues/26836; vLLM start-up logs 'Free memory on device (76.0/79.19 GiB)', InferenceX DeepSeek-V4.1-Flash H100 runs, https://github.com/SemiAnalysisAI/InferenceX/actions/runs/35314892357). Measured, not vendor_spec; the rest of this file is vendor_spec."
+MemoryGiB: 79.1895752
 _comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 4 link as a per-GPU NOMINAL unidirectional bandwidth in GB/s: 900 GB/s bidirectional datasheet spec => 450 unidirectional per GPU. vendor_spec (bidirectional / 2), NOT measured effective throughput; any measured correction is a per-cluster blis-registry number. The inter-node fabric figure and the intra:inter ratio it feeds (#1530) live with the reusable Network fabric class (networks/ib-400g.yaml), paired with this chip per deployment (a cluster/pool concept, #1662)."
 IntraNodeBwGBps: 450
 _comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GH100 die as shipped in this part, from the NVIDIA datasheet (https://resources.nvidia.com/en-us-tensor-core/nvidia-tensor-core-gpu-datasheet). H100 SXM5 enables 132 of the GH100 die's 144 SMs. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."

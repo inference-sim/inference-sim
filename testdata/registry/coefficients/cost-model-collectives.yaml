@@ -3153,6 +3153,86 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA H100 80GB HBM3)", role: primary}
       rationale: >
         143.00 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.482x under the two-parameter form to 1.294x. Below the asymptote, which is 0.79 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
+  - moe_a2a_floor_deepep_high_throughput_8rank_h100:
+      value: 349.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_ht, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP high-throughput (intranode, 20 SMs). Its floor is mostly the host synchronisation dispatch makes to size the receive buffer (notify_dispatch, then a CPU spin on moe_recv_counter), which vLLM v0.31.0 always runs eager at dp > 1 (vllm/config/compilation.py:1237-1253), so the measured eager floor is the cost it pays. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 263.4 us + 393.6 GB/s and combine 85.6 us + 255.3 GB/s per phase (mean |log| 0.148 / 0.147), summed. Fitted on 35 (shape, token) rows; Held out by token count: median 12.7%, max 43.7%; by hidden size (6144): median 14.9%, max 35.8%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_rate_deepep_high_throughput_8rank_h100:
+      value: 154800.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_ht, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP high-throughput (intranode, 20 SMs). Its floor is mostly the host synchronisation dispatch makes to size the receive buffer (notify_dispatch, then a CPU spin on moe_recv_counter), which vLLM v0.31.0 always runs eager at dp > 1 (vllm/config/compilation.py:1237-1253), so the measured eager floor is the cost it pays. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 263.4 us + 393.6 GB/s and combine 85.6 us + 255.3 GB/s per phase (mean |log| 0.148 / 0.147), summed. Fitted on 35 (shape, token) rows; Held out by token count: median 12.7%, max 43.7%; by hidden size (6144): median 14.9%, max 35.8%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_floor_deepep_low_latency_8rank_h100:
+      value: 108.1
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_ll, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP low-latency (NVLink intranode, allow_nvlink_for_low_latency_mode=True as v0.31.0 builds it, all2all.py:316-327). Measured EAGER: the floor includes vLLM's host issue time, which a captured graph does not pay, so under CUDA graphs it is an upper bound. Measured to 256 tokens per rank; above that the rate is extrapolated. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 61.8 us + 202.4 GB/s and combine 46.3 us + 237.3 GB/s per phase (mean |log| 0.129 / 0.275), summed. Fitted on 40 (shape, token) rows; Held out by token count: median 14.8%, max 48.4%; by hidden size (6144): median 11.7%, max 32.5%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_rate_deepep_low_latency_8rank_h100:
+      value: 109200.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_ll, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP low-latency (NVLink intranode, allow_nvlink_for_low_latency_mode=True as v0.31.0 builds it, all2all.py:316-327). Measured EAGER: the floor includes vLLM's host issue time, which a captured graph does not pay, so under CUDA graphs it is an upper bound. Measured to 256 tokens per rank; above that the rate is extrapolated. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 61.8 us + 202.4 GB/s and combine 46.3 us + 237.3 GB/s per phase (mean |log| 0.129 / 0.275), summed. Fitted on 40 (shape, token) rows; Held out by token count: median 14.8%, max 48.4%; by hidden size (6144): median 11.7%, max 32.5%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_floor_deepep_v2_eager_8rank_h100:
+      value: 439.8
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_v2_context, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP v2 ElasticBuffer with use_cudagraph False (do_expand, CPU sync): what v0.31.0 runs under enforce_eager (all2all_utils.py:286-298). v0.24.0's eager prepare rebuilt topk_idx with one fill_ per local expert where v0.31.0 runs one repeat_interleave, so this floor overstates v0.31.0 by up to that many small launches. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 358.5 us + 367.9 GB/s and combine 81.4 us + 189.1 GB/s per phase (mean |log| 0.186 / 0.268), summed. Fitted on 35 (shape, token) rows; Held out by token count: median 9.9%, max 53.0%; by hidden size (6144): median 12.2%, max 40.7%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_rate_deepep_v2_eager_8rank_h100:
+      value: 124900.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_v2_context, EP8 one node, BF16", role: primary}
+      rationale: >
+        DeepEP v2 ElasticBuffer with use_cudagraph False (do_expand, CPU sync): what v0.31.0 runs under enforce_eager (all2all_utils.py:286-298). v0.24.0's eager prepare rebuilt topk_idx with one fill_ per local expert where v0.31.0 runs one repeat_interleave, so this floor overstates v0.31.0 by up to that many small launches. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 358.5 us + 367.9 GB/s and combine 81.4 us + 189.1 GB/s per phase (mean |log| 0.186 / 0.268), summed. Fitted on 35 (shape, token) rows; Held out by token count: median 9.9%, max 53.0%; by hidden size (6144): median 12.2%, max 40.7%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_floor_deepep_v2_graph_8rank_h100:
+      value: 333.5
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_v2_generation, EP8 one node, BF16", role: primary}
+      rationale: >
+        LOW CONFIDENCE: the one variant outside the declared median band (held out ~25%), on rows whose own same-bytes scatter is 61% median; landed as a large improvement over the generic price, not as validated. DeepEP v2 ElasticBuffer with use_cudagraph True (no expand, no CPU sync): what v0.31.0 runs at every step size whenever enforce_eager is off (all2all_utils.py:286-298). Measured eager and to 256 tokens per rank only, so the floor is an upper bound under graphs and the rate is extrapolated above 256 tokens; v0.31.0 also overlaps this combine with the shared expert (deepep_v2.py finalize_async), which the synchronous v0.24.0 rows do not. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 237.6 us + 440.4 GB/s and combine 95.9 us + 91.4 GB/s per phase (mean |log| 0.252 / 0.437), summed. Fitted on 40 (shape, token) rows; Held out by token count: median 24.7%, max 60.5%; by hidden size (6144): median 26.0%, max 58.5%. Reproduce with scripts/fit_deepep_a2a.py.
+  - moe_a2a_rate_deepep_v2_graph_8rank_h100:
+      value: 75670.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/moe_a2a_perf.parquet (aisimulate 95b7f839, sha256 c077f3e4a57d), backend deepep_v2_generation, EP8 one node, BF16", role: primary}
+      rationale: >
+        LOW CONFIDENCE: the one variant outside the declared median band (held out ~25%), on rows whose own same-bytes scatter is 61% median; landed as a large improvement over the generic price, not as validated. DeepEP v2 ElasticBuffer with use_cudagraph True (no expand, no CPU sync): what v0.31.0 runs at every step size whenever enforce_eager is off (all2all_utils.py:286-298). Measured eager and to 256 tokens per rank only, so the floor is an upper bound under graphs and the rate is extrapolated above 256 tokens; v0.31.0 also overlaps this combine with the shared expert (deepep_v2.py finalize_async), which the synchronous v0.24.0 rows do not. One MoE layer's dispatch plus combine as floor + tokens x hidden x 2 x top_k / rate, per-rank tokens: dispatch 237.6 us + 440.4 GB/s and combine 95.9 us + 91.4 GB/s per phase (mean |log| 0.252 / 0.437), summed. Fitted on 40 (shape, token) rows; Held out by token count: median 24.7%, max 60.5%; by hidden size (6144): median 26.0%, max 58.5%. Reproduce with scripts/fit_deepep_a2a.py.
   - collective_floor_alltoall_int8_2rank_h100:
       value: 6.24
       units: us_per_transfer

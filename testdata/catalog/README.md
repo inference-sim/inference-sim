@@ -22,7 +22,7 @@ and registry its fixtures resolve against, and
 `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/kernelmodel`) fails when this
 copy's `.upstream-commit` differs from it. While a pinned kernel pre-release lags the unreleased catalog it was developed against,
 `testdata/upstream-prerelease.lock` names that commit instead (currently `dsv41/agentx-workload`
-`a2ef6d3`); the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`
+`3f8cb20`); the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`
 (`cmd`) requires the copy to load with no problems through the production readers.
 
 ## Updating

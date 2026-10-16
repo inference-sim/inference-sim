@@ -2,9 +2,9 @@
 #
 # Upstreams vendored ahead of blis-latency-kernel's testdata/upstream.lock (same format:
 # <dest> <repository> <branch> <commit> [paths]). The pinned kernel pre-release
-# (v0.2.1-0.20261016002255-ce085ccd7830) still locks blis-catalog 0.2.2 and blis-registry
+# (v0.2.1-0.20261016183352-35c8bf3e3956) still locks blis-catalog 0.2.2 and blis-registry
 # v0.1.2; the dsv41 work was developed against these unreleased PR heads. Delete a line when
 # the kernel's lock names its release; TestTheVendoredCatalogAndRegistryAreTheLockedReleases
 # fails while a line restates the kernel's lock.
-catalog  https://github.com/inference-sim/blis-catalog  dsv41/agentx-workload  a2ef6d3443a9832dabccd04fe75918a9e3bcc701
-registry https://github.com/inference-sim/blis-registry dsv41/h100-coefficients fb107030d6cb0f3d1a3bed86ec65457b28b00301
+catalog  https://github.com/inference-sim/blis-catalog  dsv41/agentx-workload  3f8cb20eb028102369d5614538e8e98c2aa3203f
+registry https://github.com/inference-sim/blis-registry dsv41/h100-coefficients 3742c65e7858512f00bf4aea8eda24735a749e3c
