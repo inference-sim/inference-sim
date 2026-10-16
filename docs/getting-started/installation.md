@@ -63,10 +63,17 @@ revision and whether it was dirty — see [Results](../guide/results.md); a `--d
 tag clone still carries the revision, so that provenance is unaffected.)
 
 BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
-clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.1.1`**, the release blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested
-against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
-repository's test suite holds its vendored catalog and registry to it.
+clone for its fitted coefficients (`--registry`, required). Its compatible release is the one
+blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested against; that pair is
+recorded in the kernel's own `testdata/upstream.lock`, and this repository's test suite holds
+its vendored catalog and registry to it.
+
+<!-- Canonical declaration. cmd.TestDocExamplesPinTheRegistryVersion reads the tag from the
+     line below, requires it to equal the registry release blis-latency-kernel's
+     upstream.lock pins, and requires every documented blis-registry clone to pin exactly it,
+     so keep the `**Compatible blis-registry release: `<tag>`**` shape intact when bumping. -->
+
+**Compatible blis-registry release: `v0.1.1`** — [release notes](https://github.com/inference-sim/blis-registry/releases/tag/v0.1.1).
 
 ```bash
 git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git

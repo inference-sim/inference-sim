@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 )
 
 // docExampleRoots is the LIVE documentation set whose `blis run` / `blis replay` examples
@@ -382,6 +384,86 @@ func TestDocExamplesPinTheCatalogVersion(t *testing.T) {
 				"the page lost an instruction a reader needs, or catalogCloneCommand no longer "+
 				"matches how it is written (in which case its pin is unchecked)", entry)
 		}
+	}
+}
+
+// canonicalRegistryPin extracts the declared blis-registry release from
+// catalogCompatibilityDoc: the same page and the same one-line shape as canonicalCatalogPin,
+// so a bump edits one line and a reworded declaration fails rather than matching nothing.
+var canonicalRegistryPin = regexp.MustCompile("(?m)^\\*\\*Compatible blis-registry release: `([^`]+)`\\*\\*")
+
+// registryCloneCommand matches a documented `git clone` of the coefficient registry. Like
+// catalogCloneCommand it requires the full repository URL, and it is matched against the
+// reconstructed command docLogicalLines produces.
+var registryCloneCommand = regexp.MustCompile(`git clone\b[^\n]*github\.com/inference-sim/blis-registry`)
+
+// TestDocExamplesPinTheRegistryVersion is #1965, the registry counterpart of
+// TestDocExamplesPinTheCatalogVersion: installation.md declares the compatible blis-registry
+// release once, every documented clone of the registry pins exactly that tag, and the tag is
+// the one blis-latency-kernel's testdata/upstream.lock pins.
+//
+// The last check is what the catalog guard does not need and this one does. The registry
+// release is not BLIS's to choose: the kernel go.mod requires is tested against exactly one,
+// recorded in its lock. Agreement among the docs alone would let a go.mod kernel bump leave
+// every documented clone on the old registry, so the declaration is held to the lock and the
+// bump fails here until the docs follow.
+func TestDocExamplesPinTheRegistryVersion(t *testing.T) {
+	declaration, err := os.ReadFile(catalogCompatibilityDoc)
+	if err != nil {
+		t.Fatalf("read %s: %v (catalogCompatibilityDoc is stale)", catalogCompatibilityDoc, err)
+	}
+	match := canonicalRegistryPin.FindStringSubmatch(string(declaration))
+	if match == nil {
+		t.Fatalf("%s must declare the compatible registry release on its own line, as "+
+			"**Compatible blis-registry release: `<tag>`** — it is the single place the version "+
+			"is stated, and every documented clone command is checked against it", catalogCompatibilityDoc)
+	}
+	tag := match[1]
+
+	locked, err := kernelmodel.LockedUpstreams()
+	if err != nil {
+		t.Fatalf("read blis-latency-kernel's upstream.lock: %v", err)
+	}
+	registry, ok := locked["registry"]
+	if !ok {
+		t.Fatal("blis-latency-kernel's upstream.lock pins no registry release")
+	}
+	if tag != registry.Tag {
+		t.Errorf("%s declares blis-registry release %q, but the kernel go.mod requires is locked "+
+			"to %q (blis-latency-kernel testdata/upstream.lock). The declaration must name the "+
+			"release the kernel is tested against", catalogCompatibilityDoc, tag, registry.Tag)
+	}
+
+	// Every documented clone of the registry pins that exact tag.
+	clones := 0
+	for _, file := range collectDocFiles(t) {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, command := range docLogicalLines(string(src)) {
+			if !registryCloneCommand.MatchString(command.text) {
+				continue
+			}
+			clones++
+			pinned, ok := catalogClonePin(command.text)
+			if !ok {
+				t.Errorf("%s:%d: documented blis-registry clone is unpinned — it takes whatever "+
+					"`main` is at clone time, not the release the kernel is tested against. "+
+					"Pin it with `--branch %s`:\n  %s", file, command.num, tag, collapse(command.text))
+				continue
+			}
+			if pinned != tag {
+				t.Errorf("%s:%d: documented blis-registry clone pins release %q, but the canonical "+
+					"declaration in %s says %q. One version, stated once:\n  %s",
+					file, command.num, pinned, catalogCompatibilityDoc, tag, collapse(command.text))
+			}
+		}
+	}
+	if clones == 0 {
+		t.Error("non-vacuity: found no documented blis-registry clone command — either the docs " +
+			"lost the instruction a reader needs, or registryCloneCommand no longer matches how " +
+			"it is written (in which case every pin is unchecked)")
 	}
 }
 
