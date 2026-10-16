@@ -146,8 +146,9 @@ type KVEventSource interface {
 	CPUBlockHashes() []string
 }
 
-// KVAborter is a KV store that can release a request's blocks whose KV never arrived (a
-// transfer cancelled before it completed), forgetting their prefix hashes.
-type KVAborter interface {
-	AbortKVBlocks(req *Request)
+// PendingKVStore is a KV store that can reserve a request's prompt blocks for KV a transfer will
+// deliver without caching them, and cache them once the KV has arrived.
+type PendingKVStore interface {
+	ReservePendingKVBlocks(req *Request) bool
+	CommitPendingKVBlocks(req *Request)
 }

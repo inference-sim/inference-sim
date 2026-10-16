@@ -392,16 +392,12 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID, startBlock int
 		// (cache.go lazy deletion). Without this, HashToBlock retains a stale
 		// entry mapping the old hash to this block's ID even though the block
 		// is about to be overwritten with different content.
-		if gpuBlk.Hash != "" {
-			t.gpu.dropHash(gpuBlk.Hash)
-			gpuBlk.Hash = ""
-		}
+		t.gpu.uncacheBlock(gpuBlk)
 
 		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
-		gpuBlk.Hash = h
 		gpuBlk.RefCount = 0
 		gpuBlk.InUse = false
-		t.gpu.storeHash(prevHash, h, gpuBlk.ID, gpuBlk.Tokens)
+		t.gpu.cacheBlock(gpuBlk, prevHash, h)
 		t.gpu.appendToFreeList(gpuBlk)
 
 		// Accumulate transfer latency through the checked shared boundary. The constructor
@@ -429,8 +425,13 @@ func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	return t.gpu.SnapshotCachedBlocksFn()
 }
 
-// AbortKVBlocks implements sim.KVAborter: KV that never arrived lives only on the GPU tier.
-func (t *TieredKVCache) AbortKVBlocks(req *sim.Request) { t.gpu.AbortKVBlocks(req) }
+// ReservePendingKVBlocks implements sim.PendingKVStore: a transfer's destination is GPU blocks.
+func (t *TieredKVCache) ReservePendingKVBlocks(req *sim.Request) bool {
+	return t.gpu.ReservePendingKVBlocks(req)
+}
+
+// CommitPendingKVBlocks implements sim.PendingKVStore.
+func (t *TieredKVCache) CommitPendingKVBlocks(req *sim.Request) { t.gpu.CommitPendingKVBlocks(req) }
 
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)

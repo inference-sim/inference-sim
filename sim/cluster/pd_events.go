@@ -319,5 +319,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	decodeInst.CommitTransferredKV(decodeSubReq) // the KV has arrived: its blocks are now cached
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }

@@ -474,7 +474,9 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 		req.ProgressIndex = 0
 		return true
 	}
-	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
+	// The blocks are reserved for KV still in transfer: not cached until it arrives
+	// (CommitTransferredKV), so no request can hit them, as in vLLM.
+	ok := i.pendingKV().ReservePendingKVBlocks(req)
 	if ok {
 		req.ProgressIndex = inputLen
 	}
@@ -490,15 +492,25 @@ func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 }
 
 // AbortReservedKV cancels a reservation whose transfer was evicted before it completed at time
-// now: its blocks are freed and, since their KV never arrived, their prefix hashes forgotten (a
-// removed KV event cancels the stored one), and the engine publishes its state after the abort.
+// now: its blocks are freed (they were never cached, ReserveTransferredKV), and the engine
+// publishes its state after the abort.
 func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
-	a, ok := i.sim.KVCache.(sim.KVAborter)
-	if !ok {
-		panic(fmt.Sprintf("AbortReservedKV: KV cache %T cannot abort a reservation", i.sim.KVCache))
-	}
-	a.AbortKVBlocks(req)
+	i.sim.KVCache.ReleaseKVBlocks(req)
 	i.sim.NoteAbort(now)
+}
+
+// CommitTransferredKV caches a decode sub-request's reserved prompt blocks once its KV transfer
+// has completed.
+func (i *InstanceSimulator) CommitTransferredKV(req *sim.Request) {
+	i.pendingKV().CommitPendingKVBlocks(req)
+}
+
+func (i *InstanceSimulator) pendingKV() sim.PendingKVStore {
+	p, ok := i.sim.KVCache.(sim.PendingKVStore)
+	if !ok {
+		panic(fmt.Sprintf("KV cache %T cannot reserve KV for a transfer", i.sim.KVCache))
+	}
+	return p
 }
 
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.

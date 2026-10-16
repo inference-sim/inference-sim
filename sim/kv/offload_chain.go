@@ -213,11 +213,16 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
 
-// AbortKVBlocks implements sim.KVAborter: KV that never arrived lives only on the GPU tier.
-func (o *OffloadCache) AbortKVBlocks(req *sim.Request) { o.gpu.AbortKVBlocks(req) }
-func (o *OffloadCache) BlockSize() int64               { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64              { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64           { return o.gpu.TotalCapacity() }
+// ReservePendingKVBlocks implements sim.PendingKVStore: a transfer's destination is GPU blocks.
+func (o *OffloadCache) ReservePendingKVBlocks(req *sim.Request) bool {
+	return o.gpu.ReservePendingKVBlocks(req)
+}
+
+// CommitPendingKVBlocks implements sim.PendingKVStore.
+func (o *OffloadCache) CommitPendingKVBlocks(req *sim.Request) { o.gpu.CommitPendingKVBlocks(req) }
+func (o *OffloadCache) BlockSize() int64                       { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64                      { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64                   { return o.gpu.TotalCapacity() }
 
 // ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
 // pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the
@@ -506,20 +511,16 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 				return reloaded
 			}
 			// Lazy hash deletion (vLLM parity): clear a stale hash before refilling.
-			if gpuBlk.Hash != "" {
-				o.gpu.dropHash(gpuBlk.Hash)
-				gpuBlk.Hash = ""
-			}
+			o.gpu.uncacheBlock(gpuBlk)
 			start := i * bs
 			gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
-			gpuBlk.Hash = h
 			gpuBlk.RefCount = 0
 			gpuBlk.InUse = false
 			parent := prevHash
 			if i > startBlock {
 				parent = string(tailKeys[i-startBlock-1])
 			}
-			o.gpu.storeHash(parent, h, gpuBlk.ID, gpuBlk.Tokens)
+			o.gpu.cacheBlock(gpuBlk, parent, h)
 			o.gpu.appendToFreeList(gpuBlk)
 			o.cpu.touchKey(key) // block is hot: refresh LRU recency
 			o.reloadCount++

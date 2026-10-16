@@ -49,6 +49,13 @@ type KVCacheState struct {
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
 	// events records changes to HashToBlock's key set once EnableKVEvents is called (nil: off).
 	events *[]sim.KVEvent
+	// holders are, per content hash, the blocks holding that content (their Hash): HashToBlock
+	// maps a hash to one of them. Several hold the same content when a block is filled without
+	// reusing a cached one (a KV transfer's destination).
+	holders map[string]map[int64]struct{}
+	// pending suppresses hashing while a KV transfer's destination blocks are reserved: their KV
+	// has not arrived (ReservePendingKVBlocks).
+	pending bool
 }
 
 // EnableKVEvents implements sim.KVEventSource.
@@ -360,8 +367,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					prevHash = kvc.Blocks[ids[len(ids)-2]].Hash
 				}
 				h := hash.HashBlock(prevHash, latestBlk.Tokens)
-				latestBlk.Hash = h
-				kvc.storeHash(prevHash, h, latestBlk.ID, latestBlk.Tokens)
+				kvc.cacheBlock(latestBlk, prevHash, h)
 			}
 		} else {
 			// latest block is full or request is coming in for the first time.
@@ -391,11 +397,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// semantics (block_pool.py:331-356). Hash was preserved in
 				// popFreeBlock so preempted requests could find their cached
 				// prefix blocks on readmission.
-				if blk.Hash != "" {
-					h := blk.Hash
-					blk.Hash = ""
-					kvc.releaseHash(h, blk.ID)
-				}
+				kvc.uncacheBlock(blk)
 
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
@@ -410,13 +412,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.InUse = true
 				kvc.CacheMisses++
 
-				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() && !kvc.pending {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).
 					h := hash.HashBlock(prevHash, blk.Tokens)
-					blk.Hash = h
-					kvc.storeHash(prevHash, h, blk.ID, blk.Tokens)
+					kvc.cacheBlock(blk, prevHash, h)
 					prevHash = h
 				}
 				// allocated is the block IDs allocated for this request
@@ -499,47 +500,73 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	}
 }
 
-// AbortKVBlocks releases req's blocks like ReleaseKVBlocks, for KV that never arrived (a transfer
-// cancelled before it completed): a released block's content was never computed, so it gives up
-// its hash (releaseHash) -- kept cached when an earlier block still holds the content.
-func (kvc *KVCacheState) AbortKVBlocks(req *sim.Request) {
-	ids := kvc.RequestMap[req.ID]
-	kvc.ReleaseKVBlocks(req)
-	for _, id := range ids {
+// cacheBlock makes blk, full with content hash h chained from parent, a cached prefix block.
+func (kvc *KVCacheState) cacheBlock(blk *KVBlock, parent, h string) {
+	blk.Hash = h
+	if kvc.holders == nil {
+		kvc.holders = map[string]map[int64]struct{}{}
+	}
+	if kvc.holders[h] == nil {
+		kvc.holders[h] = map[int64]struct{}{}
+	}
+	kvc.holders[h][blk.ID] = struct{}{}
+	kvc.storeHash(parent, h, blk.ID, blk.Tokens)
+}
+
+// uncacheBlock is blk giving up its content (its slot is reused). A hash maps to one block, but
+// several may hold the same content; as vLLM, which keeps every block of a hash, the content
+// stays cached while any block holds it: the hash moves to the lowest-numbered remaining holder,
+// with no event, and is forgotten (a removed KV event) only with its last holder.
+func (kvc *KVCacheState) uncacheBlock(blk *KVBlock) {
+	h := blk.Hash
+	if h == "" {
+		return
+	}
+	blk.Hash = ""
+	held := kvc.holders[h]
+	delete(held, blk.ID)
+	if len(held) == 0 {
+		delete(kvc.holders, h)
+	}
+	if owner, ok := kvc.HashToBlock[h]; !ok || owner != blk.ID {
+		return
+	}
+	if len(held) == 0 {
+		kvc.dropHash(h)
+		return
+	}
+	next := int64(-1)
+	for id := range held {
+		if next < 0 || id < next {
+			next = id
+		}
+	}
+	kvc.HashToBlock[h] = next
+}
+
+// ReservePendingKVBlocks allocates req's prompt blocks [0, inputLen) for KV a transfer will
+// deliver, filled but not cached: until the KV arrives (CommitPendingKVBlocks) no request can hit
+// them, and none of them is published. Released before then (an aborted transfer), they leave
+// the prefix cache as it was.
+func (kvc *KVCacheState) ReservePendingKVBlocks(req *sim.Request) bool {
+	kvc.pending = true
+	defer func() { kvc.pending = false }()
+	return kvc.AllocateKVBlocks(req, 0, req.InputLen(), nil)
+}
+
+// CommitPendingKVBlocks caches req's reserved prompt blocks once their KV has arrived, in prompt
+// order, as vLLM caches a remote-KV request's blocks when their load completes.
+func (kvc *KVCacheState) CommitPendingKVBlocks(req *sim.Request) {
+	prevHash := ""
+	for _, id := range kvc.RequestMap[req.ID] {
 		blk := kvc.Blocks[id]
-		if blk.RefCount > 0 || blk.Hash == "" {
-			continue
+		if util.Len64(blk.Tokens) < kvc.BlockSizeTokens {
+			return // only full prompt blocks are cached
 		}
-		h := blk.Hash
-		blk.Hash, blk.Tokens = "", nil
-		kvc.releaseHash(h, id)
+		h := hash.HashBlock(prevHash, blk.Tokens)
+		kvc.cacheBlock(blk, prevHash, h)
+		prevHash = h
 	}
-}
-
-// releaseHash is block id giving up content hash h (its slot is reused, or its KV never
-// arrived). A hash maps to one block, but several may hold the same content (a transfer reserves
-// blocks without reusing cached ones); as vLLM, which keeps every block of a hash, the content
-// stays cached while any block holds it: the hash moves to another holder, with no event, and is
-// forgotten (a removed KV event) only with its last holder.
-func (kvc *KVCacheState) releaseHash(h string, id int64) {
-	if owner, ok := kvc.HashToBlock[h]; !ok || owner != id {
-		return
-	}
-	if other, ok := kvc.blockHolding(h); ok {
-		kvc.HashToBlock[h] = other
-		return
-	}
-	kvc.dropHash(h)
-}
-
-// blockHolding returns the lowest-numbered block whose content has hash h, if any.
-func (kvc *KVCacheState) blockHolding(h string) (int64, bool) {
-	for _, blk := range kvc.Blocks {
-		if blk.Hash == h {
-			return blk.ID, true
-		}
-	}
-	return 0, false
 }
 
 // BlockSize returns the number of tokens per block.
