@@ -586,3 +586,11 @@ func (t *TieredKVCache) MirrorToCPU(batch []*sim.Request) {
 		}
 	}
 }
+
+// ReconcilePrefixHit implements sim.PrefixHitReconciler on the GPU tier.
+func (t *TieredKVCache) ReconcilePrefixHit(req *sim.Request, cached []int64) []int64 {
+	return t.gpu.ReconcilePrefixHit(req, cached)
+}
+
+// PrefixReplayTokens implements sim.PrefixHitReconciler on the GPU tier.
+func (t *TieredKVCache) PrefixReplayTokens() int64 { return t.gpu.PrefixReplayTokens() }

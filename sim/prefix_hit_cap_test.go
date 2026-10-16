@@ -77,3 +77,55 @@ func TestAPartlyCachedPromptKeepsItsWholeBlockHit(t *testing.T) {
 		t.Errorf("holds %d blocks, want 3", used)
 	}
 }
+
+// DeepSeek-V4.1's SWA bounded replay computes a hit's last window again without storing it
+// again (vLLM v0.31.0 sched/scheduler.py:1059-1079, 3038-3050): the admission bills the
+// replayed tokens and the uncached tail, claims the whole hit, allocates only the tail, and
+// still reports the whole hit. A step budget that ends inside the replay skips it.
+func TestBoundedReplayRecomputesTheHitsLastWindow(t *testing.T) {
+	const blockSize, replay = 4, 8
+	prompt := make([]TokenID, 40)
+	for i := range prompt {
+		prompt[i] = TokenID(i + 1)
+	}
+	for _, tt := range []struct {
+		name           string
+		budget, billed int64
+		wantComputed   int64
+	}{
+		{"budget covers the replay", 64, replay + 8, 48},
+		{"budget ends inside the replay", replay, replay, 48},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			kv := NewKVStoreFromConfig(NewKVCacheConfig(32, blockSize, 0, 0, 0, 0,
+				WithPrefixHit(KVPrefixHit{ReplayTokens: replay})), 0)
+			first := &Request{ID: "a", InputTokens: append([]TokenID(nil), prompt...)}
+			if !kv.AllocateKVBlocks(first, 0, 40, nil) {
+				t.Fatal("setup allocation refused")
+			}
+			kv.ReleaseKVBlocks(first)
+			in := append(append([]TokenID(nil), prompt...), 101, 102, 103, 104, 105, 106, 107, 108)
+			req := &Request{ID: "b", InputTokens: in, OutputTokens: make([]TokenID, 2), State: StateQueued}
+			wq := &WaitQueue{}
+			wq.Enqueue(req)
+			ctx := BatchContext{RunningBatch: &Batch{}, WaitQ: wq, KVCache: kv,
+				MaxNumBatchedTokens: tt.budget, MaxNumSeqs: 4, ComputedTokens: map[string]int64{}}
+			res := NewBatchFormation("").FormBatch(ctx)
+			if len(res.NewlyScheduled) != 1 {
+				t.Fatalf("the request was not admitted")
+			}
+			if int64(req.NumNewTokens) != tt.billed {
+				t.Errorf("billed %d prompt tokens, want %d", req.NumNewTokens, tt.billed)
+			}
+			if got := ctx.ComputedTokens[req.ID]; got != tt.wantComputed {
+				t.Errorf("computed tokens %d after admission, want %d", got, tt.wantComputed)
+			}
+			if got := res.NewlyScheduled[0].Lookup.HitTokens; got != 40 {
+				t.Errorf("reported hit %d, want the whole 40-token hit", got)
+			}
+			if used := kv.UsedBlocks(); used != 12 {
+				t.Errorf("holds %d blocks, want the prompt's 12 (the replay stores nothing)", used)
+			}
+		})
+	}
+}
