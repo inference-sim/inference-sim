@@ -96,22 +96,25 @@ func NewRoundRobinPolicy() *RoundRobinPolicy {
 	return &RoundRobinPolicy{cursors: make(map[int]string)}
 }
 
+// Pick resumes after the last-selected flow. llm-d keeps an emptied flow's key in the band
+// until the flow is garbage-collected, so its cursor resumes after a drained flow too; BLIS
+// drops empty flows, so the scan starts at the first key after lastSelected in sorted
+// order, which is the same flow. A pick that finds no non-empty flow resets the cursor
+// (v0.10.0:pkg/epp/framework/plugins/flowcontrol/fairness/roundrobin/roundrobin.go:78-128).
 func (rr *RoundRobinPolicy) Pick(band *priorityBand) *flowQueue {
 	keys := sortedFlowKeys(band.flows)
 	if len(keys) == 0 {
+		delete(rr.cursors, band.priority)
 		return nil
 	}
 
-	lastSelected := rr.cursors[band.priority]
 	startIndex := 0
-	if lastSelected != "" {
-		for i, k := range keys {
-			if k == lastSelected {
-				startIndex = (i + 1) % len(keys)
-				break
-			}
+	if lastSelected, ok := rr.cursors[band.priority]; ok {
+		i := sort.SearchStrings(keys, lastSelected)
+		if i < len(keys) && keys[i] == lastSelected {
+			i++
 		}
-		// If lastSelected not found (flow removed), startIndex stays 0.
+		startIndex = i % len(keys)
 	}
 
 	for i := 0; i < len(keys); i++ {
@@ -516,12 +519,10 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 // (work conservation — same as GIE's "select failure → continue").
 // Returns nil if saturated or queue empty.
 func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
-	if q.totalLen == 0 {
-		return nil
-	}
-
+	// An empty queue still runs the cycle: llm-d's dispatch cycle picks in every band under
+	// its ceiling whether or not it holds work, resetting round-robin cursors.
 	numBands := len(q.bands)
-	if numBands == 0 {
+	if numBands == 0 && q.totalLen > 0 {
 		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but no bands — INV-16 violation: counter desync", q.totalLen))
 	}
 
@@ -547,7 +548,11 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		}
 
 		// Work conservation: skip empty bands (matches GIE's "select failure → continue").
+		// llm-d still asks the band's fairness policy to pick (selectItem runs for every band
+		// under its ceiling, v0.10.0:pkg/epp/flowcontrol/controller/internal/processor.go:402-442),
+		// which resets a round-robin cursor.
 		if band.totalLen == 0 {
+			q.bandFairness(band).Pick(band)
 			continue
 		}
 
@@ -616,12 +621,16 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 }
 
 // dequeueFromBand delegates within-band flow selection to the configured FairnessPolicy.
-func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
-	policy := q.fairnessPolicy
+// bandFairness is the band's own fairness policy, else the queue's.
+func (q *GatewayQueue) bandFairness(band *priorityBand) FairnessPolicy {
 	if l, ok := q.bandLimits[band.priority]; ok && l.fairness != nil {
-		policy = l.fairness
+		return l.fairness
 	}
-	flow := policy.Pick(band)
+	return q.fairnessPolicy
+}
+
+func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
+	flow := q.bandFairness(band).Pick(band)
 	if flow == nil {
 		return nil
 	}
@@ -771,4 +780,60 @@ func (q *GatewayQueue) RemoveByRequestID(id string) *sim.Request {
 	}
 
 	panic(fmt.Sprintf("RemoveByRequestID: requestIndex contains %q but request not found in flow (band=%d, tenant=%q)", id, loc.bandPriority, loc.tenantID))
+}
+
+// buildGatewayQueue builds the flow-control gateway queue a deployment configures: its
+// capacities, fairness, ceilings and priority bands (llm-d flowControl via ApplyEPPIngest,
+// or the --flow-control flags).
+func buildGatewayQueue(config DeploymentConfig, dispatchOrder string, priorityMap *sim.SLOPriorityMap) *GatewayQueue {
+	gq := NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, priorityMap)
+	if config.FlowControlSLOTargets != nil {
+		gq.SetSLOTargets(config.FlowControlSLOTargets)
+	}
+	if config.FlowControlPerBandCapacity > 0 {
+		gq.SetPerBandCapacity(config.FlowControlPerBandCapacity)
+	}
+	if config.FlowControlUsageLimitThreshold > 0 && config.FlowControlUsageLimitThreshold < 1.0 {
+		gq.SetUsageLimitThreshold(config.FlowControlUsageLimitThreshold)
+	}
+	switch config.FlowControlFairnessPolicy {
+	case "round-robin":
+		gq.SetFairnessPolicy(NewRoundRobinPolicy())
+	case "", "global-strict":
+		// default — already set
+	default:
+		panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
+	}
+	if config.FlowControlQueueShedding {
+		gq.SetSheddingEnabled(true)
+	}
+	if config.FlowControlMaxBytes > 0 || config.FlowControlPerBandMaxBytes > 0 {
+		gq.SetByteCapacity(config.FlowControlMaxBytes, config.FlowControlPerBandMaxBytes)
+	}
+	if config.FlowControlUniformCeiling > 0 {
+		gq.SetUniformCeiling(config.FlowControlUniformCeiling)
+	}
+	for _, band := range config.FlowControlBands {
+		var fp FairnessPolicy
+		switch band.Fairness {
+		case "round-robin":
+			fp = NewRoundRobinPolicy()
+		case "", "global-strict":
+		default:
+			panic(fmt.Sprintf("ClusterSimulator: unknown band fairness %q", band.Fairness))
+		}
+		gq.SetBandLimits(band.Priority, band.MaxRequests, band.MaxBytes, fp)
+	}
+	return gq
+}
+
+// NewConformanceGatewayQueue builds the gateway queue an EPP-ingested deployment runs, for
+// the differential conformance harness (test/llmd-conformance), which drives it and llm-d's
+// flow controller through the same request sequence. Not used by the simulator.
+func NewConformanceGatewayQueue(config DeploymentConfig) *GatewayQueue {
+	order := config.FlowControlDispatchOrder
+	if order == "" {
+		order = "fifo"
+	}
+	return buildGatewayQueue(config, order, sim.DefaultSLOPriorityMap())
 }

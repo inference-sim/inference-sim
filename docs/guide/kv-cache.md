@@ -224,6 +224,9 @@ Chunked prefill splits long prefills into smaller chunks:
 !!! info "Chunked prefill benefits TTFT, not ITL"
     With `--long-prefill-token-threshold=256`, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (<0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.
 
+!!! note "A lone request is not chunked"
+    As in vLLM v0.31.0 (#57951), the threshold applies only when the engine's scheduler holds another request, running or waiting. A request alone takes the whole `max_num_batched_tokens` budget, since there is nobody for it to starve.
+
 ## Batch Formation Parameters
 
 KV cache pressure is directly coupled to batch formation. The scenario pool's `engine.max_num_seqs` (maximum requests in the running batch) and `engine.max_num_batched_tokens` (token budget per step) are the primary capacity knobs, with vLLM's meaning. Reducing them decreases KV cache pressure but also reduces throughput.

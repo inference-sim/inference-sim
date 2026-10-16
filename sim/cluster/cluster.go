@@ -640,31 +640,11 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			dispatchOrder = "fifo"
 		}
 		cs.flowControlEnabled = true
-		gq := NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
-		if config.FlowControlSLOTargets != nil {
-			gq.SetSLOTargets(config.FlowControlSLOTargets)
-		}
-		if config.FlowControlPerBandCapacity > 0 {
-			gq.SetPerBandCapacity(config.FlowControlPerBandCapacity)
-		}
-		if config.FlowControlUsageLimitThreshold > 0 && config.FlowControlUsageLimitThreshold < 1.0 {
-			gq.SetUsageLimitThreshold(config.FlowControlUsageLimitThreshold)
-		}
-		switch config.FlowControlFairnessPolicy {
-		case "round-robin":
-			gq.SetFairnessPolicy(NewRoundRobinPolicy())
-		case "", "global-strict":
-			// default — already set
-		default:
-			panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
-		}
+		gq := buildGatewayQueue(config, dispatchOrder, cs.priorityMap)
 		cs.gatewayQueue = gq
 		cs.requestTTL = config.FlowControlRequestTTL
 		if cs.requestTTL < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: FlowControlRequestTTL must be >= 0, got %d", cs.requestTTL))
-		}
-		if config.FlowControlQueueShedding {
-			gq.SetSheddingEnabled(true)
 		}
 		cs.dispatchTickInterval = config.FlowControlDispatchTickInterval
 		if cs.dispatchTickInterval < 0 {
@@ -682,23 +662,6 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 				config.FlowControlKVCacheUtilThreshold,
 				config.FlowControlMaxConcurrency,
 			)
-		}
-		if config.FlowControlMaxBytes > 0 || config.FlowControlPerBandMaxBytes > 0 {
-			gq.SetByteCapacity(config.FlowControlMaxBytes, config.FlowControlPerBandMaxBytes)
-		}
-		if config.FlowControlUniformCeiling > 0 {
-			gq.SetUniformCeiling(config.FlowControlUniformCeiling)
-		}
-		for _, band := range config.FlowControlBands {
-			var fp FairnessPolicy
-			switch band.Fairness {
-			case "round-robin":
-				fp = NewRoundRobinPolicy()
-			case "", "global-strict":
-			default:
-				panic(fmt.Sprintf("ClusterSimulator: unknown band fairness %q", band.Fairness))
-			}
-			gq.SetBandLimits(band.Priority, band.MaxRequests, band.MaxBytes, fp)
 		}
 		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
