@@ -114,6 +114,12 @@ nav:
       - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md
+  - Validation:
+      - validation/index.md
+      - "InferenceX DSV4.1 Agentic": validation/inferencex-agentic.md
+      - "InferenceX Single-Turn": validation/inferencex-single-turn.md
+      - "Internal llm-d Deployments": validation/internal-deployments.md
+      - "llm-d Prism": validation/llm-d-prism.md
   - Reference:
       - reference/index.md
       - Project Structure: reference/project-structure.md
