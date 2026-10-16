@@ -57,6 +57,7 @@ type ClusterSimulator struct {
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
+	pdEvictedAfterPrefill     int                       // INV-1: parents the gateway evicted in transfer or decode (counted gatewayEvicted)
 	// transfersInitiated counts every request that reaches
 	// KVTransferStartedEvent (issue #1343: both successful reservations
 	// that enter the transfer pipeline AND drop-at-start cases where the
@@ -822,7 +823,9 @@ func (c *ClusterSimulator) Run() error {
 	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
 	// - timed-out decodes: counted in pdDecodeTimedOutCount; already in instance
 	//   TimedOutRequests via aggregateMetrics(). Subtracted here to keep pdInTransfer = 0.
-	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
+	// - gateway-evicted in transfer or decode: counted in pdEvictedAfterPrefill and in
+	//   gatewayEvicted. Subtracted here.
+	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - c.pdEvictedAfterPrefill - len(c.pendingDecodeCompletions)
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
 	} else if pdInTransfer < 0 {

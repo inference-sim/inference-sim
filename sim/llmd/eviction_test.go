@@ -29,12 +29,33 @@ flowControl:
   enableEviction: true
 `
 
+// pdEvictionConfig is pdConfig with flow control and in-flight eviction.
+var pdEvictionConfig = "featureGates:\n- flowControl\nflowControl:\n  enableEviction: true\n" + pdConfig
+
+// victim is what an evicted request held on its engine just before and just after its eviction.
+type victim struct {
+	running              bool  // it had computed tokens
+	blocksBefore, after  int64 // the engine's used KV blocks
+	pinnedBefore, pinned bool  // its adapter pin
+	revoked              int
+}
+
+type evictionSetup struct {
+	config   string
+	pd       bool   // 2 prefill + 2 decode pods
+	adapter  string // the sheddable requests' LoRA adapter
+	capacity int    // adapter slots per engine
+	// kvBound runs every sheddable request at once on a small KV cache, so the pool saturates on
+	// KV utilization and the victims are running.
+	kvBound bool
+}
+
 // runEviction runs long sheddable requests that saturate the pool, then a burst of critical ones.
-func runEviction(t *testing.T, config string) (runResult, map[string]int) {
+func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) {
 	t.Helper()
 	var reqs []*sim.Request
 	for i, r := range testRequests(40, 5, 1000, 0) {
-		r.ID, r.SLOClass = fmt.Sprintf("sheddable_%d", i), "sheddable"
+		r.ID, r.SLOClass, r.Adapter = fmt.Sprintf("sheddable_%d", i), "sheddable", s.adapter
 		r.OutputTokens = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(int64(i))), 2000) // long-running
 		r.MaxOutputLen = len(r.OutputTokens)
 		reqs = append(reqs, r)
@@ -42,57 +63,139 @@ func runEviction(t *testing.T, config string) (runResult, map[string]int) {
 	for i, r := range testRequests(40, 6, 500, 0) {
 		r.ID, r.SLOClass = fmt.Sprintf("critical_%d", i), "critical"
 		r.ArrivalTime += 200_000
+		if s.kvBound {
+			r.ArrivalTime += 600_000 // once the running requests' KV has grown
+		}
 		reqs = append(reqs, r)
 	}
 	dep := testDeployment(2)
+	labels := func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} }
+	if s.pd {
+		dep = testDeployment(4)
+		dep.PrefillInstances, dep.DecodeInstances = 2, 2
+		dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+		labels = func(id cluster.InstanceID, role cluster.PoolRole) map[string]string {
+			l := map[string]string{"app": "vllm"}
+			for k, v := range roleLabels(id, role) {
+				l[k] = v
+			}
+			return l
+		}
+	}
 	dep.BatchConfig = sim.NewBatchConfig(8, 2048, 0)
+	if s.kvBound {
+		dep.BatchConfig = sim.NewBatchConfig(64, 8192, 0)
+		dep.KVCacheConfig = sim.NewKVCacheConfig(800, 16, 0, 0, 0, 0)
+	}
+	if s.adapter != "" {
+		capacity, base, bw, fp := s.capacity, 1000.0, 2.0e6, 2.0e6
+		dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+			LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []sim.AdapterSpec{{ID: s.adapter, Rank: 8}}}
+	}
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{
 		Model:     "test-model",
-		EPPFlags:  []string{"--pool-name=vllm", "--config-text=" + config},
+		EPPFlags:  []string{"--pool-name=vllm", "--config-text=" + s.config},
 		Manifests: []byte(poolManifests),
-		PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
+		PodLabels: labels,
 	})
-	evicted := map[string]int{}
-	gw.observe = func(kind, detail string) {
-		if kind == "evict" {
-			evicted[detail]++
+	byID := map[string]*sim.Request{}
+	for _, r := range reqs {
+		byID[r.ID] = r
+	}
+	// engine is the request (or, disaggregated, its active sub-request) on an engine, and that engine.
+	engine := func(r *sim.Request) (*sim.Request, *cluster.InstanceSimulator) {
+		for _, p := range cs.ParentRequests() {
+			if p.ID == r.ID {
+				switch {
+				case p.DecodeSubReq != nil:
+					r = p.DecodeSubReq
+				case p.PrefillSubReq != nil:
+					r = p.PrefillSubReq
+				}
+			}
+		}
+		for _, inst := range cs.Instances() {
+			if string(inst.ID()) == r.AssignedInstance {
+				return r, inst
+			}
+		}
+		return r, nil
+	}
+	victims := map[string]*victim{}
+	gw.observe = func(kind, id string) {
+		switch kind {
+		case "evict":
+			v := victims[id]
+			if v == nil {
+				v = &victim{}
+				victims[id] = v
+			}
+			r, inst := engine(byID[id])
+			v.running, v.pinnedBefore = r.ProgressIndex > 0, r.AdapterPinned()
+			if inst != nil {
+				v.blocksBefore = inst.UsedKVBlocks()
+			}
+		case "evicted":
+			v := victims[id]
+			v.revoked++
+			r, inst := engine(byID[id])
+			v.pinned = r.AdapterPinned()
+			if inst != nil {
+				v.after = inst.UsedKVBlocks()
+			}
 		}
 	}
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	return runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}, evicted
+	for id, v := range victims {
+		if v.revoked == 0 {
+			delete(victims, id) // signalled, but it completed before it could be revoked
+		}
+	}
+	return runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}, victims
 }
 
-// TestFlowControl_InFlightEviction (Discussion #1933 §5.7): with enableEviction, the router
-// revokes in-flight sheddable requests while critical ones wait on the saturated pool. Each
-// victim is a dispatched sheddable request, revoked once and counted gateway-evicted (INV-1); its
-// engine frees its KV blocks; the router's response lifecycle for it ends (nothing stays tracked
-// as in flight); and the run is deterministic.
-func TestFlowControl_InFlightEviction(t *testing.T) {
-	res, evicted := runEviction(t, evictionConfig)
+// checkEviction: victims are dispatched sheddable requests, each revoked once and counted
+// gateway-evicted (INV-1); a running victim's KV blocks and adapter pin are released at its
+// eviction; the router's response lifecycle ends for every request; the run is deterministic.
+func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
+	t.Helper()
+	res, victims := runEviction(t, s)
 	assertConservation(t, res, len(res.reqs))
 	if res.cs.GatewayEvicted() == 0 {
 		t.Fatal("no request was evicted in flight; the test does not exercise the path")
 	}
-	if len(evicted) != res.cs.GatewayEvicted() {
-		t.Errorf("%d requests revoked, %d counted gateway-evicted", len(evicted), res.cs.GatewayEvicted())
+	if len(victims) != res.cs.GatewayEvicted() {
+		t.Errorf("%d requests revoked, %d counted gateway-evicted", len(victims), res.cs.GatewayEvicted())
 	}
-	byID := map[string]*sim.Request{}
+	running := 0
 	for _, r := range res.reqs {
-		byID[r.ID] = r
-	}
-	for id, n := range evicted {
-		r := byID[id]
-		if n != 1 || r.SLOClass != "sheddable" || r.AssignedInstance == "" {
-			t.Errorf("%s revoked %d times (class %s, instance %q); want each victim a dispatched sheddable request, once", id, n, r.SLOClass, r.AssignedInstance)
+		v := victims[r.ID]
+		if v == nil {
+			continue
+		}
+		if v.revoked != 1 || r.SLOClass != "sheddable" {
+			t.Errorf("%s (class %s) revoked %d times; want each victim a sheddable request, once", r.ID, r.SLOClass, v.revoked)
+		}
+		if v.running {
+			running++
+			if v.after >= v.blocksBefore {
+				t.Errorf("%s: running victim's engine holds %d KV blocks after its eviction, %d before", r.ID, v.after, v.blocksBefore)
+			}
+		}
+		if v.pinned || (s.adapter != "" && v.running && !v.pinnedBefore) {
+			t.Errorf("%s: adapter pin before eviction %v, after %v; want a running victim's pin released", r.ID, v.pinnedBefore, v.pinned)
 		}
 	}
+	if running == 0 {
+		t.Error("no running victim was evicted; the check of released resources would be vacuous")
+	}
 	for _, inst := range res.cs.Instances() {
-		if u := inst.KVUtilization(); u != 0 {
-			t.Errorf("%s: KV utilization %g at the end; evicted requests must free their blocks", inst.ID(), u)
+		if u := inst.UsedKVBlocks(); u != 0 {
+			t.Errorf("%s: %d KV blocks used at the end", inst.ID(), u)
 		}
 	}
 	if inFlight, _ := res.gw.emb.RequestEvictor.Stats(); inFlight != 0 {
@@ -101,14 +204,28 @@ func TestFlowControl_InFlightEviction(t *testing.T) {
 	if res.gw.LiveCoroutines() != 0 || len(res.gw.flights) != 0 {
 		t.Errorf("%d coroutines, %d flights left after the run", res.gw.LiveCoroutines(), len(res.gw.flights))
 	}
-	again, evicted2 := runEviction(t, evictionConfig)
-	if len(evicted2) != len(evicted) || again.metrics.CompletedRequests != res.metrics.CompletedRequests {
-		t.Fatalf("two identical runs differ: %d vs %d evicted", len(evicted), len(evicted2))
+	again, victims2 := runEviction(t, s)
+	if len(victims2) != len(victims) || again.metrics.CompletedRequests != res.metrics.CompletedRequests {
+		t.Fatalf("two identical runs differ: %d vs %d evicted", len(victims), len(victims2))
 	}
 	for i := range res.reqs {
 		if res.reqs[i].AssignedInstance != again.reqs[i].AssignedInstance || res.reqs[i].GatewayDispatchTime != again.reqs[i].GatewayDispatchTime {
 			t.Fatalf("%s: placed differently in two identical runs", res.reqs[i].ID)
 		}
 	}
-	t.Logf("evicted %d sheddable requests in flight; completed %d", len(evicted), res.metrics.CompletedRequests)
+	t.Logf("evicted %d sheddable requests in flight (%d running); completed %d", len(victims), running, res.metrics.CompletedRequests)
+	return victims
+}
+
+// TestFlowControl_InFlightEviction (Discussion #1933 §5.7): with enableEviction the router revokes
+// in-flight sheddable requests while critical ones wait on the saturated pool; running victims,
+// pinning a LoRA adapter, release their KV blocks and pin when revoked.
+func TestFlowControl_InFlightEviction(t *testing.T) {
+	checkEviction(t, evictionSetup{config: evictionConfig, adapter: "a0", capacity: 2, kvBound: true})
+}
+
+// TestFlowControl_InFlightEvictionDisaggregated: a disaggregated victim is revoked at the stage
+// it is in (its prefill, its KV transfer, or its decode), releasing what that stage holds, once.
+func TestFlowControl_InFlightEvictionDisaggregated(t *testing.T) {
+	checkEviction(t, evictionSetup{config: pdEvictionConfig, pd: true})
 }

@@ -245,20 +245,78 @@ func (cs *ClusterSimulator) Abort(err error) {
 	}
 }
 
-// Evict implements GatewayHost.
+// Evict implements GatewayHost. A disaggregated request is evicted at the stage it is in.
 func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
+	if parent := cs.parentRequests[req.ID]; parent != nil && parent.OriginalRequest == req {
+		if !cs.evictParent(parent) {
+			return false
+		}
+		cs.gatewayEvicted++
+		cs.recordShed(req)
+		cs.parentDone(parent, cs.clock, DoneEvicted)
+		return true
+	}
 	inst := cs.instanceByID(InstanceID(req.AssignedInstance))
 	if inst == nil || !inst.EvictRequest(req) {
 		return false
 	}
-	cs.inFlightRequests[req.AssignedInstance]--
-	if cs.inFlightRequests[req.AssignedInstance] < 0 {
-		cs.inFlightRequests[req.AssignedInstance] = 0
-	}
+	cs.releaseInFlight(req.AssignedInstance)
 	cs.gatewayEvicted++
 	cs.recordShed(req)
 	cs.gateway.OnDone(req, cs.clock, DoneEvicted)
 	return true
+}
+
+// evictParent stops a disaggregated request at its current stage, releasing what that stage
+// holds: the prefill sub-request on its prefill engine (no transfer starts); the decode KV
+// reserved for a transfer in flight (its completion then finds nothing to promote); or the decode
+// sub-request on its decode engine. It reports false when the request is between stages (on its
+// way to an engine, or in the step that computes its prefill, whose end starts the transfer) or
+// has finished; the gateway retries.
+func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
+	if parent.gatewayDone {
+		return false
+	}
+	prefill, decode := parent.PrefillSubReq, parent.DecodeSubReq
+	switch _, prefilling := cs.pendingPrefillCompletions[parent.PrefillSubReqID]; {
+	case prefilling:
+		inst := cs.instanceByID(InstanceID(prefill.AssignedInstance))
+		if inst == nil || !inst.EvictRequest(prefill) {
+			return false // not yet in its prefill engine's queue
+		}
+		delete(cs.pendingPrefillCompletions, parent.PrefillSubReqID)
+		cs.releaseInFlight(prefill.AssignedInstance)
+	case decode == nil:
+		return false // its prefill is computing in the current step; its transfer starts at the step's end
+	case decode.State == sim.StateWaitingForRemoteKVs:
+		inst := cs.instanceByID(parent.DecodeInstanceID)
+		if inst == nil {
+			return false
+		}
+		inst.ReleaseReservedKV(decode)
+		parent.DecodeSubReq = nil
+		cs.pdEvictedAfterPrefill++
+	default:
+		if _, decoding := cs.pendingDecodeCompletions[parent.DecodeSubReqID]; !decoding {
+			return false
+		}
+		inst := cs.instanceByID(parent.DecodeInstanceID)
+		if inst == nil || !inst.EvictRequest(decode) {
+			return false
+		}
+		delete(cs.pendingDecodeCompletions, parent.DecodeSubReqID)
+		cs.releaseInFlight(string(parent.DecodeInstanceID))
+		cs.pdEvictedAfterPrefill++
+	}
+	parent.CompletionTime = cs.clock
+	return true
+}
+
+func (cs *ClusterSimulator) releaseInFlight(id string) {
+	cs.inFlightRequests[id]--
+	if cs.inFlightRequests[id] < 0 {
+		cs.inFlightRequests[id] = 0
+	}
 }
 
 func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {

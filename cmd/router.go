@@ -28,8 +28,8 @@ var (
 	eppManifestPaths []string // --epp-manifests: Kubernetes manifest files
 	podLabelPairs    []string // --pod-labels: extra labels on every model-server pod
 	gatewayLatencyUs int64    // --gateway-latency
-	scrapeJitterUs   int64
-	kvEventDelayUs   int64 // --epp-scrape-jitter
+	scrapeJitterUs   int64 // --epp-scrape-jitter
+	kvEventDelayUs   int64 // --kv-event-delay
 )
 
 // registerRouterFlags registers the router inputs on run and replay (INV-13).

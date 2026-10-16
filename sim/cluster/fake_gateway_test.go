@@ -32,6 +32,12 @@ type fakeGateway struct {
 	abortWith error
 	// heldUntil, when set, is reported through GatewayHoldHorizon.
 	heldUntil int64
+	// evictAfterUs, when positive, evicts every dispatched request that long after its dispatch,
+	// retrying while it is between stages; evictOK records whether each eviction took, and done
+	// each request's outcome.
+	evictAfterUs int64
+	evictOK      map[string]bool
+	done         map[string]DoneOutcome
 }
 
 func (g *fakeGateway) HeldUntil(int64) int64 { return g.heldUntil }
@@ -105,6 +111,26 @@ func (g *fakeGateway) decide(req *sim.Request) {
 		p.Prefill = prefill
 	}
 	g.host.Dispatch(req, p)
+	g.scheduleEviction(req)
+}
+
+func (g *fakeGateway) scheduleEviction(req *sim.Request) {
+	if g.evictAfterUs <= 0 {
+		return
+	}
+	var try func()
+	try = func() {
+		if g.evictOK == nil {
+			g.evictOK = map[string]bool{}
+		}
+		if _, ended := g.done[req.ID]; ended {
+			return
+		}
+		if g.evictOK[req.ID] = g.host.Evict(req); !g.evictOK[req.ID] {
+			g.host.Schedule(g.host.Now()+100, PriorityGatewayRequest, false, try) // between stages: retry
+		}
+	}
+	g.host.Schedule(g.host.Now()+g.evictAfterUs, PriorityGatewayRequest, false, try)
 }
 
 // pick returns the next routable instance with the role (0 = any) serving req's model.
@@ -130,9 +156,17 @@ func (g *fakeGateway) pick(req *sim.Request, role PoolRole) (InstanceID, bool) {
 	return candidates[i].ID(), true
 }
 
-func (g *fakeGateway) OnDispatched(*sim.Request, int64)        {}
-func (g *fakeGateway) OnFirstToken(*sim.Request, int64)        {}
-func (g *fakeGateway) OnDone(*sim.Request, int64, DoneOutcome) {}
-func (g *fakeGateway) OnInstanceChange(*InstanceSimulator)     {}
-func (g *fakeGateway) Pending() int                            { return g.held }
-func (g *fakeGateway) Stop()                                   {}
+func (g *fakeGateway) OnDispatched(*sim.Request, int64) {}
+func (g *fakeGateway) OnFirstToken(*sim.Request, int64) {}
+func (g *fakeGateway) OnDone(req *sim.Request, _ int64, o DoneOutcome) {
+	if g.done == nil {
+		g.done = map[string]DoneOutcome{}
+	}
+	if _, twice := g.done[req.ID]; twice {
+		panic("fakeGateway: " + req.ID + " ended twice")
+	}
+	g.done[req.ID] = o
+}
+func (g *fakeGateway) OnInstanceChange(*InstanceSimulator) {}
+func (g *fakeGateway) Pending() int                        { return g.held }
+func (g *fakeGateway) Stop()                               {}

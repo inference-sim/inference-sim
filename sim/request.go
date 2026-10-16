@@ -136,6 +136,9 @@ type Request struct {
 	specDecodeCarry float64
 }
 
+// AdapterPinned reports whether the request holds a pin on its LoRA adapter's resident slot.
+func (req *Request) AdapterPinned() bool { return req.adapterPinned }
+
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
 	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)

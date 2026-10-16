@@ -553,6 +553,9 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	return false
 }
 
+// UsedKVBlocks returns the KV blocks the instance's engine has allocated.
+func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVCache.UsedBlocks() }
+
 // EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
 func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
 	return i.sim.EngineMetricsAt(t)

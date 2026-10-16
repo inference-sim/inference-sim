@@ -1,6 +1,9 @@
 package sim
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 // EngineMetrics is the state a model server publishes on its Prometheus endpoint, as vLLM's
 // PrometheusStatLogger records it from the SchedulerStats of one engine step
@@ -98,10 +101,14 @@ func (sim *Simulator) AdapterCapacity() int {
 
 // SetKVEventSink makes the engine publish its prefix cache's KV events, as vLLM does: at the end
 // of every step that changed the set of cached block hashes, sink receives that step's events, in
-// order, with the time the step ends. A KV cache that cannot record events publishes none.
+// order, with the time the step ends. With prefix caching disabled the engine caches no block for
+// reuse and, as vLLM, publishes nothing.
 func (sim *Simulator) SetKVEventSink(sink func(at int64, events []KVEvent)) {
 	src, ok := sim.KVCache.(KVEventSource)
 	if !ok {
+		panic(fmt.Sprintf("SetKVEventSink: KV cache %T cannot publish KV events", sim.KVCache))
+	}
+	if sim.prefixCachingDisabled {
 		return
 	}
 	src.EnableKVEvents()

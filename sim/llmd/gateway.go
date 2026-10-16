@@ -320,13 +320,9 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	}
 	g.kvIngest = kvIngesters(emb.Handle)
 	g.kvHeld = map[cluster.InstanceID]map[string]int{}
-	if len(g.kvIngest) > 0 {
-		for _, inst := range host.Instances() {
-			if inst.AdapterCapacity() > 0 {
-				return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
-					"keys blocks by LoRA adapter, but the simulated engines' prefix caches do not, so their KV events " +
-					"cannot name the adapter a block belongs to")
-			}
+	for _, inst := range host.Instances() {
+		if err := g.checkPreciseLoRA(inst); err != nil {
+			return err
 		}
 	}
 	if err := validateTopology(emb, host); err != nil {
@@ -745,7 +741,11 @@ func (g *Gateway) evict(f *flight) {
 		g.observe("evict", f.req.ID)
 	}
 	if !g.host.Evict(f.req) {
-		f.evicting = false // not on an engine now (e.g. its KV in transfer): the next check retries
+		f.evicting = false // between stages at this instant: the next check retries
+		return
+	}
+	if g.observe != nil {
+		g.observe("evicted", f.req.ID)
 	}
 }
 
@@ -956,14 +956,30 @@ func (g *Gateway) requestHeaderMap(f *flight) map[string]string {
 		// The header is whole milliseconds; round up so a sub-millisecond target stays a target.
 		h[metadata.TTFTSLOHeaderKey] = strconv.FormatInt((f.req.SLOTargetUs+999)/1000, 10)
 	}
-	if left := f.req.Deadline - f.req.ArrivalTime; f.req.Deadline > 0 && left > 0 {
+	if f.req.Deadline > 0 {
 		// The client's lifetime for the request, as it sends it: flow control's queue budget
 		// becomes the shorter of this and the configured one (an EDF ordering policy orders by
 		// it). The router counts from its own enqueue, no earlier than the send, so the client
 		// still gives up first, at its deadline (clientDeadline).
-		h[metadata.InferenceTTLHeaderKey] = (time.Duration(left) * time.Microsecond).String()
+		if ttl, ok := requestTTL(f.req.Deadline - f.req.ArrivalTime); ok {
+			h[metadata.InferenceTTLHeaderKey] = ttl
+		}
 	}
 	return h
+}
+
+// maxTTLMicros is the longest lifetime a Go duration (nanoseconds in an int64) can carry.
+const maxTTLMicros = math.MaxInt64 / int64(time.Microsecond/time.Nanosecond)
+
+// requestTTL renders a client lifetime of lifeUs microseconds as x-llm-d-inference-ttl, a positive
+// Go duration. A lifetime that is not positive sends no header; one too long for a Go duration
+// (over about 292 years) sends none either: it bounds no queue budget the router can hold, as
+// with no client deadline.
+func requestTTL(lifeUs int64) (string, bool) {
+	if lifeUs <= 0 || lifeUs > maxTTLMicros {
+		return "", false
+	}
+	return (time.Duration(lifeUs) * time.Microsecond).String(), true
 }
 
 // requestBody is the OpenAI completions request a client sends for f: the prompt as token IDs,
@@ -1116,6 +1132,19 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 	}
 	if err := validateTopology(g.emb, g.host); err != nil {
 		return fmt.Errorf("instance %s, added during the run: %w", inst.ID(), err)
+	}
+	if err := g.checkPreciseLoRA(inst); err != nil {
+		return fmt.Errorf("instance %s, added during the run: %w", inst.ID(), err)
+	}
+	return nil
+}
+
+// checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters.
+func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
+	if len(g.kvIngest) > 0 && inst.AdapterCapacity() > 0 {
+		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
+			"keys blocks by LoRA adapter, but the simulated engines' prefix caches do not, so their KV events " +
+			"cannot name the adapter a block belongs to")
 	}
 	return nil
 }

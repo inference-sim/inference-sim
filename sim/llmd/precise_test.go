@@ -582,3 +582,37 @@ func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
 		})
 	}
 }
+
+// TestPrecisePrefix_NoEventsWithPrefixCachingDisabled: an engine launched without prefix caching
+// caches no block for reuse and, as vLLM, publishes no KV event; the router's index stays empty
+// and no request is scored for a hit the engine would not take.
+func TestPrecisePrefix_NoEventsWithPrefixCachingDisabled(t *testing.T) {
+	dep := testDeployment(2)
+	dep.BatchConfig = sim.NewBatchConfig(256, 2048, 0, sim.WithPrefixCachingDisabled(true))
+	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(prefixGroups(2, 8, 256, 20000)), nil)
+	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
+	delivered := 0
+	gw.observe = func(kind, detail string) {
+		switch kind {
+		case "kvdeliver":
+			delivered++
+		case "score":
+			if !strings.HasSuffix(detail, " 0") {
+				t.Errorf("scored for a prefix hit with prefix caching disabled: %s", detail)
+			}
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if delivered != 0 {
+		t.Errorf("%d KV event batches delivered with prefix caching disabled", delivered)
+	}
+	for _, inst := range cs.Instances() {
+		ep := gw.endpoints[inst.ID()]
+		if got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port)); err != nil || len(got) != 0 {
+			t.Errorf("%s: the router indexes %d blocks (%v)", inst.ID(), len(got), err)
+		}
+	}
+}

@@ -1,8 +1,10 @@
 package llmd
 
 import (
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -426,5 +428,33 @@ func TestClientDeadline_SameInstantAsTheDecision(t *testing.T) {
 	}
 	if dispatched != len(reqs) {
 		t.Fatalf("%d of %d dispatched", dispatched, len(reqs))
+	}
+}
+
+// TestRequestTTL: a client lifetime is sent as a positive Go duration, up to the longest a Go
+// duration holds; a longer one (which would overflow negative) and a non-positive one send none.
+func TestRequestTTL(t *testing.T) {
+	for _, tc := range []struct {
+		life int64
+		want string
+		ok   bool
+	}{
+		{30_000_000, "30s", true},
+		{1, "1µs", true},
+		{maxTTLMicros, (time.Duration(maxTTLMicros) * time.Microsecond).String(), true},
+		{maxTTLMicros + 1, "", false},
+		{math.MaxInt64, "", false},
+		{0, "", false},
+		{-5, "", false},
+	} {
+		got, ok := requestTTL(tc.life)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("requestTTL(%d) = %q, %v; want %q, %v", tc.life, got, ok, tc.want, tc.ok)
+		}
+		if ok {
+			if d, err := time.ParseDuration(got); err != nil || d <= 0 {
+				t.Errorf("requestTTL(%d) = %q: not a positive Go duration (%v, %v)", tc.life, got, d, err)
+			}
+		}
 	}
 }
