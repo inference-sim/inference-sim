@@ -408,3 +408,84 @@ func TestSpeculativeSlotsStopAtMaxModelLen(t *testing.T) {
 		}
 	}
 }
+
+// windowState is a bounded state that holds a block per block of tokens in flight, plus one,
+// and gates at one block: the shape of a sliding-window ring whose window covers a step.
+func windowState(bs int64) sim.KVSequenceState {
+	return sim.KVSequenceState{
+		Hold: func(_, inFlight int64) int64 { return (inFlight+bs-1)/bs + 1 },
+		Gate: func(int64) int64 { return 1 },
+	}
+}
+
+// #1955: a prefix an offload tier loads is computed, not in flight, so the state of the
+// request admitted over it is sized past the loaded tokens, as vLLM sizes a window group from
+// total_computed_tokens. A request whose sequence fits an empty pool is then admitted within
+// its load and one step, at every prompt length, chunk width, step and bandwidth. Charging the
+// loaded prefix as in flight sized the state at the whole prompt, which these pools cannot
+// hold, so the request was refused at every step however long the pool stayed empty.
+func TestLoadedPrefix_AFittingRequestIsAdmittedWithinItsLoad(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		const bs, perBlock = 2, 4096
+		bpc := rapid.Int64Range(1, 4).Draw(rt, "bpc")
+		chunks := rapid.Int64Range(2, 16).Draw(rt, "chunks")
+		promptBlocks := chunks * bpc
+		state := windowState(bs)
+		// The token blocks, the state past the loaded prefix and the gate fit; the state of
+		// the whole prompt in flight does not.
+		fits := promptBlocks + max(state.Hold(0, 1), state.Gate(0))
+		pool := rapid.Int64Range(fits, promptBlocks+state.Hold(0, promptBlocks*bs)-1).Draw(rt, "pool")
+		oc := chunkCache(pool, bs, bpc, 64, 0)
+		oc.gpu.SequenceState = state
+		bw := rapid.Int64Range(1, 20000).Draw(rt, "bytesPerTick")
+		withLoad := rapid.Bool().Draw(rt, "withLoad")
+		var load int64
+		if withLoad {
+			oc.cpuLoadTime = bandwidthLoad(bw)
+			load = oc.cpuLoadTime(promptBlocks * perBlock)
+		}
+		step := rapid.Int64Range(1, 5000).Draw(rt, "step")
+
+		tokens := seqTokens(1, int(promptBlocks*bs))
+		seedCPU(oc, tokens)
+		at := admitTick(oc, &sim.Request{ID: "r", InputTokens: tokens}, 0, step)
+		if at < 0 {
+			rt.Fatalf("a %d-block prompt loaded from CPU into an empty %d-block pool was never admitted", promptBlocks, pool)
+		}
+		if at > load+step {
+			rt.Fatalf("admitted at %d, past its %d-tick load and one %d-tick step", at, load, step)
+		}
+		if err := oc.gpu.verifyBlockConservation(); err != nil {
+			rt.Fatal(err)
+		}
+	})
+}
+
+// The legacy CPU tier sizes the state the same way (#1955).
+func TestLoadedPrefix_TheLegacyTierAdmitsAFittingRequest(t *testing.T) {
+	const bs = 4
+	gpu := NewKVCacheState(12, bs)
+	tiered := NewTieredKVCache(gpu, 20, 0.0, 1.0, 10)
+	prompt := seqTokens(1, 40) // 10 blocks: 10 + Hold(39, 1) = 12 fit; 10 + Hold(0, 40) = 21 do not
+	seed := &sim.Request{ID: "seed", InputTokens: prompt}
+	if !tiered.AllocateKVBlocks(seed, 0, 40, nil) {
+		t.Fatal("seed refused")
+	}
+	for _, id := range gpu.RequestMap["seed"] {
+		tiered.cpu.store(gpu.Blocks[id].Hash, append([]sim.TokenID(nil), gpu.Blocks[id].Tokens...))
+	}
+	tiered.ReleaseKVBlocks(seed)
+	for _, b := range gpu.Blocks {
+		gpu.dropHash(b)
+	}
+	gpu.SequenceState = windowState(bs)
+
+	req := &sim.Request{ID: "r", InputTokens: append([]sim.TokenID(nil), prompt...)}
+	if !tiered.AllocateKVBlocks(req, 0, 40, nil) {
+		t.Fatal("a prompt loaded from the CPU tier into an empty pool that holds it was refused")
+	}
+	if got, want := int64(len(gpu.StateBlocks["r"])), gpu.SequenceState.Hold(39, 1); got != want {
+		t.Errorf("the loaded request holds %d state blocks, want %d (sized past the loaded prefix)", got, want)
+	}
+	assertBlockConservation(t, gpu)
+}

@@ -74,6 +74,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
 | [INV-K6](#inv-k6-the-offload-tiers-hold-whole-chunks) The offload tiers hold whole chunks | Subsystem | KV cache / offload |
 | [INV-K7](#inv-k7-a-cpu-tier-hit-waits-for-its-load) A CPU-tier hit waits for its load | Subsystem | KV cache / offload |
+| [INV-K8](#inv-k8-a-loaded-prefix-is-computed-not-in-flight) A loaded prefix is computed, not in flight | Subsystem | KV cache / offload |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -344,6 +345,14 @@ vLLM v0.31.0 sources:
 **Enforced:** `sim/kv` `OffloadCache.beginCPULoad` / `cpuLoadPlan` / `PollDeferred` (`deferLoading`); `cmd` `priceOffload` installs `KVOffloadConfig.CPULoadTime`.
 
 **Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins` (`sim/kv`); `TestRunCmd_KernelBackend_CPUTierReloadIsPricedByTheHostTier` (`cmd`: halving `cpu_dram` read bandwidth strictly raises mean TTFT at a non-zero CPU-tier hit rate).
+
+#### INV-K8: A Loaded Prefix Is Computed, Not In Flight
+
+**Statement:** A new admission whose prefix an offload tier loads sizes its bounded state (INV-K3) from the end of the loaded prefix, capped below the prompt's last token, not from its GPU-cached prefix: the loaded tokens are computed, and only the tokens scheduled past them are in flight. vLLM v0.31.0 sizes a window group from `total_computed_tokens`, the local and external hits together, and skips the blocks the window has passed (`single_type_kv_cache_manager.py:178-245`). So a queued request whose sequence fits the pool is scheduled within its load and one step once the pool frees, and a CPU tier never leaves unstarted a request that starts without it. Charging the loaded prefix as in flight sized a DSV4 rank's state at the whole prompt, more than a DP rank's pool, and refused the request at every step of the run (#1955).
+
+**Enforced:** `sim/kv` `KVCacheState.loadedStateStart`, used by `OffloadCache.AllocateKVBlocks` and `TieredKVCache.AllocateKVBlocks` for the pre-check (`sequenceFits`) and the full-reload charge (`chargeSequence`).
+
+**Verification:** `TestLoadedPrefix_AFittingRequestIsAdmittedWithinItsLoad` (rapid), `TestLoadedPrefix_TheLegacyTierAdmitsAFittingRequest` (`sim/kv`); `TestInstanceSimulator_Offload_ALoadedRequestIsScheduledOnceThePoolFrees` (invariant), `TestInstanceSimulator_Offload_TheTierStartsEveryRequestTheGPUAloneStarts` (metamorphic) (`sim/cluster`).
 
 ### Batch formation
 

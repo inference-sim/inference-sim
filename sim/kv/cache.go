@@ -424,12 +424,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 // sequenceFits reports whether an allocation of a request over [startIndex, endIndex),
 // claiming cachedBlocks on a first allocation, passes the admission gate and finds every
 // block it needs on the free list: its token blocks not already held or claimable in use,
-// the growth of its bounded state (#1941) and its slot reservation (#1627), counted as
-// AllocateKVBlocks' own pre-check counts them. The offload tiers ask it before they reload
-// anything, so a refusal leaves no side effect (vLLM's allocate_slots likewise refuses before
-// it touches a block). Always true when the store charges neither term, which keeps those
-// runs byte-identical.
-func (kvc *KVCacheState) sequenceFits(req *sim.Request, startIndex, endIndex int64, cachedBlocks []int64) bool {
+// the growth of its bounded state (#1941) from stateStart (loadedStateStart) and its slot
+// reservation (#1627), counted as AllocateKVBlocks' own pre-check counts them. The offload
+// tiers ask it before they reload anything, so a refusal leaves no side effect (vLLM's
+// allocate_slots likewise refuses before it touches a block). Always true when the store
+// charges neither term, which keeps those runs byte-identical.
+func (kvc *KVCacheState) sequenceFits(req *sim.Request, startIndex, stateStart, endIndex int64, cachedBlocks []int64) bool {
 	if kvc.SequenceState.Hold == nil && !kvc.Speculative.Enabled {
 		return true
 	}
@@ -448,9 +448,25 @@ func (kvc *KVCacheState) sequenceFits(req *sim.Request, startIndex, endIndex int
 		}
 	}
 	tokenBlocks := max((endIndex+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-held-claimed, 0)
-	need := claimedFromFree + kvc.stateDelta(reqID, startIndex, endIndex) +
+	need := claimedFromFree + kvc.stateDelta(reqID, stateStart, endIndex) +
 		kvc.slotBlocksFromFree(reqID, endIndex, held+claimed, tokenBlocks)
 	return need <= kvc.countFreeBlocks()
+}
+
+// loadedStateStart is the token a new admission's bounded state is sized from when an offload
+// tier loads its prefix: past the loaded tokens, which are computed, not scheduled. vLLM sizes
+// a window group's blocks from total_computed_tokens, the local and the external (loaded) hit
+// together, and skips the blocks the window has passed (get_num_blocks_to_allocate,
+// single_type_kv_cache_manager.py:178-245 at v0.31.0), so a loaded prefix holds only its
+// window. reloadableEnd is the tier's ReloadablePrefixEnd; the result is capped, as batch
+// formation caps the computed baseline, below the prompt's last token and at endIndex.
+// Sizing it from startIndex instead charges the whole loaded prefix as in flight, which on a
+// pool smaller than that charge refuses the request forever, however empty the pool (#1955).
+func (kvc *KVCacheState) loadedStateStart(req *sim.Request, startIndex, endIndex, reloadableEnd int64, ok bool) int64 {
+	if !ok {
+		return startIndex
+	}
+	return max(startIndex, min(reloadableEnd, max(req.InputLen()-1, 0), endIndex))
 }
 
 // chargeSequence sizes a request's bounded state for [startIndex, endIndex) and tops up its

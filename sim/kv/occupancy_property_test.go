@@ -29,11 +29,15 @@ func (c *checkingStore) AllocateKVBlocks(req *sim.Request, start, end int64, cac
 	before := int64(len(c.gpu.RequestMap[req.ID]) + len(c.gpu.SpareBlocks[req.ID]))
 	// A same-step CPU reload computes the reloaded prefix too, so the step's computed tokens
 	// start where the reload ends (vLLM's num_computed_tokens = local + external) -- when the
-	// reload the pure query promised does land; the tier can fall back to the GPU prefix.
+	// reload the pure query promised does land; the tier can fall back to the GPU prefix. A
+	// reload of the whole prompt leaves its last token to compute, as batch formation caps it
+	// and vLLM sets num_computed_tokens = num_tokens - 1 after such a load
+	// (sched/scheduler.py:3095-3096 at v0.31.0); the window state is sized from there
+	// (single_type_kv_cache_manager.py:178-245, INV-K8).
 	computed := start
 	if c.reload != nil {
-		if e, ok := c.reload.ReloadablePrefixEnd(req, start); ok && e < end {
-			computed = e
+		if e, ok := c.reload.ReloadablePrefixEnd(req, start); ok {
+			computed = max(start, min(e, max(req.InputLen()-1, 0), end))
 		}
 	}
 	ok := c.KVStore.AllocateKVBlocks(req, start, end, cached)
