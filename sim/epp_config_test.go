@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -331,5 +332,67 @@ flowControl:
 	renamed := strings.Replace(fc, "- type: static-usage-limit-policy\n", "- type: static-usage-limit-policy\n  name: other\n", 1)
 	if in, err = ParseEndpointPickerConfig([]byte(renamed), 64, EPPVersionMain); err != nil || in.FlowControl.UniformCeiling != 1.0 {
 		t.Errorf("unreferenced policy: %v %v", err, in.FlowControl)
+	}
+}
+
+// A listed priority band with unset caps takes the registry's constants (5000 requests,
+// 1e9 bytes), not defaultPriorityBand's: the loader builds every band with
+// registry.NewPriorityBandConfig, whose defaults are the constants, and only bands
+// provisioned later copy the defaultPriorityBand template
+// (v0.10.0:pkg/epp/config/loader/flowcontrol.go:139-185, registry/config.go:388-399).
+func TestEPPConfig_ListedBandCapsDefaultToRegistryConstants(t *testing.T) {
+	const cfg = `apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+featureGates: [flowControl]
+plugins:
+- type: concurrency-detector
+- type: inflight-load-producer
+- type: token-load-scorer
+schedulingProfiles:
+- name: default
+  plugins: [{pluginRef: token-load-scorer}]
+flowControl:
+  saturationDetector: {pluginRef: concurrency-detector}
+  defaultPriorityBand: {maxRequests: 1, maxBytes: 100}
+  priorityBands:
+  - {priority: 3}
+`
+	in, err := ParseEndpointPickerConfig([]byte(cfg), 64, EPPVersionV0_10_0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc := in.FlowControl
+	if fc.PerBandMaxRequests != 1 || fc.PerBandMaxBytes != 100 {
+		t.Errorf("template caps: %d requests, %d bytes; want 1 and 100", fc.PerBandMaxRequests, fc.PerBandMaxBytes)
+	}
+	if len(fc.Bands) != 1 || fc.Bands[0].MaxRequests != 5000 || fc.Bands[0].MaxBytes != 1_000_000_000 {
+		t.Errorf("listed band: %+v; want the registry constants 5000 and 1e9", fc.Bands)
+	}
+}
+
+// The P/D decider lever as the campaign applies it to the deployed P/D router: the
+// unnamed always-disagg-pd-decider becomes prefix-based-pd-decider {nonCachedTokens: 16}
+// (llm-d's pd-disaggregation guide) and the handler's reference follows the rename.
+// Unpatched it is "always"; patched, the prefix-based decider with that threshold.
+func TestEPPConfig_DeployedPDDeciderLever(t *testing.T) {
+	raw, err := os.ReadFile("testdata/epp/pd-1p1d.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []EPPVersion{EPPVersionV0_10_0, EPPVersionMain} {
+		in, err := ParseEndpointPickerConfig(raw, 64, v)
+		if err != nil || in.PDDecider != "always" {
+			t.Fatalf("%s template: decider %q, %v", v, in.PDDecider, err)
+		}
+		patched := strings.Replace(strings.Replace(string(raw),
+			"- type: always-disagg-pd-decider\n", "- type: prefix-based-pd-decider\n  parameters: {nonCachedTokens: 16}\n", 1),
+			"prefill: always-disagg-pd-decider", "prefill: prefix-based-pd-decider", 1)
+		in, err = ParseEndpointPickerConfig([]byte(patched), 64, v)
+		if err != nil {
+			t.Fatalf("%s patched: %v", v, err)
+		}
+		if in.PDDecider != "prefix-based" || in.PDPrefixBased == nil || in.PDPrefixBased.NonCachedTokens != 16 {
+			t.Errorf("%s patched: decider %q %+v", v, in.PDDecider, in.PDPrefixBased)
+		}
 	}
 }

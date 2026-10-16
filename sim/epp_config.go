@@ -676,8 +676,11 @@ func (b *eppBuilder) resolveFlowControl(gate bool, resolved *RoutingPipelineConf
 		return fmt.Errorf("flowControl.maxRequests too large: %d", maxReq)
 	}
 	// Per-band defaults: defaultPriorityBandMaxRequests 5000 and MaxBytes 1e9
-	// (pkg/epp/flowcontrol/registry/config.go), overridable by defaultPriorityBand.
-	bandReq, bandBytes := int64(5000), int64(1_000_000_000)
+	// (pkg/epp/flowcontrol/registry/config.go:388-399). defaultPriorityBand overrides them
+	// only for the bands provisioned from that template, not for a listed priorityBands
+	// entry, whose unset caps take the constants (v0.10.0:pkg/epp/config/loader/flowcontrol.go:139-185).
+	const constBandReq, constBandBytes = int64(5000), int64(1_000_000_000)
+	bandReq, bandBytes := constBandReq, constBandBytes
 	if db := fc.DefaultPriorityBand; db != nil {
 		if db.FairnessPolicyRef != "" || db.OrderingPolicyRef != "" || db.DefaultRequestTTL != nil {
 			return fmt.Errorf("flowControl.defaultPriorityBand: only maxRequests/maxBytes are supported")
@@ -709,7 +712,7 @@ func (b *eppBuilder) resolveFlowControl(gate bool, resolved *RoutingPipelineConf
 			}
 			return fmt.Errorf("flowControl.priorityBands[%d]: per-band defaultRequestTTL is not supported by the simulator", pb.Priority)
 		}
-		band := EPPPriorityBand{Priority: pb.Priority, MaxRequests: int(bandReq), MaxBytes: bandBytes, Fairness: "global-strict"}
+		band := EPPPriorityBand{Priority: pb.Priority, MaxRequests: int(constBandReq), MaxBytes: constBandBytes, Fairness: "global-strict"}
 		v, err := parseQuantity(pb.MaxRequests, "priorityBands.maxRequests")
 		if err != nil {
 			return err
