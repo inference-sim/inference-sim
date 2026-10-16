@@ -41,7 +41,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 2. `--policy-config` YAML bundle — loads all policy settings from one file
 3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
 
-**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. Only `--long-prefill-token-threshold` and `--preemption-policy` remain on the CLI.
+**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. `--long-prefill-token-threshold` is a run-wide override: it applies to every pool and must agree with every value a pool states, or the run is refused. `--preemption-policy` remains on the CLI.
 
 ### Known Unit Gotchas
 
@@ -74,13 +74,13 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--scenario` | string | "" | **Required.** Scenario **file name** within `--scenarios`, e.g. `llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml`. The file is a [blis-schemas](https://github.com/inference-sim/blis-schemas) Scenario + Deployment (two YAML documents) — see [Scenario and Deployment](#scenario-and-deployment). |
-| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`) and an MTP example (`glm-5-h200-tp8-mtp3.yaml`). |
-| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) clone root, holding the fitted coefficient sets the scenario names. Pinned release: `v0.1.1`. |
-| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) **clone root** (pinned release `0.2.1`; see [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
+| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`), an MTP example (`glm-5-h200-tp8-mtp3.yaml`) and a DeepSeek-V4.1-Flash DSpark example (`deepseek-v4.1-flash-h100-tp8-dspark5.yaml`). |
+| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) clone root, holding the fitted coefficient sets the scenario names. Pinned release: `v0.1.2`. |
+| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) **clone root** (pinned release `0.2.2`; see [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
 
 ```bash
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios <dir of scenario files> --registry $PWD/blis-registry \
@@ -108,10 +108,10 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Max sequence length | Pool `engine.max_model_len` — **required** in the scenario |
 | Prefix caching | Pool `engine.enable_prefix_caching` |
 | KV-cache dtype | Pool `engine.cache_dtype` |
-| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (`--speculative-acceptance-rate` is still required on the CLI when the scenario drafts tokens) |
+| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one replica per data-parallel rank, each sized as one vLLM EngineCore. `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing` is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
 
 **Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
 
@@ -124,7 +124,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the `cache_hit_rate` and `catalog` provenance fields when those apply). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the file-only `cache_hit_rate`, `catalog`, measured-window aggregates (#1938), `kernel_provenance` (#1942) and build-version fields; see the results guide). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -134,7 +134,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--kv-cpu-blocks` | int64 | 0 | Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU on the legacy `--kv-cpu-blocks` path. Range [0, 1]. |
-| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. KV offload combined with P/D disaggregation is refused. See [KV Cache Management](../guide/kv-cache.md). |
+| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
 
 ## Batch Formation
 
@@ -143,15 +143,21 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
+| `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
+| `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
 | `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 ## Latency Model
 
-BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.1.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.2.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--speculative-acceptance-rate` | float64 | 0.0 | Mean fraction of draft tokens accepted, in [0, 1]. **Required** when the scenario's pool drafts tokens (`engine.speculative.num_spec_tokens > 0`). The draft length and method come from the scenario. |
+| `--speculative-acceptance-rate` | float64 | 0.0 | The accepted fraction of drafts, (AL − 1)/K, in [0, 1]. The highest acceptance layer (#1939); not with `--speculative-acceptance-length`. |
+| `--speculative-acceptance-length` | float64 | 0.0 | The mean acceptance length AL (tokens per verification step, counting the bonus token), in [1, K + 1]. The highest acceptance layer; not with `--speculative-acceptance-rate`. |
+| `--speculative-thinking` | string | | `on` or `off`: with `--speculative-category`, selects the registry's acceptance profile, overriding the workload's selectors. |
+| `--speculative-category` | string | | The workload category (e.g. `coding`) that selects the registry's acceptance profile. |
+| `--speculative-fallback-category` | string | | A category to use, recorded as a fallback, when the workload's has no profile. Without it an unmatched category is refused. A scenario pin's own `fallback_category` wins over it (blis-schemas `acceptance.Resolve`). |
 
 ## Cluster Configuration
 
@@ -163,8 +169,9 @@ With `--num-instances 1` (the default), BLIS runs a single-instance simulation �
 | `--prefill-instances` | int | 0 | Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with `prefill` and `decode` pools, and must not exceed the prefill pool's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)). |
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
 | `--pd-decider` | string | "never" | P/D disaggregation decider: `never`, `always`, `prefix-threshold`. |
+| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the kernel's `PDTransferDemand`. A handoff alone still takes exactly `PDTransferTime`. Run and replay alike (INV-13). |
 
-**P/D disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; KV offload combined with P/D; shared (`--prefill-decode-instances`) or encode instances.
+**P/D disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block (or `--kv-offload-config`) gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
 
 ## Admission Policy
 
@@ -280,6 +287,9 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 | `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
 | `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
+| `--epp-config` | string | "" | llm-d `EndpointPickerConfig` ingested verbatim; owns routing, P/D routing and flow control. See [Routing: llm-d EndpointPickerConfig](../guide/routing.md#llm-d-endpointpickerconfig-epp-config). |
+| `--epp-cpu-tier-view` | string | "" | BLIS opt-in (a deviation from llm-d): the named approx-prefix-cache-producer of `--epp-config` reports each instance's CPU-offload-tier-resident prefix instead of llm-d's router-side LRU estimate. |
+| `--epp-version` | string | "main@981acb8a" | llm-d-router release `--epp-config` follows: `main@981acb8a` (alias `main`) or `v0.10.0`. |
 | `--snapshot-refresh-interval` | int64 | 50000 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. Default 50ms = llm-d parity. 0 = immediate/oracle mode. |
 
 ### Scorer Configuration
@@ -290,7 +300,7 @@ When using `--routing-policy weighted`, the `--routing-scorers` flag configures 
 --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
 ```
 
-Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`.
+Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`, `prefix-cache`, `token-load`. `prefix-cache` and `token-load` read llm-d's default approx prefix producer and inflight-load-producer, created with llm-d's defaults when used from this flag.
 
 Default (when `--routing-scorers` is empty): `precise-prefix-cache:2, queue-depth:1, kv-utilization:1` (llm-d parity).
 
@@ -520,10 +530,10 @@ lora:
 | **Deployment (required)** | `--scenario`, `--scenarios`, `--registry`, `--catalog` (or `BLIS_CATALOG`) |
 | **KVCacheConfig** | `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-offload-config` (block budget and block size: scenario + kernel) |
 | **BatchConfig** | `--long-prefill-token-threshold` (`max_num_seqs`, `max_num_batched_tokens`: scenario) |
-| **Latency** | `--speculative-acceptance-rate` (everything else: scenario + registry, priced by blis-latency-kernel) |
+| **Latency** | `--speculative-acceptance-rate` / `--speculative-acceptance-length` and the acceptance selectors (everything else: scenario + registry, priced by blis-latency-kernel) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
+| **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-decider`, `--pd-transfer-contention`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 

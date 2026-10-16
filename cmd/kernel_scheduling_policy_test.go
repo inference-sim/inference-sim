@@ -120,7 +120,7 @@ func TestAdoptKernelDeployment_SchedulingPolicySetsQueueOrderAndPreemption(t *te
 // priority preemption, and batch requests pay for it. Non-vacuous: the run preempts.
 func TestRunCmd_PrioritySchedulingPolicyPreemptsTheLeastUrgent(t *testing.T) {
 	dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
-		"      gpu_memory_utilization: 0.25\n      scheduling_policy: priority\n")
+		"      gpu_memory_utilization: 0.22\n      scheduling_policy: priority\n")
 	args := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--seed", "11",
 		"--workload-spec", mixedPriorityWorkload(t, 120, 6000, 600)}
 	out, stderr, err := runKernelCLI(t, args...)

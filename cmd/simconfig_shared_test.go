@@ -79,7 +79,7 @@ func TestBothCommands_EngineAndDeploymentKnobsAreNotFlags(t *testing.T) {
 		"max-num-scheduled-tokens", "block-size-in-tokens", "gpu-memory-utilization", "max-model-len",
 		"kv-cache-dtype", "no-enable-prefix-caching", "num-speculative-tokens", "speculative-method",
 		"kv-transfer-bandwidth", "kv-transfer-base-latency",
-		"pd-transfer-bandwidth", "pd-transfer-base-latency", "pd-transfer-contention",
+		"pd-transfer-bandwidth", "pd-transfer-base-latency",
 		"comm-serialization-factor", "enforce-eager",
 	}
 	for _, c := range []struct {
@@ -112,7 +112,7 @@ func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 		"kv-cpu-blocks", "kv-offload-threshold", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"cache-signal-delay",
+		"cache-signal-delay", "dp-load-balancing",
 	}
 	for _, name := range policyFlags {
 		assert.NotNilf(t, runCmd.Flags().Lookup(name),
@@ -166,7 +166,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"num-instances",
-		"long-prefill-token-threshold", "cache-signal-delay",
+		"long-prefill-token-threshold", "cache-signal-delay", "dp-load-balancing",
 		"flow-control", "saturation-detector", "dispatch-order",
 		"max-gateway-queue-depth", "queue-depth-threshold",
 		"kv-cache-util-threshold", "max-concurrency",

@@ -37,6 +37,22 @@ const (
 	StateWaitingForRemoteKVs RequestState = "waiting_for_remote_kvs"
 )
 
+// Phase is a request's benchmark phase, after aiperf's benchmark_phase record tag. Only
+// PhaseWarmup is excluded from the measured window; profile and grace requests (sent in
+// the profiling phase, completing before or after its sending window closes) count, as
+// aiperf counts every valid profiling record (AGENTX_MVP_SPEC §5.3).
+type Phase string
+
+const (
+	PhaseUnset   Phase = ""
+	PhaseWarmup  Phase = "warmup"
+	PhaseProfile Phase = "profile"
+	PhaseGrace   Phase = "grace"
+)
+
+// Measured reports whether a request of this phase counts in the measured aggregates.
+func (p Phase) Measured() bool { return p != PhaseWarmup }
+
 type Request struct {
 	ID string // Unique identifier for the request
 
@@ -74,6 +90,8 @@ type Request struct {
 	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
 	PrefixLength    int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
 	Streaming       bool    // Whether client expects streaming response
+	// Agentic identifies a request of an agentic session-tree replay (#1937); nil otherwise.
+	Agentic *AgenticTag
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
 	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
@@ -120,9 +138,22 @@ type Request struct {
 	// Set by KVTransferCompletedEvent before the request is routed and enqueued.
 	IsDecodeSubRequest bool
 
+	// RetainKVOnFinish keeps the request's KV blocks allocated when it finishes, for an owner
+	// that releases them later. A P/D prefill sub-request sets it: NIXL keeps a finished
+	// prefill's blocks until the decode side has pulled them or the lease expires
+	// (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:247-266 at
+	// v0.31.0), and the cluster releases them then (#1934). False releases them at completion.
+	RetainKVOnFinish bool
+
 	// Flow control timestamps (issue #882). Zero when flow control is disabled.
 	GatewayEnqueueTime  int64 // microseconds: when request entered the gateway queue
 	GatewayDispatchTime int64 // microseconds: when request was dispatched from the gateway queue
+
+	// Phase is the benchmark phase the request was sent in (#1938). The zero value means
+	// the request is in the measured window, so a workload that sets no phase is measured
+	// whole. A replay with a warm-up sets PhaseWarmup on the requests the measured
+	// aggregates of the --metrics-path file must exclude.
+	Phase Phase
 
 	// specDecodeCarry accumulates the fractional part of the mean accepted-token
 	// count (1+α·K) across decode steps for speculative decoding / MTP (#1528).
@@ -131,6 +162,15 @@ type Request struct {
 	// Request construction site needs updating. Reset to 0 on preemption (alongside
 	// ProgressIndex) and at completion.
 	specDecodeCarry float64
+
+	// preemptions counts how often batch formation preempted this request; a re-admission
+	// after preemption is not a new prefix-cache query (PrefixLookup).
+	preemptions int
+	// scheduledTokens is what this step debited from the batched-token budget for the
+	// request: NumNewTokens, except for a speculating decode, which schedules its whole
+	// verify width however many drafts are later accepted (#1627). Set by FormBatch; read
+	// when a preemption returns the debit.
+	scheduledTokens int64
 }
 
 // This method returns a human-readable string representation of a Request.

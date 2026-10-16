@@ -1,10 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,25 +29,27 @@ func writePrefixPressureSpec(t *testing.T, groups, requests int) string {
 	return path
 }
 
-// cacheHitRate reads the run's "Cache Hit Rate:" line from stdout.
-func cacheHitRate(t *testing.T, stdout string) float64 {
+// servedFromCache returns the share of queried prompt tokens a cache served (GPU plus CPU
+// tier) and the CPU tier's part, from a --metrics-path file.
+func servedFromCache(t *testing.T, path string) (served, cpu float64) {
 	t.Helper()
-	const key = "Cache Hit Rate: "
-	i := strings.Index(stdout, key)
-	if i < 0 {
-		t.Fatalf("no %q in stdout:\n%s", key, stdout)
-	}
-	rest := stdout[i+len(key):]
-	v, err := strconv.ParseFloat(strings.TrimSpace(rest[:strings.IndexByte(rest, '\n')]), 64)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v
+	var file map[string]any
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	gpu, cpu := file["cache_hit_rate"].(float64), file["cpu_tier_hit_rate"].(float64)
+	return gpu + cpu, cpu
 }
 
 // Under prefix pressure an offload tier changes the outcome: prefixes the GPU cache evicted are
-// found again on the CPU tier, so the cache hit rate is strictly higher with offload than
-// without, and the recovered prefill work makes mean E2E strictly shorter -- colocated and
+// found again on the CPU tier, so the prompt tokens served from a cache -- the GPU prefix
+// cache's hits plus the CPU tier's (cache_hit_rate + cpu_tier_hit_rate, which partition the
+// queried tokens as vLLM's local and connector prefix-cache stats do) -- are strictly more with
+// offload than without, and the recovered prefill work makes mean E2E strictly shorter -- colocated and
 // disaggregated. The disaggregated leg routes prefill round-robin over twice the groups, so
 // every prefill instance (not only the one decode instance) holds more prefixes than its KV
 // fits. Without this, an offload wiring that stored or found nothing would pass every
@@ -60,7 +62,9 @@ func TestRunCmd_KernelBackend_KVOffloadUnderPrefixPressure(t *testing.T) {
 		args             []string
 	}{
 		{"colocated", 48, 192, []string{"run", "--scenario", "glm-5-h200-fp8-sglang-tp8.yaml"}},
-		{"disaggregated", 96, 384, []string{"run", "--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
+		// A tier beside the NIXL handoff runs through a MultiConnector (vllm/config/vllm.py:1124-1158).
+		{"disaggregated", 96, 384, []string{"run", "--scenarios",
+			writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector"), "--scenario", "variant.yaml",
 			"--pd-decider", "always", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1",
 			"--routing-policy", "round-robin"}},
 	} {
@@ -69,18 +73,26 @@ func TestRunCmd_KernelBackend_KVOffloadUnderPrefixPressure(t *testing.T) {
 			base := append(tt.args, "--workload-spec", writePrefixPressureSpec(t, tt.groups, requests), "--seed", "3")
 			var rates, e2e []float64
 			for _, extra := range [][]string{nil, {"--kv-offload-config", offload}} {
-				out, stderr, err := runKernelCLI(t, append(base, extra...)...)
+				path := filepath.Join(t.TempDir(), "metrics.json")
+				out, stderr, err := runKernelCLI(t, append(append(base, extra...), "--metrics-path", path)...)
 				if err != nil {
 					t.Fatalf("%v: %v\n%s", extra, err, lastLines(stderr, 3))
 				}
 				if got := clusterMetricInt(t, out, "completed_requests"); got != requests {
 					t.Fatalf("%v: completed %d of %d requests", extra, got, requests)
 				}
-				rates = append(rates, cacheHitRate(t, out))
+				served, cpu := servedFromCache(t, path)
+				if extra == nil && cpu != 0 {
+					t.Errorf("no offload tier, yet cpu_tier_hit_rate = %v", cpu)
+				}
+				if extra != nil && cpu <= 0 {
+					t.Errorf("the offload tier served no prompt token (cpu_tier_hit_rate %v)", cpu)
+				}
+				rates = append(rates, served)
 				e2e = append(e2e, e2eMean(t, out))
 			}
 			if rates[1] <= rates[0] {
-				t.Errorf("offload left the cache hit rate at %.4f against %.4f without it; under prefix "+
+				t.Errorf("offload left the cache-served share of prompt tokens at %.4f against %.4f without it; under prefix "+
 					"pressure the CPU tier must recover evicted prefixes", rates[1], rates[0])
 			}
 			if e2e[1] >= e2e[0] {

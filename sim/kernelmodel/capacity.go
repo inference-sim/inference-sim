@@ -16,7 +16,7 @@
 // and multiplied by dp for an MoE model, because vLLM runs dp independent EngineCores each
 // with a full KV budget and splits requests disjointly across them.
 //
-// The kernel supplies both inputs:
+// The kernel supplies the inputs:
 //
 //   - FixedBytes() is per-rank occupancy independent of the request set: weights, the
 //     engine's workspace, communicator buffers, graph capture. Subtracting it from the
@@ -24,6 +24,14 @@
 //   - SequenceVariableBytes(blockSize) is the per-sequence KV cost of one page, already
 //     page-quantized and already divided by tensor-parallel width down to the engine's
 //     one-KV-head floor.
+//   - SequenceBoundedBytesAt(computed, inFlight) is what a sequence's bounded state --
+//     window rings, compressor and indexer state, bounded recurrent state -- holds with
+//     computed tokens computed and inFlight scheduled, in whole blocks of the shared pool; it
+//     settles at SequenceFixedBytes while decoding. SequenceAdmissionBytes is the window
+//     rings at vLLM's admission cap, which vLLM applies only as an admission gate. The
+//     simulator charges these per resident sequence step by step (Settings.SequenceState,
+//     #1941) rather than out of the pool up front, because how many sequences are resident is
+//     the scheduler's to decide.
 package kernelmodel
 
 import (
@@ -57,6 +65,17 @@ type KVBudget struct {
 	PerBlockBytes int64
 	// DPScaled records whether the MoE DP multiplication applied.
 	DPScaled bool
+
+	// SequenceAdmissionBytes is the kernel's admission-cap reservation for a sequence's
+	// bounded state and SequenceAdmissionBlocks its whole blocks of PerBlockBytes: vLLM's
+	// admission gate and its startup capacity figure divide by it. SequenceSteadyBytes is the
+	// smaller hold a decoding sequence's bounded state settles at (the kernel's
+	// SequenceFixedBytes), SequenceSteadyBlocks its blocks. All are zero for a model with no
+	// such caches.
+	SequenceAdmissionBytes  int64
+	SequenceAdmissionBlocks int64
+	SequenceSteadyBytes     int64
+	SequenceSteadyBlocks    int64
 }
 
 // KVBudget derives the block budget for this model's deployment.
@@ -146,17 +165,48 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		scaled = true
 	}
 
+	adm, ok := m.k.(admissionReserver)
+	if !ok {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: the kernel (%T) does not report the per-sequence admission "+
+				"reservation (SequenceAdmissionBytes), which the KV budget charges", m.k)
+	}
+	seqFixed := adm.SequenceAdmissionBytes()
+	steady := m.k.SequenceFixedBytes()
+	if seqFixed < 0 {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: per-sequence admission reservation resolved to %d bytes", seqFixed)
+	}
+	seqFixedBlocks := (seqFixed + perBlock - 1) / perBlock
+	if seqFixedBlocks >= perRank {
+		return KVBudget{}, fmt.Errorf(
+			"kernelmodel: one sequence's fixed occupancy (%d bytes, %d blocks) does not fit a "+
+				"rank's %d-block KV pool", seqFixed, seqFixedBlocks, perRank)
+	}
+
 	return KVBudget{
-		TotalBlocks:      blocks,
-		PerRankBlocks:    perRank,
-		BlockSize:        blockSize,
-		DeviceBytes:      deviceBytes,
-		BudgetBytes:      budget,
-		FixedBytes:       fixed,
-		AllocatableBytes: allocatable,
-		PerBlockBytes:    perBlock,
-		DPScaled:         scaled,
+		TotalBlocks:             blocks,
+		PerRankBlocks:           perRank,
+		BlockSize:               blockSize,
+		DeviceBytes:             deviceBytes,
+		BudgetBytes:             budget,
+		FixedBytes:              fixed,
+		AllocatableBytes:        allocatable,
+		PerBlockBytes:           perBlock,
+		DPScaled:                scaled,
+		SequenceAdmissionBytes:  seqFixed,
+		SequenceAdmissionBlocks: seqFixedBlocks,
+		SequenceSteadyBytes:     steady,
+		SequenceSteadyBlocks:    (steady + perBlock - 1) / perBlock,
 	}, nil
+}
+
+// admissionReserver is the kernel's bounded per-sequence state, exported by
+// blis-latency-kernel beside the published kernel.Kernel interface (blis-latency-kernel#46,
+// #56).
+type admissionReserver interface {
+	SequenceAdmissionBytes() int64
+	SequenceBoundedBytesAt(computedTokens, inFlightTokens int) int64
 }
 
 const gibToBytes = 1 << 30

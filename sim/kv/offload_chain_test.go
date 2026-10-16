@@ -72,9 +72,14 @@ func TestNewOffloadCache_Validation(t *testing.T) {
 		c := enabledOffloadCfg(1<<20, 0, 1)
 		NewOffloadCache(gpu, c)
 	})
-	mustPanic(t, "blocksPerChunk>1", func() {
+	mustPanic(t, "blocksPerChunk<=0", func() {
 		c := enabledOffloadCfg(1<<20, 4096, 1)
-		c.BlocksPerChunk = 2
+		c.BlocksPerChunk = 0
+		NewOffloadCache(gpu, c)
+	})
+	mustPanic(t, "cpu budget under one chunk", func() {
+		c := enabledOffloadCfg(3*4096, 4096, 1) // three blocks, but a chunk is four
+		c.BlocksPerChunk = 4
 		NewOffloadCache(gpu, c)
 	})
 	mustPanic(t, "arc eviction", func() {
@@ -94,6 +99,12 @@ func TestNewOffloadCache_Validation(t *testing.T) {
 	oc := NewOffloadCache(gpu, enabledOffloadCfg(40960, 4096, 2)) // 10 CPU blocks, 2 tiers
 	if oc.cpu.capacity != 10 {
 		t.Fatalf("CPU capacity must be cpu_bytes/per_block_bytes=10, got %d", oc.cpu.capacity)
+	}
+	// At blocks_per_chunk 4 the tier holds whole chunks: cpu_bytes / (per_block_bytes x 4).
+	c4 := enabledOffloadCfg(40960, 4096, 0)
+	c4.BlocksPerChunk = 4
+	if got := NewOffloadCache(gpu, c4).cpu.capacity; got != 2 {
+		t.Fatalf("CPU capacity at blocks_per_chunk 4 must be 40960/(4096x4)=2 chunks, got %d", got)
 	}
 	if len(oc.secondary) != 2 || oc.station == nil {
 		t.Fatalf("2 secondary tiers must build 2 tiers + a station, got %d tiers station=%v", len(oc.secondary), oc.station)

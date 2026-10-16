@@ -207,3 +207,86 @@ func TestInstanceSimulator_Offload_CPUHitReducesTTFT(t *testing.T) {
 // fails on base. An aggregate e2e TTFT comparison against a GPU-only baseline is NOT a
 // valid guard here: it conflates the H3 deferral penalty (which raises secondary-path
 // TTFT) with the prefill shrink, so it holds on base too.
+
+// loadedPrefixWorkload is a 40-block prompt, three distinct 40-block fillers that evict it
+// from a 64-block GPU, and then the prompt again with one more block: its prefix is on the
+// CPU tier only. Requests arrive a second apart, so each finds the instance idle.
+func loadedPrefixWorkload(seed int64) []*sim.Request {
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(seed)).ForSubsystem(sim.SubsystemWorkload)
+	prompt := sim.GenerateRandomTokenIDs(rng, 640)
+	inputs := [][]sim.TokenID{prompt}
+	for i := 0; i < 3; i++ {
+		inputs = append(inputs, sim.GenerateRandomTokenIDs(rng, 640))
+	}
+	inputs = append(inputs, append(append([]sim.TokenID(nil), prompt...), sim.GenerateRandomTokenIDs(rng, 16)...))
+	reqs := make([]*sim.Request, len(inputs))
+	for i, in := range inputs {
+		reqs[i] = &sim.Request{ID: fmt.Sprintf("req_%d", i), ArrivalTime: int64(i) * 1_000_000,
+			InputTokens: in, OutputTokens: sim.GenerateRandomTokenIDs(rng, 4), State: sim.StateQueued}
+	}
+	return reqs
+}
+
+// runLoadedPrefix runs loadedPrefixWorkload on a 64-block GPU whose sequences hold a
+// sliding-window-like state (a block per block in flight, plus one), with or without a CPU
+// tier, to a 100 s horizon.
+func runLoadedPrefix(t *testing.T, tier bool) *InstanceSimulator {
+	t.Helper()
+	opts := []sim.KVCacheOption{sim.WithSequenceState(sim.KVSequenceState{
+		Hold: func(_, inFlight int64) int64 { return (inFlight+15)/16 + 1 },
+		Gate: func(int64) int64 { return 1 },
+	})}
+	if tier {
+		off := cpuOnlyOffloadCfg(7, 512).Offload
+		off.CPULoadTime = func(bytes int64) int64 { return bytes / 4096 }
+		opts = append(opts, sim.WithKVOffload(off))
+	}
+	cfg := cpuOnlyOffloadCfg(7, 512)
+	cfg.Horizon = 100_000_000
+	cfg.KVCacheConfig = sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0, opts...)
+	cfg.BatchConfig = sim.NewBatchConfig(8, 128, 0)
+	inst := NewInstanceSimulator(InstanceID("loaded-prefix"), cfg)
+	for _, r := range loadedPrefixWorkload(7) {
+		inst.InjectRequest(r)
+	}
+	inst.Run()
+	return inst
+}
+
+// #1955 invariant: no request waits forever. A request whose prefix the CPU tier loads, and
+// whose sequence fits the instance's pool, is scheduled within its load and a step of the
+// pool freeing -- here it arrives at an idle instance -- and the run drains. Its loaded
+// prefix used to be charged as in flight, sizing its state at the whole prompt, which the
+// pool cannot hold: it was refused at every step of the run.
+func TestInstanceSimulator_Offload_ALoadedRequestIsScheduledOnceThePoolFrees(t *testing.T) {
+	inst := runLoadedPrefix(t, true)
+	m := inst.Metrics()
+	if m.StillQueued != 0 || m.CompletedRequests != 5 {
+		t.Fatalf("completed %d of 5, %d still queued at the horizon", m.CompletedRequests, m.StillQueued)
+	}
+	oc := inst.sim.KVCache.(*kv.OffloadCache)
+	if oc.CPULoadsStarted() == 0 {
+		t.Fatal("the reused prompt was not loaded from the CPU tier")
+	}
+	if d := m.RequestSchedulingDelays["req_4"]; d > 50_000 {
+		t.Errorf("the loaded request waited %d ticks at an idle instance; its load takes %d", d, 40*4096/4096)
+	}
+}
+
+// #1955 metamorphic: adding a CPU tier never leaves unstarted a request that starts without
+// it. A tier that only shortens prefills must not lift interactivity by holding requests
+// that never get a first token.
+func TestInstanceSimulator_Offload_TheTierStartsEveryRequestTheGPUAloneStarts(t *testing.T) {
+	without, with := runLoadedPrefix(t, false).Metrics(), runLoadedPrefix(t, true).Metrics()
+	if len(without.RequestTTFTs) != 5 {
+		t.Fatalf("without the tier %d of 5 requests started", len(without.RequestTTFTs))
+	}
+	for id := range without.RequestTTFTs {
+		if _, ok := with.RequestTTFTs[id]; !ok {
+			t.Errorf("%s starts without the CPU tier and never starts with it", id)
+		}
+	}
+	if with.StillQueued > without.StillQueued {
+		t.Errorf("the tier leaves %d requests queued at the horizon, against %d without it", with.StillQueued, without.StillQueued)
+	}
+}

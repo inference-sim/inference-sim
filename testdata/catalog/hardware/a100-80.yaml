@@ -8,3 +8,5 @@ _comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 3 link as a per
 IntraNodeBwGBps: 300
 _comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GA100 die as shipped in this part, from the NVIDIA datasheet (https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf). A100 enables 108 of the GA100 die's 128 SMs. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."
 SMCount: 108
+_comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
+ComputeCapability: "8.0"

@@ -1,0 +1,6 @@
+name: deepseek-v4.1-flash
+source:
+  provider: huggingface
+  repo: deepseek-ai/DeepSeek-V4.1-Flash
+  revision: 5254448103b6254fc646dacbca1cbbf20e9216c1
+  retrieved: 2026-10-12

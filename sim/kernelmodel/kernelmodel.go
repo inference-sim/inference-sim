@@ -54,12 +54,17 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-schemas/spec/workload"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -85,11 +90,17 @@ type Model struct {
 	// specTokens is the pool's draft length (engine.speculative.num_spec_tokens), 0 when it
 	// does not speculate. See batchOf.
 	specTokens int
+	// pad is how a lockstep data-parallel step pads this pool's ranks (#1909).
+	pad dpPadding
 
 	// Host costs are invariant per kernel, so they are converted to ticks once. StepTime
 	// is called once per simulated step; a Duration-to-ticks division per call is wasted.
 	outputTokenTicks int64
 	completionTicks  int64
+
+	// rules is the release-rule report taken from the Inputs at open: the rules no one
+	// enforces on this pool and what they find (#1942). See Provenance.
+	rules ruleReport
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -113,6 +124,9 @@ type identity struct {
 	smCount       int
 	experts       int
 	expertsPerTok int
+	// defaultWindow is the graph's derived context window (GlobalShape.DefaultWindow), what an
+	// unstated or auto max_model_len starts from; 0 when the graph states none.
+	defaultWindow int
 
 	// The pool's extent in the cluster, which places its instances. A deployment's pools fill
 	// the cluster's nodes exactly (blis-schemas' placement contract); BLIS places them in
@@ -124,6 +138,9 @@ type identity struct {
 	gpusPerRack int
 	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
 	rankGPUs int
+	// prefillBackoff is NIXL's _prefill_backoff for this pool: the trailing prompt tokens a
+	// disaggregated prefill does not compute and the decode side recomputes.
+	prefillBackoff int
 }
 
 func identityOf(in latencykernel.Inputs) identity {
@@ -141,14 +158,40 @@ func identityOf(in latencykernel.Inputs) identity {
 		smCount:       in.Chip.SMCount,
 		experts:       experts,
 		expertsPerTok: topK,
+		defaultWindow: in.Model.Global.DefaultWindow(),
 		role:          pool.Role,
 		firstNode:     first,
 		poolNodes:     pool.Nodes,
 		gpusPerNode:   in.Scenario.Cluster.GPUsPerNode,
 		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
 		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
+		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
 	}
 }
+
+// prefillBackoffOf is vLLM v0.31.0's NixlConnector _prefill_backoff
+// (nixl/base_scheduler.py:385-398): max(1 if the model has Mamba-style recurrent layers,
+// num_prefill_lookahead_tokens - 1). The lookahead (config/vllm.py:657-678) is 0 without an
+// Eagle-family drafter, num_speculative_tokens for multi-module MTP (method mtp with
+// min(draft layers, K) > 1, config/speculative.py:1973-1979), and 1 for every other Eagle-family
+// drafter -- DSpark included (speculative.py:1938-1942) -- so DSpark backs off nothing.
+func prefillBackoffOf(g *model.Graph, sp *deployment.Speculative) int {
+	backoff := 0
+	g.EachNode(func(_ string, n model.Node) {
+		if n.Op == model.OpRecurrentUpdate {
+			backoff = 1
+		}
+	})
+	if sp != nil && sp.Method == "mtp" && g.Speculator != nil &&
+		min(g.Speculator.Stack.Layers(), sp.NumSpecTokens) > 1 {
+		backoff = max(backoff, sp.NumSpecTokens-1)
+	}
+	return backoff
+}
+
+// PrefillBackoffTokens is the pool's NIXL prefill backoff (prefillBackoffOf): under P/D the
+// decode side recomputes this many trailing prompt tokens instead of pulling them.
+func (m *Model) PrefillBackoffTokens() int { return m.id.prefillBackoff }
 
 // expertCounts returns the routed expert count and top-k of the first routed layer kind,
 // or zeros for a dense model. A layer kind carrying a GroupedGEMM node is what makes a
@@ -194,23 +237,46 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	return fromInputs(in)
+}
+
+// fromInputs builds and adapts the kernel for loaded Inputs, refusing a speculative method
+// the scenario's engine release does not accept first.
+func fromInputs(in latencykernel.Inputs) (*Model, error) {
+	if err := checkSpeculativeMethod(in); err != nil {
+		return nil, err
+	}
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
 	}
-	return newModel(k, identityOf(in)), nil
+	m, err := newModel(k, identityOf(in))
+	if err != nil {
+		return nil, err
+	}
+	m.rules = reportRules(in)
+	return m, nil
 }
 
-func newModel(k kernel.Kernel, id identity) *Model {
+func newModel(k kernel.Kernel, id identity) (*Model, error) {
+	spec := specTokensOf(k)
+	pad, err := dpPaddingOf(k, spec)
+	if err != nil {
+		return nil, err
+	}
 	return &Model{
-		k:                k,
-		id:               id,
-		decodeThreshold:  DecodeThreshold,
+		k:  k,
+		id: id,
+		// vLLM classifies a verify of up to 1 + K tokens as a decode (reorder_batch_threshold
+		// is raised to it; for V4.1, vllm/models/deepseek_v41/sparse_mla.py:160), so a
+		// speculating pool widens the threshold to cover its verify width (#1932).
+		decodeThreshold:  max(DecodeThreshold, 1+spec),
 		smBudget:         id.smCount,
-		specTokens:       specTokensOf(k),
+		specTokens:       spec,
+		pad:              pad,
 		outputTokenTicks: ticks(k.OutputTokenOverhead()),
 		completionTicks:  ticks(k.CompletionOverhead()),
-	}
+	}, nil
 }
 
 // OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
@@ -328,6 +394,11 @@ func (m *Model) PostDecodeFixedOverhead() int64 { return m.completionTicks }
 // acceptance rate -- which decides how far the request moves, not what the forward pass
 // cost. So a decode's Scheduled is the verify width here, and NumNewTokens keeps its
 // meaning for the simulator.
+//
+// INV-K1 (no BLIS-side draft cost): the step price is the kernel's StepTime of exactly this
+// verify-width batch, floored at one tick, and nothing else. blis-latency-kernel v0.2.0 prices
+// the drafter's passes, its context stack and its head inside StepTime, so a draft term added
+// here, or a Scheduled widened past 1 + K, would charge the drafts twice.
 func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
 	b := kernel.Batch{
 		Reqs:            make([]kernel.ReqShape, 0, len(batch)),
@@ -407,6 +478,12 @@ func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() 
 // configuration chosen against a scenario, not part of the immutable problem it states.
 // The error text says "deployment" for the same reason -- a reader told the scenario lacks
 // a block_size would look in the wrong document.
+// DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
+// internal; blis-schemas#76).
+func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
+	return m.k.Deployment().Parallel.DataParallelLoadBalancing
+}
+
 func (m *Model) Engine() (deployment.Engine, error) {
 	e := m.k.Deployment().Engine
 	if e.BlockSize <= 0 {
@@ -512,21 +589,80 @@ type Deployment struct {
 }
 
 // Shape is what a scenario's deployment states beyond any one pool, read without building a
-// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy.
+// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy;
+// and what its Scenario states that no kernel prices: its acceptance pin and its workload
+// binding, which the simulator's speculative acceptance resolves from (#1939).
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+	// PDConnector is the deployment's pd_transfer.connector, "" when it states none.
+	PDConnector string
+	// Offload is the deployment's offload block, nil when it states none.
+	Offload *deployment.Offload
+	// LongPrefillTokenThresholds and DPLoadBalancings are each pool's
+	// engine.long_prefill_token_threshold (blis-schemas#75; 0 = unstated) and
+	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
+	LongPrefillTokenThresholds []int
+	DPLoadBalancings           []deployment.DPLoadBalancing
+
+	Model           string
+	Acceptance      *acceptance.Pin
+	WorkloadBinding *workload.Binding
 }
 
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	sc, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return Shape{}, err
 	}
-	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload}
+	if dep.PDTransfer != nil {
+		sh.PDConnector = dep.PDTransfer.Connector
+	}
+	if dep.Offload != nil {
+		o := *dep.Offload
+		o.Tiers = append([]deployment.Tier(nil), dep.Offload.Tiers...)
+		sh.Offload = &o
+	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
+		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, p.Engine.LongPrefillTokenThreshold)
+		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
 	}
 	return sh, nil
+}
+
+// checkSpeculativeMethod refuses a pool whose engine.speculative.method the scenario's engine
+// release does not accept, read from that release's blis-schemas rules pack
+// (rules.Pack.SpeculativeMethods), so the accepted set moves with engine_version: dspark is
+// accepted at vLLM 0.31.0 because that release ships it.
+//
+// The kernel does not check it itself. It refuses a method the model graph's speculator
+// does not describe, and a combination vLLM refuses (MTP on DeepSeek-V4.1), but it applies
+// only the field layer of blis-schemas validation, so on a graph with no speculator any
+// label would price. The whole rule layer is not applied here either: it also checks the
+// graph's own speculator name against the release, which refuses committed fixtures that do
+// not speculate at all.
+func checkSpeculativeMethod(in latencykernel.Inputs) error {
+	sp := in.Deployment.Pools[in.PoolIndex].Engine.Speculative
+	if sp == nil {
+		return nil
+	}
+	pack, ok := in.Rules.(*rules.Pack)
+	if !ok || pack == nil {
+		return fmt.Errorf("engine.speculative.method %q cannot be checked: the engine rules for "+
+			"version %q are not a blis-schemas rules pack", sp.Method, in.Scenario.EngineVersion)
+	}
+	if !pack.SpeculativeMethods[sp.Method] {
+		accepted := make([]string, 0, len(pack.SpeculativeMethods))
+		for m := range pack.SpeculativeMethods {
+			accepted = append(accepted, m)
+		}
+		sort.Strings(accepted)
+		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
+			sp.Method, pack.Version, strings.Join(accepted, ", "))
+	}
+	return nil
 }

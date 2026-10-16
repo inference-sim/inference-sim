@@ -69,6 +69,11 @@ type KVOffloadConfig struct {
 	// consulted before tier 1, etc. vLLM default empty (single CPU tier, no spill).
 	// A slice (not a map, R8) so ordering is deterministic (INV-6).
 	Tiers []KVOffloadTier
+
+	// CPULoadTime, when set, prices one CPU->GPU load of bytes, in ticks (INV-K7): the
+	// latency backend's host-tier price (blis-latency-kernel TierTime, cpu_dram), supplied at
+	// run time and never serialized. Nil leaves a CPU-tier hit a same-step reload.
+	CPULoadTime func(bytes int64) int64 `yaml:"-" json:"-"`
 }
 
 // KVOffloadTier is one resolved secondary offload tier. Only the filesystem ("fs")
@@ -246,4 +251,24 @@ func validatePositiveFinite(v float64, index int, field string) error {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].%s must be a finite value > 0, got %v", index, field, v)
 	}
 	return nil
+}
+
+// CPUChunkCapacity is the CPU tier's size in offload chunks, as vLLM's CPU spec sizes it:
+// cpu_bytes_to_use // (kv_bytes_per_block * blocks_per_chunk)
+// (vllm/v1/kv_offload/cpu/spec.py:108-121 at v0.31.0). 0 until PerBlockBytes is resolved.
+func (c KVOffloadConfig) CPUChunkCapacity() int64 {
+	if c.PerBlockBytes <= 0 || c.BlocksPerChunk <= 0 {
+		return 0
+	}
+	return c.CPUBytesToUse / (c.PerBlockBytes * c.BlocksPerChunk)
+}
+
+// CheckFitsOneChunk refuses an enabled config, PerBlockBytes resolved, whose CPU budget holds
+// no whole chunk: vLLM would size a zero-chunk tier. A non-positive width is Validate's to refuse.
+func (c KVOffloadConfig) CheckFitsOneChunk() error {
+	if !c.Enabled || c.BlocksPerChunk <= 0 || c.PerBlockBytes <= 0 || c.CPUChunkCapacity() >= 1 {
+		return nil
+	}
+	return fmt.Errorf("kv_offload: cpu_bytes_to_use (%d) is smaller than one offload chunk "+
+		"(blocks_per_chunk %d x %d bytes per block)", c.CPUBytesToUse, c.BlocksPerChunk, c.PerBlockBytes)
 }

@@ -1,0 +1,31 @@
+_comment: "Provenance: the agentic workload our calibration runs use, aiperf 0.12.0 --scenario inferencex-agentx-mvp over the public-dataset alias semianalysis_cc_traces_weka_062126_256k (inference-sim/blis-catalog#34). The corpus is not vendored: a consumer fetches traces.jsonl from the Hugging Face dataset semianalysisai/cc-traces-weka-062126-256k at the pinned revision and checks it against sha256 before replaying it. A real aiperf 0.12.0 run does not pin the revision: the alias's plugin metadata sets hf_dataset_name and hf_split but no hf_revision (plugin/plugins.yaml:2429-2447), so the loader reads the dataset's HEAD (dataset/loader/base_hf_dataset.py:77), and aiperf exposes no CLI flag to override it (--tokenizer-revision is the tokenizer's). A run that claims this workload must therefore check the downloaded traces.jsonl against sha256. The lane count (aiperf --concurrency) is each run's choice, so it is stated where the workload is bound, not here."
+_comment_corpus: "Corpus: Apache-2.0, ungated. traces.jsonl is 568,864,747 bytes. The dataset's stats.txt at the pinned revision states 393 traces, 28,444 main turns, 1,697 subagent groups, 39,822 subagent inner requests, 68,266 model requests, 6,891,228,864 input tokens and 58,728,807 output tokens. Its README.md says it was built on 2026-06-21 by utils/agentic/build_weka_hf_dataset.py from semianalysisai/cc-traces-weka-062126 (SemiAnalysis Claude Code proxy traces, trace version 7 only), capping each request at 256,000 input + output tokens."
+_comment_run: "Run settings, as our calibration runs set them: random_seed 42 (aiperf alone would draw a random seed); benchmark_duration_s 900, the scenario's floor (its default is 1800); grace_period_s 30, aiperf's --benchmark-grace-period default, which the scenario does not set; max_context_length max_model_len, the deployment's resolved --max-model-len, which drops every trace whose recorded peak prompt plus output exceeds it."
+_comment_locked: "cache_bust, system_idle_gap_cap_s, trajectory_start, warmup and split_flattened_agents are stated at the values aiperf 0.12.0 applies under the scenario (common/scenario/inferencex_agentx_mvp.py; common/environment.py WEKA_SPLIT_FLATTENED_AGENTS), so the file reads as the whole run. category coding is the corpus plugin's default_prompt_corpus, and thinking on is the THINKING_MODE InferenceX's benchmark workflows set (InferenceX 9fa76586 .github/workflows/benchmark-tmpl.yml:96), which its launcher requires for speculative AgentX throughput runs (inferencex-e2e/infx/launch/request.py:141-146); together they select the acceptance profile."
+replay:
+  scenario: inferencex-agentx-mvp
+  harness_version: 0.12.0
+  corpus:
+    loader: semianalysis_cc_traces_weka_062126_256k
+    format: weka-trace-v7
+    encoding: jsonl
+    source:
+      huggingface: semianalysisai/cc-traces-weka-062126-256k
+      revision: 8fecd2fc56694469f758f0afbbb6335ad3043740
+      file: traces.jsonl
+      split: train
+    sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
+  random_seed: 42
+  benchmark_duration_s: 900
+  grace_period_s: 30
+  max_context_length: max_model_len
+  cache_bust: first_turn_prefix
+  system_idle_gap_cap_s: 10
+  trajectory_start:
+    min_ratio: 0.0
+    max_ratio: 1.0
+  warmup:
+    mode: synthesized
+  split_flattened_agents: true
+  category: coding
+  thinking: "on"

@@ -3,6 +3,9 @@ package sim
 
 import (
 	"math"
+
+	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/vocab"
 )
 
 type IntOrFloat64 interface {
@@ -28,6 +31,13 @@ type RequestMetrics struct {
 	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 	SessionID         string  `json:"session_id,omitempty"`             // #1058: session context for multi-turn metrics
 	RoundIndex        int     `json:"round_index"`                      // #1058: 0 for first round, N for Nth follow-up
+	Phase             Phase   `json:"phase,omitempty"`                  // #1938: benchmark phase; "" = measured
+	// Agentic is the request's agentic-replay tag (#1937), shared with the Request, so its
+	// Outcome reads as the request ended. Absent for every other workload.
+	Agentic *AgenticTag `json:"agentic,omitempty"`
+	// OutputTokens is the count the request emitted (aiperf's OSL), set at completion. It
+	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
+	OutputTokens int `json:"output_tokens,omitempty"`
 
 	// CompletionIndex is this request's 1-based position in the run's completion order,
 	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
@@ -44,6 +54,13 @@ type RequestMetrics struct {
 	// them. Unexported, so never serialized.
 	completionSeq   int
 	completionClock int64
+	// completionOverheadTicks is the fixed host time the latency model charged after the
+	// request's last streamed token (PostDecodeFixedOverhead), part of E2E but not of
+	// aiperf's request latency, which ends at the last content chunk (#1938). timedOut marks
+	// a request cancelled by its client timeout. Both survive the merge and the P/D
+	// projection (WithCompletionOf) like the completion stamp.
+	completionOverheadTicks int64
+	timedOut                bool
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -63,6 +80,8 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		LengthCapped:     req.LengthCapped,
 		SessionID:        req.SessionID,
 		RoundIndex:       req.RoundIndex,
+		Phase:            req.Phase,
+		Agentic:          req.Agentic,
 	}
 	// Flow control: compute gateway queue delay when timestamps are set (#882)
 	if req.GatewayDispatchTime > 0 && req.GatewayEnqueueTime > 0 {
@@ -142,7 +161,139 @@ type MetricsOutput struct {
 	// states -- so a results file always says when it does not reproduce its scenario.
 	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
 	// scenario exactly.
+	// EPP is the ingested llm-d EndpointPickerConfig (--epp-config, #1930); file-only
+	// via WithEPPProvenance, absent otherwise.
+	EPP *EPPProvenance `json:"epp,omitempty"`
+
 	Overrides []ScenarioOverride `json:"overrides,omitempty"`
+
+	// Agentic is an agentic replay's own counts (#1937; workload.AgentXSummary, held as
+	// any to avoid an import cycle). File-only (WithAgentic); absent for other workloads.
+	Agentic any `json:"agentic,omitempty"`
+
+	// PD is the P/D block (PDOutput), file-only; absent for a colocated run.
+	PD *PDOutput `json:"pd,omitempty"`
+
+	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
+	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
+	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
+	*MeasuredMetrics
+
+	// WholeRun keeps the whole-run values of the keys the file restates over the measured
+	// window (ttft_*, e2e_*, cache_hit_rate). File-only.
+	WholeRun *WholeRunLatency `json:"whole_run,omitempty"`
+
+	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
+	// (#1942), {} when no kernel priced the run. File-only (WithKernelProvenance); a pointer
+	// so stdout omits it while the file can state an empty map.
+	KernelProvenance *map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
+
+	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
+	*BuildVersions
+
+	// Acceptance records the speculative acceptance the run advanced requests by and where it
+	// came from (#1939). File-only, like Catalog (WithAcceptance); omitted when the run does
+	// not speculate.
+	Acceptance *AcceptanceRecord `json:"acceptance,omitempty"`
+}
+
+// BuildVersions are the module versions a results file was produced by: BLIS itself and the
+// blis-latency-kernel and blis-schemas releases it was built against.
+type BuildVersions struct {
+	BLIS    string `json:"blis_version"`
+	Kernel  string `json:"kernel_version"`
+	Schemas string `json:"schemas_version"`
+}
+
+// KernelPoolProvenance is the evidence behind one pool's kernel (#1942): how many of the
+// coefficients it priced with rest on each evidence method, the registry entries that rest on
+// none (copied from another scope, or assumed), the assumptions the kernel made itself, and
+// the release rules no one applied to the scenario. Entries are blis-latency-kernel's own
+// kernel.CoefficientOrigin records, so their keys are that type's field names.
+type KernelPoolProvenance struct {
+	// MethodCounts counts the Provenance entries by evidence method; Evidenced and Total are
+	// the kernel's Evidence() figures.
+	MethodCounts map[vocab.Method]int `json:"method_counts"`
+	Evidenced    int                  `json:"evidenced"`
+	Total        int                  `json:"total"`
+	// EvidenceSource says where Evidenced came from: the kernel's Evidence(), or, for a
+	// kernel that does not report it, nothing (Evidenced is 0 and Total counts the entries).
+	EvidenceSource string `json:"evidence_source"`
+	// NotEvidenced are the registry entries whose method is neither evidenced nor
+	// not_charged: copied from another scope (a fallback) or assumed.
+	NotEvidenced []kernel.CoefficientOrigin `json:"fallback_or_assumed"`
+	// Assumptions are the values the kernel supplied itself (Set == KernelAssumptionSet).
+	Assumptions []kernel.CoefficientOrigin `json:"assumptions"`
+	// SkippedRules are the scenario's release rules that neither the kernel nor BLIS
+	// enforces, and SkippedRuleFindings what they report on this scenario.
+	SkippedRules        []string      `json:"skipped_rules"`
+	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+}
+
+// The values of KernelPoolProvenance.EvidenceSource.
+const (
+	EvidenceFromKernel     = "kernel"
+	EvidenceFromProvenance = "provenance_entries"
+)
+
+// RuleFinding is one finding of a blis-schemas release rule.
+type RuleFinding struct {
+	Rule     string `json:"rule"`
+	Severity string `json:"severity"`
+	Path     string `json:"path,omitempty"`
+	Message  string `json:"message"`
+}
+
+// PDOutput is the results file's P/D block (#1922, #1934, #1940): the KV handoffs, how long
+// contended links held them up, the prefill KV held for decode pulls, and each pool's CPU-tier
+// hit rate. File-only, like Catalog. Times in milliseconds; percentiles numpy-linear.
+type PDOutput struct {
+	Transfers                int                `json:"transfers"`
+	TransferTimeP50Ms        float64            `json:"transfer_time_p50_ms"`
+	TransferTimeP90Ms        float64            `json:"transfer_time_p90_ms"`
+	TransferQueueDelayMeanMs float64            `json:"transfer_queue_delay_mean_ms"`
+	TransferQueueDelayP90Ms  float64            `json:"transfer_queue_delay_p90_ms"`
+	PrefillKVHoldPeakTokens  int64              `json:"prefill_kv_hold_peak_tokens"`
+	LinkPeakConcurrent       map[string]int     `json:"link_peak_concurrent_transfers,omitempty"`
+	CPUTierHitRate           map[string]float64 `json:"cpu_tier_hit_rate"`
+}
+
+
+// AcceptanceRecord is a speculating run's acceptance as simulated: the mean acceptance length
+// AL each verification step advanced a request by (1 + accepted drafts, so in [1, K+1]), its
+// rate (AL-1)/K, the precedence layer that supplied it (registry, workload, scenario or cli),
+// and the evidence behind it.
+type AcceptanceRecord struct {
+	Length      float64         `json:"length"`
+	Rate        float64         `json:"rate"`
+	SourceLayer string          `json:"source_layer"`
+	Entry       AcceptanceEntry `json:"entry"`
+}
+
+// AcceptanceEntry is the provenance of a resolved acceptance. Set, Key and the profile fields
+// are filled when a profile layer resolved it; Source always cites the evidence when one was
+// stated.
+type AcceptanceEntry struct {
+	// Set and Key name the profile set and the (model/method/k/thinking/category) profile.
+	Set string `json:"set,omitempty"`
+	Key string `json:"key,omitempty"`
+	// Method is how the profile's value was obtained (measured, copied, ...), and CopiedFrom
+	// the profile a copied value came from.
+	Method     string `json:"method,omitempty"`
+	CopiedFrom string `json:"copied_from,omitempty"`
+	// Source is the document cited: the profile's provenance source or the value's source.
+	Source string `json:"source,omitempty"`
+	// Run is the job that measured a profile.
+	Run string `json:"run,omitempty"`
+	// FallbackFrom is the workload category that had no profile when a requested fallback
+	// category replaced it.
+	FallbackFrom string `json:"fallback_from,omitempty"`
+	// MeasuredOn is the hardware a profile was measured on when it differs from the run's.
+	MeasuredOn string `json:"measured_on,omitempty"`
+	// PerPositionRates are the per-position acceptance rates p_1..p_K, and RatesDerived
+	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
+	PerPositionRates []float64 `json:"per_position_rates"`
+	RatesDerived     bool      `json:"rates_derived"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.
@@ -230,4 +381,3 @@ func CalculateMean[T IntOrFloat64](numbers []T) float64 {
 
 	return (sum / float64(len(numbers))) / 1000
 }
-

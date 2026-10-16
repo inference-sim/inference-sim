@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // KVCacheConfig groups KV cache parameters for KV store construction.
@@ -24,6 +25,32 @@ type KVCacheConfig struct {
 	// TierTime) supplies the charge rather than a bandwidth to compose one from. Set via
 	// WithKVTransferTicksPerBlock.
 	KVTransferTicksPerBlock int64
+
+	// SequenceState is each resident sequence's bounded per-sequence state -- window rings,
+	// compressor and indexer state, bounded recurrent state -- in pool blocks, as the latency
+	// kernel prices it (#1941). Zero value: none. Set via WithSequenceState.
+	SequenceState KVSequenceState
+
+	// Speculative is the KV side of speculative decoding (#1627); its zero value is off.
+	// NewInstanceSimulator sets it from the SpeculativeConfig, so the two cannot disagree.
+	Speculative KVSpeculation
+}
+
+// KVSpeculation is how a speculating engine reserves KV slots (#1627), as vLLM v0.31.0's
+// KVCacheManager.allocate_slots does: a request holds slots for its computed tokens, every
+// token scheduled this step -- the whole verify width, accepted or not -- and
+// LookaheadTokens more that the drafter writes past them (num_tokens_need_slot,
+// vllm/v1/core/kv_cache_manager.py).
+type KVSpeculation struct {
+	// Enabled sizes each allocation by its end index plus LookaheadTokens rather than by the
+	// tokens stored, so the slots of rejected drafts stay held.
+	Enabled bool
+	// LookaheadTokens is vLLM's VllmConfig.num_lookahead_tokens (see
+	// SpeculativeConfig.LookaheadTokens).
+	LookaheadTokens int64
+	// MaxModelLen caps the slots a request holds, as vLLM caps num_tokens_need_slot at
+	// max_model_len (kv_cache_manager.py:536-538 at v0.31.0); 0 is uncapped.
+	MaxModelLen int64
 }
 
 // KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
@@ -42,6 +69,26 @@ func WithKVOffload(o KVOffloadConfig) KVCacheOption {
 // WithKVTransferTicksPerBlock sets the legacy CPU tier's whole per-block reload charge.
 func WithKVTransferTicksPerBlock(ticks int64) KVCacheOption {
 	return func(c *KVCacheConfig) { c.KVTransferTicksPerBlock = ticks }
+}
+
+// KVSequenceState is how many pool blocks a sequence's bounded state takes (#1941). vLLM
+// holds a window ring's blocks on demand -- allocate_slots allocates them for the tokens
+// scheduled and remove_skipped_blocks frees those the window has passed -- and applies its
+// max_admission_blocks_per_request cap only as an admission gate; both are in blocks of the
+// shared pool.
+type KVSequenceState struct {
+	// Hold is the blocks a sequence's state holds once computed tokens are computed and
+	// inFlight more are scheduled this step (the kernel's SequenceBoundedBytesAt). Nil: the
+	// model has no bounded per-sequence state.
+	Hold func(computed, inFlight int64) int64
+	// Gate is the state blocks admission requires of a request of tokens tokens: each
+	// window group at min(cdiv(tokens), its admission cap).
+	Gate func(tokens int64) int64
+}
+
+// WithSequenceState sets the bounded per-sequence state the KV store charges (#1941).
+func WithSequenceState(st KVSequenceState) KVCacheOption {
+	return func(c *KVCacheConfig) { c.SequenceState = st }
 }
 
 // NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
@@ -71,6 +118,9 @@ func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+	if (cfg.SequenceState.Hold == nil) != (cfg.SequenceState.Gate == nil) {
+		panic("NewKVCacheConfig: SequenceState needs both Hold and Gate, or neither")
 	}
 	if cfg.KVTransferTicksPerBlock < 0 {
 		panic(fmt.Sprintf("NewKVCacheConfig: KVTransferTicksPerBlock must be >= 0, got %d", cfg.KVTransferTicksPerBlock))
@@ -151,27 +201,6 @@ func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold i
 // GLM-5.2 MTP is 5) while leaving a wide safety margin.
 const MaxSpeculativeTokens = 1024
 
-// isValidSpeculativeMethod reports whether label is an accepted speculative method
-// (the scenario's engine.speculative method). The label does not change the step-time math in the current model
-// (throughput and verify-width cost are driven by K and α); it is informational
-// provenance and the extension point for future per-method behavior. Implemented as
-// a function over a switch (not a package-level map) so there is no shared mutable
-// state (R8).
-//
-// These are BLIS labels, not verbatim vLLM method strings. "mtp", "eagle", "medusa",
-// and "ngram" match vLLM's SpeculativeMethod literals exactly; "draft" is a BLIS
-// shorthand for vLLM's "draft_model". Since the label is pure provenance today, the
-// abbreviation is harmless — but this is the spot to reconcile names if a future
-// per-method cost model needs to key off the exact vLLM string.
-func isValidSpeculativeMethod(label string) bool {
-	switch label {
-	case "mtp", "eagle", "medusa", "ngram", "draft":
-		return true
-	default:
-		return false
-	}
-}
-
 // SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
 // parameters (#1528). It is a MODEL-LEVEL attribute (one speculative config per
 // served model), not per-request. Its zero value (K=0) is inert: the feature is off
@@ -187,7 +216,11 @@ func isValidSpeculativeMethod(label string) bool {
 type SpeculativeConfig struct {
 	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
 	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
-	Method     string  // informational label: "mtp","eagle","medusa","ngram","draft". "" when off.
+	// Method is the scenario's engine.speculative.method, "" when off. It is provenance here:
+	// cost and progress are driven by K and α. Which methods exist is a fact of the engine
+	// release, so the scenario's rules pack validates it where the scenario is opened
+	// (kernelmodel.OpenPool), not a list in this package.
+	Method string
 }
 
 // NewSpeculativeConfig is the canonical constructor (R4). Returns the config and a
@@ -224,12 +257,54 @@ func (c SpeculativeConfig) Validate() error {
 		}
 		return nil
 	}
-	if c.Method != "" {
-		if !isValidSpeculativeMethod(c.Method) {
-			return fmt.Errorf("speculative: unknown method %q (valid: mtp, eagle, medusa, ngram, draft)", c.Method)
-		}
-	}
 	return nil
+}
+
+// LookaheadTokens is the KV slots a speculating engine reserves past the tokens it schedules
+// for a request, vLLM v0.31.0's VllmConfig.num_lookahead_tokens (vllm/config/vllm.py:630-654):
+// K + 1 for DFlash (one bonus query plus K mask queries), K for the methods that draft from the
+// target's hidden states or a draft model (eagle, eagle3, mtp and the model-specific *_mtp
+// names vLLM folds into it, dspark, draft_model), and 0 for the rest (ngram, ngram_gpu,
+// suffix, medusa, mlp_speculator, extract_hidden_states, custom_class). 0 when off.
+func (c SpeculativeConfig) LookaheadTokens() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch m := c.Method; {
+	case m == "dflash":
+		return int64(c.K) + 1
+	case m == "eagle", m == "eagle3", m == "dspark", m == "draft_model", strings.HasSuffix(m, "mtp"):
+		return int64(c.K)
+	default:
+		return 0
+	}
+}
+
+// DraftSlots is vLLM v0.31.0's SpeculativeConfig.max_num_new_slots_for_drafting
+// (vllm/config/speculative.py:1882-1919): the query slots a drafter adds to the forward pass
+// per scheduled request beyond the one already budgeted -- K for DFlash, K-1 for the other
+// parallel drafter DSpark (parallel_drafting is set for both, :1462-1463), 1 for a serial
+// draft model, 0 for the rest. The scheduler debits it from input_budget for every request
+// it schedules (scheduler.py:826, 1314). 0 when off.
+func (c SpeculativeConfig) DraftSlots() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch c.Method {
+	case "dflash":
+		return int64(c.K)
+	case "dspark":
+		return int64(c.K) - 1
+	case "draft_model":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// KV is the KV-slot reservation the config implies (#1627).
+func (c SpeculativeConfig) KV() KVSpeculation {
+	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens()}
 }
 
 // IsEnabled reports whether speculative decoding is active (K>0).

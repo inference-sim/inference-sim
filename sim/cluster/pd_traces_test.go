@@ -258,10 +258,8 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	// 2 prefill, 1 decode instance with only 3 blocks (48 tokens).
 	// newShortRequests produces requests needing ~2 blocks each; the decode instance fills up
 	// and subsequent AllocateTransferredKV calls fail → droppedAtDecodeKV > 0.
-	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	config, requests := decodeDropFixture(4) // prompts the decode instance can never hold
 	config.TraceLevel = "decisions"
-	requests := newShortRequests(4)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
@@ -269,7 +267,7 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 
 	// THEN at least one request was dropped at decode KV allocation
 	if cs.AggregatedMetrics().DroppedUnservable == 0 {
-		t.Fatal("expected DroppedUnservable > 0 with 3-block decode KV capacity and 4 requests, but no drops occurred — check test setup")
+		t.Fatal("expected DroppedUnservable > 0 with prompts larger than the 3-block decode KV, but no drops occurred — check test setup")
 	}
 
 	tr := cs.Trace()

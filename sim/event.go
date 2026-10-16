@@ -42,13 +42,17 @@ func (e *ArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 
-	// Trigger queued event with processing delay
-	queued_delay := sim.latencyModel.QueueingTime(e.Request) // coming from alpha model
+	// The admission overhead (render + tokenize) runs on the endpoint's render stage when
+	// one is configured, so it queues behind earlier requests (INV-R1).
+	render := sim.latencyModel.QueueingTime(e.Request)
+	queuedAt := e.time + render
+	if sim.renderer != nil {
+		queuedAt = sim.renderer.Admit(e.time, render)
+	}
 	sim.Schedule(&QueuedEvent{
-		time:    e.time + queued_delay,
+		time:    queuedAt,
 		Request: e.Request,
 	})
-
 }
 
 // QueuedEvent represents the queue of a new inference request into the system.
@@ -72,9 +76,7 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 
 	// If there's no Step scheduled and WaitQ has work, trigger one immediately.
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 }
 
@@ -121,6 +123,10 @@ func (e *StepEvent) Priority() int    { return PriorityStep }
 // Execute the StepEvent
 func (e *StepEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< StepEvent at %d ticks", e.time)
+	if sim.lockstep != nil {
+		sim.lockstep.step(e)
+		return
+	}
 	sim.Step(e.time)
 }
 
@@ -175,6 +181,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// statement does not yet enumerate; this is not the only site that sets it.
 	e.Request.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++
+	sim.Metrics.RecordTimeout(e.Request)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,
@@ -221,9 +228,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// schedule a StepEvent (defense-in-depth, BC-18)
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 
 	// Invoke completion callback for session management

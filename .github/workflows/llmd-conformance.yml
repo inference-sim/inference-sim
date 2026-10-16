@@ -1,0 +1,32 @@
+name: llm-d conformance
+
+# Differential conformance job: drives llm-d-router's own plugin code
+# (main@981acb8a and v0.10.0) and BLIS's ports with identical randomized endpoint
+# states and requires identical outputs. The harness lives in separate modules
+# (test/llmd-conformance/*) so the main module gains no llm-d dependency. It runs on
+# every PR (no path filter) so it can be a required status check; it needs network
+# access to download the llm-d-router modules and the Go toolchain their go.mod
+# pins. Run locally: see docs/guide/routing.md#llm-d-conformance.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'feature/**']
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        llmd: [main, v0_10_0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: test/llmd-conformance/${{ matrix.llmd }}/go.mod
+          cache: false
+      - name: Differential conformance (llm-d-router ${{ matrix.llmd }})
+        working-directory: test/llmd-conformance/${{ matrix.llmd }}
+        run: go test ./... -count=1 -rapid.checks=5000

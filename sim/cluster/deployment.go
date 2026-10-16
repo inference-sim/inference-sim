@@ -1,6 +1,9 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import (
+	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
+)
 
 // DefaultCacheSignalDelay is the default propagation delay for prefix cache
 // signals in microseconds (50ms). Only affects precise-prefix-cache and
@@ -16,6 +19,26 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
+	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
+	// many consecutive instances is one replica whose ranks step in lockstep and share one
+	// router endpoint, behind vLLM's internal DP load balancer. 0 or 1 = every instance is an
+	// independent engine and its own endpoint. NumInstances and every pool count must be a
+	// multiple of it.
+	DPLockstepRanks int
+
+	// DPLoadBalancing is how a lockstep replica's requests reach its ranks (#1909), as vLLM
+	// v0.31.0's serve flags choose (vllm/engine/arg_utils.py:536-538, :1225-1242;
+	// EngineCoreClient.make_async_mp_client, vllm/v1/engine/core_client.py:155-166):
+	//   - DPLoadBalancingInternal ("" or "internal", vLLM's default) and
+	//     DPLoadBalancingHybrid (--data-parallel-hybrid-lb): one endpoint per replica,
+	//     whose front-end balances requests over its ranks (DPLBAsyncMPClient). Hybrid
+	//     balances over one node's ranks, which is the whole replica when it fits a node.
+	//   - DPLoadBalancingExternal (--data-parallel-external-lb, or
+	//     --data-parallel-multi-port-external-lb): every rank serves its own port
+	//     (DPAsyncMPClient, one client per rank), so the router sees and picks ranks.
+	// Lockstep stepping is the same in every mode.
+	DPLoadBalancing string
+
 	// Online routing pipeline configuration (PR4+)
 	AdmissionPolicy       string  // "always-admit" (default) or "token-bucket"
 	AdmissionLatency      int64   // microseconds, default 0
@@ -26,6 +49,10 @@ type DeploymentConfig struct {
 	// Routing policy configuration (PR6, evolved in PR17)
 	RoutingPolicy        string             // "round-robin" (default), "least-loaded", "weighted", "always-busiest"
 	RoutingScorerConfigs []sim.ScorerConfig // for weighted routing scorer pipeline (nil = use defaults)
+	// RoutingPipeline is llm-d's data layer and filter stage for weighted routing
+	// (producers, inflight-load-producers, filters), from --epp-config. Nil keeps
+	// the scorer-only pipeline (INV-6).
+	RoutingPipeline *sim.RoutingPipelineConfig `yaml:"-"`
 
 	// Decision trace configuration (PR13)
 	TraceLevel      string // "none" (default), "decisions"
@@ -69,6 +96,9 @@ type DeploymentConfig struct {
 	SharedInstances   int
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
+	// PDPrefixBased, when non-nil, selects llm-d's prefix-based-pd-decider on the EPP
+	// data layer (requires RoutingPipeline); it overrides PDDecider.
+	PDPrefixBased *sim.LLMDPrefixPDDeciderConfig `yaml:"-"`
 
 	// E/P/D disaggregation configuration (GAP-4, issue #1264).
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
@@ -84,6 +114,32 @@ type DeploymentConfig struct {
 	// and the KV geometry) and the simulator owns only when it happens. Required whenever
 	// PD disaggregation is enabled; NewClusterSimulator refuses a PD deployment without it.
 	PDTransferTime func(tokens int64, from, to InstanceID) int64
+
+	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
+	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a kvtransfer.LinkArbiter, which
+	// divides every link max-min fairly among the handoffs on it and re-rates them as handoffs
+	// start, drain and finish. A handoff alone still completes at exactly PDTransferTime. False
+	// (the default) prices every handoff as if alone, byte-identical to the behaviour before.
+	PDTransferContention bool
+	// PDTransferDemand is the demand behind PDTransferTime for the same handoff: payload bytes,
+	// the floor, and the links crossed with their full rates (blis-schemas
+	// kernel.PDTransferDemand). Required when PDTransferContention is set; the simulator invents
+	// no rate, floor or link of its own.
+	PDTransferDemand func(tokens int64, from, to InstanceID) kvtransfer.Flow
+
+	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
+	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:
+	// request_finished returns delay_free_blocks and records a lease deadline instead of
+	// freeing (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:247-266 at
+	// v0.31.0; push_scheduler.py:260-270 likewise). The blocks are freed when the pull
+	// completes, at once when the decode side aborts the request before pulling, and at lease
+	// expiry when the decode side vanishes (#1934, INV-PD-7). False frees them when the
+	// prefill finishes, the behaviour before #1934.
+	PDPrefillKVHold bool
+	// PDKVLeaseUs is NIXL's kv_lease_duration in microseconds: how long a prefill engine keeps
+	// a finished request's blocks for a decode side that neither pulls them nor renews the
+	// lease. 0 takes vLLM's default of 30 s (nixl/base_scheduler.py:81-85).
+	PDKVLeaseUs int64
 
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.
@@ -138,6 +194,20 @@ type DeploymentConfig struct {
 	FlowControlRequestTTL           int64   `yaml:"flow_control_request_ttl,omitempty"`             // microseconds; 0 = disabled (default). GIE parity: DefaultRequestTTL.
 	FlowControlQueueShedding        bool    `yaml:"flow_control_queue_shedding,omitempty"`          // BLIS-extra: cross-band shedding on full queue (not in llm-d). Default false.
 	FlowControlDispatchTickInterval int64   `yaml:"flow_control_dispatch_tick_interval,omitempty"`  // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity). 0 = use default.
+	// FlowControlConcurrency, when non-nil, replaces FlowControlMaxConcurrency with
+	// the full llm-d concurrency-detector parameter set (--epp-config).
+	FlowControlConcurrency *sim.ConcurrencyDetectorConfig `yaml:"-"`
+	// FlowControlMaxBytes / FlowControlPerBandMaxBytes bound the gateway queue's
+	// estimated request bytes (llm-d flowControl maxBytes and the per-band default,
+	// registry/config.go:44). 0 = unlimited.
+	FlowControlMaxBytes        int64 `yaml:"-"`
+	FlowControlPerBandMaxBytes int64 `yaml:"-"`
+	// FlowControlBands configures individual priority bands (llm-d
+	// flowControl.priorityBands): caps and fairness ("global-strict"/"round-robin").
+	FlowControlBands []sim.EPPPriorityBand `yaml:"-"`
+	// FlowControlUniformCeiling, when > 0, is one saturation ceiling for every band
+	// (llm-d static-usage-limit-policy threshold).
+	FlowControlUniformCeiling float64 `yaml:"-"`
 	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
 }
 
@@ -171,5 +241,44 @@ func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
 		return d.SimConfig
 	default:
 		return d.SimConfig
+	}
+}
+
+// ApplyEPPIngest maps an ingested llm-d EndpointPickerConfig (--epp-config, #1930)
+// onto the deployment: weighted routing over the EPP data layer, the P/D profiles
+// and decider, and flow control. The single mapping point for run and replay.
+func (d *DeploymentConfig) ApplyEPPIngest(in *sim.EPPIngest) {
+	d.RoutingPolicy = "weighted"
+	d.RoutingScorerConfigs = in.Scorers
+	d.RoutingPipeline = in.Pipeline
+	if in.MetricsRefreshIntervalUs > 0 {
+		d.SnapshotRefreshInterval = in.MetricsRefreshIntervalUs // metrics-data-source interval
+	}
+	if in.Disaggregated {
+		d.PrefillScorerConfigs = in.PrefillScorers
+		d.DecodeScorerConfigs = in.DecodeScorers
+		d.PDPrefixBased = in.PDPrefixBased
+		switch in.PDDecider {
+		case "always", "never":
+			d.PDDecider = in.PDDecider
+		default:
+			d.PDDecider = "never" // PDPrefixBased supersedes it
+		}
+	}
+	if fc := in.FlowControl; fc != nil {
+		det := fc.Detector
+		d.FlowControlEnabled = true
+		d.FlowControlDetector = "concurrency"
+		d.FlowControlConcurrency = &det
+		d.FlowControlMaxConcurrency = int(det.MaxConcurrency)
+		d.FlowControlMaxQueueDepth = fc.MaxRequests
+		d.FlowControlPerBandCapacity = fc.PerBandMaxRequests
+		d.FlowControlMaxBytes = fc.MaxBytes
+		d.FlowControlPerBandMaxBytes = fc.PerBandMaxBytes
+		d.FlowControlBands = fc.Bands
+		d.FlowControlRequestTTL = fc.RequestTTLUs
+		d.FlowControlUniformCeiling = fc.UniformCeiling
+		d.FlowControlDispatchOrder = "fifo"
+		d.FlowControlFairnessPolicy = "global-strict"
 	}
 }

@@ -225,6 +225,14 @@ func prefixPoint(t *testing.T, enabled bool) (Sweep, Config) {
 // request 0 served from the cached prompt, so its first token comes sooner than from an empty
 // engine -- and on a point with caching off the cold one, which is then the same thing. RunCold
 // is the information-only empty-engine run.
+//
+// The mechanism is asserted on request 0 itself. A full prefix hit computes only the prompt's
+// last block (vLLM v0.31.0 KVCacheManager.get_computed_blocks, max_cache_hit_length =
+// num_tokens - 1, vllm/v1/core/kv_cache_manager.py:289-299), so its prefill is shorter. The
+// main-phase MEAN is not a measure of it: the client is closed-loop, each completion sends the
+// next request, so request 0 finishing sooner shifts every later arrival, and a shifted
+// arrival can land on another's prefill. At this point request 5 then queues ~19 ms longer and
+// the primed mean exceeds the cold one by 0.17%, though request 0 is 15 ms faster.
 func TestRunScoresThePrimedMainPhaseWhereThePrefixIsCached(t *testing.T) {
 	sw, cfg := prefixPoint(t, true)
 	scored, err := Run(sw, 4, cfg)
@@ -239,19 +247,19 @@ func TestRunScoresThePrimedMainPhaseWhereThePrefixIsCached(t *testing.T) {
 		t.Fatalf("scored primed=%v completed=%d, cold primed=%v completed=%d", scored.Primed, scored.Completed,
 			cold.Primed, cold.Completed)
 	}
-	if scored.MeanTTFTUs >= cold.MeanTTFTUs {
-		t.Errorf("primed mean TTFT %.0f us is not below the cold %.0f us: request 0's cached prompt did not "+
-			"shorten its prefill", scored.MeanTTFTUs, cold.MeanTTFTUs)
+	if scored.FirstTTFTUs <= 0 || scored.FirstTTFTUs >= cold.FirstTTFTUs {
+		t.Errorf("primed request 0 TTFT %.0f us is not below the cold %.0f us: its cached prompt did not "+
+			"shorten its prefill", scored.FirstTTFTUs, cold.FirstTTFTUs)
 	}
 	d, err := RunWarmupDifference(sw, 4, cfg, scored)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Scored != scored || d.Cold != cold || d.DTTFTPct >= 0 {
+	if d.Scored != scored || d.Cold != cold || d.DTTFTPct != 100*(scored.MeanTTFTUs/cold.MeanTTFTUs-1) {
 		t.Errorf("the reported difference is not scored against cold: %+v", d)
 	}
-	t.Logf("scored (primed) TTFT %.0f us TPOT %.1f us; cold TTFT %.0f us (%+.2f%%) TPOT %.1f us (%+.3f%%)",
-		scored.MeanTTFTUs, scored.MeanTPOTUs, cold.MeanTTFTUs, d.DTTFTPct, cold.MeanTPOTUs, d.DTPOTPct)
+	t.Logf("scored (primed) TTFT %.0f us TPOT %.1f us, request 0 %.0f us; cold TTFT %.0f us (%+.2f%%) TPOT %.1f us (%+.3f%%), request 0 %.0f us",
+		scored.MeanTTFTUs, scored.MeanTPOTUs, scored.FirstTTFTUs, cold.MeanTTFTUs, d.DTTFTPct, cold.MeanTPOTUs, d.DTPOTPct, cold.FirstTTFTUs)
 
 	off, cfgOff := prefixPoint(t, false)
 	a, err := Run(off, 4, cfgOff)

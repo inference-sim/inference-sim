@@ -61,7 +61,24 @@ func LockedUpstreams() (map[string]Upstream, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "testdata", "upstream.lock")
+	return parseLock(filepath.Join(dir, "testdata", "upstream.lock"))
+}
+
+// PrereleaseUpstreams reads this repository's testdata/upstream-prerelease.lock, the same
+// format: upstreams vendored ahead of blis-latency-kernel's lock, at the unreleased commits
+// a pinned kernel pre-release was developed against (Tag names the branch). An absent file
+// is no entries. TestTheVendoredCatalogAndRegistryAreTheLockedReleases lets an entry here
+// stand in for the kernel's only while the two differ, so the file empties once the kernel's
+// lock catches up.
+func PrereleaseUpstreams() (map[string]Upstream, error) {
+	path := filepath.Join(repoRoot(), "testdata", "upstream-prerelease.lock")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return map[string]Upstream{}, nil
+	}
+	return parseLock(path)
+}
+
+func parseLock(path string) (map[string]Upstream, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
