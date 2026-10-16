@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"sort"
 	"fmt"
 	"math"
 	"math/rand"
@@ -693,11 +694,28 @@ func (o *OffloadCache) cascade(key kvkey.BlockKey) {
 	}
 }
 
-// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes.
-func (o *OffloadCache) EnableKVEvents() { o.gpu.EnableKVEvents() }
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so does
+// the CPU tier (Tier "cpu"; its keys are the GPU block hashes), in one ordered stream. Secondary
+// tiers behind the CPU tier publish nothing.
+func (o *OffloadCache) EnableKVEvents() {
+	o.gpu.EnableKVEvents()
+	o.cpu.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier("cpu", string(key), removed) }
+}
 
 // TakeKVEvents implements sim.KVEventSource.
 func (o *OffloadCache) TakeKVEvents() []sim.KVEvent { return o.gpu.TakeKVEvents() }
 
 // CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
 func (o *OffloadCache) CachedBlockHashes() []string { return o.gpu.CachedBlockHashes() }
+
+// CPUBlockHashes implements sim.KVEventSource: the CPU tier's ready blocks.
+func (o *OffloadCache) CPUBlockHashes() []string {
+	out := make([]string, 0, len(o.cpu.blocks))
+	for k, blk := range o.cpu.blocks {
+		if blk.refCnt >= 0 {
+			out = append(out, string(k))
+		}
+	}
+	sort.Strings(out)
+	return out
+}

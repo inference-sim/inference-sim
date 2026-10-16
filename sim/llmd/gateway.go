@@ -131,6 +131,11 @@ type Gateway struct {
 	canon   *promptCanon
 	// kvIngest are the configuration's precise-prefix-cache-producers, which receive KV events.
 	kvIngest []*preciseprefixcache.Producer
+	// kvHeld counts, per instance, the published holdings (tiers) of each block hash, to release
+	// the canonicalizer's pins when the instance's cache is cleared.
+	kvHeld map[cluster.InstanceID]map[string]int
+	// canonCapacity, set only by tests, overrides the canonicalizer's chain capacity.
+	canonCapacity int
 	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
 	rawConfig []byte
 	// maxQueueTTL and expirySweepUs bound a held request's wait in flow control (queueBudget).
@@ -162,8 +167,10 @@ type endpoint struct {
 	ip    string
 	port  int
 	ready bool
-	// cleared is set once the router has been told the instance's prefix cache is gone.
-	cleared bool
+	// cleared is set when the instance terminates; kvCleared once the router has been told its
+	// prefix cache is gone, after which no batch of it is delivered.
+	cleared   bool
+	kvCleared bool
 }
 
 // flight is one request between its arrival and the end of its response.
@@ -284,7 +291,11 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	for _, inst := range host.Instances() {
 		kvBlocks += inst.TotalKVBlocks()
 	}
-	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), int(2*kvBlocks))
+	capacity := int(2 * kvBlocks)
+	if g.canonCapacity > 0 {
+		capacity = g.canonCapacity
+	}
+	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), capacity)
 	g.rt.server = &modelServers{g: g, rendered: map[cluster.InstanceID]renderedMetrics{}}
 	ctx := hosting.Into(log.IntoContext(context.Background(), g.logger), g.rt)
 	g.ctx, g.cancel = context.WithCancel(ctx)
@@ -302,6 +313,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		return err
 	}
 	g.kvIngest = kvIngesters(emb.Handle)
+	g.kvHeld = map[cluster.InstanceID]map[string]int{}
 	if len(g.kvIngest) > 0 {
 		for _, inst := range host.Instances() {
 			if inst.AdapterCapacity() > 0 {
@@ -441,8 +453,10 @@ func (g *Gateway) OnInstanceChange(inst *cluster.InstanceSimulator) {
 		ep = g.newEndpoint(inst)
 	}
 	if inst.State == sim.InstanceStateTerminated && !ep.cleared {
+		// Its prefix cache is gone with it. The clear travels the same delayed stream as its
+		// events, so a batch already in flight cannot arrive after it and repopulate the index.
 		ep.cleared = true
-		g.clearKVEvents(ep) // its prefix cache is gone with it
+		g.host.Schedule(g.host.Now()+g.opts.KVEventDelayUs, PriorityKVEvents, true, func() { g.clearKVEvents(ep) })
 	}
 	ready := inst.IsRoutable()
 	if ok && ready == ep.ready {
@@ -679,6 +693,7 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 	}
 	if g.observe != nil {
 		g.observe("dispatch", fmt.Sprintf("%s %v", f.req.ID, f.ctx.Err()))
+		g.observe("score", fmt.Sprintf("%s %s %g", f.req.ID, decode.ID(), p.Scores[string(decode.ID())]))
 	}
 	g.host.Dispatch(f.req, p)
 }
@@ -973,9 +988,10 @@ func completionBody(model, id string, u usage) []byte {
 }
 
 // queueBudget is the longest a held request can wait in flow control before the router expires it:
-// the largest effective queue-wait budget (the controller's default and no-endpoint budgets, every
-// band's own) plus one expiry sweep. ttl is 0 when flow control is off, and -1 when some budget is
-// unbounded (an explicit zero).
+// the largest bounded queue-wait budget (the controller's default and no-endpoint budgets, every
+// band's own) plus one expiry sweep. An unbounded budget (an explicit zero) is left out: a request
+// under it is released by no router timer, so only the bounded ones extend the horizon. ttl is 0
+// when flow control is off or no budget is bounded.
 func queueBudget(emb *runner.Embedded) (ttl, sweep int64) {
 	if !emb.FlowControlEnabled() || emb.Config == nil || emb.Config.FlowControlConfig == nil {
 		return 0, 0
@@ -1001,10 +1017,9 @@ func queueBudget(emb *runner.Embedded) (ttl, sweep int64) {
 		}
 	}
 	for _, d := range budgets {
-		if d == 0 {
-			return -1, sweep
+		if d > 0 {
+			ttl = max(ttl, toMicros(d))
 		}
-		ttl = max(ttl, toMicros(d))
 	}
 	return ttl, sweep
 }

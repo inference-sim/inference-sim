@@ -306,20 +306,27 @@ func TestHeldUntil(t *testing.T) {
 	if got, want := g.HeldUntil(30_000_000), int64(30_000_000+60_000_000+1_000_000); got != want {
 		t.Errorf("HeldUntil after a later event = %d, want %d", got, want)
 	}
-	g.maxQueueTTL = -1 // a budget without bound: only deadlines release
+	g.maxQueueTTL = 0 // no bounded budget: only deadlines release
 	if got, want := g.HeldUntil(0), int64(7_200_000_000); got != want {
-		t.Errorf("unbounded TTL: HeldUntil = %d, want %d", got, want)
+		t.Errorf("no bounded TTL: HeldUntil = %d, want %d", got, want)
 	}
 }
 
-// TestFlowControl_GlobalTTLOverAnHourIsNotAStall: a request flow control holds with no client
-// deadline and a global queue-wait budget over an hour expires at that budget; the one-hour "no
-// progress" limit does not fail the run first (review 6205113308).
-func TestFlowControl_GlobalTTLOverAnHourIsNotAStall(t *testing.T) {
+// TestFlowControl_TTLOverAnHourIsNotAStall: a request flow control holds with no client deadline,
+// under a queue-wait budget over an hour, expires at that budget; the one-hour "no progress" limit
+// does not fail the run first. An unbounded budget elsewhere (the empty-pool regime, another band)
+// does not erase the bounded one (reviews 6205113308, 6205596017).
+func TestFlowControl_TTLOverAnHourIsNotAStall(t *testing.T) {
 	if testing.Short() {
 		t.Skip("ticks flow control through an hour of simulated time")
 	}
-	const config = `apiVersion: llm-d.ai/v1
+	for name, flowControl := range map[string]string{
+		"global budget":        "  defaultRequestTTL: 61m\n",
+		"unbounded empty-pool": "  defaultRequestTTL: 61m\n  noEndpointRequestTTL: 0s\n",
+		"unbounded other band": "  defaultRequestTTL: 61m\n  priorityBands:\n  - priority: 7\n    defaultRequestTTL: 0s\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := `apiVersion: llm-d.ai/v1
 kind: EndpointPickerConfig
 featureGates:
 - flowControl
@@ -331,19 +338,20 @@ schedulingProfiles:
   plugins:
   - pluginRef: max-score-picker
 flowControl:
-  defaultRequestTTL: 61m
-`
-	reqs := testRequests(1, 3, 0, 0)
-	reqs[0].ArrivalTime = 1_000_000 // after the startup scrape has gone stale
-	cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
-	// Metrics refreshed every three hours: after the startup scrape they are stale, which the
-	// utilization detector reads as saturated, so flow control holds the request.
-	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--refresh-metrics-interval=3h", "--config-text="+config)}))
-	if err := cs.Run(); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if reqs[0].AssignedInstance != "" || cs.GatewayExpired() != 1 {
-		t.Fatalf("dispatched=%q, expired=%d: want the held request to expire at its 61-minute budget", reqs[0].AssignedInstance, cs.GatewayExpired())
+` + flowControl
+			reqs := testRequests(1, 3, 0, 0)
+			reqs[0].ArrivalTime = 1_000_000 // after the startup scrape has gone stale
+			cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+			// Metrics refreshed every three hours: after the startup scrape they are stale, which the
+			// utilization detector reads as saturated, so flow control holds the request.
+			cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--refresh-metrics-interval=3h", "--config-text="+config)}))
+			if err := cs.Run(); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if reqs[0].AssignedInstance != "" || cs.GatewayExpired() != 1 {
+				t.Fatalf("dispatched=%q, expired=%d: want the held request to expire at its 61-minute budget", reqs[0].AssignedInstance, cs.GatewayExpired())
+			}
+		})
 	}
 }
 

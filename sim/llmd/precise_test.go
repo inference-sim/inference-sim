@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -196,9 +199,10 @@ func TestPrecisePrefix_SampleConfigs(t *testing.T) {
 		{"epp-precise-prefix-cache-config.yaml", 64, ""},
 		{"sim-epp-kvcache-config.yaml", 16, ""},
 		{"sim-epp-tokenizer-vllm-http-config.yaml", 16, ""},
-		{"sim-epp-no-hit-lru.yaml", 16, "cuts block keys every 5 tokens"},
+		{"sim-epp-no-hit-lru.yaml", 5, ""},
+		{"sim-epp-no-hit-lru.yaml", 16, "cuts block keys every 5 tokens"}, // on engines with another block size
 	} {
-		t.Run(tc.file, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%d-token-blocks", tc.file, tc.blockSize), func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(dir, tc.file))
 			if err != nil {
 				t.Fatal(err)
@@ -228,4 +232,173 @@ func forkConfigDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return filepath.Join(out, "deploy", "config")
+}
+
+// TestPrecisePrefix_ClearIsOrderedWithDelayedBatches: when an instance terminates while its KV
+// event batches are still in flight (a delivery delay), the clear arrives after every batch the
+// instance published before terminating, nothing of it is delivered after the clear, and the
+// router's index for its pod ends empty.
+func TestPrecisePrefix_ClearIsOrderedWithDelayedBatches(t *testing.T) {
+	reqs := prefixGroups(1, 10, 256, 30000) // one group: it stays on one instance
+	late := testRequests(1, 99, 0, 0)[0]
+	late.ID, late.ArrivalTime = "late", 2_000_000
+	after := testRequests(1, 98, 0, 0)[0] // keeps the run going past the clear (deliveries are daemon events)
+	after.ID, after.ArrivalTime = "after", 6_000_000
+	reqs = append(reqs, late, after)
+	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", KVEventDelayUs: 1_900_000, EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
+	var victim cluster.InstanceID
+	var events []string
+	gw.observe = func(kind, detail string) {
+		switch kind {
+		case "request":
+			if detail == "late" {
+				victim = cluster.InstanceID(reqs[0].AssignedInstance)
+				events = append(events, "terminate")
+				for _, inst := range cs.Instances() {
+					if inst.ID() == victim {
+						inst.TransitionTo(sim.InstanceStateTerminated)
+					}
+				}
+			}
+		case "kvdeliver":
+			if victim != "" && strings.HasPrefix(detail, string(victim)+" ") {
+				events = append(events, "deliver")
+			}
+		case "kvclear":
+			events = append(events, "clear "+detail)
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	seq := strings.Join(events, ",")
+	if !strings.HasPrefix(seq, "terminate,deliver") || !strings.HasSuffix(seq, ",clear "+string(victim)) {
+		t.Fatalf("after termination: %s; want the in-flight batches delivered, then the clear, then nothing", seq)
+	}
+	ep := gw.endpoints[victim]
+	if got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port)); err != nil || len(got) != 0 {
+		t.Fatalf("the terminated pod still indexes %d blocks (%v)", len(got), err)
+	}
+}
+
+// TestPrecisePrefix_PerfHelmConfig: the EndpointPickerConfig and EPP flags embedded in llm-d's
+// test/perf/config/router-configs/precise-prefix.yaml (Helm values) run unchanged: endpoint
+// notification source, pod discovery settings (inert: the simulated pods are given, not
+// discovered), speculative indexing, and the active-request, KV-utilization, prefix and no-hit-LRU
+// scorers.
+func TestPrecisePrefix_PerfHelmConfig(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(forkConfigDir(t), "..", "..", "test", "perf", "config", "router-configs", "precise-prefix.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values struct {
+		Router struct {
+			EPP struct {
+				Flags               map[string]any    `json:"flags"`
+				PluginsConfigFile   string            `json:"pluginsConfigFile"`
+				PluginsCustomConfig map[string]string `json:"pluginsCustomConfig"`
+			} `json:"epp"`
+		} `json:"router"`
+	}
+	if err := yaml.Unmarshal(raw, &values); err != nil {
+		t.Fatal(err)
+	}
+	epp := values.Router.EPP
+	config := epp.PluginsCustomConfig[epp.PluginsConfigFile]
+	if !strings.Contains(config, "precise-prefix-cache-producer") || !strings.Contains(config, "speculativeIndexing: true") {
+		t.Fatalf("the embedded config %q was not found or changed shape", epp.PluginsConfigFile)
+	}
+	flags := DefaultEPPFlags()
+	for name, v := range epp.Flags {
+		flags = append(flags, fmt.Sprintf("--%s=%v", name, v))
+	}
+	sort.Strings(flags[2:])
+	flags = append(flags, "--config-text="+config)
+	run := runPrecise(t, testDeployment(3), prefixGroups(3, 8, 256, 20000), "", Options{EPPFlags: flags})
+	if m := run.cs.AggregatedMetrics(); m.CompletedRequests != len(run.reqs) {
+		t.Fatalf("completed %d of %d", m.CompletedRequests, len(run.reqs))
+	}
+}
+
+// TestPrecisePrefix_IndexFollowsEveryTier: with a CPU tier (the legacy tiered cache, or the
+// offload chain), the router's index holds, per pod and per tier, exactly the blocks the engine
+// holds there: its GPU prefix cache, and the blocks ready on its CPU tier.
+func TestPrecisePrefix_IndexFollowsEveryTier(t *testing.T) {
+	offload := sim.KVOffloadConfig{
+		Enabled: true, CPUBytesToUse: 300 * 1000, PerBlockBytes: 1000,
+		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
+	}
+	for name, kv := range map[string]sim.KVCacheConfig{
+		"tiered":  sim.NewKVCacheConfig(120, 16, 300, 0.5, 1e6, 0),
+		"offload": sim.NewKVCacheConfig(120, 16, 0, 0, 0, 0, sim.WithKVOffload(offload)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			dep := testDeployment(2)
+			dep.KVCacheConfig = kv
+			run := runPrecise(t, dep, prefixGroups(10, 4, 256, 15000), preciseConfig(""), Options{})
+			cpuBlocks := 0
+			for _, inst := range run.cs.Instances() {
+				ep := run.gw.endpoints[inst.ID()]
+				pod := ep.ip + ":" + fmt.Sprint(ep.port)
+				for tier, want := range map[string][]string{"gpu": inst.CachedBlockHashes(), "cpu": inst.CPUBlockHashes()} {
+					got, err := run.gw.kvIngest[0].HostedPodTierBlocks(pod, tier)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if tier == "cpu" {
+						cpuBlocks += len(want)
+					}
+					if len(got) != len(want) {
+						t.Errorf("%s %s: the router indexes %d blocks, the engine holds %d", inst.ID(), tier, len(got), len(want))
+						continue
+					}
+					for _, h := range want {
+						if !got[engineKey(h)] {
+							t.Errorf("%s %s: block %s is not in the router's index", inst.ID(), tier, h[:12])
+							break
+						}
+					}
+				}
+			}
+			if cpuBlocks == 0 {
+				t.Fatal("no block reached a CPU tier; the check would be vacuous")
+			}
+		})
+	}
+}
+
+// TestPrecisePrefix_CachedBlockSurvivesCanonicalizerChurn (review 6205960463): unique prompts
+// churn the prompt canonicalizer far past its capacity while a shared prefix stays cached on an
+// engine; a later request with that prefix still matches it in the router's index and goes there.
+func TestPrecisePrefix_CachedBlockSurvivesCanonicalizerChurn(t *testing.T) {
+	first := prefixGroups(1, 1, 256, 0)[0]
+	var reqs []*sim.Request
+	reqs = append(reqs, first)
+	for i, r := range testRequests(40, 77, 20000, 0) { // ~6 unique blocks each: ~240 chains
+		r.ID = fmt.Sprintf("unique_%d", i)
+		r.ArrivalTime += 100000
+		reqs = append(reqs, r)
+	}
+	again := prefixGroups(1, 2, 256, 0)[1] // same prefix as first, new suffix
+	again.ID, again.ArrivalTime = "again", 2_000_000
+	reqs = append(reqs, again)
+
+	cs := cluster.NewClusterSimulator(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
+	gw.canonCapacity = 40 // far below the chains the unique prompts introduce
+	var score string
+	gw.observe = func(kind, detail string) {
+		if kind == "score" && strings.HasPrefix(detail, "again ") {
+			score = detail
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if again.AssignedInstance != first.AssignedInstance || strings.HasSuffix(score, " 0") {
+		t.Fatalf("the repeated prefix went to %s (score %q), not %s where it is cached", again.AssignedInstance, score, first.AssignedInstance)
+	}
 }

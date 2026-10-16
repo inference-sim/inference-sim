@@ -567,6 +567,15 @@ func (i *InstanceSimulator) CachedBlockHashes() []string {
 	return nil
 }
 
+// CPUBlockHashes returns the hashes of the blocks the instance's CPU KV tier holds, sorted (nil
+// without one).
+func (i *InstanceSimulator) CPUBlockHashes() []string {
+	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
+		return src.CPUBlockHashes()
+	}
+	return nil
+}
+
 // SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
 func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
 	i.sim.SetKVEventSink(sink)

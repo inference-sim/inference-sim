@@ -21,27 +21,31 @@ import (
 // A router block size that is a multiple of the engine's block size hashes the canonical prompt
 // as it would the original.
 //
-// Chains are remembered in a least-recently-used set bounded by capacity: a chain no instance
-// could still hold in its prefix cache can be forgotten. Eviction order depends only on the
-// sequence of prompts, so it is the same in a run and its replay.
+// Chains an engine reports cached (KV events) are kept as long as it caches them; the others are
+// remembered in a least-recently-used set bounded by capacity. Eviction depends only on the
+// sequence of prompts and events, so it is the same in a run and its replay.
 type promptCanon struct {
 	seed      uint64
 	blockSize int
 	capacity  int
 	next      uint64 // canonical id of the next new chain
-	ids       map[string]*list.Element
-	lru       *list.List
+	chains    map[string]*chain
+	lru       *list.List // the unpinned chains, most recent first
 }
 
-type chainEntry struct {
-	key string
-	id  uint64
+// chain is one prefix chain's canonical id. A chain an engine reports cached (pins > 0, from its
+// KV events) is out of the LRU: forgetting it would show the router new tokens for a block the
+// router has indexed under the old ones.
+type chain struct {
+	id   uint64
+	pins int
+	elem *list.Element // nil while pinned
 }
 
 func newPromptCanon(seed int64, blockSize, capacity int) *promptCanon {
 	return &promptCanon{
 		seed: uint64(seed), blockSize: max(blockSize, 1), capacity: max(capacity, 1),
-		ids: map[string]*list.Element{}, lru: list.New(),
+		chains: map[string]*chain{}, lru: list.New(),
 	}
 }
 
@@ -76,19 +80,51 @@ func (c *promptCanon) canonicalBlock(blockHash string, n int) []uint32 {
 }
 
 func (c *promptCanon) chainID(key string) uint64 {
-	if e, ok := c.ids[key]; ok {
-		c.lru.MoveToFront(e)
-		return e.Value.(chainEntry).id
+	if ch, ok := c.chains[key]; ok {
+		if ch.elem != nil {
+			c.lru.MoveToFront(ch.elem)
+		}
+		return ch.id
 	}
-	id := c.next
+	ch := &chain{id: c.next}
 	c.next++
-	c.ids[key] = c.lru.PushFront(chainEntry{key: key, id: id})
-	if c.lru.Len() > c.capacity {
+	c.chains[key] = ch
+	ch.elem = c.lru.PushFront(key)
+	c.trim()
+	return ch.id
+}
+
+// pin keeps chain key while an engine caches the block it names (a stored KV event).
+func (c *promptCanon) pin(key string) {
+	c.chainID(key)
+	ch := c.chains[key]
+	ch.pins++
+	if ch.elem != nil {
+		c.lru.Remove(ch.elem)
+		ch.elem = nil
+	}
+}
+
+// unpin releases one pin of chain key (a removed KV event, or a cleared engine).
+func (c *promptCanon) unpin(key string) {
+	ch, ok := c.chains[key]
+	if !ok || ch.pins == 0 {
+		return
+	}
+	ch.pins--
+	if ch.pins == 0 {
+		ch.elem = c.lru.PushFront(key)
+		c.trim()
+	}
+}
+
+// trim forgets the least recently used unpinned chains beyond capacity.
+func (c *promptCanon) trim() {
+	for c.lru.Len() > c.capacity {
 		oldest := c.lru.Back()
 		c.lru.Remove(oldest)
-		delete(c.ids, oldest.Value.(chainEntry).key)
+		delete(c.chains, oldest.Value.(string))
 	}
-	return id
 }
 
 // token is the canonical value at offset i of the block with canonical id, drawn uniformly from

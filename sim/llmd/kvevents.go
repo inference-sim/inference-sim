@@ -49,7 +49,22 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 	if len(g.kvIngest) == 0 {
 		return
 	}
+	held := map[string]int{}
+	g.kvHeld[inst.ID()] = held
 	inst.SetKVEventSink(func(at int64, events []sim.KVEvent) {
+		// Pin the chains the engine now caches, at publication: their canonical tokens must not
+		// change while any engine holds the block (promptCanon).
+		for _, e := range events {
+			if e.Removed {
+				if held[e.Hash] > 0 {
+					held[e.Hash]--
+					g.canon.unpin(e.Hash)
+				}
+			} else {
+				held[e.Hash]++
+				g.canon.pin(e.Hash)
+			}
+		}
 		g.host.Schedule(at+g.opts.KVEventDelayUs, PriorityKVEvents, true, func() { g.deliverKVEvents(inst, at, events) })
 	})
 }
@@ -57,8 +72,11 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 // deliverKVEvents hands one engine step's events to the router.
 func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, events []sim.KVEvent) {
 	ep, ok := g.endpoints[inst.ID()]
-	if !ok {
+	if !ok || ep.kvCleared {
 		return
+	}
+	if g.observe != nil {
+		g.observe("kvdeliver", fmt.Sprintf("%s %d", inst.ID(), at))
 	}
 	batch := g.kvEventBatch(at, events)
 	pod := net.JoinHostPort(ep.ip, strconv.Itoa(ep.port))
@@ -73,6 +91,22 @@ func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, eve
 
 // clearKVEvents tells the router that inst's prefix cache is gone (its pod was removed).
 func (g *Gateway) clearKVEvents(ep *endpoint) {
+	ep.kvCleared = true
+	held := g.kvHeld[ep.inst.ID()]
+	keys := make([]string, 0, len(held))
+	for h := range held {
+		keys = append(keys, h)
+	}
+	sort.Strings(keys)
+	for _, h := range keys {
+		for ; held[h] > 0; held[h]-- {
+			g.canon.unpin(h)
+		}
+	}
+	delete(g.kvHeld, ep.inst.ID())
+	if g.observe != nil {
+		g.observe("kvclear", string(ep.inst.ID()))
+	}
 	pod := net.JoinHostPort(ep.ip, strconv.Itoa(ep.port))
 	for _, p := range g.kvIngest {
 		if err := p.HostedClearPod(g.ctx, pod); err != nil {
@@ -83,14 +117,15 @@ func (g *Gateway) clearKVEvents(ep *endpoint) {
 	g.rt.co.settle()
 }
 
-// kvEventBatch converts one step's events into vLLM's event batch: runs of stored blocks that
-// chain (each block's parent is the previous one) become one BlockStored, runs of removals one
-// BlockRemoved, in order.
+// kvEventBatch converts one step's events into vLLM's event batch, in order: a run of GPU stores
+// that chain (each block's parent is the previous one) becomes one BlockStored with the blocks'
+// canonical tokens; a run of CPU stores one location-only BlockStored (DeviceTier "cpu", no
+// tokens, as vLLM's offloading events); a run of removals on one tier one BlockRemoved.
 func (g *Gateway) kvEventBatch(at int64, events []sim.KVEvent) *kvevents.EventBatch {
 	batch := &kvevents.EventBatch{Timestamp: float64(toTime(at).UnixNano()) / 1e9}
 	var stored *kvevents.BlockStoredEvent
 	var removed *kvevents.BlockRemovedEvent
-	last := ""
+	last, runTier := "", ""
 	flush := func() {
 		if stored != nil {
 			batch.Events = append(batch.Events, stored)
@@ -103,26 +138,31 @@ func (g *Gateway) kvEventBatch(at int64, events []sim.KVEvent) *kvevents.EventBa
 	}
 	for _, e := range events {
 		if e.Removed {
-			if stored != nil {
+			if stored != nil || (removed != nil && runTier != e.Tier) {
 				flush()
 			}
 			if removed == nil {
-				removed = &kvevents.BlockRemovedEvent{}
+				removed = &kvevents.BlockRemovedEvent{DeviceTier: e.Tier}
+				runTier = e.Tier
 			}
 			removed.BlockHashes = append(removed.BlockHashes, engineKey(e.Hash))
 			continue
 		}
-		if removed != nil || (stored != nil && e.Parent != last) {
+		gpu := e.Tier == ""
+		if removed != nil || (stored != nil && (runTier != e.Tier || (gpu && e.Parent != last))) {
 			flush()
 		}
 		if stored == nil {
-			stored = &kvevents.BlockStoredEvent{BlockSize: g.canon.blockSize}
-			if e.Parent != "" {
+			stored = &kvevents.BlockStoredEvent{BlockSize: g.canon.blockSize, DeviceTier: e.Tier}
+			runTier = e.Tier
+			if gpu && e.Parent != "" {
 				stored.ParentHash = engineKey(e.Parent)
 			}
 		}
 		stored.BlockHashes = append(stored.BlockHashes, engineKey(e.Hash))
-		stored.Tokens = append(stored.Tokens, g.canon.canonicalBlock(e.Hash, len(e.Tokens))...)
+		if gpu {
+			stored.Tokens = append(stored.Tokens, g.canon.canonicalBlock(e.Hash, len(e.Tokens))...)
+		}
 		last = e.Hash
 	}
 	flush()

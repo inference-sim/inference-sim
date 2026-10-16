@@ -46,6 +46,8 @@ type offloadCPUBlock struct {
 // so eviction is O(1) and never selects a locked block (BC-C4); the evictable
 // counter is maintained only at ref_cnt transitions that cross zero.
 type offloadCPUTier struct {
+	// notify, when set, is told each block that becomes readable (removed=false) or leaves the tier.
+	notify    func(key kvkey.BlockKey, removed bool)
 	blocks    map[kvkey.BlockKey]*offloadCPUBlock
 	lruHead   *offloadCPUBlock // oldest evictable (evict first)
 	lruTail   *offloadCPUBlock // newest evictable
@@ -99,6 +101,9 @@ func (t *offloadCPUTier) store(key kvkey.BlockKey) bool {
 	t.appendToTail(blk)
 	t.used++
 	t.evictable++
+	if t.notify != nil {
+		t.notify(key, false)
+	}
 	return true
 }
 
@@ -148,6 +153,9 @@ func (t *offloadCPUTier) completeStore(key kvkey.BlockKey, ok bool) {
 		blk.refCnt = 0
 		t.appendToTail(blk)
 		t.evictable++
+		if t.notify != nil {
+			t.notify(key, false) // readable now
+		}
 	} else {
 		delete(t.blocks, key)
 		t.used-- // a -1 block is off the LRU, so no unlink / evictable change
@@ -195,6 +203,9 @@ func (t *offloadCPUTier) evict(n int64) int64 {
 		delete(t.blocks, victim.key)
 		t.used--
 		t.evictable--
+		if t.notify != nil {
+			t.notify(victim.key, true)
+		}
 		t.evictions++
 		cnt++
 	}

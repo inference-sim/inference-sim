@@ -78,6 +78,16 @@ func (kvc *KVCacheState) CachedBlockHashes() []string {
 	return out
 }
 
+// recordTier records that the block with hash h became cached on (or left) another tier.
+func (kvc *KVCacheState) recordTier(tier, h string, removed bool) {
+	if kvc.events != nil {
+		*kvc.events = append(*kvc.events, sim.KVEvent{Removed: removed, Hash: h, Tier: tier})
+	}
+}
+
+// CPUBlockHashes implements sim.KVEventSource: a GPU-only cache has no CPU tier.
+func (kvc *KVCacheState) CPUBlockHashes() []string { return nil }
+
 // storeHash maps h to block id. A hash that was not in the map is a stored block (KVEvent); an
 // overwrite of a present hash changes no key, so it publishes nothing.
 func (kvc *KVCacheState) storeHash(parent, h string, id int64, tokens []sim.TokenID) {
