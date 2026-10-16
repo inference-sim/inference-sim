@@ -111,9 +111,10 @@ type GatewayHost interface {
 
 // GatewayHoldHorizon is implemented by a gateway whose held requests can be released by its own
 // timers (client deadlines, queue-wait budgets). HeldUntil is the latest time any of them can
-// still be released that way; until then a run waiting only on those timers is not stuck.
+// still be released that way, given that nothing but those timers has happened since since; until
+// then a run waiting only on those timers is not stuck.
 type GatewayHoldHorizon interface {
-	HeldUntil() int64
+	HeldUntil(since int64) int64
 }
 
 // newDefaultGateway, when set, supplies the gateway of a cluster that has none at Run. Only this

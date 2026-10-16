@@ -653,7 +653,7 @@ func (c *ClusterSimulator) Run() error {
 			if len(c.clusterEvents) == 0 {
 				return fmt.Errorf("gateway holds %d request(s) and no event can release them", c.gateway.Pending())
 			}
-			if c.clock-lastProgress > gatewayStallLimitUs && c.clock > c.gatewayHeldUntil() {
+			if c.clock-lastProgress > gatewayStallLimitUs && c.clock > c.gatewayHeldUntil(lastProgress) {
 				return fmt.Errorf("gateway holds %d request(s) and nothing but its own timers has happened for %d µs of simulated time",
 					c.gateway.Pending(), gatewayStallLimitUs)
 			}
@@ -881,9 +881,9 @@ func (c *ClusterSimulator) maybeFastForward() {
 
 // gatewayHeldUntil is the latest time the gateway's own timers can still release a request it
 // holds (0 when it does not say).
-func (c *ClusterSimulator) gatewayHeldUntil() int64 {
+func (c *ClusterSimulator) gatewayHeldUntil(since int64) int64 {
 	if h, ok := c.gateway.(GatewayHoldHorizon); ok {
-		return h.HeldUntil()
+		return h.HeldUntil(since)
 	}
 	return 0
 }

@@ -34,7 +34,7 @@ type fakeGateway struct {
 	heldUntil int64
 }
 
-func (g *fakeGateway) HeldUntil() int64 { return g.heldUntil }
+func (g *fakeGateway) HeldUntil(int64) int64 { return g.heldUntil }
 
 func init() {
 	newDefaultGateway = func() Gateway { return &fakeGateway{disaggregate: true} }

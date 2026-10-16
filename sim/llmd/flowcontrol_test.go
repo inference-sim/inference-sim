@@ -292,19 +292,58 @@ func (f progressFunc) OnProgress(s sim.ProgressSnapshot) { f(s) }
 // deadline, or its queue-wait budget plus one expiry sweep, whichever comes first; requests with
 // neither, and requests no longer held, do not count.
 func TestHeldUntil(t *testing.T) {
-	g := &Gateway{flights: map[string]*flight{}, maxQueueTTL: 60_000_000}
+	g := &Gateway{flights: map[string]*flight{}, maxQueueTTL: 60_000_000, expirySweepUs: 1_000_000}
 	add := func(id string, held bool, enqueue, deadline int64) {
 		g.flights[id] = &flight{req: &sim.Request{ID: id, GatewayEnqueueTime: enqueue, Deadline: deadline}, held: held}
 	}
 	add("ttl-first", true, 1_000_000, 7_200_000_000)   // TTL at 61 s + sweep
 	add("deadline-first", true, 2_000_000, 10_000_000) // deadline at 10 s
 	add("dispatched", false, 0, 9_000_000_000)
-	if got, want := g.HeldUntil(), int64(1_000_000+60_000_000+expirySweepUs); got != want {
+	if got, want := g.HeldUntil(0), int64(1_000_000+60_000_000+1_000_000); got != want {
 		t.Errorf("HeldUntil = %d, want %d", got, want)
 	}
-	g.maxQueueTTL = -1 // a band without a budget: only deadlines release
-	if got, want := g.HeldUntil(), int64(7_200_000_000); got != want {
+	// A later event (a change of pool regime) starts a fresh budget.
+	if got, want := g.HeldUntil(30_000_000), int64(30_000_000+60_000_000+1_000_000); got != want {
+		t.Errorf("HeldUntil after a later event = %d, want %d", got, want)
+	}
+	g.maxQueueTTL = -1 // a budget without bound: only deadlines release
+	if got, want := g.HeldUntil(0), int64(7_200_000_000); got != want {
 		t.Errorf("unbounded TTL: HeldUntil = %d, want %d", got, want)
+	}
+}
+
+// TestFlowControl_GlobalTTLOverAnHourIsNotAStall: a request flow control holds with no client
+// deadline and a global queue-wait budget over an hour expires at that budget; the one-hour "no
+// progress" limit does not fail the run first (review 6205113308).
+func TestFlowControl_GlobalTTLOverAnHourIsNotAStall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("ticks flow control through an hour of simulated time")
+	}
+	const config = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: single-profile-handler
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker
+flowControl:
+  defaultRequestTTL: 61m
+`
+	reqs := testRequests(1, 3, 0, 0)
+	reqs[0].ArrivalTime = 1_000_000 // after the startup scrape has gone stale
+	cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+	// Metrics refreshed every three hours: after the startup scrape they are stale, which the
+	// utilization detector reads as saturated, so flow control holds the request.
+	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--refresh-metrics-interval=3h", "--config-text="+config)}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if reqs[0].AssignedInstance != "" || cs.GatewayExpired() != 1 {
+		t.Fatalf("dispatched=%q, expired=%d: want the held request to expire at its 61-minute budget", reqs[0].AssignedInstance, cs.GatewayExpired())
 	}
 }
 

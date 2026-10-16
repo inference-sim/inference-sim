@@ -133,9 +133,9 @@ type Gateway struct {
 	kvIngest []*preciseprefixcache.Producer
 	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
 	rawConfig []byte
-	// maxQueueTTL is the longest queue-wait budget of any flow-control band (0: none, or flow
-	// control off; -1: some band waits without bound).
-	maxQueueTTL int64
+	// maxQueueTTL and expirySweepUs bound a held request's wait in flow control (queueBudget).
+	maxQueueTTL   int64
+	expirySweepUs int64
 	// observe, set only by tests, sees each scrape ("scrape", endpoint), each request the router
 	// receives ("request", ID), each dispatch ("dispatch", "ID <context error>") and the usage of
 	// each completed response ("usage", "ID tokens").
@@ -334,7 +334,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		// an idle pool can be in (stale metrics count as saturated), so idle cycles cannot be skipped.
 		g.skipIdle = false
 	}
-	g.maxQueueTTL = maxQueueTTL(emb)
+	g.maxQueueTTL, g.expirySweepUs = queueBudget(emb)
 	g.server = handlers.NewStreamingServer(emb.Datastore, emb.Director, emb.Parsers, 0)
 	g.server.SetResponders(nil)
 
@@ -972,36 +972,50 @@ func completionBody(model, id string, u usage) []byte {
 	return b
 }
 
-// expirySweepUs is how often flow control sweeps its queues for expired requests (1 s).
-const expirySweepUs = 1_000_000
-
-func maxQueueTTL(emb *runner.Embedded) int64 {
-	if !emb.FlowControlEnabled() || emb.Config == nil || emb.Config.FlowControlConfig == nil || emb.Config.FlowControlConfig.Registry == nil {
-		return 0
+// queueBudget is the longest a held request can wait in flow control before the router expires it:
+// the largest effective queue-wait budget (the controller's default and no-endpoint budgets, every
+// band's own) plus one expiry sweep. ttl is 0 when flow control is off, and -1 when some budget is
+// unbounded (an explicit zero).
+func queueBudget(emb *runner.Embedded) (ttl, sweep int64) {
+	if !emb.FlowControlEnabled() || emb.Config == nil || emb.Config.FlowControlConfig == nil {
+		return 0, 0
 	}
-	reg := emb.Config.FlowControlConfig.Registry
-	bands := []*fcregistry.PriorityBandConfig{reg.DefaultPriorityBand, reg.DefaultNegativePriorityBand}
-	for _, b := range reg.PriorityBands {
-		bands = append(bands, b)
-	}
-	var longest int64
-	for _, b := range bands {
-		if b == nil || b.DefaultRequestTTL == nil {
-			continue
+	fc := emb.Config.FlowControlConfig
+	var budgets []time.Duration
+	sweep = 1_000_000 // the controller's default expiry cleanup interval
+	if c := fc.Controller; c != nil {
+		budgets = append(budgets, c.DefaultRequestTTL, c.NoEndpointRequestTTL)
+		if c.ExpiryCleanupInterval > 0 {
+			sweep = toMicros(c.ExpiryCleanupInterval)
 		}
-		if *b.DefaultRequestTTL == 0 {
-			return -1
-		}
-		longest = max(longest, toMicros(*b.DefaultRequestTTL))
 	}
-	return longest
+	if reg := fc.Registry; reg != nil {
+		bands := []*fcregistry.PriorityBandConfig{reg.DefaultPriorityBand, reg.DefaultNegativePriorityBand}
+		for _, b := range reg.PriorityBands {
+			bands = append(bands, b)
+		}
+		for _, b := range bands {
+			if b != nil && b.DefaultRequestTTL != nil {
+				budgets = append(budgets, *b.DefaultRequestTTL)
+			}
+		}
+	}
+	for _, d := range budgets {
+		if d == 0 {
+			return -1, sweep
+		}
+		ttl = max(ttl, toMicros(d))
+	}
+	return ttl, sweep
 }
 
 // HeldUntil is the latest time at which a request the router holds can still be released by its
-// own timers: its client deadline, or its flow-control queue-wait budget plus one expiry sweep.
-// Past it, a run in which nothing else happens cannot make progress. It implements
-// cluster.GatewayHoldHorizon.
-func (g *Gateway) HeldUntil() int64 {
+// own timers: its client deadline, or the end of its queue-wait budget plus one expiry sweep. A
+// change of pool regime (endpoints appearing or leaving) starts a fresh budget; it follows an
+// instance event, so a budget counts from the later of the request's enqueue and since, the last
+// time anything other than the router's own timers happened. Past it, a run in which nothing else
+// happens cannot make progress. It implements cluster.GatewayHoldHorizon.
+func (g *Gateway) HeldUntil(since int64) int64 {
 	var until int64
 	for _, f := range g.flights {
 		if !f.held {
@@ -1012,7 +1026,7 @@ func (g *Gateway) HeldUntil() int64 {
 			release = f.req.Deadline
 		}
 		if g.maxQueueTTL > 0 {
-			release = min(release, f.req.GatewayEnqueueTime+g.maxQueueTTL+expirySweepUs)
+			release = min(release, max(f.req.GatewayEnqueueTime, since)+g.maxQueueTTL+g.expirySweepUs)
 		}
 		if release != math.MaxInt64 {
 			until = max(until, release)
