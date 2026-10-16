@@ -459,28 +459,12 @@ into one of three tiers, and prints every arm on each:
   resolves for it.
 - **ALL (approximate)**: every scoreable sweep. These are not the measured runs as they ran.
 
-Mean absolute error, BLIS / AISimulate / AIC, on the same points:
-
-| tier | sweeps | n (shape / mape) | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
-|---|---|---|---|---|---|---|
-| STRICT | 0 | 0 | -- | -- | -- | -- |
-| MEASURED-OR-RESOLVED | 10 | 52 / 62 | 11.38 / 8.73 / 9.15 | 16.79 / 19.85 / 19.08 | 13.96 / 23.22 / 22.34 | 23.47 / 42.96 / 23.77 |
-| ALL (approximate) | 113 | 460 / 573 | 9.64 / 10.43 / 10.56 | 15.04 / 15.39 / 15.71 | 17.85 / 23.05 / 30.12 | 25.30 / 37.86 / 36.66 |
-
-No sweep is STRICT. Every logged vLLM sweep either passed `max_cudagraph_capture_size`, which
-blis-schemas cannot express, or left an admission setting unpassed.
-
-On the MEASURED-OR-RESOLVED tier BLIS is **behind on TPOT shape** (11.38% against 8.73% and 9.15%) and
-ahead on the other three metrics. The TPOT-shape deficit comes from two sweeps of one deployment,
-minimax-m2.5-h200-fp8-vllm-tp4:
-
-- **8k1k:** BLIS over-predicts the rise of TPOT with concurrency by +14.7% to +22.6% from
-  concurrency 8 to 256, scoring 16.42% against AISimulate's 5.10%.
-- **1k8k:** BLIS over-predicts it by +12.8% to +38.4% from concurrency 8 to 64, scoring 27.83%
-  against AISimulate's 15.86%.
-
-Without those two sweeps the two models are level, 8.73% against 8.75%. On the same tier BLIS's
-TTFT is biased low: its signed mean TTFT mape is **-21.53%**.
+The current figures, per tier and per model family against the estimators the snapshot
+publishes, are on [InferenceX single-turn](../validation/inferencex-single-turn.md). They
+are generated from the scorer's output by `tools/validation/render_docs.py`, which also
+renders BLIS's errors on the other anchors (InferenceX agentic, internal llm-d deployments,
+llm-d Prism): see [Validation results](../validation/index.md). No sweep is STRICT, and no
+anchor is EXACT.
 
 A figure quoted without its tier and `-framework` cannot be checked. `-config-tier` (sweeps with
 or without an engine log) changes the ALL row as well.
