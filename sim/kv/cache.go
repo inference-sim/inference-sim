@@ -66,6 +66,15 @@ type KVCacheState struct {
 	// and the first used when its tokens need a new block. Zero value: off.
 	Speculative sim.KVSpeculation
 	SpareBlocks map[string][]int64
+
+	// PrefixHit reconciles a full-attention hit with the model's other KV cache groups
+	// (prefix_hit.go). Zero value: the hit is the full-attention prefix. tails are the window
+	// tails retained, by the prefix they cover, with the block each is anchored at; pending
+	// are each request's boundaries still to retain.
+	PrefixHit sim.KVPrefixHit
+	tails     map[string]int64
+	tailsAt   map[int64][]string
+	pending   map[string]pendingTails
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -417,6 +426,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		kvc.resizeState(reqID, kvc.stateTarget(startIndex, endIndex))
 	}
 	kvc.reserveSlots(reqID, endIndex)
+	if kvc.pending != nil {
+		kvc.registerTails(req, endIndex)
+	}
 
 	return true
 }
@@ -631,6 +643,9 @@ func (kvc *KVCacheState) dropHash(blk *KVBlock) {
 	if blk.Hash == "" {
 		return
 	}
+	if kvc.tailsAt != nil {
+		kvc.dropTails(blk.ID)
+	}
 	if id, ok := kvc.HashToBlock[blk.Hash]; ok && id == blk.ID {
 		delete(kvc.HashToBlock, blk.Hash)
 	}
@@ -703,6 +718,7 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	ids := kvc.RequestMap[req.ID]
 	delete(kvc.RequestMap, req.ID)
 	delete(kvc.remoteKV, req.ID)
+	delete(kvc.pending, req.ID)
 	// From https://docs.vllm.ai/en/v0.8.5/design/v1/prefix_caching.html
 	// Freed blocks are added to the tail of the free queue in reverse order.
 	// Later blocks can only be reused if all preceding blocks also match

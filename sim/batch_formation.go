@@ -324,6 +324,12 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// single-tier KVCacheState does not, so reloadReporter stays nil and Phase 2 is
 	// byte-identical to the pre-#1699 loop (INV-6).
 	reloadReporter, _ := ctx.KVCache.(ReloadReportingKVStore)
+	// A hybrid model's KV cache groups cut the full-attention hit (PrefixHitReconciler).
+	reconciler, _ := ctx.KVCache.(PrefixHitReconciler)
+	var replayTokens int64
+	if reconciler != nil {
+		replayTokens = reconciler.PrefixReplayTokens()
+	}
 
 	// Phase 2: Dequeue new requests from wait queue.
 	// skipped counts requests set aside this step (offload-deferred). It is the scan
@@ -451,6 +457,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			if util.Len64(cachedBlocks) > maxHitBlocks {
 				cachedBlocks = cachedBlocks[:maxHitBlocks]
 			}
+			if reconciler != nil {
+				cachedBlocks = reconciler.ReconcilePrefixHit(next, cachedBlocks)
+			}
 		}
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
 
@@ -480,16 +489,30 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			}
 		}
 
-		numNewTokens := next.InputLen() - computedStart
-		if 0 < prefillCap && prefillCap < numNewTokens {
-			numNewTokens = prefillCap
+		chunkFrom := func(from int64) int64 {
+			n := next.InputLen() - from
+			if 0 < prefillCap && prefillCap < n {
+				n = prefillCap
+			}
+			n = min(n, bud.room())
+			// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running
+			// requests). For valid enqueued requests (input < maxModelLen), this is a no-op.
+			if ctx.MaxModelLen > 0 {
+				n = min(n, max(ctx.MaxModelLen-1-from, 0))
+			}
+			return n
 		}
-		numNewTokens = min(numNewTokens, bud.room())
-		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
-		// For valid enqueued requests (input < maxModelLen), this is a no-op.
-		if ctx.MaxModelLen > 0 {
-			maxAllowed := max(ctx.MaxModelLen-1-computedStart, 0)
-			numNewTokens = min(numNewTokens, maxAllowed)
+		numNewTokens := chunkFrom(computedStart)
+		// SWA bounded replay: the hit's last min(window, hit) tokens are computed again, without
+		// their KV being stored again (sched/scheduler.py:1059-1079, 3038-3050 at v0.31.0), so
+		// they are billed but allocate nothing. Simplification: a chunk the step budget ends
+		// inside the replayed range (vLLM's num_tokens_past_hit = 0, scheduler.py:1207-1208)
+		// is admitted without the replay.
+		if replay := min(replayTokens, computedStart); replay > 0 && computedStart == startIndex {
+			if n := chunkFrom(computedStart - replay); n > replay {
+				computedStart -= replay
+				numNewTokens = n
+			}
 		}
 		endIndex := computedStart + numNewTokens
 

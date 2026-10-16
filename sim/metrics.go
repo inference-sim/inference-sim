@@ -429,6 +429,7 @@ type emitOptions struct {
 	pd        *PDOutput
 	epp       *EPPProvenance
 	acceptance *AcceptanceRecord
+	prefix     map[string]PrefixCacheRecord
 }
 
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
@@ -481,6 +482,12 @@ func WithAcceptance(a *AcceptanceRecord) EmitOption {
 	return func(opts *emitOptions) { opts.acceptance = a }
 }
 
+// WithPrefixCache records each pool's prefix-hit resolution (model runner, SWA bounded
+// replay, the group layout) in the --metrics-path file only. Nil leaves the block absent.
+func WithPrefixCache(p map[string]PrefixCacheRecord) EmitOption {
+	return func(opts *emitOptions) { opts.prefix = p }
+}
+
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
 // optional file (when outputFilePath != ""). The file variant additionally
 // embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
@@ -520,6 +527,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		output.Catalog = resolvedOpts.catalog
 		output.Overrides = resolvedOpts.overrides
 		output.Acceptance = resolvedOpts.acceptance
+		output.PrefixCache = resolvedOpts.prefix
 		output.EPP = resolvedOpts.epp
 		output.Agentic = resolvedOpts.agentic
 		output.PD = resolvedOpts.pd

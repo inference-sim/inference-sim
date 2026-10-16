@@ -34,6 +34,44 @@ type KVCacheConfig struct {
 	// Speculative is the KV side of speculative decoding (#1627); its zero value is off.
 	// NewInstanceSimulator sets it from the SpeculativeConfig, so the two cannot disagree.
 	Speculative KVSpeculation
+
+	// PrefixHit is how the engine's KV cache groups cut a prefix-cache hit. Zero value: the
+	// hit is the full-attention prefix alone. Set via WithPrefixHit.
+	PrefixHit KVPrefixHit
+}
+
+// KVPrefixHit is how vLLM v0.31.0's KV cache coordinator reconciles a prefix-cache hit
+// across a model's KV cache groups (vllm/v1/core/kv_cache_coordinator.py
+// find_longest_cache_hit), beyond the full-attention prefix BLIS hashes. Every length is in
+// tokens and the full-attention block is the store's block, which must be the engine's
+// scheduler block (the LCM of the group block sizes) for the hit to land where vLLM's does.
+type KVPrefixHit struct {
+	// FullEagle drops the last block of every full-attention hit: the full-attention group is
+	// an EAGLE group (FullAttentionManager.find_longest_cache_hit,
+	// single_type_kv_cache_manager.py:834-836).
+	FullEagle bool `json:"full_eagle,omitempty"`
+	// Window is a prefix-cacheable sliding-window group (SlidingWindowManager), 0 when the
+	// model has none or its window caches do not take part in prefix caching. WindowBlock is
+	// its page in tokens.
+	Window      int64 `json:"window,omitempty"`
+	WindowBlock int64 `json:"window_block,omitempty"`
+	// WindowEagle: the window group is an EAGLE group, which peeks one window block past a
+	// boundary and drops it (single_type_kv_cache_manager.py:960-971, 1056-1067).
+	WindowEagle bool `json:"window_eagle,omitempty"`
+	// EagleBoundaries: some group is an EAGLE group, so the replay boundaries a request
+	// retains window tails at sit one scheduler block below its prompt
+	// (KVCacheCoordinator.get_replay_boundaries, kv_cache_coordinator.py:316-338).
+	EagleBoundaries bool `json:"eagle_boundaries,omitempty"`
+	// ReplayTokens is DeepSeek-V4.1's SWA bounded replay window (prefix_replay_tokens,
+	// kv_cache_interface.py:953-955): a hit no longer than it is dropped, and the last
+	// min(ReplayTokens, hit) tokens of a hit are computed again (sched/scheduler.py:1016-1026,
+	// 1059-1079, 3038-3050). 0: off.
+	ReplayTokens int64 `json:"replay_tokens,omitempty"`
+}
+
+// WithPrefixHit sets how the KV store reconciles a prefix-cache hit across KV cache groups.
+func WithPrefixHit(p KVPrefixHit) KVCacheOption {
+	return func(c *KVCacheConfig) { c.PrefixHit = p }
 }
 
 // KVSpeculation is how a speculating engine reserves KV slots (#1627), as vLLM v0.31.0's

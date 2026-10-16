@@ -62,6 +62,8 @@ var (
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
+	swaBoundedReplay          optionalBool           // --swa-bounded-replay: overrides the resolved DeepSeek-V4.1 SWA bounded replay
+	prefixHit                 sim.KVPrefixHit        // how the KV cache groups cut a prefix hit, from the kernel's model
 	blockSizeTokens           int64                  // Number of tokens per KV block
 	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
 	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
@@ -663,6 +665,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	adoptScenarioEngineKnobs(cmd, shape)
 	scenarioShape = shape
 	acceptanceRecord = nil
+	prefixCacheRecords = nil
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
@@ -706,6 +709,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
 	totalKVBlocks = settings.KVBlocks
 	sequenceState = settings.SequenceState
+	prefixHit = prefixHitOf("first pool", m)
 	blockSizeTokens = int64(settings.BlockSize)
 	maxNumSeqs = int64(settings.MaxNumSeqs)
 	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
@@ -1130,6 +1134,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// setting -- block size, sequence and token caps, max_model_len, prefix caching, cache
 	// dtype, speculation -- is the scenario's, and the KV budget is the kernel's.
 	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false). Unset, it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
 	registerFrontendFlags(cmd)
 
 	// The deployment: a blis-schemas scenario (model, hardware, fabric, pools, engines)
@@ -1964,7 +1969,7 @@ var runCmd = &cobra.Command{
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
 					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
-					sim.WithSequenceState(sequenceState)),
+					sim.WithSequenceState(sequenceState), sim.WithPrefixHit(prefixHit)),
 				BatchConfig: batchConfigFromCLI(),
 				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
 				// the plan is active (each replica is one rank), else the CLI dataParallelism
@@ -2550,3 +2555,49 @@ func init() {
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
 }
+
+// prefixHitOf is how the pool's KV cache groups cut a prefix hit. It records the resolution
+// for the results file and logs when the model's layout is not one BLIS maps.
+func prefixHitOf(what string, m *kernelmodel.Model) sim.KVPrefixHit {
+	r := m.PrefixHit(swaBoundedReplay.v)
+	if r.Note != "" {
+		logrus.Warnf("prefix cache (%s): the hit is the full-attention prefix alone: %s", what, r.Note)
+	}
+	if prefixCacheRecords == nil {
+		prefixCacheRecords = map[string]sim.PrefixCacheRecord{}
+	}
+	prefixCacheRecords[string(m.Role())] = sim.PrefixCacheRecord{
+		ModelRunner: r.Runner, ModelRunnerForcedBy: r.RunnerForcedBy,
+		SWABoundedReplay: r.BoundedReplay, SWABoundedReplayFrom: r.BoundedReplayFrom,
+		Layout: r.Hit, Note: r.Note,
+	}
+	return r.Hit
+}
+
+// prefixCacheRecords are each opened pool's prefix-hit resolution, keyed by role, for the
+// results file.
+var prefixCacheRecords map[string]sim.PrefixCacheRecord
+
+// optionalBool is a boolean flag that tells "unset" from false.
+type optionalBool struct{ v *bool }
+
+func (o *optionalBool) String() string {
+	if o.v == nil {
+		return ""
+	}
+	return strconv.FormatBool(*o.v)
+}
+
+func (o *optionalBool) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	o.v = &b
+	return nil
+}
+
+func (o *optionalBool) Type() string { return "bool" }
+
+// IsBoolFlag lets the flag be passed bare (--swa-bounded-replay) as true.
+func (o *optionalBool) IsBoolFlag() bool { return true }

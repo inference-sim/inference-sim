@@ -792,3 +792,11 @@ func (o *OffloadCache) cpuPrefixBlocks(tokens []sim.TokenID, readable func(kvkey
 	}
 	return count
 }
+
+// ReconcilePrefixHit implements sim.PrefixHitReconciler on the GPU tier.
+func (o *OffloadCache) ReconcilePrefixHit(req *sim.Request, cached []int64) []int64 {
+	return o.gpu.ReconcilePrefixHit(req, cached)
+}
+
+// PrefixReplayTokens implements sim.PrefixHitReconciler on the GPU tier.
+func (o *OffloadCache) PrefixReplayTokens() int64 { return o.gpu.PrefixReplayTokens() }

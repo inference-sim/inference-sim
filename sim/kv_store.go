@@ -39,6 +39,20 @@ type RequestBlockReporter interface {
 	RequestBlocks(reqID string) []int64
 }
 
+// PrefixHitReconciler is the capability a KVStore implements to cut a full-attention prefix
+// hit to the one every KV cache group of a hybrid model agrees on (sim.KVPrefixHit). Every
+// production store implements it (the offload stores delegate to their GPU tier).
+//
+//   - ReconcilePrefixHit takes the request's GetCachedBlocks result, already capped below its
+//     last prompt token, and returns the blocks the hit keeps. It also records the window
+//     tails the request will retain, so it is called once per admission attempt.
+//   - PrefixReplayTokens is the bounded-replay window: the last min(it, hit) tokens of a hit
+//     are computed again without being stored again (0: none).
+type PrefixHitReconciler interface {
+	ReconcilePrefixHit(req *Request, cached []int64) []int64
+	PrefixReplayTokens() int64
+}
+
 // RemoteKVReserver is the capability a KVStore implements to reserve a P/D decode
 // sub-request's prompt KV for an incoming NIXL pull. Every production store implements it.
 //

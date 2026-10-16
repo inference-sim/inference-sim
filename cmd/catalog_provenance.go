@@ -129,6 +129,7 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 		sim.WithKernelProvenance(kernelProvenance(kernelOpened, kernelPDOpened)),
 		sim.WithBuildVersions(buildVersions()),
 		sim.WithAcceptance(acceptanceRecord),
+		sim.WithPrefixCache(prefixCacheRecords),
 	}
 	if p := eppProvenance(); p != nil {
 		opts = append(opts, sim.WithEPPProvenance(p)) // --epp-config (#1930)

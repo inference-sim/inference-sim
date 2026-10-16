@@ -141,6 +141,8 @@ type identity struct {
 	// prefillBackoff is NIXL's _prefill_backoff for this pool: the trailing prompt tokens a
 	// disaggregated prefill does not compute and the decode side recomputes.
 	prefillBackoff int
+	// prefix is the KV cache group layout a prefix hit is cut by (PrefixHit).
+	prefix prefixLayout
 }
 
 func identityOf(in latencykernel.Inputs) identity {
@@ -166,6 +168,7 @@ func identityOf(in latencykernel.Inputs) identity {
 		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
 		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
+		prefix:         prefixLayoutOf(in.Model, pool),
 	}
 }
 

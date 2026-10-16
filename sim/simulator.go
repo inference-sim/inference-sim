@@ -1380,6 +1380,10 @@ func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool
 		for int64(len(cached))*bs > inputLen-1 {
 			cached = cached[:len(cached)-1]
 		}
+		// The hybrid groups cut the hit as on any admission (kv_cache_manager.py:295-300).
+		if r, ok := sim.KVCache.(PrefixHitReconciler); ok {
+			cached = r.ReconcilePrefixHit(req, cached)
+		}
 	}
 	local := int64(len(cached)) * bs
 	if !sim.remoteKVReserver().AllocateRemoteKV(req, local, inputLen, cached) {
