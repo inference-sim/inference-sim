@@ -218,9 +218,9 @@ func TestDocExamplesDocumentTheCatalogEnvVar(t *testing.T) {
 	}
 }
 
-// catalogCompatibilityDoc is the CANONICAL place the compatible blis-catalog release is
-// declared (#1814). Every other page's clone command must pin the same tag; this is the only
-// file whose prose the guard below reads a version out of.
+// catalogCompatibilityDoc is the CANONICAL place the compatible blis-catalog (#1814) and
+// blis-registry (#1965) releases are declared. Every other page's clone command must pin the
+// same tag; this is the only file whose prose the two pin guards read a version out of.
 const catalogCompatibilityDoc = "../docs/getting-started/installation.md"
 
 // canonicalCatalogPin extracts the declared release tag from catalogCompatibilityDoc. The
@@ -402,11 +402,17 @@ var registryCloneCommand = regexp.MustCompile(`git clone\b[^\n]*github\.com/infe
 // release once, every documented clone of the registry pins exactly that tag, and the tag is
 // the one blis-latency-kernel's testdata/upstream.lock pins.
 //
-// The last check is what the catalog guard does not need and this one does. The registry
-// release is not BLIS's to choose: the kernel go.mod requires is tested against exactly one,
-// recorded in its lock. Agreement among the docs alone would let a go.mod kernel bump leave
-// every documented clone on the old registry, so the declaration is held to the lock and the
-// bump fails here until the docs follow.
+// The last check is one the catalog guard does not (yet) make. The registry release is not
+// BLIS's to choose: the kernel go.mod requires is tested against exactly one, recorded in its
+// lock. Agreement among the docs alone would let a go.mod kernel bump leave every documented
+// clone on the old registry, so the declaration is held to the lock and the bump fails here
+// until the docs follow.
+//
+// Non-vacuity is checked PER ENTRY POINT, for the reason the catalog guard gives: a single
+// total would let matches on one page cover for an entry point the matcher stopped seeing.
+//
+// Scope, as for the catalog guard: what is checked is every clone registryCloneCommand
+// recognizes, which by design means those carrying the full repository URL.
 func TestDocExamplesPinTheRegistryVersion(t *testing.T) {
 	declaration, err := os.ReadFile(catalogCompatibilityDoc)
 	if err != nil {
@@ -435,7 +441,7 @@ func TestDocExamplesPinTheRegistryVersion(t *testing.T) {
 	}
 
 	// Every documented clone of the registry pins that exact tag.
-	clones := 0
+	clonesByFile := map[string]int{}
 	for _, file := range collectDocFiles(t) {
 		src, err := os.ReadFile(file)
 		if err != nil {
@@ -445,7 +451,7 @@ func TestDocExamplesPinTheRegistryVersion(t *testing.T) {
 			if !registryCloneCommand.MatchString(command.text) {
 				continue
 			}
-			clones++
+			clonesByFile[filepath.Clean(file)]++
 			pinned, ok := catalogClonePin(command.text)
 			if !ok {
 				t.Errorf("%s:%d: documented blis-registry clone is unpinned — it takes whatever "+
@@ -460,11 +466,23 @@ func TestDocExamplesPinTheRegistryVersion(t *testing.T) {
 			}
 		}
 	}
-	if clones == 0 {
-		t.Error("non-vacuity: found no documented blis-registry clone command — either the docs " +
-			"lost the instruction a reader needs, or registryCloneCommand no longer matches how " +
-			"it is written (in which case every pin is unchecked)")
+	for _, entry := range docRegistryEntryPoints {
+		if clonesByFile[filepath.Clean(entry)] == 0 {
+			t.Errorf("non-vacuity: found no documented blis-registry clone command in %s — either "+
+				"the page lost an instruction a reader needs, or registryCloneCommand no longer "+
+				"matches how it is written (in which case its pin is unchecked)", entry)
+		}
 	}
+}
+
+// docRegistryEntryPoints are the entry pages that each show a blis-registry clone: the
+// catalog entry points minus CLAUDE.md, which points at installation.md instead.
+var docRegistryEntryPoints = []string{
+	"../README.md",
+	"../docs/index.md",
+	"../docs/getting-started/quickstart.md",
+	"../docs/getting-started/installation.md",
+	"../docs/getting-started/tutorial.md",
 }
 
 // TestDocCatalogEntryPointsLinkTheCompatibilityNote pins the other half of #1814's "state it

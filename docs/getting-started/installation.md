@@ -80,8 +80,11 @@ git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-regist
 ```
 
 **Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
-your workload against it, and if it works, bump the tag on the line above — the guard test
-then requires every documented clone command to match, so no page is left behind. Nothing
+your workload against it, and if it works, bump the **Compatible blis-catalog release** line
+above — the guard test then requires every documented clone command to match, so no page is
+left behind. The registry is not upgraded this way: its release is the one the pinned kernel
+is tested against, so it moves only with a `go.mod` kernel bump, and the guard test fails
+until the **Compatible blis-registry release** line follows. Nothing
 stops you pointing `--catalog` at a `main` checkout or a scratch clone of your own; the pin
 is what the *documentation* promises, not a restriction the binary enforces.
 
