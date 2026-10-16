@@ -475,3 +475,29 @@ func TestINV13_RunReplayParity_RequestTTL(t *testing.T) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
+
+// TestINV13_RunReplayParity_InFlightEviction: a pool with critical and sheddable objectives under
+// flow control with in-flight eviction; the replay reproduces the run byte for byte, evictions
+// included.
+func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	horizon := "9223372036854775807"
+	router := []string{"--epp-config", "testdata/epp/eviction.yaml", "--epp-manifests", "testdata/epp/objectives.yaml",
+		"--epp-flags", "testdata/epp/pool-flags.yaml", "--pod-labels", "app=vllm"}
+	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--workload-spec", "testdata/eviction-workload.yaml", "--seed", "1", "--horizon", horizon, "--trace-output", prefix}, router...)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
+	}
+	if !strings.Contains(runOut, "Gateway Evicted (in-flight): ") {
+		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
+	}
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if replayOut != runOut {
+		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
+	}
+}

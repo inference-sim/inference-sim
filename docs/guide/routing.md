@@ -257,7 +257,6 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | `topology-*`, `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no topology labels, custom attributes or GPU telemetry. |
 | `models-data-source`, `models-data-extractor`, `models-responder` | The simulated engines do not serve `/v1/models` yet; the workload sends only completions. |
 | `redis-syncer`, `thunder-agent`, `k8s-notification-source`, `k8s-peer-discovery`, `file-discovery`, `multicluster-*` | They need external services or another discovery source than the simulated deployment. |
-| Flow-control in-flight eviction (`enableEviction`) | It revokes dispatched requests, and the simulation does not model that revocation yet. |
 | More than one `InferencePool`; objective or rewrite manifests with `--endpoint-selector` | A run has one router for one pool; in standalone mode the router does not reconcile objectives or rewrites. |
 | A pool with more than one target port | Several ports make each pod several endpoints (data-parallel ranks behind one pod); BLIS simulates each rank as its own pod. |
 | Prefill and decode pools with a configuration that has no `disagg-profile-handler` | The router would serve every request from one flat pool; pass a disaggregating configuration (for example `examples/llm-d/pd.yaml`). |
@@ -294,7 +293,7 @@ to an llm-d configuration or is dropped.
 | `--max-gateway-queue-depth`, `--per-band-capacity` | `flowControl.maxRequests`, a priority band's capacity |
 | `--usage-limit-threshold` | `static-usage-limit-policy` |
 | `--request-ttl` | `flowControl.defaultRequestTTL` |
-| `--queue-shedding`, `--dispatch-tick-interval`, `--in-flight-eviction` | Dropped: BLIS-only behaviors. llm-d's dispatch tick is fixed at 1 ms; its in-flight eviction is refused (above). |
+| `--queue-shedding`, `--dispatch-tick-interval`, `--in-flight-eviction` | Dropped: BLIS-only behaviors. llm-d's dispatch tick is fixed at 1 ms; its in-flight eviction is `flowControl.enableEviction` ([admission](admission.md)). |
 | `--pd-decider always`, `prefix-threshold`; `--pd-prefix-threshold` | `disagg-profile-handler` with `always-disagg-pd-decider` or `prefix-based-pd-decider` (`nonCachedTokens`) |
 | `--prefill-routing-scorers`, `--decode-routing-scorers` | The `prefill` and `decode` scheduling profiles |
 | `--encode-decider` | The disaggregation handler's encode decider; multimodal deciders are refused |

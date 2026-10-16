@@ -154,6 +154,8 @@ type Gateway struct {
 	endpoints map[cluster.InstanceID]*endpoint
 	byIP      map[string]cluster.InstanceID
 	flights   map[string]*flight
+	// evictable are the dispatched flights carrying an eviction signal, in dispatch order.
+	evictable []*flight
 	pending   int
 	// skipIdle is whether idle periods may be fast-forwarded (see FastForwardIdle);
 	// neverSkipIdle disables it, for the test that proves it exact.
@@ -188,6 +190,10 @@ type flight struct {
 	decided    bool
 	held       bool // counted in Pending: arrived and neither dispatched nor rejected
 	dispatched bool
+	// evictCh is the router's in-flight eviction signal for the request once it is dispatched
+	// (nil without enableEviction): flow control closes it to revoke the request.
+	evictCh    chan struct{}
+	evicting   bool
 	headersOut bool
 	firstOut   bool
 	done       bool
@@ -327,8 +333,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		return err
 	}
 	if emb.RequestEvictor != nil {
-		return errors.New("the router configuration cannot be simulated faithfully: flow-control in-flight eviction " +
-			"(enableEviction) revokes dispatched requests, and the simulation does not model that revocation yet")
+		g.rt.co.settled = g.checkEvictions
 	}
 	g.skipIdle = true
 	if emb.Config != nil && emb.Config.DataConfig != nil {
@@ -695,7 +700,53 @@ func (g *Gateway) finishRequest(f *flight, err error) {
 		g.observe("dispatch", fmt.Sprintf("%s %v", f.req.ID, f.ctx.Err()))
 		g.observe("score", fmt.Sprintf("%s %s %g", f.req.ID, decode.ID(), p.Scores[string(decode.ID())]))
 	}
+	if g.emb.RequestEvictor != nil {
+		f.evictCh = g.emb.RequestEvictor.EvictionRegistry().Get(f.req.ID)
+		if f.evictCh != nil {
+			g.evictable = append(g.evictable, f)
+		}
+	}
 	g.host.Dispatch(f.req, p)
+}
+
+// checkEvictions observes flow control's in-flight eviction signals, as the ext_proc server's
+// stream loop does: a dispatched request whose signal has closed is revoked, in a fresh event
+// (the router is not re-entered from its own call), in dispatch order.
+func (g *Gateway) checkEvictions() {
+	live := g.evictable[:0]
+	for _, f := range g.evictable {
+		if f.done {
+			continue
+		}
+		live = append(live, f)
+		if f.evicting {
+			continue
+		}
+		select {
+		case <-f.evictCh:
+			f.evicting = true
+			g.host.Schedule(g.host.Now(), PriorityRequest, false, func() { g.evict(f) })
+		default:
+		}
+	}
+	clear(g.evictable[len(live):])
+	g.evictable = live
+}
+
+// evict revokes a dispatched request the router evicted: the client receives the router's
+// immediate response, and the gateway aborts the request on its engine (its KV blocks and adapter
+// pin are released), counted as gateway-evicted; the router's response ends with the eviction
+// cause (OnDone). A request that finished at this instant has nothing left to revoke.
+func (g *Gateway) evict(f *flight) {
+	if f.done {
+		return
+	}
+	if g.observe != nil {
+		g.observe("evict", f.req.ID)
+	}
+	if !g.host.Evict(f.req) {
+		f.evicting = false // not on an engine now (e.g. its KV in transfer): the next check retries
+	}
 }
 
 // prefillerHeader is the header the disaggregation profile handler sets for the P/D sidecar.

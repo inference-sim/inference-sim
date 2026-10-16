@@ -26,6 +26,9 @@ type scheduler struct {
 	nextID   int
 	live     int
 	settling bool
+	// settled, when set, runs after each settle on the simulation goroutine: it observes what the
+	// router's goroutines did (it must not resume them; it may schedule events).
+	settled func()
 }
 
 type coroutine struct {
@@ -103,7 +106,12 @@ func (s *scheduler) settle() {
 		return
 	}
 	s.settling = true
-	defer func() { s.settling = false }()
+	defer func() {
+		s.settling = false
+		if s.settled != nil {
+			s.settled()
+		}
+	}()
 	for {
 		progressed := false
 		for i := 0; i < len(s.parked); {

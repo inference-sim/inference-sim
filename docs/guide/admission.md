@@ -75,7 +75,12 @@ The `flowControl` block configures:
 Fairness policies are `global-strict-fairness-policy` and `round-robin-fairness-policy`;
 ordering policies are `fcfs-ordering-policy`, `edf-ordering-policy` and
 `slo-deadline-ordering-policy`. The dispatch tick (1 ms) and the expiry sweep (1 s) are the
-router's own. In-flight eviction (`enableEviction`) is refused at startup.
+router's own. With in-flight eviction (`enableEviction`), when higher-priority requests are
+blocked by saturation the router revokes in-flight sheddable (priority < 0) requests: BLIS
+observes the router's eviction signal, aborts the request on its engine in a fresh event (its KV
+blocks and adapter pin are released), ends the router's response with the eviction cause, and
+counts it as `Gateway Evicted (in-flight)` (INV-1). A victim not on an engine at that instant
+is retried at the router's next step; one that completes first is not revoked.
 
 ```yaml
 apiVersion: llm-d.ai/v1
