@@ -429,6 +429,9 @@ func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	return t.gpu.SnapshotCachedBlocksFn()
 }
 
+// AbortKVBlocks implements sim.KVAborter: KV that never arrived lives only on the GPU tier.
+func (t *TieredKVCache) AbortKVBlocks(req *sim.Request) { t.gpu.AbortKVBlocks(req) }
+
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
 	// No offload — freed blocks stay on GPU free list with hashes intact (BC-3).

@@ -121,7 +121,9 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
-	stepCount                 int
+	// abortPending is set by NoteAbort until the next step publishes the engine's state.
+	abortPending bool
+	stepCount    int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -515,6 +517,19 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
+// NoteAbort records that a request was aborted between steps (a gateway eviction). As in vLLM,
+// whose scheduler keeps a finished request until its next step, the engine runs one more step at
+// time now, so its published metrics and KV events show the state after the abort even when
+// nothing is left to run.
+func (sim *Simulator) NoteAbort(now int64) {
+	sim.abortPending = true
+	if sim.stepEvent == nil {
+		step := &StepEvent{time: now}
+		sim.stepEvent = step
+		sim.Schedule(step)
+	}
+}
+
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
 		step := &StepEvent{time: time}
@@ -852,8 +867,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 func (sim *Simulator) Step(now int64) {
 	if sim.RunningBatch == nil && sim.WaitQ.Len() == 0 {
 		sim.stepEvent = nil
+		if sim.abortPending {
+			// The step after an abort that left nothing to run: it publishes the engine's
+			// state after the abort (NoteAbort).
+			sim.abortPending = false
+			sim.publishEngineMetrics(now)
+			sim.publishKVEvents(now)
+		}
 		return
 	}
+	sim.abortPending = false
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -74,6 +75,17 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 			for _, inst := range cs.Instances() {
 				if u := inst.UsedKVBlocks(); u != 0 {
 					t.Errorf("%s: %d KV blocks still allocated", inst.ID(), u)
+				}
+				// The engine published its state after the evictions (an empty step), as vLLM.
+				if m := inst.EngineMetricsAt(math.MaxInt64); m.Running != 0 || m.Waiting != 0 || m.KVUsage != 0 {
+					t.Errorf("%s: last published running %d, waiting %d, KV usage %g after every request was evicted",
+						inst.ID(), m.Running, m.Waiting, m.KVUsage)
+				}
+				// A transfer evicted before it completed leaves no cached prefix: its KV never arrived.
+				if tc.stage == "transfer" && cs.PoolMembership()[string(inst.ID())] == PoolRoleDecode {
+					if h := inst.CachedBlockHashes(); len(h) != 0 {
+						t.Errorf("%s: %d cached block hashes for KV that never arrived", inst.ID(), len(h))
+					}
 				}
 			}
 			if cs.transfersInitiated != cs.transfersCompleted {

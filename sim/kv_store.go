@@ -145,3 +145,9 @@ type KVEventSource interface {
 	// CPUBlockHashes returns the hashes of the blocks a CPU tier holds ready, sorted (nil without one).
 	CPUBlockHashes() []string
 }
+
+// KVAborter is a KV store that can release a request's blocks whose KV never arrived (a
+// transfer cancelled before it completed), forgetting their prefix hashes.
+type KVAborter interface {
+	AbortKVBlocks(req *Request)
+}

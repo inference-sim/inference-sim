@@ -498,6 +498,24 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 	}
 }
 
+// AbortKVBlocks releases req's blocks like ReleaseKVBlocks, for KV that never arrived (a transfer
+// cancelled before it completed): a released block's content was never computed, so the prefix
+// cache forgets its hash (a removed KV event) instead of keeping it for reuse.
+func (kvc *KVCacheState) AbortKVBlocks(req *sim.Request) {
+	ids := kvc.RequestMap[req.ID]
+	kvc.ReleaseKVBlocks(req)
+	for _, id := range ids {
+		blk := kvc.Blocks[id]
+		if blk.RefCount > 0 || blk.Hash == "" {
+			continue
+		}
+		if kvc.HashToBlock[blk.Hash] == id {
+			kvc.dropHash(blk.Hash)
+		}
+		blk.Hash, blk.Tokens = "", nil
+	}
+}
+
 // BlockSize returns the number of tokens per block.
 func (kvc *KVCacheState) BlockSize() int64 { return kvc.BlockSizeTokens }
 

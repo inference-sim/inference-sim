@@ -2,7 +2,9 @@ package llmd
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -31,6 +33,29 @@ flowControl:
 
 // pdEvictionConfig is pdConfig with flow control and in-flight eviction.
 var pdEvictionConfig = "featureGates:\n- flowControl\nflowControl:\n  enableEviction: true\n" + pdConfig
+
+// pdPreciseEvictionConfig is pdEvictionConfig with the precise prefix cache (the engines' KV
+// events) in place of the approximate one.
+var pdPreciseEvictionConfig = strings.Replace(pdEvictionConfig, `- type: approx-prefix-cache-producer
+  parameters:
+    maxPrefixTokensToMatch: 16384
+    lruCapacityPerServer: 31250
+- type: prefix-cache-scorer
+`, `- type: token-producer
+  parameters:
+    modelName: test-model
+    vllm:
+      url: http://render.blis.local:8000
+- type: precise-prefix-cache-producer
+  parameters:
+    tokenProcessorConfig:
+      blockSizeTokens: 16
+    kvEventsConfig:
+      zmqEndpoint: tcp://0.0.0.0:5557
+- type: prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+`, 1)
 
 // victim is what an evicted request held on its engine just before and just after its eviction.
 type victim struct {
@@ -197,6 +222,30 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 		if u := inst.UsedKVBlocks(); u != 0 {
 			t.Errorf("%s: %d KV blocks used at the end", inst.ID(), u)
 		}
+		// The engines published their state after the last eviction or completion (vLLM's empty
+		// step after an abort): the router's scrapes see the requests gone.
+		if m := inst.EngineMetricsAt(math.MaxInt64); m.Running != 0 || m.Waiting != 0 || m.KVUsage != 0 {
+			t.Errorf("%s: last published running %d, waiting %d, KV usage %g", inst.ID(), m.Running, m.Waiting, m.KVUsage)
+		}
+		// With the precise prefix cache, the router indexes exactly what each engine caches: no
+		// block of a cancelled transfer.
+		if len(res.gw.kvIngest) > 0 {
+			ep := res.gw.endpoints[inst.ID()]
+			got, err := res.gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := inst.CachedBlockHashes()
+			if len(got) != len(want) {
+				t.Errorf("%s: the router indexes %d blocks, the engine caches %d", inst.ID(), len(got), len(want))
+			}
+			for _, h := range want {
+				if !got[engineKey(h)] {
+					t.Errorf("%s: cached block %s is not in the router's index", inst.ID(), h[:12])
+					break
+				}
+			}
+		}
 	}
 	if inFlight, _ := res.gw.emb.RequestEvictor.Stats(); inFlight != 0 {
 		t.Errorf("the router still tracks %d requests as in flight", inFlight)
@@ -228,4 +277,11 @@ func TestFlowControl_InFlightEviction(t *testing.T) {
 // it is in (its prefill, its KV transfer, or its decode), releasing what that stage holds, once.
 func TestFlowControl_InFlightEvictionDisaggregated(t *testing.T) {
 	checkEviction(t, evictionSetup{config: pdEvictionConfig, pd: true})
+}
+
+// TestFlowControl_InFlightEvictionDisaggregatedPrecise: as above, with the precise prefix cache:
+// a transfer evicted before its KV arrived leaves no block in the decode engine's cache, and so
+// none in the router's index.
+func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
+	checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true})
 }

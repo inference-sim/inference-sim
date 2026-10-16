@@ -212,9 +212,12 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 }
 
 func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
-func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
+
+// AbortKVBlocks implements sim.KVAborter: KV that never arrived lives only on the GPU tier.
+func (o *OffloadCache) AbortKVBlocks(req *sim.Request) { o.gpu.AbortKVBlocks(req) }
+func (o *OffloadCache) BlockSize() int64               { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64              { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64           { return o.gpu.TotalCapacity() }
 
 // ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
 // pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the

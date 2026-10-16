@@ -489,6 +489,18 @@ func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 	i.sim.KVCache.ReleaseKVBlocks(req)
 }
 
+// AbortReservedKV cancels a reservation whose transfer was evicted before it completed at time
+// now: its blocks are freed and, since their KV never arrived, their prefix hashes forgotten (a
+// removed KV event cancels the stored one), and the engine publishes its state after the abort.
+func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
+	a, ok := i.sim.KVCache.(sim.KVAborter)
+	if !ok {
+		panic(fmt.Sprintf("AbortReservedKV: KV cache %T cannot abort a reservation", i.sim.KVCache))
+	}
+	a.AbortKVBlocks(req)
+	i.sim.NoteAbort(now)
+}
+
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
 // Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
 // the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
@@ -517,7 +529,15 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // the sole CompletedRequests++ in sim/simulator.go. So INV-2's `-> completed` edge
 // does not describe this line; reading StateCompleted as "completed" here would
 // double-count an evicted request.
-func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
+func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
+	if !i.evictRequest(req) {
+		return false
+	}
+	i.sim.NoteAbort(now) // the engine's next step publishes the state after the eviction
+	return true
+}
+
+func (i *InstanceSimulator) evictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
 		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
 		i.sim.KVCache.ReleaseKVBlocks(req)
@@ -544,7 +564,6 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 				req.State = sim.StateCompleted
 				if len(i.sim.RunningBatch.Requests) == 0 {
 					i.sim.RunningBatch = nil
-					i.sim.ScheduleStepIfIdle(i.sim.CurrentClock())
 				}
 				return true
 			}

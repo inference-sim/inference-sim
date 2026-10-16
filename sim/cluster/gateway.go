@@ -259,7 +259,7 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 		return true
 	}
 	inst := cs.instanceByID(InstanceID(req.AssignedInstance))
-	if inst == nil || !inst.EvictRequest(req) {
+	if inst == nil || !inst.EvictRequest(req, cs.clock) {
 		return false
 	}
 	cs.releaseInFlight(req.AssignedInstance)
@@ -283,7 +283,7 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 	switch _, prefilling := cs.pendingPrefillCompletions[parent.PrefillSubReqID]; {
 	case prefilling:
 		inst := cs.instanceByID(InstanceID(prefill.AssignedInstance))
-		if inst == nil || !inst.EvictRequest(prefill) {
+		if inst == nil || !inst.EvictRequest(prefill, cs.clock) {
 			return false // not yet in its prefill engine's queue
 		}
 		delete(cs.pendingPrefillCompletions, parent.PrefillSubReqID)
@@ -295,7 +295,7 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 		if inst == nil {
 			return false
 		}
-		inst.ReleaseReservedKV(decode)
+		inst.AbortReservedKV(decode, cs.clock)
 		parent.DecodeSubReq = nil
 		cs.pdEvictedAfterPrefill++
 	default:
@@ -303,7 +303,7 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 			return false
 		}
 		inst := cs.instanceByID(parent.DecodeInstanceID)
-		if inst == nil || !inst.EvictRequest(decode) {
+		if inst == nil || !inst.EvictRequest(decode, cs.clock) {
 			return false
 		}
 		delete(cs.pendingDecodeCompletions, parent.DecodeSubReqID)
