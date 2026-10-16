@@ -9,6 +9,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // evictionConfig is flow control with in-flight eviction (enableEviction): when higher-priority
@@ -63,6 +64,12 @@ type victim struct {
 	blocksBefore, after  int64 // the engine's used KV blocks
 	pinnedBefore, pinned bool  // its adapter pin
 	revoked              int
+	// pending is set for a decode reservation still waiting for its KV transfer; held* report
+	// whether its decode engine's cache and the router's index for that pod held the shared
+	// prefix's first block before and after the eviction.
+	pending                          bool
+	heldEngine, heldRouter           bool
+	stillHeldEngine, stillHeldRouter bool
 }
 
 type evictionSetup struct {
@@ -76,13 +83,24 @@ type evictionSetup struct {
 	// sharedPrefix gives every sheddable request one prefix of that many tokens, so a revoked
 	// transfer's reservation duplicates a prefix its decode engine already caches.
 	sharedPrefix int
+	// transferUs and criticalAt, when set, are the P/D KV transfer time and the critical burst's
+	// start (µs).
+	transferUs, criticalAt int64
+	// sheddable and sheddableGapUs, when set, are the number of sheddable requests and their
+	// spacing (default 40, 1 ms apart).
+	sheddable      int
+	sheddableGapUs int64
 }
 
 // runEviction runs long sheddable requests that saturate the pool, then a burst of critical ones.
 func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) {
 	t.Helper()
 	var reqs []*sim.Request
-	for i, r := range testRequests(40, 5, 1000, s.sharedPrefix) {
+	n, gap := 40, int64(1000)
+	if s.sheddable > 0 {
+		n, gap = s.sheddable, s.sheddableGapUs
+	}
+	for i, r := range testRequests(n, 5, gap, s.sharedPrefix) {
 		r.ID, r.SLOClass, r.Adapter = fmt.Sprintf("sheddable_%d", i), "sheddable", s.adapter
 		r.OutputTokens = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(int64(i))), 2000) // long-running
 		r.MaxOutputLen = len(r.OutputTokens)
@@ -91,6 +109,9 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 	for i, r := range testRequests(40, 6, 500, 0) {
 		r.ID, r.SLOClass = fmt.Sprintf("critical_%d", i), "critical"
 		r.ArrivalTime += 200_000
+		if s.criticalAt > 0 {
+			r.ArrivalTime += s.criticalAt - 200_000
+		}
 		if s.kvBound {
 			r.ArrivalTime += 600_000 // once the running requests' KV has grown
 		}
@@ -102,6 +123,9 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 		dep = testDeployment(4)
 		dep.PrefillInstances, dep.DecodeInstances = 2, 2
 		dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+		if s.transferUs > 0 {
+			dep.PDTransferTime = func(int64, cluster.InstanceID, cluster.InstanceID) int64 { return s.transferUs }
+		}
 		labels = func(id cluster.InstanceID, role cluster.PoolRole) map[string]string {
 			l := map[string]string{"app": "vllm"}
 			for k, v := range roleLabels(id, role) {
@@ -133,23 +157,53 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 	}
 	// engine is the request (or, disaggregated, its active sub-request) on an engine, and that engine.
 	engine := func(r *sim.Request) (*sim.Request, *cluster.InstanceSimulator) {
+		at := r.AssignedInstance
 		for _, p := range cs.ParentRequests() {
 			if p.ID == r.ID {
 				switch {
 				case p.DecodeSubReq != nil:
-					r = p.DecodeSubReq
+					r, at = p.DecodeSubReq, string(p.DecodeInstanceID) // reserved there, or decoding
 				case p.PrefillSubReq != nil:
-					r = p.PrefillSubReq
+					r, at = p.PrefillSubReq, p.PrefillSubReq.AssignedInstance
 				}
 			}
 		}
 		for _, inst := range cs.Instances() {
-			if string(inst.ID()) == r.AssignedInstance {
+			if string(inst.ID()) == at {
 				return r, inst
 			}
 		}
 		return r, nil
 	}
+	// prefixHeld reports whether the decode engine of a pending reservation, and the router's index
+	// for its pod, hold the shared prefix's first block.
+	prefixHeld := func(r *sim.Request) (pending, engineHas, routerHas bool) {
+		if s.sharedPrefix < 16 {
+			return false, false, false
+		}
+		first := hash.HashBlock("", reqs[0].InputTokens[:16])
+		for _, p := range cs.ParentRequests() {
+			if p.ID != r.ID || p.DecodeSubReq == nil || p.DecodeSubReq.State != sim.StateWaitingForRemoteKVs {
+				continue
+			}
+			for _, inst := range cs.Instances() {
+				if inst.ID() != p.DecodeInstanceID {
+					continue
+				}
+				for _, h := range inst.CachedBlockHashes() {
+					engineHas = engineHas || h == first
+				}
+				ep := gw.endpoints[inst.ID()]
+				got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return true, engineHas, got[engineKey(first)]
+			}
+		}
+		return false, false, false
+	}
+	pendingVictims := map[string]*cluster.ParentRequest{}
 	victims := map[string]*victim{}
 	gw.observe = func(kind, id string) {
 		switch kind {
@@ -164,6 +218,14 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			if inst != nil {
 				v.blocksBefore = inst.UsedKVBlocks()
 			}
+			v.pending, v.heldEngine, v.heldRouter = prefixHeld(byID[id])
+			if v.pending {
+				for _, p := range cs.ParentRequests() {
+					if p.ID == id {
+						pendingVictims[id] = p
+					}
+				}
+			}
 		case "evicted":
 			v := victims[id]
 			v.revoked++
@@ -171,6 +233,24 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			v.pinned = r.AdapterPinned()
 			if inst != nil {
 				v.after = inst.UsedKVBlocks()
+			}
+			if p := pendingVictims[id]; p != nil && s.sharedPrefix >= 16 {
+				// Its reservation is released: look at its decode engine directly.
+				first := hash.HashBlock("", reqs[0].InputTokens[:16])
+				for _, inst := range cs.Instances() {
+					if inst.ID() != p.DecodeInstanceID {
+						continue
+					}
+					for _, h := range inst.CachedBlockHashes() {
+						v.stillHeldEngine = v.stillHeldEngine || h == first
+					}
+					ep := gw.endpoints[inst.ID()]
+					got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
+					if err != nil {
+						t.Fatal(err)
+					}
+					v.stillHeldRouter = got[engineKey(first)]
+				}
 			}
 		}
 	}
@@ -294,8 +374,24 @@ func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
 // revoking them keeps that prefix cached, in the engine and in the router's index (which
 // checkEviction compares block for block).
 func TestFlowControl_InFlightEvictionDisaggregatedSharedPrefix(t *testing.T) {
-	victims := checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true, sharedPrefix: 256})
-	if len(victims) == 0 {
-		t.Fatal("nothing evicted")
+	// 120 sheddable requests 2 ms apart, 100 ms transfers, the critical burst at 200 ms: the
+	// earliest transfers have completed (their decode engines cache the prefix), later ones are
+	// still pending when they are revoked.
+	victims := checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true, sharedPrefix: 256,
+		transferUs: 100_000, criticalAt: 200_000, sheddable: 120, sheddableGapUs: 2000})
+	duplicates := 0
+	for id, v := range victims {
+		if !v.pending || !v.heldEngine || !v.heldRouter {
+			continue
+		}
+		duplicates++ // a pending duplicate of a prefix its decode engine (and the router) already held
+		if !v.stillHeldEngine || !v.stillHeldRouter {
+			t.Errorf("%s: after revoking its pending transfer, the shared prefix is cached on its decode engine %v, indexed by the router %v; want both",
+				id, v.stillHeldEngine, v.stillHeldRouter)
+		}
 	}
+	if duplicates == 0 {
+		t.Fatal("no pending reservation duplicating a cached prefix was revoked; the test does not exercise the path")
+	}
+	t.Logf("%d pending duplicate transfers revoked", duplicates)
 }
