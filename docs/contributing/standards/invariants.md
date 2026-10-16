@@ -129,6 +129,8 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 
 **Verification:** State machine assertions in request processing code.
 
+**Preemption edge (running -> queued):** as vLLM v0.31.0's `_preempt_request` (`sched/scheduler.py:1538-1580`), a preempted request frees its blocks and its computed tokens return to 0, but the output it emitted stands: it resumes as one prefill of prompt and output (`Request.PrefillEnd`; vLLM schedules `num_tokens - num_computed_tokens`, `:1084`), whose step samples its next token. Its TTFT is its first prefill's, its inter-token history is kept and the resumed token's interval runs from its last token. `TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill` (`sim`).
+
 **Known weakness (#1721):** this is the thinnest entry in the registry — it names no test, and the three states above are fewer than the request states the code actually distinguishes. Correcting the statement was raised separately and is deliberately out of scope here; it is recorded so a reader does not mistake brevity for a tight specification.
 
 **Contrast with INV-14 (#1772):** the *instance* lifecycle is the same class of invariant with the opposite protection profile — it has a legal-transition table, a single mutation choke point that panics, and an edge-table test, while INV-2 has a registry entry and no enforcement (request state is written directly at many sites). The two entries are sited adjacently for exactly that reason.

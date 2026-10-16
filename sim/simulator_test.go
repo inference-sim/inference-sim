@@ -3358,77 +3358,73 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 	}
 }
 
-// TestSimulator_TTFT_UpdatedAfterPreemption verifies that TTFT reflects the re-prefill
-// completion time, not the original (pre-preemption) prefill time (#1122).
+// TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill pins vLLM v0.31.0's preemption
+// (sched/scheduler.py:1538-1580, 1084): a request preempted while decoding keeps the output it
+// emitted, frees its blocks, and resumes as ONE prefill of prompt and output, whose step samples
+// its next token. So its TTFT is the first prefill's, unchanged by the preemption; the resumed
+// step computes prompt + emitted tokens at once (its prefix hit plus one prefill) and holds
+// their blocks; the gap since its last token is one inter-token interval; and it emits exactly
+// its output, no token twice.
 //
-// GIVEN a 4-block KV cache that forces preemption of request B (32 tokens, 5 output)
-// while A (16 tokens, 5 output) continues decoding uninterrupted,
-// WHEN both complete after B's preemption and re-prefill,
-// THEN TTFT_B > TTFT_A (B's first token arrives later because it waited in queue and
-// re-prefilled after A finished — TTFTSet not reset on preemption would freeze TTFT_B
-// at the pre-preemption value, making it equal to TTFT_A).
-func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
+// GIVEN a 4-block KV cache that preempts B (30 tokens, 5 output) after it emitted three tokens,
+// while A (16 tokens) decodes.
+func TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             1_000_000_000,
 		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks x 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 10_000, 0),
 		LatencyModel:        fakeTokenCost(),
 		ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
 	}
 	s := mustNewSimulator(t, cfg)
-
-	// A (16 tokens) injected first → at front of WaitQ → stays in batch during decode.
-	// B (32 tokens) injected second → at tail of WaitQ → becomes tail of RunningBatch,
-	// gets preempted when decode needs a new KV block and none are free.
-	reqA := &Request{
-		ID:           "A",
-		ArrivalTime:  0,
-		InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), 16),
-		OutputTokens: make([]TokenID, 5),
-		State:        StateQueued,
-	}
-	reqB := &Request{
-		ID:           "B",
-		ArrivalTime:  0,
-		InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), 32),
-		OutputTokens: make([]TokenID, 5),
-		State:        StateQueued,
-	}
+	reqA := &Request{ID: "A", InputTokens: GenerateRandomTokenIDs(s.WorkloadRNG(), 16),
+		OutputTokens: make([]TokenID, 5), State: StateQueued}
+	reqB := &Request{ID: "B", InputTokens: GenerateRandomTokenIDs(s.WorkloadRNG(), 30),
+		OutputTokens: make([]TokenID, 5), State: StateQueued}
 	s.InjectArrival(reqA)
 	s.InjectArrival(reqB)
 
+	firstTTFT := -1.0
+	var resumedTo, resumedBlocks int64 = -1, -1
+	var emittedAtPreemption int64 = -1
+	wasRunning := false
 	for s.HasPendingEvents() {
 		s.ProcessNextEvent()
+		if v, ok := s.Metrics.RequestTTFTs["B"]; ok && firstTTFT < 0 {
+			firstTTFT = v
+		}
+		if wasRunning && reqB.State == StateQueued && emittedAtPreemption < 0 {
+			emittedAtPreemption = int64(len(reqB.ITL)) + 1
+		}
+		if reqB.preemptions > 0 && reqB.State == StateRunning && resumedTo < 0 && reqB.NumNewTokens > 0 {
+			resumedTo = s.reqNumComputedTokens["B"]
+			resumedBlocks = int64(len(s.KVCache.(RequestBlockReporter).RequestBlocks("B")))
+		}
+		wasRunning = reqB.State == StateRunning
 	}
 
-	if s.Metrics.PreemptionCount == 0 {
-		t.Fatal("precondition violated: expected at least one preemption — scenario does not exercise the bug path")
+	if s.Metrics.PreemptionCount == 0 || emittedAtPreemption < 2 {
+		t.Fatalf("precondition: B must be preempted after two or more tokens (preemptions %d, emitted %d)",
+			s.Metrics.PreemptionCount, emittedAtPreemption)
 	}
 	if s.Metrics.CompletedRequests != 2 {
-		t.Fatalf("expected both requests to complete, got %d completed", s.Metrics.CompletedRequests)
+		t.Fatalf("expected both requests to complete, got %d", s.Metrics.CompletedRequests)
 	}
-
-	ttftA, okA := s.Metrics.RequestTTFTs["A"]
-	ttftB, okB := s.Metrics.RequestTTFTs["B"]
-	if !okA || !okB {
-		t.Fatalf("missing TTFT entry: A=%v B=%v", okA, okB)
+	if got := s.Metrics.RequestTTFTs["B"]; got != firstTTFT {
+		t.Errorf("TTFT_B = %.0f after the preemption, want its first prefill's %.0f", got, firstTTFT)
 	}
-	if ttftA <= 0 {
-		t.Errorf("TTFT_A = %.0f: A's TTFT should be positive (unaffected by B's preemption)", ttftA)
+	if want := reqB.InputLen() + emittedAtPreemption; resumedTo != want {
+		t.Errorf("resumed step computes through token %d, want prompt + emitted output = %d", resumedTo, want)
 	}
-
-	// B was preempted during decode and had to re-prefill after A finished.
-	// Its TTFT must reflect the re-prefill completion time, which is >> A's TTFT.
-	// The bug (TTFTSet not reset) would leave TTFT_B == TTFT_A.
-	if ttftB <= ttftA {
-		t.Errorf("TTFT_B = %.0f, TTFT_A = %.0f: expected TTFT_B > TTFT_A because B was preempted and re-prefilled after A completed",
-			ttftB, ttftA)
+	if want := (reqB.InputLen() + emittedAtPreemption + 15) / 16; resumedBlocks < want {
+		t.Errorf("resumed request holds %d blocks, want at least %d for prompt and output", resumedBlocks, want)
 	}
-
-	e2eB := s.Metrics.RequestE2Es["B"]
-	if e2eB <= ttftB {
-		t.Errorf("E2E_B = %.0f <= TTFT_B = %.0f: expected E2E_B > TTFT_B for a request with 5 output tokens", e2eB, ttftB)
+	if got, want := len(reqB.ITL), len(reqB.OutputTokens)-1; got != want {
+		t.Errorf("B has %d inter-token intervals, want %d: no output token is emitted twice", got, want)
+	}
+	if want := len(reqA.OutputTokens) + len(reqB.OutputTokens); s.Metrics.TotalOutputTokens != want {
+		t.Errorf("TotalOutputTokens %d, want %d", s.Metrics.TotalOutputTokens, want)
 	}
 }
 

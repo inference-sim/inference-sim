@@ -2067,11 +2067,8 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		//     runs);
 		//   - decode-timeout-while-queued — DecodeSubReq != nil but ITL is empty because it
 		//     never ran a decode step; and
-		//   - preempted-then-timed-out — a decode sub-request that emitted a token, was then
-		//     preempted (batch_formation.go resets ProgressIndex/TTFTSet and clears ITL on
-		//     preempt), and timed out while re-queued before re-emitting. Its ITL is empty at
-		//     finalization, so no first-token measurement survives — correctly excluded, same
-		//     as the others.
+		//   - (a decode sub-request preempted after emitting tokens keeps them and its ITL,
+		//     as vLLM keeps a preempted request's output, so it stays served.)
 		// Each reaches a terminal CompletionTime with a DecodeInstanceID assigned (so
 		// `completed` is true) yet has no surviving first token. Such a parent belongs to the
 		// drop/timeout counters (DroppedUnservable via droppedAtDecodeKV; TimedOutRequests via

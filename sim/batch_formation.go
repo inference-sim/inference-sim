@@ -207,7 +207,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 		req := result.RunningBatch.Requests[reqIndex]
 
-		numNewTokens := req.InputLen() - req.ProgressIndex
+		numNewTokens := req.PrefillEnd() - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
 			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
@@ -235,7 +235,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
 		// Decode phase: allocate the accepted-token count for this step.
-		if req.ProgressIndex >= req.InputLen() && len(req.OutputTokens) > 0 {
+		if req.ProgressIndex >= req.PrefillEnd() && len(req.OutputTokens) > 0 {
 			// Base is 1 token/step. Under speculative decoding / MTP (#1528) the
 			// step advances by g = accepted tokens (1 + accepted drafts), proposed by
 			// the pure DecodeTokensPerStep peek. nil predicate ⇒ g=1 ⇒ byte-identical.
@@ -347,8 +347,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// IsDecodeSubRequest is set exclusively by KVTransferStartedEvent when it
 		// reserves KV on the decode pod (issue #1343), so this path fires only for
 		// requests that genuinely arrived via PD KV transfer.
-		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
-		if next.IsDecodeSubRequest {
+		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV. One
+		// preempted since holds no KV and resumes as a local prefill of its prompt and output,
+		// as vLLM's decode engine resumes it (sched/scheduler.py:1538-1580, 1084 at v0.31.0).
+		if next.IsDecodeSubRequest && next.preemptions == 0 {
 			decodeTokens := int64(1)
 			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
 			// g accepted tokens per step, same as a non-PD decode request. This whole
@@ -436,7 +438,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// a request resumed after preemption, or a first admission over another's prefix --
 		// is admitted with no work, claims none of its cached blocks and runs holding no KV
 		// (#1943).
-		maxHitBlocks := max(next.InputLen()-1, 0) / ctx.KVCache.BlockSize()
+		maxHitBlocks := max(next.PrefillEnd()-1, 0) / ctx.KVCache.BlockSize()
 		var cachedBlocks []int64
 		if !ctx.PrefixCachingDisabled {
 			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
@@ -468,11 +470,11 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				// load covered all of it (Scheduler._update_waiting_for_remote_kv,
 				// vllm/v1/core/sched/scheduler.py:3095-3096 at v0.31.0), recomputing one token
 				// rather than the GPU hit's whole block (#1943).
-				computedStart = min(reloadableEnd, max(next.InputLen()-1, 0))
+				computedStart = min(reloadableEnd, max(next.PrefillEnd()-1, 0))
 			}
 		}
 
-		numNewTokens := next.InputLen() - computedStart
+		numNewTokens := next.PrefillEnd() - computedStart
 		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 			numNewTokens = ctx.PrefillTokenThreshold
 		}
@@ -613,16 +615,22 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			}
 
 			// INV-2 (request lifecycle): preemption is the only place a request moves
-			// BACKWARD, running -> queued, and it is a full reset — progress, ITL, and
-			// TTFT return to their pre-prefill state. INV-2's statement enumerates only
-			// the forward queued -> running -> completed path, so this edge is code
-			// truth the statement does not yet name.
+			// BACKWARD, running -> queued. As vLLM's _preempt_request does
+			// (sched/scheduler.py:1538-1580 at v0.31.0), it frees the request's blocks and
+			// sets its computed tokens to 0, but keeps the output it emitted: the request
+			// resumes as one prefill of prompt and output (resumeEnd, PrefillEnd), whose step
+			// samples its next token. Its first token time and its inter-token history stand;
+			// a request preempted before its first token simply prefills again.
+			// A decoding request at ProgressIndex p has p - InputLen + 1 output tokens out (the
+			// first is the prefill's), so its resumed prefill covers p + 1 tokens; one preempted
+			// inside a resumed prefill keeps the resume it had.
+			if preemptedRequest.TTFTSet && preemptedRequest.ProgressIndex >= preemptedRequest.PrefillEnd() {
+				preemptedRequest.resumeEnd = preemptedRequest.ProgressIndex + 1
+			}
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			preemptedRequest.preemptions++
-			preemptedRequest.ITL = nil
-			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
-			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
+			preemptedRequest.specDecodeCarry = 0 // spec tokens are dropped on preemption (scheduler.py:1561-1562)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)

@@ -213,9 +213,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	// stateNeed is the change in the request's bounded-state blocks this step (negative when
 	// its window rings shrink, as remove_skipped_blocks frees them before allocating).
 	stateNeed := kvc.stateDelta(reqID, startIndex, endIndex)
-	if req.ProgressIndex < req.InputLen() {
+	if req.ProgressIndex < req.PrefillEnd() {
 		// request is in prefill (could be chunked)
-		newTokens = req.InputTokenSlice(startIndex, endIndex)
+		newTokens = req.SequenceTokenSlice(startIndex, endIndex)
 
 		// Compute blocks needed, accounting for tokens that will be absorbed
 		// into the request's existing partially-filled last block. Without this,
@@ -395,7 +395,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.InUse = true
 				kvc.CacheMisses++
 
-				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.PrefillEnd() {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).
@@ -466,7 +466,7 @@ func (kvc *KVCacheState) loadedStateStart(req *sim.Request, startIndex, endIndex
 	if !ok {
 		return startIndex
 	}
-	return max(startIndex, min(reloadableEnd, max(req.InputLen()-1, 0), endIndex))
+	return max(startIndex, min(reloadableEnd, max(req.PrefillEnd()-1, 0), endIndex))
 }
 
 // chargeSequence sizes a request's bounded state for [startIndex, endIndex) and tops up its
@@ -529,10 +529,10 @@ func (kvc *KVCacheState) admissionGateRefuses(req *sim.Request, cachedBlocks []i
 			claimedFromFree++
 		}
 	}
-	promptBlocks := max((req.InputLen()+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(cachedBlocks), 0)
+	promptBlocks := max((req.PrefillEnd()+kvc.BlockSizeTokens-1)/kvc.BlockSizeTokens-util.Len64(cachedBlocks), 0)
 	need := claimedFromFree + promptBlocks
 	if kvc.SequenceState.Gate != nil {
-		need += kvc.gateState(req.InputLen(), max(util.Len64(cachedBlocks)*kvc.BlockSizeTokens, computed))
+		need += kvc.gateState(req.PrefillEnd(), max(util.Len64(cachedBlocks)*kvc.BlockSizeTokens, computed))
 	}
 	if need > kvc.countFreeBlocks() {
 		logrus.Debugf("KV admission gate: req %s needs %d blocks for its full prompt and state, %d free", req.ID, need, kvc.countFreeBlocks())
