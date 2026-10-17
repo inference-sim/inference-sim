@@ -82,6 +82,7 @@ const (
 	fetchNone      fetchKind = iota // fully cached/reloadable, or a genuine miss (recompute) — no defer
 	fetchSecondary                  // a cpuMiss block is secondary-resident — defer to promote its run
 	fetchPending                    // a cpuHitPending block — defer to await an in-flight promotion
+	fetchProbe                      // a cpuMiss tail no secondary tier holds, not yet probed — one RETRY round
 )
 
 // fetchClass is the read-only classification of a new request's consult.
@@ -89,6 +90,10 @@ type fetchClass struct {
 	kind fetchKind
 	run  []kvkey.BlockKey // fetchSecondary: the run to promote; fetchPending: the awaited key(s)
 	tier int              // fetchSecondary: the holding tier; else -1
+	// probe is the CPU-miss tail the lookup asks the secondary tiers about: every chunk from
+	// the one that ended the GPU/CPU run to the prompt's last (the connector keeps scanning
+	// past a RETRY, offloading/scheduler.py:697-700 at v0.31.0).
+	probe []kvkey.BlockKey
 }
 
 // classifyFetch walks the uncached tail in offload chunks exactly like
@@ -97,11 +102,17 @@ type fetchClass struct {
 // extend the cached prefix synchronously at admission — and stops at the first:
 //   - cpuHitPending  → fetchPending (await the in-flight promotion),
 //   - cpuMiss that is secondary-resident → fetchSecondary (promote its run),
-//   - cpuMiss absent everywhere (genuine miss) → fetchNone (recompute the tail),
+//   - cpuMiss absent everywhere and never probed → fetchProbe (one RETRY round),
+//   - cpuMiss absent everywhere, already probed (genuine miss) → fetchNone (recompute),
 //   - end of tail → fetchNone (whole prefix cached/reloadable).
+//
+// A CPU miss is a secondary lookup whatever the tiers hold: the fs tier answers RETRY for a
+// chunk whose existence it has not checked (tiering/fs/manager.py:215-220,
+// tiering/async_lookup.py:140-161 at v0.31.0), and a RETRY defers the request
+// (offloading/scheduler.py:697-703; sched/scheduler.py:956-961), so a miss costs a round too.
 func (o *OffloadCache) classifyFetch(tokens []sim.TokenID, startBlock int64, prevHash string) fetchClass {
 	none := fetchClass{kind: fetchNone, tier: -1}
-	if o.station == nil || len(o.secondary) == 0 {
+	if len(o.secondary) == 0 {
 		return none // CPU-only offload never defers (no secondary tier to fetch from)
 	}
 	tail, ok := o.tailOf(tokens, startBlock, prevHash)
@@ -116,31 +127,61 @@ func (o *OffloadCache) classifyFetch(tokens []sim.TokenID, startBlock int64, pre
 	case cpuHitPending:
 		return fetchClass{kind: fetchPending, run: []kvkey.BlockKey{tail.key(c)}, tier: -1}
 	case cpuMiss:
+		probe := make([]kvkey.BlockKey, 0, tail.endChunk-c)
+		for j := c; j < tail.endChunk; j++ {
+			probe = append(probe, tail.key(j))
+		}
 		if run, tier, ok := o.gatherSecondaryRun(tail, c); ok {
-			return fetchClass{kind: fetchSecondary, run: run, tier: tier}
+			return fetchClass{kind: fetchSecondary, run: run, tier: tier, probe: probe}
+		}
+		if !o.allKnown(probe) {
+			return fetchClass{kind: fetchProbe, tier: -1, probe: probe}
 		}
 	}
 	return none // whole prefix cached/reloadable, or a genuine miss (recompute from here)
 }
 
-// allKnown reports whether every key's secondary existence is already resolved
-// (warm). A single unknown key makes the whole run cold (+1 RETRY round).
+// allKnown reports whether every key's secondary existence has been probed for a live
+// request (warm). A single unprobed key makes the lookup cold (+1 RETRY round).
 func (o *OffloadCache) allKnown(keys []kvkey.BlockKey) bool {
 	for _, k := range keys {
-		if _, ok := o.existenceKnown[k]; !ok {
+		if _, ok := o.lookups[k]; !ok {
 			return false
 		}
 	}
 	return true
 }
 
-// markKnown records that the run's secondary existence has been resolved (the
-// RETRY round completed). Only the promoted run's keys are marked (a documented
-// second-order simplification vs vLLM's whole-prefix existence batch).
-func (o *OffloadCache) markKnown(keys []kvkey.BlockKey) {
+// probeKeys records that owner's lookup has asked the secondary tiers about keys. The state
+// lasts while some live request owns it (tiering/async_lookup.py:140-161, 226-236 at v0.31.0).
+func (o *OffloadCache) probeKeys(owner string, keys []kvkey.BlockKey) {
 	for _, k := range keys {
-		o.existenceKnown[k] = struct{}{}
+		owners, ok := o.lookups[k]
+		if !ok {
+			owners = make(map[string]struct{}, 1)
+			o.lookups[k] = owners
+		}
+		if _, mine := owners[owner]; !mine {
+			owners[owner] = struct{}{}
+			o.lookupOwners[owner] = append(o.lookupOwners[owner], k)
+		}
 	}
+}
+
+// markKnown records keys as probed with no request owning them, so they stay warm (tests).
+func (o *OffloadCache) markKnown(keys []kvkey.BlockKey) { o.probeKeys("", keys) }
+
+// dropLookups forgets owner's lookups: a key no live request references loses its verdict and
+// is probed again by the next request to ask (async_lookup.py:226-236; fs/manager.py:338-339).
+func (o *OffloadCache) dropLookups(owner string) {
+	for _, k := range o.lookupOwners[owner] {
+		owners := o.lookups[k]
+		delete(owners, owner)
+		if len(owners) == 0 {
+			delete(o.lookups, k)
+		}
+	}
+	delete(o.lookupOwners, owner)
 }
 
 // registerDeferral records a fresh deferral episode for a NEW request whose consult
@@ -150,20 +191,23 @@ func (o *OffloadCache) markKnown(keys []kvkey.BlockKey) {
 func (o *OffloadCache) registerDeferral(reqID string, fc fetchClass) {
 	o.deferralsStarted++
 	st := &deferralState{keys: fc.run, tier: fc.tier, startTick: o.clock}
+	cold := !o.allKnown(fc.probe)
+	o.probeKeys(reqID, fc.probe)
 	switch fc.kind {
+	case fetchProbe:
+		// Nothing to promote: the RETRY round for the existence check, then a miss.
+		st.phase = deferRetry
 	case fetchPending:
 		// Awaiting another request's in-flight promotion: existence is known (the
 		// block is physically in CPU as -1), so no RETRY round — wait for it to land.
 		st.phase = deferPromoting
 		st.tier = -1
 	case fetchSecondary:
-		if o.allKnown(fc.run) {
+		if !cold {
 			// WARM: existence cached → promote now (round 1 = promote).
-			o.markKnown(fc.run)
-			if id, ok := o.firePromotionRun(fc.run, fc.tier); ok {
+			if o.firePromotionRun(fc.run, fc.tier) {
 				st.phase = deferPromoting
 				st.hasJob = true
-				_ = id
 			} else {
 				// Evictable gate refused (mechanism c) or station rejected → recompute.
 				st.recompute = true
@@ -212,14 +256,17 @@ func (o *OffloadCache) PollDeferred(now int64) []string {
 			// promotion instead of firing a duplicate (convoy dedup, BC-C2) — firing
 			// would find no fresh CPU slots and wrongly recompute. Only fire when the
 			// run is still genuinely CPU-absent; a gate refusal there means recompute.
-			o.markKnown(st.keys)
+			if st.tier < 0 {
+				st.resolved = true // a probe that found nothing: admit and recompute
+				break
+			}
 			switch o.awaitedState(st.keys) {
 			case cpuHit:
 				st.resolved = true // already landed
 			case cpuHitPending:
 				st.phase = deferPromoting // wait for the in-flight promotion (no own job)
 			default: // cpuMiss: genuinely absent → fire this request's promotion
-				if _, ok := o.firePromotionRun(st.keys, st.tier); ok {
+				if o.firePromotionRun(st.keys, st.tier) {
 					st.phase = deferPromoting
 					st.hasJob = true
 				} else {
@@ -291,6 +338,7 @@ func (o *OffloadCache) ClearDeferred(id string) {
 		o.endCPULoad(st)
 	}
 	delete(o.deferred, id)
+	o.dropLookups(id) // the request is finished (aborted) for its engine
 }
 
 // DeferralsStarted returns the cumulative count of new prefill admissions that were

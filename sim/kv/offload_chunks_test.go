@@ -29,14 +29,15 @@ func seqTokens(from, n int) []sim.TokenID {
 // vLLM stores whole chunks only, each keyed by its last block's hash
 // (offloading/scheduler.py:418-436, :448-479 at v0.31.0): a 13-block-and-a-bit prompt at
 // blocks_per_chunk 4 offloads chunks 0-2 (blocks 0-11) under the hashes of blocks 3, 7 and
-// 11, and never block 12. Each chunk is one CPU entry and one write job per tier.
+// 11, and never block 12. Each chunk is one CPU entry; the request's chunks go to each tier as
+// one store job (tiering/manager.py:737-747), one file per chunk.
 func TestOffloadChunks_StoreWholeChunksKeyedByTheirLastBlock(t *testing.T) {
 	oc := chunkCache(64, 2, 4, 16, 1)
 	tokens := seqTokens(1, 27)
 	keys := blockKeysFor(tokens, 2)
 	req := &sim.Request{ID: "r", InputTokens: tokens}
 	oc.SetClock(1)
-	if !oc.AllocateKVBlocks(req, 0, int64(len(tokens)), nil) {
+	if !admitOffload(oc, req, 0, int64(len(tokens)), nil) {
 		t.Fatal("allocation failed")
 	}
 	oc.MirrorToCPU([]*sim.Request{req})
@@ -53,8 +54,8 @@ func TestOffloadChunks_StoreWholeChunksKeyedByTheirLastBlock(t *testing.T) {
 			t.Errorf("block %d has its own CPU entry; only chunk-final hashes are keys", i)
 		}
 	}
-	if got := oc.station.ActiveJobs(0, kvtransfer.Write); got != 3 {
-		t.Errorf("%d cascade writes, want one per chunk (3)", got)
+	if got := oc.secondary[0].activeJobs(kvtransfer.Write); got != 1 {
+		t.Errorf("%d cascade writes, want one store job for the request's 3 chunks", got)
 	}
 }
 
@@ -69,7 +70,7 @@ func TestOffloadChunks_ReloadWholeChunksAndNeverLessThanOne(t *testing.T) {
 	setup := func(cpuChunks ...int) *OffloadCache {
 		oc := chunkCache(64, bs, bpc, 16, 0)
 		warm := &sim.Request{ID: "warm", InputTokens: tokens[:6*bs]}
-		oc.AllocateKVBlocks(warm, 0, 6*bs, nil)
+		admitOffload(oc, warm, 0, 6*bs, nil)
 		oc.ReleaseKVBlocks(warm)
 		for _, c := range cpuChunks {
 			oc.cpu.store(keys[(c+1)*bpc-1])
@@ -86,7 +87,7 @@ func TestOffloadChunks_ReloadWholeChunksAndNeverLessThanOne(t *testing.T) {
 	if end, ok := oc.ReloadablePrefixEnd(req, 6*bs); !ok || end != 12*bs {
 		t.Errorf("chunks 1-2 resident: reloadable to %d (ok=%v), want %d", end, ok, 12*bs)
 	}
-	if !oc.AllocateKVBlocks(req, 6*bs, int64(len(tokens)), oc.GetCachedBlocks(tokens)[:6]) {
+	if !admitOffload(oc, req, 6*bs, int64(len(tokens)), oc.GetCachedBlocks(tokens)[:6]) {
 		t.Fatal("allocation after reload failed")
 	}
 	if got := len(oc.GetCachedBlocks(tokens)); got != 12 {
@@ -105,7 +106,7 @@ func TestOffloadChunks_LRUEvictsWholeChunks(t *testing.T) {
 	tokens := seqTokens(1, 24)
 	keys := blockKeysFor(tokens, 2)
 	req := &sim.Request{ID: "r", InputTokens: tokens}
-	oc.AllocateKVBlocks(req, 0, 24, nil)
+	admitOffload(oc, req, 0, 24, nil)
 	oc.MirrorToCPU([]*sim.Request{req})
 	if oc.cpu.usedCount() != 2 || oc.cpu.lookup(keys[3]) != cpuMiss ||
 		oc.cpu.lookup(keys[7]) != cpuHit || oc.cpu.lookup(keys[11]) != cpuHit {
@@ -141,7 +142,7 @@ func TestOffloadChunks_LoadsAreWholeChunksAndTheQueryIsTheCommit(t *testing.T) {
 			if rapid.Bool().Draw(rt, "warmGPU") {
 				w := &sim.Request{ID: id + "w", InputTokens: tokens[:rapid.IntRange(0, n).Draw(rt, "warm")]}
 				if w.InputLen() > 0 {
-					oc.AllocateKVBlocks(w, 0, w.InputLen(), nil)
+					admitOffload(oc, w, 0, w.InputLen(), nil)
 					oc.MirrorToCPU([]*sim.Request{w})
 					oc.ReleaseKVBlocks(w)
 				}
@@ -157,7 +158,7 @@ func TestOffloadChunks_LoadsAreWholeChunksAndTheQueryIsTheCommit(t *testing.T) {
 			} else if end != start {
 				rt.Fatalf("no load, yet reloadable end %d != start %d", end, start)
 			}
-			if !oc.AllocateKVBlocks(req, start, req.InputLen(), cached) {
+			if !admitOffload(oc, req, start, req.InputLen(), cached) {
 				rt.Fatal("allocation with ample GPU room failed")
 			}
 			if got := int64(len(oc.GetCachedBlocks(tokens))) * bs; got < end {
@@ -187,11 +188,11 @@ func TestOffloadChunks_AlignedPromptReloadsTheSameAtEveryWidth(t *testing.T) {
 	for _, bpc := range []int64{1, 2, 3, 4} {
 		oc := chunkCache(32, bs, bpc, 64, 0)
 		a := &sim.Request{ID: "a", InputTokens: tokens}
-		oc.AllocateKVBlocks(a, 0, a.InputLen(), nil)
+		admitOffload(oc, a, 0, a.InputLen(), nil)
 		oc.MirrorToCPU([]*sim.Request{a})
 		oc.ReleaseKVBlocks(a)
 		flush := &sim.Request{ID: "flush", InputTokens: seqTokens(1000, 32*bs)}
-		if !oc.AllocateKVBlocks(flush, 0, flush.InputLen(), nil) {
+		if !admitOffload(oc, flush, 0, flush.InputLen(), nil) {
 			t.Fatal("flush allocation failed")
 		}
 		oc.ReleaseKVBlocks(flush)
@@ -211,8 +212,9 @@ func TestOffloadChunks_AlignedPromptReloadsTheSameAtEveryWidth(t *testing.T) {
 	}
 }
 
-// Every tier transfer moves a whole chunk: a cascade write and a promotion read at
-// blocks_per_chunk 4 each price blocks_per_chunk x per-block bytes.
+// Every tier transfer moves whole chunks, each its own file: a cascade write of two chunks and
+// a promotion read of one, at blocks_per_chunk 4, price each file at blocks_per_chunk x
+// per-block bytes.
 func TestOffloadChunks_TransfersMoveWholeChunks(t *testing.T) {
 	cfg := enabledOffloadCfg(16*4*4096, 4096, 1)
 	cfg.BlocksPerChunk, cfg.BlockSize = 4, 8
@@ -222,13 +224,13 @@ func TestOffloadChunks_TransfersMoveWholeChunks(t *testing.T) {
 	tokens := seqTokens(1, 17) // two chunks
 	req := &sim.Request{ID: "r", InputTokens: tokens}
 	oc.SetClock(1)
-	oc.AllocateKVBlocks(req, 0, int64(len(tokens)), nil)
+	admitOffload(oc, req, 0, int64(len(tokens)), nil)
 	oc.MirrorToCPU([]*sim.Request{req})
 	keys := blockKeysFor(seqTokens(500, 16), 2)
 	oc.secondary[0].store(keys[3])
 	oc.consultAndReload(seqTokens(500, 16), 0, "")
-	if len(priced) != 3 {
-		t.Fatalf("priced %d transfers, want 2 chunk writes and 1 chunk read", len(priced))
+	if len(priced) != 2 {
+		t.Fatalf("priced %d jobs, want one 2-chunk write and one 1-chunk read", len(priced))
 	}
 	for _, b := range priced {
 		if b != 4*4096 {

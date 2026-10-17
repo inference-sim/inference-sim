@@ -434,7 +434,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			// Pre-check: ceil(9/4)=3 > 1 free → rejection.
 			// Reality: partial absorbs 2, remaining 7 → ceil(7/4)=2 > 1 → still insufficient.
 			// This is a genuine failure, not a false rejection.
-			name:            "genuinely insufficient blocks (not a false rejection)",
+			name: "genuinely insufficient blocks (not a false rejection)",
 			// The pool holds the whole prompt at admission (vLLM's full_sequence_must_fit),
 			// and another request then takes a block, leaving one free.
 			totalBlocks:     4,
@@ -1066,4 +1066,3 @@ func TestLazyHashDeletion_PartialEviction(t *testing.T) {
 	// block. The surviving prefix (blocks 0-511) forms a contiguous chain.
 	assertBlockConservation(t, kvc)
 }
-

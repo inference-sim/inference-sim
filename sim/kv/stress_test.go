@@ -210,7 +210,7 @@ func TestStress_CachedBlockBudgetExhaustionUnderPressure(t *testing.T) {
 
 	// Step 1: Allocate and release a request to populate prefix cache.
 	// 4 tokens = 2 blocks become cached on the free list.
-	req1 := &sim.Request{ID: "prefix-seed", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
+	req1 := &sim.Request{ID: "prefix-seed", InputTokens: []sim.TokenID{1, 2, 3, 4}}
 	ok := kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	require.True(t, ok)
 	kvc.ReleaseKVBlocks(req1)
@@ -223,7 +223,7 @@ func TestStress_CachedBlockBudgetExhaustionUnderPressure(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		fillers[i] = &sim.Request{
 			ID:          fmt.Sprintf("filler%d", i),
-			InputTokens:  []sim.TokenID{sim.TokenID(100 + i*10), sim.TokenID(101 + i*10), sim.TokenID(102 + i*10), sim.TokenID(103 + i*10)},
+			InputTokens: []sim.TokenID{sim.TokenID(100 + i*10), sim.TokenID(101 + i*10), sim.TokenID(102 + i*10), sim.TokenID(103 + i*10)},
 		}
 		ok := kvc.AllocateKVBlocks(fillers[i], 0, 4, []int64{})
 		require.True(t, ok, "filler %d allocation should succeed", i)
@@ -236,7 +236,7 @@ func TestStress_CachedBlockBudgetExhaustionUnderPressure(t *testing.T) {
 	// Prefix [1,2,3,4] = 2 cached blocks (will be claimed from free list).
 	// New tokens [5,6,7,8] = 2 more blocks needed from free list.
 	// After claiming cached blocks: 0 free remain. Need 2 more -> should fail.
-	req2 := &sim.Request{ID: "pressure-req", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8}}
+	req2 := &sim.Request{ID: "pressure-req", InputTokens: []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	require.Len(t, cached, 2, "should find 2 cached prefix blocks")
 
@@ -275,8 +275,8 @@ func TestStress_BlockConservationThroughCompleteLifecycle(t *testing.T) {
 	const totalBlocks, blockSize = int64(20), int64(4)
 	const numRounds = 5
 	const reqsPerRound = 3
-	const inputTokensPerReq = 8  // 2 blocks per request
-	const decodeStepsPerReq = 2  // 2 decode tokens per request
+	const inputTokensPerReq = 8 // 2 blocks per request
+	const decodeStepsPerReq = 2 // 2 decode tokens per request
 
 	kvc := NewKVCacheState(totalBlocks, blockSize)
 

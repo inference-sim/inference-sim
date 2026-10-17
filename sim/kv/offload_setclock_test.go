@@ -31,7 +31,7 @@ func TestOffload_PromotionCompletesOnPoll(t *testing.T) {
 
 	// Stage 2: a later request reloads the now-CPU-resident prefix onto the GPU.
 	reqB := &sim.Request{ID: "b", InputTokens: tokens}
-	oc.AllocateKVBlocks(reqB, 0, 4, nil)
+	admitOffload(oc, reqB, 0, 4, nil)
 	if oc.reloadCount != 2 {
 		t.Fatalf("a later request must reload both promoted blocks CPU->GPU, reloadCount=%d", oc.reloadCount)
 	}
@@ -50,7 +50,7 @@ func TestOffload_CascadeCompletesAndUnpins(t *testing.T) {
 
 	req := &sim.Request{ID: "r", InputTokens: tokens}
 	oc.SetClock(100)
-	oc.AllocateKVBlocks(req, 0, 4, nil)
+	admitOffload(oc, req, 0, 4, nil)
 	oc.MirrorToCPU([]*sim.Request{req}) // stores + cascades (pins) at t=100
 	if oc.cpu.evictableCount() != 0 {
 		t.Fatalf("blocks must be pinned by in-flight cascade writes, evictable=%d", oc.cpu.evictableCount())
