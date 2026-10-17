@@ -221,8 +221,9 @@ var (
 	goodputSLOE2E  string
 
 	// output file paths
-	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
-	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	metricsPath           string  // File to write MetricsOutput JSON for blis run (--metrics-path)
+	serverSeriesIntervalS float64 // --server-series-interval-s: bin width of the file-only server_series block; 0 = off
+	resultsPath           string  // File to write []SimResult JSON for blis replay (--results-path)
 	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
 	// Declared in saturation.go alongside --detectors / --saturation-config.
 
@@ -1137,6 +1138,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
 	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false), over the scenario's engine.swa_bounded_replay. Unset, the pool states it or it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
 	registerFrontendFlags(cmd)
+	cmd.Flags().Float64Var(&serverSeriesIntervalS, "server-series-interval-s", 0, "Bin width in seconds of the per-engine vLLM /metrics time series (KV usage, running/waiting, prefix-cache and prompt-token-by-source counters, generation tokens) written as server_series to the --metrics-path file only; 0 disables it")
 
 	// The deployment: a blis-schemas scenario (model, hardware, fabric, pools, engines)
 	// priced by blis-latency-kernel with the coefficient sets it names.
@@ -1986,7 +1988,8 @@ var runCmd = &cobra.Command{
 				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.
-				LatencyModel: lr.KernelModel,
+				LatencyModel:           lr.KernelModel,
+				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
 			},
 			NumInstances:                    numInstances,
 			DPLockstepRanks:                 dpPlan.LockstepRanks,
@@ -2218,7 +2221,7 @@ var runCmd = &cobra.Command{
 		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
 		pdMetrics := cs.PDMetrics()
 		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
-			append(resultsFileEmitOptions(metricsPath, resolvedCatalogRoot), sim.WithPD(pdMetrics.Output()))...); err != nil {
+			append(resultsFileEmitOptions(metricsPath, resolvedCatalogRoot), sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(cs.ServerSeries()))...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -2603,3 +2606,16 @@ func (o *optionalBool) Type() string { return "bool" }
 
 // IsBoolFlag lets the flag be passed bare (--swa-bounded-replay) as true.
 func (o *optionalBool) IsBoolFlag() bool { return true }
+
+// serverSeriesIntervalUs is --server-series-interval-s in ticks (us); 0 when off. A negative
+// or sub-microsecond width is refused.
+func serverSeriesIntervalUs() int64 {
+	if serverSeriesIntervalS < 0 {
+		logrus.Fatalf("--server-series-interval-s must be >= 0, got %g", serverSeriesIntervalS)
+	}
+	us := int64(math.Round(serverSeriesIntervalS * 1e6))
+	if serverSeriesIntervalS > 0 && us < 1 {
+		logrus.Fatalf("--server-series-interval-s %g is below one microsecond", serverSeriesIntervalS)
+	}
+	return us
+}

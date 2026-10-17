@@ -159,6 +159,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		r.advanceBatch(now, advance)
 		r.KVCache.MirrorToCPU(r.RunningBatch.Requests)
 		remaining := r.processCompletions(now, advance)
+		r.recordServerStepEnd(now+advance, len(remaining))
 		if len(remaining) > 0 {
 			r.RunningBatch.Requests = remaining
 		} else {

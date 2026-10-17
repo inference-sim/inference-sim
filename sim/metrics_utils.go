@@ -174,6 +174,10 @@ type MetricsOutput struct {
 	// PD is the P/D block (PDOutput), file-only; absent for a colocated run.
 	PD *PDOutput `json:"pd,omitempty"`
 
+	// ServerSeries is the per-engine vLLM /metrics time series (--server-series-interval-s),
+	// file-only (WithServerSeries); absent when off.
+	ServerSeries *ServerSeriesOutput `json:"server_series,omitempty"`
+
 	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
 	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
 	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
