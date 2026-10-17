@@ -717,7 +717,7 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 		State:           sim.StateCompleted,
 		InputTokens:     make([]sim.TokenID, 512),
 		OutputTokens:    make([]sim.TokenID, 256),
-		ProgressIndex:   512 + 256,
+		ProgressIndex:   512 + 256 - 1, // fully generated ⇒ InputLen+N-1
 		ArrivalTime:     10000,
 		TTFTSet:         true,
 		FirstTokenTime:  5000,
@@ -985,7 +985,7 @@ func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
 			SLOClass:      "critical",
 			InputTokens:   make([]sim.TokenID, 10),
 			OutputTokens:  make([]sim.TokenID, 5),
-			ProgressIndex: 15,
+			ProgressIndex: 14, // fully generated ⇒ InputLen+N-1
 		},
 		{
 			ID:            "req2",
@@ -993,7 +993,7 @@ func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
 			SLOClass:      "batch",
 			InputTokens:   make([]sim.TokenID, 20),
 			OutputTokens:  make([]sim.TokenID, 10),
-			ProgressIndex: 30,
+			ProgressIndex: 29, // fully generated ⇒ InputLen+N-1
 		},
 		{
 			ID:            "req3",
@@ -1001,7 +1001,7 @@ func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
 			SLOClass:      "", // no SLO class
 			InputTokens:   make([]sim.TokenID, 5),
 			OutputTokens:  make([]sim.TokenID, 2),
-			ProgressIndex: 7,
+			ProgressIndex: 6, // fully generated ⇒ InputLen+N-1
 		},
 	}
 

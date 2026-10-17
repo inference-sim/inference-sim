@@ -124,13 +124,15 @@ func TestSessionAccumulate_ClosedLoopMemoryIsLinear(t *testing.T) {
 	}
 	sm := NewSessionManager([]SessionBlueprint{bp})
 
-	// Round 0: simulated externally — 100 input + 50 actual output.
+	// Round 0: simulated externally — 100 input + 50 emitted output tokens. A
+	// fully-generated round of N output tokens ends at ProgressIndex == InputLen+N-1
+	// (output token #1 is charged to prefill completion, not to a decode step).
 	req := &sim.Request{
 		ID:            "r0",
 		SessionID:     "s",
 		RoundIndex:    0,
 		State:         sim.StateCompleted,
-		ProgressIndex: 150, // 100 + 50
+		ProgressIndex: 149, // 100 + 50 - 1
 		InputTokens:   sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 100),
 		OutputTokens:  sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), 50),
 	}
@@ -143,7 +145,7 @@ func TestSessionAccumulate_ClosedLoopMemoryIsLinear(t *testing.T) {
 		}
 		nextReq := follow[0]
 		nextReq.State = sim.StateCompleted
-		nextReq.ProgressIndex = int64(len(nextReq.InputTokens) + len(nextReq.OutputTokens))
+		nextReq.ProgressIndex = int64(len(nextReq.InputTokens) + len(nextReq.OutputTokens) - 1)
 		req = nextReq
 	}
 
