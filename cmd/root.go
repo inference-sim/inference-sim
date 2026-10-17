@@ -676,6 +676,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	applyRoutingOverrides(cmd)
 	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
 		Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
 	})
@@ -1232,6 +1233,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Speculative decoding / MTP (#1528). Model-level; shared by run and replay so a
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
 	registerAcceptanceFlags(cmd)
+	registerRoutingFlags(cmd)
 
 	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
 	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier

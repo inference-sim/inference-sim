@@ -243,6 +243,25 @@ type KernelPoolProvenance struct {
 	// enforces, and SkippedRuleFindings what they report on this scenario.
 	SkippedRules        []string      `json:"skipped_rules"`
 	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+	// Routing is the pool's resolved expert-parallel routing imbalance: which layer
+	// supplied it, from which set and source, and why the default applied when it did.
+	Routing *RoutingRecord `json:"routing,omitempty"`
+}
+
+// RoutingRecord is the provenance of a pool's routing-imbalance resolution
+// (blis-schemas routing.Resolve), recorded the way acceptance's source layer is.
+type RoutingRecord struct {
+	SourceLayer string `json:"source_layer"`
+	Set         string `json:"set,omitempty"`
+	// Keys are the decode and prefill profiles a profile layer resolved to.
+	Keys         []string `json:"keys,omitempty"`
+	Source       string   `json:"source,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
+	MeasuredOn   string   `json:"measured_on,omitempty"`
+	FallbackFrom string   `json:"fallback_from,omitempty"`
+	// TokenImbalance and ExpertImbalance are an inline value's ratios.
+	TokenImbalance  float64 `json:"token_imbalance,omitempty"`
+	ExpertImbalance float64 `json:"expert_imbalance,omitempty"`
 }
 
 // The values of KernelPoolProvenance.EvidenceSource.

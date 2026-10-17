@@ -95,5 +95,6 @@ func (m *Model) Provenance() sim.KernelPoolProvenance {
 		p.EvidenceSource = sim.EvidenceFromKernel
 	}
 	sort.Strings(p.SkippedRules)
+	p.Routing = m.routing
 	return p
 }
