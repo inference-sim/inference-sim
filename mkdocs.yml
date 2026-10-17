@@ -134,6 +134,7 @@ nav:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
       - PR Workflow: contributing/pr-workflow.md
+      - Changes Across the BLIS Repositories: contributing/cross-repo-changes.md
       - Automated Delivery (L1): contributing/automated-delivery.md
       - External PR Review: contributing/external-pr-review.md
       - RFC Template: contributing/rfc.md

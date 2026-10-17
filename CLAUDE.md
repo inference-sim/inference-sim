@@ -113,6 +113,10 @@ GitHub Actions run on all PRs to main:
 - `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.9.0), tests, and a CLAUDE.md size-ceiling check.
 - `.github/workflows/docs.yml` — MkDocs site (PR build-only; deploy on push to main; versioned on tag).
 
+## Cross-Repository Changes (BLIS repositories)
+
+A change that also touches blis-schemas, blis-catalog, blis-registry or blis-latency-kernel follows the canonical process in blis-schemas (`docs/contributing/cross-repo-changes.md`); this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace`, and push schemas -> catalog/registry/kernel -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (schemas validators, snapshot pin check, push gate, `git merge-tree --write-tree origin/main HEAD`).
+
 ## Agent Behavioral Instructions
 
 The following are for Claude Code and other AI assistants. Human contributors can skip this section.
