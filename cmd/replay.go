@@ -545,7 +545,8 @@ Example:
 				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.
-				LatencyModel: lr.KernelModel,
+				LatencyModel:           lr.KernelModel,
+				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
 			},
 			NumInstances:                    numInstances,
 			DPLockstepRanks:                 dpPlan.LockstepRanks,
@@ -738,7 +739,7 @@ Example:
 		// An agentic replay (#1937) adds the measured window and its agentic block.
 		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
 		pdMetrics := cs.PDMetrics()
-		extra := append([]sim.EmitOption{sim.WithPD(pdMetrics.Output())}, agx.emitOptions(aggregated)...)
+		extra := append([]sim.EmitOption{sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(cs.ServerSeries())}, agx.emitOptions(aggregated)...)
 		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
 			append(resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot), extra...)...); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)

@@ -102,6 +102,10 @@ type SimConfig struct {
 	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
 	// tag.
 	LatencyModel LatencyModel
+
+	// ServerSeriesIntervalUs, when > 0, records the per-engine server time series binned at
+	// this width (server_series.go). Zero is off and output is byte-identical (INV-6).
+	ServerSeriesIntervalUs int64
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -137,6 +141,8 @@ type Simulator struct {
 	// preEventClock is Clock before the event being processed advanced it, so a lockstep
 	// dummy step can leave the clock at the rank's last real work.
 	preEventClock int64
+	// serverSeries records the vLLM /metrics series per engine; nil when off.
+	serverSeries *serverSeries
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -252,6 +258,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		specDraftSlots:            cfg.DraftSlots(),
 		latencyModel:              latencyModel,
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
+	}
+	if cfg.ServerSeriesIntervalUs > 0 {
+		s.serverSeries = newServerSeries(cfg.ServerSeriesIntervalUs)
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.scheduler = NewScheduler(cfg.Scheduler)
@@ -915,6 +924,7 @@ func (sim *Simulator) Step(now int64) {
 	// (completing requests' blocks are still in-use and can be mirrored).
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, currStepAdvance)
+	sim.recordServerStepEnd(now+currStepAdvance, len(remaining))
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
 }
 
@@ -988,6 +998,9 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
 		sim.Metrics.recordPrefixLookup(s.Request, s.Lookup)
+		if sim.serverSeries != nil {
+			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
+		}
 		sim.recordAdapterResidency(s.Request)
 	}
 
@@ -1176,6 +1189,7 @@ func (sim *Simulator) scheduledRequests() []*Request {
 // advanceBatch applies one step of currStepAdvance ticks to the running batch: progress,
 // ITL, TTFT and the KV usage observation.
 func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
+	var emitted int64
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
@@ -1192,6 +1206,7 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 			if req.resumeEnd > req.InputLen() && req.ProgressIndex == end {
 				// A resumed prefill samples the request's next token (sched/scheduler.py:1084):
 				// its inter-token gap runs from the last token before the preemption.
+				emitted++
 				emittedAt := now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime()
 				last := req.ArrivalTime + req.FirstTokenTime
 				for _, itl := range req.ITL {
@@ -1212,6 +1227,7 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 				// per output token, so a step emitting g tokens pays g×OTPT. At the
 				// feature-off default NumNewTokens==1 ⇒ +=1 and 1×OTPT ⇒ byte-identical.
 				req.ProgressIndex += int64(req.NumNewTokens)
+				emitted += int64(req.NumNewTokens)
 				req.ITL = append(req.ITL, currStepAdvance+int64(req.NumNewTokens)*sim.latencyModel.OutputTokenProcessingTime())
 				if sim.specEnabled {
 					// Commit the carry with the GRANTED count (after FormBatch caps), so a
@@ -1227,9 +1243,16 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			emitted++ // the prefill-completing step samples the first token
+			if sim.serverSeries != nil {
+				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
+			}
 		}
 	}
 
+	if sim.serverSeries != nil {
+		sim.serverSeries.recordGeneration(now+currStepAdvance, emitted)
+	}
 	// Record KV cache usage observations after execution
 	sim.recordKVUsageMetrics(currStepAdvance)
 }

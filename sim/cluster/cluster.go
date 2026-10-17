@@ -2707,3 +2707,18 @@ func (cs *ClusterSimulator) eppRejected(req *sim.Request) {
 	cs.releaseInFlightGroup(req.ID)
 	cs.recordUnserved(req)
 }
+
+// ServerSeries is the per-engine server time series of every instance, one engine per
+// instance as vLLM labels one per EngineCore; nil when the feature is off.
+func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
+	ids := make([]string, 0, len(c.instances))
+	sims := make([]*sim.Simulator, 0, len(c.instances))
+	for _, inst := range c.instances {
+		if inst.sim == nil {
+			continue
+		}
+		ids = append(ids, string(inst.ID()))
+		sims = append(sims, inst.sim)
+	}
+	return sim.BuildServerSeries(ids, sims)
+}

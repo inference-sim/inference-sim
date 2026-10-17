@@ -430,6 +430,7 @@ type emitOptions struct {
 	epp       *EPPProvenance
 	acceptance *AcceptanceRecord
 	prefix     map[string]PrefixCacheRecord
+	series     *ServerSeriesOutput
 }
 
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
@@ -488,6 +489,12 @@ func WithPrefixCache(p map[string]PrefixCacheRecord) EmitOption {
 	return func(opts *emitOptions) { opts.prefix = p }
 }
 
+// WithServerSeries records the per-engine server time series in the --metrics-path file
+// only. Nil leaves the block absent.
+func WithServerSeries(s *ServerSeriesOutput) EmitOption {
+	return func(opts *emitOptions) { opts.series = s }
+}
+
 // EmitOutput writes a populated MetricsOutput to stdout (always) and an
 // optional file (when outputFilePath != ""). The file variant additionally
 // embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
@@ -531,6 +538,7 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		output.EPP = resolvedOpts.epp
 		output.Agentic = resolvedOpts.agentic
 		output.PD = resolvedOpts.pd
+		output.ServerSeries = resolvedOpts.series
 		if resolvedOpts.provenance != nil {
 			output.KernelProvenance = &resolvedOpts.provenance
 		}
