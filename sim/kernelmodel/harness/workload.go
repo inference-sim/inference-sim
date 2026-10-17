@@ -24,13 +24,18 @@ package harness
 // fixture_test.go cross-checks the file against an independent Go implementation of NumPy's
 // legacy generator. docs/kernel-exclusive/APPLES-TO-APPLES.md carries the file:line citations.
 //
-// # What is not recoverable
+// # What the client sent
 //
 // The client turns each target into a text prompt, then decodes and re-encodes it (up to ten
-// times) to land on the target, and sends whatever length it reached. The difference
-// ("mismatch") is printed as an average and not stored per request in any artifact this
-// project has, so the simulated prompt is the TARGET length. With --ignore-eos the output
-// length is the target exactly (max_tokens = output_len).
+// times) to land on the target, and sends whatever length it reached. That sent length is
+// recovered offline: scripts/inferencex_prompt_lengths.py reproduces the construction with each
+// point's tokenizer at pinned revisions, and promptlengths.go reads the committed evidence. For a
+// VERIFIED point -- every pinned revision gives zero mismatch and no server-added token -- the
+// sent length is exactly the TARGET the fixture replays, so the simulated prompt is that target.
+// A point the evidence file does not hold (e.g. a gated tokenizer whose run left no engine log) is
+// not verified and carries that gap; docs/kernel-exclusive/APPLES-TO-APPLES.md "The sent prompt
+// lengths" has the file:line citations. With --ignore-eos the output length is the target exactly
+// (max_tokens = output_len).
 
 import (
 	"encoding/json"

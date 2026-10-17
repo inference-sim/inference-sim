@@ -19,9 +19,12 @@ and writes the vectors in request order. docs/kernel-exclusive/APPLES-TO-APPLES.
 line this depends on.
 
 The vectors are TARGET lengths. The client then builds a text prompt from token ids, decodes and
-re-encodes it up to ten times to land on the target, and records the length it actually got;
-that tokenizer residual ("mismatch") is not recoverable from the measurements and is not
-modelled here.
+re-encodes it up to ten times to land on the target, and records the length it actually got; that
+tokenizer residual ("mismatch") is not in the measurements and is not modelled by this generator.
+It is instead reconstructed offline by scripts/inferencex_prompt_lengths.py at the point's pinned
+tokenizer revisions and verified: for every verified point the residual is zero, so the sent length
+equals the target this script emits. See sim/kernelmodel/harness/promptlengths.go and
+docs/kernel-exclusive/APPLES-TO-APPLES.md "The sent prompt lengths".
 
 Usage (numpy required; any version -- legacy RandomState streams are frozen by NEP 19):
 
