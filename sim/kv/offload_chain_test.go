@@ -106,13 +106,13 @@ func TestNewOffloadCache_Validation(t *testing.T) {
 	if got := NewOffloadCache(gpu, c4).cpu.capacity; got != 2 {
 		t.Fatalf("CPU capacity at blocks_per_chunk 4 must be 40960/(4096x4)=2 chunks, got %d", got)
 	}
-	if len(oc.secondary) != 2 || oc.station == nil {
-		t.Fatalf("2 secondary tiers must build 2 tiers + a station, got %d tiers station=%v", len(oc.secondary), oc.station)
+	if len(oc.secondary) != 2 || oc.secondary[0].station == nil {
+		t.Fatalf("2 secondary tiers must build 2 tiers + a station, got %d tiers", len(oc.secondary))
 	}
 
 	// CPU-only offload (no secondary tiers) builds with a nil station.
 	ocpu := NewOffloadCache(gpu, enabledOffloadCfg(40960, 4096, 0))
-	if len(ocpu.secondary) != 0 || ocpu.station != nil {
+	if len(ocpu.secondary) != 0 {
 		t.Fatalf("no secondary tiers must yield 0 tiers + nil station")
 	}
 }
@@ -227,7 +227,7 @@ func TestOffload_ReloadablePrefixEnd_ReportsBoundary(t *testing.T) {
 
 		// Warm blocks 0-1 onto the GPU via a prior resident request.
 		warm := &sim.Request{ID: "warm", InputTokens: tokens[:4]} // [1,2,3,4] = blocks 0-1
-		if ok := oc.AllocateKVBlocks(warm, 0, 4, nil); !ok {
+		if ok := admitOffload(oc, warm, 0, 4, nil); !ok {
 			t.Fatalf("warm allocation should succeed")
 		}
 		// Block 2 ([5,6] = tokens[4:6]) is CPU-resident only.
@@ -263,7 +263,7 @@ func TestOffload_ComposedReloadCommit_ConservesBlocks(t *testing.T) {
 
 	// Warm blocks 0-1 onto the GPU via a prior resident request (startIndex will be 4).
 	warm := &sim.Request{ID: "warm", InputTokens: tokens[:4]} // [1,2,3,4] = blocks 0-1
-	if ok := oc.AllocateKVBlocks(warm, 0, 4, nil); !ok {
+	if ok := admitOffload(oc, warm, 0, 4, nil); !ok {
 		t.Fatalf("warm allocation should succeed")
 	}
 	// Block 2 ([5,6] = tokens[4:6]) is CPU-resident only.
@@ -278,7 +278,7 @@ func TestOffload_ComposedReloadCommit_ConservesBlocks(t *testing.T) {
 	// AllocateKVBlocks is called with the UNCHANGED startIndex (C3): the CPU-resident
 	// block 2 is reloaded to GPU and the uncached tail (block 3) is allocated.
 	req := &sim.Request{ID: "r", InputTokens: tokens}
-	if ok := oc.AllocateKVBlocks(req, startIndex, 8, cached); !ok {
+	if ok := admitOffload(oc, req, startIndex, 8, cached); !ok {
 		t.Fatalf("composed reload+tail allocation should succeed")
 	}
 	if oc.reloadCount != 1 {
@@ -289,5 +289,18 @@ func TestOffload_ComposedReloadCommit_ConservesBlocks(t *testing.T) {
 	}
 	if err := oc.gpu.verifyBlockConservation(); err != nil {
 		t.Fatalf("INV-4 GPU conservation must hold after a composed reload: %v", err)
+	}
+}
+
+// vLLM sizes the CPU tier as cpu_bytes_to_use // (worker bytes per block x num_copies): a
+// non-latent cache holds one copy per TP worker (kv_offload/cpu/spec.py:103-121 at v0.31.0).
+func TestOffload_TheCPUBudgetHoldsEveryWorkersCopy(t *testing.T) {
+	cfg := enabledOffloadCfg(16*4096, 4096, 0)
+	if got := cfg.CPUChunkCapacity(); got != 16 {
+		t.Fatalf("one copy: %d chunks, want 16", got)
+	}
+	cfg.CPUCopies = 4
+	if got := cfg.CPUChunkCapacity(); got != 4 {
+		t.Fatalf("4 workers' copies: %d chunks, want 4", got)
 	}
 }

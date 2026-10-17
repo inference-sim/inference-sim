@@ -137,6 +137,9 @@ type TraceKVOffloadConfig struct {
 	OffloadPromptOnly      bool                 `yaml:"offload_prompt_only"`
 	SelfDescribingKVEvents bool                 `yaml:"self_describing_kv_events"`
 	Tiers                  []TraceKVOffloadTier `yaml:"secondary_tiers,omitempty"`
+	// SimpleCPUOffload / LazyOffload record vLLM's SimpleCPUOffloadConnector and its mode.
+	SimpleCPUOffload bool `yaml:"simple_cpu_offload,omitempty"`
+	LazyOffload      bool `yaml:"lazy_offload,omitempty"`
 }
 
 // TraceKVOffloadTier is the trace-header serialization of one resolved
@@ -158,7 +161,9 @@ type TraceKVOffloadTier struct {
 	// round-trip is lossless (BC-G6); Qsat=1/f₁=1.0/σ=0 encode "ramp/jitter off".
 	SaturationQueueDepth   int64   `yaml:"saturation_queue_depth"`
 	SingleTransferFraction float64 `yaml:"single_transfer_fraction"`
-	LatencyJitterStddev    float64 `yaml:"latency_jitter_stddev"`
+	// CapacityBytes is the tier's resolved size in bytes (0 unbounded).
+	CapacityBytes       int64   `yaml:"capacity_bytes,omitempty"`
+	LatencyJitterStddev float64 `yaml:"latency_jitter_stddev"`
 }
 
 // TraceServerConfig captures server configuration in trace header.

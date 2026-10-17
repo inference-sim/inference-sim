@@ -72,10 +72,10 @@ func TestServiceTicksAtDepth_FlatBeyondQsat(t *testing.T) {
 // base+floor(bytes/bw) and equals the uncontended ServiceTicks (BC-D2, INV-6).
 func TestServiceTicks_RampOff_Identity(t *testing.T) {
 	configs := []Config{
-		oneTier(4, 4, 100, 300),                 // zero-value ramp fields
-		rampTier(10, 100, 1, 0.5),               // Qsat=1 => no ramp
-		rampTier(10, 100, 4, 1.0),               // f1=1.0 => no ramp
-		rampTier(10, 100, 0, 0.5),               // Qsat=0 => no ramp
+		oneTier(4, 4, 100, 300),   // zero-value ramp fields
+		rampTier(10, 100, 1, 0.5), // Qsat=1 => no ramp
+		rampTier(10, 100, 4, 1.0), // f1=1.0 => no ramp
+		rampTier(10, 100, 0, 0.5), // Qsat=0 => no ramp
 	}
 	for ci, cfg := range configs {
 		s := mustNew(t, cfg)
@@ -146,7 +146,7 @@ func TestStart_JitterFactorApplied(t *testing.T) {
 func TestStart_NoJitterSentinel_ByteIdentical(t *testing.T) {
 	for _, bytes := range []int64{0, 1, 499, 500, 1000, 1005} {
 		s := mustNew(t, oneTier(4, 4, 100, 100))
-		want := int64(1000) + s.ServiceTicks(0, Read, bytes) // lone job => q=1
+		want := int64(1000) + s.ServiceTicks(0, Read, bytes)                                      // lone job => q=1
 		id, ok := s.Submit(TransferJob{Tier: 0, Direction: Read, Bytes: bytes, SubmitTick: 1000}) // JitterFactor 0
 		if !ok {
 			t.Fatalf("bytes=%d rejected", bytes)

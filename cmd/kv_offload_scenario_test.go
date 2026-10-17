@@ -57,12 +57,12 @@ func TestKVOffloadFromDeployment_RefusesWhatTheModelDoesNotImplement(t *testing.
 		o    deployment.Offload
 		want string
 	}{
-		{"another connector", deployment.Offload{Tiers: cpu, Connector: "SimpleCPUOffloadConnector"}, "offload.connector"},
 		{"LMCache", deployment.Offload{Tiers: cpu, Connector: "LMCacheConnectorV1"}, "offload.connector"},
 		{"an unknown spec", deployment.Offload{Tiers: cpu, Spec: "MySpec"}, "offload.spec"},
 		{"a prefetch depth", deployment.Offload{Tiers: cpu, PrefetchDepth: 2}, "offload.prefetch_depth"},
-		{"a secondary tier", deployment.Offload{Tiers: append(cpu, deployment.Tier{Device: "nvme_gen4", Bytes: 1 << 40})}, `offload.tiers[1] ("nvme_gen4")`},
-		{"no CPU tier", deployment.Offload{Tiers: []deployment.Tier{{Device: "nvme_gen4", Bytes: 1 << 40}}}, "offload.tiers[0]"},
+		{"a secondary tier without the tiering spec", deployment.Offload{Tiers: append(cpu, deployment.Tier{Device: "nvme_gen4", Bytes: 1 << 40})}, `offload.tiers[1] ("nvme_gen4")`},
+		{"an object store", deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: append(cpu, deployment.Tier{Device: "s3", Bytes: 1 << 40})}, "obj secondary tier"},
+		{"no CPU tier", deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: []deployment.Tier{{Device: "nvme_gen4", Bytes: 1 << 40}}}, "offload.tiers[0]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := kvOffloadBlockFromDeployment(&tc.o)
@@ -199,5 +199,73 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 				t.Errorf("a 0-byte tier must be refused by the schema: err=%v\n%s", err, lastLines(stderr, 3))
 			}
 		})
+	}
+}
+
+// A secondary tier in the scenario is vLLM's fs tier behind the CPU tier, as a
+// TieringOffloadingSpec secondary_tiers [{type: fs, root_dir}] entry runs it: the device class
+// prices it, vLLM's 16+16 thread defaults serve it, it runs O_DIRECT, and it holds the stated
+// bytes. It resolves as the equivalent kv_offload file does.
+func TestKVOffloadFromDeployment_ASecondaryTierIsTheFSTier(t *testing.T) {
+	o := deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: []deployment.Tier{
+		{Device: "cpu_dram", Bytes: 1 << 30}, {Device: "nvme_gen4", Bytes: 1 << 40}}}
+	block, err := kvOffloadBlockFromDeployment(&o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices := map[string]kvOffloadDevice{"nvme_gen4": {ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80}}
+	got, err := resolveKVOffload(block, devices, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parseKVOffloadBytes([]byte("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n" +
+		"    - {type: fs, root_dir: " + fsTierRoot + ", direct_io: true, device_class: nvme_gen4, capacity_bytes: 1099511627776}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := resolveKVOffload(file.KVOffload, devices, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("scenario tier resolves to %+v, the equivalent file to %+v", got, want)
+	}
+	if tier := got.Tiers[0]; tier.NReadThreads != 16 || tier.NWriteThreads != 16 || !tier.DirectIO || tier.CapacityBytes != 1<<40 {
+		t.Fatalf("fs tier %+v: want 16+16 threads, O_DIRECT, 1 TiB", tier)
+	}
+}
+
+// The SimpleCPUOffloadConnector is accepted: one block-granular CPU tier, every block offloaded
+// (no prompt-only clamp), eager by default and lazy when the spec says so; anything else it
+// cannot be is refused.
+func TestKVOffloadFromDeployment_TheSimpleConnector(t *testing.T) {
+	cpu := []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 30}}
+	for _, tc := range []struct {
+		spec string
+		lazy bool
+	}{{"", false}, {"eager", false}, {"lazy", true}} {
+		block, err := kvOffloadBlockFromDeployment(&deployment.Offload{Connector: simpleConnector, Spec: tc.spec, Tiers: cpu})
+		if err != nil {
+			t.Fatalf("spec %q: %v", tc.spec, err)
+		}
+		got, err := resolveKVOffload(block, nil, 64)
+		if err != nil {
+			t.Fatalf("spec %q: %v", tc.spec, err)
+		}
+		if !got.Simple || got.LazyOffload != tc.lazy || got.OffloadPromptOnly || got.BlocksPerChunk != 1 {
+			t.Fatalf("spec %q resolves to %+v", tc.spec, got)
+		}
+		back := headerToSimOffload(simToHeaderOffload(got))
+		if back.Simple != got.Simple || back.LazyOffload != got.LazyOffload {
+			t.Fatalf("spec %q: the trace header loses the connector mode", tc.spec)
+		}
+	}
+	for _, o := range []deployment.Offload{
+		{Connector: simpleConnector, Spec: "TieringOffloadingSpec", Tiers: cpu},
+		{Connector: simpleConnector, Tiers: append(cpu, deployment.Tier{Device: "nvme_gen4", Bytes: 1 << 40})},
+	} {
+		if _, err := kvOffloadBlockFromDeployment(&o); err == nil {
+			t.Fatalf("%+v must be refused", o)
+		}
 	}
 }

@@ -52,7 +52,9 @@ func (o *OffloadCache) tailOf(tokens []sim.TokenID, startBlock int64, prevHash s
 func (t offloadTail) key(c int64) kvkey.BlockKey { return t.blockKeys[(c+1)*t.bpc-1-t.startBlock] }
 
 // blocks is the range [lo, hi) of chunk c's blocks at or past startBlock.
-func (t offloadTail) blocks(c int64) (lo, hi int64) { return max(c*t.bpc, t.startBlock), (c + 1) * t.bpc }
+func (t offloadTail) blocks(c int64) (lo, hi int64) {
+	return max(c*t.bpc, t.startBlock), (c + 1) * t.bpc
+}
 
 func (t offloadTail) blockKey(i int64) kvkey.BlockKey { return t.blockKeys[i-t.startBlock] }
 

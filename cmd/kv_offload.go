@@ -46,6 +46,9 @@ type kvOffloadBlock struct {
 	SelfDescribingKVEvents *bool                `yaml:"self_describing_kv_events"`
 	StoreThreshold         *int                 `yaml:"store_threshold"`
 	SecondaryTiers         []kvOffloadTierBlock `yaml:"secondary_tiers"`
+	// Simple selects the SimpleCPUOffloadConnector; LazyOffload is its lazy_offload.
+	Simple      *bool `yaml:"simple_cpu_offload"`
+	LazyOffload *bool `yaml:"lazy_offload"`
 }
 
 // kvOffloadTierBlock is one user-facing secondary tier. Pointer fields (R9).
@@ -61,6 +64,9 @@ type kvOffloadTierBlock struct {
 	ReadBandwidth  *float64 `yaml:"read_bandwidth"`
 	WriteBandwidth *float64 `yaml:"write_bandwidth"`
 	BaseLatency    *float64 `yaml:"base_latency"`
+	// CapacityBytes is the tier's size on its device (BLIS-only: vLLM's fs tier writes until
+	// the filesystem is full). Absent is unbounded.
+	CapacityBytes *int64 `yaml:"capacity_bytes"`
 }
 
 // loadKVOffloadConfigFile reads and strictly parses a --kv-offload-config file.
@@ -201,6 +207,12 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 		cfg.Tiers = append(cfg.Tiers, tier)
 	}
 
+	if block.Simple != nil {
+		cfg.Simple = *block.Simple
+	}
+	if block.LazyOffload != nil {
+		cfg.LazyOffload = *block.LazyOffload
+	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, err
 	}
@@ -234,6 +246,13 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]k
 	tier.NWriteThreads = 16
 	if tb.NWriteThreads != nil {
 		tier.NWriteThreads = *tb.NWriteThreads
+	}
+
+	if tb.CapacityBytes != nil {
+		if *tb.CapacityBytes < 0 {
+			return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].capacity_bytes must be >= 0, got %d", index, *tb.CapacityBytes)
+		}
+		tier.CapacityBytes = *tb.CapacityBytes
 	}
 
 	// locality: default unset ("").
@@ -360,8 +379,12 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	var fromScenario, fromFlag sim.KVOffloadConfig
 	if scenarioOffload != nil {
 		block, err := kvOffloadBlockFromDeployment(scenarioOffload)
+		var devices map[string]kvOffloadDevice
 		if err == nil {
-			fromScenario, err = resolveKVOffload(block, nil, blockSizeTokens)
+			devices, err = resolveKVOffloadDevices(block)
+		}
+		if err == nil {
+			fromScenario, err = resolveKVOffload(block, devices, blockSizeTokens)
 		}
 		if err != nil {
 			logrus.Fatalf("scenario %q: %v", kernelScenario, err)
@@ -426,6 +449,8 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 		EvictionPolicy:         c.EvictionPolicy,
 		OffloadPromptOnly:      c.OffloadPromptOnly,
 		SelfDescribingKVEvents: c.SelfDescribingKVEvents,
+		SimpleCPUOffload:       c.Simple,
+		LazyOffload:            c.LazyOffload,
 	}
 	for _, t := range c.Tiers {
 		h.Tiers = append(h.Tiers, workload.TraceKVOffloadTier{
@@ -443,6 +468,7 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 			SaturationQueueDepth:   t.SaturationQueueDepth,
 			SingleTransferFraction: t.SingleTransferFraction,
 			LatencyJitterStddev:    t.LatencyJitterStddev,
+			CapacityBytes:          t.CapacityBytes,
 		})
 	}
 	return h
@@ -561,6 +587,8 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 		EvictionPolicy:         h.EvictionPolicy,
 		OffloadPromptOnly:      h.OffloadPromptOnly,
 		SelfDescribingKVEvents: h.SelfDescribingKVEvents,
+		Simple:                 h.SimpleCPUOffload,
+		LazyOffload:            h.LazyOffload,
 	}
 	for _, t := range h.Tiers {
 		c.Tiers = append(c.Tiers, sim.KVOffloadTier{
@@ -578,6 +606,7 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 			SaturationQueueDepth:   t.SaturationQueueDepth,
 			SingleTransferFraction: t.SingleTransferFraction,
 			LatencyJitterStddev:    t.LatencyJitterStddev,
+			CapacityBytes:          t.CapacityBytes,
 		})
 	}
 	return c

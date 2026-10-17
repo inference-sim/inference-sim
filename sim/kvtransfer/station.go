@@ -55,6 +55,13 @@ type TransferJob struct {
 	// "no jitter" sentinel: the exact integer service time is used unchanged
 	// (byte-identical, BC-D2/INV-6).
 	JitterFactor float64
+
+	// Files is how many files the job reads or writes, one after another on its one server:
+	// vLLM's fs tier runs a whole job as one thread task that opens, moves and closes each
+	// chunk's own file in turn (vllm/v1/kv_offload/tiering/fs/manager.py:222-276,
+	// fs/io.py:166-218 at v0.31.0). Its Bytes are split evenly among them, each priced as its
+	// own transfer. 0 or 1 is one transfer of Bytes.
+	Files int
 }
 
 // TierConfig describes one tier's server pool and its per-direction service
@@ -104,6 +111,12 @@ type TierConfig struct {
 	// matching vLLM's deque()-backed queues; a positive value enables the
 	// Submit → Rejected path when the target queue is full.
 	MaxQueueDepth int
+
+	// DeviceDepth prices every transfer at the depth of the whole device -- the tier's reads
+	// and writes in service together -- rather than its own direction's: the fs tier's read
+	// and write threads all do their I/O on the one device under root_dir. false keeps the
+	// per-direction depth.
+	DeviceDepth bool
 }
 
 // Config is the full station configuration: one TierConfig per secondary tier,
@@ -138,6 +151,7 @@ type job struct {
 	completeAt int64       // valid once the job is in service
 	server     serverClass // which server group is serving it (valid once in service)
 	jitter     float64     // caller-supplied service-time multiplier; ≤0 == none (BC-D5)
+	files      int         // files moved one after another (≥ 1)
 }
 
 // tierState is the mutable per-tier state.
@@ -295,6 +309,34 @@ func (c TierConfig) serviceTicks(dir Direction, bytes int64, q int) int64 {
 	return base + variable
 }
 
+// jobTicks is the service time of a job moving bytes in files files one after another at
+// depth q: each file its share of the bytes, priced as its own transfer, so each pays the
+// per-transfer floor. One file is serviceTicks exactly.
+func (c TierConfig) jobTicks(dir Direction, bytes int64, files, q int) int64 {
+	if files <= 1 {
+		return c.serviceTicks(dir, bytes, q)
+	}
+	n := int64(files)
+	per, rem := bytes/n, bytes%n
+	total := (n - rem) * c.serviceTicks(dir, per, q)
+	if rem > 0 {
+		total += rem * c.serviceTicks(dir, per+1, q)
+	}
+	return min(maxServiceTicks, total)
+}
+
+// depth is the tier's in-service count that prices a new dir transfer: the whole device's
+// when DeviceDepth, else dir's own.
+func (ts *tierState) depth(dir Direction) int {
+	if ts.cfg.DeviceDepth {
+		return ts.activeRead + ts.activeWrite
+	}
+	if dir == Read {
+		return ts.activeRead
+	}
+	return ts.activeWrite
+}
+
 // effectiveBandwidth applies the queue-depth ramp (BC-D1). It returns the
 // constant peak bw when the ramp is disabled (qsat≤1, f1≥1, or f1≤0), the
 // single-transfer bandwidth f1·bw at q=1, a linear interpolation for
@@ -330,6 +372,9 @@ func (s *TransferStation) Submit(j TransferJob) (JobID, bool) {
 	if j.Bytes < 0 {
 		panic(fmt.Sprintf("kvtransfer: negative bytes %d", j.Bytes))
 	}
+	if j.Files < 0 {
+		panic(fmt.Sprintf("kvtransfer: negative file count %d", j.Files))
+	}
 
 	// Bring the clock up to the submit tick so completions that are due by now
 	// have freed their servers before this job competes for one.
@@ -354,6 +399,7 @@ func (s *TransferStation) Submit(j TransferJob) (JobID, bool) {
 		bytes:      j.Bytes,
 		submitTick: j.SubmitTick,
 		jitter:     j.JitterFactor,
+		files:      max(1, j.Files),
 	}
 	if j.Direction == Read {
 		ts.readQ = append(ts.readQ, nj)
@@ -479,13 +525,8 @@ func (s *TransferStation) assign(tier int, startTick int64) {
 // ≤0 sentinel keeps the exact integer path (byte-identical, BC-D2).
 func (s *TransferStation) start(ts *tierState, nj *job, sc serverClass, startTick int64) {
 	nj.server = sc
-	var q int
-	if nj.direction == Read {
-		q = ts.activeRead + 1
-	} else {
-		q = ts.activeWrite + 1
-	}
-	svc := ts.cfg.serviceTicks(nj.direction, nj.bytes, q)
+	q := ts.depth(nj.direction) + 1
+	svc := ts.cfg.jobTicks(nj.direction, nj.bytes, nj.files, q)
 	if nj.jitter > 0 {
 		jittered := math.Round(float64(svc) * nj.jitter)
 		// Clamp to the same overflow guard serviceTicks uses, so an adversarial

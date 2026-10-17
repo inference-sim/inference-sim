@@ -138,6 +138,10 @@ type identity struct {
 	gpusPerRack int
 	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
 	rankGPUs int
+	// tpRanks is the pool's TP width; latentKV is whether every attention layer stores one
+	// latent vector per token (MLA), whose cache every TP rank holds alike.
+	tpRanks  int
+	latentKV bool
 	// prefillBackoff is NIXL's _prefill_backoff for this pool: the trailing prompt tokens a
 	// disaggregated prefill does not compute and the decode side recomputes.
 	prefillBackoff int
@@ -167,6 +171,8 @@ func identityOf(in latencykernel.Inputs) identity {
 		gpusPerNode:   in.Scenario.Cluster.GPUsPerNode,
 		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
 		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
+		tpRanks:       max(1, pl.TP),
+		latentKV:      allLatent(in.Model),
 		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
 		prefix:         prefixLayoutOf(in.Model, pool),
 	}
@@ -307,6 +313,17 @@ func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
 
 // Role is the role of the pool this model prices.
 func (m *Model) Role() deployment.Role { return m.id.role }
+
+// OffloadCopies is how many workers' copies of a block vLLM's CPU offload tier holds for
+// this pool: 1 when every KV-holding attention layer is latent (MLA) and the engine runs one
+// node's TP group (the replicated layout, offloading/config.py:158-171 at v0.31.0), else the
+// engine's world size, PP x TP x PCP (kv_offload/cpu/spec.py:103-121).
+func (m *Model) OffloadCopies() int64 {
+	if m.id.latentKV && m.id.rankGPUs == m.id.tpRanks && m.id.rankGPUs <= max(1, m.id.gpusPerNode) {
+		return 1
+	}
+	return int64(m.id.rankGPUs)
+}
 
 // RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
@@ -669,4 +686,24 @@ func checkSpeculativeMethod(in latencykernel.Inputs) error {
 			sp.Method, pack.Version, strings.Join(accepted, ", "))
 	}
 	return nil
+}
+
+// allLatent reports whether the model's attention layers all store a latent KV (MLA and its
+// sparse form), and it has at least one.
+func allLatent(g *model.Graph) bool {
+	n := 0
+	for _, k := range g.LayerKinds {
+		for _, nd := range k.Nodes {
+			// The DSA indexer's keys (block_index_scores) live in the MLA group and are one head
+			// that every TP rank holds alike, so they keep the layout replicated.
+			if nd.Op != model.OpAttention || nd.Role == "block_index_scores" {
+				continue
+			}
+			if !nd.AttentionKind.LatentKV() {
+				return false
+			}
+			n++
+		}
+	}
+	return n > 0
 }

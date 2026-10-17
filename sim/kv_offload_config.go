@@ -74,6 +74,78 @@ type KVOffloadConfig struct {
 	// latency backend's host-tier price (blis-latency-kernel TierTime, cpu_dram), supplied at
 	// run time and never serialized. Nil leaves a CPU-tier hit a same-step reload.
 	CPULoadTime func(bytes int64) int64 `yaml:"-" json:"-"`
+
+	// Simple selects vLLM's SimpleCPUOffloadConnector instead of the OffloadingConnector
+	// (vllm/v1/simple_kv_offload/manager.py at v0.31.0): a block-granular CPU cache whose stores
+	// are asynchronous copies, readable once they land. LazyOffload is its lazy_offload (default
+	// false): stores only GPU blocks near eviction instead of every computed block. A Simple
+	// config has no secondary tiers and blocks_per_chunk 1.
+	Simple      bool
+	LazyOffload bool
+	// LazyTargetFree is the lazy store window: how many blocks at the head of the GPU free
+	// queue are offered each step, 2 x ceil(max_num_batched_tokens / block_size) for one
+	// full-attention group (manager.py:312-330). Set by the caller from the engine config.
+	LazyTargetFree int64
+	// CPUStoreTime prices one GPU->CPU store of bytes, in ticks (the Simple connector's stores
+	// run on their own stream, worker.py:164-167); nil makes a store readable at once.
+	// Supplied at run time and never serialized.
+	CPUStoreTime func(bytes int64) int64 `yaml:"-" json:"-"`
+
+	// CPUCopies is how many workers' copies of each block the CPU tier holds: vLLM sizes the
+	// tier as cpu_bytes_to_use // (worker bytes per block x num_copies), num_copies = 1 under
+	// the replicated layout (an MLA cache that every TP rank holds alike) and world_size =
+	// PP x TP x PCP otherwise (vllm/v1/kv_offload/cpu/spec.py:103-121 at v0.31.0;
+	// offloading/config.py:158-171; the Simple connector divides the same way,
+	// simple_cpu_offload_connector.py:85-137). 0 is 1. Set from the engine layout; never
+	// serialized (it is derived).
+	CPUCopies int64 `yaml:"-" json:"-"`
+
+	// Sharing, when set, places each engine's secondary tiers on its node: the engines it maps
+	// to one node share each tier (OffloadTierSharing). Nil gives every engine private tiers.
+	// Supplied at run time and never serialized.
+	Sharing *OffloadTierSharing `yaml:"-" json:"-"`
+}
+
+// OffloadTierSharing places engines' secondary tiers by node. vLLM's fs tier names a chunk's
+// file from the model, the layout and the chunk hash, with no data-parallel rank
+// (vllm/v1/kv_offload/file_mapper.py:21-144 at v0.31.0; the scheduler-side rank is 0,
+// config/parallel.py:347), and block hashes agree across processes by default
+// (tiering/fs/manager.py:96-104): the engines of a node that name one root_dir read and write
+// the same files on the same device.
+type OffloadTierSharing struct {
+	// NodeOf is the node an engine (its instance ID) runs on.
+	NodeOf func(instanceID string) int
+	groups map[[2]int]*OffloadTierGroup
+}
+
+// OffloadTierGroup is the one tier the engines of a node share, built by the first engine
+// (sim/kv) and joined by the rest.
+type OffloadTierGroup struct {
+	Tier any
+}
+
+// ForInstance is c with each secondary tier bound to the group of the node instanceID runs on.
+// c itself is unchanged; without Sharing it is c.
+func (c KVOffloadConfig) ForInstance(instanceID string) KVOffloadConfig {
+	if c.Sharing == nil || c.Sharing.NodeOf == nil || len(c.Tiers) == 0 {
+		return c
+	}
+	s := c.Sharing
+	if s.groups == nil {
+		s.groups = make(map[[2]int]*OffloadTierGroup)
+	}
+	node := s.NodeOf(instanceID)
+	c.Tiers = append([]KVOffloadTier(nil), c.Tiers...)
+	for i := range c.Tiers {
+		k := [2]int{node, i}
+		g, ok := s.groups[k]
+		if !ok {
+			g = &OffloadTierGroup{}
+			s.groups[k] = g
+		}
+		c.Tiers[i].Group = g
+	}
+	return c
 }
 
 // KVOffloadTier is one resolved secondary offload tier. Only the filesystem ("fs")
@@ -143,6 +215,15 @@ type KVOffloadTier struct {
 	// above. Supplied by the latency backend (blis-latency-kernel's TierTime) at run time
 	// and never serialized: a trace header records the tier, not the pricer.
 	ServiceTime func(write bool, bytes int64, inService int) int64 `yaml:"-" json:"-"`
+
+	// CapacityBytes is the tier's size, in bytes of the device under root_dir (shared by the
+	// engines on it). vLLM's fs tier has no eviction: a chunk is written until the filesystem
+	// is full, after which a write fails and stores nothing. 0 is unbounded.
+	CapacityBytes int64
+
+	// Group, when set, is the tier this engine shares with the other engines of its node
+	// (KVOffloadConfig.ForInstance). Never serialized.
+	Group *OffloadTierGroup `yaml:"-" json:"-"`
 }
 
 // Valid enumerations for the offload config surface.
@@ -198,6 +279,12 @@ func (c KVOffloadConfig) Validate() error {
 			return err
 		}
 	}
+	if c.Simple && (len(c.Tiers) > 0 || c.BlocksPerChunk != 1) {
+		return fmt.Errorf("kv_offload: the SimpleCPUOffloadConnector is one block-granular CPU tier: no secondary_tiers and blocks_per_chunk 1, got %d tiers, blocks_per_chunk %d", len(c.Tiers), c.BlocksPerChunk)
+	}
+	if !c.Simple && c.LazyOffload {
+		return fmt.Errorf("kv_offload: lazy_offload is a SimpleCPUOffloadConnector setting")
+	}
 	return nil
 }
 
@@ -239,6 +326,9 @@ func (t KVOffloadTier) validate(index int) error {
 	if t.SaturationQueueDepth >= 2 && !(t.SingleTransferFraction > 0 && t.SingleTransferFraction <= 1) {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].single_transfer_fraction must be in (0,1] when saturation_queue_depth >= 2, got %v", index, t.SingleTransferFraction)
 	}
+	if t.CapacityBytes < 0 {
+		return fmt.Errorf("kv_offload: secondary_tiers[%d] capacity must be >= 0 bytes, got %d", index, t.CapacityBytes)
+	}
 	if math.IsNaN(t.LatencyJitterStddev) || math.IsInf(t.LatencyJitterStddev, 0) || t.LatencyJitterStddev < 0 {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].latency_jitter_stddev must be a finite value >= 0, got %v", index, t.LatencyJitterStddev)
 	}
@@ -260,7 +350,7 @@ func (c KVOffloadConfig) CPUChunkCapacity() int64 {
 	if c.PerBlockBytes <= 0 || c.BlocksPerChunk <= 0 {
 		return 0
 	}
-	return c.CPUBytesToUse / (c.PerBlockBytes * c.BlocksPerChunk)
+	return c.CPUBytesToUse / (c.PerBlockBytes * c.BlocksPerChunk * max(1, c.CPUCopies))
 }
 
 // CheckFitsOneChunk refuses an enabled config, PerBlockBytes resolved, whose CPU budget holds

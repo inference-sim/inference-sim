@@ -125,7 +125,7 @@ func TestDeferral_ColdPhaseSequence(t *testing.T) {
 	if oc.cpu.lookup(keys[0]) != cpuHitPending {
 		t.Fatalf("round 2: the promoted block must be HIT_PENDING")
 	}
-	if n := oc.station.ActiveJobs(0, kvtransfer.Read); n != 1 {
+	if n := oc.secondary[0].activeJobs(kvtransfer.Read); n != 1 {
 		t.Fatalf("round 2: one Read job must be in service, got %d", n)
 	}
 
@@ -172,7 +172,7 @@ func TestDeferral_Metamorphic_StepVsBandwidth(t *testing.T) {
 	// Bandwidth surrogate: "delay is set by the disk" — service time of the run.
 	surrogate := func(readBW float64) int64 {
 		oc := deferOC(base, readBW)
-		return oc.station.ServiceTicks(0, kvtransfer.Read, 2*oc.perBlockBytes)
+		return oc.secondary[0].station.ServiceTicks(0, kvtransfer.Read, 2*oc.perBlockBytes)
 	}
 
 	dStep1 := delay(1000, 100)

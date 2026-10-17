@@ -40,17 +40,6 @@ func WithOffloadRNG(rng *rand.Rand) OffloadOption {
 	return func(o *OffloadCache) { o.rng = rng }
 }
 
-// jobRef records what an in-flight transfer-station job represents so SetClock can
-// apply its completion to the right tier action. A Read job (secondary→CPU)
-// promotes its keys (completeStore); a Write job (CPU→secondary) lands its keys in
-// the tier and releases the CPU pins (secondary.store + unpin). A single Read job
-// may cover a run of keys; a cascade Write job covers one.
-type jobRef struct {
-	keys []kvkey.BlockKey
-	tier int
-	dir  kvtransfer.Direction
-}
-
 // OffloadCache is the N-tier KV-offload chain (H1, #1590): the GPU tier
 // (KVCacheState) plus a ref_cnt-managed CPU staging tier and ordered secondary
 // "fs" tiers, with a bounded transfer station (#1588) driving promotion/cascade
@@ -68,20 +57,25 @@ type jobRef struct {
 // (PollDeferred / offload_deferral.go) — the delay is a whole multiple of step
 // time, not a per-request transfer latency (ConsumePendingTransferLatency stays 0).
 type OffloadCache struct {
-	gpu       *KVCacheState
-	cpu       *offloadCPUTier
+	gpu *KVCacheState
+	cpu *offloadCPUTier
+	// secondary are the ordered secondary tiers, each with its own transfer station; a tier
+	// may be shared with the other engines of a node (sim.OffloadTierShares). None for
+	// CPU-only offload.
 	secondary []*secondaryTier
-	station   *kvtransfer.TransferStation // nil when there are no secondary tiers (CPU-only offload)
-
-	inflight map[kvtransfer.JobID]jobRef // in-flight transfer jobs, applied on SetClock→Poll
+	// cascadeQueue holds one request's newly stored chunks of this step until flushCascades
+	// submits them as one store job per tier.
+	cascadeQueue []kvkey.BlockKey
 
 	// H3 (#1591) step-boundary re-poll state. deferred tracks new prefill admissions
-	// set aside waiting for a secondary→CPU fetch (keyed by Request.ID). existenceKnown
-	// models vLLM's async-lookup existence cache: a key present ⇒ its secondary
-	// existence is resolved (warm, skips the RETRY round); absent ⇒ cold (+1 round).
-	deferred       map[string]*deferralState
-	prefilling     []sim.InflightPrefill // SetInflightPrefills: running requests still prefilling
-	existenceKnown map[kvkey.BlockKey]struct{}
+	// set aside waiting for a secondary→CPU fetch (keyed by Request.ID). lookups is vLLM's
+	// async-lookup state: a key with an entry has had its secondary existence probed (or is
+	// being probed), owned by the requests that asked (lookupOwners); the entry goes when
+	// its last owner finishes (tiering/async_lookup.py:140-236 at v0.31.0).
+	deferred     map[string]*deferralState
+	lookups      map[kvkey.BlockKey]map[string]struct{}
+	lookupOwners map[string][]kvkey.BlockKey
+	prefilling   []sim.InflightPrefill // SetInflightPrefills: running requests still prefilling
 
 	perBlockBytes     int64 // resolved per-rank KV bytes of one GPU block (transfer-job sizing)
 	offloadPromptOnly bool
@@ -95,6 +89,15 @@ type OffloadCache struct {
 	// one stream (kv_offload/cpu/gpu_worker.py:696-701 at v0.31.0).
 	cpuLoadTime   func(bytes int64) int64
 	loadBusyUntil int64
+
+	// The SimpleCPUOffloadConnector's store side (offload_simple.go): its mode, lazy window,
+	// store pricing, the end of the last store issued and the copies still in flight.
+	simple         bool
+	lazyOffload    bool
+	lazyTargetFree int64
+	cpuStoreTime   func(bytes int64) int64
+	storeBusyUntil int64
+	simpleStores   []simpleStore
 
 	// Device-model latency jitter (#1581 BC-D5). jitterStddev[t] is tier t's relative
 	// stddev σ (0 == off). rng is the seeded kv-offload partition; nil disables jitter
@@ -144,49 +147,29 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 	oc := &OffloadCache{
 		gpu:               gpu,
 		cpu:               newOffloadCPUTier(capacity),
-		inflight:          make(map[kvtransfer.JobID]jobRef),
 		deferred:          make(map[string]*deferralState),
-		existenceKnown:    make(map[kvkey.BlockKey]struct{}),
+		lookups:           make(map[kvkey.BlockKey]map[string]struct{}),
+		lookupOwners:      make(map[string][]kvkey.BlockKey),
 		perBlockBytes:     cfg.PerBlockBytes,
 		offloadPromptOnly: cfg.OffloadPromptOnly,
 		blocksPerChunk:    cfg.BlocksPerChunk,
 		cpuLoadTime:       cfg.CPULoadTime,
+		simple:            cfg.Simple,
+		lazyOffload:       cfg.LazyOffload,
+		lazyTargetFree:    cfg.LazyTargetFree,
+		cpuStoreTime:      cfg.CPUStoreTime,
 	}
 	for _, opt := range opts {
 		opt(oc)
 	}
 
-	if len(cfg.Tiers) > 0 {
-		stationCfg := kvtransfer.Config{Tiers: make([]kvtransfer.TierConfig, len(cfg.Tiers))}
-		oc.jitterStddev = make([]float64, len(cfg.Tiers))
-		for i, t := range cfg.Tiers {
-			oc.secondary = append(oc.secondary, newSecondaryTier())
-			oc.jitterStddev[i] = t.LatencyJitterStddev
-			if t.LatencyJitterStddev > 0 && oc.rng == nil {
-				panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
-			}
-			stationCfg.Tiers[i] = kvtransfer.TierConfig{
-				NRead:                  int(t.NReadThreads),
-				NWrite:                 int(t.NWriteThreads),
-				ReadBaseTicks:          int64(math.Round(t.BaseLatency)),
-				WriteBaseTicks:         int64(math.Round(t.BaseLatency)),
-				ReadBytesPerTick:       t.ReadBandwidth,
-				WriteBytesPerTick:      t.WriteBandwidth,
-				SaturationQueueDepth:   int(t.SaturationQueueDepth),
-				SingleTransferFraction: t.SingleTransferFraction,
-				MaxQueueDepth:          0, // unbounded (vLLM deque default); keeps prepareStore→Submit leak-safe
-			}
-			if price := t.ServiceTime; price != nil {
-				stationCfg.Tiers[i].ServiceTime = func(dir kvtransfer.Direction, bytes int64, q int) int64 {
-					return price(dir == kvtransfer.Write, bytes, q)
-				}
-			}
+	oc.jitterStddev = make([]float64, len(cfg.Tiers))
+	for i, t := range cfg.Tiers {
+		oc.jitterStddev[i] = t.LatencyJitterStddev
+		if t.LatencyJitterStddev > 0 && oc.rng == nil {
+			panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
 		}
-		station, err := kvtransfer.New(stationCfg)
-		if err != nil {
-			panic(fmt.Sprintf("NewOffloadCache: transfer station config invalid: %v", err))
-		}
-		oc.station = station
+		oc.secondary = append(oc.secondary, sharedTier(cfg, i))
 	}
 	return oc
 }
@@ -214,7 +197,15 @@ func (o *OffloadCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return o.gpu.GetCachedBlocks(tokens)
 }
 
-func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) { o.gpu.ReleaseKVBlocks(req) }
+// ReleaseKVBlocks frees req's GPU blocks. A request released for good -- finished, timed out
+// or evicted, not preempted back to the queue -- also gives up its secondary-tier lookups, as
+// vLLM's request_finished cleans them up (tiering/fs/manager.py:338-339 at v0.31.0).
+func (o *OffloadCache) ReleaseKVBlocks(req *sim.Request) {
+	o.gpu.ReleaseKVBlocks(req)
+	if req.State != sim.StateQueued {
+		o.dropLookups(req.ID)
+	}
+}
 
 // RequestBlocks implements sim.RequestBlockReporter from the GPU tier.
 func (o *OffloadCache) RequestBlocks(reqID string) []int64 { return o.gpu.RequestBlocks(reqID) }
@@ -228,9 +219,9 @@ func (o *OffloadCache) AllocateRemoteKV(req *sim.Request, startIndex, endIndex i
 // CacheRemoteKV implements sim.RemoteKVReserver from the GPU tier.
 func (o *OffloadCache) CacheRemoteKV(reqID string) { o.gpu.CacheRemoteKV(reqID) }
 
-func (o *OffloadCache) BlockSize() int64                 { return o.gpu.BlockSize() }
-func (o *OffloadCache) UsedBlocks() int64                { return o.gpu.UsedBlocks() }
-func (o *OffloadCache) TotalCapacity() int64             { return o.gpu.TotalCapacity() }
+func (o *OffloadCache) BlockSize() int64     { return o.gpu.BlockSize() }
+func (o *OffloadCache) UsedBlocks() int64    { return o.gpu.UsedBlocks() }
+func (o *OffloadCache) TotalCapacity() int64 { return o.gpu.TotalCapacity() }
 
 // ReloadablePrefixEnd implements sim.ReloadReportingKVStore (#1699/#1706): a PURE
 // pre-allocation query (the analogue of vLLM's get_num_new_matched_tokens) reporting the
@@ -326,27 +317,24 @@ func (o *OffloadCache) ThrashCounts() sim.ThrashCounts {
 // no-op (the station's Poll never moves the clock back, INV-3).
 func (o *OffloadCache) SetClock(clock int64) {
 	o.clock = clock
-	if o.station == nil {
-		return
+	if o.simple {
+		o.landSimpleStores()
 	}
-	for _, id := range o.station.Poll(clock) {
-		ref, ok := o.inflight[id]
-		if !ok {
-			continue // defensive: unknown/duplicate id
-		}
-		delete(o.inflight, id)
-		switch ref.dir {
-		case kvtransfer.Read:
-			// Promotion (secondary→CPU) landed: -1 → 0, block becomes readable.
-			for _, k := range ref.keys {
-				o.cpu.completeStore(k, true)
-			}
-		case kvtransfer.Write:
-			// Cascade replica (CPU→secondary) landed: record it in the tier and
-			// release the CPU write-lock (re-evictable once its last writer finishes).
-			for _, k := range ref.keys {
-				o.secondary[ref.tier].store(k)
-				o.cpu.unpin(k)
+	for _, t := range o.secondary {
+		t.poll(clock)
+		for _, j := range t.takeDone(o) {
+			switch j.dir {
+			case kvtransfer.Read:
+				// Promotion (secondary→CPU) landed: -1 → 0, block becomes readable.
+				for _, k := range j.keys {
+					o.cpu.completeStore(k, true)
+				}
+			case kvtransfer.Write:
+				// Cascade (CPU→secondary) landed in the tier (poll stored it): release the
+				// CPU write-lock (re-evictable once its last writer finishes).
+				for _, k := range j.keys {
+					o.cpu.unpin(k)
+				}
 			}
 		}
 	}
@@ -424,10 +412,13 @@ func (o *OffloadCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex i
 			return ok
 		}
 
-		if fc := o.classifyFetch(req.FullInputTokens(), reloadStartBlock, reloadPrevHash); fc.kind != fetchNone {
+		fc := o.classifyFetch(req.FullInputTokens(), reloadStartBlock, reloadPrevHash)
+		if fc.kind != fetchNone {
 			o.registerDeferral(req.ID, fc)
 			return false // defer: stays in WaitQ, re-polled next step
 		}
+		o.probeKeys(req.ID, fc.probe) // a warm lookup still holds its verdicts
+
 		if started, refused := o.beginCPULoad(req, startIndex, cachedBlocks, reloadStartBlock, reloadPrevHash); started || refused {
 			return false // waits for its CPU->GPU load holding its blocks, or does not fit (INV-K7)
 		}
@@ -648,20 +639,22 @@ func (o *OffloadCache) maybePromoteFromSecondary(tail offloadTail, c int64) {
 // every secondary tier (a genuine miss). It is read-only (no allocation, no submission) so
 // both the H1 promote path and the H3 deferral classifier can use it.
 func (o *OffloadCache) gatherSecondaryRun(tail offloadTail, c int64) ([]kvkey.BlockKey, int, bool) {
-	if o.station == nil || len(o.secondary) == 0 || c >= tail.endChunk {
+	if len(o.secondary) == 0 || c >= tail.endChunk {
 		return nil, 0, false
 	}
 	tier, ok := lookupSecondary(o.secondary, tail.key(c))
 	if !ok {
 		return nil, 0, false // genuine miss (absent from every secondary tier)
 	}
+	// vLLM's lookup walks the whole prefix: a chunk on the GPU or in the CPU tier is a hit and
+	// the walk goes on, a secondary-tier hit starts its promotion and counts as pending, and
+	// only a miss ends it (offloading/scheduler.py:671-703, tiering/manager.py:383-465 at
+	// v0.31.0). So every secondary-resident chunk up to the first miss is promoted in the one
+	// round, past chunks already held above it.
 	run := []kvkey.BlockKey{tail.key(c)}
 	for j := c + 1; j < tail.endChunk; j++ {
-		if o.onGPU(tail, j) {
-			break
-		}
-		if o.cpu.lookup(tail.key(j)) != cpuMiss {
-			break // already CPU-resident or a promotion in flight
+		if o.onGPU(tail, j) || o.cpu.lookup(tail.key(j)) != cpuMiss {
+			continue // held above: a hit, the walk goes on
 		}
 		if tj, okj := lookupSecondary(o.secondary, tail.key(j)); !okj || tj != tier {
 			break
@@ -677,30 +670,30 @@ func (o *OffloadCache) gatherSecondaryRun(tail offloadTail, c int64) ([]kvkey.Bl
 // refuses the run (promotionsFailed++, recompute) or the (unbounded) station
 // somehow rejects. Shared by the H1 background path and the H3 deferral path so
 // the ref_cnt/station bookkeeping lives in exactly one place.
-func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtransfer.JobID, bool) {
+func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) bool {
 	granted := o.cpu.prepareStore(run) // all-or-nothing over the (all-fresh) run
 	if granted == 0 {
 		o.promotionsFailed++ // BC-C5: evictable gate refused the run -> recompute
-		return 0, false
+		return false
 	}
-	id, accepted := o.station.Submit(kvtransfer.TransferJob{
-		Tier:         tier,
+	// One load job of the run, one file per chunk read in turn (tiering/fs/manager.py:238-276).
+	accepted := o.secondary[tier].submit(o, kvtransfer.TransferJob{
 		Direction:    kvtransfer.Read,
 		Bytes:        int64(granted) * o.chunkBytes(),
+		Files:        granted,
 		SubmitTick:   o.clock,
 		JitterFactor: o.drawJitterFactor(tier),
-	})
+	}, run)
 	if !accepted {
 		// MaxQueueDepth==0 makes rejection impossible; roll back defensively so a
 		// future bounded queue can never strand -1 slots with no in-flight Read.
 		for _, k := range run {
 			o.cpu.completeStore(k, false)
 		}
-		return 0, false
+		return false
 	}
 	o.promotionsFired++
-	o.inflight[id] = jobRef{keys: run, tier: tier, dir: kvtransfer.Read}
-	return id, true
+	return true
 }
 
 // MirrorToCPU stores each request's newly-completed full GPU blocks into the CPU
@@ -725,6 +718,10 @@ func (o *OffloadCache) firePromotionRun(run []kvkey.BlockKey, tier int) (kvtrans
 // MirrorToCPU never writes gpu.HashToBlock (pure consumer), so switching the policy cannot
 // perturb GPU-tier behavior. Uses the stored clock (SetClock ran earlier this step).
 func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
+	if o.simple {
+		o.mirrorSimple(batch)
+		return
+	}
 	bs := o.gpu.BlockSize()
 	bpc := o.blocksPerChunk
 	for _, req := range batch {
@@ -757,32 +754,58 @@ func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 			}
 			o.cascade(key)
 		}
+		o.flushCascades()
 	}
 }
 
-// cascade submits a write-through replica of a freshly-stored CPU block to every
-// secondary tier and pins the CPU block once per in-flight write, so it is
-// non-evictable until every replica completes (BC-C3 pin, BC-C7a fan-out). The
-// pins are released as the Write jobs complete (SetClock). No-op when there are no
-// secondary tiers (CPU-only offload).
+// cascade queues a freshly-stored CPU chunk for this step's store job to every secondary tier
+// (write-through, BC-C7a), pinning it once per tier so it is non-evictable until every
+// replica lands (BC-C3). No-op with no secondary tiers (CPU-only offload).
 func (o *OffloadCache) cascade(key kvkey.BlockKey) {
-	if o.station == nil {
+	if len(o.secondary) == 0 {
 		return
 	}
-	for tier := range o.secondary {
+	for range o.secondary {
 		o.cpu.pin(key) // lock for the write duration (ref_cnt++)
-		id, accepted := o.station.Submit(kvtransfer.TransferJob{
-			Tier:         tier,
-			Direction:    kvtransfer.Write,
-			Bytes:        o.chunkBytes(),
-			SubmitTick:   o.clock,
-			JitterFactor: o.drawJitterFactor(tier),
-		})
-		if !accepted {
-			o.cpu.unpin(key) // MaxQueueDepth==0 => unreachable; defensive
+	}
+	o.cascadeQueue = append(o.cascadeQueue, key)
+}
+
+// flushCascades submits the chunks MirrorToCPU stored for one request this step as ONE store
+// job per secondary tier. vLLM cascades each GPU->CPU store job's keys with one submit_store per tier
+// (tiering/manager.py:737-747, 757-783 at v0.31.0) -- a store job per request per step
+// (offloading/scheduler.py:1501-1530) -- and the fs tier writes them in one thread task, file
+// by file (fs/manager.py:222-236). A chunk the tier already holds is a file that exists, which
+// the write skips (fs/io.py:98-100), so it costs no I/O and is not counted in the job.
+func (o *OffloadCache) flushCascades() {
+	if len(o.cascadeQueue) == 0 {
+		return
+	}
+	keys := o.cascadeQueue
+	o.cascadeQueue = nil
+	for tier, t := range o.secondary {
+		var fresh []kvkey.BlockKey
+		for _, k := range keys {
+			if t.has(k) {
+				o.cpu.unpin(k)
+				continue
+			}
+			fresh = append(fresh, k)
+		}
+		if len(fresh) == 0 {
 			continue
 		}
-		o.inflight[id] = jobRef{keys: []kvkey.BlockKey{key}, tier: tier, dir: kvtransfer.Write}
+		if !t.submit(o, kvtransfer.TransferJob{
+			Direction:    kvtransfer.Write,
+			Bytes:        int64(len(fresh)) * o.chunkBytes(),
+			Files:        len(fresh),
+			SubmitTick:   o.clock,
+			JitterFactor: o.drawJitterFactor(tier),
+		}, fresh) {
+			for _, k := range fresh {
+				o.cpu.unpin(k) // MaxQueueDepth==0 => unreachable; defensive
+			}
+		}
 	}
 }
 

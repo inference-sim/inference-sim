@@ -56,6 +56,8 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	kvCfg := cfg.KVCacheConfig
 	kvCfg.Speculative = cfg.KV()
 	kvCfg.Speculative.MaxModelLen = cfg.MaxModelLen
+	// The engines of one node share each secondary offload tier (sim.OffloadTierSharing).
+	kvCfg.Offload = kvCfg.Offload.ForInstance(string(id))
 	kvStore := kv.NewKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// wrap the latency model with it so the per-step compute overhead applies

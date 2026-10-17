@@ -395,6 +395,21 @@ func kernelTierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
+// shareTiersByNode places each engine's secondary tiers on the node the kernel places its rank
+// on, so a node's engines share one tier (sim.OffloadTierSharing). rankOf maps an instance to
+// its rank in m's pool.
+func shareTiersByNode(cfg *sim.KVOffloadConfig, m *kernelmodel.Model, rankOf func(string) int) {
+	if !cfg.IsEnabled() || len(cfg.Tiers) == 0 || m == nil {
+		return
+	}
+	cfg.Sharing = &sim.OffloadTierSharing{NodeOf: func(id string) int {
+		return m.PlacementOf(rankOf(id)).Node
+	}}
+}
+
+// instanceRank is a colocated run's instance index ("instance_<n>"), the rank the kernel places.
+func instanceRank(id string) int { return rankInPool(cluster.InstanceID(id), math.MaxInt) }
+
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
 // run, from the run's one pool: see priceOffload. It returns the legacy per-block charge, 0
 // when no kernel is open or with no legacy tier. A disaggregated run's pools are priced separately,
@@ -403,6 +418,7 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kernelOpened == nil {
 		return 0
 	}
+	shareTiersByNode(cfg, kernelOpened, instanceRank)
 	return priceOffload(kernelOpened, cfg)
 }
 
@@ -419,6 +435,12 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 // kernel.TierTime: the slower of the device and the host link binds).
 func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 	perBlock := m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	if cfg.IsEnabled() {
+		cfg.CPUCopies = m.OffloadCopies()
+		if err := cfg.CheckFitsOneChunk(); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+	}
 	if (cfg.IsEnabled() || kvCPUBlocks > 0) && perBlock <= 0 {
 		logrus.Fatalf("the kernel prices a %d-token block at %d bytes; offload "+
 			"needs a block to occupy memory", blockSizeTokens, perBlock)
@@ -452,6 +474,19 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 		kernelTierTicks(m, kernelCPUTier, false, perBlock, 1)
 		cfg.CPULoadTime = func(bytes int64) int64 {
 			return kernelTierTicks(m, kernelCPUTier, false, bytes, 1)
+		}
+		if cfg.Simple {
+			// The Simple connector's stores are device-to-host copies on their own stream
+			// (vllm/v1/simple_kv_offload/worker.py:164-167, 273-295 at v0.31.0).
+			kernelTierTicks(m, kernelCPUTier, true, perBlock, 1)
+			cfg.CPUStoreTime = func(bytes int64) int64 {
+				return kernelTierTicks(m, kernelCPUTier, true, bytes, 1)
+			}
+			if cfg.LazyOffload {
+				// target_free: 2 x ceil(max_num_batched_tokens / block_size) for one
+				// full-attention group (simple_kv_offload/manager.py:312-330).
+				cfg.LazyTargetFree = 2 * ((maxNumBatchedTokens + blockSizeTokens - 1) / blockSizeTokens)
+			}
 		}
 	}
 	if kvCPUBlocks <= 0 {
@@ -494,6 +529,10 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 				logrus.Fatalf("%s pool: %v", c.role, err)
 			}
 		}
+		firstDecode := prefillInstances
+		shareTiersByNode(&pool, c.m, func(id string) int {
+			return rankInPool(cluster.InstanceID(id), firstDecode)
+		})
 		ticks := priceOffload(c.m, &pool)
 		c.dst.KVOffload = &pool
 		c.dst.KVTransferTicksPerBlock = &ticks
