@@ -101,6 +101,8 @@ type Model struct {
 	// rules is the release-rule report taken from the Inputs at open: the rules no one
 	// enforces on this pool and what they find (#1942). See Provenance.
 	rules ruleReport
+	// routing is the pool's routing-imbalance resolution for the results file.
+	routing *sim.RoutingRecord
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -246,6 +248,9 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	if in.Routing, err = resolveRouting(in, r.Registry, routingOverrides); err != nil {
+		return nil, fmt.Errorf("%s: %w", scenario, err)
+	}
 	return fromInputs(in)
 }
 
@@ -264,6 +269,7 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 		return nil, err
 	}
 	m.rules = reportRules(in)
+	m.routing = routingRecordOf(in.Routing)
 	return m, nil
 }
 
