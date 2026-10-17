@@ -292,7 +292,9 @@ def single_turn_mismatches(conc: int) -> list[dict]:
 
 
 # --public-dataset -> (data dir, HF repo, HF revision). weka-062126: HF sha 23f152f6 (the DSV4.1 replay CORPUS_REV,
-# verified). weka-256k: revision not recorded at download (MISMATCH-free: the sha256 pins the bytes).
+# verified). weka-256k: resolved after the fact to HF commit 8fecd2fc56694469f758f0afbbb6335ad3043740 (its traces.jsonl
+# LFS oid = e39cd2ff..., the bytes replayed). The workload still states "unknown" so its bytes, and the command stamps of
+# the published points, stay identical; the sha256 pins the corpus either way (fetch/corpora.sh verifies it).
 AIPERF_CORPORA = {"semianalysis_cc_traces_weka_062126": ("weka-062126", "semianalysisai/cc-traces-weka-062126",
                                                          "23f152f6f0f9399a85901b89a6458def0ef16729"),
                   "semianalysis_cc_traces_weka_062126_256k": ("weka-256k", "semianalysisai/cc-traces-weka-062126-256k",

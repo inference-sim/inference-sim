@@ -72,3 +72,13 @@ def test_engine_count_mismatch_asserts():
          "hit_rate_window": None, "src_share": None, "engines": 8, "interval": 1.0, "source": "trace-server-metrics"}
     with pytest.raises(AssertionError):
         K.compare("p", m, b, None)
+
+
+def test_kv_units_flags_size_inconsistent_with_max_concurrency():
+    """kv_units: a logged KV size more than 5% off max_concurrency x tokens is not token capacity."""
+    import kv_units as KU
+    f = {"kv_tokens": [100_000], "max_conc": [10.0, 9_000]}
+    assert KU.entry(f)["consistent"] is False
+    f["max_conc"] = [10.0, 10_200]
+    assert KU.entry(f)["consistent"] is True
+    assert KU.entry({"kv_tokens": [], "max_conc": None}) == {"consistent": None}
