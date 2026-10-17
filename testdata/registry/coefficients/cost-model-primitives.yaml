@@ -217,7 +217,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.27.1/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 702 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.264, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.264, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless
@@ -369,7 +369,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.27.1/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 702 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.267, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.267, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless
@@ -521,7 +521,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/moe/vllm/0.27.1/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 702 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.250, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.250, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless
@@ -694,7 +694,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.25.0/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 18,144 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.387, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.387, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless
@@ -878,7 +878,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.25.0/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 18,144 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.394, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.394, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless
@@ -1021,7 +1021,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/moe/vllm/0.24.0/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 16,028 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.113, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.113, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - moe_routing_imbalance_median:
       value: 0.954
       units: dimensionless
@@ -1031,7 +1031,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/moe/vllm/0.27.1/moe_perf.parquet, power_law_1.01 against balanced at identical shape and kernel_source, 675 paired shapes", role: primary}
       rationale: >
-        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.272, stated here rather than as a coefficient because no consumer prices a tail from it.
+        Median ratio of skewed to balanced latency on vLLM's own expert kernels -- Triton, FlashInfer-Cutlass and Marlin, which is what vLLM runs rather than the `moe_torch_flow*` paths the TRT-LLM sweep measures. Paired per shape AND per kernel, so no ratio crosses implementations. This multiplies the routed-expert FLOPs in the kernel's step time. The 90th percentile of the same ratios is 1.272, stated here rather than as a coefficient because no consumer prices a tail from it. It is ONE rank's kernel slowdown under uneven load across its own experts, measured on one GPU; it does not carry which expert-parallel rank is busiest, which is the run's resolved routing profile (routing/), and the two compose.
   - hbm_derate:
       value: 0.8
       units: dimensionless

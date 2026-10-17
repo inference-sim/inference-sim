@@ -12,7 +12,7 @@ require (
 	pgregory.net/rapid v1.2.0
 )
 
-require github.com/inference-sim/blis-schemas v0.3.1-0.20261016183153-d48d2635fc76 // indirect
+require github.com/inference-sim/blis-schemas v0.3.1-0.20261017092034-afd839aa6053 // indirect
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

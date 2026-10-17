@@ -28,12 +28,40 @@ sata_ssd:
   write_bandwidth_mb_s: 5.0e2
   base_latency_us: 150.0
 cpu_dram:
-  _comment: "Representative host-DRAM class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
-  read_bandwidth_mb_s: 2.0e4
-  write_bandwidth_mb_s: 2.0e4
-  base_latency_us: 1.0
+  _comment: >-
+    Pinned host DRAM across an H100 SXM host link, fitted (not a datasheet figure) to InferenceX CollectiveX
+    swap_blocks, sku h100-dgxc, image vllm/vllm-openai:v0.27.1 (runs 35158674963 and 36334394602, public
+    InferenceX Data API /api/v1/collectivex/runs/{id}). Form max(floor, bytes / rate) per direction, the
+    kernel's TierTime. FIT: contiguous layout; rate = median payload rate at payloads >= 64 MiB; floor =
+    median p50 latency at payloads <= 16 KiB. read = host-to-device 27,058 MB/s, write = device-to-host
+    46,089 MB/s, base latency 19.3 us (the two directions' floors, 19.7 and 18.9 us). HELD (random layout,
+    payload >= 1 MiB): median absolute error of p50 latency 0.51 h2d and 0.14 d2h, against 0.55 and 0.98 for
+    the earlier 2.0e4 MB/s / 1 us placeholder. The data show a per-descriptor cost this form cannot state: at
+    64 KiB blocks the rate stays near 9-10 GB/s at any count, at 1 MiB blocks it reaches 40-44 GB/s. vLLM
+    v0.27.1 to v0.31.0 changes only a descriptor-chunking loop in swap_blocks_batch that is a no-op on CUDA
+    (csrc/libtorch_stable/cache_kernels.cu). The fit is for H100; other hosts use it until measured.
+  read_bandwidth_mb_s: 27058.0
+  write_bandwidth_mb_s: 46089.0
+  base_latency_us: 19.3
 s3:
   _comment: "Representative object-storage (S3) class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
   read_bandwidth_mb_s: 1.0e3
   write_bandwidth_mb_s: 1.0e3
   base_latency_us: 30000.0
+nvme_gen4_raid0_8x:
+  _comment: >-
+    ASSUMED CLASS for a DGX/HGX H100 node's local NVMe data volume: the drive model is not public. NVIDIA's DGX
+    H100 user guide and datasheet state 8 x 3.84 TB NVMe U.2 in RAID 0 at /raid (PCIe Gen4); NVIDIA's DGX
+    SuperPOD H100 reference architecture states "> 50 GB/s" from internal NVMe (a design target). Read 50,000
+    MB/s: that target, and 8 x ~6.5 GB/s measured per PM1733 under SPDK (Haas & Leis, VLDB 2023), below 8 x the
+    7.0 GB/s datasheet maximum. Write 30,000 MB/s: 8 x 3.8 GB/s PM1733 datasheet sequential write, rounded
+    down. These are DEVICE aggregates; the kernel divides them among the transfers in service, so one of
+    vLLM's 16+16 fs threads alone sees the whole rate, which a single O_DIRECT stream does not reach on md
+    RAID0 (128 KiB splits; ~1.2-1.5 GB/s per Gen4 drive at QD1, Samsung PM1743 white paper): optimistic at
+    low concurrency. Base latency 100 us per file: a 128 KiB QD1 read is 220 us and write 80 us on PM1733
+    (datasheet), plus 25-50 us of ext4 create/rename metadata on a store (FxMark, ATC 2016) and ~3 us of
+    O_DIRECT software path (XRP, OSDI 2022); ASSUMED range 50-250 us. Sources saved with provenance under
+    the r2b work's data/external/nvme-* and fsop-* (not redistributed).
+  read_bandwidth_mb_s: 5.0e4
+  write_bandwidth_mb_s: 3.0e4
+  base_latency_us: 100.0
