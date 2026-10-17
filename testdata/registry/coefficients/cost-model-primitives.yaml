@@ -229,15 +229,15 @@ coefficients:
       rationale: >
         The fraction of datasheet HBM bandwidth a real access stream achieves. NVIDIA ships this in its own system descriptor, annotated there as a correction based on observation. Applied to the catalog's BwPeakTBs. vendor_spec rather than measured: NVIDIA observed it, this project did not, and the sweep behind it is not published.
   - host_link_bandwidth:
-      value: 128000.0
+      value: 46801.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [b200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/b200_sxm.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku b200-nscale, pinned host memory, contiguous, payload >= 64 MiB, 1 MiB blocks", role: primary}
       rationale: >
-        128 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (1 MiB blocks): host-to-device 45,726 bytes/us (n 4), device-to-host 46,801 (n 4); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
@@ -381,15 +381,15 @@ coefficients:
       rationale: >
         The fraction of datasheet HBM bandwidth a real access stream achieves. NVIDIA ships this in its own system descriptor, annotated there as a correction based on observation. Applied to the catalog's BwPeakTBs. vendor_spec rather than measured: NVIDIA observed it, this project did not, and the sweep behind it is not published.
   - host_link_bandwidth:
-      value: 128000.0
+      value: 48096.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [b300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/b300_sxm.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku b300, pinned host memory, contiguous, payload >= 64 MiB, 1 MiB blocks", role: primary}
       rationale: >
-        128 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (1 MiB blocks): host-to-device 45,245 bytes/us (n 4), device-to-host 48,096 (n 4); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
@@ -533,15 +533,15 @@ coefficients:
       rationale: >
         The fraction of datasheet HBM bandwidth a real access stream achieves. NVIDIA ships this in its own system descriptor, annotated there as a correction based on observation. Applied to the catalog's BwPeakTBs. vendor_spec rather than measured: NVIDIA observed it, this project did not, and the sweep behind it is not published.
   - host_link_bandwidth:
-      value: 64000.0
+      value: 97618.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [gb200-nvl72]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/gb200.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku gb200, pinned host memory, contiguous, payload >= 64 MiB, 1 MiB blocks", role: primary}
       rationale: >
-        64 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (1 MiB blocks): host-to-device 97,536 bytes/us (n 4), device-to-host 97,618 (n 4); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
@@ -706,15 +706,15 @@ coefficients:
       rationale: >
         The fraction of datasheet HBM bandwidth a real access stream achieves. NVIDIA ships this in its own system descriptor, annotated there as a correction based on observation. Applied to the catalog's BwPeakTBs. vendor_spec rather than measured: NVIDIA observed it, this project did not, and the sweep behind it is not published.
   - host_link_bandwidth:
-      value: 64000.0
+      value: 46089.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku h100-dgxc, pinned host memory, contiguous, payload >= 64 MiB, all block sizes", role: primary}
       rationale: >
-        64 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (all block sizes): host-to-device 27,058 bytes/us (n 26), device-to-host 46,089 (n 26); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
   - host_gather_rate_uva:
       value: 57764.0
       units: bytes_per_us
@@ -722,10 +722,10 @@ coefficients:
       fitted: false
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml pcie_bw (host_link_bandwidth)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml pcie_bw (the nominal link rate, not host_link_bandwidth)", role: primary}
         - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/common/engram.py _engram_lookup_kernel, ParallelEngramEmbedding", role: supporting}
       rationale: >
-        ASSUMED: an UPPER BOUND on the useful-byte rate of DeepSeek-V4.1's engram lookup when the tables are in pinned host memory (EngramConfig.cpu_offload, the v0.31.0 default) and read through UVA. Derived as host_link_bandwidth (64 GB/s, AISimulate's 'pcie 5.0' figure: the raw rate per direction) x 128/130 (PCIe 5.0's 128b/130b line code, leaving 63.0 GB/s) x 264/288: a row is 264 useful bytes -- 256 FP8 values in one table at a 256 B stride (two whole 128 B lines) and 8 UE8M0 scales in a separate table, which cost at least one 32 B sector -- so at least 288 B cross the link per row. Per token and engram layer a rank reads cdiv(24, shards) rows. WHAT THE BOUND IGNORES, each making the real rate LOWER: PCIe transaction-layer overhead; GPU address translation for random rows over a table of 384 million rows, ~101 GB per layer before TP sharding (vLLM's own comment: 'The table dwarfs TLB reach'); the latency-bound regime at decode batch sizes, where 24 rows are a few kilobytes and a per-launch round trip dominates -- no floor is stated because none is measured; and host-side contention when every GPU of a node gathers from one host's memory. The lookup runs on a side stream at half the SMs, so how much of it a step exposes is a composition question, not this rate's. TO REPLACE IT: time ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an H100 host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read by no consumer until the schema can state a host-resident gather (blis-schemas#48, blis-latency-kernel#38).
+        ASSUMED: an UPPER BOUND on the useful-byte rate of DeepSeek-V4.1's engram lookup when the tables are in pinned host memory (EngramConfig.cpu_offload, the v0.31.0 default) and read through UVA. Derived as the descriptor's nominal pcie_bw (64 GB/s, AISimulate's 'pcie 5.0' figure: the raw rate per direction) x 128/130 (PCIe 5.0's 128b/130b line code, leaving 63.0 GB/s) x 264/288: a row is 264 useful bytes -- 256 FP8 values in one table at a 256 B stride (two whole 128 B lines) and 8 UE8M0 scales in a separate table, which cost at least one 32 B sector -- so at least 288 B cross the link per row. Per token and engram layer a rank reads cdiv(24, shards) rows. WHAT THE BOUND IGNORES, each making the real rate LOWER: PCIe transaction-layer overhead; GPU address translation for random rows over a table of 384 million rows, ~101 GB per layer before TP sharding (vLLM's own comment: 'The table dwarfs TLB reach'); the latency-bound regime at decode batch sizes, where 24 rows are a few kilobytes and a per-launch round trip dominates -- no floor is stated because none is measured; and host-side contention when every GPU of a node gathers from one host's memory. The lookup runs on a side stream at half the SMs, so how much of it a step exposes is a composition question, not this rate's. TO REPLACE IT: time ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an H100 host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read by no consumer until the schema can state a host-resident gather (blis-schemas#48, blis-latency-kernel#38). NOT host_link_bandwidth, which is now the measured copy-engine payload rate (fit_host_link.py); re-deriving this bound from a measured SM-driven ceiling (vLLM PR #42212, ~51 GB/s on H100) was tried and failed its held-out gate (h100 capped-replay ITL worse), so it is parked.
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
@@ -890,15 +890,15 @@ coefficients:
       rationale: >
         The fraction of datasheet HBM bandwidth a real access stream achieves. NVIDIA ships this in its own system descriptor, annotated there as a correction based on observation. Applied to the catalog's BwPeakTBs. vendor_spec rather than measured: NVIDIA observed it, this project did not, and the sweep behind it is not published.
   - host_link_bandwidth:
-      value: 64000.0
+      value: 48269.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/h200_sxm.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku h200-dgxc, pinned host memory, contiguous, payload >= 64 MiB, 1 MiB blocks", role: primary}
       rationale: >
-        64 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (1 MiB blocks): host-to-device 48,269 bytes/us (n 4), device-to-host 47,164 (n 4); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
   - host_gather_rate_uva:
       value: 57764.0
       units: bytes_per_us
@@ -906,10 +906,10 @@ coefficients:
       fitted: false
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/h200_sxm.yaml pcie_bw (host_link_bandwidth)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/h200_sxm.yaml pcie_bw (the nominal link rate, not host_link_bandwidth)", role: primary}
         - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/common/engram.py _engram_lookup_kernel, ParallelEngramEmbedding", role: supporting}
       rationale: >
-        ASSUMED: an UPPER BOUND on the useful-byte rate of DeepSeek-V4.1's engram lookup when the tables are in pinned host memory (EngramConfig.cpu_offload, the v0.31.0 default) and read through UVA. Derived as host_link_bandwidth (64 GB/s, AISimulate's 'pcie 5.0' figure: the raw rate per direction) x 128/130 (PCIe 5.0's 128b/130b line code, leaving 63.0 GB/s) x 264/288: a row is 264 useful bytes -- 256 FP8 values in one table at a 256 B stride (two whole 128 B lines) and 8 UE8M0 scales in a separate table, which cost at least one 32 B sector -- so at least 288 B cross the link per row. Per token and engram layer a rank reads cdiv(24, shards) rows. WHAT THE BOUND IGNORES, each making the real rate LOWER: PCIe transaction-layer overhead; GPU address translation for random rows over a table of 384 million rows, ~101 GB per layer before TP sharding (vLLM's own comment: 'The table dwarfs TLB reach'); the latency-bound regime at decode batch sizes, where 24 rows are a few kilobytes and a per-launch round trip dominates -- no floor is stated because none is measured; and host-side contention when every GPU of a node gathers from one host's memory. The lookup runs on a side stream at half the SMs, so how much of it a step exposes is a composition question, not this rate's. TO REPLACE IT: time ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an H200 host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read by no consumer until the schema can state a host-resident gather (blis-schemas#48, blis-latency-kernel#38).
+        ASSUMED: an UPPER BOUND on the useful-byte rate of DeepSeek-V4.1's engram lookup when the tables are in pinned host memory (EngramConfig.cpu_offload, the v0.31.0 default) and read through UVA. Derived as the descriptor's nominal pcie_bw (64 GB/s, AISimulate's 'pcie 5.0' figure: the raw rate per direction) x 128/130 (PCIe 5.0's 128b/130b line code, leaving 63.0 GB/s) x 264/288: a row is 264 useful bytes -- 256 FP8 values in one table at a 256 B stride (two whole 128 B lines) and 8 UE8M0 scales in a separate table, which cost at least one 32 B sector -- so at least 288 B cross the link per row. Per token and engram layer a rank reads cdiv(24, shards) rows. WHAT THE BOUND IGNORES, each making the real rate LOWER: PCIe transaction-layer overhead; GPU address translation for random rows over a table of 384 million rows, ~101 GB per layer before TP sharding (vLLM's own comment: 'The table dwarfs TLB reach'); the latency-bound regime at decode batch sizes, where 24 rows are a few kilobytes and a per-launch round trip dominates -- no floor is stated because none is measured; and host-side contention when every GPU of a node gathers from one host's memory. The lookup runs on a side stream at half the SMs, so how much of it a step exposes is a composition question, not this rate's. TO REPLACE IT: time ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an H200 host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read by no consumer until the schema can state a host-resident gather (blis-schemas#48, blis-latency-kernel#38). NOT host_link_bandwidth, which is now the measured copy-engine payload rate (fit_host_link.py); re-deriving this bound from a measured SM-driven ceiling (vLLM PR #42212, ~51 GB/s on H100) was tried and failed its held-out gate (h100 capped-replay ITL worse), so it is parked.
   - nccl_communicator_bytes_2rank:
       value: 358612992
       units: bytes_per_rank
@@ -1208,15 +1208,15 @@ coefficients:
 
 
   - host_link_bandwidth:
-      value: 64000.0
+      value: 141663.0
       units: bytes_per_us
-      method: vendor_spec
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [gb300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/gb300.yaml", role: primary}
+        - {kind: model, cite: "InferenceX CollectiveX swap_blocks (api/v1/collectivex/runs, contract v1; bodies sha256 26cad6ccbdaa), sku gb300, pinned host memory, contiguous, payload >= 64 MiB, 1 MiB blocks", role: primary}
       rationale: >
-        64 GB/s single-direction over the CPU-to-GPU link, which is what an offload tier's transfer crosses in addition to host memory. NVIDIA's descriptor states this per part, and the value differs by platform: a Grace-Blackwell part connects over NVLink-C2C rather than PCIe, so a tier that is a liability on one host can be affordable on another. Nominal link rate, not a measured payload throughput; a real transfer reaches a fraction of it.
+        The payload rate a GPU<->host copy sustains over this part's host link, as the kernel caps a CPU tier's transfer with it. Median payload rate of vLLM swap_blocks over contiguous points of at least 64 MiB (1 MiB blocks): host-to-device 141,663 bytes/us (n 7), device-to-host 140,127 (n 7); the larger is committed, so the cap never binds below either direction's measured rate. The same rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.
 
 
   - nccl_communicator_bytes_2rank:
