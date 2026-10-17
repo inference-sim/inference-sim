@@ -74,3 +74,31 @@ Fixes #
 - [ ] CLAUDE.md updated (if new files, packages, CLI flags, or invariants added)
 - [ ] README updated (if user-facing behavior changed)
 - [ ] CONTRIBUTING.md reviewed (if extension patterns changed)
+
+## Cross-Repository Dependencies
+
+<!-- Every BLIS repository this PR pins or vendors, with the EXACT head SHA; each must equal its
+branch head at push time. Process: docs/contributing/cross-repo-changes.md -->
+
+| Repository | PR | Pinned head / release | Where it is pinned |
+|---|---|---|---|
+| | | | |
+
+- [ ] No `replace` in `go.mod`; vendored `testdata/{catalog,registry}` equal the pinned heads
+- [ ] `git merge-tree --write-tree origin/main HEAD` is clean
+- [ ] N/A — this PR pins nothing new from another BLIS repository
+
+## Held-Out and Gate Evidence
+
+<!-- Required when simulated output changes: the pre-registered gate, baseline build, before/after
+on the SAME points from a script (output path), seed means with pooled SE, any recorded
+deviation; the mutation that shows each new test fails without the fix. -->
+
+- [ ] N/A — no change to simulated output
+
+## Data, Names, Duplicates, AI Assistance
+
+- [ ] No third-party data committed; derived values carry source URL plus commit or sha256
+- [ ] Name scan clean (no internal project, customer or colleague names)
+- [ ] Duplicate-PR check: <!-- searches run, and why this is not a duplicate -->
+- [ ] AI assistance: <!-- used or not, and how; a human has reviewed every line -->
