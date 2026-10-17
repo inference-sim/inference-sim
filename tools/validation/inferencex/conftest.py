@@ -8,7 +8,7 @@ import paths as PX  # noqa: E402
 
 NEEDS_BEHAVIOUR = {"test_version_defaults_not_v031", "test_unresolvable_build_flagged",
                    "test_legacy_cuda_graph_sizes_is_a_ceiling_on_v0_10", "test_stream_interval_named_and_chunk_itl_not_scored",
-                   "test_long_prefill_threshold_stated_and_unstateable_args_named"}
+                   "test_long_prefill_threshold_stated_and_unstateable_args_named", "test_logged_dp_run_keeps_tp_default"}
 
 
 def pytest_collection_modifyitems(config, items):

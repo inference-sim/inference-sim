@@ -76,7 +76,7 @@ output). If it is absent, only the architecture guard applies.
 uv run --no-project --with pytest --with numpy python -I -m pytest -q tools/validation/inferencex
 ```
 
-The tests use synthetic inputs. Six resolver tests need `$IX_BEHAVIOUR` and skip without it. One
+The tests use synthetic inputs. Seven resolver tests need `$IX_BEHAVIOUR` and skip without it. One
 anchor-reproduction test needs `IX_R6_DIR` and skips without it. inference-sim CI runs Go only, so these
 tests are not run in CI. Run them by hand.
 
