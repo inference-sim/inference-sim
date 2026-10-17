@@ -23,12 +23,12 @@ func catalogWithCPUDRAMRead(t *testing.T, mbps string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const old = "cpu_dram:\n  _comment: \"Representative host-DRAM class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file).\"\n  read_bandwidth_mb_s: 2.0e4\n"
+	const old = "  read_bandwidth_mb_s: 27058.0\n  write_bandwidth_mb_s: 46089.0\n  base_latency_us: 19.3\n"
 	body := string(raw)
 	if !strings.Contains(body, old) {
 		t.Fatalf("the vendored catalog's cpu_dram entry changed; update this fixture:\n%s", body)
 	}
-	body = strings.Replace(body, old, strings.Replace(old, "2.0e4", mbps, 1), 1)
+	body = strings.Replace(body, old, strings.Replace(old, "27058.0", mbps, 1), 1)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestRunCmd_KernelBackend_CPUTierReloadIsPricedByTheHostTier(t *testing.T) {
 	args := []string{"run", "--scenario", "glm-5-h200-fp8-sglang-tp8.yaml",
 		"--workload-spec", writePrefixPressureSpec(t, 48, 192), "--seed", "3", "--kv-offload-config", offload}
 	ttft := map[string]float64{}
-	for _, bw := range []string{"2.0e4", "1.0e4"} {
+	for _, bw := range []string{"27058.0", "13529.0"} {
 		path := filepath.Join(t.TempDir(), "metrics.json")
 		_, stderr, err := runKernelCLIOnCatalog(t, catalogWithCPUDRAMRead(t, bw), append(args, "--metrics-path", path)...)
 		if err != nil {
@@ -73,8 +73,8 @@ func TestRunCmd_KernelBackend_CPUTierReloadIsPricedByTheHostTier(t *testing.T) {
 		}
 		ttft[bw] = m["ttft_mean_ms"].(float64)
 	}
-	if ttft["1.0e4"] <= ttft["2.0e4"] {
+	if ttft["13529.0"] <= ttft["27058.0"] {
 		t.Errorf("halving cpu_dram's read bandwidth left mean TTFT at %.3f ms against %.3f; a CPU-tier "+
-			"reload must cost its transfer", ttft["1.0e4"], ttft["2.0e4"])
+			"reload must cost its transfer", ttft["13529.0"], ttft["27058.0"])
 	}
 }
