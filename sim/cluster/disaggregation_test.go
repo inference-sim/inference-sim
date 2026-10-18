@@ -2258,9 +2258,7 @@ func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 // entry point (#1261): effective injection wall-time is unchanged after collapsing
 // the poolsConfigured() fork. For a disaggregated request, PrefillEnqueueTime —
 // the timestamp at which PrefillRoutingEvent fires and writes the parent record —
-// must equal ArrivalTime + AdmissionLatency + RoutingLatency, the same value the
-// old DisaggregationDecisionEvent produced (it fired at admission_time and
-// re-added routingLatency when scheduling PrefillRoutingEvent).
+// must equal ArrivalTime + AdmissionLatency + RoutingLatency.
 //
 // A future refactor that accidentally dropped routingLatency from the
 // RoutingDecisionEvent schedule expression would silently pass the weaker
