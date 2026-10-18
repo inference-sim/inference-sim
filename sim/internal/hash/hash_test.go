@@ -158,7 +158,7 @@ func BenchmarkComputeBlockHashes_LargeContext(b *testing.B) {
 }
 
 // ChainCache serves exactly ComputeBlockHashes, also for a view that grew in place, one
-// shortened, and an array rewritten in place behind a cached chain.
+// shortened, and fresh arrays with the same or different content.
 func TestChainCache_EqualsComputeBlockHashes(t *testing.T) {
 	const bs = 4
 	buf := make([]tokenid.TokenID, 0, 64)
@@ -177,7 +177,10 @@ func TestChainCache_EqualsComputeBlockHashes(t *testing.T) {
 	buf = append(buf, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 	check("grown", buf)
 	check("shorter", buf[:9])
-	buf[10] = 999 // in-place rewrite inside a cached block
-	check("rewritten", buf)
+	fresh := append([]tokenid.TokenID(nil), buf...) // same content, a fresh array
+	check("fresh", fresh)
+	other := append([]tokenid.TokenID(nil), buf...)
+	other[10] = 999 // different content, a fresh array
+	check("other", other)
 	check("tiny", buf[:3])
 }

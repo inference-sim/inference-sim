@@ -16,16 +16,21 @@ var blockHashes atomic.Int64
 // BlockHashes returns the number of block hashes HashBlock has computed in this process.
 func BlockHashes() int64 { return blockHashes.Load() }
 
+// promptHashes counts the prompt blocks ChainCaches hashed: INV-K11's counting hook.
+var promptHashes atomic.Int64
+
+// PromptBlockHashes returns how many prompt blocks every ChainCache of the process has hashed.
+func PromptBlockHashes() int64 { return promptHashes.Load() }
+
 // ChainCacheCapacity is how many token sequences a ChainCache holds; the least recently used
 // is evicted beyond it. INV-K11 holds while an engine's live prompts number no more.
 const ChainCacheCapacity = 1024
 
 // ChainCache memoises the hierarchical block-hash chain of token sequences (INV-K11), so a
 // prompt looked up again -- a waiting request re-examined every step -- is not re-hashed. An
-// entry is found by the sequence's backing array and kept with a copy of the tokens it
-// covers; a lookup reuses the longest cached prefix whose tokens still match, so a view that
-// grew (a later turn of a session buffer) or an array written in place is hashed past the
-// match only. Chain(tokens) always equals ComputeBlockHashes(blockSize, tokens).
+// entry is found by the sequence's backing array; a longer view of it (a later turn of a
+// session buffer) is hashed past the cached blocks only, and a block seen before in any array
+// is served from the content memo. Chain(tokens) always equals ComputeBlockHashes(blockSize, tokens).
 // Not safe for concurrent use.
 type ChainCache struct {
 	blockSize int
@@ -38,7 +43,7 @@ type ChainCache struct {
 
 type chainEntry struct {
 	key    *tokenid.TokenID
-	tokens []tokenid.TokenID // the complete blocks hashed, copied
+	tokens []tokenid.TokenID // the array hashed, held so its address is not reused
 	hashes []string
 }
 
@@ -71,15 +76,14 @@ func (c *ChainCache) Chain(tokens []tokenid.TokenID) []string {
 		e = &chainEntry{key: key}
 		c.entries[key] = c.lru.PushFront(e)
 	}
-	valid := 0
-	for valid < len(e.hashes) && valid < n &&
-		slices.Equal(e.tokens[valid*bs:(valid+1)*bs], tokens[valid*bs:(valid+1)*bs]) {
-		valid++
-	}
+	// The entry holds the array it was built from, so the address names this array for the
+	// entry's life; prompt arrays are never written in place (sim.Request.FullInputTokens:
+	// every writer allocates a fresh array), so the cached blocks are still these tokens.
+	valid := min(len(e.hashes), n)
 	if valid >= n {
 		return e.hashes[:n:n]
 	}
-	e.hashes, e.tokens = e.hashes[:valid], e.tokens[:valid*bs]
+	e.hashes = e.hashes[:valid]
 	prev := ""
 	if valid > 0 {
 		prev = e.hashes[valid-1]
@@ -88,8 +92,8 @@ func (c *ChainCache) Chain(tokens []tokenid.TokenID) []string {
 		blk := tokens[i*bs : (i+1)*bs]
 		prev = c.block(prev, blk)
 		e.hashes = append(e.hashes, prev)
-		e.tokens = append(e.tokens, blk...)
 	}
+	e.tokens = tokens
 	return e.hashes[:n:n]
 }
 
@@ -115,6 +119,7 @@ func (c *ChainCache) block(prev string, blk []tokenid.TokenID) string {
 		clear(c.memo)
 		c.memoBlocks = 0
 	}
+	promptHashes.Add(1)
 	out := HashBlock(prev, blk)
 	c.memo[k] = append(c.memo[k], memoEntry{prev: prev, tokens: slices.Clone(blk), hash: out})
 	c.memoBlocks++
@@ -141,6 +146,7 @@ var chainCacheOff bool
 func SetChainCacheOff(off bool) { chainCacheOff = off }
 
 func computeChain(bs int, tokens []tokenid.TokenID) []string {
+	promptHashes.Add(int64(len(tokens) / bs))
 	var out []string
 	prev := ""
 	for i := 0; i+bs <= len(tokens); i += bs {

@@ -381,7 +381,7 @@ vLLM v0.31.0 sources:
 
 **Enforced:** `hash.ChainCache` (`sim/internal/hash/chain_cache.go`), one per GPU tier (`KVCacheState.chainOf`, `blockHash`).
 
-**Verification:** `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` (`sim/cluster`, rapid: random prompt lengths, shared prefixes, multi-turn growth, P/D on/off, CPU tier on/off; counts `hash.BlockHashes()` and compares every instance's metrics with `hash.SetChainCacheOff(true)`); `TestChainCache_EqualsComputeBlockHashes` (`sim/internal/hash`).
+**Verification:** `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` (`sim/cluster`, rapid: random prompt lengths, shared prefixes, multi-turn growth, P/D on/off, CPU tier on/off; counts `hash.PromptBlockHashes()` (prompt blocks the chain caches hashed; output blocks are hashed once at allocation and excluded) and compares every instance's metrics with `hash.SetChainCacheOff(true)`); `TestChainCache_EqualsComputeBlockHashes` (`sim/internal/hash`).
 
 ### Batch formation
 

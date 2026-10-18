@@ -49,12 +49,12 @@ func TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine(t *testing.T) {
 					cfg.Offload = *cpuTier()
 				}
 			}
-			before := hash.BlockHashes()
+			before := hash.PromptBlockHashes()
 			cs := NewClusterSimulator(cfg, NewSliceRequestSource(cloneRequests(reqs)), nil)
 			if err := cs.Run(); err != nil {
 				rt.Fatalf("run: %v", err)
 			}
-			return cs, hash.BlockHashes() - before
+			return cs, hash.PromptBlockHashes() - before
 		}
 		ref, _ := run(true)
 		got, hashes := run(false)
@@ -63,19 +63,15 @@ func TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine(t *testing.T) {
 				rt.Fatalf("instance %d: memoised metrics differ from the uncached run", i)
 			}
 		}
-		// Bound: every engine hashes each distinct prompt block once, plus each request's
-		// output blocks (output tokens are not a prompt and are not memoised).
 		distinct := map[string]bool{}
-		var outputBlocks int64
 		for _, r := range reqs {
 			for _, h := range hash.ComputeBlockHashes(16, r.InputTokens) {
 				distinct[h] = true
 			}
-			outputBlocks += int64(len(r.OutputTokens))/16 + 2
 		}
 		engines := int64(len(got.Instances()))
-		if limit := engines*int64(len(distinct)) + engines*outputBlocks; hashes > limit {
-			rt.Fatalf("%d block hashes for %d distinct prompt blocks on %d engines (limit %d)",
+		if limit := engines * int64(len(distinct)); hashes > limit {
+			rt.Fatalf("%d prompt block hashes for %d distinct prompt blocks on %d engines (limit %d)",
 				hashes, len(distinct), engines, limit)
 		}
 	})
