@@ -35,3 +35,5 @@ It reads the registry and catalog from read-only snapshots of the pinned commits
 working tree. The pull request body records the binary's revision and the five head SHAs; the
 held-out and gate evidence the canonical page requires goes under *Held-out and gate evidence*
 in the template.
+
+A private-names check (`.github/workflows/private-names.yml`) reads its pattern from a repository secret and fails a pull request whose files, paths, commit messages, title or body match it.

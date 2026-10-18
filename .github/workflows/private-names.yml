@@ -1,0 +1,56 @@
+name: private-names
+
+# Fails if a private name appears in tracked files, file paths, the commit messages being
+# merged, or the pull request title and body. The patterns (one Perl regex per line, matched
+# case-insensitively) come from the INTERNAL_NAME_PATTERNS repository secret, so they are
+# never in the repository; matches print as location only, never the matched text.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan
+        env:
+          PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          RE=$(printf '%s\n' "${PATTERNS:-}" | grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' | paste -sd'|' -)
+          if [ -z "$RE" ]; then echo "skipped: no pattern secret"; exit 0; fi
+          export RE
+          # match LABEL < input: print LABEL:<line number> per matching line; exit 1 on any match.
+          match() { perl -ne 'BEGIN { $re = qr/$ENV{RE}/i; $l = shift @ARGV }
+                              if (/$re/) { print "$l:$.\n"; $hit = 1 } END { exit($hit ? 1 : 0) }' "$1"; }
+          fail=0
+          while IFS= read -r -d '' f; do
+            [ -f "$f" ] && ! grep -Iq . "$f" 2>/dev/null && continue
+            match "$f" < "$f" || fail=1
+          done < <(git ls-files -z)
+          git ls-files | match "file path, git ls-files entry" || fail=1
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            range="$BASE..$HEAD"
+          else
+            range="-1 $HEAD"
+          fi
+          for c in $(git rev-list $range); do
+            git log -1 --format=%B "$c" | match "commit message $c" || fail=1
+          done
+          printf '%s\n' "${TITLE:-}" | match "pull request title" || fail=1
+          printf '%s\n' "${BODY:-}" | match "pull request body" || fail=1
+          if [ "$fail" -ne 0 ]; then echo "private names found at the locations above"; exit 1; fi
+          echo "private-names: clean"
