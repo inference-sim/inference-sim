@@ -933,3 +933,12 @@ func (kvc *KVCacheState) specStepBlocks() int64 {
 	}
 	return (1 + kvc.Speculative.NumSpecTokens + kvc.Speculative.LookaheadTokens + kvc.BlockSizeTokens - 1) / kvc.BlockSizeTokens
 }
+
+// Quiescent implements sim.QuiescentKVStore: the single-tier store has nothing in flight.
+func (kvc *KVCacheState) Quiescent() bool { return true }
+
+// PollMisses implements sim.QuiescentKVStore: a failed admission advances no counter here.
+func (kvc *KVCacheState) PollMisses() int64 { return 0 }
+
+// AddPollMisses implements sim.QuiescentKVStore.
+func (kvc *KVCacheState) AddPollMisses(int64) {}

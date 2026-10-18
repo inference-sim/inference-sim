@@ -494,6 +494,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq)
+		decodeInst.WakeIfParked(e.time)
 		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
@@ -511,6 +512,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// And the decode engine caches the blocks it has received, which only now may serve
 	// another request's prefix (_update_waiting_for_remote_kv, sched/scheduler.py:3052-3085).
 	decodeInst.CacheRemoteKV(decodeSubReq)
+	decodeInst.WakeIfParked(e.time)
 
 	// Promote StateWaitingForRemoteKVs → StateQueued. KV blocks remain
 	// allocated; EnqueueDecodeSubRequest (via InjectDecodeOnline) does not

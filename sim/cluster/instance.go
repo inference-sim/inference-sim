@@ -527,6 +527,9 @@ func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
 	i.sim.KVCache.ReleaseKVBlocks(req)
 }
 
+// WakeIfParked wakes a parked engine for KV freed at cluster time t (sim.Simulator.WakeIfParked).
+func (i *InstanceSimulator) WakeIfParked(t int64) { i.sim.WakeIfParked(t) }
+
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
 	r, ok := i.sim.KVCache.(sim.RequestBlockReporter)

@@ -873,3 +873,15 @@ func (o *OffloadCache) ReconcilePrefixHit(req *sim.Request, cached []int64) []in
 
 // PrefixReplayTokens implements sim.PrefixHitReconciler on the GPU tier.
 func (o *OffloadCache) PrefixReplayTokens() int64 { return o.gpu.PrefixReplayTokens() }
+
+// Quiescent implements sim.QuiescentKVStore: no deferral, load or store pending, and no
+// secondary tier, whose holdings another engine of the node can change at any time.
+func (o *OffloadCache) Quiescent() bool {
+	return len(o.deferred) == 0 && len(o.simpleStores) == 0 && !o.lazyOffload && len(o.secondary) == 0
+}
+
+// PollMisses implements sim.QuiescentKVStore: the count a failed admission poll advances.
+func (o *OffloadCache) PollMisses() int64 { return o.offloadMissCount }
+
+// AddPollMisses implements sim.QuiescentKVStore: charges n polls' worth of failed admissions.
+func (o *OffloadCache) AddPollMisses(n int64) { o.offloadMissCount += n }

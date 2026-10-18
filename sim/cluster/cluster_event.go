@@ -317,6 +317,7 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == e.targetInstance {
 			evicted = inst.EvictRequest(e.request)
+			inst.WakeIfParked(e.time)
 			break
 		}
 	}

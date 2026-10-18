@@ -192,3 +192,14 @@ type LoadHoldingKVStore interface {
 	LoadedPrefix(id string) (computed, gpuHitTokens int64, ok bool)
 	SetInflightPrefills(prefills []InflightPrefill)
 }
+
+// QuiescentKVStore is the optional capability a KVStore implements to report that nothing
+// in it can change on its own: no deferred admission, CPU load, store or secondary-tier
+// transfer is in flight. An idle engine may then park instead of polling (Simulator.SetParkOnEmpty).
+type QuiescentKVStore interface {
+	Quiescent() bool
+	// PollMisses is the counter a failed admission attempt advances; AddPollMisses adds to it
+	// what the polls a parked engine skipped would have.
+	PollMisses() int64
+	AddPollMisses(n int64)
+}

@@ -2,11 +2,11 @@
 package sim
 
 import (
-	"sort"
 	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -134,13 +134,24 @@ type Simulator struct {
 	// that empties the running batch leaves stepEvent nil at that step's START, so an
 	// arrival during the step must not start the next one before this (idleStepTime).
 	busyUntil int64
-	stepCount                 int
+	stepCount int
 	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
 	// independent engine.
 	lockstep *LockstepGroup
 	// preEventClock is Clock before the event being processed advanced it, so a lockstep
 	// dummy step can leave the clock at the rank's last real work.
 	preEventClock int64
+	// park is the wait of an engine whose step scheduled nothing (parkIdle); nil otherwise.
+	park *idlePark
+	// lastStepEmpty is whether the last executed step scheduled no tokens.
+	lastStepEmpty bool
+	// pollMissesAtStep is the KV store's PollMisses at the start of the last step.
+	pollMissesAtStep int64
+	// idlePolling disables parking (SetIdlePolling); eventsProcessed counts executed events.
+	idlePolling     bool
+	eventsProcessed int64
+	// curPriority is the priority of the event executing, -1 outside one.
+	curPriority int
 	// serverSeries records the vLLM /metrics series per engine; nil when off.
 	serverSeries *serverSeries
 	// map of request IDs to total num computed tokens (including cached tokens)
@@ -383,8 +394,14 @@ func (sim *Simulator) ProcessNextEvent() Event {
 
 	sim.preEventClock = sim.Clock
 	sim.Clock = ev.Timestamp()
+	sim.eventsProcessed++
+	sim.curPriority = ev.Priority()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
+	if sim.park != nil && sim.WaitQ.Len() == 0 {
+		sim.dropPark(sim.Clock)
+	}
+	sim.curPriority = -1
 	return ev
 }
 
@@ -392,6 +409,7 @@ func (sim *Simulator) ProcessNextEvent() Event {
 // Call once after the event loop ends. Called by both sim.Run() (single-instance)
 // and ClusterSimulator.Run() (cluster mode via inst.Finalize()).
 func (sim *Simulator) Finalize() {
+	sim.finalizePark()
 	// Record conservation fields (BC-8, BC-9) — must happen in Finalize
 	// because cluster mode drives events via ProcessNextEvent() directly
 	// and never calls sim.Run().
@@ -566,6 +584,9 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 // so neither path starts a step while one is running.
 func (sim *Simulator) scheduleStepAt(t int64) {
 	t = sim.idleStepTime(t)
+	if sim.park != nil {
+		t = sim.unpark(t)
+	}
 	if sim.lockstep != nil {
 		sim.lockstep.wake(t)
 		return
@@ -932,6 +953,9 @@ func (sim *Simulator) Step(now int64) {
 // and event scheduling for preemptions and newly scheduled requests.
 func (sim *Simulator) scheduleBatch(now int64) {
 	sim.stepCount += 1
+	if q, ok := sim.KVCache.(QuiescentKVStore); ok {
+		sim.pollMissesAtStep = q.PollMisses()
+	}
 
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
@@ -1170,6 +1194,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// All LatencyModel implementations must return >= 1 per interface contract;
 	// this floor catches violations that would cause infinite livelock.
 	currStepAdvance = max(1, currStepAdvance)
+	sim.lastStepEmpty = len(sim.scheduledRequests()) == 0
 	sim.advanceBatch(now, currStepAdvance)
 	return currStepAdvance
 }
@@ -1471,6 +1496,10 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one
 		// step per tick for the whole load. Inert when no LoRA (loadingAdapter == "").
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
+			if sim.canPark() {
+				sim.parkIdle(now+currStepAdvance, currStepAdvance)
+				return
+			}
 			sim.scheduleStepAt(now + currStepAdvance)
 		}
 	}

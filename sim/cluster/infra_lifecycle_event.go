@@ -200,6 +200,7 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 		instID := string(inst.ID())
 		abandoned := inst.QueueDepth() + inst.BatchSize()
 		_ = inst.DrainWaitQueue() // discard queued requests; they won't be re-routed
+		inst.WakeIfParked(cs.clock)
 		if abandoned > 0 {
 			cs.inFlightRequests[instID] -= abandoned
 			if cs.inFlightRequests[instID] < 0 {
@@ -257,6 +258,7 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	// full wait time including the pre-drain queue time. INV-5 (arrival ≤ enqueue ≤ schedule ≤
 	// completion) is preserved because the new ClusterArrivalEvent fires at cs.clock ≥ ArrivalTime.
 	queued := inst.DrainWaitQueue()
+	inst.WakeIfParked(cs.clock)
 
 	// C1 (INV-1 conservation): Decrement inFlightRequests for re-injected requests.
 	// These requests are leaving this instance and will get fresh inFlight counts

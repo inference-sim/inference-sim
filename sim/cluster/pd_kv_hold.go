@@ -83,7 +83,9 @@ func (c *ClusterSimulator) releasePrefillHold(parent *ParentRequest) {
 			delete(refs, b)
 		}
 	}
-	c.instanceByID(instID).ReleaseHeldKV(parent.PrefillSubReq)
+	inst := c.instanceByID(instID)
+	inst.ReleaseHeldKV(parent.PrefillSubReq)
+	inst.WakeIfParked(c.clock)
 }
 
 // HeldPrefillKVTokens is the KV, in tokens, that prefill instance id holds right now for pulls
