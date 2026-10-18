@@ -1,6 +1,10 @@
 package sim
 
-import "math"
+import (
+	"math"
+	"os"
+	"strconv"
+)
 
 // Idle park (event-driven wake). An engine whose step scheduled nothing while requests wait
 // would poll again one empty step later, and keep polling until some event frees KV or adds
@@ -24,6 +28,7 @@ type idlePark struct {
 	waiting   int   // WaitQ length while parked
 	used      int64 // KV blocks in use while parked
 	missDelta int64 // the offload miss counter's advance per poll
+	free      bool  // polls cost no GPU time (IdlePollEnv): no KV-usage integral, no busy time
 }
 
 // canPark reports whether the engine, whose last step scheduled nothing, may park.
@@ -38,9 +43,31 @@ func (sim *Simulator) canPark() bool {
 	return ok && q.Quiescent()
 }
 
+// IdlePollEnv names the opt-in vLLM idle-loop period, in us. Set (vLLM's is 1000:
+// v1/engine/core.py:1538-1542 sleeps 1 ms when a step executed nothing), a parked engine wakes
+// at the end of the poll period an event falls in, t + (x - 1 - (t-at) mod x) from the park,
+// and its skipped polls cost no time (core.py:630-659 runs no forward pass for an empty
+// schedule). Unset, an engine wakes on the StepTime(empty) grid, byte-identical to polling.
+const IdlePollEnv = "BLIS_ENGINE_IDLE_POLL_US"
+
+var idlePollUs = func() int64 {
+	v, err := strconv.ParseInt(os.Getenv(IdlePollEnv), 10, 64)
+	if err != nil || v < 0 {
+		return -1
+	}
+	return v
+}()
+
 // parkIdle parks the engine; at is when polling would step next.
 func (sim *Simulator) parkIdle(at, quantum int64) {
 	q := sim.KVCache.(QuiescentKVStore)
+	if idlePollUs >= 0 {
+		at, quantum = at-quantum+max(idlePollUs, 1), max(idlePollUs, 1)
+		sim.park = &idlePark{at: at, quantum: quantum, waiting: sim.WaitQ.Len(),
+			used: sim.KVCache.UsedBlocks(), missDelta: q.PollMisses() - sim.pollMissesAtStep, free: true}
+		sim.stepEvent = nil
+		return
+	}
 	sim.park = &idlePark{at: at, quantum: quantum, waiting: sim.WaitQ.Len(),
 		used: sim.KVCache.UsedBlocks(), missDelta: q.PollMisses() - sim.pollMissesAtStep}
 	sim.stepEvent = nil
@@ -70,11 +97,16 @@ func (sim *Simulator) chargePolls(k int64) {
 	if p.used > sim.Metrics.PeakKVBlocksUsed {
 		sim.Metrics.PeakKVBlocksUsed = p.used
 	}
-	for i := int64(0); i < k; i++ {
-		sim.Metrics.KVBlocksUsed += float64(p.used) * float64(p.quantum)
+	if !p.free {
+		for i := int64(0); i < k; i++ {
+			sim.Metrics.KVBlocksUsed += float64(p.used) * float64(p.quantum)
+		}
 	}
 	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.missDelta)
 	end := p.at + k*p.quantum
+	if p.free {
+		end = p.at + (k-1)*p.quantum
+	}
 	sim.busyUntil = end
 	if sim.serverSeries != nil {
 		sim.serverSeries.recordGeneration(end, 0)
@@ -132,3 +164,6 @@ func (sim *Simulator) pollsBefore(t int64) int64 {
 	}
 	return (t - p.at + p.quantum - 1) / p.quantum
 }
+
+// SetIdlePollPeriod sets the IdlePollEnv period process-wide (-1: the StepTime grid). For tests.
+func SetIdlePollPeriod(us int64) { idlePollUs = us }

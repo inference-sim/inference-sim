@@ -58,3 +58,33 @@ func TestIdlePark_HeldKVPrefillWaitsForTheReleaseNotByPolling(t *testing.T) {
 		}
 	}
 }
+
+// With a real idle-loop period (sim.IdlePollEnv) a parked prefill engine wakes at the end of
+// the poll period its release falls in, not on the StepTime(empty) grid: the fake model's
+// empty step is 1000 us, so a 250 us loop starts the next prefill earlier, by less than one
+// grid step, and never before the release.
+func TestIdlePark_PollPeriodWakesOnTheNextPollBoundary(t *testing.T) {
+	const transfer, period, gridStep = 2_000_357, 250, 1000
+	run := func() *ClusterSimulator {
+		cfg := holdConfig(true, transfer)
+		blocks := int64(15)
+		cfg.PrefillOverrides.TotalKVBlocks = &blocks
+		reqs := []*sim.Request{holdTestRequest("a", 1, 0, 160, 4), holdTestRequest("b", 2, 1, 160, 4)}
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+		mustRun(t, cs)
+		return cs
+	}
+	grid := run()
+	sim.SetIdlePollPeriod(period)
+	defer sim.SetIdlePollPeriod(-1)
+	polled := run()
+	gb, pb := parentsByID(grid)["b"], parentsByID(polled)["b"]
+	if gain := gb.PrefillCompleteTime - pb.PrefillCompleteTime; gain <= 0 || gain >= gridStep {
+		t.Errorf("b's prefill ends %d us earlier than on the grid; want in (0, %d)", gain, gridStep)
+	}
+	// The step is the same length either way, so its start moved by the same gain: it starts
+	// at the poll boundary at or after the release.
+	if release := parentsByID(polled)["a"].TransferCompleteTime; pb.PrefillCompleteTime <= release {
+		t.Errorf("b prefilled at %d, before a's pull released its KV at %d", pb.PrefillCompleteTime, release)
+	}
+}
