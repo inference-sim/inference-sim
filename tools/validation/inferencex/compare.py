@@ -1,5 +1,5 @@
 """r6 vs r7 on the pre-registered HELD subsample (r7cmp/subsample.json): same points, same scorer.
-r6 = results/heldout/points.jsonl (blis-r6, registry 78017af, catalog a2a8e47); r7 = work-r7/points/*/result.json.
+r6 = results/heldout/points.jsonl (blis-r6, registry 78017af, catalog 8b6dea9); r7 = work-r7/points/*/result.json.
 A point counts only if BOTH builds scored it. Per metric: MAPE (mean |signed err|) and signed median, per factor
 level where n >= 10, plus ALL and ANCHORS. kv_cache_pool_tokens dropped where cov.kv_units_differ (as heldout_report).
 Writes r7cmp/compare.json and prints the table. Usage: uv run --no-project python -I compare.py"""

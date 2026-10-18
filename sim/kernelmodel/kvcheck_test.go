@@ -111,12 +111,12 @@ func TestStartupKVCheck_ADEP8RankStartsOnlyWhereOneWindowFits(t *testing.T) {
 	t.Logf("started at %v, refused at %v", started, refused)
 }
 
-// The registry and catalog the KV-pool fix lands (registry c5e24a7, catalog 7ab73d6) make the
+// The registry and catalog the KV-pool fix lands (registry c5e24a7, catalog 622175d) make the
 // DEP8 rank refuse at gmu 0.85 and start at 0.90 and 0.92. Runs where BLIS_KVPOOL_PINS=1 and
 // BLIS_REGISTRY / BLIS_CATALOG point at them; the vendored pins are older.
 func TestStartupKVCheck_ADEP8RankOnTheKVPoolPins(t *testing.T) {
 	if os.Getenv("BLIS_KVPOOL_PINS") != "1" {
-		t.Skip("set BLIS_KVPOOL_PINS=1 with BLIS_REGISTRY/BLIS_CATALOG at registry c5e24a7 / catalog 7ab73d6")
+		t.Skip("set BLIS_KVPOOL_PINS=1 with BLIS_REGISTRY/BLIS_CATALOG at registry c5e24a7 / catalog 622175d")
 	}
 	src, err := os.ReadFile("../../testdata/scenarios/deepseek-v4.1-flash-h100-2n-dep8-dspark5.yaml")
 	if err != nil {

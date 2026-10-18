@@ -60,11 +60,11 @@ directories and PR heads; `cov.py` stamps it into every result.
 
 ## Reproducing the HELD table
 
-Rebuild the inventory (sha256 678f244a... with catalog a2a8e47 and registry 2e7070c, the trees it was built at):
+Rebuild the inventory (sha256 678f244a... with catalog 8b6dea9 and registry 2e7070c, the trees it was built at):
 
 ```bash
 fetch/db_dump.sh && fetch/db_export.sh && fetch/gh_bmk.sh && fetch/recipes.sh inputs/nolog_shas.txt
-partition/rebuild_inventory.sh <blis-catalog@a2a8e47> <blis-registry@2e7070c>   # inventory.jsonl + recipe_recon.jsonl
+partition/rebuild_inventory.sh <blis-catalog@8b6dea9> <blis-registry@2e7070c>   # inventory.jsonl + recipe_recon.jsonl
 ```
 
 Build BLIS at the inference-sim PR head (`go build -o blis .`). Export `blis-registry` and `blis-catalog` at

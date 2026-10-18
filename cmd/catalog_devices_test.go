@@ -52,7 +52,7 @@ func historicalKVOffloadDevices() map[string]kvOffloadDevice {
 
 // catalogKVOffloadDevices is the table the vendored catalog must state: the frozen
 // historical block with the deliberate changes since, each argued in the catalog entry's
-// own _comment (blis-catalog 7823068): cpu_dram refitted to the H100 host link (InferenceX
+// own _comment (blis-catalog 5f6ecab): cpu_dram refitted to the H100 host link (InferenceX
 // CollectiveX swap_blocks) and the assumed DGX H100 NVMe RAID0 class added.
 func catalogKVOffloadDevices() map[string]kvOffloadDevice {
 	t := historicalKVOffloadDevices()

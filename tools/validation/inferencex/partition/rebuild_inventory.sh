@@ -1,6 +1,6 @@
 #!/bin/bash
 # rebuild_inventory.sh <catalog dir> <registry dir>: rebuild $IX_INVENTORY (inventory.jsonl) and
-# $IX_RECIPE_RECON from the fetched inputs. With blis-catalog a2a8e47 and blis-registry 2e7070c (the
+# $IX_RECIPE_RECON from the fetched inputs. With blis-catalog 8b6dea9 and blis-registry 2e7070c (the
 # coverage-branch heads the inventory was built at) and the inputs below, the result is sha256
 # 678f244a4fea9b1bb5e29dc076a027d9840cd2a6378f62e5374db092020162bb (verified locally, 2026-10-17).
 # Inputs: fetch/db_dump.sh, fetch/db_export.sh, fetch/gh_bmk.sh, fetch/recipes.sh inputs/nolog_shas.txt.
