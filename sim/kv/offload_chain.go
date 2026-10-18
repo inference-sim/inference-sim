@@ -743,8 +743,10 @@ func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 				}
 			}
 			key := kvkey.BlockKey(o.gpu.Blocks[blockIDs[(c+1)*bpc-1]].Hash) // the last block's hash
-			if o.cpu.lookup(key) != cpuMiss {
-				o.cpu.touchKey(key) // already resident: refresh recency, no re-cascade
+			if blk, ok := o.cpu.blocks[key]; ok { // already resident: refresh recency, no re-cascade
+				if blk.refCnt == 0 {
+					o.cpu.touch(blk)
+				}
 				continue
 			}
 			if !o.cpu.store(key) {
