@@ -6,7 +6,6 @@ import (
 	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 	"github.com/inference-sim/inference-sim/sim/kvtransfer"
@@ -851,10 +850,10 @@ func (o *OffloadCache) cpuPrefixBlocks(tokens []sim.TokenID, readable func(kvkey
 	bs := int(o.gpu.BlockSize())
 	bpc := int(o.blocksPerChunk)
 	n := len(tokens) / bs / bpc * bpc
-	prev := ""
+	chain := o.gpu.chainOf(tokens)
 	count := 0
 	for i := 0; i < n; i++ {
-		prev = hash.HashBlock(prev, tokens[i*bs:(i+1)*bs])
+		prev := chain[i]
 		if (i+1)%bpc != 0 {
 			continue
 		}

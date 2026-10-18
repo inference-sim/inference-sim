@@ -77,6 +77,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K8](#inv-k8-a-loaded-prefix-is-computed-not-in-flight) A loaded prefix is computed, not in flight | Subsystem | KV cache / offload |
 | [INV-K9](#inv-k9-the-admission-gate-counts-the-computed-prefix-against-the-window-cap) The admission gate counts the computed prefix against the window cap | Subsystem | KV cache |
 | [INV-K10](#inv-k10-an-engine-starts-only-if-one-max_model_len-request-fits-its-kv-cache) An engine starts only if one max_model_len request fits its KV cache | Code-boundary | CLI / KV budget |
+| [INV-K11](#inv-k11-each-prompt-block-is-hashed-once-per-engine) Each prompt block is hashed once per engine | Subsystem | KV cache (efficiency) |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
 | [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
@@ -373,6 +374,14 @@ vLLM v0.31.0 sources:
 **Enforced:** `sim/kernelmodel` `checkEnoughKVCacheMemory`, `estimateMaxModelLen`, `requestBlocks` in `SettingsReserving`; `KVBudgetReserving` (no memory left).
 
 **Verification:** `TestStartupKVCheck_ExactlyEnoughStartsAndOneBlockShortIsRefused` (rapid boundary), `TestStartupKVCheck_ADEP8RankStartsOnlyWhereOneWindowFits`, `TestStartupKVCheck_ADEP8RankOnTheKVPoolPins` (with `BLIS_KVPOOL_PINS=1`) (`sim/kernelmodel`); `TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart`, `TestRunCmd_KernelBackend_ScenarioRefusals` (`cmd`).
+
+#### INV-K11: Each Prompt Block Is Hashed Once Per Engine
+
+**Statement:** An engine computes the SHA-256 block hash (`hash.HashBlock`) of a given prompt block -- a block's tokens together with the chain hash before it -- at most once, however many times the request is examined (a waiting request is re-examined every step), whichever lookup asks (`GetCachedBlocks`, the offload tail keys of `ReloadablePrefixEnd` / `cpuLoadPlan` / `beginCPULoad`, the router snapshot, allocation), and whether a later turn's prompt lives in the same token array or a fresh one. The memoised hashes equal `hash.ComputeBlockHashes` exactly, so outputs are byte-identical to the uncached path. It is an efficiency invariant: the 1P1D c512 corner spent 75% of its CPU re-hashing 100k-token prompts. It holds while an engine's distinct prompt blocks number at most `hash.MemoCapacity` (the memo is cleared beyond it) and output blocks are excluded (they are hashed once, at allocation).
+
+**Enforced:** `hash.ChainCache` (`sim/internal/hash/chain_cache.go`), one per GPU tier (`KVCacheState.chainOf`, `blockHash`).
+
+**Verification:** `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` (`sim/cluster`, rapid: random prompt lengths, shared prefixes, multi-turn growth, P/D on/off, CPU tier on/off; counts `hash.BlockHashes()` and compares every instance's metrics with `hash.SetChainCacheOff(true)`); `TestChainCache_EqualsComputeBlockHashes` (`sim/internal/hash`).
 
 ### Batch formation
 

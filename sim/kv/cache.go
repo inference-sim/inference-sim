@@ -6,6 +6,7 @@ package kv
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/sirupsen/logrus"
 
@@ -191,20 +192,13 @@ func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	for k, v := range kvc.HashToBlock {
 		snapshot[k] = v
 	}
-	blockSize := kvc.BlockSizeTokens
 	return func(tokens []sim.TokenID) int {
-		n := int64(len(tokens)) / blockSize
-		prevHash := ""
 		count := 0
-		for i := int64(0); i < n; i++ {
-			start := i * blockSize
-			end := start + blockSize
-			h := hash.HashBlock(prevHash, tokens[start:end])
+		for _, h := range kvc.chainOf(tokens) {
 			if _, ok := snapshot[h]; !ok {
 				break
 			}
 			count++
-			prevHash = h
 		}
 		return count
 	}
@@ -364,7 +358,7 @@ func (kvc *KVCacheState) allocate(req *sim.Request, startIndex, stateStart, endI
 				if len(ids) >= 2 {
 					prevHash = kvc.Blocks[ids[len(ids)-2]].Hash
 				}
-				h := hash.HashBlock(prevHash, latestBlk.Tokens)
+				h := kvc.blockHash(req, int64(len(ids))-1, prevHash, latestBlk.Tokens)
 				latestBlk.Hash = h
 				if !kvc.remoteKV[reqID] {
 					kvc.HashToBlock[h] = latestBlk.ID
@@ -419,7 +413,7 @@ func (kvc *KVCacheState) allocate(req *sim.Request, startIndex, stateStart, endI
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).
-					h := hash.HashBlock(prevHash, blk.Tokens)
+					h := kvc.blockHash(req, int64(len(kvc.RequestMap[reqID])), prevHash, blk.Tokens)
 					blk.Hash = h
 					if !kvc.remoteKV[reqID] {
 						kvc.HashToBlock[h] = blk.ID
@@ -946,3 +940,19 @@ func (kvc *KVCacheState) PollMisses() int64 { return 0 }
 
 // AddPollMisses implements sim.QuiescentKVStore.
 func (kvc *KVCacheState) AddPollMisses(int64) {}
+
+// blockHash is the hash of req's block idx, holding tokens and chained to prevHash. A prompt
+// block takes it from the memoised chain (INV-K11) when the chain agrees on both; anything
+// else -- an output block, a chain seeded differently -- is hashed here.
+func (kvc *KVCacheState) blockHash(req *sim.Request, idx int64, prevHash string, tokens []sim.TokenID) string {
+	bs := kvc.BlockSizeTokens
+	if idx >= 0 && (idx+1)*bs <= req.InputLen() {
+		in := req.FullInputTokens()
+		chain := kvc.chainOf(in)
+		if (idx == 0 && prevHash == "" || idx > 0 && chain[idx-1] == prevHash) &&
+			slices.Equal(tokens, in[idx*bs:(idx+1)*bs]) {
+			return chain[idx]
+		}
+	}
+	return hash.HashBlock(prevHash, tokens)
+}
