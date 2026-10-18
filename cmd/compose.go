@@ -12,7 +12,7 @@ var composeFromPaths []string
 var composeCmd = &cobra.Command{
 	Use:   "compose",
 	Short: "Merge multiple v2 workload specs into one",
-	Long:  "Load multiple v2 WorkloadSpec YAML files and merge their client lists. Output is written to stdout.",
+	Long:  "Load multiple v2 WorkloadSpec YAML files and merge their client lists. num_requests is summed and horizon is the maximum; the inputs must share one seed and set num_requests on all or none. Output is written to stdout.",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(composeFromPaths) == 0 {
 			logrus.Fatalf("at least one --from flag is required")

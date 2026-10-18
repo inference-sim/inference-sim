@@ -365,7 +365,8 @@ The compose operation:
 - **Concatenates** all client lists from each input spec
 - **Sums** aggregate rates (e.g., 60 req/s + 40 req/s = 100 req/s total)
 - **Renormalizes** `rate_fraction` values proportionally: each client's merged fraction = `original_fraction * (spec_rate / total_rate)`, preserving absolute request rates
-- **Drops** `num_requests`: the merged spec carries none, so add a `num_requests:` line to `combined.yaml` (or pass `--horizon`) before running it, or `blis run` refuses it with "Workload requires either num_requests or --horizon"
+- **Sums** `num_requests` and takes the largest `horizon`, so the merged spec runs as is
+- **Keeps** the shared `seed`, and refuses inputs whose seeds differ or where only some set `num_requests`
 
 This lets you build complex mixed workloads from reusable single-purpose specs.
 
