@@ -70,11 +70,9 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
 
-	// If there's no Step scheduled and WaitQ has work, trigger one immediately.
+	// If there's no Step scheduled and WaitQ has work, trigger one.
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 }
 
@@ -221,9 +219,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// schedule a StepEvent (defense-in-depth, BC-18)
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
-		sim.Schedule(pbe)
-		sim.stepEvent = pbe
+		sim.scheduleStepAt(e.time)
 	}
 
 	// Invoke completion callback for session management

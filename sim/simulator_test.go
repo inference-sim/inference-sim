@@ -1244,6 +1244,72 @@ func TestWorkConserving_StepRestartsWhenWaitQNonEmpty(t *testing.T) {
 	}
 }
 
+// TestStep_NewWorkWaitsForTheExecutingStep verifies #1964 (INV-5, INV-8):
+// GIVEN an engine whose step [0, 10ms) finished its whole batch, so nothing is
+// running or waiting while that step still executes
+// WHEN new work reaches any step-scheduling site mid-step (t=5ms)
+// THEN a step is scheduled (INV-8) and it starts when the executing step ends
+// (10ms), not at 5ms.
+func TestStep_NewWorkWaitsForTheExecutingStep(t *testing.T) {
+	const stepTime = int64(10_000)
+	newRequest := func(id string) *Request {
+		return &Request{
+			ID: id, InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1),
+			MaxOutputLen: 1, State: StateQueued,
+		}
+	}
+	sites := []struct {
+		name string
+		fire func(s *Simulator, at int64)
+	}{
+		{"arrival", func(s *Simulator, at int64) {
+			(&QueuedEvent{time: at, Request: newRequest("b")}).Execute(s)
+		}},
+		{"timeout", func(s *Simulator, at int64) {
+			s.WaitQ.Enqueue(newRequest("b"))
+			(&TimeoutEvent{time: at, Request: newRequest("x")}).Execute(s)
+		}},
+		{"ScheduleStepIfIdle", func(s *Simulator, at int64) {
+			s.WaitQ.Enqueue(newRequest("b"))
+			s.ScheduleStepIfIdle(at)
+		}},
+		{"decode injection", func(s *Simulator, at int64) {
+			s.EnqueueDecodeSubRequest(newRequest("b"), at)
+		}},
+	}
+	for _, site := range sites {
+		t.Run(site.name, func(t *testing.T) {
+			s := mustNewSimulator(t, SimConfig{
+				Horizon:             math.MaxInt64,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(8, 2048, 0),
+				LatencyModel:        &fixedStepModel{stepTime: stepTime},
+				ModelHardwareConfig: NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
+			})
+			// Request a finishes in the step that prefills it, draining the engine.
+			s.InjectArrival(newRequest("a"))
+			for s.HasPendingEvents() {
+				if _, ok := s.ProcessNextEvent().(*StepEvent); ok {
+					break
+				}
+			}
+			if s.RunningBatch != nil || s.WaitQ.Len() != 0 || s.stepEvent != nil {
+				t.Fatal("fixture: the first step must drain the engine")
+			}
+
+			site.fire(s, stepTime/2)
+
+			if s.stepEvent == nil {
+				t.Fatal("no step scheduled for the new work (INV-8)")
+			}
+			if got := s.stepEvent.Timestamp(); got != stepTime {
+				t.Errorf("next step starts at %d, want %d (end of the executing step)", got, stepTime)
+			}
+		})
+	}
+}
+
 // TestINV3_ClockNeverDecreases verifies INV-3 (clock monotonicity):
 // GIVEN a simulator running several requests to completion, each carrying a deadline
 //

@@ -121,6 +121,7 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
+	busyUntil                 int64 // end of the last executed step; no step starts before it
 	stepCount                 int
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
@@ -505,10 +506,17 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // the last request from RunningBatch.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		step := &StepEvent{time: time}
-		sim.stepEvent = step
-		sim.Schedule(step)
+		sim.scheduleStepAt(time)
 	}
+}
+
+// scheduleStepAt schedules the next step at t, or when the executing step ends if
+// that is later. The engine runs one step at a time, so work that arrives mid-step
+// waits for the step to end (#1964). Every step-scheduling site goes through here.
+func (sim *Simulator) scheduleStepAt(t int64) {
+	step := &StepEvent{time: max(t, sim.busyUntil)}
+	sim.stepEvent = step
+	sim.Schedule(step)
 }
 
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
@@ -682,9 +690,7 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 		if clusterTime > stepTime {
 			stepTime = clusterTime
 		}
-		step := &StepEvent{time: stepTime}
-		sim.stepEvent = step
-		sim.Schedule(step)
+		sim.scheduleStepAt(stepTime)
 	}
 }
 
@@ -843,6 +849,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	sim.busyUntil = now + currStepAdvance
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
 	// Runs after execution (new full blocks exist) and before completions
 	// (completing requests' blocks are still in-use and can be mirrored).
@@ -1281,9 +1288,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		sim.RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
 		//
-		pbe := StepEvent{time: now + currStepAdvance}
-		sim.Schedule(&pbe)
-		sim.stepEvent = &pbe
+		sim.scheduleStepAt(now + currStepAdvance)
 	} else {
 		sim.RunningBatch = nil
 		sim.stepEvent = nil
@@ -1303,9 +1308,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one
 		// step per tick for the whole load. Inert when no LoRA (loadingAdapter == "").
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
-			pbe := StepEvent{time: now + currStepAdvance}
-			sim.Schedule(&pbe)
-			sim.stepEvent = &pbe
+			sim.scheduleStepAt(now + currStepAdvance)
 		}
 	}
 }

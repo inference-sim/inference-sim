@@ -191,6 +191,8 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Verification:** `sim/simulator_test.go` — `TestWorkConserving_StepRestartsWhenWaitQNonEmpty`. Deterministic test with `MaxNumSeqs=1`, two requests arriving simultaneously. Without the property, the second request is stranded forever (no arrival to trigger a new StepEvent). With the property, both complete.
 
+**One step at a time (#1964):** a newly scheduled `StepEvent` starts no earlier than the end of the step that last executed, so work that arrives mid-step waits for that step instead of overlapping it. Every step-scheduling site goes through `scheduleStepAt`. Verified by `TestStep_NewWorkWaitsForTheExecutingStep`.
+
 **Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
 
 **Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
