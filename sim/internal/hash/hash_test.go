@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -154,4 +155,29 @@ func BenchmarkComputeBlockHashes_LargeContext(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ComputeBlockHashes(16, tokens)
 	}
+}
+
+// ChainCache serves exactly ComputeBlockHashes, also for a view that grew in place, one
+// shortened, and an array rewritten in place behind a cached chain.
+func TestChainCache_EqualsComputeBlockHashes(t *testing.T) {
+	const bs = 4
+	buf := make([]tokenid.TokenID, 0, 64)
+	for i := 0; i < 40; i++ {
+		buf = append(buf, tokenid.TokenID(i*7+1))
+	}
+	c := NewChainCache(bs)
+	check := func(name string, toks []tokenid.TokenID) {
+		t.Helper()
+		if got, want := c.Chain(toks), ComputeBlockHashes(bs, toks); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: chain %v, want %v", name, got, want)
+		}
+	}
+	check("first", buf[:23])
+	check("again", buf[:23])
+	buf = append(buf, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+	check("grown", buf)
+	check("shorter", buf[:9])
+	buf[10] = 999 // in-place rewrite inside a cached block
+	check("rewritten", buf)
+	check("tiny", buf[:3])
 }

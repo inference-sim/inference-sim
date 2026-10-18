@@ -44,7 +44,16 @@ func (o *OffloadCache) tailOf(tokens []sim.TokenID, startBlock int64, prevHash s
 	if t.firstChunk >= t.endChunk {
 		return t, false
 	}
-	t.blockKeys = kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:t.endChunk*t.bpc*bs], int(bs))
+	end := t.endChunk * t.bpc
+	// The memoised chain serves the tail when it is seeded by the same prefix; else derive it.
+	if chain := o.gpu.chainOf(tokens); (startBlock == 0 && prevHash == "") || (startBlock > 0 && chain[startBlock-1] == prevHash) {
+		t.blockKeys = make([]kvkey.BlockKey, end-startBlock)
+		for i := range t.blockKeys {
+			t.blockKeys[i] = kvkey.BlockKey(chain[startBlock+int64(i)])
+		}
+		return t, true
+	}
+	t.blockKeys = kvkey.DeriveChunkKeys(kvkey.BlockKey(prevHash), tokens[startBlock*bs:end*bs], int(bs))
 	return t, true
 }
 

@@ -58,6 +58,8 @@ type KVCacheState struct {
 	// request; they carry no tokens and no hash, so prefix caching never sees them.
 	SequenceState sim.KVSequenceState
 	StateBlocks   map[string][]int64
+	// chains memoises prompts' block-hash chains (hash.ChainCache); nil until first use.
+	chains *hash.ChainCache
 
 	// Speculative sizes each allocation by vLLM's slot count rather than by the tokens
 	// stored (#1627): a request holds blocks for endIndex + LookaheadTokens slots, endIndex
@@ -155,20 +157,22 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 // frozen map[string]int64 snapshot. If this loop, the hash chain logic, or the
 // break condition changes, update SnapshotCachedBlocksFn to match.
 func (kvc *KVCacheState) GetCachedBlocks(tokens []sim.TokenID) (blockIDs []int64) {
-	n := util.Len64(tokens) / kvc.BlockSizeTokens
-	prevHash := ""
-	for i := int64(0); i < n; i++ {
-		start := i * kvc.BlockSizeTokens
-		end := start + kvc.BlockSizeTokens
-		h := hash.HashBlock(prevHash, tokens[start:end])
+	for _, h := range kvc.chainOf(tokens) {
 		blockId, ok := kvc.HashToBlock[h]
 		if !ok {
 			break
 		}
 		blockIDs = append(blockIDs, blockId)
-		prevHash = h
 	}
 	return
+}
+
+// chainOf is tokens' block-hash chain, memoised (hash.ChainCache).
+func (kvc *KVCacheState) chainOf(tokens []sim.TokenID) []string {
+	if kvc.chains == nil {
+		kvc.chains = hash.NewChainCache(int(kvc.BlockSizeTokens))
+	}
+	return kvc.chains.Chain(tokens)
 }
 
 // SnapshotCachedBlocksFn returns a function that queries a frozen copy of the
