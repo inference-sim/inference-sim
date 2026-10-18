@@ -14,9 +14,10 @@ import "math"
 // offload miss counter) is charged at the wake, so the run's metrics are unchanged.
 //
 // An engine parks only when nothing but an external event can change what it would schedule:
-// no in-flight offload work (QuiescentKVStore), no adapter load, no data-parallel lockstep
-// group and no remote-KV admission (a P/D decode engine, whose cluster-side admission runs
-// after each of its events).
+// no in-flight offload work (QuiescentKVStore), no adapter load and no data-parallel lockstep
+// group. A P/D decode engine parks too: its remote-KV admission runs only with an empty wait
+// queue (admitRemoteKV), so a poll of a parked engine never reaches it; a pull that lands
+// enqueues its request, which wakes the engine.
 type idlePark struct {
 	at        int64 // the first skipped poll's time
 	quantum   int64 // one empty step
@@ -27,7 +28,7 @@ type idlePark struct {
 
 // canPark reports whether the engine, whose last step scheduled nothing, may park.
 func (sim *Simulator) canPark() bool {
-	if sim.idlePolling || !sim.lastStepEmpty || sim.lockstep != nil || sim.remoteKVAdmission != nil || sim.loadingAdapter != "" {
+	if sim.idlePolling || !sim.lastStepEmpty || sim.lockstep != nil || sim.loadingAdapter != "" {
 		return false
 	}
 	if sim.KVCache.PendingTransferLatency() != 0 {
