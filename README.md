@@ -206,6 +206,17 @@ metrics and fitness scoring.
 | [Reference](docs/reference/index.md) | CLI flags, supported models, workload spec schema, [project structure](docs/reference/project-structure.md) |
 | [Methodology](docs/methodology/index.md) | Strategy Evolution methodology, discovered principles |
 | [Contributing](docs/contributing/index.md) | Extension recipes, PR workflow, design process, standards |
+| [Roadmap](docs/roadmap.md) | Where BLIS is going: llm-d parity, day-0 models, multi-node, networking, accuracy, config search |
+
+---
+
+## Roadmap
+
+We plan to bring BLIS to
+[llm-d-perf-simulator](https://github.com/llm-d-incubation/llm-d-perf-simulator) as the
+community-maintained **llm-d performance simulator**. The direction, guided by *llm-d parity by
+design*, spans six themes: llm-d parity, day-0 model support, multi-node accuracy, networking
+configs, accuracy transparency, and config search. See the full [Roadmap](docs/roadmap.md).
 
 ---
 
