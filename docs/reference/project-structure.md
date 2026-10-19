@@ -149,7 +149,7 @@ inference-sim/
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides
-│   │   ├── llm-d-router-fork.md # The llm-d router fork: seams, rebasing, hosting lint, patch budget
+│   │   ├── llm-d-router-fork.md # The llm-d router fork: seams, release updates, hosting lint, patch budget
 │   │   ├── pr-workflow.md     # PR development workflow
 │   │   ├── rfc.md             # RFC template for large features
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
