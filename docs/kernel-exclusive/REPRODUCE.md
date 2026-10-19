@@ -6,7 +6,7 @@ prints, the command is right.
 
 ## What you need
 
-This repository, Go 1.24 or later, and the measurement corpora. Every other input is pinned to a
+This repository, Go 1.27.2 or later, and the measurement corpora. Every other input is pinned to a
 tagged release and reaches you without a separate checkout:
 
 | input | release | how it arrives |

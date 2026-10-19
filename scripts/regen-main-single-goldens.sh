@@ -26,13 +26,25 @@ for dep in github.com/inference-sim/blis-latency-kernel github.com/inference-sim
     exit 1
   fi
 done
+for vendored in testdata/catalog testdata/registry; do
+  if ! cmp -s "$vendored/.upstream-commit" "$tmp/src/$vendored/.upstream-commit"; then
+    echo "regen-main-single-goldens: $commit vendors a different $vendored than this branch; re-vendor it first (see above)" >&2
+    exit 1
+  fi
+done
+if [[ -n "$(git -C "$tmp/src" status --porcelain)" ]]; then
+  echo "regen-main-single-goldens: the $commit checkout is not clean" >&2
+  exit 1
+fi
 (cd "$tmp/src" && go build -o "$tmp/blis" main.go)
 kernel=$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-latency-kernel)
+# Run from inside the generation commit, so the catalog the binary reads, and the provenance it
+# records ("revision", "dirty": false), are that clean commit's own testdata, not this checkout's.
 for scenario in llama-3.1-70b-instruct-h200-fp8-vllm-tp4 gpt-oss-120b-h200-fp4-vllm-tp4; do
-  out=cmd/testdata/golden/main-single-$scenario
-  "$tmp/blis" run --scenario "$scenario.yaml" --scenarios "$kernel/testdata/aisimulate" \
+  out="$root/cmd/testdata/golden/main-single-$scenario"
+  (cd "$tmp/src" && "$tmp/blis" run --scenario "$scenario.yaml" --scenarios "$kernel/testdata/aisimulate" \
     --catalog testdata/catalog --registry testdata/registry --defaults-filepath defaults.yaml \
     --num-instances 1 --rate 10 --num-requests 200 --seed 42 \
-    --metrics-path "$out.metrics.json" > "$out.stdout"
+    --metrics-path "$out.metrics.json" > "$out.stdout")
   echo "wrote $out.{stdout,metrics.json} from $commit"
 done

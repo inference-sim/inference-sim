@@ -82,3 +82,26 @@ func TestStepPriceIsPositiveFaithfulGrowingAndOrderFree(t *testing.T) {
 		})
 	}
 }
+
+// The monotone law at the point blis-latency-kernel#42 broke it, pinned rather than left to the
+// generator: on GLM-5 (DSA sparse MLA) on H200, a mixed step of exactly 512 scheduled tokens --
+// the capture ceiling -- and the same step plus one decode, just past it. v0.1.0 priced the
+// second cheaper; the step past the ceiling must cost at least as much.
+func TestOneMoreRequestPastTheCaptureCeilingIsNotCheaper(t *testing.T) {
+	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
+	decode := func() *sim.Request {
+		return &sim.Request{InputTokens: make([]sim.TokenID, 1), ProgressIndex: 1, NumNewTokens: 1}
+	}
+	var batch []*sim.Request
+	for i := 0; i < 9; i++ {
+		batch = append(batch, decode(), &sim.Request{InputTokens: make([]sim.TokenID, 1), NumNewTokens: 1})
+	}
+	batch = append(batch, &sim.Request{InputTokens: make([]sim.TokenID, 494), NumNewTokens: 494})
+	past := append(batch[:len(batch):len(batch)], decode())
+	if at, over := m.batchOf(batch).Tokens(), m.batchOf(past).Tokens(); at != 512 || over != 513 {
+		t.Fatalf("fixture lost its point: %d and %d scheduled tokens, not 512 and 513 either side of the ceiling", at, over)
+	}
+	if at, over := m.StepTime(batch), m.StepTime(past); over < at {
+		t.Fatalf("one more decode past the 512-token capture ceiling made the step cheaper: %d ticks, down from %d", over, at)
+	}
+}

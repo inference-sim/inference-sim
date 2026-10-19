@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -156,5 +157,36 @@ func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
 		if _, err := summarize(bad, pl, nil); err == nil {
 			t.Errorf("summarize accepted %s", name)
 		}
+	}
+}
+
+// A point whose engine ran with max_model_len auto (an engine log passing -1) keeps that state
+// into its variant rather than inventing a count, and the kernel adapter then refuses the
+// variant naming auto -- the same refusal a hand-written auto scenario gets -- so the point
+// fails loudly instead of being simulated at a window the engine did not run.
+func TestAnAutoWindowReachesTheVariantAndIsRefused(t *testing.T) {
+	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
+	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
+	pc := PointConfig{MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, BlockSize: 16,
+		MaxModelLen: deployment.MaxModelLen(-1), GPUMemoryUtilization: 0.9}
+	dst := filepath.Join(t.TempDir(), name)
+	if err := writeScenarioVariant(src, dst, pc); err != nil {
+		t.Fatalf("writeScenarioVariant: %v", err)
+	}
+	_, dep, err := latencykernel.LoadBundle(dst)
+	if err != nil {
+		t.Fatalf("the variant does not load as a scenario: %v", err)
+	}
+	if !dep.Pools[0].Engine.MaxModelLen.Auto() {
+		t.Fatalf("variant max_model_len %d, want auto", dep.Pools[0].Engine.MaxModelLen)
+	}
+	r := testRepos()
+	r.Scenarios = filepath.Dir(dst)
+	m, err := kernelmodel.Open(name, r)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := m.Settings(); err == nil || !strings.Contains(err.Error(), "max_model_len auto") {
+		t.Errorf("Settings on an auto variant: %v, want a refusal naming max_model_len auto", err)
 	}
 }
