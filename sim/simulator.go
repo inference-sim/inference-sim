@@ -121,7 +121,12 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
-	stepCount                 int
+	// busyUntil is the end time of the most recently executed step: Step(now)
+	// executes the whole step at once, but the engine is busy until
+	// now + currStepAdvance. A step scheduled on an idle engine (stepEvent == nil)
+	// must not start before it (one step at a time, INV-5; #1964). See nextStepStart.
+	busyUntil int64
+	stepCount int
 	// Cumulative count of idle wakes superseded by scheduleStepBy — the one path whose
 	// effect is invisible in metrics (a cancelled step executes nothing), so without a
 	// counter a test cannot tell whether it exercised the path at all. Load-independent
@@ -535,22 +540,36 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	}
 }
 
-// scheduleStepBy makes sure a StepEvent fires no later than t. It schedules one at t
-// when none is pending, and supersedes a pending idle wake that is later than t, so
-// work that arrives during an idle wait is served at once (INV-8). Any other pending
-// step is left alone, exactly as the previous stepEvent == nil guards did.
+// scheduleStepBy makes sure a StepEvent fires no later than the engine can start one
+// after t: start = nextStepStart(t), i.e. never inside a step still executing (#1964).
+// It schedules one at start when none is pending, and supersedes a pending idle wake
+// that is later than start, so work that arrives during an idle wait is served as soon
+// as the engine is free (INV-8). The comparison uses the floored start, not t: an
+// arrival during a running step cannot start a step before busyUntil, so it must not
+// cancel a wake it would not actually precede. Any other pending step is left alone,
+// exactly as the previous stepEvent == nil guards did.
 func (sim *Simulator) scheduleStepBy(t int64) {
+	start := sim.nextStepStart(t)
 	if sim.stepEvent != nil {
 		pending, ok := sim.stepEvent.(*StepEvent)
-		if !ok || !pending.idleWake || pending.time <= t {
+		if !ok || !pending.idleWake || pending.time <= start {
 			return
 		}
 		pending.cancelled = true
 		sim.idleWakesSuperseded++
 	}
-	step := &StepEvent{time: t}
+	step := &StepEvent{time: start}
 	sim.stepEvent = step
 	sim.Schedule(step)
+}
+
+// nextStepStart returns the start time for a step newly scheduled at t on an
+// idle engine: max(t, busyUntil). The step that drained the engine may still be
+// executing at t; a request arriving mid-step joins the next step, which cannot
+// begin before the current one ends (vLLM's engine core runs one step at a time;
+// INV-5 causality, #1964).
+func (sim *Simulator) nextStepStart(t int64) int64 {
+	return max(t, sim.busyUntil)
 }
 
 // idleDeferralWake returns the next tick at which a deferred request can change
@@ -895,6 +914,7 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	sim.busyUntil = now + currStepAdvance
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
 	// Runs after execution (new full blocks exist) and before completions
 	// (completing requests' blocks are still in-use and can be mirrored).

@@ -70,8 +70,9 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 	// Enqueue the arriving request into the waiting queue
 	sim.EnqueueRequest(e.Request)
 
-	// If WaitQ has work, make sure a Step runs now: schedule one if none is pending,
-	// or pull an idle wake forward to this arrival.
+	// If WaitQ has work, make sure a Step runs as soon as the engine is free: schedule
+	// one if none is pending, or pull an idle wake forward to this arrival. The step
+	// starts at nextStepStart(e.time) — never inside a step still executing (#1964).
 	if sim.WaitQ.Len() > 0 {
 		sim.scheduleStepBy(e.time)
 	}
@@ -241,7 +242,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// instead of leaving it strands the sibling deferral.
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
 		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		pbe := &StepEvent{time: e.time}
+		pbe := &StepEvent{time: sim.nextStepStart(e.time)}
 		sim.Schedule(pbe)
 		sim.stepEvent = pbe
 	}
