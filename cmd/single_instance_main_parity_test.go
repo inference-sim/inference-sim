@@ -16,7 +16,8 @@ import (
 // the same flags: the same text, with every number equal to the last few ULPs (sameOutput; the
 // goldens were recorded on amd64, and an arm64 build rounds some percentiles in the last digit) (cmd/testdata/golden, produced by `blis run` built from main at
 // 63ffc020 with this branch's blis-latency-kernel v0.2.0 / blis-schemas / testdata bump applied
-// to it uncommitted, since main itself still pins v0.1.0). The router can only pick the one instance, and with the default configuration it
+// to it as a local throwaway commit (main itself still pins v0.1.0), so the vendored catalog is a
+// clean tree and records "dirty": false as a CI checkout does). The router can only pick the one instance, and with the default configuration it
 // admits every request on arrival, so nothing a user reads may change.
 //
 // Regenerate with scripts/regen-main-single-goldens.sh (only when main's own single-instance output

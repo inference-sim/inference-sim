@@ -19,7 +19,7 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := 0
+	checked, statedWindows := 0, 0
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
@@ -40,7 +40,10 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 			t.Fatalf("%s: Settings: %v", e.Name(), err)
 		}
 		eng, _ := m.Engine()
-		window, _ := eng.MaxModelLen.Stated()
+		window, ok := eng.MaxModelLen.Stated()
+		if ok {
+			statedWindows++
+		}
 		if s.BlockSize != eng.BlockSize || s.MaxNumSeqs != eng.MaxNumSeqs ||
 			s.MaxNumBatchedTokens != eng.MaxNumBatchedTokens || s.MaxModelLen != window {
 			t.Errorf("%s: settings %+v do not restate the pool's engine %+v", e.Name(), s, eng)
@@ -64,6 +67,11 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no scenario produced settings; the laws were checked against nothing")
+	}
+	// An omitted window restates as 0 == 0, which holds by construction; the window law is
+	// only exercised by a scenario that states one.
+	if statedWindows == 0 {
+		t.Fatal("no scenario states max_model_len as a count; the window law was checked against nothing")
 	}
 }
 
