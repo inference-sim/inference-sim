@@ -154,5 +154,6 @@ nav:
           - Micro Plan: contributing/templates/micro-plan.md
           - Archon Issue Examples: contributing/templates/archon-issue-examples.md
           - Hypothesis: contributing/templates/hypothesis.md
+  - Roadmap: roadmap.md
   - Blog:
       - blog/index.md
