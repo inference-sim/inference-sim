@@ -90,7 +90,7 @@ builds against.
 
 ## The environment around the router
 
-Two BLIS knobs model the environment, not routing:
+Three BLIS flags model the environment, not routing:
 
 | Flag | Default | Meaning |
 |---|---|---|

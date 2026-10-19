@@ -156,6 +156,7 @@ func TestScenarioRouterInputs_Refusals(t *testing.T) {
 		{"a missing endpoint_picker_config", "router.endpoint_picker_config", deployment.Router{EndpointPickerConfig: "absent.yaml"}},
 		{"a missing manifest", "router.manifests[1]", deployment.Router{Manifests: []string{"present.yaml", "absent.yaml"}}},
 		{"a missing --config-file", "--config-file", deployment.Router{EPPFlags: []string{"--config-file=absent.yaml"}}},
+		{"a missing --config-file, two-argument form", "--config-file", deployment.Router{EPPFlags: []string{"--config-file", "absent.yaml"}}},
 		{"the configuration named twice", "both name the router configuration",
 			deployment.Router{EPPFlags: []string{"--config-text=x"}, EndpointPickerConfig: "absent.yaml"}},
 	} {
@@ -237,6 +238,42 @@ func TestReplay_ScenarioRouterContradictingTheHeaderFatal(t *testing.T) {
 		if !strings.Contains(stderr, "differs from the router the trace was recorded with") {
 			t.Errorf("%s: the refusal must name the contradiction; stderr:\n%s", tt.name, lastLines(stderr, 3))
 		}
+	}
+}
+
+// Pool labels alone (no router block) reach the router: an InferencePool selecting app=vllm, named
+// by a router block, serves a pool whose labels say app=vllm, and the same scenario with the label
+// stating another value leaves the pool with no endpoints, so nothing completes. The labels-only
+// case is checked from the trace header the run records.
+func TestRun_PoolLabelsWithoutARouterBlockReachTheRouter(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	labelsOnly := colocatedRouterVariant(t, "", "      app: vllm\n      tier: gpu\n", nil)
+	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", labelsOnly, "--scenario", "variant.yaml", "--num-instances", "2",
+		"--num-requests", "6", "--rate", "3", "--trace-output", prefix); err != nil {
+		t.Fatalf("labels-only run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	header := readFile(t, prefix+".yaml")
+	for _, want := range []string{"app: vllm", "tier: gpu", "--endpoint-selector=llm-d.ai/inference-serving=true"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("a labels-only scenario's run does not record %q in its router header", want)
+		}
+	}
+	pool := writeRouterFile(t, "pool.yaml", inv13Manifests)
+	served := func(label string) int {
+		dir := colocatedRouterVariant(t, "router:\n  epp_flags: [--pool-name=vllm]\n  manifests: [pool.yaml]\n",
+			"      app: "+label+"\n", map[string]string{"pool.yaml": pool})
+		out, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
+			"--num-requests", "6", "--rate", "3", "--horizon", "60000000")
+		if err != nil {
+			t.Fatalf("app=%s: %v\n%s", label, err, lastLines(stderr, 5))
+		}
+		return clusterMetricInt(t, out, "completed_requests")
+	}
+	if got := served("vllm"); got != 6 {
+		t.Errorf("pods labelled app=vllm, the pool's selector, completed %d of 6 requests", got)
+	}
+	if got := served("other"); got != 0 {
+		t.Errorf("pods the pool's selector does not match completed %d requests; the pool labels are not reaching the router", got)
 	}
 }
 

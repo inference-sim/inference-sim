@@ -157,7 +157,7 @@ BLIS prices every step with [blis-latency-kernel](https://github.com/inference-s
 
 ## Cluster Configuration
 
-With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no router. With `--num-instances N` (N > 1), the cluster simulation runs: every request passes through the embedded llm-d router (admission, flow control, endpoint picking) before reaching a per-instance wait queue. See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
+Every run, `--num-instances 1` (the default) included, passes each request through the embedded llm-d router (admission, flow control, endpoint picking) before it reaches a per-instance wait queue. With one instance the router can only pick that instance, and with the default configuration it admits every request on arrival, so a single-instance run reports what a run without a router would (see [Routing](../guide/routing.md)). See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
