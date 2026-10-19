@@ -176,9 +176,11 @@ type PointConfig struct {
 	MaxNumBatchedTokens   int
 	BlockSize             int
 	PrefixCachingDisabled bool
-	MaxModelLen           int
-	GPUMemoryUtilization  float64
-	EnableExpertParallel  bool
+	// MaxModelLen keeps the scenario's three states (omitted, auto, a count), so a point
+	// written back into its variant states what the scenario or the engine log did.
+	MaxModelLen          deployment.MaxModelLen
+	GPUMemoryUtilization float64
+	EnableExpertParallel bool
 
 	SeqsFrom   SettingSource
 	TokensFrom SettingSource
@@ -331,7 +333,7 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		a.PrefixCachingDisabled, a.PrefixFrom = !*v, SourceMeasured
 	}
 	if v := p.Passed.MaxModelLen; v != nil {
-		a.MaxModelLen, a.WindowFrom = *v, SourceMeasured
+		a.MaxModelLen, a.WindowFrom = deployment.MaxModelLen(*v), SourceMeasured
 	}
 	if v := p.Passed.GPUMemoryUtilization; v != nil {
 		a.GPUMemoryUtilization, a.MemoryFrom = *v, SourceMeasured

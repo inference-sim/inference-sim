@@ -6,6 +6,9 @@
 #   scripts/regen-main-single-goldens.sh [commit]
 #
 # Run it from the repository root; it builds the commit in a temporary worktree and removes it.
+# The commit must pin the same blis-latency-kernel, blis-schemas and vendored testdata as this
+# branch; when it does not, apply the same bump to it in a throwaway worktree and run the command
+# in TestSingleInstance_MatchesMainGolden's comment by hand.
 set -euo pipefail
 commit=${1:-0d092d4e}
 root=$(git rev-parse --show-toplevel)

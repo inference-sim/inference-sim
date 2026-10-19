@@ -261,7 +261,7 @@ func TestTheWindowMemoryAndExpertParallelSettingsResolveLikeTheOthers(t *testing
 	ml, gmu, ep := 2304, 0.95, true
 	got := at(&PointSettings{Passed: PassedSettings{MaxModelLen: &ml, GPUMemoryUtilization: &gmu,
 		EnableExpertParallel: &ep}, Resolved: ResolvedSettings{EngineVersion: "0.22.0"}})
-	if got.MaxModelLen != ml || got.GPUMemoryUtilization != gmu || !got.EnableExpertParallel ||
+	if int(got.MaxModelLen) != ml || got.GPUMemoryUtilization != gmu || !got.EnableExpertParallel ||
 		got.WindowFrom != SourceMeasured || got.MemoryFrom != SourceMeasured || got.EPFrom != SourceMeasured {
 		t.Errorf("passed settings not taken as measured: %+v", got)
 	}

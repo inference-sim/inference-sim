@@ -64,7 +64,7 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 		}
 		if s.MaxNumSeqs != pc.MaxNumSeqs || s.MaxNumBatchedTokens != pc.MaxNumBatchedTokens ||
 			s.BlockSize != pc.BlockSize || s.PrefixCachingDisabled != pc.PrefixCachingDisabled ||
-			s.MaxModelLen != pc.MaxModelLen {
+			s.MaxModelLen != int(pc.MaxModelLen) {
 			t.Errorf("kernel settings %+v, want %+v", s, pc)
 		}
 		if d := m.Deployment(); d.GPUMemUtil != pc.GPUMemoryUtilization || d.ExpertParallel != pc.EnableExpertParallel {

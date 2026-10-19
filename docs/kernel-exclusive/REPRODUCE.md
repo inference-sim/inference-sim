@@ -11,19 +11,19 @@ tagged release and reaches you without a separate checkout:
 
 | input | release | how it arrives |
 |---|---|---|
-| blis-latency-kernel | `v0.1.0` | `go.mod`; its scenario fixtures (`testdata/aisimulate`) are read from the module cache |
-| blis-schemas | `v0.2.2` | `go.mod` |
-| blis-catalog | `0.2.1` | vendored subset at `testdata/catalog` |
-| blis-registry | `v0.1.1` | vendored coefficient sets at `testdata/registry` |
+| blis-latency-kernel | `v0.2.0` | `go.mod`; its scenario fixtures (`testdata/aisimulate`) are read from the module cache |
+| blis-schemas | `v0.3.1-0.20261016203744-bd5ba957f8d1` (branch `llm-d-r`) | `go.mod` |
+| blis-catalog | `0.2.2` | vendored subset at `testdata/catalog` |
+| blis-registry | `v0.1.2` | vendored coefficient sets at `testdata/registry` |
 
-The catalog and registry releases are the ones blis-latency-kernel `v0.1.0` pins in its own
+The catalog and registry releases are the ones blis-latency-kernel `v0.2.0` pins in its own
 `testdata/upstream.lock`; `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` fails if the
 vendored copies drift from that lock. To score against live upstream checkouts instead, clone the
 tags and point the variables at them:
 
 ```
-git clone --branch 0.2.1  --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.2.2  --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog BLIS_REGISTRY=$PWD/blis-registry
 ```
 
