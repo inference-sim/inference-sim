@@ -535,7 +535,8 @@ func (sim *Simulator) IdleWakesSuperseded() int64 { return sim.idleWakesSupersed
 
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
-// the last request from RunningBatch.
+// the last request from RunningBatch. The step starts at nextStepStart(time):
+// no earlier than the end of the step still executing, nor than sim.Clock.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.WaitQ.Len() > 0 {
 		sim.scheduleStepBy(time)
@@ -736,7 +737,8 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // clusterTime is the cluster-level clock when this request is injected (from
 // KVTransferCompletedEvent.Execute()). The StepEvent is scheduled at
 // max(sim.Clock, clusterTime) to prevent the instance from processing the
-// decode sub-request at a stale internal time that precedes the request's arrival.
+// decode sub-request at a stale internal time that precedes the request's arrival,
+// and no earlier than the end of the step still executing (nextStepStart, #1964).
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
 func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Pre-processor: decode sub-requests inherit SLOClass from parent (pd_events.go:215).
