@@ -31,9 +31,9 @@ which estimates each endpoint's cached prefix from the requests the router has s
 configuration:
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --epp-config examples/llm-d/prefix-affinity.yaml \
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 4 \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
 

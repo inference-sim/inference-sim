@@ -59,7 +59,10 @@ func RequireBlis(path string) error {
 //
 // A scenario stating more than one pool is refused: the corpus scores aggregated serving, and
 // the resolved settings describe one engine.
-func writeScenarioVariant(src, dst string, pc PointConfig) error {
+//
+// A non-nil router becomes the variant's router block (its paths relative to dst's directory); a
+// committed scenario that already states one is refused rather than overwritten.
+func writeScenarioVariant(src, dst string, pc PointConfig, router *deployment.Router) error {
 	sc, dep, err := latencykernel.LoadBundle(src)
 	if err != nil {
 		return err
@@ -68,6 +71,12 @@ func writeScenarioVariant(src, dst string, pc PointConfig) error {
 		return fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
 	}
 	applyPointConfig(&dep.Pools[0], pc)
+	if router != nil {
+		if dep.Router != nil {
+			return fmt.Errorf("%s states a router block; the harness routes every point with its own", src)
+		}
+		dep.Router = router
+	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -111,11 +120,9 @@ func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
 // session is admitted at the completion tick, which is the client's zero-wait behaviour at
 // --request-rate inf. No per-request deadline: the trace states none (deadline_us 0), as the
 // client sets no timeout on a request.
-func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath, eppConfigPath string, sessions, concurrency int) []string {
+func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metricsPath string, sessions, concurrency int) []string {
 	return []string{
 		"replay",
-		// The router places like vLLM's own data-parallel balancer (vllm-dp-lb.epp.yaml).
-		"--epp-config", eppConfigPath,
 		"--scenario", scenarioName,
 		"--scenarios", scenarioDir,
 		"--catalog", cfg.Repos.Catalog,
@@ -230,6 +237,9 @@ func primedPhase(pl PointLengths, copies int) replayRun {
 //go:embed vllm-dp-lb.epp.yaml
 var vllmDPLoadBalancer []byte
 
+// vllmDPLoadBalancerFile is the name the variant scenario's router block gives that configuration.
+const vllmDPLoadBalancerFile = "vllm-dp-lb.epp.yaml"
+
 // runBlis runs one point through `blis replay` in a fresh temporary directory and returns the
 // --metrics-path output.
 func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*sim.MetricsOutput, error) {
@@ -239,8 +249,13 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*s
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
+	// The router places like vLLM's own data-parallel balancer: the variant's router block names
+	// vllm-dp-lb.epp.yaml, written beside it.
+	if err := os.WriteFile(filepath.Join(dir, vllmDPLoadBalancerFile), vllmDPLoadBalancer, 0o644); err != nil {
+		return nil, err
+	}
 	if err := writeScenarioVariant(filepath.Join(cfg.Repos.Scenarios, scenarioName),
-		filepath.Join(dir, scenarioName), pc); err != nil {
+		filepath.Join(dir, scenarioName), pc, &deployment.Router{EndpointPickerConfig: vllmDPLoadBalancerFile}); err != nil {
 		return nil, err
 	}
 	records := run.records
@@ -249,12 +264,8 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*s
 		return nil, err
 	}
 	metricsPath := filepath.Join(dir, "metrics.json")
-	eppConfigPath := filepath.Join(dir, "vllm-dp-lb.epp.yaml")
-	if err := os.WriteFile(eppConfigPath, vllmDPLoadBalancer, 0o644); err != nil {
-		return nil, err
-	}
 
-	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath, eppConfigPath,
+	cmd := exec.Command(cfg.Blis, blisArgs(cfg, scenarioName, dir, headerPath, dataPath, metricsPath,
 		run.sessions, run.pool)...)
 	// From the repository root, as a user runs it: the command reads its bundled defaults.yaml
 	// relative to the working directory, and scorer tests run from their package directory.

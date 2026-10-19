@@ -41,7 +41,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 2. `--policy-config` YAML bundle
 3. The scenario's engine settings, then the default `fcfs`
 
-**Routing, admission and flow control** are the embedded llm-d router's, configured by the [router flags](#router) and the files they name. See [Routing](../guide/routing.md).
+**Routing, admission and flow control** are the embedded llm-d router's, configured by the scenario's `router:` block and pool labels ([Router](#router)). See [Routing](../guide/routing.md).
 
 **Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. Only `--long-prefill-token-threshold` and `--preemption-policy` remain on the CLI.
 
@@ -169,23 +169,28 @@ With `--num-instances 1` (the default), BLIS runs a single-instance simulation �
 
 ## Router
 
-Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. These flags are registered on `run` and `replay`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md) for the supported plugins, what is refused at startup, the corresponding deployment-schema keys, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
+Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. Its inputs are the deployment's, so the `--scenario` states them (#1950): the deployment's `router:` block and each pool's `labels`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md#the-routers-inputs) for the mapping, the supported plugins, what is refused at startup, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
+
+| Scenario field | Description |
+|----------------|-------------|
+| `router.epp_flags` | The llm-d router's (EPP's) command-line flags, verbatim, one entry per flag. Default: a standalone router whose pool is every simulated pod (`--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`). |
+| `router.endpoint_picker_config` | EndpointPickerConfig file, as the EPP reads it with `--config-file`. Default: the router's built-in default configuration. Refused together with an EPP flag `--config-file` or `--config-text`. |
+| `router.manifests` | Kubernetes manifest files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. |
+| `pools[].labels` | Labels on the pool's simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches. A label every pool states with one value is on every pod; any other is on its pool's pods only. |
+
+Paths are relative to the scenario file; a file that cannot be read is refused at startup. `--epp-flags`, `--epp-config`, `--epp-manifests` and `--pod-labels` were removed (unknown flags), as `--tp` was. The flags below model the environment around the router, not the deployment, and stay on `run` and `replay`:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--epp-flags` | string | "" | File holding the llm-d router's (EPP's) command-line flags, verbatim: a YAML list of flags, or a YAML map of flag name to value as in the router Helm chart's `epp.flags`. Default: a standalone router whose pool is every simulated pod (`--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`). |
-| `--epp-config` | string | "" | EndpointPickerConfig file for the llm-d router, as passed to the EPP with `--config-file`. Default: the router's built-in default configuration. Refused together with an EPP flag `--config-file` or `--config-text`. |
-| `--epp-manifests` | string slice | — | Kubernetes manifest files (comma-separated or repeated). The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. |
-| `--pod-labels` | string slice | — | Extra labels on the simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches: `key=value` on every pod, or `role:key=value` on the pods of one P/D role (`prefill`, `decode`, `prefill-decode`, `encode`), overriding an unscoped label with the same key. Comma-separated or repeated. |
 | `--gateway-latency` | int64 | 0 | Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker). Must be >= 0. |
 | `--epp-scrape-jitter` | int64 | 0 | Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase. Must be >= 0. |
 | `--kv-event-delay` | int64 | 0 | Microseconds from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them. Must be >= 0. Recorded in the trace header. |
 
-**Recorded in the trace.** The router inputs are written to the TraceV2 header (`--trace-output`); a `--config-file` EPP flag is inlined as `--config-text` so the header carries the configuration itself. `blis replay` rebuilds the recorded router from the header. A replay command line that names router flags must describe the same router, or replay is refused (INV-13).
+**Recorded in the trace.** The resolved router inputs are written to the TraceV2 header (`--trace-output`); the EndpointPickerConfig (and a `--config-file` EPP flag) is inlined as `--config-text` so the header carries the configuration itself. `blis replay` rebuilds the recorded router from the header. A replay whose scenario states no router replays the recorded one; a replay whose scenario states a router (a `router:` block or pool labels) that differs from the header's, or whose router environment flags differ from it, is refused (INV-13).
 
-**Pod labels.** BLIS sets `llm-d.ai/inference-serving=true` on every pod and `llm-d.ai/role` (`prefill`, `decode`, `prefill-decode`, `encode`) from the scenario's pools, in addition to `--pod-labels`; `llm-d.ai/role` cannot be given with `--pod-labels`.
+**Pod labels.** BLIS sets `llm-d.ai/inference-serving=true` on every pod and `llm-d.ai/role` (`prefill`, `decode`, `prefill-decode`, `encode`) from the scenario's pools, in addition to `pools[].labels`; blis-schemas refuses a pool label `llm-d.ai/role` that contradicts the pool's role.
 
-**Objectives.** Request priorities come from the `InferenceObjective` objects in the manifests, which the router reconciles only for an `InferencePool` (`--pool-name`); a request whose objective has none gets priority 0. `examples/llm-d/inferencepool.yaml` (with `examples/llm-d/pool-flags.yaml`) defines a pool and one objective per SLO class (`critical` 4, `standard` 3, `batch` -1, `sheddable` -2, `background` -3). Each request carries its SLO class in the `x-llm-d-inference-objective` header and its tenant in `x-llm-d-inference-fairness-id`. See [Admission and Flow Control](../guide/admission.md).
+**Objectives.** Request priorities come from the `InferenceObjective` objects in the manifests, which the router reconciles only for an `InferencePool` (`--pool-name`); a request whose objective has none gets priority 0. `examples/llm-d/inferencepool.yaml` defines a pool and one objective per SLO class (`critical` 4, `standard` 3, `batch` -1, `sheddable` -2, `background` -3); `examples/llm-d/scenarios/llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml` routes with it. Each request carries its SLO class in the `x-llm-d-inference-objective` header and its tenant in `x-llm-d-inference-fairness-id`. See [Admission and Flow Control](../guide/admission.md).
 
 ### SLO Tier Priorities
 
@@ -411,7 +416,7 @@ lora:
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
-| **Router** | `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
+| **Router** | the scenario's `router:` block and `pools[].labels`; `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 

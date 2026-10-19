@@ -58,11 +58,11 @@ Total time from request arrival to final token completion. Computed as `TTFT + s
 
 ### EndpointPickerConfig
 
-The llm-d router's configuration file (`kind: EndpointPickerConfig`): the plugins, the [scheduling profiles](#scheduling-profile) that compose them, feature gates and the flow-control block. BLIS reads it with `--epp-config` (or the deployment's `router.endpoint_picker_config`) unchanged from a real deployment. See [Routing](../guide/routing.md#the-routers-inputs).
+The llm-d router's configuration file (`kind: EndpointPickerConfig`): the plugins, the [scheduling profiles](#scheduling-profile) that compose them, feature gates and the flow-control block. BLIS reads it from the scenario deployment's `router.endpoint_picker_config` unchanged from a real deployment. See [Routing](../guide/routing.md#the-routers-inputs).
 
 ### EPP (Endpoint Picker)
 
-The llm-d router component that admits, queues and routes each request to a model-server pod. BLIS embeds the real EPP in-process (package `sim/llmd`) and runs it on the simulation's [hosting runtime](#hosting-runtime); its command-line flags are passed with `--epp-flags`. See [Routing](../guide/routing.md).
+The llm-d router component that admits, queues and routes each request to a model-server pod. BLIS embeds the real EPP in-process (package `sim/llmd`) and runs it on the simulation's [hosting runtime](#hosting-runtime); its command-line flags are the scenario deployment's `router.epp_flags`. See [Routing](../guide/routing.md).
 
 ### Fitness Score
 
@@ -94,7 +94,7 @@ A GAIE resource that gives a named objective a priority. A request names its obj
 
 ### InferencePool
 
-A GAIE resource that selects the model-server pods one router serves. BLIS reads it from `--epp-manifests` when the EPP flags name it with `--pool-name`; `--pod-labels` (or `pools[].labels`) puts the labels its selector expects on the simulated pods. Without a pool name, the router runs standalone over every simulated pod. See [Routing](../guide/routing.md#the-routers-inputs).
+A GAIE resource that selects the model-server pods one router serves. BLIS reads it from `router.manifests` when the EPP flags name it with `--pool-name`; `pools[].labels` puts the labels its selector expects on the simulated pods. Without a pool name, the router runs standalone over every simulated pod. See [Routing](../guide/routing.md#the-routers-inputs).
 
 ### ITL (Inter-Token Latency)
 

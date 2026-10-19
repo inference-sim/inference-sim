@@ -15,17 +15,17 @@
 #
 #   # Prefix-cache scorer dominant (sessions cluster on instances)
 #   ./blis run \
-#     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-#     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --epp-config examples/llm-d/prefix-affinity.yaml \
+#    --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+#    --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+#     --num-instances 4 \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
 #   # Load-only (rounds scatter across instances — no cache reuse)
 #   ./blis run \
-#     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-#     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --epp-config examples/llm-d/load-only.yaml \
+#    --scenario llama-3.1-70b-instruct-h200-tp4-4node-load-only.yaml \
+#    --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+#     --num-instances 4 \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #

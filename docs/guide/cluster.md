@@ -35,7 +35,7 @@ Arrival → gateway latency → llm-d router → dispatch → Instance WaitQueue
 
 | Stage | Controls | Configured by |
 |-------|----------|---------------|
-| **Admission, flow control, routing** | Whether the request is admitted, how long it waits, which instance receives it | The llm-d router's inputs: `--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels` (or the deployment's `router:` block); see [the router's inputs](routing.md#the-routers-inputs) |
+| **Admission, flow control, routing** | Whether the request is admitted, how long it waits, which instance receives it | The llm-d router's inputs: the scenario's `router:` block and `pools[].labels`; see [the router's inputs](routing.md#the-routers-inputs) |
 | **Scheduling** | What order within the instance | `--scheduler`, the policy bundle's `priority` section |
 | **Batch Formation** | Which requests form the next batch | scenario `max_num_seqs`, `max_num_batched_tokens` |
 
@@ -70,13 +70,13 @@ the `disagg-profile-handler`, a P/D decider (`always-disagg-pd-decider` or
 `prefix-based-pd-decider`) and `prefill` and `decode` scheduling profiles. BLIS labels prefill and
 decode pods with `llm-d.ai/role`, so the `prefill-filter` and `decode-filter` plugins select them.
 `examples/llm-d/pd.yaml` disaggregates every request. This repository's
-`testdata/scenarios/glm-5-h200-3p1d-ib.yaml` is a 3P1D example:
+`testdata/scenarios/glm-5-h200-3p1d-ib.yaml` is a 3P1D example whose `router:` block names such a
+configuration:
 
 ```bash
 ./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
-  --epp-config examples/llm-d/pd.yaml \
   --rate 10 --num-requests 100
 ```
 

@@ -3,17 +3,18 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -21,23 +22,24 @@ import (
 // Router inputs. A simulated deployment routes with the llm-d router, configured by the same
 // three inputs a real deployment's router reads: its command-line flags, the
 // EndpointPickerConfig they name, and the InferencePool / InferenceObjective /
-// InferenceModelRewrite manifests. The remaining flags model the environment, not routing.
+// InferenceModelRewrite manifests, plus the labels on the model-server pods. They are a
+// deployment property, so the --scenario states them: the deployment's `router:` block and each
+// pool's `labels` (#1950), as `parallel:` states the tensor-parallel width. The flags below model
+// the environment around the router, not the deployment.
 var (
-	eppFlagsPath     string   // --epp-flags: file with the EPP command-line flags
-	eppConfigPath    string   // --epp-config: EndpointPickerConfig file
-	eppManifestPaths []string // --epp-manifests: Kubernetes manifest files
-	podLabelPairs    []string // --pod-labels: extra labels on every model-server pod
-	gatewayLatencyUs int64    // --gateway-latency
-	scrapeJitterUs   int64    // --epp-scrape-jitter
-	kvEventDelayUs   int64    // --kv-event-delay
+	gatewayLatencyUs int64 // --gateway-latency
+	scrapeJitterUs   int64 // --epp-scrape-jitter
+	kvEventDelayUs   int64 // --kv-event-delay
+
+	// scenarioRouter is the deployment half of the router inputs, read from the --scenario by
+	// adoptKernelDeployment; scenarioStatesRouter reports whether the scenario states any of it
+	// (a router block or a pool with labels) rather than leaving the router at its default.
+	scenarioRouter       routerInputs
+	scenarioStatesRouter bool
 )
 
-// registerRouterFlags registers the router inputs on run and replay (INV-13).
+// registerRouterFlags registers the router's environment flags on run and replay (INV-13).
 func registerRouterFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&eppFlagsPath, "epp-flags", "", "File holding the llm-d router's (EPP's) command-line flags, verbatim: a YAML list of flags, or a YAML map of flag name to value as in the router Helm chart's epp.flags. Default: a standalone router whose pool is every simulated pod ("+strings.Join(llmd.DefaultEPPFlags(), " ")+")")
-	cmd.Flags().StringVar(&eppConfigPath, "epp-config", "", "EndpointPickerConfig file for the llm-d router, as passed to the EPP with --config-file. Default: the router's built-in default configuration")
-	cmd.Flags().StringSliceVar(&eppManifestPaths, "epp-manifests", nil, "Kubernetes manifest files (comma-separated or repeated). The router reads InferencePool, InferenceObjective and InferenceModelRewrite objects; other kinds are ignored")
-	cmd.Flags().StringSliceVar(&podLabelPairs, "pod-labels", nil, "Extra labels on the simulated model-server pods, so an InferencePool selector or label filter from a real deployment matches: key=value on every pod, or role:key=value on the pods of one P/D role (prefill, decode, prefill-decode, encode); comma-separated or repeated. llm-d.ai/role comes from the scenario's pools")
 	cmd.Flags().Int64Var(&gatewayLatencyUs, "gateway-latency", 0, "Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker)")
 	cmd.Flags().Int64Var(&kvEventDelayUs, "kv-event-delay", 0, "Microseconds from an engine publishing its KV-cache events (at the end of a step, as vLLM does) to the router's precise-prefix-cache-producer ingesting them; 0 = before any later routing decision")
 	cmd.Flags().Int64Var(&scrapeJitterUs, "epp-scrape-jitter", 0, "Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase")
@@ -70,107 +72,144 @@ func validateRouterFlags() {
 	}
 }
 
-// resolveRouterInputs reads the router inputs the command line names.
+// adoptScenarioRouter reads the router half of the scenario's deployment, refusing a router block
+// whose files cannot be read before any simulation state is built (R3). adoptKernelDeployment
+// calls it with the scenario's Shape.
+func adoptScenarioRouter(shape kernelmodel.Shape) {
+	in, err := scenarioRouterInputs(shape)
+	if err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	scenarioRouter, scenarioStatesRouter = in, statesRouter(shape)
+}
+
+// resolveRouterInputs is the router inputs of a run: the deployment half the scenario states
+// (scenarioRouter), and the environment half the command line gives.
 func resolveRouterInputs() routerInputs {
-	in := routerInputs{GatewayLatencyUs: gatewayLatencyUs, ScrapeJitterUs: scrapeJitterUs, KVEventDelayUs: kvEventDelayUs}
 	validateRouterFlags()
-	if eppFlagsPath != "" {
-		flags, err := readEPPFlags(eppFlagsPath)
-		if err != nil {
-			logrus.Fatalf("--epp-flags: %v", err)
+	in := scenarioRouter
+	in.EPPFlags = append([]string(nil), in.EPPFlags...)
+	if len(in.EPPFlags) == 0 {
+		in.EPPFlags = append([]string(nil), llmd.DefaultEPPFlags()...)
+	}
+	in.GatewayLatencyUs, in.ScrapeJitterUs, in.KVEventDelayUs = gatewayLatencyUs, scrapeJitterUs, kvEventDelayUs
+	return in
+}
+
+// statesRouter reports whether a scenario states any router input: a router block, or a pool
+// with labels.
+func statesRouter(sh kernelmodel.Shape) bool {
+	if sh.Router != nil {
+		return true
+	}
+	for _, l := range sh.Labels {
+		if len(l) > 0 {
+			return true
 		}
-		in.EPPFlags = flags
+	}
+	return false
+}
+
+// scenarioRouterInputs maps a scenario's router block and pool labels onto the router inputs,
+// exactly as a real deployment hands them to its router. One block configures one router:
+//
+//   - epp_flags are the router's command-line flags, verbatim; absent, BLIS runs the default
+//     standalone router whose pool is every simulated pod (llmd.DefaultEPPFlags);
+//   - endpoint_picker_config is read and passed as --config-text=<contents>, which is what
+//     --config-file reads; a --config-file among the flags is inlined the same way, so the trace
+//     header carries the configuration itself rather than a path;
+//   - manifests are read and joined into one YAML stream;
+//   - pools[].labels label the pods of each pool (poolPodLabels).
+//
+// Paths, in the block and in a --config-file flag, are relative to the scenario file's directory.
+func scenarioRouterInputs(sh kernelmodel.Shape) (routerInputs, error) {
+	var in routerInputs
+	r := sh.Router
+	if r == nil {
+		r = &deployment.Router{}
+	}
+	resolve := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(sh.Dir, p)
+	}
+	if len(r.EPPFlags) > 0 {
+		in.EPPFlags = append([]string(nil), r.EPPFlags...)
 	} else {
 		in.EPPFlags = append([]string(nil), llmd.DefaultEPPFlags()...)
 	}
-	if eppConfigPath != "" {
+	if r.EndpointPickerConfig != "" {
 		for _, f := range in.EPPFlags {
 			if strings.HasPrefix(f, "--config-file") || strings.HasPrefix(f, "--config-text") {
-				logrus.Fatalf("--epp-config and the EPP flag %q both name the router configuration; give one", f)
+				return routerInputs{}, fmt.Errorf("router.endpoint_picker_config and the EPP flag %q both name the router configuration; give one", f)
 			}
 		}
-		b, err := os.ReadFile(eppConfigPath)
+		b, err := os.ReadFile(resolve(r.EndpointPickerConfig))
 		if err != nil {
-			logrus.Fatalf("--epp-config: %v", err)
+			return routerInputs{}, fmt.Errorf("router.endpoint_picker_config: %w", err)
 		}
 		in.EPPFlags = append(in.EPPFlags, "--config-text="+string(b))
 	}
-	in.EPPFlags = inlineConfigFile(in.EPPFlags)
+	flags, err := inlineConfigFile(in.EPPFlags, resolve)
+	if err != nil {
+		return routerInputs{}, err
+	}
+	in.EPPFlags = flags
 	var docs []string
-	for _, p := range eppManifestPaths {
-		b, err := os.ReadFile(p)
+	for i, p := range r.Manifests {
+		b, err := os.ReadFile(resolve(p))
 		if err != nil {
-			logrus.Fatalf("--epp-manifests: %v", err)
+			return routerInputs{}, fmt.Errorf("router.manifests[%d]: %w", i, err)
 		}
 		docs = append(docs, strings.TrimRight(string(b), "\n"))
 	}
 	in.Manifests = strings.Join(docs, "\n---\n")
-	if len(podLabelPairs) > 0 {
-		in.PodLabels = map[string]string{}
-		for _, kv := range podLabelPairs {
-			k, v, ok := strings.Cut(kv, "=")
-			if !ok || k == "" {
-				logrus.Fatalf("--pod-labels: %q is not [role:]key=value", kv)
-			}
-			role, key, scoped := strings.Cut(k, ":")
-			if !scoped {
-				key = k
-			} else if !podRoles[role] {
-				logrus.Fatalf("--pod-labels: %q scopes a label to role %q; the roles are prefill, decode, prefill-decode and encode", kv, role)
-			}
-			if key == roleLabel {
-				logrus.Fatalf("--pod-labels: %s is set by BLIS from the scenario's pools and cannot be given", roleLabel)
-			}
-			in.PodLabels[k] = v
-		}
-	}
-	return in
+	in.PodLabels = poolPodLabels(sh)
+	return in, nil
 }
 
-// readEPPFlags reads a flags file: a YAML list of command-line arguments, or a YAML map of flag
-// name to value (the router Helm chart's epp.flags shape).
-func readEPPFlags(path string) ([]string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var node yaml.Node
-	if err := yaml.Unmarshal(b, &node); err != nil {
-		return nil, err
-	}
-	if len(node.Content) == 0 {
-		return nil, nil
-	}
-	switch root := node.Content[0]; root.Kind {
-	case yaml.SequenceNode:
-		var list []string
-		if err := root.Decode(&list); err != nil {
-			return nil, err
+// poolPodLabels maps each pool's labels onto the role-scoped pod labels podLabelFunc applies: a
+// label every pool states with one value labels every pod ("key"); any other labels the pods of
+// its pool's role ("prefill:key", "decode:key").
+//
+// llm-d.ai/role on a prefill or decode pool is BLIS's to set from the pool's role, and blis-schemas
+// refuses a value that contradicts it, so restating it adds nothing and is skipped. A colocated
+// pool's pods carry no role label of their own, so its labels -- llm-d.ai/role included, should
+// the pool state it -- label every pod.
+func poolPodLabels(sh kernelmodel.Shape) map[string]string {
+	out := map[string]string{}
+	everyPool := func(k, v string) bool {
+		for _, l := range sh.Labels {
+			if got, ok := l[k]; !ok || got != v {
+				return false
+			}
 		}
-		return list, nil
-	case yaml.MappingNode:
-		var m map[string]string
-		if err := root.Decode(&m); err != nil {
-			return nil, err
-		}
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		out := make([]string, 0, len(keys))
-		for _, k := range keys {
-			out = append(out, "--"+strings.TrimPrefix(k, "--")+"="+m[k])
-		}
-		return out, nil
-	default:
-		return nil, fmt.Errorf("%s: expected a YAML list of flags or a map of flag name to value", path)
+		return true
 	}
+	for i, labels := range sh.Labels {
+		role := sh.Roles[i]
+		for k, v := range labels {
+			switch {
+			case role != deployment.RoleColocated && k == roleLabel:
+				continue
+			case role == deployment.RoleColocated || everyPool(k, v):
+				out[k] = v
+			default:
+				out[role.RoleLabelValue()+":"+k] = v
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
-// inlineConfigFile replaces --config-file=<path> with --config-text=<contents>, so the trace
-// header carries the configuration itself rather than a path the replaying host may not have.
-func inlineConfigFile(flags []string) []string {
+// inlineConfigFile replaces --config-file=<path> with --config-text=<contents>, so the trace header
+// carries the configuration itself rather than a path the replaying host may not have. resolve
+// maps the flag's path to the file read.
+func inlineConfigFile(flags []string, resolve func(string) string) ([]string, error) {
 	out := make([]string, 0, len(flags))
 	for i := 0; i < len(flags); i++ {
 		f := flags[i]
@@ -185,18 +224,18 @@ func inlineConfigFile(flags []string) []string {
 			out = append(out, f)
 			continue
 		}
-		b, err := os.ReadFile(path)
+		b, err := os.ReadFile(resolve(path))
 		if err != nil {
-			logrus.Fatalf("EPP flag --config-file: %v", err)
+			return nil, fmt.Errorf("router.epp_flags --config-file: %w", err)
 		}
 		out = append(out, "--config-text="+string(b))
 	}
-	return out
+	return out, nil
 }
 
-// routerFlagsChanged reports whether the command line names any router input.
-func routerFlagsChanged(cmd *cobra.Command) bool {
-	for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
+// environmentFlagsChanged reports whether the command line names a router environment flag.
+func environmentFlagsChanged(cmd *cobra.Command) bool {
+	for _, name := range []string{"gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
 		if cmd.Flags().Changed(name) {
 			return true
 		}
@@ -217,32 +256,46 @@ func (in routerInputs) header(seed int64) *workload.TraceRouterConfig {
 	}
 }
 
-// reconcileReplayRouter picks the router inputs of a replay: the trace header's, which
-// reproduce the source run (INV-13), unless the command line names its own. A command line
-// that contradicts the header is refused, never silently preferred.
+// reconcileReplayRouter picks the router inputs of a replay: the trace header's, which reproduce
+// the source run (INV-13). A replay may name each half of them again, and each is checked against
+// the header rather than silently preferred: the deployment half when the --scenario states a
+// router (a router block or pool labels), the environment half when a router environment flag is
+// given. Either half contradicting the header is refused (logrus.Fatalf). A scenario that states no
+// router replays the recorded one. With no header (a trace BLIS did not record) the scenario and
+// the flags configure the router, as on a run.
 func reconcileReplayRouter(cmd *cobra.Command, h *workload.TraceRouterConfig) routerInputs {
-	flags := resolveRouterInputs()
+	resolved := resolveRouterInputs()
 	if h == nil {
-		return flags
+		return resolved
 	}
 	fromHeader := routerInputs{
 		EPPFlags: h.EPPFlags, Manifests: h.Manifests, PodLabels: h.PodLabels,
 		GatewayLatencyUs: h.GatewayLatencyUs, ScrapeJitterUs: h.ScrapeJitterUs, KVEventDelayUs: h.KVEventDelayUs, Seed: h.Seed,
 	}
-	if !routerFlagsChanged(cmd) {
-		return fromHeader
+	if scenarioStatesRouter {
+		got, want := normalizeRouter(resolved), normalizeRouter(fromHeader)
+		if !reflect.DeepEqual(got.EPPFlags, want.EPPFlags) || got.Manifests != want.Manifests ||
+			!reflect.DeepEqual(got.PodLabels, want.PodLabels) {
+			logrus.Fatalf("scenario %q states a router (its router block or pool labels) that differs from the "+
+				"router the trace was recorded with; replay with a scenario stating the recorded router, or none, "+
+				"to replay the recorded router (INV-13)", kernelScenario)
+		}
 	}
-	if !reflect.DeepEqual(normalizeRouter(flags), normalizeRouter(fromHeader)) {
+	if environmentFlagsChanged(cmd) && (resolved.GatewayLatencyUs != h.GatewayLatencyUs ||
+		resolved.ScrapeJitterUs != h.ScrapeJitterUs || resolved.KVEventDelayUs != h.KVEventDelayUs) {
 		logrus.Fatalf("the router flags differ from the router the trace was recorded with; omit them to replay the recorded router (INV-13)")
 	}
 	return fromHeader
 }
 
-// normalizeRouter is the part of the router inputs a command line can name: the seed comes from
-// the trace alone.
+// normalizeRouter is the part of the router inputs a scenario or a command line can name: the seed
+// comes from the trace alone, and an empty label set or flag list is none.
 func normalizeRouter(in routerInputs) routerInputs {
 	if len(in.PodLabels) == 0 {
 		in.PodLabels = nil
+	}
+	if len(in.EPPFlags) == 0 {
+		in.EPPFlags = nil
 	}
 	in.Seed = nil
 	return in
@@ -265,9 +318,6 @@ func newGateway(in routerInputs, model string) *llmd.Gateway {
 
 // roleLabel is the llm-d pod label naming a pod's P/D role.
 const roleLabel = "llm-d.ai/role"
-
-// podRoles are the llm-d.ai/role values; --pod-labels may scope a label to one of them.
-var podRoles = map[string]bool{"prefill": true, "decode": true, "prefill-decode": true, "encode": true}
 
 // podLabelFunc labels each pod with its llm-d role (llm-d.ai/role, from the scenario's pools) and
 // the extra labels: an unscoped key=value on every pod, a role:key=value on the pods of that role,

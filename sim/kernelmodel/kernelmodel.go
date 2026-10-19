@@ -512,21 +512,37 @@ type Deployment struct {
 }
 
 // Shape is what a scenario's deployment states beyond any one pool, read without building a
-// kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy.
+// kernel: its pools' roles, in declaration order, whether it states an offload hierarchy, and
+// the llm-d router's inputs -- the router block and each pool's pod labels.
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
+	// Router is the deployment's router block, or nil when it states none. Its paths are
+	// relative to Dir.
+	Router *deployment.Router
+	// Labels are each pool's pod labels, parallel to Roles; nil for a pool that states none.
+	Labels []map[string]string
+	// Dir is the directory of the scenario file, against which the router block's paths resolve.
+	Dir string
 }
 
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	path := filepath.Join(r.Scenarios, scenario)
+	_, dep, err := latencykernel.LoadBundle(path)
 	if err != nil {
 		return Shape{}, err
 	}
-	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil}
+	sh := Shape{
+		Roles:         make([]deployment.Role, len(dep.Pools)),
+		StatesOffload: dep.Offload != nil,
+		Router:        dep.Router,
+		Labels:        make([]map[string]string, len(dep.Pools)),
+		Dir:           filepath.Dir(path),
+	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
+		sh.Labels[i] = p.Labels
 	}
 	return sh, nil
 }

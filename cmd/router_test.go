@@ -17,9 +17,10 @@ import (
 )
 
 // pdAlwaysEPPConfig is an EndpointPickerConfig that disaggregates every request (llm-d's P/D
-// sample configuration with the always-disagg-pd-decider). Tests that need the P/D path pass
-// it with --epp-config; the router's default configuration does not disaggregate.
-const pdAlwaysEPPConfig = "testdata/epp/pd-always.yaml"
+// sample configuration with the always-disagg-pd-decider), relative to pdScenarios. The P/D
+// scenarios there name it in their router block; the router's default configuration does not
+// disaggregate.
+const pdAlwaysEPPConfig = "router/pd-always.yaml"
 
 // writeRouterFile writes body to a fresh file named name and returns its path.
 func writeRouterFile(t *testing.T, name, body string) string {
@@ -31,54 +32,6 @@ func writeRouterFile(t *testing.T, name, body string) string {
 	return path
 }
 
-func TestReadEPPFlags(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		body string
-		want []string
-	}{
-		{"list form is taken verbatim, in order",
-			"- --pool-name=vllm\n- --v\n- \"4\"\n- --endpoint-selector=app=x\n",
-			[]string{"--pool-name=vllm", "--v", "4", "--endpoint-selector=app=x"}},
-		{"map form (Helm epp.flags) is sorted by name into --k=v",
-			"v: 4\nzeta: \"true\"\npool-name: vllm\nalpha: a=b\n",
-			[]string{"--alpha=a=b", "--pool-name=vllm", "--v=4", "--zeta=true"}},
-		{"map form: a key already spelled --name is not doubled",
-			"--pool-name: vllm\n", []string{"--pool-name=vllm"}},
-		{"an empty file names no flags", "", nil},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := readEPPFlags(writeRouterFile(t, "flags.yaml", tt.body))
-			if err != nil {
-				t.Fatalf("readEPPFlags: %v", err)
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestReadEPPFlags_RejectsOtherShapes(t *testing.T) {
-	for _, tt := range []struct{ name, body string }{
-		{"a scalar", "--pool-name=vllm\n"},
-		{"a list of maps", "- name: v\n  value: 4\n"},
-		{"a map of lists", "v:\n  - 4\n"},
-		{"malformed YAML", "[unclosed\n"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got, err := readEPPFlags(writeRouterFile(t, "flags.yaml", tt.body)); err == nil {
-				t.Errorf("accepted %q as %q; want an error", tt.body, got)
-			}
-		})
-	}
-	if _, err := readEPPFlags(filepath.Join(t.TempDir(), "absent.yaml")); err == nil {
-		t.Error("a missing flags file must be an error")
-	}
-}
-
-// inlineConfigFile carries the configuration itself into the trace header, never a path the
-// replaying host may not have (INV-13).
 func TestInlineConfigFile(t *testing.T) {
 	const body = "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\n"
 	path := writeRouterFile(t, "epp.yaml", body)
@@ -95,21 +48,21 @@ func TestInlineConfigFile(t *testing.T) {
 		{"a trailing bare --config-file is left to the router to refuse", []string{"--config-file"}, []string{"--config-file"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := inlineConfigFile(tt.in); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got %q, want %q", got, tt.want)
+			if got, err := inlineConfigFile(tt.in, func(p string) string { return p }); err != nil || !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %q, %v; want %q", got, err, tt.want)
 			}
 		})
 	}
 }
 
-// saveRouterVars snapshots the router flag variables and restores them at test end.
+// saveRouterVars snapshots the router variables and restores them at test end.
 func saveRouterVars(t *testing.T) {
 	t.Helper()
-	flags, cfg, manifests, labels := eppFlagsPath, eppConfigPath, eppManifestPaths, podLabelPairs
-	latency, jitter := gatewayLatencyUs, scrapeJitterUs
+	latency, jitter, delay := gatewayLatencyUs, scrapeJitterUs, kvEventDelayUs
+	stated, states, scen := scenarioRouter, scenarioStatesRouter, kernelScenario
 	t.Cleanup(func() {
-		eppFlagsPath, eppConfigPath, eppManifestPaths, podLabelPairs = flags, cfg, manifests, labels
-		gatewayLatencyUs, scrapeJitterUs = latency, jitter
+		gatewayLatencyUs, scrapeJitterUs, kvEventDelayUs = latency, jitter, delay
+		scenarioRouter, scenarioStatesRouter, kernelScenario = stated, states, scen
 	})
 }
 
@@ -124,24 +77,21 @@ func routerCmd(t *testing.T, args ...string) *cobra.Command {
 	return c
 }
 
-func TestResolveRouterInputs_DefaultsAndEPPConfig(t *testing.T) {
+// A run's router is the scenario's deployment half (the default standalone router when it states
+// none) and the command line's environment half.
+func TestResolveRouterInputs_ScenarioAndEnvironment(t *testing.T) {
 	saveRouterVars(t)
+	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
 	routerCmd(t)
 	if got := resolveRouterInputs(); !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags()) || got.Manifests != "" || got.PodLabels != nil {
-		t.Errorf("no router flags: got %+v, want the default EPP flags %q and nothing else", got, llmd.DefaultEPPFlags())
+		t.Errorf("no router stated: got %+v, want the default EPP flags %q and nothing else", got, llmd.DefaultEPPFlags())
 	}
-
-	const body = "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\n"
-	routerCmd(t, "--epp-config", writeRouterFile(t, "epp.yaml", body), "--pod-labels", "app=vllm,tier=gpu",
-		"--gateway-latency", "250", "--epp-scrape-jitter", "40")
-	got := resolveRouterInputs()
-	want := routerInputs{
-		EPPFlags:         append(append([]string(nil), llmd.DefaultEPPFlags()...), "--config-text="+body),
-		PodLabels:        map[string]string{"app": "vllm", "tier": "gpu"},
-		GatewayLatencyUs: 250,
-		ScrapeJitterUs:   40,
-	}
-	if !reflect.DeepEqual(got, want) {
+	scenarioRouter = routerInputs{EPPFlags: []string{"--pool-name=vllm"}, Manifests: "kind: InferencePool", PodLabels: map[string]string{"app": "vllm"}}
+	scenarioStatesRouter = true
+	routerCmd(t, "--gateway-latency", "250", "--epp-scrape-jitter", "40")
+	want := routerInputs{EPPFlags: []string{"--pool-name=vllm"}, Manifests: "kind: InferencePool",
+		PodLabels: map[string]string{"app": "vllm"}, GatewayLatencyUs: 250, ScrapeJitterUs: 40}
+	if got := resolveRouterInputs(); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
@@ -160,50 +110,62 @@ func TestReconcileReplayRouter(t *testing.T) {
 		GatewayLatencyUs: recorded.GatewayLatencyUs, ScrapeJitterUs: recorded.ScrapeJitterUs,
 	}
 
-	t.Run("no header: the command line", func(t *testing.T) {
-		c := routerCmd(t, "--gateway-latency", "9")
-		got := reconcileReplayRouter(c, nil)
+	t.Run("no header: the scenario and the command line", func(t *testing.T) {
+		scenarioRouter, scenarioStatesRouter = routerInputs{}, false
+		got := reconcileReplayRouter(routerCmd(t, "--gateway-latency", "9"), nil)
 		if got.GatewayLatencyUs != 9 || !reflect.DeepEqual(got.EPPFlags, llmd.DefaultEPPFlags()) {
 			t.Errorf("got %+v, want the command line's router (gateway latency 9, default EPP flags)", got)
 		}
 	})
-	t.Run("header and no router flags: the header", func(t *testing.T) {
+	t.Run("header, a scenario stating no router and no flags: the header", func(t *testing.T) {
+		scenarioRouter, scenarioStatesRouter = routerInputs{}, false
 		if got := reconcileReplayRouter(routerCmd(t), recorded); !reflect.DeepEqual(got, fromHeader) {
 			t.Errorf("got %+v, want the recorded router %+v", got, fromHeader)
 		}
 	})
-	t.Run("header and router flags restating it: the header", func(t *testing.T) {
-		flags := writeRouterFile(t, "flags.yaml", "- --endpoint-selector=app=recorded\n- --config-text=recorded\n")
-		manifests := writeRouterFile(t, "pool.yaml", "kind: InferencePool\n")
-		c := routerCmd(t, "--epp-flags", flags, "--epp-manifests", manifests, "--pod-labels", "app=recorded",
-			"--gateway-latency", "100", "--epp-scrape-jitter", "7")
+	t.Run("header, a scenario and flags restating it: the header", func(t *testing.T) {
+		scenarioRouter = routerInputs{EPPFlags: recorded.EPPFlags, Manifests: recorded.Manifests, PodLabels: recorded.PodLabels}
+		scenarioStatesRouter = true
+		c := routerCmd(t, "--gateway-latency", "100", "--epp-scrape-jitter", "7")
 		if got := reconcileReplayRouter(c, recorded); !reflect.DeepEqual(got, fromHeader) {
 			t.Errorf("got %+v, want the recorded router %+v", got, fromHeader)
 		}
 	})
 }
 
-// A replay whose router flags contradict the router its trace was recorded with is refused
-// (logrus.Fatalf, exit 1), never silently preferred over the header (INV-13).
-func TestReconcileReplayRouter_ContradictingFlagsFatal(t *testing.T) {
-	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
-		c := &cobra.Command{}
-		registerRouterFlags(c)
-		if err := c.ParseFlags([]string{"--gateway-latency", "5"}); err != nil {
-			os.Exit(2)
-		}
-		reconcileReplayRouter(c, &workload.TraceRouterConfig{EPPFlags: llmd.DefaultEPPFlags(), GatewayLatencyUs: 100})
+// A replay whose router flags, or whose scenario's router, contradicts the router its trace was
+// recorded with is refused (logrus.Fatalf, exit 1), never silently preferred over the header
+// (INV-13).
+func TestReconcileReplayRouter_ContradictionsFatal(t *testing.T) {
+	recorded := &workload.TraceRouterConfig{EPPFlags: llmd.DefaultEPPFlags(), GatewayLatencyUs: 100}
+	legs := map[string]struct {
+		set  func()
+		args []string
+		want string
+	}{
+		"flag": {func() {}, []string{"--gateway-latency", "5"}, "router flags differ"},
+		"scenario": {func() {
+			scenarioRouter = routerInputs{EPPFlags: llmd.DefaultEPPFlags(), PodLabels: map[string]string{"app": "vllm"}}
+			scenarioStatesRouter = true
+		}, nil, "differs from the router the trace was recorded with"},
+	}
+	if leg, ok := legs[os.Getenv("BLIS_RECONCILE_LEG")]; ok {
+		leg.set()
+		reconcileReplayRouter(routerCmd(t, leg.args...), recorded)
 		os.Exit(0) // must Fatalf before here
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestReconcileReplayRouter_ContradictingFlagsFatal$")
-	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
-	out, err := cmd.CombinedOutput()
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-		t.Fatalf("want exit 1 (logrus.Fatalf) for contradicting router flags, got %v:\n%s", err, out)
-	}
-	if !strings.Contains(string(out), "router flags differ") {
-		t.Errorf("the refusal must name the contradiction, got:\n%s", out)
+	for name, leg := range legs {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestReconcileReplayRouter_ContradictionsFatal$")
+		cmd.Env = append(os.Environ(), "BLIS_RECONCILE_LEG="+name)
+		out, err := cmd.CombinedOutput()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			t.Errorf("%s: want exit 1 (logrus.Fatalf) for a contradicting replay, got %v:\n%s", name, err, out)
+			continue
+		}
+		if !strings.Contains(string(out), leg.want) {
+			t.Errorf("%s: the refusal must name the contradiction, got:\n%s", name, out)
+		}
 	}
 }
 
@@ -261,9 +223,15 @@ func TestRunAndReplay_BLISRoutingFlagsRemoved(t *testing.T) {
 				t.Errorf("%s still registers --%s", c.Name(), name)
 			}
 		}
-		for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels", "gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
+		for _, name := range []string{"gateway-latency", "epp-scrape-jitter", "kv-event-delay"} {
 			if c.Flags().Lookup(name) == nil {
-				t.Errorf("%s must register the router input --%s", c.Name(), name)
+				t.Errorf("%s must register the router environment flag --%s", c.Name(), name)
+			}
+		}
+		// The router's deployment inputs are the scenario's router block and pool labels.
+		for _, name := range []string{"epp-flags", "epp-config", "epp-manifests", "pod-labels"} {
+			if c.Flags().Lookup(name) != nil {
+				t.Errorf("%s still registers --%s; the scenario states the router (#1950)", c.Name(), name)
 			}
 		}
 	}
@@ -320,20 +288,21 @@ flowControl:
   defaultRequestTTL: 2s
 `
 
-// TestINV13_RunReplayParity_LLMDRouterInputs: a run that sets every router input (EPP flags in
-// pool mode, an EndpointPickerConfig with flow control, manifests, pod labels, gateway latency,
-// scrape jitter) exports them in its trace header, and a replay given no router flags reproduces
-// the run byte for byte.
+// TestINV13_RunReplayParity_LLMDRouterInputs: a run whose scenario states every router input (a
+// router block with EPP flags in pool mode, an EndpointPickerConfig with flow control and
+// manifests, and pool labels) and that sets the environment (gateway latency, scrape jitter)
+// exports them in its trace header, and a replay given the same scenario and no router flags
+// reproduces the run byte for byte.
 func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
-	flagsFile := writeRouterFile(t, "epp-flags.yaml", "- --pool-name=vllm\n- --refresh-metrics-interval=20ms\n")
-	cfg := writeRouterFile(t, "epp-config.yaml", inv13Config)
-	manifests := writeRouterFile(t, "pool.yaml", inv13Manifests)
+	dir := colocatedRouterVariant(t, "router:\n  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]\n"+
+		"  endpoint_picker_config: epp-config.yaml\n  manifests: [pool.yaml]\n", "      app: vllm\n",
+		map[string]string{"epp-config.yaml": writeRouterFile(t, "epp-config.yaml", inv13Config),
+			"pool.yaml": writeRouterFile(t, "pool.yaml", inv13Manifests)})
 	prefix := filepath.Join(t.TempDir(), "trace")
 	horizon := "600000000"
-	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
 		"--rate", "2000", "--num-requests", "1500", "--seed", "7", "--horizon", horizon,
-		"--epp-flags", flagsFile, "--epp-config", cfg, "--epp-manifests", manifests,
-		"--pod-labels", "app=vllm", "--gateway-latency", "300", "--epp-scrape-jitter", "5000",
+		"--gateway-latency", "300", "--epp-scrape-jitter", "5000",
 		"--trace-output", prefix)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
@@ -355,7 +324,7 @@ func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
 	}
 	// No --seed: the router seed comes from the header, and the router is shown canonical prompts,
 	// so the replay's own placeholder tokens do not matter.
-	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
 		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
@@ -389,38 +358,15 @@ func TestINV13_RunReplayParity_PrefixSharingWorkload(t *testing.T) {
 	}
 	// Non-vacuity: on this workload the default router's placement depends on prompt content
 	// (its prefix-cache scorer), so a content-blind configuration routes differently.
-	loadOnly, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
-		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon,
-		"--epp-config", "../examples/llm-d/load-only.yaml")
+	loadOnlyDir := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: load-only.yaml\n", "",
+		map[string]string{"load-only.yaml": "../examples/llm-d/load-only.yaml"})
+	loadOnly, stderr, err := runKernelCLI(t, "run", "--scenarios", loadOnlyDir, "--scenario", "variant.yaml", "--num-instances", "4",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("load-only run: %v\n%s", err, lastLines(stderr, 5))
 	}
 	if loadOnly == runOut {
 		t.Error("the default and load-only configurations route this workload identically; the parity check does not exercise content-sensitive routing")
-	}
-}
-
-// TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved: --pod-labels accepts role-scoped
-// labels; an unknown role, or an explicit llm-d.ai/role (which comes from the scenario's pools), is
-// refused.
-func TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved(t *testing.T) {
-	saved := podLabelPairs
-	t.Cleanup(func() { podLabelPairs = saved })
-	podLabelPairs = []string{"app=vllm", "decode:app=vllm-decode"}
-	if got := resolveRouterInputs().PodLabels; !reflect.DeepEqual(got, map[string]string{"app": "vllm", "decode:app": "vllm-decode"}) {
-		t.Errorf("got %v", got)
-	}
-	for _, bad := range []string{"llm-d.ai/role=decode", "gpu:app=x", "decode:llm-d.ai/role=prefill"} {
-		if os.Getenv("BLIS_POD_LABELS_LEG") == bad {
-			podLabelPairs = []string{bad}
-			resolveRouterInputs()
-			return
-		}
-		cmd := exec.Command(os.Args[0], "-test.run=^TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved$")
-		cmd.Env = append(os.Environ(), "BLIS_POD_LABELS_LEG="+bad)
-		if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "--pod-labels") {
-			t.Errorf("--pod-labels %s: want a fatal refusal, got err=%v\n%s", bad, err, out)
-		}
 	}
 }
 
@@ -430,9 +376,11 @@ func TestResolveRouterInputs_PodLabelsAreScopedAndRoleIsReserved(t *testing.T) {
 func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	horizon := "9223372036854775807"
-	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+	dir := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: precise.yaml\n", "",
+		map[string]string{"precise.yaml": "testdata/epp/precise.yaml"})
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "4",
 		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--horizon", horizon,
-		"--epp-config", "testdata/epp/precise.yaml", "--kv-event-delay", "3000", "--trace-output", prefix)
+		"--kv-event-delay", "3000", "--trace-output", prefix)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
@@ -443,7 +391,7 @@ func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
 	if !strings.Contains(string(header), "kv_event_delay_us: 3000") {
 		t.Errorf("trace header does not record the KV event delay")
 	}
-	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "4",
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "4",
 		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
@@ -460,13 +408,15 @@ func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
 func TestINV13_RunReplayParity_RequestTTL(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	horizon := "9223372036854775807"
-	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+	dir := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: edf.yaml\n", "",
+		map[string]string{"edf.yaml": "testdata/epp/edf.yaml"})
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
 		"--workload-spec", "testdata/request-ttl-workload.yaml", "--seed", "1", "--horizon", horizon,
-		"--epp-config", "testdata/epp/edf.yaml", "--trace-output", prefix)
+		"--trace-output", prefix)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
-	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
 		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
@@ -482,17 +432,16 @@ func TestINV13_RunReplayParity_RequestTTL(t *testing.T) {
 func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	horizon := "9223372036854775807"
-	router := []string{"--epp-config", "testdata/epp/eviction.yaml", "--epp-manifests", "testdata/epp/objectives.yaml",
-		"--epp-flags", "testdata/epp/pool-flags.yaml", "--pod-labels", "app=vllm"}
-	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
-		"--workload-spec", "testdata/eviction-workload.yaml", "--seed", "1", "--horizon", horizon, "--trace-output", prefix}, router...)...)
+	dir := colocatedRouterVariant(t, evictionRouter("eviction.yaml"), "      app: vllm\n", evictionFiles("eviction.yaml"))
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
+		"--workload-spec", "testdata/eviction-workload.yaml", "--seed", "1", "--horizon", horizon, "--trace-output", prefix)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
 	if !strings.Contains(runOut, "Gateway Evicted (in-flight): ") {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
 	}
-	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", pdScenarios, "--scenario", capScenario, "--num-instances", "2",
+	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
 		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", horizon)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
@@ -502,23 +451,55 @@ func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
 	}
 }
 
+// evictionRouter is a router block in pool mode (--pool-name=vllm, testdata/epp/objectives.yaml's pool)
+// naming the EndpointPickerConfig cfg and the critical/sheddable objectives.
+func evictionRouter(cfg string) string {
+	return "router:\n  epp_flags: [--pool-name=vllm]\n  endpoint_picker_config: " + cfg + "\n  manifests: [objectives.yaml]\n"
+}
+
+// evictionFiles are the files evictionRouter names, copied from testdata/epp.
+func evictionFiles(cfg string) map[string]string {
+	return map[string]string{cfg: "testdata/epp/" + cfg, "objectives.yaml": "testdata/epp/objectives.yaml"}
+}
+
+// pdRouterVariant is the committed 3P1D scenario with its router block replaced by router and each
+// pool given labels (YAML lines indented under the pool; "" for none).
+func pdRouterVariant(t *testing.T, router, prefillLabels, decodeLabels string, files map[string]string) string {
+	t.Helper()
+	edits := []string{"router:\n  endpoint_picker_config: " + pdAlwaysEPPConfig + "\n", ""}
+	if prefillLabels != "" {
+		edits = append(edits, "  - role: prefill\n    nodes: 3\n", "  - role: prefill\n    nodes: 3\n    labels:\n"+prefillLabels)
+	}
+	if decodeLabels != "" {
+		edits = append(edits, "  - role: decode\n    nodes: 1\n", "  - role: decode\n    nodes: 1\n    labels:\n"+decodeLabels)
+	}
+	return routerVariant(t, filepath.Join(pdScenarios, "glm-5-h200-3p1d-ib.yaml"), router, files, edits...)
+}
+
 // TestINV13_RunReplayParity_InFlightEvictionDisaggregated: every request disaggregated, under flow
 // control with in-flight eviction; disaggregated victims are revoked at their stage, and the
 // replay reproduces the run byte for byte.
 func TestINV13_RunReplayParity_InFlightEvictionDisaggregated(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	horizon := "9223372036854775807"
-	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--num-instances", "4",
+	// Per-pool labels: both pools carry the InferencePool's selector label, and each its own tier.
+	dir := pdRouterVariant(t, evictionRouter("pd-eviction.yaml"), "      app: vllm\n      tier: fast\n",
+		"      app: vllm\n      tier: slow\n", evictionFiles("pd-eviction.yaml"))
+	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "4",
 		"--prefill-instances", "3", "--decode-instances", "1", "--horizon", horizon}
-	router := []string{"--epp-config", "testdata/epp/pd-eviction.yaml", "--epp-manifests", "testdata/epp/objectives.yaml",
-		"--epp-flags", "testdata/epp/pool-flags.yaml", "--pod-labels", "app=vllm"}
-	runOut, stderr, err := runKernelCLI(t, append(append([]string{"run", "--workload-spec", "testdata/eviction-workload.yaml",
-		"--seed", "1", "--trace-output", prefix}, common...), router...)...)
+	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--workload-spec", "testdata/eviction-workload.yaml",
+		"--seed", "1", "--trace-output", prefix}, common...)...)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
 	if !strings.Contains(runOut, "Gateway Evicted (in-flight): ") {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
+	}
+	header := readFile(t, prefix+".yaml")
+	for _, want := range []string{"app: vllm", "prefill:tier: fast", "decode:tier: slow", "--pool-name=vllm", "kind: InferenceObjective"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("trace header does not record the scenario's router input %q", want)
+		}
 	}
 	replayOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, common...)...)
 	if err != nil {

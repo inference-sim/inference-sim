@@ -17,43 +17,60 @@ For instance-level request ordering (the engine's own scheduler), see
 [Scheduling & Priority](scheduling.md).
 
 ```bash
-# The router's built-in configuration over four instances
+# The router's built-in configuration over four instances (the scenario states no router)
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
 
-# A real deployment's router configuration, unchanged
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500 \
-  --epp-config epp-config.yaml --epp-flags epp-flags.yaml --epp-manifests inferencepool.yaml
+# A real deployment's router configuration, unchanged, named by the scenario's router block
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
+  --scenarios examples/llm-d/scenarios \
+  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
 ```
 
 ## The router's inputs
 
-| Input | CLI flag | What it is |
+The router's inputs are a deployment property, so the scenario states them, as `parallel:`
+states the tensor-parallel width: the deployment's `router:` block and each pool's `labels`
+(blis-schemas `spec/deployment`). There are no router flags for them; `--epp-flags`,
+`--epp-config`, `--epp-manifests` and `--pod-labels` were removed, as `--tp` was, and are
+refused as unknown flags.
+
+```yaml
+kind: Deployment
+name: my-deployment
+pools:
+  - role: colocated
+    nodes: 4
+    labels: {app: vllm}          # labels on this pool's model-server pods
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine: {...}
+router:
+  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]
+  endpoint_picker_config: epp-config.yaml   # relative to this scenario file
+  manifests: [inferencepool.yaml]
+```
+
+| Input | Scenario field | What it is |
 |---|---|---|
-| EPP flags | `--epp-flags FILE` | The router's command-line flags, verbatim: a YAML list of flags, or a map of flag name to value as in the router Helm chart's `epp.flags`. They select the pool (`--pool-name` or `--endpoint-selector`) and set the router's own knobs (`--refresh-metrics-interval`, `--metrics-staleness-threshold`, `--feature-gates`, ...). |
-| EndpointPickerConfig | `--epp-config FILE` | The router configuration, as the EPP reads it with `--config-file`. |
-| Manifests | `--epp-manifests FILE[,FILE...]` | Kubernetes YAML. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects through its own reconcilers; other kinds (the model servers' Deployments, Services, ...) are ignored. |
-| Pod labels | `--pod-labels [role:]k=v[,...]` | Labels on the simulated model-server pods, so an `InferencePool` selector or a label filter from a real deployment matches. `k=v` labels every pod; `role:k=v` labels the pods of one P/D role (`prefill`, `decode`, `prefill-decode`, `encode`) and overrides an unscoped label with the same key. BLIS sets `llm-d.ai/role` from the scenario's pools (it cannot be given) and `llm-d.ai/inference-serving=true` on every pod. |
+| EPP flags | `router.epp_flags` | The router's command-line flags, verbatim, one entry per flag (a Helm chart's `epp.flags` rendered as `--name=value`). They select the pool (`--pool-name` or `--endpoint-selector`) and set the router's own knobs (`--refresh-metrics-interval`, `--metrics-staleness-threshold`, `--feature-gates`, ...). A `--config-file` flag is read relative to the scenario file. |
+| EndpointPickerConfig | `router.endpoint_picker_config` | The router configuration file, as the EPP reads it with `--config-file`. Naming it here and with an EPP `--config-file`/`--config-text` flag is refused. |
+| Manifests | `router.manifests` | Kubernetes YAML files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects through its own reconcilers; other kinds (the model servers' Deployments, Services, ...) are ignored. |
+| Pod labels | `pools[].labels` | Labels on the pool's simulated model-server pods, so an `InferencePool` selector or a label filter from a real deployment matches. A label every pool states with one value is on every pod; any other is on its own pool's pods only. BLIS sets `llm-d.ai/role` from each prefill and decode pool's role (blis-schemas refuses a pool label that contradicts it) and `llm-d.ai/inference-serving=true` on every pod. |
 
-Each input is parsed by the router's own code: the flags by the EPP's flag set, the
-configuration by its config loader, the manifests by its reconcilers. A value the real router
-rejects is rejected here with the router's message.
+Paths are relative to the scenario file's directory. A file that cannot be read is refused at
+startup, naming the scenario and the field. Each input is parsed by the router's own code: the
+flags by the EPP's flag set, the configuration by its config loader, the manifests by its
+reconcilers. A value the real router rejects is rejected here with the router's message.
+`examples/llm-d/scenarios/` holds scenarios that route with each configuration in
+`examples/llm-d/`.
 
-`blis run --trace-output` records all four inputs, inline, in the trace header, with the seed
-the router ran with, and `blis replay` routes with them; a router flag given to `replay` must
-match the header's. A replay therefore reproduces the run's routing whatever `--seed` it is given
-(INV-13).
-
-**Where the router configuration will live.** The router's inputs are a deployment property, so
-their home is the scenario: the deployment schema's `router:` block (`epp_flags`,
-`endpoint_picker_config`, `manifests`) and `pools[].labels` (blis-schemas branch `llm-d-r`),
-mirroring how `parallel:` replaced `--tp`. BLIS does not read them yet, because that schema
-release requires a latency-kernel release whose step prices differ from the pinned one, so the
-two move together in their own change. When it lands, the scenario is the only source of the
-router configuration and `--epp-flags`, `--epp-config`, `--epp-manifests` and `--pod-labels`
-are removed, as `--tp` was; a trace header keeps recording the inputs for replay. Until then the
-flags are the interim way in.
+`blis run --trace-output` records the resolved inputs, inline (the configuration's contents, not
+its path), in the trace header, with the seed the router ran with, and `blis replay` routes with
+them, so a replay reproduces the run's routing whatever `--seed` it is given (INV-13). A replay
+whose scenario states no router replays the recorded one. A replay whose scenario does state one
+(a router block or pool labels) must state the recorded router, and a router environment flag
+(below) given to `replay` must match the header's; otherwise the replay is refused, never
+silently preferred over the header.
 
 **Defaults.** With no EPP flags, BLIS runs a standalone router whose pool is every simulated
 pod: `--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`. With

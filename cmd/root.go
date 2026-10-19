@@ -552,6 +552,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
 	scenarioScheduler, scenarioPreemption, scenarioOverrides = "", "", nil
 	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
+	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
 	missing := []string{}
 	if kernelScenario == "" {
 		missing = append(missing, "--scenario")
@@ -588,6 +589,8 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 			"from the scenario", kernelScenario)
 	}
 	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
+	// The router's inputs are the deployment's too: its router block and pool labels.
+	adoptScenarioRouter(shape)
 	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
 		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
 			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",

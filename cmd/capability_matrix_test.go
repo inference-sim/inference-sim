@@ -381,7 +381,7 @@ func capVariant(t *testing.T, file string, edits ...string) string {
 
 // pdBase is the committed 3P1D scenario's topology, with dir/file naming the scenario.
 func pdBase(dir, file string) []string {
-	return []string{"--scenarios", dir, "--scenario", file, "--epp-config", pdAlwaysEPPConfig, "--num-instances", "4",
+	return []string{"--scenarios", dir, "--scenario", file, "--num-instances", "4",
 		"--prefill-instances", "3", "--decode-instances", "1", "--seed", "11", "--horizon", "900000000"}
 }
 
@@ -496,14 +496,22 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		if err := runConvertWeka(wekaSessions(t, 8), weka, workload.WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1}); err != nil {
 			t.Fatal(err)
 		}
-		replay := func(prefix string, routing ...string) (capOut, []capRequest) {
+		replay := func(prefix string, scenarios ...string) (capOut, []capRequest) {
+			args := colocated(4)
+			if len(scenarios) > 0 { // a scenario directory stating the router, in place of pdScenarios
+				args = with([]string{"--scenarios", scenarios[0], "--scenario", "variant.yaml"}, args[4:]...)
+			}
 			return capRunRows(t, append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv",
-				"--session-mode", "closed-loop"}, with(colocated(4), routing...)...)...)
+				"--session-mode", "closed-loop"}, args...)...)
 		}
-		// The two routers are llm-d EndpointPickerConfigs: one that scores load alone, one that
-		// also scores each endpoint's cached prefix.
-		rr, rrRows := replay(weka, "--epp-config", capFile(t, "load-only.yaml", capLoadOnlyEPPConfig))
-		pa, paRows := replay(weka, "--epp-config", capFile(t, "prefix-aware.yaml", capPrefixAwareEPPConfig))
+		// The two routers are llm-d EndpointPickerConfigs, each named by its scenario's router
+		// block: one that scores load alone, one that also scores each endpoint's cached prefix.
+		routed := func(name, cfg string) string {
+			return colocatedRouterVariant(t, "router:\n  endpoint_picker_config: "+name+"\n", "",
+				map[string]string{name: capFile(t, name, cfg)})
+		}
+		rr, rrRows := replay(weka, routed("load-only.yaml", capLoadOnlyEPPConfig))
+		pa, paRows := replay(weka, routed("prefix-aware.yaml", capPrefixAwareEPPConfig))
 		rr.conserves(t, 24)
 		pa.conserves(t, 24)
 		spread := func(rows []capRequest) int { // sessions served by more than one instance

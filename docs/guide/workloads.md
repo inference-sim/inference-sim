@@ -99,10 +99,9 @@ clients:
 Run with a prefix-aware router configuration to maximize cache reuse:
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 4 --workload-spec rag.yaml \
-  --epp-config examples/llm-d/prefix-affinity.yaml
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 4 --workload-spec rag.yaml
 ```
 
 ### Batch / Offline Processing

@@ -1,6 +1,7 @@
 # An InferencePool selecting every simulated model-server pod, and one InferenceObjective
-# per BLIS SLO class, at the priorities of BLIS's engine SLO priority map. Pass it with
-# --epp-manifests and select the pool with the EPP flags in examples/llm-d/pool-flags.yaml.
+# per BLIS SLO class, at the priorities of BLIS's engine SLO priority map. A scenario names it
+# in its router block's manifests and selects the pool with --pool-name=blis-pool
+# --pool-namespace=default in epp_flags (examples/llm-d/scenarios/*-inferencepool.yaml).
 # Shapes from llm-d-router deploy/components/inference-gateway/inference-pools.yaml and
 # config/manifests/inferenceobjective.yaml (here as llm-d.ai/v1; llm-d.ai/v1alpha2 is read too).
 apiVersion: inference.networking.k8s.io/v1

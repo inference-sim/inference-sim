@@ -32,7 +32,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 One canonical form per command. `--help` and the guides carry the full flag surface — by home:
 
-- routing, admission, flow control: the embedded llm-d router (`--epp-config`/`--epp-flags`/`--epp-manifests`) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
+- routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
 - KV-offload (`--kv-offload-config`) → `docs/guide/kv-offload-calibration.md`
 - closed-loop/corpus sessions, `replay` (`observe`/`calibrate` are deprecated, #1901) → `docs/guide/observe-replay-calibrate.md`
