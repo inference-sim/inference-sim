@@ -57,29 +57,34 @@ outcome mapping.
 - `RoundTrip` serves `/metrics` (each engine's published vLLM series) and
   `/v1/completions/render` (the prompt's token IDs).
 
-## Rebasing onto a new llm-d release
+## Updating to a new llm-d release
 
-The fork is a permanent patch set on llm-d-router release tags; nothing is upstreamed.
+The fork is a permanent patch set on llm-d-router release tags; nothing is upstreamed. A
+release is **merged** into `llm-d-r`, never rebased: BLIS pins a commit on `llm-d-r`, and a
+rebase would rewrite the hashes and orphan that pin.
 
-1. Fetch upstream and rebase `llm-d-r` onto the release tag:
-   `git fetch upstream --tags && git rebase --onto vX.Y.Z <old-base> llm-d-r`.
-2. Resolve conflicts. Most patches are a few lines per file; most of the seam is in new files
-   that do not conflict.
+1. Bring the fork's `main` to the release tag (a fast-forward):
+   `git fetch upstream --tags && git push <org-remote> 'vX.Y.Z^{commit}:refs/heads/main'`.
+2. On a branch from `llm-d-r`, merge the tag: `git merge --no-ff vX.Y.Z`. Resolve conflicts.
+   Most patches are a few lines per file; most of the seam is in new files that do not
+   conflict.
 3. Run `go run ./hack/hosting-lint`. A failure names each file where the release added a
    direct clock read, timer, deadline, goroutine or random draw. Route each one through the
    runtime, or, if it cannot affect a routing decision (a metric, a log), annotate the line
    `//blis:wallclock-ok <reason>` or regenerate the baseline (`-update`) on review.
-4. Update `upstream_base` in `hack/hosting-lint/budget.txt` and run
+4. Update `upstream_base` in `hack/hosting-lint/budget.txt` to the release and run
    `go run ./hack/hosting-lint -budget`.
-5. Run the fork's tests, push, then in BLIS run `go get` on the new pseudo-version (the
-   `replace` line) and `go test ./sim/llmd/...`. New plugin types in the release are refused by
-   BLIS until they are audited and added to `sim/llmd/support.go`'s supported list.
+5. Run the fork's tests, and BLIS's against the branch (a local `replace`). Open a PR into
+   `llm-d-r` and merge it with **a merge commit**. Then, in BLIS, point the `replace` at that
+   merge commit's pseudo-version and run `go test ./sim/llmd/...`. New plugin types in the
+   release are refused by BLIS until they are audited and added to `sim/llmd/support.go`'s
+   supported list.
 
-## Keeping the rebase cheap
+## Keeping each update cheap
 
 - **The patch budget.** `hack/hosting-lint/budget.txt` caps the lines the fork may change in
   files it shares with upstream (new files are free). CI fails when a change exceeds it, so a
-  growing rebase cost is visible on the change that causes it. Prefer new files, and wrappers
+  growing update cost is visible on the change that causes it. Prefer new files, and wrappers
   in new files, over edits to upstream code.
 - **The lint.** It is the main defense against a release silently reintroducing wall-clock or
   concurrency on a router path.

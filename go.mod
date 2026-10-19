@@ -125,4 +125,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v0.0.0-20261016013134-805cd61f4acc
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6
