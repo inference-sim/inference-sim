@@ -124,7 +124,9 @@ type Simulator struct {
 	// busyUntil is the end time of the most recently executed step: Step(now)
 	// executes the whole step at once, but the engine is busy until
 	// now + currStepAdvance. A step scheduled on an idle engine (stepEvent == nil)
-	// must not start before it (one step at a time, INV-5; #1964). See nextStepStart.
+	// must not start before it: the engine runs one step at a time, so a request
+	// cannot be scheduled into a step that began before the request's step
+	// could (causality, #1964). See nextStepStart.
 	busyUntil int64
 	stepCount int
 	// Cumulative count of idle wakes superseded by scheduleStepBy — the one path whose
@@ -564,12 +566,14 @@ func (sim *Simulator) scheduleStepBy(t int64) {
 }
 
 // nextStepStart returns the start time for a step newly scheduled at t on an
-// idle engine: max(t, busyUntil). The step that drained the engine may still be
-// executing at t; a request arriving mid-step joins the next step, which cannot
-// begin before the current one ends (vLLM's engine core runs one step at a time;
-// INV-5 causality, #1964).
+// idle engine: max(t, busyUntil, Clock). The step that drained the engine may
+// still be executing at t; a request arriving mid-step joins the next step, which
+// cannot begin before the current one ends (vLLM's engine core runs one step at a
+// time; #1964). The Clock floor keeps a step from being scheduled in the past
+// (INV-3) even if a caller passes a stale t; every in-tree caller already passes
+// t >= Clock, so it never moves a step today.
 func (sim *Simulator) nextStepStart(t int64) int64 {
-	return max(t, sim.busyUntil)
+	return max(t, sim.busyUntil, sim.Clock)
 }
 
 // idleDeferralWake returns the next tick at which a deferred request can change
@@ -752,8 +756,9 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	}
 
 	// Trigger StepEvent if idle (work-conserving: INV-8).
-	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
-	// at a stale instance time that precedes the cluster time when it was injected.
+	// Start at max(sim.Clock, clusterTime) so the decode sub-request is not processed
+	// at a stale instance time that precedes the cluster time when it was injected;
+	// scheduleStepBy floors that at the end of the step still executing (nextStepStart, #1964).
 	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
 		sim.scheduleStepBy(max(sim.Clock, clusterTime))
 	}
