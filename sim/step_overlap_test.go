@@ -182,3 +182,117 @@ func TestScheduleStepIfIdle_StaleTime_NeverSchedulesInThePast(t *testing.T) {
 		t.Errorf("step scheduled at %d, behind the clock %d (INV-3)", ev.Timestamp(), clock)
 	}
 }
+
+// TestStep_NoOverlap_ArrivalDuringDrainingStepSupersedesIdleWake verifies #1964
+// composes with #1886's idle wake:
+//
+// GIVEN an engine whose last running request finishes in a step that leaves every
+// waiting request deferred on a KV fetch, so scheduleNextStep sleeps to a far idle wake
+// WHEN a new request arrives while that draining step is still executing
+// THEN the arrival supersedes the wake (it precedes it), but its step starts at
+// max(arrival, busyUntil) — the draining step's end — never mid-step; steps never
+// overlap; and the deferred request is still admitted at its own fetch-completion tick.
+func TestStep_NoOverlap_ArrivalDuringDrainingStepSupersedesIdleWake(t *testing.T) {
+	const (
+		stepTicks = int64(1000)
+		ready     = int64(1_000_000)
+	)
+	run := func(withB bool, arrB int64) (*Simulator, *timedDeferKV, []stepSpan) {
+		kv := newTimedDeferKV(map[string]int64{"A": ready})
+		cfg := newTestSimConfig()
+		lat := &recordingLatency{LatencyModel: &fixedStepModel{stepTime: stepTicks}}
+		s, err := NewSimulator(cfg, kv, lat)
+		if err != nil {
+			t.Fatalf("NewSimulator: %v", err)
+		}
+		s.InjectArrival(arriving("C", 0)) // runnable: keeps the engine busy, then drains it
+		s.InjectArrival(arriving("A", 0)) // deferred until ready
+		if withB {
+			s.InjectArrival(arriving("B", arrB))
+		}
+		return s, kv, runAndRecordSteps(s, lat)
+	}
+
+	// Control run (no B) locates the draining step: the last step before the idle gap.
+	_, _, ctl := run(false, 0)
+	drain := -1
+	for k := 0; k+1 < len(ctl); k++ {
+		if ctl[k+1].start > ctl[k].end {
+			drain = k
+			break
+		}
+	}
+	if drain < 0 {
+		t.Fatalf("setup: no idle gap in the control run, so no idle wake was taken: %v", ctl)
+	}
+	d := ctl[drain]
+	arrB := d.start + stepTicks/2 // strictly inside the draining step
+
+	s, kv, spans := run(true, arrB)
+	if got := s.Metrics.CompletedRequests; got != 3 {
+		t.Fatalf("all three requests must complete (INV-1), completed=%d", got)
+	}
+	if got := s.IdleWakesSuperseded(); got != 1 {
+		t.Fatalf("non-vacuity: B's arrival must supersede the pending idle wake exactly once, got %d", got)
+	}
+	if got := kv.admitAt["B"]; got != d.end {
+		t.Errorf("B arrived at %d inside the draining step [%d, %d): admitted at %d, want %d = "+
+			"max(arrival, busyUntil)", arrB, d.start, d.end, got, d.end)
+	}
+	if got := kv.admitAt["A"]; got != ready {
+		t.Errorf("A must still be admitted at its fetch-completion tick %d, got %d", ready, got)
+	}
+	for k := 1; k < len(spans); k++ {
+		if spans[k].start < spans[k-1].end {
+			t.Errorf("step overlap: step %d starts at %d, before step %d ends at %d",
+				k, spans[k].start, k-1, spans[k-1].end)
+		}
+	}
+}
+
+// TestScheduleStepBy_ComparesFlooredStartWithPendingWake pins the supersession
+// decision on the floored start nextStepStart(t), not the raw arrival time t:
+// a pending idle wake is superseded only when the step the arrival can actually start
+// precedes it. Superseding a wake the floored start does not precede would cancel a
+// step that was due and replace it with a LATER one.
+//
+// The first case is defense-in-depth (scheduleNextStep only ever sleeps to a wake past
+// the step's end, so in-tree a wake never sits at or before busyUntil); the decision is
+// driven directly so the comparison is pinned regardless.
+func TestScheduleStepBy_ComparesFlooredStartWithPendingWake(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		t, busy, wake int64
+		wantTime      int64
+		wantSupersede bool
+	}{
+		{"wake between arrival and busyUntil: keep the wake", 1000, 2000, 1500, 1500, false},
+		{"wake at busyUntil: keep the wake", 1000, 2000, 2000, 2000, false},
+		{"wake after busyUntil: supersede, start at busyUntil", 1000, 2000, 3000, 2000, true},
+		{"engine free, wake later: supersede, start at arrival", 2500, 2000, 3000, 2500, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newIdleWakeSim(t, map[string]int64{"A": 1_000_000}, []string{"A"}, "A")
+			s.busyUntil = tc.busy
+			wake := &StepEvent{time: tc.wake, idleWake: true}
+			s.Schedule(wake)
+			s.stepEvent = wake
+
+			s.scheduleStepBy(tc.t)
+
+			step, ok := s.stepEvent.(*StepEvent)
+			if !ok {
+				t.Fatalf("a step must stay pending (INV-8), got %T", s.stepEvent)
+			}
+			if step.time != tc.wantTime {
+				t.Errorf("pending step at %d, want %d", step.time, tc.wantTime)
+			}
+			if wake.cancelled != tc.wantSupersede || (s.IdleWakesSuperseded() == 1) != tc.wantSupersede {
+				t.Errorf("superseded = %v (counter %d), want %v", wake.cancelled, s.IdleWakesSuperseded(), tc.wantSupersede)
+			}
+			if step != wake && step.time < tc.busy {
+				t.Errorf("new step at %d starts before busyUntil %d (#1964)", step.time, tc.busy)
+			}
+		})
+	}
+}
