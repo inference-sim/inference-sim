@@ -1,0 +1,5086 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Result: BLIS on blis-latency-kernel, against AISimulate - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#result-blis-on-blis-latency-kernel-against-aisimulate" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Result: BLIS on blis-latency-kernel, against AISimulate
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../validation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Validation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../methodology/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Methodology
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admission Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Kernel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics & Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-offload-calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Hit-Rate Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/archon-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/skills-and-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills & Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../validation/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Validation
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Validation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/inferencex-agentic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InferenceX DSV4.1 Agentic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/inferencex-single-turn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InferenceX Single-Turn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/internal-deployments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal llm-d Deployments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/llm-d-prism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llm-d Prism
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../methodology/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Methodology
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Methodology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../contributing/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/cross-repo-changes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changes Across the BLIS Repositories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/automated-delivery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/external-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/rfc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFC Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/perspectives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Perspectives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archon
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/baseline-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Baseline Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/encode-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Encode Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/pr-review-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Review Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R23)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/archon-issue-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon Issue Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../blog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_2" id="__nav_10_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_3" id="__nav_10_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is BLIS?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#current-standing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current standing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current standing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-moved-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What moved, and why
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-residuals-quantified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The residuals, quantified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#headline-superseded-2026-10-13-see-current-standing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headline (superseded 2026-10-13 -- see Current standing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#making-the-measurement-converge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Making the measurement converge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-comparison-is-verified-not-asserted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The comparison is verified, not asserted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-error-is-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the error is, measured
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-ruled-out-as-the-cause" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is ruled out as the cause
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-remains-untested" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What remains untested
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-ceiling-on-what-this-comparison-can-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The ceiling on what this comparison can show
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-was-ruled-out-as-the-cause-of-the-minimax-deficit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What was ruled out as the cause of the minimax deficit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-residual-actually-is-decomposed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the residual actually is, decomposed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-expert-rate-hypothesis-tested-and-rejected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The expert-rate hypothesis, tested and rejected
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-confirmed-over-prediction-in-decode-attention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A confirmed over-prediction in decode attention
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#correction-the-attention-over-prediction-is-not-family-wide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correction: the attention over-prediction is not family-wide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-sliding-window-split-changed-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the sliding-window split changed, measured
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standing-under-the-previous-protocol-superseded-2026-10-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standing under the previous protocol (superseded 2026-10-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Standing under the previous protocol (superseded 2026-10-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-figure-moved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the figure moved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-remains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What remains
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-the-sign-and-what-it-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting the sign, and what it changed
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reporting the sign, and what it changed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-hypothesis-the-sign-killed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A hypothesis the sign killed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefill-attention-the-right-defect-the-wrong-regime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefill attention: the right defect, the wrong regime
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prefill attention: the right defect, the wrong regime">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-it-was-not-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why it was not fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#four-estimators-on-the-hopper-subset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Four estimators on the Hopper subset
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Four estimators on the Hopper subset">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-held-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is held fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-two-analytic-arms-fail-structurally-in-opposite-directions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two analytic arms fail structurally, in opposite directions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-this-comparison-does-not-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this comparison does not show
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-defect-in-bliss-own-kv-sizing-found-by-this-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A defect in BLIS's own KV sizing, found by this audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="result-blis-on-blis-latency-kernel-against-aisimulate">Result: BLIS on blis-latency-kernel, against AISimulate<a class="headerlink" href="#result-blis-on-blis-latency-kernel-against-aisimulate" title="Permanent link">&para;</a></h1>
+<p>Worktree-scoped experiment. In the headline comparison latency comes exclusively from
+<code>blis-latency-kernel</code>. BLIS's roofline and trained-physics backends were, when these runs were
+made, constructed only by <code>cmd/estimatorscore</code>, which scored them as additional columns on the
+subset they are calibrated for; they supply nothing to the figures below. Both backends and
+<code>cmd/estimatorscore</code> have since been removed, so those columns are historical.</p>
+<blockquote>
+<p><strong>Reading order.</strong> This document is chronological: it records what was measured when, including
+figures that a later measurement superseded. The live numbers are under
+<a href="#current-standing">Current standing</a>, scored by replaying the InferenceX benchmark's main phase
+from its own seed-0 vectors (<code>APPLES-TO-APPLES.md</code> says what that does and does not reproduce).
+Every section after it is dated history under earlier protocols and an earlier corpus
+extraction. Its first scored run, under "Headline", predates a change of error definition that
+moved the point count from 238 to 192 and AISimulate's own re-anchored figure from 7.15% to
+8.87%. It is kept because the path from it to the current number shows that no step was tuned.</p>
+</blockquote>
+<h2 id="current-standing">Current standing<a class="headerlink" href="#current-standing" title="Permanent link">&para;</a></h2>
+<p>Each point is the InferenceX benchmark client's main phase, replayed by <code>blis replay</code>:</p>
+<ul>
+<li>the <code>10*CONC</code> target lengths numpy drew at seed 0, in request order, which are verified per
+  point to be the lengths the client sent;</li>
+<li>gated at <code>CONC</code>;</li>
+<li>every run setting the measured engine passed carried into the scenario;</li>
+<li>on a prefix-caching point, run after the warm-up's state (request 0's prompt cached);</li>
+<li>scored with the client's own <code>mean_ttft</code> and <code>mean_tpot</code> definitions.</li>
+</ul>
+<p>What that does and does not reproduce is in <code>APPLES-TO-APPLES.md</code>, and the commands are in
+<code>REPRODUCE.md</code>. The figures below are printed by <code>cmd/metricscore -framework vllm</code> at
+<code>e4d76827</code>, as mean absolute error, BLIS / AISimulate / AIC on the same points:</p>
+<table>
+<thead>
+<tr>
+<th>tier</th>
+<th>sweeps</th>
+<th>n (shape / mape)</th>
+<th>TPOT shape</th>
+<th>TPOT mape</th>
+<th>TTFT shape</th>
+<th>TTFT mape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>STRICT</td>
+<td>0</td>
+<td>0</td>
+<td>--</td>
+<td>--</td>
+<td>--</td>
+<td>--</td>
+</tr>
+<tr>
+<td>MEASURED-OR-RESOLVED</td>
+<td>10</td>
+<td>52 / 62</td>
+<td>11.38 / 8.73 / 9.15</td>
+<td>16.79 / 19.85 / 19.08</td>
+<td>13.96 / 23.22 / 22.34</td>
+<td>23.47 / 42.96 / 23.77</td>
+</tr>
+<tr>
+<td>ALL (approximate)</td>
+<td>113</td>
+<td>460 / 573</td>
+<td>9.64 / 10.43 / 10.56</td>
+<td>15.04 / 15.39 / 15.71</td>
+<td>17.85 / 23.05 / 30.12</td>
+<td>25.30 / 37.86 / 36.66</td>
+</tr>
+</tbody>
+</table>
+<p>(TTFT n is 456 / 569 in ALL: four measured TTFT excursions are excluded for every arm.)</p>
+<p><strong>No sweep is STRICT.</strong> Every logged vLLM sweep falls short in one of two ways:</p>
+<ul>
+<li>it passed <code>max_cudagraph_capture_size</code>, which blis-schemas cannot express (298 of the 360
+  logged points); or</li>
+<li>it left an admission setting unpassed, so that setting runs at vLLM's resolved value rather than
+  a measured one.</li>
+</ul>
+<p>The 10 MEASURED-OR-RESOLVED sweeps, with the settings resolved on each (the scorer
+prints this list):</p>
+<table>
+<thead>
+<tr>
+<th>sweep</th>
+<th>resolved</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kimi-k2.5 b300 tp4 and tp8, 1k1k</td>
+<td>block_size, max_num_batched_tokens</td>
+</tr>
+<tr>
+<td>minimax-m2.5 b200 fp8 tp2 and tp4, 1k8k</td>
+<td>max_num_seqs, max_num_batched_tokens</td>
+</tr>
+<tr>
+<td>minimax-m2.5 h200 fp8 tp4, 1k1k and 8k1k</td>
+<td>block_size</td>
+</tr>
+<tr>
+<td>minimax-m2.5 h200 fp8 tp4, 1k8k</td>
+<td>max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching (on, vLLM's default)</td>
+</tr>
+<tr>
+<td>minimax-m2.5 h200 fp8 tp8, 1k1k, 1k8k and 8k1k</td>
+<td>max_num_seqs, max_num_batched_tokens, block_size</td>
+</tr>
+</tbody>
+</table>
+<p>minimax-m2.5 h200 fp8 tp4 1k8k entered the tier when the warm-up's state became reproduced: its
+2026-03-01 runs did not pass <code>--no-enable-prefix-caching</code>, so the engine cached prefixes, and each
+point is scored after request 0's prompt was cached.</p>
+<p><strong>On the headline tier, BLIS is behind on TPOT shape and ahead on the other three metrics.</strong> The
+whole TPOT-shape deficit comes from two sweeps on one deployment, minimax-m2.5-h200-fp8-vllm-tp4.
+BLIS's excess over AISimulate, summed over the tier's 52 points, is 137.7
+percentage points, made up as follows:</p>
+<ul>
+<li><strong>8k1k: +90.5.</strong> BLIS 16.42%, AISimulate 5.10%. BLIS over-predicts the rise in TPOT by +7.8% at
+  concurrency 4 and by +14.7% to +22.6% from concurrency 8 to 256.</li>
+<li><strong>1k8k: +47.9.</strong> BLIS 27.83%, AISimulate 15.86%. BLIS over-predicts the rise by +12.8% to +38.4%
+  from concurrency 8 to 64.</li>
+<li><strong>The other eight sweeps: -0.7</strong> together.</li>
+</ul>
+<p>Without these two sweeps the two models are level: 8.73% against 8.75% over the other 40 points.
+On TTFT level BLIS is biased low: its signed mean TTFT mape on the tier is <strong>-21.53%</strong>
+(AISimulate -42.96%, AIC -9.26%).</p>
+<p>ALL mixes approximate points in and is labelled accordingly. On it BLIS leads every metric.</p>
+<h3 id="what-moved-and-why">What moved, and why<a class="headerlink" href="#what-moved-and-why" title="Permanent link">&para;</a></h3>
+<p>The baseline is the scorer at <code>13c5b552</code>. It ran BLIS's Go-sampled lengths in <code>blis run</code>, as a
+<code>12*CONC</code> continuous pool; it took TPOT after a <code>2*CONC</code> cut and TTFT over all <code>12*CONC</code>; and it
+carried four run settings. The table below is over the 360 logged points. For each step, the move
+columns give median / p90 / max of <code>|log ratio|</code> of BLIS's prediction, and the four error columns
+give the resulting scores. TTFT excursions are not excluded here.</p>
+<table>
+<thead>
+<tr>
+<th>step</th>
+<th>TPOT moves</th>
+<th>TTFT moves</th>
+<th>TPOT shape</th>
+<th>TPOT mape</th>
+<th>TTFT shape</th>
+<th>TTFT mape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>before</td>
+<td></td>
+<td></td>
+<td>10.85</td>
+<td>13.55</td>
+<td>26.06</td>
+<td>30.11</td>
+</tr>
+<tr>
+<td>main phase only, client metric population, replay (same lengths)</td>
+<td>0.03 / 0.11 / 1.47%</td>
+<td>3.11 / 11.04 / 16.39%</td>
+<td>10.84</td>
+<td>13.55</td>
+<td>23.73</td>
+<td>28.31</td>
+</tr>
+<tr>
+<td>numpy seed-0 vectors instead of those Go draws</td>
+<td>0.07 / 0.29 / 0.45%</td>
+<td>0.40 / 1.68 / 6.19%</td>
+<td>10.82</td>
+<td>13.54</td>
+<td>23.72</td>
+<td>28.41</td>
+</tr>
+<tr>
+<td>max_model_len, gpu_memory_utilization, enable_expert_parallel carried</td>
+<td>under 0.01% on 332 points; up to 19.5%</td>
+<td>under 0.01% on 332 points; up to 37.4%</td>
+<td>10.60</td>
+<td>13.67</td>
+<td>23.73</td>
+<td>29.13</td>
+</tr>
+<tr>
+<td>concurrent commits by others to HEAD</td>
+<td>0</td>
+<td>0</td>
+<td>10.60</td>
+<td>13.67</td>
+<td>23.73</td>
+<td>29.13</td>
+</tr>
+<tr>
+<td>prefix-caching points scored after the warm-up's state (5 points)</td>
+<td>0 / 0 / 0.0016%</td>
+<td>0 / 0 / 1.70%</td>
+<td>10.60</td>
+<td>13.67</td>
+<td>23.72</td>
+<td>29.14</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Step 1: the protocol.</strong> This step kept each point's own <code>blis run</code> lengths (its first <code>10*CONC</code>
+generated requests) and changed only the protocol. The per-request TPOT formula is unchanged:
+<code>itl_ms</code> was already the client's <code>(latency - ttft)/(output_len - 1)</code>. What moved is which requests
+are averaged: the main phase alone, started against an empty queue, rather than the post-cut tail
+of a continuously refilled pool for TPOT and all 12x for TTFT. That raised TTFT by +4.5% on average
+and barely moved TPOT.</p>
+<p><strong>Step 2: the vectors.</strong> This step is the draw itself.</p>
+<p><strong>Step 3: the settings.</strong> This step moved 28 points, all on five minimax-m2.5 sweeps whose runs
+passed <code>--enable-expert-parallel</code> against scenarios that state it off.</p>
+<p><strong>Step 5: the warm-up.</strong> This step moved only the 5 logged prefix-caching points: minimax-m2.5
+h200 fp8 tp4 1k8k, whose 2026-03-01 runs did not pass <code>--no-enable-prefix-caching</code>. Scored after
+request 0's prompt was cached, their TTFT is 0.30% to 1.70% lower than from an empty engine, and
+their TPOT moves by at most 0.0016%. The same change brought the sweep into
+MEASURED-OR-RESOLVED.</p>
+<h3 id="the-residuals-quantified">The residuals, quantified<a class="headerlink" href="#the-residuals-quantified" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Warm-up.</strong> On a prefix-caching point, the scored main phase runs after the warm-up's state. The
+  cold run is printed beside it as information only. Over ALL's 218 such points (the 213
+  Llama-3.1-70B points, whose runs captured no log and so take vLLM's default of prefix caching
+  on, plus the 5 minimax points above), the scored figure lies a median 1.998% (at most 6.861%)
+  from the cold one on TTFT, and a median 0.0092% (at most 0.1508%) on TPOT. A drain-gated
+  two-phase trace is blis-schemas#56 / inference-sim#1926.</li>
+<li><strong>Sent prompt lengths.</strong> The client's prompt construction was reproduced at the run-date and
+  today's revision of each tokenizer (<code>testdata/inferencex-workloads/prompt-lengths.json</code>: 360
+  points, 7 pinned revisions). It gives <code>|sent - target|</code> = 0 and no server-added token at every
+  logged point, including every MEASURED-OR-RESOLVED point. The Llama points are unverified (no
+  log, gated tokenizer) and stay in ALL.</li>
+<li><strong>The draw.</strong> The 425 monotone vLLM points were re-scored with the vectors numpy draws at seeds
+  1 to 4 from the same intervals (<code>cmd/sensitivity</code>'s draw rows, at <code>e4d76827</code>). Those are other
+  workloads, not repeated observations of the benchmark's seed 0. BLIS's TPOT shape error spans
+  8.56% to 8.60% across the five draws, a range of 0.04 points. Its TTFT shape error spans 17.64%
+  to 18.01%, a range of 0.38 points. A figure scored against any draw other than the benchmark's
+  own could move by that much for that reason alone; replaying the seed-0 vectors removes it.</li>
+</ul>
+<hr />
+<blockquote>
+<p><strong>Everything below this line is superseded history</strong>, measured before 2026-10-12 under earlier
+harness protocols (BLIS's own Go-sampled lengths, a continuous <code>12*CONC</code> pool, a <code>2*CONC</code> cut,
+no warm-up state) and, for most of it, an earlier corpus extraction. It is kept as the record of
+how the current figures were reached; no figure below is a current result.</p>
+</blockquote>
+<h2 id="headline-superseded-2026-10-13-see-current-standing">Headline (superseded 2026-10-13 -- see <a href="#current-standing">Current standing</a>)<a class="headerlink" href="#headline-superseded-2026-10-13-see-current-standing" title="Permanent link">&para;</a></h2>
+<p>On the 238 points measured under vLLM -- the engine BLIS models:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>n</th>
+<th>MAPE</th>
+<th>median</th>
+<th>worst</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BLIS + blis-latency-kernel</td>
+<td>238</td>
+<td><strong>12.01%</strong></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>AISimulate, same points</td>
+<td>238</td>
+<td><strong>7.15%</strong></td>
+<td>4.19%</td>
+<td>75.12%</td>
+</tr>
+</tbody>
+</table>
+<p>Excluding the four sweeps whose MEASURED curve is non-monotone in concurrency:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>n</th>
+<th>MAPE</th>
+<th>median</th>
+<th>worst</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BLIS + blis-latency-kernel</td>
+<td>213</td>
+<td><strong>11.54%</strong></td>
+<td>8.74%</td>
+<td>67.07%</td>
+</tr>
+<tr>
+<td>AISimulate, same points</td>
+<td>213</td>
+<td><strong>6.68%</strong></td>
+<td>4.09%</td>
+<td>75.12%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>AISimulate is ahead.</strong> The goal was to beat it; this does not.</p>
+<p>These figures are HIGHER than the 11.26% and 10.72% this document reported earlier, and the
+earlier numbers were wrong. They were taken before the harness had a convergence criterion,
+and part of their apparent advantage was measurement noise flattering the result. See
+"Making the measurement converge" below. Both corrections are recorded rather than quietly
+replaced, because a number that moved when the method was fixed is exactly the kind of thing
+a reviewer needs to see.</p>
+<p>What the thesis did establish: the kernel alone scores 13.67% on the full 447 points with the
+resident batch assumed equal to client concurrency. Letting BLIS's scheduler decide the
+resident batch moves the vLLM subset to 12.01%. Part of the gap closed, and a larger part
+remains.</p>
+<p>Note also that the 9.41% named in the goal is AISimulate's figure over all 447 points,
+including the sglang and trt arms BLIS does not model. On the vLLM subset AISimulate scores
+7.15%, and 6.68% on the monotone part of it. That is the real bar.</p>
+<h2 id="making-the-measurement-converge">Making the measurement converge<a class="headerlink" href="#making-the-measurement-converge" title="Permanent link">&para;</a></h2>
+<p>Before any modelling conclusion could be trusted, the harness had to stop reporting a number
+that depended on itself. It did:</p>
+<table>
+<thead>
+<tr>
+<th>Completions per point</th>
+<th>MAPE (monotone vLLM)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20</td>
+<td>9.92%</td>
+</tr>
+<tr>
+<td>30</td>
+<td>11.20%</td>
+</tr>
+<tr>
+<td>40</td>
+<td>9.89%</td>
+</tr>
+<tr>
+<td>60</td>
+<td>10.72%</td>
+</tr>
+<tr>
+<td>100</td>
+<td>10.64%</td>
+</tr>
+</tbody>
+</table>
+<p>A 1.3-point swing with no trend -- larger than several of the modelling effects this document
+reports, and enough to make any comparison between two variants meaningless. Two causes, both
+properties of the harness rather than of the deployment:</p>
+<p><strong>A closed-loop pool does not start in its steady state.</strong> At t=0 all N users submit at once,
+so the first requests see a resident batch that is still filling and a cold KV cache. Their
+inter-token latency was pooled with the settled requests', so the mean depended on what
+fraction of the run was transient.</p>
+<p><strong>A fixed completion budget covers fewer pool cycles as concurrency rises.</strong> At concurrency 32
+a 40-completion budget is barely one cycle, and the mean then depends on where the run
+stopped. Measured on <code>minimax-m2.5-b200-fp8-vllm-tp4</code> at c=32: 9746, 8186, 9397, 9490 us at
+20, 40, 100, 200 completions, while c=8 had converged by 40.</p>
+<p>The criterion now: each point gathers <code>max(24, 4 x concurrency)</code> completions and discards the
+first half. With it, the score is monotone and tight in the budget -- 11.31%, 11.54%, 11.68%
+at 2, 4 and 6 cycles -- so a 0.4-point modelling effect is now resolvable where before it was
+buried in noise. The criterion is set from the shape of the transient, applies identically to
+every point, and is not a tuning knob: it made the reported score WORSE.</p>
+<h2 id="the-comparison-is-verified-not-asserted">The comparison is verified, not asserted<a class="headerlink" href="#the-comparison-is-verified-not-asserted" title="Permanent link">&para;</a></h2>
+<p>AISimulate's error here is recomputed from its own published per-point relatives,
+re-anchored to its own lowest concurrency exactly as BLIS is. Reproduced independently
+outside the Go harness: 7.15% on the same 238 points. Both sides are the same quantity --
+a normalised curve divided by the measured normalised curve.</p>
+<h2 id="where-the-error-is-measured">Where the error is, measured<a class="headerlink" href="#where-the-error-is-measured" title="Permanent link">&para;</a></h2>
+<p>By concurrency:</p>
+<table>
+<thead>
+<tr>
+<th>Concurrency</th>
+<th>n</th>
+<th>BLIS</th>
+<th>AISimulate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4</td>
+<td>43</td>
+<td>0.65%</td>
+<td>0.37%</td>
+</tr>
+<tr>
+<td>8</td>
+<td>43</td>
+<td>7.80%</td>
+<td>5.66%</td>
+</tr>
+<tr>
+<td>16</td>
+<td>43</td>
+<td>13.76%</td>
+<td>7.27%</td>
+</tr>
+<tr>
+<td>32</td>
+<td>40</td>
+<td>15.70%</td>
+<td>6.35%</td>
+</tr>
+<tr>
+<td>64</td>
+<td>38</td>
+<td>18.03%</td>
+<td>11.31%</td>
+</tr>
+<tr>
+<td>128</td>
+<td>15</td>
+<td>13.74%</td>
+<td><strong>18.72%</strong></td>
+</tr>
+<tr>
+<td>256</td>
+<td>6</td>
+<td>4.68%</td>
+<td>4.14%</td>
+</tr>
+<tr>
+<td>512</td>
+<td>3</td>
+<td>20.02%</td>
+<td><strong>28.10%</strong></td>
+</tr>
+<tr>
+<td>1024</td>
+<td>2</td>
+<td>39.13%</td>
+<td>16.58%</td>
+</tr>
+<tr>
+<td>2048</td>
+<td>1</td>
+<td>59.47%</td>
+<td>15.91%</td>
+</tr>
+</tbody>
+</table>
+<p>BLIS beats AISimulate at 128 and 512 and loses badly at 1024 and 2048 (three points
+total). The bulk of the deficit is the 16-64 band, which is 121 of 238 points.</p>
+<p>By chip family:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>n</th>
+<th>BLIS</th>
+<th>AISimulate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hopper</td>
+<td>133</td>
+<td>10.60%</td>
+<td>4.84%</td>
+</tr>
+<tr>
+<td>blackwell</td>
+<td>105</td>
+<td>12.36%</td>
+<td>10.08%</td>
+</tr>
+</tbody>
+</table>
+<p>The ten worst sweeps are dominated by one model:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Workload</th>
+<th>n</th>
+<th>BLIS</th>
+<th>AISimulate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>minimax-m2.5-h200-fp8-vllm-tp4</td>
+<td>1k8k</td>
+<td>5</td>
+<td>33.36%</td>
+<td>12.69%</td>
+</tr>
+<tr>
+<td>minimax-m2.5-b300-fp4-vllm-tp2-ep4-dp2</td>
+<td>1k1k</td>
+<td>4</td>
+<td>32.71%</td>
+<td>4.80%</td>
+</tr>
+<tr>
+<td>minimax-m2.5-h200-fp8-vllm-tp4</td>
+<td>1k1k</td>
+<td>9</td>
+<td>23.57%</td>
+<td>13.43%</td>
+</tr>
+<tr>
+<td>minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2</td>
+<td>1k1k</td>
+<td>3</td>
+<td>20.32%</td>
+<td>13.02%</td>
+</tr>
+<tr>
+<td>minimax-m2.5-b200-fp8-vllm-tp2</td>
+<td>1k8k</td>
+<td>5</td>
+<td>18.86%</td>
+<td>4.03%</td>
+</tr>
+</tbody>
+</table>
+<p>Seven of the ten worst are minimax-m2.5. On a deployment BLIS fits well --
+<code>gpt-oss-120b-h200-fp4-vllm-tp4</code> at 1k1k -- it beats AISimulate at four of five points
+(0.74% against 5.05%, 0.49% against 4.25%), so the machinery is capable and the deficit is
+localised rather than systemic.</p>
+<h2 id="what-is-ruled-out-as-the-cause">What is ruled out as the cause<a class="headerlink" href="#what-is-ruled-out-as-the-cause" title="Permanent link">&para;</a></h2>
+<p><strong>Not insufficient simulation.</strong> Mean ITL varies under 2% between 30 and 200 completed
+sessions per point (<code>minimax-m2.5-h200-fp8-vllm-tp4</code>, c=16: 9633/9671/9823 us; c=32:
+13778/13438/13578 us). The runs are in steady state and deterministic at a fixed seed.</p>
+<p><strong>Not a metric mismatch.</strong> AISimulate's 7.15% is reproduced independently from its own data.</p>
+<p><strong>Not KV capacity being wrong.</strong> All 39 deployments derive a budget from the kernel's memory
+methods after the upstream <code>/expertTensorShards</code> fix, and preemption is active.</p>
+<p><strong>Partly unfittable data.</strong> <code>minimax-m2.5-h200-fp8-vllm-tp4</code> at 1k1k has a measured TPOT that
+FALLS from 3.1848 at c=16 to 2.2677 at c=32. No monotone model fits that transition; it is one
+of the four non-monotone transitions in the corpus. This arm alone contributes 9 of the 238
+points and 23.57% error.</p>
+<h2 id="what-remains-untested">What remains untested<a class="headerlink" href="#what-remains-untested" title="Permanent link">&para;</a></h2>
+<p>The 209 non-vLLM points (sglang, trt) are out of scope for a BLIS fidelity claim and are not
+included above. Running them would produce a number, not evidence.</p>
+<h2 id="the-ceiling-on-what-this-comparison-can-show">The ceiling on what this comparison can show<a class="headerlink" href="#the-ceiling-on-what-this-comparison-can-show" title="Permanent link">&para;</a></h2>
+<p>Two bugs were found and fixed after the first score. One was serious; the second finding is
+a limit rather than a bug, and it bounds the whole exercise.</p>
+<p><strong>Fixed: data parallelism was not scaling the batch caps.</strong> vLLM runs <code>dp</code> independent
+EngineCores, each with its own <code>max_num_seqs</code> and token budget, splitting requests disjointly
+across them -- the same rule <code>KVBudget</code> already applied to KV blocks. The harness set a single
+core's caps. On the two <code>ep4-dp2</code> sweeps, which begin at concurrency 256 against a stated
+<code>max_num_seqs</code> of 256, the resident batch saturated at the very first point and the predicted
+curve went FLAT: 1.002 and 1.003 across a four-fold concurrency rise, against a measurement
+that doubled. At concurrency 512 the error fell from 59.47% to 0.84% once dp was applied.</p>
+<p>Aggregate effect was small -- 11.38% to 11.26% -- because only 3 of 238 points sit above
+<code>256 x dp</code>. A serious bug on few points.</p>
+<p><strong>Measured, not assumed: the snapshot publishes no engine settings, and it barely matters.</strong>
+Its topology records carry <code>framework</code>, <code>precision</code>, <code>serving</code>, <code>spec_method</code> and the five
+parallelism widths. They do NOT carry <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>block_size</code>,
+<code>gpu_memory_utilization</code>, <code>cudagraph_mode</code>, <code>scheduling_policy</code>, or the chunked-prefill and
+prefix-caching flags. The scenario files default them.</p>
+<p>A first draft of this document argued that this bounds what the comparison can show, because
+the defaults were justified for a step-time ratio ("a constant cancels") and that
+justification fails with a scheduler in the loop. The first half is right; the conclusion was
+not, and <code>cmd/sensitivity</code> settles it by measurement on the 213 monotone vLLM points:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>MAPE</th>
+<th>delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>scenario values</td>
+<td>11.20%</td>
+<td>—</td>
+</tr>
+<tr>
+<td>max_num_seqs x4</td>
+<td>11.03%</td>
+<td>-0.17</td>
+</tr>
+<tr>
+<td>max_num_seqs /2</td>
+<td>11.56%</td>
+<td>+0.36</td>
+</tr>
+<tr>
+<td>token budget x2</td>
+<td>11.24%</td>
+<td>+0.03</td>
+</tr>
+<tr>
+<td>KV bound removed entirely</td>
+<td>11.21%</td>
+<td>+0.00</td>
+</tr>
+</tbody>
+</table>
+<p>Against a 4.5-point gap, the largest of these is 0.36. The resident batch in this corpus is
+set by the offered concurrency and the work per request rather than by the caps, so the caps
+barely register. The unstated settings are a footnote, and the gap is a modelling gap.</p>
+<p>The dp fix stands for a different reason: its 3 points sat AT the cap, where it binds
+absolutely rather than marginally.</p>
+<h2 id="what-was-ruled-out-as-the-cause-of-the-minimax-deficit">What was ruled out as the cause of the minimax deficit<a class="headerlink" href="#what-was-ruled-out-as-the-cause-of-the-minimax-deficit" title="Permanent link">&para;</a></h2>
+<p><code>ExpertsTouched(tokens, E, k, local) = local * (1 - ((E-k)/E)^tokens)</code> is identical for
+minimax (E=256, k=8) and gpt-oss (E=128, k=4) at every batch size -- 0.031 at one token,
+0.398 at 16, 0.983 at 128 -- because the two models' E/k ratios coincide. So the expert-count
+term cannot explain a minimax-specific error, and the hypothesis that it did is rejected.</p>
+<h2 id="standing">Standing<a class="headerlink" href="#standing" title="Permanent link">&para;</a></h2>
+<p>The goal was to beat AISimulate. On the vLLM subset AISimulate scores 7.15% (6.68% on the
+monotone subset), not the 9.41% quoted in the goal, which is its figure over all 447 points
+including the sglang and trt arms BLIS does not model. BLIS scores 11.26% and 10.72%. The
+gap is real and is not closed.</p>
+<h2 id="where-the-residual-actually-is-decomposed">Where the residual actually is, decomposed<a class="headerlink" href="#where-the-residual-actually-is-decomposed" title="Permanent link">&para;</a></h2>
+<p>The per-resource breakdown at decode (context 1024, microseconds per step) isolates it:</p>
+<table>
+<thead>
+<tr>
+<th>batch</th>
+<th>minimax SM</th>
+<th>minimax HBM</th>
+<th>gpt-oss SM</th>
+<th>gpt-oss HBM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>793</td>
+<td>1,107</td>
+<td>507</td>
+<td>566</td>
+</tr>
+<tr>
+<td>8</td>
+<td>827</td>
+<td>2,900</td>
+<td>545</td>
+<td>1,310</td>
+</tr>
+<tr>
+<td>32</td>
+<td>942</td>
+<td>6,786</td>
+<td>673</td>
+<td>2,936</td>
+</tr>
+<tr>
+<td>64</td>
+<td>1,096</td>
+<td>9,043</td>
+<td>844</td>
+<td>3,907</td>
+</tr>
+<tr>
+<td>256</td>
+<td>2,020</td>
+<td>11,143</td>
+<td>1,870</td>
+<td>5,049</td>
+</tr>
+</tbody>
+</table>
+<p>Both are HBM-bound and the overlap-to-serialized ratio is similar (1.26-1.47 on both), so the
+choice of band edge is not the minimax-specific cause.</p>
+<p>The cause is the composition of that HBM term. For minimax at tp=4 with expert parallelism
+off -- 62 layers, 256 experts, three matrices at 1536x3072, fp8 -- expert weights are</p>
+<table>
+<thead>
+<tr>
+<th>batch</th>
+<th>experts touched</th>
+<th>expert GiB</th>
+<th>KV GiB</th>
+<th>expert share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>8.0</td>
+<td>1.63</td>
+<td>0.030</td>
+<td>98.2%</td>
+</tr>
+<tr>
+<td>8</td>
+<td>57.4</td>
+<td>11.73</td>
+<td>0.242</td>
+<td>98.0%</td>
+</tr>
+<tr>
+<td>32</td>
+<td>163.3</td>
+<td>33.37</td>
+<td>0.969</td>
+<td>97.2%</td>
+</tr>
+<tr>
+<td>64</td>
+<td>222.4</td>
+<td>45.46</td>
+<td>1.938</td>
+<td>95.9%</td>
+</tr>
+<tr>
+<td>256</td>
+<td>255.9</td>
+<td>52.30</td>
+<td>7.750</td>
+<td>87.1%</td>
+</tr>
+</tbody>
+</table>
+<p>So 87-98% of minimax's decode HBM traffic is expert weights, and the term grows 32x between
+batch 1 and 256 as <code>ExpertsTouched</code> saturates toward all 256 local experts. That is exactly
+the shape of the observed error: a systematic over-prediction that GROWS with batch, on the
+model whose step is most dominated by this one term.</p>
+<p><code>ExpertsTouched</code> itself is not the culprit -- it is identical for minimax (E=256, k=8) and
+gpt-oss (E=128, k=4) at every batch size. The remaining candidate is the RATE the expert bytes
+are charged at, which is a calibration question answerable against AISimulate's own MoE
+measurement parquets rather than by adjusting a number.</p>
+<p>That is the open lead. It is checkable, which is the bar for pursuing it.</p>
+<h2 id="the-expert-rate-hypothesis-tested-and-rejected">The expert-rate hypothesis, tested and rejected<a class="headerlink" href="#the-expert-rate-hypothesis-tested-and-rejected" title="Permanent link">&para;</a></h2>
+<p>The residual's signature -- a systematic over-prediction growing with batch, concentrated on
+the model whose decode step is 87-98% expert-weight traffic -- pointed at the rate those bytes
+are charged at. That is checkable against NVIDIA's own MoE measurements rather than adjustable,
+which is why it was the lead worth pursuing.</p>
+<p><code>b200_sxm/moe/trtllm/1.3.0rc20/moe_perf.parquet</code> holds 218,457 measured MoE latencies, and
+6,804 of them are at minimax-m2.5's exact geometry: hidden 3072, inter 1536, 256 experts,
+top_k 8. Filtering further to the deployment actually being scored -- <code>moe_tp_size</code> 4 with
+<code>moe_ep_size</code> 1, nvfp4, balanced routing -- leaves 27 points per kernel implementation.</p>
+<p>The sweep carries two implementations, which matters and nearly produced a wrong conclusion:
+<code>moe_torch_flow_min_latency</code> and <code>moe_torch_flow_cutlass</code> differ by roughly 5x at every token
+count. A latency-sensitive engine picks the faster one, so that is the comparison.</p>
+<p>Predicted over measured, where the prediction is the kernel's own form
+<code>max(flops/(peak x eff), touched_expert_bytes/bandwidth)</code>:</p>
+<table>
+<thead>
+<tr>
+<th>tokens</th>
+<th>1</th>
+<th>8</th>
+<th>32</th>
+<th>64</th>
+<th>80</th>
+<th>3072</th>
+<th>8192</th>
+<th>16384</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vs min_latency</td>
+<td>0.12</td>
+<td>0.65</td>
+<td>0.76</td>
+<td>0.99</td>
+<td>1.03</td>
+<td>0.53</td>
+<td>0.37</td>
+<td>0.39</td>
+</tr>
+<tr>
+<td>vs cutlass</td>
+<td>0.03</td>
+<td>0.13</td>
+<td>0.15</td>
+<td>0.22</td>
+<td>0.23</td>
+<td>0.14</td>
+<td>0.09</td>
+<td>0.10</td>
+</tr>
+</tbody>
+</table>
+<p>Geometric mean against the faster kernel: <strong>0.625</strong>. Against the slower: 0.153.</p>
+<p><strong>The hypothesis is rejected.</strong> The MoE term is UNDER-predicted at almost every token count --
+it crosses 1.0 only briefly around 64-80 tokens and falls back to 0.37-0.53 at large batches.
+An under-predicted term cannot produce the observed over-prediction, and its shape in the batch
+is wrong for the residual too: the error grows with batch while this ratio falls.</p>
+<p>So the expert rate is not the cause. Two things follow. The residual must come from a term that
+grows with batch and is charged too heavily -- attention, the collectives, or the per-layer
+composition rather than the MoE GEMM. And separately, the MoE term being 0.625 of measurement
+is a real calibration gap in its own right, in the direction that would make predictions
+optimistic; it is not what this experiment is chasing, but it belongs in the record.</p>
+<p>This is the second hypothesis rejected by data rather than by argument, after <code>ExpertsTouched</code>.
+Both rejections cost little and prevented a change that would have been justified by a story
+instead of a measurement.</p>
+<h2 id="a-confirmed-over-prediction-in-decode-attention">A confirmed over-prediction in decode attention<a class="headerlink" href="#a-confirmed-over-prediction-in-decode-attention" title="Permanent link">&para;</a></h2>
+<p>With the MoE rate rejected, the search narrowed to a term that GROWS with batch and is charged
+too heavily. Decode attention is the other batch-scaling term in the per-resource breakdown,
+and NVIDIA's generation-attention sweep can test it directly.</p>
+<p><code>h200_sxm/attention/trtllm/1.3.0rc20/generation_attention_perf.parquet</code>, filtered to
+minimax-m2.5's per-rank attention geometry at tp=4 -- 12 query heads, 2 KV heads, head
+dimension 128, full attention, fp8 KV cache -- gives 164 measured points.</p>
+<p>One column reading had to be corrected before the comparison meant anything. <code>isl</code> is 1 for
+every generation row; the context length is carried by <code>step</code>, which runs 1 to 131071. A first
+pass used <code>isl</code>, which made the predicted KV read about 2000x too small and collapsed the
+prediction onto the floor, giving 0.754. Checking that latency actually tracks <code>step</code> -- 5.78 us
+at step 1 rising to 140.75 us at step 131071, at fixed batch 8 -- settled it. The first check of
+that ("latency is flat in step") looked only at steps 1 to 63, where the floor dominates and it
+IS flat; extending the range corrected it.</p>
+<p>Predicted over measured, where the prediction is the registry's own form
+<code>floor + kv_bytes/rate</code> with the committed h200 constants (floor 11.0 us, rate 2.784e6 B/us):</p>
+<table>
+<thead>
+<tr>
+<th>batch</th>
+<th>1</th>
+<th>8</th>
+<th>32</th>
+<th>128</th>
+<th>256</th>
+<th>512</th>
+<th>1024</th>
+<th>2048</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>geo-mean ratio</td>
+<td>1.372</td>
+<td>1.548</td>
+<td>1.563</td>
+<td>1.506</td>
+<td>1.195</td>
+<td>1.027</td>
+<td>0.680</td>
+<td>0.432</td>
+</tr>
+</tbody>
+</table>
+<p>Restricted to the regime the corpus actually runs -- context 512 to 8191, batch 4 to 256, which
+is where 121 of the 213 scored points sit -- 26 measured points give a geometric mean of
+<strong>1.294</strong>, and the ratio stays between 1.20 and 1.39 across every batch size in that band.</p>
+<p><strong>So decode attention is over-predicted by about 30% in the regime being scored.</strong> That is the
+right sign and the right place: it is charged too heavily, it scales with batch, and its excess
+is largest in the 8-128 band where the residual is worst.</p>
+<p>This is a calibration finding about <code>blis-registry</code>, not about BLIS or the adapter. Acting on
+it means re-fitting <code>attention_decode_floor</code> and <code>attention_decode_rate</code> against this sweep,
+which is a change to a committed coefficient set outside this worktree, and the fit would have
+to hold across every part rather than being tuned on the arm that exposed it. It is recorded
+here for that decision rather than taken.</p>
+<p>Worth noting what it does NOT explain: the ratio falls below 1.0 by batch 1024, so the
+over-prediction is not uniform, and the three worst points in the corpus sit at concurrency
+1024 and 2048 where attention is UNDER-predicted. More than one term is in play.</p>
+<h2 id="correction-the-attention-over-prediction-is-not-family-wide">Correction: the attention over-prediction is not family-wide<a class="headerlink" href="#correction-the-attention-over-prediction-is-not-family-wide" title="Permanent link">&para;</a></h2>
+<p>The 1.29x decode-attention over-prediction recorded earlier was measured on ONE geometry --
+12 query heads, 2 KV heads, head dimension 128, which is minimax-m2.5's per-rank shape at tp=4
+-- on 26 points. <code>blis-registry/scripts/validate_against_aisimulate_tables.py</code> now prices the
+committed coefficients against every measured shape in the family and finds:</p>
+<table>
+<thead>
+<tr>
+<th>population</th>
+<th>n</th>
+<th>predicted / measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>h200 gqa, corpus regime, minimax per-rank geometry</td>
+<td>26</td>
+<td><strong>1.294</strong></td>
+</tr>
+<tr>
+<td>h200 gqa, corpus regime, every geometry</td>
+<td>3,003</td>
+<td><strong>0.795</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Both figures are correct and they answer different questions. Across the family the committed
+form is 20% too CHEAP; on one shape it is 29% too expensive. A coefficient scoped to a part
+applies to every geometry on it, so the family-wide figure is the one that describes the
+coefficient, and the per-geometry figure describes the residual at the shape minimax happens to
+run.</p>
+<p>The consequence matters more than either number: a form that is 0.80 on average and 1.29 on one
+shape is NOT uniformly mis-scaled. Its error depends on geometry. That is scatter, not bias,
+and it is precisely what the error decomposition predicted -- BLIS and AISimulate carry
+identical mean log-error and differ only in spread. A re-fit of the floor and rate moves the
+average and cannot fix the geometry dependence, which is why "recalibrate attention" would not
+have closed the gap and why the decomposition was worth doing before the re-fit.</p>
+<p>Two filtering details had to be right for the two figures to be comparable at all, and both
+were wrong in a first version of the gate:</p>
+<ul>
+<li>The KV cache dtype halves or doubles bytes per token. Pooling fp8 and bfloat16 rows gave
+    1.156 where the fp8 rows alone give 1.294. The corpus runs fp8 throughout, so the check
+    filters to it.</li>
+<li>The collection must be pinned. Globbing every framework and version gave 66,148 rows where
+    the committed fit used 40,367, and a different fit with them.</li>
+</ul>
+<h2 id="what-the-sliding-window-split-changed-measured">What the sliding-window split changed, measured<a class="headerlink" href="#what-the-sliding-window-split-changed-measured" title="Permanent link">&para;</a></h2>
+<p>The per-kind swa coefficients are better calibrated in isolation -- a windowed kernel sustains
+0.26 of peak bandwidth on h200 against 0.58 for full attention, and the naive form is 32x to
+245x wrong on windowed rows across six parts. Dispatching on the kind made the END-TO-END shape
+score WORSE:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>all 447 points</td>
+<td>13.67%</td>
+<td>13.86%</td>
+</tr>
+<tr>
+<td>gpt-oss only (the only model with swa layers)</td>
+<td>11.65%</td>
+<td>12.09%</td>
+</tr>
+</tbody>
+</table>
+<p>147 points moved, 85 worse and 62 better. The mechanism is visible: the swa law makes windowed
+layers more expensive, gpt-oss was already over-predicting on 79 of its 190 points, and the
+change raised the prediction on 146 of them.</p>
+<p>So a more accurate per-kernel coefficient moved the aggregate the wrong way. That is a finding
+about gpt-oss, not an argument against the coefficient: something else in its step is already
+too expensive, and under-charging the windowed layers was partly cancelling it. The
+coefficients stay, because they are measured and the cancellation was accidental; the
+cancelling term is the thing to find.</p>
+<h2 id="standing-under-the-previous-protocol-superseded-2026-10-13">Standing under the previous protocol (superseded 2026-10-13)<a class="headerlink" href="#standing-under-the-previous-protocol-superseded-2026-10-13" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Superseded</strong> by <a href="#current-standing">Current standing</a>. This was scored before 2026-10-12 on an
+earlier corpus extraction (192 vLLM points). It used BLIS's own Go-sampled lengths and a
+continuous <code>12*CONC</code> pool, and did not reproduce the benchmark's warm-up. It is kept as the
+record of what was measured then.</p>
+</blockquote>
+<p>Measured under what was then taken to be InferenceX's protocol:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>n</th>
+<th>MAPE</th>
+<th>median</th>
+<th>worst</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BLIS + blis-latency-kernel</td>
+<td>192</td>
+<td><strong>10.41%</strong></td>
+<td>7.59%</td>
+<td>76.72%</td>
+</tr>
+<tr>
+<td>AISimulate, same points</td>
+<td>192</td>
+<td><strong>8.87%</strong></td>
+<td>5.68%</td>
+<td>75.12%</td>
+</tr>
+</tbody>
+</table>
+<p>Monotone subset only: 9.92% against 8.32% on 171 points.</p>
+<p>By chip family:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>n</th>
+<th>BLIS</th>
+<th>AISimulate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Blackwell</td>
+<td>84</td>
+<td><strong>11.91%</strong></td>
+<td>12.61%</td>
+</tr>
+<tr>
+<td>Hopper</td>
+<td>108</td>
+<td>9.24%</td>
+<td>5.96%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>AISimulate is ahead overall and this kernel is ahead on Blackwell.</strong> That split is the most
+useful diagnostic here: AISimulate's error more than doubles between the families while this
+kernel's moves by two and a half points. A table-interpolating model is limited by how densely
+the part was collected; a closed-form one is limited by its forms, which do not know which part
+they are on.</p>
+<h3 id="how-the-figure-moved">How the figure moved<a class="headerlink" href="#how-the-figure-moved" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>vLLM subset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kernel alone, resident batch assumed equal to concurrency</td>
+<td>13.67% (447 pts)</td>
+</tr>
+<tr>
+<td>BLIS scheduler deciding the resident batch</td>
+<td>14.98%</td>
+</tr>
+<tr>
+<td>Routed-expert term composing as a sum</td>
+<td>10.39%</td>
+</tr>
+<tr>
+<td>A <code>2*CONC</code> warm-up cut and <code>12*CONC</code> budget (a continuous pool, not the benchmark's drained phases)</td>
+<td><strong>10.41%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The last step moved the figure by 0.02 points. It showed that the earlier convergence criterion
+had converged. It did not reproduce the benchmark's two phases, which <code>Current standing</code> now does.</p>
+<h3 id="what-remains">What remains<a class="headerlink" href="#what-remains" title="Permanent link">&para;</a></h3>
+<p>About 1.5 points, and it is not closable by recalibration. <code>cmd/kernelscore</code> reports the
+decomposition directly (<code>harness.Logs</code>), in log space, where a ratio's bias and scatter separate:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>n</th>
+<th>mean log</th>
+<th>sd log</th>
+<th>bias</th>
+<th>floor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BLIS + blis-latency-kernel</td>
+<td>192</td>
+<td>+0.0165</td>
+<td>0.1442</td>
+<td>+1.67%</td>
+<td><strong>10.23%</strong></td>
+</tr>
+<tr>
+<td>AISimulate, same points</td>
+<td>192</td>
+<td>+0.0462</td>
+<td>0.1122</td>
+<td>+4.73%</td>
+<td>7.73%</td>
+</tr>
+</tbody>
+</table>
+<p><code>mean log</code> is the bias a single rescaling could remove; <code>sd log</code> is the scatter it could not;
+<code>floor</code> is the mean magnitude surviving perfect bias removal.</p>
+<p>This kernel's bias is 2.8x SMALLER than AISimulate's -- +0.0165 against +0.0462 -- and its
+scatter is 1.29x larger. The whole of the 1.5-point deficit is scatter: removing this project's
+bias perfectly would reach 10.23%, still above AISimulate's 8.87%, while removing AISimulate's
+would take it to 7.73%. There is more recalibration headroom in the baseline than in this kernel,
+and none of it is available to this kernel by recalibration.</p>
+<p>Scatter is what a closed-form model trades away against a 1.87-million-row interpolation over 14
+operator families.</p>
+<blockquote>
+<p>An earlier version of this section reported "near-identical mean log-error -- +0.0461 against
++0.0462 -- and differ only in spread, 0.1677 against 0.1119", concluding the two models carry
+the same bias. The AISimulate figure was right and this project's was not. Those numbers were
+prose with no command behind them, which is how the error survived; they are now computed by
+the scorer and reproduced by <code>REPRODUCE.md</code>. The qualitative conclusion -- the gap is scatter,
+not bias -- is unchanged and in fact strengthened.</p>
+</blockquote>
+<p>One regression is unexplained and is recorded rather than buried: on the absolute-ITL corpus the
+two Granite arms improved sharply and Kimi-K3 improved, while Nemotron-3-Ultra worsened from
+86.8% to 117.6%. Three hypotheses about it were tested against NVIDIA's tables and all three were
+wrong, including one that scored better and was reverted because it was right for MoE and wrong
+for dense GEMM. A change justified on MoE tables should not have made Nemotron worse.</p>
+<h2 id="reporting-the-sign-and-what-it-changed">Reporting the sign, and what it changed<a class="headerlink" href="#reporting-the-sign-and-what-it-changed" title="Permanent link">&para;</a></h2>
+<p>Until this point every figure here was an absolute MAPE. Magnitude answers how wrong a model is;
+it cannot answer which way, and the two imply different fixes. A consistent sign is a
+miscalibrated coefficient and is removable by rescaling. A sign that turns with batch size is a
+missing mechanism and is not.</p>
+<p><code>cmd/kernelscore</code> now reports both. Errors are kept SIGNED at the point of computation and
+absoluted only at each aggregation (<code>harness.Abs</code>), so every previously published absolute figure
+is unchanged by construction -- the headline reproduces at 10.41% against 8.87% on 192 points.</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>n</th>
+<th>mean</th>
+<th>median</th>
+<th>mean abs</th>
+<th>over</th>
+<th>p10</th>
+<th>p90</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BLIS + blis-latency-kernel</td>
+<td>192</td>
+<td>+2.71%</td>
+<td><strong>+0.78%</strong></td>
+<td>10.41%</td>
+<td><strong>53%</strong></td>
+<td>-11.61%</td>
+<td>+19.60%</td>
+</tr>
+<tr>
+<td>AISimulate, same points</td>
+<td>192</td>
+<td>+5.39%</td>
+<td>+4.02%</td>
+<td><strong>8.87%</strong></td>
+<td>71%</td>
+<td>-6.83%</td>
+<td>+19.77%</td>
+</tr>
+</tbody>
+</table>
+<p>Positive means the model predicted a LARGER relative rise in time per output token than was
+measured. This kernel is nearly unbiased -- a median of +0.78% and a coin-flip 53% of points over
+-- while AISimulate over-predicts on 71% of points with a median of +4.02%. Read with the log-space
+decomposition above, the ranking by absolute MAPE conceals that this kernel already wins the part
+of the error that is cheap to fix and loses the part that is not.</p>
+<h3 id="a-hypothesis-the-sign-killed">A hypothesis the sign killed<a class="headerlink" href="#a-hypothesis-the-sign-killed" title="Permanent link">&para;</a></h3>
+<p>The per-concurrency magnitudes rise monotonically -- 4.79% at concurrency 8 to 12.76% at 128 --
+which reads as a mechanism that compounds with batch size, and the obvious candidate was missing
+contention: a <code>max</code> over resources that under-states a step the more requests share it.</p>
+<p>The sign refutes it. Missing contention would show a consistent NEGATIVE sign that deepens with
+concurrency. Instead:</p>
+<table>
+<thead>
+<tr>
+<th>conc</th>
+<th>n</th>
+<th>BLIS signed (magnitude)</th>
+<th>AISimulate signed (magnitude)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8</td>
+<td>43</td>
+<td>+2.40% (4.79%)</td>
+<td>+4.19% (5.66%)</td>
+</tr>
+<tr>
+<td>16</td>
+<td>43</td>
+<td>+3.38% (10.38%)</td>
+<td>+2.66% (7.27%)</td>
+</tr>
+<tr>
+<td>32</td>
+<td>40</td>
+<td>+5.38% (11.73%)</td>
+<td>+0.43% (6.35%)</td>
+</tr>
+<tr>
+<td>64</td>
+<td>38</td>
+<td>+2.14% (12.36%)</td>
+<td>+8.56% (11.31%)</td>
+</tr>
+<tr>
+<td>128</td>
+<td>14</td>
+<td>+0.25% (12.76%)</td>
+<td>+16.50% (20.06%)</td>
+</tr>
+<tr>
+<td>256</td>
+<td>4</td>
+<td>-4.37% (7.66%)</td>
+<td>+6.21% (6.21%)</td>
+</tr>
+<tr>
+<td>1024</td>
+<td>2</td>
+<td>-21.73% (21.73%)</td>
+<td>+15.55% (16.58%)</td>
+</tr>
+<tr>
+<td>2048</td>
+<td>1</td>
+<td>-47.87% (47.87%)</td>
+<td>+15.91% (15.91%)</td>
+</tr>
+</tbody>
+</table>
+<p>The signed mean does not grow with concurrency; it wanders and then turns negative at the top.
+Magnitude grows while direction does not, which is scatter increasing, not bias accumulating. An
+earlier version of this document presented the magnitude column alone and drew the
+batch-composition conclusion from it; that conclusion was unsupported and the sign is what showed
+it.</p>
+<p>The three points above concurrency 512 deserve their own note: -21.73% and -47.87% are large
+under-predictions on two and one point respectively, the opposite sign from the rest of the curve,
+and AISimulate is better there (+15.55%, +15.91%). That is a real weakness on 3 of 192 points, and
+it is not the same phenomenon as the 16-64 band.</p>
+<h2 id="prefill-attention-the-right-defect-the-wrong-regime">Prefill attention: the right defect, the wrong regime<a class="headerlink" href="#prefill-attention-the-right-defect-the-wrong-regime" title="Permanent link">&para;</a></h2>
+<p>One structural defect was found, measured, and deliberately NOT fixed. It is recorded because the
+measurement is reusable and the reasoning is the point.</p>
+<p>The kernel prices prefill attention as <code>floor + causal_flops / (peak * eff(tokens) * work_scale)</code>,
+where <code>eff</code> is the dense-GEMM ramp <code>eps_max * m / (m + m_half)</code> keyed on the step's total scheduled
+tokens. That ramp is fitted on MATMUL ROWS (<code>gemm_eps_max_bf16</code>, <code>gemm_m_half_bf16</code>), so one
+request of 2048 tokens and eight of 256 receive identical attention efficiency despite entirely
+different attention shapes.</p>
+<p>AISimulate's own interpolation design states the governing fact: curvature is a property of the
+AXIS, not the table -- context attention is quadratic along sequence and roughly linear along
+batch and heads, and confining a sqrt transform to the sequence axis moved their measured interior
+error from 9.44% to 2.00%.</p>
+<p>Tested against NVIDIA's context-attention parquets by
+<code>blis-registry/scripts/probe_attention_prefill_axis.py</code>, which refits <code>(floor, work_scale)</code> per arm
+on the same rows over the same grids as the shipping fitter and scores on held-out shapes:</p>
+<table>
+<thead>
+<tr>
+<th>key</th>
+<th>h200</th>
+<th>h100</th>
+<th>b200</th>
+<th>b300</th>
+<th>gb200</th>
+<th>l40s</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>b*isl</code> (current)</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>isl</code> only</td>
+<td><strong>-5.2%</strong></td>
+<td><strong>-7.6%</strong></td>
+<td><strong>-5.7%</strong></td>
+<td><strong>-5.9%</strong></td>
+<td><strong>-5.7%</strong></td>
+<td><strong>-10.6%</strong></td>
+</tr>
+<tr>
+<td><code>sqrt(b)*isl</code></td>
+<td>-0.6%</td>
+<td>-1.0%</td>
+<td>-0.7%</td>
+<td>-0.8%</td>
+<td>-0.7%</td>
+<td>-1.6%</td>
+</tr>
+<tr>
+<td><code>b*sqrt(isl)</code></td>
+<td>+6.2%</td>
+<td>+9.4%</td>
+<td>+7.3%</td>
+<td>+8.0%</td>
+<td>+7.6%</td>
+<td>+8.3%</td>
+</tr>
+</tbody>
+</table>
+<p><code>isl</code> alone wins on every part, with <code>work_scale</code> barely moving (0.48 to 0.48 on h200), so this is
+a better key rather than a rescaling. The script guards itself: the current key fitted on all rows
+must reproduce the registry's committed h200 entry -- n=55,096, floor 26.5us, work_scale 0.48 -- and
+it prints <code>GUARD FAILED</code> and exits non-zero if it cannot, because a harness that cannot reproduce
+the published fit from the published data is not measuring the same quantity.</p>
+<p>The mechanism is measurable directly. At fixed sequence length and head count, measured latency
+scales as <code>batch^0.730</code> (isl=512), <code>batch^0.843</code> (2048) and <code>batch^0.943</code> (8192): sub-linear,
+approaching linear as sequences grow. <code>causal_flops</code> already scales linearly in batch, so putting
+batch in the efficiency key as well makes efficiency RISE with batch and partially cancels the
+over-count -- an accidental approximation of sub-linearity with the wrong functional form,
+confounded across two axes.</p>
+<p>Neither key fixes the trend, which is why no change was made. Signed residuals by batch, h200:</p>
+<table>
+<thead>
+<tr>
+<th>batch</th>
+<th><code>b*isl</code> (current)</th>
+<th><code>isl</code> only</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>+28.2%</td>
+<td>+24.4%</td>
+</tr>
+<tr>
+<td>16</td>
+<td>-8.6%</td>
+<td>-7.3%</td>
+</tr>
+<tr>
+<td>64</td>
+<td>-50.7%</td>
+<td>-46.0%</td>
+</tr>
+<tr>
+<td>256</td>
+<td>-80.2%</td>
+<td>-73.7%</td>
+</tr>
+</tbody>
+</table>
+<p>Both fail from +28% over-prediction at batch 1 to -80% under at batch 256. <code>isl</code> only reduces the
+trend; no single scalar key can remove it, because the model needs a batch term with its own
+exponent.</p>
+<h3 id="why-it-was-not-fixed">Why it was not fixed<a class="headerlink" href="#why-it-was-not-fixed" title="Permanent link">&para;</a></h3>
+<p>Instrumenting <code>StepTime</code> over the whole vLLM corpus -- 8,186,921 simulated steps -- gives the
+distribution of prefill requests per step:</p>
+<table>
+<thead>
+<tr>
+<th>prefill requests in the step</th>
+<th>steps</th>
+<th>share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>8,050,278</td>
+<td>98.33%</td>
+</tr>
+<tr>
+<td>1</td>
+<td>109,115</td>
+<td>1.33%</td>
+</tr>
+<tr>
+<td>2 or more</td>
+<td>27,528</td>
+<td>0.336%</td>
+</tr>
+<tr>
+<td>16 or more</td>
+<td>54</td>
+<td>0.00066%</td>
+</tr>
+</tbody>
+</table>
+<p>The defect can only bite where two or more prefills share a step, which is 0.336% of steps, and
+the large residuals need batch 16 or more, which is 0.00066%. Weighting the measured per-batch
+improvement by these frequencies bounds the effect on step time across the run at <strong>-0.0388%</strong>,
+and that is generous because attention is only part of a step.</p>
+<p>A single 2,877-token prefill already fills the token budget, so vLLM's scheduler essentially never
+co-schedules prefills. The parquet sweeps batch 1 to 256 uniformly; real serving traffic does not.</p>
+<p>The finding stands and the fix is not worth making here. It would matter for a deployment that
+batches prefills -- a long-context ingestion workload, or an engine with a much larger token
+budget -- and the measurement above is what a future change should be judged against.</p>
+<p>Since 98.33% of steps are pure decode, that is where essentially all of the 10.41% must live.</p>
+<h2 id="four-estimators-on-the-hopper-subset">Four estimators on the Hopper subset<a class="headerlink" href="#four-estimators-on-the-hopper-subset" title="Permanent link">&para;</a></h2>
+<p>The comparison above asks how this kernel compares with NVIDIA's simulator. It does not ask what
+the kernel earned over what BLIS shipped before. <code>cmd/estimatorscore</code> answers that by scoring four
+estimators on one subset, with everything except the forward-pass model held fixed.</p>
+<p>24 sweeps, 104 points, framework vLLM, chips h100 and h200:</p>
+<table>
+<thead>
+<tr>
+<th>estimator</th>
+<th>n</th>
+<th>mean</th>
+<th>median</th>
+<th>mean abs</th>
+<th>over</th>
+<th>p10</th>
+<th>p90</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>blis-latency-kernel</td>
+<td>104</td>
+<td>+1.71%</td>
+<td><strong>-0.46%</strong></td>
+<td><strong>8.87%</strong></td>
+<td>44%</td>
+<td>-10.76%</td>
+<td>+16.91%</td>
+</tr>
+<tr>
+<td>AISimulate</td>
+<td>104</td>
+<td>+1.75%</td>
+<td>+2.02%</td>
+<td><strong>6.04%</strong></td>
+<td>66%</td>
+<td>-7.13%</td>
+<td>+10.45%</td>
+</tr>
+<tr>
+<td>roofline</td>
+<td>104</td>
+<td>+161.54%</td>
+<td>+135.30%</td>
+<td>161.54%</td>
+<td>100%</td>
+<td>+53.12%</td>
+<td>+279.13%</td>
+</tr>
+<tr>
+<td>trained-physics</td>
+<td>104</td>
+<td>-38.93%</td>
+<td>-39.04%</td>
+<td>38.93%</td>
+<td>0%</td>
+<td>-67.20%</td>
+<td>-12.59%</td>
+</tr>
+</tbody>
+</table>
+<p>The kernel is <strong>18x better than roofline and 4.4x better than trained-physics</strong> on identical
+points. That is the justification for the kernel, measured rather than asserted.</p>
+<h3 id="what-is-held-fixed">What is held fixed<a class="headerlink" href="#what-is-held-fixed" title="Permanent link">&para;</a></h3>
+<p>Step time, and nothing else:</p>
+<ul>
+<li><strong>KV blocks come from the kernel for every arm.</strong> BLIS normally sizes KV with
+  <code>latency.CalculateKVBlocks</code>, which sits outside the <code>sim.LatencyModel</code> seam. Letting each arm
+  size its own pool would give each a different resident batch and the result would mix admission
+  behaviour into a step-time comparison.</li>
+<li><strong>The host per-token cost is the kernel's for every arm</strong>, 45.9 us/token. The metric is mean
+  inter-token latency, so an arm with a different per-token host cost would differ for reasons
+  unrelated to step time. Zeroing it -- the first attempt -- would have made every analytic arm
+  45.9 us/token cheaper than the kernel per token.</li>
+<li>Workload, seed, warm-up discard, request budget, batch caps and dp scaling are the harness's,
+  untouched.</li>
+</ul>
+<p>Audited rather than assumed: at every concurrency on <code>gpt-oss-120b-h200-fp4-vllm-tp4</code>, all three
+arms report an identical KV pool of 817,357 blocks, complete exactly <code>12 x concurrency</code> requests
+and discard exactly <code>2 x concurrency</code>.</p>
+<h3 id="the-two-analytic-arms-fail-structurally-in-opposite-directions">The two analytic arms fail structurally, in opposite directions<a class="headerlink" href="#the-two-analytic-arms-fail-structurally-in-opposite-directions" title="Permanent link">&para;</a></h3>
+<p>Roofline is over on 100% of points and trained-physics under on 0% -- saturated signs, which
+indicate a missing term rather than a mis-set coefficient. The predicted curves show it, against a
+measurement that rises 2.36x:</p>
+<table>
+<thead>
+<tr>
+<th>concurrency</th>
+<th>measured</th>
+<th>kernel</th>
+<th>roofline</th>
+<th>trained-physics</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4</td>
+<td>1.0000</td>
+<td>1.0000</td>
+<td>1.0000</td>
+<td>1.0000</td>
+</tr>
+<tr>
+<td>8</td>
+<td>1.1565</td>
+<td>1.1329</td>
+<td>1.7947</td>
+<td>1.0027</td>
+</tr>
+<tr>
+<td>16</td>
+<td>1.3275</td>
+<td>1.3579</td>
+<td>3.1124</td>
+<td>1.0082</td>
+</tr>
+<tr>
+<td>32</td>
+<td>1.8010</td>
+<td>1.6830</td>
+<td>4.9277</td>
+<td>1.0191</td>
+</tr>
+<tr>
+<td>64</td>
+<td>2.3641</td>
+<td>2.0878</td>
+<td><strong>6.7031</strong></td>
+<td><strong>1.0408</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The absolute levels explain both. Roofline anchors at 1,086 us against the kernel's 3,336 and
+reaches 7,283: it is nearly free at low batch, having no fixed overhead to speak of, so
+normalising to its own anchor inflates every later point. Trained-physics runs 17,743 us to
+18,466 us -- a 1.04x rise -- because its per-layer and per-step constants dominate and concurrency
+barely moves it.</p>
+<h3 id="what-this-comparison-does-not-show">What this comparison does not show<a class="headerlink" href="#what-this-comparison-does-not-show" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Neither analytic arm was calibrated for these deployments.</strong> Trained-physics is a single
+  global fit (11 beta + 3 alpha, iter29, loss 34.57%) transcribed from <code>defaults.yaml</code>, with no
+  pipeline on <code>main</code> that can re-derive it, and it is not scoped per chip. Roofline reads
+  <code>mfuPrefill</code>/<code>mfuDecode</code> per chip but has never seen mxfp4 gpt-oss or fp8 minimax. This is a fair
+  measurement of what BLIS shipped, not an indictment of those models in the regime they were
+  fitted for.</li>
+<li><strong>Hopper only, and that is forced rather than chosen.</strong> <code>hardware_config.json</code> carries H100,
+  H200, A100-SXM, A100-80 and L40S; <code>blis-registry</code> has no <code>roofline-b200.yaml</code> or
+  <code>roofline-b300.yaml</code>. Scoring roofline on Blackwell would mean inventing <code>mfu</code> values. The
+  kernel-against-AISimulate headline covers every chip and is unaffected.</li>
+<li><strong>These 104 points are not the headline's 108.</strong> The subset is Hopper sweeps where all three arms
+  scored every point. <code>gpt-oss-120b-h100-fp4-vllm-tp2 1k8k</code> was dropped for all arms because
+  trained-physics completed no requests at concurrency 4 within the horizon, consistent with step
+  times roughly 3x the kernel's starving the run.</li>
+<li><strong>The KV pool never binds on this subset.</strong> 817,357 blocks of 16 tokens is about 13 million
+  tokens, roughly 6,400 concurrent 2k-token sequences, against a stated <code>max_num_seqs</code> of 256. The
+  resident batch is governed by the sequence cap and the token budget, not by memory. This holds
+  for all four arms equally so the ranking is unaffected, but the subset does not exercise
+  KV-pressure behaviour at all.</li>
+<li><strong>Activation precision is resolved, not assumed.</strong> <code>gpt-oss-120b</code> (mxfp4) and <code>minimax-m2.5</code>
+  (fp8) declare no <code>torch_dtype</code> or <code>dtype</code>, so <code>GetModelConfigFromHF</code> returns a zero
+  <code>BytesPerParam</code> and both analytic arms refuse to construct. vLLM resolves exactly this case: with
+  no dtype in the config it reads the safetensors weight metadata and otherwise falls back to the
+  platform's first supported dtype, which on any device of capability 80 or above is bfloat16
+  (<code>transformers_utils/model_arch_config_convertor.py</code> <code>get_torch_dtype</code>, <code>config/model.py</code>
+  <code>_resolve_auto_dtype</code>, <code>platforms/cuda.py</code> <code>supported_dtypes</code>). The arms use 2 bytes because that
+  is what the engine being modelled runs.</li>
+</ul>
+<h3 id="a-defect-in-bliss-own-kv-sizing-found-by-this-audit">A defect in BLIS's own KV sizing, found by this audit<a class="headerlink" href="#a-defect-in-bliss-own-kv-sizing-found-by-this-audit" title="Permanent link">&para;</a></h3>
+<p>Verifying that the shared KV number is not merely shared but CORRECT required deriving it a second
+way, through <code>latency.CalculateKVBlocks</code>. The two paths disagree, model-specifically:</p>
+<table>
+<thead>
+<tr>
+<th>deployment</th>
+<th>kernel</th>
+<th>legacy path</th>
+<th>ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>minimax-m2.5 h200 tp4</td>
+<td>153,471</td>
+<td>150,788</td>
+<td>1.018</td>
+</tr>
+<tr>
+<td>minimax-m2.5 h200 tp8</td>
+<td>419,483</td>
+<td>417,795</td>
+<td>1.004</td>
+</tr>
+<tr>
+<td>gpt-oss-120b h200 tp4</td>
+<td>817,357</td>
+<td>509,966</td>
+<td><strong>1.603</strong></td>
+</tr>
+<tr>
+<td>gpt-oss-120b h200 tp8</td>
+<td>1,733,706</td>
+<td>1,429,655</td>
+<td><strong>1.213</strong></td>
+</tr>
+<tr>
+<td>gpt-oss-120b h100 tp2</td>
+<td>159,297</td>
+<td><strong>error</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>The legacy path sizes <code>gpt-oss-120b</code>'s weights at 217 GiB. The config's own arithmetic -- 36 layers
+x 128 experts x 3 matrices of 2880x2880, plus attention and embeddings, 116.5B parameters -- gives
+217.0 GiB at 2 bytes per parameter and 54.3 GiB at 0.5, identifying the assumed precision as bf16
+on a model served at mxfp4. At tp=2 the over-count exceeds the device budget and KV sizing returns
+an error rather than a number.</p>
+<p>The kernel is right: 58.6 GiB of whole-model weights at tp4, 56.5 at tp2. Filed upstream as
+<strong>inference-sim#1852</strong>, a sibling of #1563 which covers nvfp4 but not mxfp4 and does not state the
+hard-failure consequence.</p>
+<p>This does not affect any figure in this document: every arm draws its KV budget from the kernel's
+memory methods, and no scoring path calls <code>CalculateKVBlocks</code>. The defect was visible only because
+the audit derived the same quantity twice.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
