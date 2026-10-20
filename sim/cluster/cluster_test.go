@@ -2469,8 +2469,15 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 // in sim/timeout_test.go.
 //
 // Scenario: 5 requests complete quickly but each bears a 300s Deadline
-// (mimicking DefaultTimeoutUs). Without the c.clock restore in the cluster loop,
-// c.clock would advance to arrival+300s for the last request, inflating SimEndedTime.
+// (mimicking DefaultTimeoutUs). Without lazy cancellation, the last request's orphaned
+// timeout at arrival+300s would advance the clock and inflate SimEndedTime.
+//
+// What this does and does not pin (#1886): it runs the cluster loop's prevClusterClock
+// restore, but the assertion below cannot distinguish that restore from its absence.
+// SimEndedTime is a max over per-instance metrics, each from that INSTANCE's clock, so
+// what keeps it honest is the instance-level skip in ProcessNextEvent; deleting the
+// cluster restore leaves this test green (measured). See INV-3 in
+// docs/contributing/standards/invariants.md.
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{

@@ -947,10 +947,13 @@ func (c *ClusterSimulator) Run() error {
 				}
 			}
 
-			// If ProcessNextEvent() skipped a cancelled TimeoutEvent (lazy
-			// cancellation — inst.Clock was not advanced), restore c.clock.
-			// A no-op orphaned timeout must not advance the cluster clock.
+			// If ProcessNextEvent() skipped a cancelled TimeoutEvent or a superseded
+			// idle-wake StepEvent (lazy cancellation — inst.Clock was not advanced),
+			// restore c.clock. A no-op event must not advance the cluster clock.
 			if te, ok := ev.(*sim.TimeoutEvent); ok && te.Request.State == sim.StateCompleted {
+				c.clock = prevClusterClock
+			}
+			if se, ok := ev.(*sim.StepEvent); ok && se.Cancelled() {
 				c.clock = prevClusterClock
 			}
 
