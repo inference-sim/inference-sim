@@ -413,8 +413,8 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionFCFS}
 
 	// WHEN preemption evicts victim to make room for newcomer
-	var budget int64 = 10000
-	bf.preemptForTokens(newReq, 16, &result, ctx, &budget, 0)
+	budget := &stepBudget{tokens: 10000, input: 10000}
+	bf.preemptForTokens(newReq, 16, &result, ctx, budget, 0)
 
 	// THEN ComputedTokens should NOT contain the preempted request's entry
 	if _, exists := computedTokens[victim.ID]; exists {
@@ -1197,5 +1197,54 @@ func TestSelectPriorityVictim_ArrivalTimeTiebreak(t *testing.T) {
 	idx := bf.selectPriorityVictim(reqs)
 	if reqs[idx].ID != "newer" {
 		t.Errorf("BC-4: victim = %s, want newer (max ArrivalTime tiebreak)", reqs[idx].ID)
+	}
+}
+
+// long_prefill_token_threshold caps a prefill chunk only when another request is in the
+// scheduler, running or waiting; a lone request takes the whole step budget, as vLLM
+// v0.31.0 schedules it (vllm/v1/core/sched/scheduler.py:611-626, vLLM #57951).
+func TestVLLMBatchFormation_LongPrefillThresholdSkipsALoneRequest(t *testing.T) {
+	const prompt, threshold, budget = 1000, 256, 4096
+	newReq := func(id string, input int) *Request {
+		return &Request{ID: id, InputTokens: make([]TokenID, input), OutputTokens: make([]TokenID, 4), State: StateQueued}
+	}
+	form := func(running []*Request, waiting ...*Request) BatchResult {
+		wq := &WaitQueue{}
+		for _, r := range waiting {
+			wq.Enqueue(r)
+		}
+		return NewBatchFormation("").FormBatch(BatchContext{
+			RunningBatch: &Batch{Requests: running}, WaitQ: wq,
+			KVCache:             MustNewKVCacheState(1000, 16),
+			MaxNumBatchedTokens: budget, MaxNumSeqs: 16, PrefillTokenThreshold: threshold,
+			Now: 1, ComputedTokens: map[string]int64{},
+		})
+	}
+	chunk := func(res BatchResult, id string) int {
+		for _, r := range res.RunningBatch.Requests {
+			if r.ID == id {
+				return r.NumNewTokens
+			}
+		}
+		t.Fatalf("%s not scheduled", id)
+		return 0
+	}
+
+	if got := chunk(form(nil, newReq("lone", prompt)), "lone"); got != prompt {
+		t.Errorf("lone waiting request: chunk %d, want the whole prompt %d", got, prompt)
+	}
+	if got := chunk(form(nil, newReq("a", prompt), newReq("b", 64)), "a"); got != threshold {
+		t.Errorf("with a second waiting request: chunk %d, want the threshold %d", got, threshold)
+	}
+
+	mid := newReq("mid", prompt)
+	mid.State, mid.ProgressIndex = StateRunning, threshold
+	if got := chunk(form([]*Request{mid}), "mid"); got != prompt-threshold {
+		t.Errorf("lone running prefill: chunk %d, want the remainder %d", got, prompt-threshold)
+	}
+	mid2 := newReq("mid2", prompt)
+	mid2.State, mid2.ProgressIndex = StateRunning, threshold
+	if got := chunk(form([]*Request{mid2}, newReq("w", 64)), "mid2"); got != threshold {
+		t.Errorf("running prefill with a waiting request: chunk %d, want the threshold %d", got, threshold)
 	}
 }

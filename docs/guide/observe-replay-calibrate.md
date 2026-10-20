@@ -230,7 +230,7 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts the shared simulation flags `blis run` keeps — routing, admission, scheduling, flow control, saturation detection, `--num-instances`, P/D topology, LoRA, the speculative acceptance flags (`--speculative-acceptance-rate`/`-length` and the selectors; a run's `--workload` preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
 
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from
@@ -499,6 +499,81 @@ model names are dropped during conversion (same routing-safety reason as OTel).
     (INV-6). Traces converted by an **older build** (no marker column) still over-count —
     re-run `convert` to get compaction-aware output. (The separate think-time lossy-0
     sentinel was resolved in #1608 — see the non-lossy note above.)
+
+### Weka subagent replay as aiperf runs it: `--agentic-scenario inferencex-agentx-mvp` (#1937)
+
+`blis convert weka` keeps only the main agent. To replay a Weka v7 corpus **with** its
+subagents, exactly as aiperf 0.12.0's `aiperf profile --scenario inferencex-agentx-mvp`
+does, give replay the raw corpus instead of a TraceV2 file:
+
+```bash
+blis replay --agentic-scenario inferencex-agentx-mvp \
+  --corpus traces.jsonl --corpus-sha256 <hex> \
+  --concurrency 64 --seed 42 --benchmark-duration 900s --grace-period 30s \
+  --max-context-length max_model_len \
+  --scenario <scenario.yaml> --scenarios <dir> --registry <blis-registry> \
+  --metrics-path out.json
+```
+
+`examples/agentx-dsv41-flash-h100-2x-tp8-dspark5.yaml` is a two-replica DeepSeek-V4.1-Flash
+H100 deployment to run it on. A sweep over concurrencies can add `--corpus-cache <dir>`:
+the first run writes a binary snapshot of the parsed corpus (keyed by the corpus digest,
+the max-context filter, chain splitting and the build), later runs load it in well under a
+second instead of re-parsing the JSON, and a missing, damaged or mismatched snapshot is
+ignored, logged and rewritten -- output is byte-identical either way.
+
+Not supported: the accelerated cache-pressure warm-up (`warmup: cache_pressure`, refused),
+`--synthesis-max-osl` (no such cap is applied; the descriptor has no field for it),
+`--trace-output` (refused), a trace-idle or per-turn delay cap (forbidden by the scenario),
+and model mapping (every request goes to the scenario's model). A warm-up request that ends
+in an error, which makes aiperf abort, is counted and warned about.
+
+The workload can also be given as `--workload-spec <file>` with a blis-schemas replay descriptor (`replay:`), which the
+flags override; the descriptor is validated as aiperf's scenario validator validates the
+scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
+refused). The corpus is streamed once and refused on a digest mismatch.
+
+What is replayed, each step a port of aiperf's code and checked send for send against
+aiperf's own runtime (`TestAgentXRuntimeMatchesAiperf`):
+
+- **Session trees.** Each trace is rebuilt as aiperf rebuilds it: flattened-agent chain
+  detection on the top-level requests and inside every subagent, SPAWN branches and
+  SPAWN_JOIN gates, end-to-start delays `max(0, t_k - t_{k-1} - api_{k-1})`, and the
+  recorded cross-stream replay barriers. Traces whose peak `in + max(out, 1)` (parent and
+  subagents) exceeds `--max-context-length` are dropped; `max_model_len` is the
+  deployment's resolved value.
+- **Lanes.** `--concurrency` counts session trees, not requests. Lane *i* replays root
+  `pool[i mod N]` from a snapshot instant t* drawn as aiperf draws it (numpy
+  `default_rng(sha256("{seed}:{trace}:{lane}")[:8]).uniform` over the trace's span). A
+  drained tree recycles its lane into the next root at turn 0.
+- **Warm-up, window, grace.** Every stream live at t* first sends its last pre-t* request
+  with max_tokens 1, aligned so every lane reaches t* together; profiling starts when the
+  warm-up drains and sends for `--benchmark-duration`; requests in flight then have
+  `--grace-period` to finish, after which they are cancelled and leave no aiperf record.
+  A 10 s global idle cap pulls in pending timers whenever nothing is in flight.
+- **Prompts.** A turn's prompt is its full message list (aiperf re-sends the whole history
+  every turn), split into user and assistant messages as aiperf's reconstructor splits it,
+  rendered through DeepSeek-V3-family chat-template tokens (BOS, a header per message, EOS
+  after assistant messages, the generation prompt) with the tree's cache-bust marker (10
+  tokens) at the head of the first user message. Message content is exactly the recorded
+  `in` tokens: hash blocks (equal across the tree's conversations) and per-turn synthetic
+  tails. So prefixes are shared within a tree up to the first message boundary two
+  conversations place differently, never across trees. The template adds 0.09% to the
+  content (median 27 messages per prompt). Outputs are `max(out, 1)` tokens (ignore_eos);
+  generated tokens are never fed back.
+- **Outcomes.** A cluster refusal (admission, routing, flow-control rejection or shed, queue
+  TTL, eviction, P/D decode-KV drop) or a client timeout is an error and the stream goes on;
+  a prompt past `max_model_len` is a context overflow and ends the stream; a request still in
+  flight at the grace end is cancelled. P/D, flow control and REDIRECT drains are supported.
+- **`--horizon`.** The replay sets the run's end itself (the grace end, or the profiling
+  phase's completion when that comes first); a smaller `--horizon` cuts the run there, and
+  the measured window then ends at it.
+
+Every request carries `Phase` (`warmup` / `profile`, `grace` once it completes after the
+window) and an `agentic` tag (lane, tree, trace, stream, kind, turn, outcome:
+`completed`, `error`, `context_overflow`, `cancelled`), echoed per request in the results
+file, which also gets the measured window (the profiling phase's start and completion) and an
+`agentic` summary block. The laws are INV-AX1 … INV-AX4 in the invariant registry.
 
 ### Faithful high-concurrency replay: `--session-mode fixed-accumulate` (#1692)
 

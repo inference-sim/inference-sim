@@ -314,8 +314,8 @@ func readCatalogHardwareEntry(path string) (*hardware.Chip, error) {
 	return chip, nil
 }
 
-// loadCatalogWorkloadEntries loads every workloads/<name>.yaml preset through
-// readCatalogPresetWorkload — the production reader shared by `blis run --workload`,
+// loadCatalogWorkloadEntries loads every workloads/<name>.yaml: a replay workload through
+// blis-schemas' LoadCatalogWorkload, and a preset through readCatalogPresetWorkload — the production reader shared by `blis run --workload`,
 // `blis observe --workload` and `blis convert preset --name` (#1769).
 func loadCatalogWorkloadEntries(root string) (int, []string) {
 	dir := filepath.Join(root, catalogWorkloadsSubdir)
@@ -337,6 +337,16 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 		}
 		if yamlErr := checkCatalogAuthoredYAML(path, data); yamlErr != nil {
 			problems = append(problems, yamlErr.Error())
+			continue
+		}
+		// A replay workload (blis-catalog#34, e.g. agentx-mvp) is not a preset: blis-schemas'
+		// strict reader and its validator decide it, and `blis replay --workload-spec` reads it.
+		if w, err := blisschemas.LoadCatalogWorkload(path); err == nil && w.Replay != nil {
+			if p := w.Replay.Validate(); !p.OK() {
+				problems = append(problems, fmt.Sprintf("%s: replay workload is not valid: %s", path, p.Error()))
+				continue
+			}
+			loaded++
 			continue
 		}
 		if _, err := readCatalogPresetWorkload(name, root); err != nil {

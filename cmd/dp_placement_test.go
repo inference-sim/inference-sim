@@ -151,6 +151,15 @@ func TestPlanDPPlacement(t *testing.T) {
 			if plan.PerRankDP != tc.wantPerRankDP {
 				t.Errorf("PerRankDP: got %d, want %d", plan.PerRankDP, tc.wantPerRankDP)
 			}
+			// #1909: an expanded plan's dp replicas are one lockstep DP group behind one
+			// endpoint, with or without expert parallelism.
+			wantLockstep := 0
+			if tc.wantActive {
+				wantLockstep = tc.dp
+			}
+			if plan.LockstepRanks != wantLockstep {
+				t.Errorf("LockstepRanks: got %d, want %d", plan.LockstepRanks, wantLockstep)
+			}
 		})
 	}
 }
@@ -547,4 +556,31 @@ func TestResolveDPPlacement_IsAPerRankExpansion(t *testing.T) {
 			rt.Fatalf("active plan %+v: each replica must run DP=1", plan)
 		}
 	})
+}
+
+// --dp-load-balancing (#1909): every mode runs the dp=2 scenario deterministically and
+// conserves its requests; hybrid on a node-local replica is the internal balancer, byte for
+// byte; and an unknown mode terminates the run naming the flag.
+func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
+	outs := map[string]string{}
+	for _, mode := range []string{"internal", "hybrid", "external"} {
+		out, stderr, err := runKernelCLI(t, dpRunArgs(2, "--dp-load-balancing", mode)...)
+		if err != nil {
+			t.Fatalf("--dp-load-balancing %s: %v\n%s", mode, err, lastLines(stderr, 3))
+		}
+		clusterConservationHolds(t, out, dpFixtureNumRequests)
+		again, _, err := runKernelCLI(t, dpRunArgs(2, "--dp-load-balancing", mode)...)
+		if err != nil || again != out {
+			t.Errorf("INV-6: two --dp-load-balancing %s runs differ (err %v)", mode, err)
+		}
+		outs[mode] = out
+	}
+	if outs["hybrid"] != outs["internal"] {
+		t.Error("hybrid on a replica within one node must equal the internal balancer")
+	}
+	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--dp-load-balancing", "random")...)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || !strings.Contains(stderr, "--dp-load-balancing") {
+		t.Errorf("an unknown mode must be refused naming the flag: %v\n%s", err, lastLines(stderr, 3))
+	}
 }

@@ -10,6 +10,9 @@ global:
   vocab_size: 163840
   tie_word_embeddings: false
   weight_dtype: int4
+  weight_scale:
+    elements: 32
+    bytes: 2
 layer_kinds:
 - id: attn_dense
   nodes:

@@ -95,13 +95,10 @@ func TestWaitingForRemoteKVs_StateDuringTransfer(t *testing.T) {
 // scheduling the completion event. Successful transfers have
 // TransferCompleteTime strictly greater than TransferStartTime.
 func TestWaitingForRemoteKVs_ReservationFailure_DropsAtTransferStart(t *testing.T) {
-	// 1 decode instance with only 3 blocks. Each request needs 2 blocks.
-	// First request fills 2/3; second reservation attempt (also 2 blocks)
-	// fails → drop at transfer start (because the running decode holds blocks).
-	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
-
-	requests := newShortRequests(4)
+	// 1 decode instance with only 3 blocks; every other prompt needs 4, so its
+	// reservation can never succeed → drop at transfer start (decodeDropFixture). A
+	// prompt that fits but finds the KV full waits (pd_decode_kv_wait_test.go).
+	config, requests := decodeDropFixture(4)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
@@ -172,7 +169,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	}
 
 	// A reserves first and consumes all 5 blocks.
-	if ok := inst.ReserveTransferredKV(reqA); !ok {
+	if _, ok := inst.ReserveTransferredKV(reqA); !ok {
 		t.Fatal("ReserveTransferredKV(A) failed; test fixture is wrong, capacity should accommodate A")
 	}
 	if used := inst.sim.KVCache.UsedBlocks(); used != 5 {
@@ -181,7 +178,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 
 	// While A still holds blocks, B must not be able to steal them.
 	// This is the core no-stealing contract from issue #1343.
-	if ok := inst.ReserveTransferredKV(reqB); ok {
+	if _, ok := inst.ReserveTransferredKV(reqB); ok {
 		t.Fatal("ReserveTransferredKV(B) succeeded while A still holds the blocks — blocks were stolen, no-stealing contract violated")
 	}
 
@@ -192,7 +189,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	if used := inst.sim.KVCache.UsedBlocks(); used != 0 {
 		t.Fatalf("UsedBlocks after A release = %d, want 0", used)
 	}
-	if ok := inst.ReserveTransferredKV(reqB); !ok {
+	if _, ok := inst.ReserveTransferredKV(reqB); !ok {
 		t.Error("ReserveTransferredKV(B) failed after A released — reservation path is broken independent of A")
 	}
 }
@@ -217,7 +214,7 @@ func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	if ok := inst.ReserveTransferredKV(req); !ok {
+	if _, ok := inst.ReserveTransferredKV(req); !ok {
 		t.Fatal("ReserveTransferredKV failed with ample capacity")
 	}
 	usedAfterReserve := inst.sim.KVCache.UsedBlocks()

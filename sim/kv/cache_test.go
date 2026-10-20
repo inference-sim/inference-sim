@@ -398,6 +398,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 		wantSuccess     bool
 		wantUsedBlocks  int64 // expected used blocks after second allocation
 		expectPartial   bool  // whether first allocation leaves a partial block
+		fillerTokens    int   // another request allocated after the first allocation (0 = none)
 	}{
 		{
 			// Pre-check: ceil(5/4)=2 > 1 free → false rejection (BUG).
@@ -433,8 +434,11 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			// Pre-check: ceil(9/4)=3 > 1 free → rejection.
 			// Reality: partial absorbs 2, remaining 7 → ceil(7/4)=2 > 1 → still insufficient.
 			// This is a genuine failure, not a false rejection.
-			name:            "genuinely insufficient blocks (not a false rejection)",
-			totalBlocks:     2,
+			name: "genuinely insufficient blocks (not a false rejection)",
+			// The pool holds the whole prompt at admission (vLLM's full_sequence_must_fit),
+			// and another request then takes a block, leaving one free.
+			totalBlocks:     4,
+			fillerTokens:    8,
 			blockSize:       4,
 			firstTokens:     2,
 			totalInput:      11,
@@ -442,7 +446,7 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			secondEnd:       11,
 			freeBeforeAlloc: 1,
 			wantSuccess:     false,
-			wantUsedBlocks:  1, // unchanged after failed allocation
+			wantUsedBlocks:  3, // unchanged after failed allocation (r1's block and the filler's two)
 			expectPartial:   true,
 		},
 		{
@@ -475,6 +479,12 @@ func TestAllocateKVBlocks_PartialBlockFill_PreCheckAccountsForExistingBlock(t *t
 			ok := kvc.AllocateKVBlocks(req, 0, int64(tc.firstTokens), []int64{})
 			if !ok {
 				t.Fatal("initial allocation should succeed")
+			}
+			if tc.fillerTokens > 0 {
+				filler := &sim.Request{ID: "filler", InputTokens: make([]sim.TokenID, tc.fillerTokens)}
+				if !kvc.AllocateKVBlocks(filler, 0, int64(tc.fillerTokens), []int64{}) {
+					t.Fatal("filler allocation should succeed")
+				}
 			}
 
 			// Verify partial block state (structural precondition, for debuggability)
@@ -1056,4 +1066,3 @@ func TestLazyHashDeletion_PartialEviction(t *testing.T) {
 	// block. The surviving prefix (blocks 0-511) forms a contiguous chain.
 	assertBlockConservation(t, kvc)
 }
-

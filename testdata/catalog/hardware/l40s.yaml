@@ -8,3 +8,5 @@ _comment_interconnect: "IntraNodeBwGBps is the on-package link as a per-GPU NOMI
 IntraNodeBwGBps: 32
 _comment_sm: 'SMCount is the count of enabled Streaming Multiprocessors on the AD102 die as shipped in this part, from the NVIDIA datasheet (https://resources.nvidia.com/en-us-l40s/l40s-datasheet-28413). L40S enables 142 of the AD102 die''s 144 SMs. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 8.45% at this part''s 142 SMs.'
 SMCount: 142
+_comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
+ComputeCapability: "8.9"

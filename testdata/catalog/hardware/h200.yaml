@@ -3,8 +3,11 @@ Provenance: vendor_spec
 TFlopsPeak: 989.5
 TFlopsFP8: 1979.0
 BwPeakTBs: 4.8
-MemoryGiB: 141.0
+_comment_memory: "MemoryGiB is the device total the CUDA driver reports (torch.cuda total_memory), which is what vLLM v0.31.0 multiplies by gpu_memory_utilization (requested = ceil(total_memory x gmu), vllm/v1/worker/utils.py:539-558), not the datasheet's 141 GB: 150,109,880,320 B = 139.8007 GiB on H200 ('torch total_memory -> 150109880320', https://github.com/vllm-project/vllm/issues/55381; vLLM start-up logs 'Free memory on device (137.64/139.8 GiB)', InferenceX DeepSeek-V4.1-Flash H200 runs, https://github.com/SemiAnalysisAI/InferenceX/actions/runs/35494445931). Measured, not vendor_spec; the rest of this file is vendor_spec. It also settles the memory-unit caveat above: the driver total is 139.80 GiB, between the decimal (131.3) and GiB (141) readings of '141GB'."
+MemoryGiB: 139.80072021
 _comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 4 link as a per-GPU NOMINAL unidirectional bandwidth in GB/s: 900 GB/s bidirectional per GPU (NVIDIA H200 datasheet) => 450 unidirectional. vendor_spec (bidirectional / 2), NOT measured effective throughput; any measured correction is a per-cluster blis-registry number. The inter-node fabric figure and the intra:inter ratio it feeds (#1530) live with the reusable Network fabric class (networks/ib-400g.yaml), paired with this chip per deployment (a cluster/pool concept, #1662)."
 IntraNodeBwGBps: 450
 _comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GH100 die as shipped in this part, from the NVIDIA datasheet (https://www.nvidia.com/en-us/data-center/h200/). H200 SXM shares the GH100 die and its 132 enabled SMs with H100 SXM5. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."
 SMCount: 132
+_comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
+ComputeCapability: "9.0"

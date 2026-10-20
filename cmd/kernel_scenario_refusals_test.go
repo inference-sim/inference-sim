@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -66,13 +68,14 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		{"two colocated pools", "states 2 colocated pools",
 			run(writeColocatedVariant(t,
 				"  nodes: 1\n  gpus_per_node: 8\n", "  nodes: 2\n  gpus_per_node: 8\n  fabric: ib-400g\n",
-				"      gpu_memory_utilization: 0.9\n", "      gpu_memory_utilization: 0.9\n"+secondPool))},
-		// vLLM refuses to start an engine whose window one request cannot fit in its KV.
-		{"a window larger than the KV budget", "vLLM refuses to start such an engine",
+				"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+secondPool))},
+		// vLLM refuses to start an engine whose window one request cannot fit in its KV, with
+		// its start-up message (vllm/v1/core/kv_cache_utils.py:917-935 at v0.31.0).
+		{"a window larger than the KV budget", "To serve at least one request with the model's max seq len (4000000)",
 			run(writeColocatedVariant(t, "max_model_len: 32768", "max_model_len: 4000000"))},
 		{"an unsimulated scheduling policy", `engine.scheduling_policy \"lifo\"`,
-			run(writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
-				"      gpu_memory_utilization: 0.9\n      scheduling_policy: lifo\n"))},
+			run(writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+				"      gpu_memory_utilization: 0.92\n      scheduling_policy: lifo\n"))},
 		// A shared-only or encode+shared topology states no dedicated prefill or decode
 		// instance yet is disaggregated; it is refused, not run into a missing handoff pricer.
 		{"shared prefill-decode instances only", "--prefill-decode-instances and --encode-instances are not supported",
@@ -96,10 +99,44 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 	}
 	// The accepted neighbours: the plain fixture, and a node pool of the scenario's chip at
 	// the catalog chip's memory.
-	for _, args := range [][]string{run(plain), run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "141"))} {
+	for _, args := range [][]string{run(plain), run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "139.80072021"))} {
 		if out, stderr, err := runKernelCLI(t, args...); err != nil || !strings.Contains(out, `"completed_requests": 4`) {
 			t.Errorf("%v was not served: %v\n%s", args, err, lastLines(stderr, 3))
 		}
+	}
+}
+
+// A DP engine vLLM refuses to start is refused before anything runs, exit status 1
+// and vLLM's start-up message as the fatal line, whether the window is too long for one rank's
+// KV or no memory is left for KV at all; the same DEP8 deployment at a utilization whose rank
+// holds one max_model_len request starts and serves.
+func TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart(t *testing.T) {
+	src := readFile(t, filepath.Join("..", "testdata", "scenarios", "deepseek-v4.1-flash-h100-2n-dep8-dspark5.yaml"))
+	variant := func(gmu string) string {
+		dir := t.TempDir()
+		body := strings.Replace(src, "gpu_memory_utilization: 0.85", "gpu_memory_utilization: "+gmu, 1)
+		if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	run := func(dir string) []string {
+		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
+			"--num-requests", "2", "--rate", "1", "--speculative-acceptance-length", "3.5"}
+	}
+	for _, tt := range []struct{ gmu, want string }{
+		{"0.74", "To serve at least one request with the model's max seq len (262144)"},
+		{"0.70", "No available memory for the cache blocks"},
+	} {
+		_, stderr, err := runKernelCLI(t, run(variant(tt.gmu))...)
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(stderr, "level=fatal") ||
+			!strings.Contains(stderr, tt.want) {
+			t.Errorf("gmu %s: want exit 1 with a fatal %q, got err=%v\n%s", tt.gmu, tt.want, err, lastLines(stderr, 4))
+		}
+	}
+	if out, stderr, err := runKernelCLI(t, run(variant("0.85"))...); err != nil || !strings.Contains(out, `"completed_requests"`) {
+		t.Errorf("gmu 0.85 on the vendored pins holds one window and must start: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
@@ -116,8 +153,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 		totalKVBlocks, blockSizeTokens, maxNumSeqs = saved[0].(int64), saved[1].(int64), saved[2].(int64)
 		maxNumBatchedTokens, maxModelLen, tensorParallelism = saved[3].(int64), saved[4].(int64), saved[5].(int)
 	})
-	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
-		"      gpu_memory_utilization: 0.9\n      scheduling_policy: priority\n")
+	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+		"      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
 	plain := writeColocatedVariant(t)
 	for _, tt := range []struct {
 		name, dir string
@@ -159,8 +196,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 // two values and what chose the run's. A run that follows its scenario records nothing, and the
 // block never reaches stdout (INV-6).
 func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
-	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
-		"      gpu_memory_utilization: 0.9\n      scheduling_policy: priority\n")
+	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+		"      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
 	if err := os.WriteFile(bundle, []byte("scheduler: sjf\n"), 0o644); err != nil {
 		t.Fatal(err)

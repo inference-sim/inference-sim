@@ -1,0 +1,43 @@
+# DeepSeek-V4.1-Flash on two 8-GPU H100 nodes: two TP8 + expert-parallel replicas drafting
+# five tokens with DSpark -- the deployment the AgentX replay's timings were measured on
+# (#1937, `blis replay --agentic-scenario inferencex-agentx-mvp`). It is
+# testdata/scenarios/deepseek-v4.1-flash-h100-tp8-dspark5.yaml with the cluster and pool
+# widened to two nodes and a fabric named, which a multi-node cluster requires (roce-200g:
+# the catalog's nominal RoCE link; only cross-replica traffic would cross it at TP8/DP1).
+# Replica count = nodes x gpus_per_node / (tp x dp) = 2.
+kind: Scenario
+name: agentx-dsv41-flash-h100-2x-tp8-dspark5
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  fabric: roce-200g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: agentx-dsv41-flash-h100-2x-tp8-dspark5
+
+pools:
+  - role: colocated
+    nodes: 2
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: true
+    engine:
+      block_size: 64
+      cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+      max_model_len: auto
+      gpu_memory_utilization: 0.8
+      engram_config:
+        cpu_offload: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 5

@@ -1,7 +1,7 @@
 # Vendored blis-catalog subset
 
 A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) release
-**`0.2.1`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
+**`0.3.0`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
 tests can resolve models, presets, chips and devices offline. Nothing here is edited: a file is
 either copied unchanged from that release or absent. Operators do not use this copy; they clone
 the release and point `--catalog` / `BLIS_CATALOG` at it
@@ -9,18 +9,20 @@ the release and point `--catalog` / `BLIS_CATALOG` at it
 
 | path | what | read by |
 |---|---|---|
-| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 20 models | the HF-config backends, the kernel, the catalog gate |
+| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 21 models | the HF-config backends, the kernel, the catalog gate |
 | `hardware/`, `networks/` | chip and fabric descriptors | the kernel, the catalog gate |
 | `devices/storage.yaml` | KV-offload storage tiers | `--kv-offload-config` device classes, the legacy CPU tier |
-| `workloads/` | the four named presets | `run --workload`, `observe --workload`, `convert preset` |
+| `workloads/` | the named presets, and the `agentx-mvp` replay workload (blis-catalog#34) | `run --workload`, `observe --workload`, `convert preset`; the replay through `replay --workload-spec` |
 
-The models are those the cmd tests name plus the nine the blis-latency-kernel scenario fixtures
-use. Every file format is blis-schemas', and BLIS reads each through that package's own loaders.
+The models are those the cmd tests name, the nine the blis-latency-kernel scenario fixtures
+use, and deepseek-v4.1-flash for `testdata/scenarios/deepseek-v4.1-flash-h100-tp8-dspark5.yaml`. Every file format is blis-schemas', and BLIS reads each through that package's own loaders.
 
 The release is not chosen here. blis-latency-kernel's `testdata/upstream.lock` pins the catalog
 and registry its fixtures resolve against, and
 `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/kernelmodel`) fails when this
-copy's `.upstream-commit` differs from it. `TestCatalogStrictLoad_CommittedFixtureCatalog`
+copy's `.upstream-commit` differs from it. While a pinned kernel pre-release lags the unreleased catalog it was developed against,
+`testdata/upstream-prerelease.lock` names that commit instead (none now: the file is absent);
+the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`
 (`cmd`) requires the copy to load with no problems through the production readers.
 
 ## Updating

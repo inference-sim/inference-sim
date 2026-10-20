@@ -1,0 +1,46 @@
+# EXTRACTED VERBATIM from llm-d/llm-d@4427f55cb6267cc07896968b4f69eda91a1efe75:guides/pd-disaggregation/router/pd-disaggregation.values.yaml
+# router.epp.pluginsCustomConfig[pd-config.yaml] (block scalar, dedented) -- do not edit.
+# sha256(extracted text): 599557ef909b36c65f0d2e1538c341f5a6d5d9bcf938027c34890e8a406172e2
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+- type: prefill-filter
+- type: decode-filter
+- type: approx-prefix-cache-producer
+  parameters:
+    # 5k-ISL gpt-oss-120b reference workload; a modest match window
+    # keeps EPP prefix-matching cheap.
+    maxPrefixTokensToMatch: 131072
+- type: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  parameters:
+    # Measured with guides/recipes/router/calibration/calibrate.sh
+    # through the full P/D path on the reference fleet (gpt-oss-120b,
+    # 8x prefill TP=1 on H200, chunk 8192). Includes the NIXL KV
+    # transfer + sidecar hop, so it is the operational ceiling the
+    # gate acts on. Re-measure for other hardware/models.
+    peakPrefillThroughput: 33821
+- type: token-load-scorer
+- type: active-request-scorer
+- type: max-score-picker
+schedulingProfiles:
+# Prefill does the prompt pass: keep prefix groups on cache-warm pods
+# (affinity filter) and pick by queued prefill token load.
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+  - pluginRef: max-score-picker
+# Pure decode is bound by concurrent in-flight requests, not prefill
+# throughput: pick the least-busy endpoint.
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker

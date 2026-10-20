@@ -113,7 +113,8 @@ kv_offload:
   cpu_bytes_to_use: 17179869184     # required when the block is present
   block_size: 16                    # optional; default = GPU block size (mutually
                                     #   exclusive with blocks_per_chunk)
-  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1)
+  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1); > 1 coalesces
+                                    #   GPU blocks into offload chunks (INV-K6)
   eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
   offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
                                     #   full decode blocks are offloaded and reused too (see below)
@@ -143,9 +144,19 @@ rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesyst
 O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
 ([blis-latency-kernel#41](https://github.com/inference-sim/blis-latency-kernel/issues/41)). A class the catalog does not define, or
 a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
-sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario that
-states its own `offload` block is refused for now: that block and `--kv-offload-config` describe
-the same tiers in two formats, and #1910 makes them one.
+sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario's own
+`offload` block is the deployment's tier configuration (#1910): its `cpu_dram` tier is the CPU
+tier, and `--kv-offload-config` may only restate it (a disagreement is refused, naming the
+fields). See [Latency models](latency-models.md#kv-offload) for the mapping and what it refuses.
+
+**Chunks (`blocks_per_chunk`, INV-K6).** The tiers hold vLLM's offload chunks: `blocks_per_chunk` GPU
+blocks keyed by their last block's hash. The CPU tier holds `cpu_bytes_to_use // (bytes per block ×
+blocks_per_chunk)` chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk.
+A load starts at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when
+it is shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk
+is refused at startup. blis-schemas' `offload` block cannot yet state the width (the proposed field
+is `offload.blocks_per_chunk`), so `--kv-offload-config` supplies it beside a scenario block. Every
+other field must still agree.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
 round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
@@ -212,6 +223,9 @@ Chunked prefill splits long prefills into smaller chunks:
 
 !!! info "Chunked prefill benefits TTFT, not ITL"
     With `--long-prefill-token-threshold=256`, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (<0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.
+
+!!! note "A lone request is not chunked"
+    As in vLLM v0.31.0 (#57951), the threshold applies only when the engine's scheduler holds another request, running or waiting. A request alone takes the whole `max_num_batched_tokens` budget, since there is nobody for it to starve.
 
 ## Batch Formation Parameters
 

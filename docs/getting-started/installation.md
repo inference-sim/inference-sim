@@ -37,7 +37,7 @@ repository **at the pinned release tag** (see [Catalog compatibility](#catalog-c
 below) and point BLIS at the clone root:
 
 ```bash
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 ```
 
@@ -51,7 +51,7 @@ compatible version is stated; every other page's clone command pins the same tag
      line below and requires every documented blis-catalog clone to pin exactly it, so keep
      the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
 
-**Compatible blis-catalog release: `0.2.1`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.2.1).
+**Compatible blis-catalog release: `0.3.0`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.3.0).
 
 Why pin at all: BLIS parses every catalog file strictly (`KnownFields(true)`), and strict
 parsing is one-way — an added or renamed key in a future catalog schema is a **hard load
@@ -64,12 +64,12 @@ tag clone still carries the revision, so that provenance is unaffected.)
 
 BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
 clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.1.1`**, the release blis-latency-kernel `v0.1.0` (the version `go.mod` pins) is tested
+`v0.2.0`**, the release blis-latency-kernel `v0.3.0` (the version `go.mod` pins) is tested
 against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
 repository's test suite holds its vendored catalog and registry to it.
 
 ```bash
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 ```
 
 **Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
@@ -88,16 +88,17 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
 `--scenario <file name>` picks one in it. Two directories are ready to use:
 
 - the kernel module's own fixtures, downloaded by `go build`, at
-  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`;
+  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`;
 - `testdata/scenarios/` in this repository: `glm-5-h200-3p1d-ib.yaml` (P/D) and
   `glm-5-h200-tp8-mtp3.yaml` (MTP speculative decoding; it drafts tokens, so a run must also
-  pass `--speculative-acceptance-rate`, e.g. `0.7`).
+  state its acceptance -- `--speculative-acceptance-rate`, e.g. `0.7`, or select a registry
+  profile; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)).
 
 ## Verify the Build
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate \
+  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate \
   --registry $PWD/blis-registry --catalog blis-catalog \
   --num-requests 10
 ```

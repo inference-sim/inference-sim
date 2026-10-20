@@ -30,8 +30,8 @@ type KeyID int64
 //
 // This is the CHUNK-stride keyspace (BC-K4): with
 // tokensPerChunk = tokensPerBlock * blocksPerChunk it yields one key per group
-// of blocksPerChunk blocks — matching vLLM's per-chunk offload keys, NOT one key
-// per block. At tokensPerChunk == blockSize and prevKey == "" it is
+// of blocksPerChunk blocks, NOT one key per block. The offload chain does not use
+// it at chunk stride: vLLM keys a chunk by its last block's hash (INV-K6, sim/kv/offload_chunks.go). At tokensPerChunk == blockSize and prevKey == "" it is
 // byte-identical to hash.ComputeBlockHashes (BC-K1).
 //
 // Panics if tokensPerChunk <= 0 (a caller bug, mirroring hash.ComputeBlockHashes).

@@ -1,0 +1,50 @@
+# Collective prices measured by InferenceX CollectiveX (inferencex.semianalysis.com,
+# api/v1/collectivex, contract v1), kept apart from cost-model-collectives.yaml because that
+# set is single-sourced from NVIDIA AISimulate and a set that mixed the two methodologies
+# would confound cross-part comparisons. Every entry here is CollectiveX's.
+#
+# A scenario adds this set beside cost-model-collectives to take these prices; without it
+# the kernel prices as before.
+kind: CoefficientSet
+name: cost-model-collectives-inferencex
+coefficients:
+  - moe_a2a_floor_deepep_low_latency_graph_8rank_h100:
+      value: 37.5
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "InferenceX CollectiveX runs 33356406487, 36334392363, 36367074689 (api/v1/collectivex, contract v1; bodies sha256 d4f2f7646c57), deepep-v2 low-latency (DeepEP legacy Buffer, 01dc3aa), bf16, EP8 one node, roundtrip p50", role: primary}
+      rationale: >
+        DeepEP low-latency dispatch plus combine as one MoE layer's price under CUDA-graph replay, which vLLM v0.31.0 uses for a captured decode step; the eager pair (moe_a2a_*_deepep_low_latency_8rank) prices a step with no graph. floor + tokens x hidden x 2 x top_k / rate, per-rank tokens, fitted on tokens 1/4/16/64/256. Held out (tokens 2/8/32/128): median |rel err| 3.3%; T2 -2.1%, T8 +3.1%, T32 +3.8%, T128 +3.5%. DeepEP d4f41e4e93...01dc3aa: 6 commits ahead, 0 behind, no file under csrc/kernels/legacy. Reproduce with scripts/fit_deepep_ll_graph.py.
+  - moe_a2a_rate_deepep_low_latency_graph_8rank_h100:
+      value: 146200.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "InferenceX CollectiveX runs 33356406487, 36334392363, 36367074689 (api/v1/collectivex, contract v1; bodies sha256 d4f2f7646c57), deepep-v2 low-latency (DeepEP legacy Buffer, 01dc3aa), bf16, EP8 one node, roundtrip p50", role: primary}
+      rationale: >
+        DeepEP low-latency dispatch plus combine as one MoE layer's price under CUDA-graph replay, which vLLM v0.31.0 uses for a captured decode step; the eager pair (moe_a2a_*_deepep_low_latency_8rank) prices a step with no graph. floor + tokens x hidden x 2 x top_k / rate, per-rank tokens, fitted on tokens 1/4/16/64/256. Held out (tokens 2/8/32/128): median |rel err| 3.3%; T2 -2.1%, T8 +3.1%, T32 +3.8%, T128 +3.5%. DeepEP d4f41e4e93...01dc3aa: 6 commits ahead, 0 behind, no file under csrc/kernels/legacy. Reproduce with scripts/fit_deepep_ll_graph.py.
+  - moe_a2a_floor_deepep_low_latency_graph_8rank_h200:
+      value: 35.3
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "InferenceX CollectiveX runs 33356406487, 36334392363, 36402856875 (api/v1/collectivex, contract v1; bodies sha256 9f9ec3a09355), deepep-v2 low-latency (DeepEP legacy Buffer, 01dc3aa), bf16, EP8 one node, roundtrip p50", role: primary}
+      rationale: >
+        DeepEP low-latency dispatch plus combine as one MoE layer's price under CUDA-graph replay, which vLLM v0.31.0 uses for a captured decode step; the eager pair (moe_a2a_*_deepep_low_latency_8rank) prices a step with no graph. floor + tokens x hidden x 2 x top_k / rate, per-rank tokens, fitted on tokens 1/4/16/64/256. Held out (tokens 2/8/32/128): median |rel err| 3.6%; T2 -2.5%, T8 +3.5%, T32 +3.7%, T128 +5.3%. DeepEP d4f41e4e93...01dc3aa: 6 commits ahead, 0 behind, no file under csrc/kernels/legacy. Reproduce with scripts/fit_deepep_ll_graph.py.
+  - moe_a2a_rate_deepep_low_latency_graph_8rank_h200:
+      value: 149600.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "InferenceX CollectiveX runs 33356406487, 36334392363, 36402856875 (api/v1/collectivex, contract v1; bodies sha256 9f9ec3a09355), deepep-v2 low-latency (DeepEP legacy Buffer, 01dc3aa), bf16, EP8 one node, roundtrip p50", role: primary}
+      rationale: >
+        DeepEP low-latency dispatch plus combine as one MoE layer's price under CUDA-graph replay, which vLLM v0.31.0 uses for a captured decode step; the eager pair (moe_a2a_*_deepep_low_latency_8rank) prices a step with no graph. floor + tokens x hidden x 2 x top_k / rate, per-rank tokens, fitted on tokens 1/4/16/64/256. Held out (tokens 2/8/32/128): median |rel err| 3.6%; T2 -2.5%, T8 +3.5%, T32 +3.7%, T128 +5.3%. DeepEP d4f41e4e93...01dc3aa: 6 commits ahead, 0 behind, no file under csrc/kernels/legacy. Reproduce with scripts/fit_deepep_ll_graph.py.

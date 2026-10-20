@@ -633,3 +633,53 @@ func TestJainFairnessIndex_Empty_ReturnsZero(t *testing.T) {
 		t.Errorf("JainFairnessIndex(empty) = %f, want 0", jfi)
 	}
 }
+
+// A cluster run hands the measured-window aggregates their inputs (#1938): each request's
+// phase reaches its row, a warm-up request's decode steps are set aside from the measured
+// step series, the in-flight step function starts and ends at zero and never exceeds the
+// requests sent, and the KV capacity per replica is the instance pool's.
+func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
+	requests := makeSharedPrefixRequests(12, 0, 64, 32, 8, 2_000)
+	phases := map[string]sim.Phase{}
+	for i, r := range requests {
+		r.Phase = sim.PhaseProfile
+		if i < 4 {
+			r.Phase = sim.PhaseWarmup
+		}
+		phases[r.ID] = r.Phase
+	}
+	cs := NewClusterSimulator(baseDeploymentConfig(2), NewSliceRequestSource(requests), nil)
+	if err := cs.Run(); err != nil {
+		t.Fatal(err)
+	}
+	agg := cs.AggregatedMetrics()
+	for id, rm := range agg.Requests {
+		if rm.Phase != phases[id] {
+			t.Errorf("%s: phase %q, want %q", id, rm.Phase, phases[id])
+		}
+	}
+	// The step owners partition AllITLs: 4 warm-up requests x 7 decode steps each (8 output
+	// tokens, the first from prefill), and the profile requests' steps.
+	warm, total := 0, 0
+	for _, o := range agg.StepOwners {
+		total += o.Steps
+		if o.Phase == sim.PhaseWarmup {
+			warm += o.Steps
+		}
+	}
+	if warm != 4*7 || total != len(agg.AllITLs) {
+		t.Errorf("owners hold %d warm-up steps (want 28) and %d in all (AllITLs has %d)", warm, total, len(agg.AllITLs))
+	}
+	samples := agg.InFlightSamples
+	if len(samples) == 0 || samples[len(samples)-1].Count != 0 {
+		t.Fatalf("in-flight samples %v must end at zero once every request completed", samples)
+	}
+	for _, s := range samples {
+		if s.Count < 0 || s.Count > len(requests) {
+			t.Errorf("in-flight count %d outside [0, %d]", s.Count, len(requests))
+		}
+	}
+	if want := cs.Instances()[0].TotalKvCapacityTokens(); agg.KVCapacityTokensPerReplica != want {
+		t.Errorf("kv_capacity_tokens_per_replica = %d, want %d", agg.KVCapacityTokensPerReplica, want)
+	}
+}

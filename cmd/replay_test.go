@@ -58,7 +58,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"snapshot-refresh-interval",
 
 		// registerSimConfigFlags: cache signal delay
-		"cache-signal-delay",
+		"cache-signal-delay", "dp-load-balancing",
 
 		// registerSimConfigFlags: flow control
 		"flow-control", "saturation-detector", "dispatch-order",

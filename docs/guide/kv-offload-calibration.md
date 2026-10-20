@@ -17,14 +17,15 @@ hit-rate**:
 - **Real hit-rate** is scraped from the vLLM server's Prometheus `/metrics` endpoint
   by `blis observe --scrape-kv-metrics` and recorded in the trace header
   (`observed_kv_metrics`).
-- **Simulated hit-rate** is the DES aggregate `cache_hit_rate`, written to the
-  `blis replay --metrics-path` MetricsOutput file.
+- **Simulated hit-rate** is read from the `blis replay --metrics-path` MetricsOutput
+  file: `cache_hit_rate` (the GPU prefix cache's prompt-token rate) against a GPU-cache
+  observation, `cache_hit_rate + cpu_tier_hit_rate` (tokens either tier served) against a
+  tiered one.
 - `blis calibrate --sim-metrics <that file>` reports the absolute error in percentage
   points and a pass/fail verdict against `--hit-rate-tolerance-pp` (default **5 pp**),
   plus a TTFT-MAPE verdict against `--ttft-mape-threshold` (default **0.15**).
 
-BLIS exposes a single aggregate hit-rate (GPU tier plus offload misses), so the
-comparison is on the **overall** hit-rate. Per-tier read/write time is recorded in the
+Against a tiered observation the comparison is on the **overall** hit-rate (both tiers). Per-tier read/write time is recorded in the
 header (`read_time_total` / `write_time_total`) as informational data for a manual
 bandwidth cross-check — the simulator has no per-tier hit counters to compare against.
 

@@ -52,7 +52,13 @@ type InstanceSimulator struct {
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	// Create KV store (single-tier or tiered based on config)
-	kvStore := kv.NewKVStore(cfg.KVCacheConfig, cfg.Seed)
+	// The KV slot reservation is the speculative config's (#1627), never set apart from it.
+	kvCfg := cfg.KVCacheConfig
+	kvCfg.Speculative = cfg.KV()
+	kvCfg.Speculative.MaxModelLen = cfg.MaxModelLen
+	// The engines of one node share each secondary offload tier (sim.OffloadTierSharing).
+	kvCfg.Offload = kvCfg.Offload.ForInstance(string(id))
+	kvStore := kv.NewKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// wrap the latency model with it so the per-step compute overhead applies
 	// (#1467, R23). BuildAdapterCost is pure and
@@ -155,8 +161,17 @@ func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessN
 func (i *InstanceSimulator) Finalize() {
 	i.sim.Finalize()
 	// Capture KV metrics at finalization for CollectRawMetrics
-	i.sim.Metrics.CacheHitRate = i.sim.KVCache.CacheHitRate()
 	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+	// The thrash counts behind the rate, so the cluster aggregate weights each instance
+	// by its opportunities (#1904). The hit rate is the instance's prompt-token lookups
+	// (Metrics.recordPrefixLookup), the quantity vLLM's prefix-cache stats count, rather
+	// than the store's block tally, which also counts decode growth.
+	if c, ok := i.sim.KVCache.(sim.ThrashCounter); ok {
+		counts := c.ThrashCounts()
+		i.sim.Metrics.KVThrashEvents = counts.Events
+		i.sim.Metrics.KVThrashOpportunities = counts.Opportunities
+	}
+	i.sim.Metrics.CacheHitRate = i.sim.Metrics.PromptCacheHitRate()
 }
 
 // QueueDepth returns the number of requests in the wait queue.
@@ -324,6 +339,25 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
 	return len(i.sim.KVCache.GetCachedBlocks(tokens))
 }
 
+// cpuTierPrefixFn returns a CPU-offload-tier prefix query (contiguous leading
+// blocks readable in the CPU tier), or nil when the instance has no offload tier.
+// With asOf non-nil the tier is read as of time asOf() (the frozen cache-signal
+// view), otherwise live.
+func (i *InstanceSimulator) cpuTierPrefixFn(asOf func() int64) func([]sim.TokenID) int {
+	if i.sim == nil {
+		return nil
+	}
+	oc, ok := i.sim.KVCache.(*kv.OffloadCache)
+	if !ok {
+		return nil
+	}
+	if asOf == nil {
+		return oc.CPUTierPrefixBlockCount
+	}
+	oc.EnableCPUTierHistory()
+	return func(tokens []sim.TokenID) int { return oc.CPUTierPrefixBlockCountAt(tokens, asOf()) }
+}
+
 // cacheSnapshotCapable is satisfied by KVStore implementations that can produce
 // a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
 // Used for stale cache signal simulation (issue #919).
@@ -453,29 +487,25 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 
 // ReserveTransferredKV reserves KV cache blocks on this instance for a decode
 // sub-request whose KV transfer is in flight (issue #1343, vLLM
-// WAITING_FOR_REMOTE_KVS parity). Blocks are allocated immediately so they
-// reduce available capacity for other requests during the transfer window.
-// ProgressIndex is advanced past the input so batch formation treats the
-// request as decode-ready once the transfer completes and the state is
-// promoted to StateQueued. Returns false if insufficient KV capacity on this
-// instance.
+// WAITING_FOR_REMOTE_KVS parity), and returns how many prompt tokens the pull must
+// move: those this instance's prefix cache does not already hold (sim.Simulator.
+// ReserveRemoteKV). Blocks are allocated immediately so they reduce available capacity
+// for other requests during the transfer window. ProgressIndex is advanced past the
+// input so batch formation treats the request as decode-ready once the transfer
+// completes and the state is promoted to StateQueued. Returns ok=false if this instance
+// lacks the KV capacity.
 //
 // Caller is responsible for calling ReleaseReservedKV (or the equivalent
 // KVCache.ReleaseKVBlocks) if the reservation must be undone — e.g., when
 // the decode instance becomes non-routable between KVTransferStartedEvent
 // and KVTransferCompletedEvent.
-func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
-	inputLen := req.InputLen()
-	if inputLen == 0 {
-		req.ProgressIndex = 0
-		return true
-	}
-	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
-	if ok {
-		req.ProgressIndex = inputLen
-	}
-	return ok
+func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) (pulledTokens int64, ok bool) {
+	return i.sim.ReserveRemoteKV(req)
 }
+
+// CacheRemoteKV registers a decode sub-request's pulled blocks in this instance's prefix
+// cache once the pull has landed (sim.Simulator.CacheRemoteKV).
+func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) { i.sim.CacheRemoteKV(req) }
 
 // ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
 // Used when a reservation must be undone (e.g., decode instance transitioned
@@ -483,6 +513,30 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 // no blocks.
 func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// ReleaseHeldKV frees the KV blocks a finished request kept past completion
+// (sim.Request.RetainKVOnFinish): a P/D prefill sub-request's, once the decode side has pulled
+// them (INV-PD-7). The blocks go back to the free list with their prefix hashes, as any
+// finished request's do.
+func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
+	if !req.RetainKVOnFinish || req.State != sim.StateCompleted {
+		panic(fmt.Sprintf("ReleaseHeldKV %s: request %s is not a finished request that retains its KV",
+			i.id, req.ID))
+	}
+	i.sim.KVCache.ReleaseKVBlocks(req)
+}
+
+// WakeIfParked wakes a parked engine for KV freed at cluster time t (sim.Simulator.WakeIfParked).
+func (i *InstanceSimulator) WakeIfParked(t int64) { i.sim.WakeIfParked(t) }
+
+// KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
+func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
+	r, ok := i.sim.KVCache.(sim.RequestBlockReporter)
+	if !ok {
+		panic(fmt.Sprintf("instance %s: KV store %T does not report a request's blocks", i.id, i.sim.KVCache))
+	}
+	return r.RequestBlocks(req.ID)
 }
 
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
@@ -547,4 +601,10 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 		}
 	}
 	return false
+}
+
+// ReserveTransferredKVBehind is ReserveTransferredKV leaving reserved blocks free for the
+// instance's other admitted handoffs (sim.Simulator.ReserveRemoteKVBehind, INV-PD-9).
+func (i *InstanceSimulator) ReserveTransferredKVBehind(req *sim.Request, reserved int64) (int64, bool) {
+	return i.sim.ReserveRemoteKVBehind(req, reserved)
 }

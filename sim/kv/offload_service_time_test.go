@@ -34,6 +34,7 @@ func TestOffload_ServiceTimeIsAskedForTheJobsDirection(t *testing.T) {
 		t.Fatal("could not seed the CPU tier")
 	}
 	oc.cascade(stored)
+	oc.flushCascades()
 	if len(calls) == 0 {
 		t.Fatal("a store was never priced by the tier's ServiceTime")
 	}

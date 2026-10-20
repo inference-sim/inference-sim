@@ -22,7 +22,7 @@ for the pinned release.
 
 ## Scored deployments
 
-blis-latency-kernel `v0.1.0` ships the scenarios it was scored on in
+blis-latency-kernel `v0.3.0` ships the scenarios it was scored on in
 `testdata/aisimulate` of its module, covering deepseek-v3, deepseek-v4-pro, glm-5,
 gpt-oss-120b, kimi-k2.5, llama-3.1-70b-instruct, minimax-m2.5, minimax-m3 and
 qwen3.5-397b-a17b on H100, H200, B200 and B300 under several TP degrees and precisions. The
@@ -38,7 +38,7 @@ accept a catalog a run rejects. The catalog is kept loadable by a whole-catalog 
 the same code path a run uses (#1750), in two layers:
 
 - **Unconditional** -- `go test ./cmd/...` loads the committed fixture catalog
-  (`testdata/catalog`, a vendored subset of blis-catalog `0.2.1`) on every test run.
+  (`testdata/catalog`, a vendored subset of blis-catalog `0.3.0`) on every test run.
 - **Against the authoritative catalog** -- `scripts/catalog-load-gate.sh` clones
   `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring it into
   CI as a `catalog-load` job is a pending human step, tracked by

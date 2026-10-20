@@ -46,6 +46,9 @@ type kvOffloadBlock struct {
 	SelfDescribingKVEvents *bool                `yaml:"self_describing_kv_events"`
 	StoreThreshold         *int                 `yaml:"store_threshold"`
 	SecondaryTiers         []kvOffloadTierBlock `yaml:"secondary_tiers"`
+	// Simple selects the SimpleCPUOffloadConnector; LazyOffload is its lazy_offload.
+	Simple      *bool `yaml:"simple_cpu_offload"`
+	LazyOffload *bool `yaml:"lazy_offload"`
 }
 
 // kvOffloadTierBlock is one user-facing secondary tier. Pointer fields (R9).
@@ -61,6 +64,9 @@ type kvOffloadTierBlock struct {
 	ReadBandwidth  *float64 `yaml:"read_bandwidth"`
 	WriteBandwidth *float64 `yaml:"write_bandwidth"`
 	BaseLatency    *float64 `yaml:"base_latency"`
+	// CapacityBytes is the tier's size on its device (BLIS-only: vLLM's fs tier writes until
+	// the filesystem is full). Absent is unbounded.
+	CapacityBytes *int64 `yaml:"capacity_bytes"`
 }
 
 // loadKVOffloadConfigFile reads and strictly parses a --kv-offload-config file.
@@ -201,6 +207,12 @@ func resolveKVOffload(block *kvOffloadBlock, devices map[string]kvOffloadDevice,
 		cfg.Tiers = append(cfg.Tiers, tier)
 	}
 
+	if block.Simple != nil {
+		cfg.Simple = *block.Simple
+	}
+	if block.LazyOffload != nil {
+		cfg.LazyOffload = *block.LazyOffload
+	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, err
 	}
@@ -234,6 +246,13 @@ func resolveKVOffloadTier(index int, tb kvOffloadTierBlock, devices map[string]k
 	tier.NWriteThreads = 16
 	if tb.NWriteThreads != nil {
 		tier.NWriteThreads = *tb.NWriteThreads
+	}
+
+	if tb.CapacityBytes != nil {
+		if *tb.CapacityBytes < 0 {
+			return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].capacity_bytes must be >= 0, got %d", index, *tb.CapacityBytes)
+		}
+		tier.CapacityBytes = *tb.CapacityBytes
 	}
 
 	// locality: default unset ("").
@@ -349,15 +368,52 @@ func knownDeviceClasses(devices map[string]kvOffloadDevice) string {
 	return strings.Join(names, ", ")
 }
 
-// resolveKVOffloadConfig is the thin CLI wrapper (Deviation #9): it reads the flag,
-// loads the file + shipped device physics, calls the pure resolver, and logrus.Fatalf's
-// on any error (CLI boundary). Absent flag ⇒ inert zero value. Single construction
-// site (R4), shared by run and replay for INV-13 parity.
+// resolveKVOffloadConfig is the thin CLI wrapper (Deviation #9): it resolves the run's KV
+// offload from its two sources and logrus.Fatalf's on any error (CLI boundary). The
+// scenario's Deployment.offload block is the deployment's tier configuration (#1910); a
+// --kv-offload-config file may state the same hierarchy in vLLM's kv_offload terms, and
+// must then resolve identically -- there is no precedence between two descriptions of one
+// deployment, so a disagreement is refused, naming the fields. With neither, the inert zero
+// value. Single construction site (R4), shared by run and replay for INV-13 parity.
 func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
-	if kvOffloadConfigPath == "" {
-		return sim.KVOffloadConfig{}
+	var fromScenario, fromFlag sim.KVOffloadConfig
+	if scenarioOffload != nil {
+		block, err := kvOffloadBlockFromDeployment(scenarioOffload)
+		var devices map[string]kvOffloadDevice
+		if err == nil {
+			devices, err = resolveKVOffloadDevices(block)
+		}
+		if err == nil {
+			fromScenario, err = resolveKVOffload(block, devices, blockSizeTokens)
+		}
+		if err != nil {
+			logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+		}
 	}
-	f, err := loadKVOffloadConfigFile(kvOffloadConfigPath)
+	if kvOffloadConfigPath != "" {
+		fromFlag = resolveKVOffloadFile(kvOffloadConfigPath)
+	}
+	switch {
+	case scenarioOffload != nil && kvOffloadConfigPath != "":
+		// blis-schemas' Offload cannot state the chunk width (proposed field:
+		// offload.blocks_per_chunk), so the scenario leaves it unstated and the flag's applies.
+		fromScenario.BlockSize, fromScenario.BlocksPerChunk = fromFlag.BlockSize, fromFlag.BlocksPerChunk
+		if diff := offloadConfigDiff(fromScenario, fromFlag); diff != "" {
+			logrus.Fatalf("--kv-offload-config %q disagrees with scenario %q's offload block (%s); the "+
+				"scenario is the deployment, so the flag may only restate it -- drop the flag, or "+
+				"change the scenario", kvOffloadConfigPath, kernelScenario, diff)
+		}
+		return fromScenario
+	case scenarioOffload != nil:
+		return fromScenario
+	default:
+		return fromFlag
+	}
+}
+
+// resolveKVOffloadFile loads and resolves one --kv-offload-config file, fatal on error.
+func resolveKVOffloadFile(path string) sim.KVOffloadConfig {
+	f, err := loadKVOffloadConfigFile(path)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -368,11 +424,11 @@ func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
 	// devices/ namespace, so it resolves exactly as it did before the cutover.
 	devices, err := resolveKVOffloadDevices(f.KVOffload)
 	if err != nil {
-		logrus.Fatalf("--kv-offload-config %q: %v", kvOffloadConfigPath, err)
+		logrus.Fatalf("--kv-offload-config %q: %v", path, err)
 	}
 	cfg, err := resolveKVOffload(f.KVOffload, devices, blockSizeTokens)
 	if err != nil {
-		logrus.Fatalf("--kv-offload-config %q: %v", kvOffloadConfigPath, err)
+		logrus.Fatalf("--kv-offload-config %q: %v", path, err)
 	}
 	return cfg
 }
@@ -393,6 +449,8 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 		EvictionPolicy:         c.EvictionPolicy,
 		OffloadPromptOnly:      c.OffloadPromptOnly,
 		SelfDescribingKVEvents: c.SelfDescribingKVEvents,
+		SimpleCPUOffload:       c.Simple,
+		LazyOffload:            c.LazyOffload,
 	}
 	for _, t := range c.Tiers {
 		h.Tiers = append(h.Tiers, workload.TraceKVOffloadTier{
@@ -410,6 +468,7 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 			SaturationQueueDepth:   t.SaturationQueueDepth,
 			SingleTransferFraction: t.SingleTransferFraction,
 			LatencyJitterStddev:    t.LatencyJitterStddev,
+			CapacityBytes:          t.CapacityBytes,
 		})
 	}
 	return h
@@ -431,7 +490,9 @@ func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
 // It is false for sim-generated (run/replay) traces, where INV-13 run/replay parity
 // forbids a flag adding an offload config the source run did not have.
 func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) sim.KVOffloadConfig {
-	flagChanged := cmd.Flags().Changed("kv-offload-config")
+	// The scenario's offload block is a source on replay as on run: it and the flag resolve
+	// together (resolveKVOffloadConfig), and the result must match the header.
+	flagChanged := cmd.Flags().Changed("kv-offload-config") || scenarioOffload != nil
 	var flagCfg sim.KVOffloadConfig
 	if flagChanged {
 		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
@@ -442,6 +503,16 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
+}
+
+// replayRecordsDeployment reports whether a replay's trace records the deployment BLIS ran:
+// a BLIS-generated trace does, and INV-13 keeps its header authoritative, so neither the
+// scenario's offload block nor --kv-offload-config may add tiers it did not run. An observe
+// trace (mode "real") records a server's requests, not BLIS's deployment, and an agentic
+// replay (#1937) has no trace at all -- its header is synthesized -- so for both the scenario
+// and an agreeing flag supply the tiers.
+func replayRecordsDeployment(h workload.TraceHeader, agentic bool) bool {
+	return !agentic && h.Mode != "real"
 }
 
 // resolveReplayKVOffload is the PURE, error-returning core of replay's
@@ -462,7 +533,7 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 		flagCmp, headerCmp := flagCfg, headerOffload
 		flagCmp.PerBlockBytes, headerCmp.PerBlockBytes = 0, 0
 		if flagChanged && !reflect.DeepEqual(flagCmp, headerCmp) {
-			return sim.KVOffloadConfig{}, fmt.Errorf("--kv-offload-config conflicts with the kv_offload config recorded in the trace header; on replay the header is authoritative — omit the flag or pass the identical config")
+			return sim.KVOffloadConfig{}, fmt.Errorf("the scenario's offload block or --kv-offload-config conflicts with the kv_offload config recorded in the trace header; on replay the header is authoritative — replay with the scenario and flags the run used")
 		}
 		return headerOffload, nil
 	}
@@ -474,7 +545,7 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 			// resolved); replay derives it after the latency config resolves.
 			return flagCfg, nil
 		}
-		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") may have an offload config supplied on replay to model the observed deployment")
+		return sim.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config or the scenario's offload block cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") and agentic replays, which record no BLIS deployment, take their offload config from the scenario or the flag on replay")
 	}
 	return sim.KVOffloadConfig{}, nil
 }
@@ -516,6 +587,8 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 		EvictionPolicy:         h.EvictionPolicy,
 		OffloadPromptOnly:      h.OffloadPromptOnly,
 		SelfDescribingKVEvents: h.SelfDescribingKVEvents,
+		Simple:                 h.SimpleCPUOffload,
+		LazyOffload:            h.LazyOffload,
 	}
 	for _, t := range h.Tiers {
 		c.Tiers = append(c.Tiers, sim.KVOffloadTier{
@@ -533,6 +606,7 @@ func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
 			SaturationQueueDepth:   t.SaturationQueueDepth,
 			SingleTransferFraction: t.SingleTransferFraction,
 			LatencyJitterStddev:    t.LatencyJitterStddev,
+			CapacityBytes:          t.CapacityBytes,
 		})
 	}
 	return c

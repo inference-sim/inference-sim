@@ -88,8 +88,10 @@ func TestFormBatch_ReloadReducesNumNewTokens(t *testing.T) {
 	}
 }
 
-// A full-prefix reload (newStart == InputLen) is a valid zero-work admission: the
-// request enters the batch billed 0 prefill tokens and transitions straight to decode.
+// A full-prefix reload (newStart == InputLen) still computes the prompt's last token, as
+// vLLM sets a fully loaded request's num_computed_tokens to num_tokens - 1
+// (scheduler.py:3095-3096 at v0.31.0, #1943): the request is billed 1 prefill token and its
+// progress reaches InputLen.
 func TestFormBatch_FullReloadZeroPrefill(t *testing.T) {
 	kv := newFakeReloadKV(16)
 	kv.reloadEnd["A"] = 64 // entire 64-token input reloaded
@@ -104,8 +106,8 @@ func TestFormBatch_FullReloadZeroPrefill(t *testing.T) {
 	if len(result.RunningBatch.Requests) != 1 {
 		t.Fatalf("full-hit A must still be admitted, got %d", len(result.RunningBatch.Requests))
 	}
-	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 0 {
-		t.Fatalf("a full-prefix reload must bill 0 prefill tokens, got NumNewTokens=%d", a.NumNewTokens)
+	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 1 {
+		t.Fatalf("a full-prefix reload must bill only the last prompt token, got NumNewTokens=%d", a.NumNewTokens)
 	}
 	if ctx.ComputedTokens["A"] != 64 {
 		t.Fatalf("full hit must set ComputedTokens=InputLen=64, got %d", ctx.ComputedTokens["A"])
@@ -141,8 +143,8 @@ func TestFormBatch_ReloadRespectsMaxModelLen(t *testing.T) {
 // A reload that covers the WHOLE input must credit the whole reloaded prefix even when a
 // chunk cap is set (#1706): folding the reloadable boundary into the computed baseline
 // BEFORE the chunk clamp (vLLM ordering) means the chunk sizes on the uncached remainder,
-// which is zero here — so the request is billed 0 prefill work and progress reaches
-// InputLen in one step, NOT capped at the (now-irrelevant) chunk size. This replaces the
+// only the last token here (#1943) — so the request is billed 1 prefill token and progress
+// reaches InputLen in one step, NOT capped at the (now-irrelevant) chunk size. This replaces the
 // pre-#1706 assertion (NumNewTokens=0 but progress capped at endIndex=16, which re-billed
 // the remainder as recompute on later steps).
 func TestFormBatch_ReloadBeyondCappedChunk(t *testing.T) {
@@ -160,8 +162,8 @@ func TestFormBatch_ReloadBeyondCappedChunk(t *testing.T) {
 	if len(result.RunningBatch.Requests) != 1 {
 		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
 	}
-	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 0 {
-		t.Fatalf("a fully-reloaded input must bill 0 prefill work regardless of the chunk cap, got NumNewTokens=%d", a.NumNewTokens)
+	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 1 {
+		t.Fatalf("a fully-reloaded input must bill only its last token regardless of the chunk cap, got NumNewTokens=%d", a.NumNewTokens)
 	}
 	if ctx.ComputedTokens["A"] != 64 {
 		t.Fatalf("the whole reloaded prefix must be credited: progress must reach InputLen=64, not the chunk cap, got ComputedTokens=%d", ctx.ComputedTokens["A"])
@@ -179,13 +181,15 @@ func TestFormBatch_ReloadThenChunkedRemainder(t *testing.T) {
 
 	wq := &WaitQueue{}
 	wq.Enqueue(reloadReq("A", 96))
+	// A second request in the scheduler, so the threshold applies (vLLM skips it for a lone request).
+	wq.Enqueue(reloadReq("B", 16))
 
 	ctx := reloadCtx(wq, kv)
 	ctx.PrefillTokenThreshold = 16
 	bf := NewBatchFormation("")
 	result := bf.FormBatch(ctx)
 
-	if len(result.RunningBatch.Requests) != 1 {
+	if len(result.RunningBatch.Requests) == 0 {
 		t.Fatalf("A must be admitted, got %d", len(result.RunningBatch.Requests))
 	}
 	if a := result.RunningBatch.Requests[0]; a.NumNewTokens != 16 {

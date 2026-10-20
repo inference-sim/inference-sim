@@ -163,6 +163,9 @@ type Observation struct {
 	// MeanTTFTUs is calculate_metrics's mean_ttft: the mean time to first token over every
 	// main-phase request.
 	MeanTTFTUs float64
+	// FirstTTFTUs is main request 0's time to first token: the request whose prompt a primed run's
+	// warm-up cached. Information only; no scorer reads it.
+	FirstTTFTUs float64
 	// Completed is how many main-phase requests completed: always 10 x concurrency, because
 	// Run refuses anything else.
 	Completed int
@@ -478,7 +481,7 @@ func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string
 	n := len(pl.InputLens)
 	seen := make([]bool, n)
 	const usPerMs = 1e3
-	var ttftSum, tpotSum float64
+	var ttftSum, tpotSum, firstTTFT float64
 	var tpotN, completed int
 	for _, r := range reqs {
 		if r.CompletionIndex == 0 || (ignore != nil && ignore(r.ID)) {
@@ -499,6 +502,9 @@ func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string
 		}
 		completed++
 		ttftSum += r.TTFT * usPerMs
+		if i == 0 {
+			firstTTFT = r.TTFT * usPerMs
+		}
 		if r.NumDecodeTokens > 1 {
 			tpotSum += r.ITL * usPerMs
 			tpotN++
@@ -507,7 +513,7 @@ func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string
 	if completed != n {
 		return Observation{}, fmt.Errorf("completed %d of the point's %d main-phase requests", completed, n)
 	}
-	obs := Observation{Completed: completed, TPOTRequests: tpotN, MeanTTFTUs: ttftSum / float64(completed)}
+	obs := Observation{Completed: completed, TPOTRequests: tpotN, MeanTTFTUs: ttftSum / float64(completed), FirstTTFTUs: firstTTFT}
 	if tpotN > 0 {
 		obs.MeanTPOTUs = tpotSum / float64(tpotN)
 	}

@@ -1,0 +1,44 @@
+# DeepSeek-V4.1-Flash on two 8-GPU H100 nodes, DEP8 per node (TP1 DP8 EP8), DSpark K=5, max_model_len
+# 262144 at gpu_memory_utilization 0.85: the start-up KV check's DP fixture (#1955 follow-up). DeepEP
+# high-throughput: low-latency at max_num_batched_tokens 32768 is refused for its buffers (kernel fe1dfa7).
+kind: Scenario
+name: deepseek-v4.1-flash-h100-2n-dep8-dspark5
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  fabric: roce-200g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v4.1-flash-h100-2n-dep8-dspark5
+
+pools:
+  - role: colocated
+    nodes: 2
+    parallel:
+      tp: 1
+      pp: 1
+      dp: 8
+      dp_local: 8
+      enable_expert_parallel: true
+      data_parallel_load_balancing: external
+    engine:
+      block_size: 64
+      cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 32768
+      max_model_len: 262144
+      gpu_memory_utilization: 0.85
+      cudagraph_mode: FULL_AND_PIECEWISE
+      all2all_backend: deepep_high_throughput
+      enable_prefix_caching: true
+      engram_config:
+        cpu_offload: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 5
