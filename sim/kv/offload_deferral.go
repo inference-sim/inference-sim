@@ -334,6 +334,50 @@ func (o *OffloadCache) awaitedState(keys []kvkey.BlockKey) cpuLookupResult {
 	return cpuHitPending
 }
 
+// NextDeferralWake returns the earliest tick at which a still-pending deferral can
+// change state, and false when none is pending. A deferRetry needs one more
+// scheduler round (now+1). A deferLoading request changes when its CPU->GPU load lands
+// (readyAt), which no backstop shortens. A deferPromoting request can only change when a
+// secondary tier's station transfer completes, since evictions happen only inside
+// allocation, which an idle scheduler does not run. Failing that, it changes at its
+// maxDeferTicks backstop. The scheduler uses this to sleep through an idle wait instead of
+// stepping 1 tick at a time.
+func (o *OffloadCache) NextDeferralWake(now int64) (int64, bool) {
+	wake, ok := int64(0), false
+	consider := func(t int64) {
+		if !ok || t < wake {
+			wake, ok = t, true
+		}
+	}
+	for _, st := range o.deferred {
+		if st.resolved || st.recompute {
+			continue
+		}
+		switch st.phase {
+		case deferRetry:
+			return now + 1, true
+		case deferLoading:
+			consider(max(st.readyAt, now+1))
+		default:
+			consider(st.startTick + maxDeferTicks + 1)
+		}
+	}
+	if !ok {
+		return 0, false
+	}
+	// Each secondary tier has its own station, and a tier may be shared with the node's
+	// other engines, so any of their completions can resolve a promotion this engine awaits.
+	for _, t := range o.secondary {
+		if t.station == nil {
+			continue
+		}
+		if at, inFlight := t.station.NextCompletion(); inFlight {
+			consider(at)
+		}
+	}
+	return wake, true
+}
+
 // IsDeferred reports whether the request is currently set aside and still pending
 // (not yet resolved/recompute). Batch formation calls it after a failed admission
 // to tell a fresh deferral (skip) apart from GPU pressure (break); a resolved

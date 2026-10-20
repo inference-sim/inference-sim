@@ -135,6 +135,11 @@ type Simulator struct {
 	// arrival during the step must not start the next one before this (idleStepTime).
 	busyUntil int64
 	stepCount int
+	// Cumulative count of idle wakes superseded by scheduleStepBy — the one path whose
+	// effect is invisible in metrics (a cancelled step executes nothing), so without a
+	// counter a test cannot tell whether it exercised the path at all. Load-independent
+	// diagnostic, in the DeferralsStarted/promotionsFired family (#1586).
+	idleWakesSuperseded int64
 	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
 	// independent engine.
 	lockstep *LockstepGroup
@@ -374,11 +379,21 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
 //
-// Special case — lazy cancellation: if the popped event is a TimeoutEvent for a
-// request that has already completed (State == StateCompleted), the event is
-// returned immediately without advancing Clock or calling Execute(). This models
-// real-world client behavior where a deadline timer is cancelled the moment a
-// response arrives, preventing orphaned timeouts from inflating SimEndedTime.
+// Special case — lazy cancellation: events are never removed from the heap when they
+// become obsolete; they are popped and skipped. A popped event that has been cancelled
+// is returned immediately WITHOUT advancing Clock or calling Execute(), so Finalize()
+// takes SimEndedTime from the last real-work event rather than from a no-op far in the
+// future. Two kinds of event are cancelled this way, each recognized differently:
+//
+//   - a TimeoutEvent whose request already completed (State == StateCompleted) — the
+//     real-world equivalent of a client cancelling its deadline timer the moment the
+//     response arrives;
+//   - a StepEvent marked cancelled — an idle wake (see scheduleNextStep/idleDeferralWake)
+//     that scheduleStepBy superseded because work arrived before the wake tick.
+//
+// INV-3 (clock monotonicity) is stated over *processed* events and explicitly excludes
+// this restore, so skipping does not break it. ClusterSimulator mirrors the skip by
+// restoring prevClusterClock for both kinds (sim/cluster/cluster.go).
 func (sim *Simulator) ProcessNextEvent() Event {
 	entry := heap.Pop(&sim.eventQueue).(eventEntry)
 	ev := entry.event
@@ -389,6 +404,11 @@ func (sim *Simulator) ProcessNextEvent() Event {
 	// Finalize() captures SimEndedTime from the last real-work event, not from
 	// an orphaned no-op timeout 300s in the future.
 	if te, ok := ev.(*TimeoutEvent); ok && te.Request.State == StateCompleted {
+		return ev
+	}
+	// Same for a superseded idle wake (scheduleStepBy): it must not advance the clock
+	// or end-of-run time.
+	if se, ok := ev.(*StepEvent); ok && se.cancelled {
 		return ev
 	}
 
@@ -569,13 +589,37 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
+// IdleWakesSuperseded returns how many times work arriving during an idle deferral wait
+// superseded the pending wake (scheduleStepBy). A load-independent diagnostic, and the
+// only way a test can assert it reached that path: the superseded step executes nothing,
+// so it leaves no trace in any metric. 0 for a run that never slept on a deferral.
+func (sim *Simulator) IdleWakesSuperseded() int64 { return sim.idleWakesSuperseded }
+
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
-	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		sim.scheduleStepAt(time)
+	if sim.WaitQ.Len() > 0 {
+		sim.scheduleStepBy(time)
 	}
+}
+
+// scheduleStepBy makes sure a StepEvent fires no later than t. It arms one at t
+// (scheduleStepAt) when none is pending, and supersedes a pending idle wake that is later
+// than t, so work that arrives during an idle wait is served at once (INV-8, #1886). Any
+// other pending step is left alone, exactly as the previous stepEvent == nil guards did; a
+// lockstep rank's stepEvent is its group's step, which is never an idle wake.
+func (sim *Simulator) scheduleStepBy(t int64) {
+	if sim.stepEvent != nil {
+		pending, ok := sim.stepEvent.(*StepEvent)
+		if !ok || !pending.idleWake || pending.time <= t {
+			return
+		}
+		pending.cancelled = true
+		sim.idleWakesSuperseded++
+		sim.stepEvent = nil
+	}
+	sim.scheduleStepAt(t)
 }
 
 // scheduleStepAt arms this instance's next step at time t, or at the end of the step still
@@ -594,6 +638,22 @@ func (sim *Simulator) scheduleStepAt(t int64) {
 	step := &StepEvent{time: t}
 	sim.stepEvent = step
 	sim.Schedule(step)
+}
+
+// idleDeferralWake returns the next tick at which a deferred request can change
+// state, when every waiting request is deferred. Until then an empty step admits
+// nothing, so the scheduler can sleep instead of re-polling every tick.
+func (sim *Simulator) idleDeferralWake(now int64) (int64, bool) {
+	d, ok := sim.KVCache.(DeferrableKVStore)
+	if !ok {
+		return 0, false
+	}
+	for i := 0; i < sim.WaitQ.Len(); i++ {
+		if !d.IsDeferred(sim.WaitQ.PeekAt(i).ID) {
+			return 0, false
+		}
+	}
+	return d.NextDeferralWake(now)
 }
 
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
@@ -767,12 +827,8 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Trigger StepEvent if idle (work-conserving: INV-8).
 	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
 	// at a stale instance time that precedes the cluster time when it was injected.
-	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
-		stepTime := sim.Clock
-		if clusterTime > stepTime {
-			stepTime = clusterTime
-		}
-		sim.scheduleStepAt(stepTime)
+	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
+		sim.scheduleStepBy(max(sim.Clock, clusterTime))
 	}
 }
 
@@ -1495,12 +1551,42 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// AdapterLoadCompletionEvent — which re-forms a step on completion via
 		// ScheduleStepIfIdle. Scheduling an empty step here instead would spin one
 		// step per tick for the whole load. Inert when no LoRA (loadingAdapter == "").
+		//
+		// Idle wake: when every waiting request is deferred on a KV fetch, an empty step
+		// costs 1 tick and admits nothing, so re-polling every tick crawls through a
+		// millisecond transfer in thousands of steps. Sleep until the next tick a
+		// deferred request can change state instead; arrivals pull the wake forward
+		// (scheduleStepBy). Admission lands on the same tick either way.
+		//
+		// The wake is clamped to the horizon so a run truncated mid-deferral ends where
+		// the 1-tick crawl ended. The cluster loop tests the horizon BEFORE executing an
+		// instance event (sim/cluster/cluster.go), so a wake past the horizon would never
+		// be processed, leaving the instance clock at the last real event and reporting a
+		// SimEndedTime short of the horizon — a different throughput denominator than
+		// before this optimization. Clamped, the step fires AT the horizon, admits
+		// nothing, and the next step at horizon+1 ends the run with the clock at the
+		// horizon, exactly as the crawl did. Inert at the default unlimited horizon.
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
 			if sim.canPark() {
 				sim.parkIdle(now+currStepAdvance, currStepAdvance)
 				return
 			}
-			sim.scheduleStepAt(now + currStepAdvance)
+			// A deferral makes the KV store non-quiescent, so an engine that waits on one
+			// never parks; it sleeps to the deferral's wake instead (#1886). A lockstep
+			// rank keeps stepping with its group.
+			next := now + currStepAdvance
+			if wake, ok := sim.idleDeferralWake(now); ok && wake > next && sim.lockstep == nil {
+				if wake > sim.Horizon {
+					wake = sim.Horizon
+				}
+				if wake > next {
+					step := &StepEvent{time: sim.idleStepTime(wake), idleWake: true}
+					sim.stepEvent = step
+					sim.Schedule(step)
+					return
+				}
+			}
+			sim.scheduleStepAt(next)
 		}
 	}
 }
