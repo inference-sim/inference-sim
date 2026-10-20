@@ -41,13 +41,12 @@ func request(t *rapid.T) *sim.Request {
 //   - it is the kernel's own price for the batch the adapter hands it, in whole ticks: the
 //     adapter adds nothing and loses nothing;
 //   - scheduling one more request hands the kernel that request appended to the same batch,
-//     with one more scheduled token at least, so the adapter itself never makes a step cheaper;
+//     with one more scheduled token at least, and the step it prices is never cheaper;
 //   - the order requests appear in does not change it, because a forward pass prices the set
 //     it runs, and BLIS's batch slice order is a scheduling artefact.
 //
-// Whether one more request can make the kernel's price fall is the kernel's law, not the
-// adapter's. blis-latency-kernel v0.1.0 breaks it at the CUDA-graph capture ceiling
-// (blis-latency-kernel#42); TestTheKernelsCaptureCeilingDropIsStillPresent pins that.
+// The last is the kernel's law as much as the adapter's: blis-latency-kernel v0.1.0 broke it
+// at the CUDA-graph capture ceiling (blis-latency-kernel#42), fixed in v0.2.0.
 //
 // These are laws of the composition, not of the field mapping: a mistranslated field can
 // satisfy all of them, so the mapping is pinned separately (TestPrefillAndDecodeArePricedByDifferentLaws,
@@ -66,10 +65,14 @@ func TestStepPriceIsPositiveFaithfulGrowingAndOrderFree(t *testing.T) {
 				if want := max(1, m.k.StepTime(kb).NoOverlap.Microseconds()); before != want {
 					rt.Fatalf("the adapter priced %d ticks; the kernel prices the batch at %d", before, want)
 				}
-				grown := m.batchOf(append(batch[:len(batch):len(batch)], request(rt)))
+				more := append(batch[:len(batch):len(batch)], request(rt))
+				grown := m.batchOf(more)
 				if len(grown.Reqs) != len(kb.Reqs)+1 || !reflect.DeepEqual(grown.Reqs[:len(kb.Reqs)], kb.Reqs) ||
 					grown.Tokens() < kb.Tokens()+1 {
 					rt.Fatalf("one more request did not append exactly one scheduled request to the kernel's batch")
+				}
+				if after := m.StepTime(more); after < before {
+					rt.Fatalf("one more request made the step cheaper: %d ticks, down from %d", after, before)
 				}
 				shuffled := rapid.Permutation(batch).Draw(rt, "order")
 				if again := m.StepTime(shuffled); again != before {
@@ -80,12 +83,11 @@ func TestStepPriceIsPositiveFaithfulGrowingAndOrderFree(t *testing.T) {
 	}
 }
 
-// Canary for blis-latency-kernel#42: on GLM-5 (DSA sparse MLA), a mixed step of exactly 512
-// tokens -- the H200 capture ceiling -- prices dearer than the same step plus one decode,
-// because v0.1.0 charges a past-the-ceiling step eager launches below the piecewise replays it
-// charges at the ceiling. When a kernel release fixes it, this fails: restore "one more
-// request never makes the step cheaper" to the law above and delete this test.
-func TestTheKernelsCaptureCeilingDropIsStillPresent(t *testing.T) {
+// The monotone law at the point blis-latency-kernel#42 broke it, pinned rather than left to the
+// generator: on GLM-5 (DSA sparse MLA) on H200, a mixed step of exactly 512 scheduled tokens --
+// the capture ceiling -- and the same step plus one decode, just past it. v0.1.0 priced the
+// second cheaper; the step past the ceiling must cost at least as much.
+func TestOneMoreRequestPastTheCaptureCeilingIsNotCheaper(t *testing.T) {
 	m := open(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	decode := func() *sim.Request {
 		return &sim.Request{InputTokens: make([]sim.TokenID, 1), ProgressIndex: 1, NumNewTokens: 1}
@@ -95,12 +97,11 @@ func TestTheKernelsCaptureCeilingDropIsStillPresent(t *testing.T) {
 		batch = append(batch, decode(), &sim.Request{InputTokens: make([]sim.TokenID, 1), NumNewTokens: 1})
 	}
 	batch = append(batch, &sim.Request{InputTokens: make([]sim.TokenID, 494), NumNewTokens: 494})
-	if tokens := m.batchOf(batch).Tokens(); tokens != 512 {
-		t.Fatalf("fixture lost its point: %d scheduled tokens, not the 512-token ceiling", tokens)
+	past := append(batch[:len(batch):len(batch)], decode())
+	if at, over := m.batchOf(batch).Tokens(), m.batchOf(past).Tokens(); at != 512 || over != 513 {
+		t.Fatalf("fixture lost its point: %d and %d scheduled tokens, not 512 and 513 either side of the ceiling", at, over)
 	}
-	at, past := m.StepTime(batch), m.StepTime(append(batch, decode()))
-	if past >= at {
-		t.Fatalf("blis-latency-kernel#42 looks fixed (%d ticks at the ceiling, %d past it): restore the "+
-			"monotone law in TestStepPriceIsPositiveFaithfulGrowingAndOrderFree and delete this canary", at, past)
+	if at, over := m.StepTime(batch), m.StepTime(past); over < at {
+		t.Fatalf("one more decode past the 512-token capture ceiling made the step cheaper: %d ticks, down from %d", over, at)
 	}
 }

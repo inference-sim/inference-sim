@@ -1,7 +1,7 @@
 # Latency Models
 
 BLIS takes its latency model from one source: **blis-latency-kernel**
-(Go module `github.com/inference-sim/blis-latency-kernel`, pinned at `v0.1.0`). The adapter
+(Go module `github.com/inference-sim/blis-latency-kernel`, pinned at `v0.2.0`). The adapter
 in `sim/kernelmodel` translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no `--latency-model` flag: the roofline and trained-physics backends, the
@@ -20,8 +20,8 @@ chips, fabrics and storage devices from **blis-catalog** and fitted coefficients
 ## Running
 
 ```bash
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios <dir of scenario files> --registry $PWD/blis-registry \
@@ -44,7 +44,7 @@ Four roots, all required on `blis run` and `blis replay`:
 
 A scenario directory can be any directory of scenario YAMLs. The kernel module ships the
 scenarios it was scored on, at
-`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`
 (after `go mod download`). This repo's own fixtures are in `testdata/scenarios/`:
 `glm-5-h200-3p1d-ib.yaml` (P/D) and `glm-5-h200-tp8-mtp3.yaml` (MTP speculation).
 
@@ -91,7 +91,7 @@ pools:
 The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
 block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (a pool that states
-none is refused), prefix caching, the KV cache dtype, and the speculative draft length and
+none, or states `auto`, is refused: BLIS needs the window as a count), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (`--model`, `--hardware`, `--tp`, `--dp`,
 `--total-kv-blocks`, `--max-num-seqs`, `--max-model-len`, `--kv-cache-dtype`,
 `--num-speculative-tokens`, ...) no longer exist; to change one, edit the scenario.

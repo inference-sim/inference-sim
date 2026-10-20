@@ -2,6 +2,7 @@ package kernelmodel
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,7 +19,7 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := 0
+	checked, statedWindows := 0, 0
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
@@ -39,8 +40,12 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 			t.Fatalf("%s: Settings: %v", e.Name(), err)
 		}
 		eng, _ := m.Engine()
+		window, ok := eng.MaxModelLen.Stated()
+		if ok {
+			statedWindows++
+		}
 		if s.BlockSize != eng.BlockSize || s.MaxNumSeqs != eng.MaxNumSeqs ||
-			s.MaxNumBatchedTokens != eng.MaxNumBatchedTokens || s.MaxModelLen != eng.MaxModelLen {
+			s.MaxNumBatchedTokens != eng.MaxNumBatchedTokens || s.MaxModelLen != window {
 			t.Errorf("%s: settings %+v do not restate the pool's engine %+v", e.Name(), s, eng)
 		}
 		if s.DataParallel != m.DataParallelWidth() {
@@ -62,5 +67,47 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no scenario produced settings; the laws were checked against nothing")
+	}
+	// An omitted window restates as 0 == 0, which holds by construction; the window law is
+	// only exercised by a scenario that states one.
+	if statedWindows == 0 {
+		t.Fatal("no scenario states max_model_len as a count; the window law was checked against nothing")
+	}
+}
+
+// A pool that states max_model_len auto is refused by Settings, naming auto, rather than
+// sized: the engine fits auto to the KV memory at startup and the kernel does not report the
+// window that resolves to, so passing -1 on, or taking the kernel's upper bound, would bound
+// requests by a window vLLM may not run.
+func TestSettingsRefuseAnAutoWindow(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("../../testdata/scenarios", "glm-5-h200-tp8-mtp3.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{"auto", "-1"} {
+		body := strings.Replace(string(raw), "max_model_len: 32768", "max_model_len: "+spelling, 1)
+		if body == string(raw) {
+			t.Fatal("fixture states no max_model_len: 32768 to replace")
+		}
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := repos()
+		r.Scenarios = dir
+		m, err := Open("variant.yaml", r)
+		if err != nil {
+			t.Fatalf("%s: Open: %v", spelling, err)
+		}
+		if e, _ := m.Engine(); !e.MaxModelLen.Auto() {
+			t.Fatalf("%s: engine max_model_len %d, want auto", spelling, e.MaxModelLen)
+		}
+		s, err := m.Settings()
+		if err == nil {
+			t.Fatalf("%s: Settings sized an auto window as %d, want a refusal", spelling, s.MaxModelLen)
+		}
+		if !strings.Contains(err.Error(), "max_model_len auto") {
+			t.Errorf("%s: refusal %q does not name max_model_len auto", spelling, err)
+		}
 	}
 }

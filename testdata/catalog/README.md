@@ -1,7 +1,7 @@
 # Vendored blis-catalog subset
 
 A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) release
-**`0.2.1`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
+**`0.2.2`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
 tests can resolve models, presets, chips and devices offline. Nothing here is edited: a file is
 either copied unchanged from that release or absent. Operators do not use this copy; they clone
 the release and point `--catalog` / `BLIS_CATALOG` at it

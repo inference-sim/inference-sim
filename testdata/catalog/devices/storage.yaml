@@ -1,7 +1,39 @@
 # Storage tiers for KV-cache offload.
-# Split verbatim from the kv_offload_devices: section of the simulator's defaults.yaml.
-nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}
-nvme_gen3: {read_bandwidth_mb_s: 3.5e3, write_bandwidth_mb_s: 3.0e3, base_latency_us: 100.0}
-sata_ssd:  {read_bandwidth_mb_s: 5.5e2, write_bandwidth_mb_s: 5.0e2, base_latency_us: 150.0}
-cpu_dram:  {read_bandwidth_mb_s: 2.0e4, write_bandwidth_mb_s: 2.0e4, base_latency_us: 1.0}
-s3:        {read_bandwidth_mb_s: 1.0e3, write_bandwidth_mb_s: 1.0e3, base_latency_us: 30000.0}
+#
+# Provenance. These five tiers were split verbatim from the kv_offload_devices: section
+# of inference-sim's defaults.yaml (blis-catalog b20b7f1). That section was added by
+# inference-sim PR #1594 (commit 3673d3655e), whose own comment describes the figures as
+# "representative device classes seeded for the multi-tier offload holes (#1588/#1589);
+# operators override per run for their hardware", and states the units as bytes per
+# microsecond (= MB/s) and microseconds. Neither that comment, that PR, nor this
+# repository's history cites a datasheet, benchmark or other source for any figure. The
+# tiers are classes (an NVMe Gen4 drive, object storage), not specific products, so no
+# single datasheet could state them. They are representative values chosen by the
+# simulator's authors, not declared facts read off a source. Each tier's _comment says
+# so. A tier whose figures are replaced with a cited product datasheet should say which
+# product.
+nvme_gen4:
+  _comment: "Representative NVMe Gen4 class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
+  read_bandwidth_mb_s: 7.0e3
+  write_bandwidth_mb_s: 5.0e3
+  base_latency_us: 80.0
+nvme_gen3:
+  _comment: "Representative NVMe Gen3 class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
+  read_bandwidth_mb_s: 3.5e3
+  write_bandwidth_mb_s: 3.0e3
+  base_latency_us: 100.0
+sata_ssd:
+  _comment: "Representative SATA SSD class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
+  read_bandwidth_mb_s: 5.5e2
+  write_bandwidth_mb_s: 5.0e2
+  base_latency_us: 150.0
+cpu_dram:
+  _comment: "Representative host-DRAM class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
+  read_bandwidth_mb_s: 2.0e4
+  write_bandwidth_mb_s: 2.0e4
+  base_latency_us: 1.0
+s3:
+  _comment: "Representative object-storage (S3) class, not a datasheet figure: seeded in inference-sim PR #1594 with no source cited (see the header of this file)."
+  read_bandwidth_mb_s: 1.0e3
+  write_bandwidth_mb_s: 1.0e3
+  base_latency_us: 30000.0

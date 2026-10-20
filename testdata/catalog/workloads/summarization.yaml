@@ -1,3 +1,4 @@
+_comment: "Provenance: no source is cited for this distribution. The figures were split verbatim from the workloads: section of inference-sim's defaults.yaml (blis-catalog b20b7f1) and restructured to the nested shape without value changes (blis-catalog PR #18). They first appear in inference-sim's workloads.yaml, added by PR #117 (commit ff3b0da85e, 2025-12-09). Neither that file, that PR, nor the issues it closes (#105, #115, #116) cites a trace, dataset or published distribution. The prefix_tokens: 0 line was added in inference-sim PR #123 (commit 79713ec295). They are a preset chosen by the simulator's authors, not a figure read off a source. A workload replaced with one derived from a published trace should cite that trace."
 prefix_tokens: 0
 prompt:
   tokens: 4096

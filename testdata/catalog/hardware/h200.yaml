@@ -8,3 +8,5 @@ _comment_interconnect: "IntraNodeBwGBps is the on-package NVLink 4 link as a per
 IntraNodeBwGBps: 450
 _comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the GH100 die as shipped in this part, from the NVIDIA datasheet (https://www.nvidia.com/en-us/data-center/h200/). H200 SXM shares the GH100 die and its 132 enabled SMs with H100 SXM5. The cost model uses SMCount for two things: the per-SM share of peak FLOPs, and the 12-SM derate a Triton-path KV fetch withholds while it overlaps a forward pass (cost model §8.3), which is 9.09% at 132 SMs and 11.11% at 108."
 SMCount: 132
+_comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
+ComputeCapability: "9.0"

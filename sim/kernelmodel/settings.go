@@ -23,7 +23,8 @@ type Settings struct {
 	BlockSize           int
 	MaxNumSeqs          int
 	MaxNumBatchedTokens int
-	// MaxModelLen is the pool's stated context window, or 0 when it states none.
+	// MaxModelLen is the pool's stated context window, or 0 when it states none. A pool that
+	// states `auto` is refused by SettingsReserving rather than reported here: see there.
 	MaxModelLen  int
 	DataParallel int
 
@@ -50,6 +51,21 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
+	// auto (MaxModelLenAuto, -1) asks the engine to fit the window to the KV memory it finds
+	// at startup. The kernel takes it at the model's derived window, an upper bound it records
+	// as an assumption, and does not expose the resolved value; BLIS's scheduler bounds every
+	// request by this window, so it would have to re-derive the fit the engine performs. It is
+	// refused rather than guessed: a -1 must not become a window, and an upper bound the engine
+	// may lower would admit requests vLLM would reject. State the window as a count.
+	if e.MaxModelLen.Auto() {
+		return Settings{}, fmt.Errorf("kernelmodel: deployment states max_model_len auto, " +
+			"which BLIS cannot honor: the engine fits it to the KV memory at startup and the " +
+			"kernel does not report the window it resolves; state max_model_len as a count")
+	}
+	if e.MaxModelLen < 0 {
+		return Settings{}, fmt.Errorf("kernelmodel: deployment states max_model_len %d", e.MaxModelLen)
+	}
+	window, _ := e.MaxModelLen.Stated()
 	d := m.Deployment()
 	s := Settings{
 		KVBlocks:              b.PerRankBlocks,
@@ -58,15 +74,12 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 		BlockSize:             e.BlockSize,
 		MaxNumSeqs:            e.MaxNumSeqs,
 		MaxNumBatchedTokens:   e.MaxNumBatchedTokens,
-		MaxModelLen:           e.MaxModelLen,
+		MaxModelLen:           window,
 		DataParallel:          m.DataParallelWidth(),
 		PrefixCachingDisabled: d.PrefixCachingDisabled,
 	}
 	if sp := e.Speculative; sp != nil && sp.NumSpecTokens > 0 {
 		s.SpeculativeTokens, s.SpeculativeMethod = sp.NumSpecTokens, sp.Method
-	}
-	if s.MaxModelLen < 0 {
-		return Settings{}, fmt.Errorf("kernelmodel: deployment states max_model_len %d", s.MaxModelLen)
 	}
 	return s, nil
 }

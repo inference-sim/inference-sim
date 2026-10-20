@@ -76,13 +76,13 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--scenario` | string | "" | **Required.** Scenario **file name** within `--scenarios`, e.g. `llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml`. The file is a [blis-schemas](https://github.com/inference-sim/blis-schemas) Scenario + Deployment (two YAML documents) — see [Scenario and Deployment](#scenario-and-deployment). |
-| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`) and an MTP example (`glm-5-h200-tp8-mtp3.yaml`). |
-| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) clone root, holding the fitted coefficient sets the scenario names. Pinned release: `v0.1.1`. |
-| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) **clone root** (pinned release `0.2.1`; see [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
+| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`) and an MTP example (`glm-5-h200-tp8-mtp3.yaml`). |
+| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) clone root, holding the fitted coefficient sets the scenario names. Pinned release: `v0.1.2`. |
+| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) **clone root** (pinned release `0.2.2`; see [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
 
 ```bash
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios <dir of scenario files> --registry $PWD/blis-registry \
@@ -107,7 +107,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Block size | Pool `engine.block_size` |
 | Max running requests | Pool `engine.max_num_seqs` |
 | Token budget per step | Pool `engine.max_num_batched_tokens` |
-| Max sequence length | Pool `engine.max_model_len` — **required** in the scenario |
+| Max sequence length | Pool `engine.max_model_len` — **required** in the scenario, as a count (`auto` is refused) |
 | Prefix caching | Pool `engine.enable_prefix_caching` |
 | KV-cache dtype | Pool `engine.cache_dtype` |
 | Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (`--speculative-acceptance-rate` is still required on the CLI when the scenario drafts tokens) |
@@ -149,7 +149,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 
 ## Latency Model
 
-BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.1.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.2.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
