@@ -61,10 +61,12 @@ func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
 
 // newDeviceCatalog builds a catalog CLONE ROOT that is the vendored catalog -- so the kernel
 // scenario's model graph, hardware and fabric resolve -- with devices/storage.yaml replaced by
-// the given table. Returns the root.
+// the given table plus the vendored cpu_dram entry, which every offload run loads its CPU-tier
+// hits over (INV-K7). Returns the root.
 func newDeviceCatalog(t *testing.T, table string) string {
 	t.Helper()
 	root := copyKernelCatalog(t)
+	table += "cpu_dram: {read_bandwidth_mb_s: 2.0e4, write_bandwidth_mb_s: 2.0e4, base_latency_us: 1.0}\n"
 	if err := os.WriteFile(catalogStorageDevicesPath(root), []byte(table), 0o644); err != nil {
 		t.Fatalf("write storage.yaml: %v", err)
 	}

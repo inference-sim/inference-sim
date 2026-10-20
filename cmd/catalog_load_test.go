@@ -239,7 +239,27 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantFile:    catalogModelEntryFile,
 			wantPhrases: []string{"licence"},
 		},
+			{
+			name: "unknown key in a replay workload",
+			mutate: func(t *testing.T, root string) {
+				body := fixtureCatalogFile(filepath.Join(catalogWorkloadsSubdir, "agentx-mvp.yaml"))
+				writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "agentx-mvp.yaml"),
+					strings.Replace(body, "  random_seed: 42\n", "  random_seed: 42\n  randm_seed: 7\n", 1))
+			},
+			wantFile:    "agentx-mvp.yaml",
+			wantPhrases: []string{"randm_seed"},
+		},
 		{
+			name: "replay workload its validator refuses",
+			mutate: func(t *testing.T, root string) {
+				body := fixtureCatalogFile(filepath.Join(catalogWorkloadsSubdir, "agentx-mvp.yaml"))
+				writeCatalogFile(t, filepath.Join(root, catalogWorkloadsSubdir, "agentx-mvp.yaml"),
+					strings.Replace(body, "  benchmark_duration_s: 900\n", "  benchmark_duration_s: 10\n", 1))
+			},
+			wantFile:    "agentx-mvp.yaml",
+			wantPhrases: []string{"replay workload is not valid", "benchmark_duration"},
+		},
+	{
 			name: "unknown key in hardware entry",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt),
@@ -251,7 +271,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 		{
 			name: "hardware entry omits a required chip fact",
 			mutate: func(t *testing.T, root string) {
-				body := strings.Replace(validHardwareEntry, "MemoryGiB: 80.0\n", "", 1)
+				body := strings.Replace(validHardwareEntry, "MemoryGiB: 79.1895752\n", "", 1)
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt), body)
 			},
 			wantFile:    filepath.Join(catalogHardwareSubdir, "h100"+catalogYAMLExt),

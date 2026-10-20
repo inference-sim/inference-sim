@@ -37,6 +37,8 @@ type PassedSettings struct {
 	EnablePrefixCaching  *bool    `json:"enable_prefix_caching"`
 	GPUMemoryUtilization *float64 `json:"gpu_memory_utilization"`
 	EnableExpertParallel *bool    `json:"enable_expert_parallel"`
+	// MaxCUDAGraphCaptureSize is compilation_config.max_cudagraph_capture_size (blis-schemas#72).
+	MaxCUDAGraphCaptureSize *int `json:"max_cudagraph_capture_size"`
 }
 
 // ResolvedSettings is what the engine reported after resolving, which is a measurement of the
@@ -179,6 +181,9 @@ type PointConfig struct {
 	MaxModelLen           int
 	GPUMemoryUtilization  float64
 	EnableExpertParallel  bool
+	// MaxCUDAGraphCaptureSize is the capture ceiling the run passed, or nil to keep the
+	// scenario's (blis-schemas#72).
+	MaxCUDAGraphCaptureSize *int
 
 	SeqsFrom   SettingSource
 	TokensFrom SettingSource
@@ -238,7 +243,7 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 		// The scenario's own setting, so a sweep with no measurement and no vLLM resolution
 		// (a non-vLLM engine) runs what its scenario states rather than caching by default.
 		PrefixCachingDisabled: dep.PrefixCachingDisabled,
-		MaxModelLen:           eng.MaxModelLen,
+		MaxModelLen:           int(eng.MaxModelLen),
 		GPUMemoryUtilization:  eng.GPUMemoryUtilization,
 		EnableExpertParallel:  dep.ExpertParallel,
 		SeqsFrom:              SourceScenario,
@@ -338,6 +343,10 @@ func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
 	}
 	if v := p.Passed.EnableExpertParallel; v != nil {
 		a.EnableExpertParallel, a.EPFrom = *v, SourceMeasured
+	}
+	if v := p.Passed.MaxCUDAGraphCaptureSize; v != nil {
+		c := *v
+		a.MaxCUDAGraphCaptureSize = &c
 	}
 	return a
 }

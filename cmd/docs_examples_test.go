@@ -46,7 +46,7 @@ var removedRunFlags = []string{
 	"--max-num-scheduled-tokens", "--block-size-in-tokens", "--gpu-memory-utilization", "--max-model-len",
 	"--kv-cache-dtype", "--no-enable-prefix-caching", "--num-speculative-tokens", "--speculative-method",
 	"--kv-transfer-bandwidth", "--kv-transfer-base-latency",
-	"--pd-transfer-bandwidth", "--pd-transfer-base-latency", "--pd-transfer-contention",
+	"--pd-transfer-bandwidth", "--pd-transfer-base-latency",
 	"--comm-serialization-factor", "--enforce-eager",
 }
 

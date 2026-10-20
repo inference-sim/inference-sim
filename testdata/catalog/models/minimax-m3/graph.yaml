@@ -79,6 +79,11 @@ layer_kinds:
     n_q: 4
     n_kv: 1
     d_h: 128
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 256
   - op: Attention
     kind: swa
     n_q: 64

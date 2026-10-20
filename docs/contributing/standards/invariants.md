@@ -61,10 +61,27 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-19](#inv-19-scale-decisions-carry-a-non-zero-delta) Scale decisions carry a non-zero delta | Subsystem | autoscaling |
 | [INV-A](#inv-a-gpu-conservation) GPU conservation | Subsystem | cluster placement |
 | [INV-A2](#inv-a2-placement-failure-visibility) Placement failure visibility | Code-boundary | autoscaler / actuator |
+| [INV-AX1 … INV-AX4](#agentic-replay) Agentic replay: conservation, dependency causality, lane bound, sending window | Subsystem | agentic replay |
 | [INV-BC-DP1](#retired-latency-model-invariants) Dense DP=1 step-time byte-identity — *retired* | Subsystem | latency model |
+| [INV-K1](#inv-k1-no-blis-side-draft-cost) No BLIS-side draft cost | Subsystem | latency model |
+| [INV-K2](#inv-k2-rejected-drafts-do-not-advance-computed) Rejected drafts do not advance Computed | Subsystem | latency model / batch formation |
+| [INV-M1](#inv-m1-measured-window-accounting-closes) Measured-window accounting closes | Subsystem | metrics output |
+| [INV-M2](#inv-m2-derived-aggregates-are-exactly-their-definitions) Derived aggregates are exactly their definitions | Subsystem | metrics output |
+| [INV-M3](#inv-m3-cluster-cache-hit-rate-is-prompt-lookup-weighted) Cluster cache hit rate is prompt-lookup-weighted | Subsystem | metrics output / KV cache |
+| [INV-M4](#inv-m4-only-the-phase-decides-what-is-measured) Only the phase decides what is measured | Subsystem | metrics output |
+| [INV-K3](#inv-k3-a-sequences-bounded-state-is-held-on-demand-and-gated-at-admission) A sequence's bounded state is held on demand and gated at admission | Subsystem | KV cache |
+| [INV-K4](#inv-k4-a-speculating-request-holds-its-verify-width-and-lookahead) A speculating request holds its verify width and lookahead | Subsystem | KV cache / batch formation |
+| [INV-K5](#inv-k5-the-recorded-acceptance-is-the-simulated-one) The recorded acceptance is the simulated one | Code-boundary | CLI / latency model |
+| [INV-K6](#inv-k6-the-offload-tiers-hold-whole-chunks) The offload tiers hold whole chunks | Subsystem | KV cache / offload |
+| [INV-K7](#inv-k7-a-cpu-tier-hit-waits-for-its-load) A CPU-tier hit waits for its load | Subsystem | KV cache / offload |
+| [INV-K8](#inv-k8-a-loaded-prefix-is-computed-not-in-flight) A loaded prefix is computed, not in flight | Subsystem | KV cache / offload |
+| [INV-K9](#inv-k9-the-admission-gate-counts-the-computed-prefix-against-the-window-cap) The admission gate counts the computed prefix against the window cap | Subsystem | KV cache |
+| [INV-K10](#inv-k10-an-engine-starts-only-if-one-max_model_len-request-fits-its-kv-cache) An engine starts only if one max_model_len request fits its KV cache | Code-boundary | CLI / KV budget |
+| [INV-K11](#inv-k11-each-prompt-block-is-hashed-once-per-engine) Each prompt block is hashed once per engine | Subsystem | KV cache (efficiency) |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
-| [INV-PD-1 … INV-PD-6b](#pd-disaggregation) PD disaggregation | Subsystem | PD |
+| [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
+| [INV-PD-1 … INV-PD-9](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
 | [NS-6](#ns-6-catalog-is-authoritative-and-read-only) Catalog is authoritative and read-only | Code-boundary | CLI / model catalog |
 
@@ -113,6 +130,8 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 **Statement:** Requests transition `queued -> running -> completed`. No invalid transitions. Requests not completed before horizon remain in current state.
 
 **Verification:** State machine assertions in request processing code.
+
+**Preemption edge (running -> queued):** as vLLM v0.31.0's `_preempt_request` (`sched/scheduler.py:1538-1580`), a preempted request frees its blocks and its computed tokens return to 0, but the output it emitted stands: it resumes as one prefill of prompt and output (`Request.PrefillEnd`; vLLM schedules `num_tokens - num_computed_tokens`, `:1084`), whose step samples its next token. Its TTFT is its first prefill's, its inter-token history is kept and the resumed token's interval runs from its last token. `TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill` (`sim`).
 
 **Known weakness (#1721):** this is the thinnest entry in the registry — it names no test, and the three states above are fewer than the request states the code actually distinguishes. Correcting the statement was raised separately and is deliberately out of scope here; it is recorded so a reader does not mistake brevity for a tight specification.
 
@@ -197,7 +216,11 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
 
+**Data-parallel lockstep (#1909):** for the ranks of one DP group the property holds per group: while any rank has waiting or running work, the group's single `StepEvent` is armed in rank 0's queue and every rank's step guard points at it (`sim/dp_lockstep.go`). Verified after every event of random multi-rank workloads by the rapid property `TestLockstepGroup_WorkConservingAndWaveEnd` (`sim/dp_lockstep_test.go`), which also checks that a wave ends on a sync step fewer than 16 dummy steps after its last request.
+
 **Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
+
+**One forward pass at a time.** Work-conserving never means overlapping: a step triggered by new work on an idle instance (an arrival, a timeout, an injected decode sub-request, `ScheduleStepIfIdle`) starts no earlier than the end of the step still executing (`Simulator.idleStepTime`). A step whose requests all finish empties the batch at the step's start, so before this clause an arrival during it began the next step at once; a P/D prefill pool, whose every sub-request finishes in its one prefill step, ran its steps in parallel. Verified by `sim/step_busy_test.go` — `TestStep_NoStepStartsBeforeThePreviousEnds` (rapid) and `TestStep_EverySiteWaitsForTheExecutingStep` (each of the four sites) (#1944). vLLM's async scheduling, which overlaps the next step's scheduling with the current one's execution, is not modelled.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
 
@@ -280,11 +303,87 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Statement:** `allocated_blocks + free_blocks = total_blocks` at all times.
 
-**Verification:** Checked after every allocation/deallocation. Check-then-act pre-check gate before any state mutation (vLLM parity); post-pre-check `popFreeBlock() == nil` panics (structurally unreachable in single-threaded DES). `FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`. `verifyBlockConservation()` provides independent free-list walk for debug-mode assertions.
+**Verification:** Checked after every allocation/deallocation. Check-then-act pre-check gate before any state mutation (vLLM parity); post-pre-check `popFreeBlock() == nil` panics (structurally unreachable in single-threaded DES). `FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`. `verifyBlockConservation()` provides independent free-list walk for debug-mode assertions. Every running request holds KV for every token it has computed: a prefix-cache hit is capped at `InputLen - 1` tokens in whole blocks (an offload reload at `InputLen - 1` tokens), so a fully cached prompt -- resumed after preemption or admitted over another request's prefix -- recomputes its last token and claims its blocks (#1943, vLLM v0.31.0 `get_computed_blocks` and `_update_waiting_for_remote_kv`); `TestEveryRunningRequestHoldsKVForItsComputedTokens` (`sim/kv`, rapid) checks it at every allocation, `TestAFullyCachedPromptRecomputesItsLastBlockAndHoldsItsKV` (`sim`) pins both cases.
 
 **Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
 
 **Additional evidence (hardening wave):** Two KV conservation bugs discovered in March 2026: (1) Issue #492, fix #502 — prefill capacity pre-check over-estimated by up to 1 block (partial last-block fill not accounted for), causing false allocation failures that triggered unnecessary preemptions. (2) Issue #501, fix #506 — TieredKVCache CPU→GPU reload could produce an inverted range (`newStart >= endIndex`), causing a slice-bounds panic in block allocation. Both bugs directly affected the allocation/deallocation balance that INV-4 protects. (See also #519 in INV-8 — the range-loop livelock primarily violated the work-conserving property, not block-level conservation.)
+
+#### INV-K3: A Sequence's Bounded State Is Held on Demand and Gated at Admission
+
+**Statement:** After every allocation a request holds exactly `SequenceState.Hold(computed, inFlight)` blocks for its bounded per-sequence state -- window rings, compressor and indexer state, bounded recurrent state -- where `computed` is its tokens computed before the step and `inFlight` those scheduled in it: the kernel's `SequenceBoundedBytesAt` in whole pool blocks (#1941, blis-latency-kernel#46/#56). That is vLLM's on-demand hold: `allocate_slots` allocates a window group's blocks for the scheduled tokens after `remove_skipped_blocks` frees those the window has passed (`single_type_kv_cache_manager.py:178-238, 687-725, 1153-1175` at v0.31.0), so the hold grows through a prefill chunk and settles at the steady `SequenceFixedBytes` while decoding; a shrink frees its blocks before any are taken. The admission cap (`SequenceAdmissionBytes`, `max_admission_blocks_per_request`) is only a gate: a request's first allocation is refused unless its whole prompt and its state at `SequenceState.Gate(prompt)` = each window group at `min(cdiv(prompt), cap)` are free (`full_sequence_must_fit`, `kv_cache_manager.py:517-534`, `single_type_kv_cache_manager.py:216-229`). State blocks hold no tokens or hash, are freed with the request, and are counted in INV-4. A model whose kernel reports no bounded per-sequence state has no `SequenceState`, no gate, and byte-identical output.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`admissionGateRefuses`, `stateDelta`, `resizeState`), `ReleaseKVBlocks`; the offload tiers check `sequenceFits` before reloading and charge through `chargeSequence`. The functions are `sim/kernelmodel` `Settings.SequenceState`.
+
+**Verification:** `TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle` (`sim/kernelmodel`: the real DSV4.1 kernel through the store over a prefill -> decode lifecycle; exact hold every step, recycling chunks, steady decode, never the cap); `TestSequenceState_LowerTheAdmissionCeilingByTheFixedTerm` (rapid), `TestSequenceState_ChargedOnceAndFreedWithTheSequence`, `TestSequenceState_RefusalIsSideEffectFree`, `TestSequenceState_DoNotTakeTheCachedPrefixBeingClaimed`, `TestARefusedReloadAdmissionHasNoSideEffects`, `TestAFullyReloadedAllocationHoldsItsSlotsAndStateBlocks` (`sim/kv`); `TestTheBudgetChargesTheKernelsAdmissionReservationInWholeBlocks`, `TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling`, and the startup-figure golden `TestKVCapacityMatchesTheEnginesLoggedFigure` (vLLM's logged "GPU KV cache size", a request at its admission cap; a startup report, not a runtime hold) (`sim/kernelmodel`).
+
+#### INV-K4: A Speculating Request Holds Its Verify Width and Lookahead
+
+**Statement:** On a speculating instance (`K > 0`), after any allocation a request holds `max(blocks held before, token blocks, ceil(min(end + L, max_model_len) / block))` token and spare blocks besides its INV-K3 state blocks, where `end` is its computed tokens plus everything scheduled this step and `L` is vLLM's `num_lookahead_tokens` for the method (vLLM v0.31.0 `allocate_slots`, `num_tokens_need_slot`, `kv_cache_manager.py:536-538`; a running request's slots are never handed back, `single_type_kv_cache_manager.py:223-228`); a speculating decode schedules and debits `1 + K` of `max_num_batched_tokens` (fewer only when the budget or `max_model_len` leaves less), never less than it advances; every scheduled request also debits the drafter's `max_num_new_slots_for_drafting` from the input budget (`stepBudget`, scheduler.py:682, 825-826, 1073, 1313-1314); a preemption returns what the victim debited, draft slots included. Progress is still the accepted count (INV-K2). A run without speculation reserves nothing extra and is byte-identical.
+
+**Enforced:** `sim/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); `sim/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); `cluster.NewInstanceSimulator` derives the reservation from the `SpeculativeConfig` (`SpeculativeConfig.KV`).
+
+**Verification:** `TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead` (rapid), `TestSpeculativeSlots_TokensFillTheReservedBlocksFirst`, `TestSpeculativeSlotsStopAtMaxModelLen`, and `TestEveryRunningRequestHoldsKVForItsComputedTokens` (rapid: the exact hold after every allocation under every store with state, speculation, max_model_len and preemption at once) (`sim/kv`); `TestSpecDecode_ADecodeDebitsItsVerifyWidthFromTheTokenBudget`, `TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth`, `TestSpecDecode_TheSimulatorSchedulesTheVerifyWidth`, `TestSpecDecode_LookaheadReservationPreemptsEarlierUnderKVPressure`, `TestSpecDecode_ReservationPropertiesAroundSaturation` (rapid; tokens conserved across K), `TestSpecDecode_AcceptanceLengthOneChangesPriceNotProgress`, `TestLookaheadTokensFollowVLLMsNumLookaheadTokens`, `TestSpecDecode_ParallelDraftSlotsDebitTheInputBudget`, `TestDraftSlotsFollowVLLMsMaxNumNewSlotsForDrafting`, `TestSpecDecode_TheSimulatorChargesTheDraftersSlots` (`sim`); `TestInstanceKVReservesTheSpeculativeConfigsSlots` (`sim/cluster`).
+
+#### INV-K6: The Offload Tiers Hold Whole Chunks
+
+**Statement:** With `blocks_per_chunk = b`, the offload tiers behave as follows.
+- *Keys.* Each tier entry is one chunk of `b` GPU blocks, keyed by the hash of its last block. The chunk keyspace is therefore a subset of the GPU block hashes.
+- *Capacity.* The CPU tier holds at most `cpu_bytes_to_use // (per_block_bytes × b)` chunks and evicts whole chunks in LRU order.
+- *Transfers.* Every tier transfer (cascade write, promotion read) moves `b × per_block_bytes`.
+- *Loads.* A load (CPU→GPU reload, or the reloadable boundary batch formation credits) starts at the chunk containing the GPU-cached boundary. It ends on a chunk boundary, spans at least one chunk past the boundary or is empty, and the pure query and the commit reach the same boundary.
+- *Stores.* A store offers only whole chunks of the offloadable (prompt-clamped) range.
+- *b = 1* is block-granular offload, byte-identical to the pre-chunk mechanism.
+
+vLLM v0.31.0 sources:
+- `offloading/scheduler.py:418-436` (`update_offload_keys`);
+- `:448-479` (`storable_chunks`);
+- `:818-821`, `:841`, `:888-891` (lookup start and "less than a chunk" skip);
+- `kv_offload/cpu/spec.py:108-121` (chunk sizing).
+
+**Enforced:** `sim/kv/offload_chunks.go` (`tailOf`, `cpuRun`, `loadableBlocks`) through `consultAndReload`, `ReloadablePrefixEnd`, `classifyFetch`, `MirrorToCPU` and the CPU-tier prefix counts; `KVOffloadConfig.CPUChunkCapacity` / `CheckFitsOneChunk` (refused at the CLI, run, replay and per P/D pool).
+
+**Verification:** `TestOffloadChunks_LoadsAreWholeChunksAndTheQueryIsTheCommit` (rapid), `TestOffloadChunks_AlignedPromptReloadsTheSameAtEveryWidth` (metamorphic), `TestOffloadChunks_StoreWholeChunksKeyedByTheirLastBlock`, `TestOffloadChunks_ReloadWholeChunksAndNeverLessThanOne`, `TestOffloadChunks_LRUEvictsWholeChunks`, `TestOffloadChunks_TransfersMoveWholeChunks`, `TestNewOffloadCache_Validation` (`sim/kv`); `TestKVOffloadConfig_CPUTierHoldsWholeChunks` (`sim`); `TestRunCmd_ScenarioOffloadBlock` (`cmd`: `blocks_per_chunk 4` beside a scenario block, run and replay). All existing offload tests run at `b = 1`.
+
+#### INV-K7: A CPU-Tier Hit Waits for Its Load
+
+**Statement:** A new prefill admission whose prefix is CPU-resident is not scheduled until its CPU->GPU load lands: the load moves the blocks of its loadable chunks not already on the GPU, is priced by the kernel at the catalog `cpu_dram` device and the host link (`TierTime`, the slower binds), and starts no earlier than the previous load ends, so a hit waits at least `bytes / host-device bandwidth`. The request is admitted on the first step at or after the load lands; other requests are scheduled meanwhile, and its chunks stay pinned until then. vLLM v0.31.0 reports every offload hit as an async load (`offloading/scheduler.py:1036-1094`), holds the request in `WAITING_FOR_REMOTE_KVS` (`scheduler.py:1258-1275`, `3052-3106`), and chains the copies on the handler's streams (`kv_offload/cpu/gpu_worker.py:676-752`). **The load holds its GPU blocks from its start:** as vLLM's async-load admission (`sched/scheduler.py:1177-1220`), the request takes the blocks of its GPU hit and of every token the load brings when the load starts -- no new tokens, no lookahead, the full-sequence gate, and refused (stopping the admission loop) unless the in-flight prefills' remaining blocks and one speculative step each stay free (`reserved_blocks`, `:1194-1205`, `3003-3036`); the blocks are cached only when the load lands (`:3052-3085`); requests holding blocks are drained ahead of the waiting queue (`kv_holding_waiting`, `:887`, `1343`), and a landed one is scheduled from the prefix its load computed with no new lookup (`:1041-1048`); one that leaves frees its blocks. A store without a `CPULoadTime` keeps the same-step reload and is byte-identical.
+
+**Enforced:** `sim/kv` `OffloadCache.beginCPULoad` / `cpuLoadPlan` / `PollDeferred` (`deferLoading`), `KVCacheState.allocateLoad`, `OffloadCache.loadReserve` / `admitLoaded`; `sim` `FormBatch` (`LoadHoldingKVStore`); `cmd` `priceOffload` installs `KVOffloadConfig.CPULoadTime`.
+
+**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins`, `TestLoadStart_TheLoadHoldsItsBlocksFromItsStart` (rapid), `TestLoadStart_ALoadLeavesTheInflightPrefillsRoom` (rapid), `TestLoadStart_AHolderThatLeavesFreesItsBlocks`, `TestLoadStart_ALandedLoadIsScheduledAheadOfTheWaitingQueue` (`sim/kv`); `TestRunCmd_KernelBackend_CPUTierReloadIsPricedByTheHostTier` (`cmd`: halving `cpu_dram` read bandwidth strictly raises mean TTFT at a non-zero CPU-tier hit rate).
+
+#### INV-K8: A Loaded Prefix Is Computed, Not In Flight
+
+**Statement:** A new admission whose prefix an offload tier loads sizes its bounded state (INV-K3) from the end of the loaded prefix, capped below the prompt's last token, not from its GPU-cached prefix: the loaded tokens are computed, and only the tokens scheduled past them are in flight. vLLM v0.31.0 sizes a window group from `total_computed_tokens`, the local and external hits together, and skips the blocks the window has passed (`single_type_kv_cache_manager.py:178-245`). So a queued request whose sequence fits the pool is scheduled within its load and one step once the pool frees, and a CPU tier never leaves unstarted a request that starts without it. Charging the loaded prefix as in flight sized a DSV4 rank's state at the whole prompt, more than a DP rank's pool, and refused the request at every step of the run (#1955).
+
+**Enforced:** `sim/kv` `KVCacheState.loadedStateStart`, used by `OffloadCache.AllocateKVBlocks` and `TieredKVCache.AllocateKVBlocks` for the pre-check (`sequenceFits`) and the full-reload charge (`chargeSequence`).
+
+**Verification:** `TestLoadedPrefix_AFittingRequestIsAdmittedWithinItsLoad` (rapid), `TestLoadedPrefix_TheLegacyTierAdmitsAFittingRequest` (`sim/kv`); `TestInstanceSimulator_Offload_ALoadedRequestIsScheduledOnceThePoolFrees` (invariant), `TestInstanceSimulator_Offload_TheTierStartsEveryRequestTheGPUAloneStarts` (metamorphic) (`sim/cluster`).
+
+#### INV-K9: The Admission Gate Counts the Computed Prefix Against the Window Cap
+
+**Statement:** The admission gate (INV-K3) charges a request's bounded state `Gate(tokens) - Gate(computed) + Gate(0)`, never less than `Gate(0)`, where `computed` is its GPU prefix hit or, when an offload tier loads its prefix, the end of the load (INV-K8). vLLM v0.31.0 gates each window group at `max(min(cdiv(num_tokens), max_admission_blocks_per_request) - max(skipped blocks of total_computed_tokens, local computed blocks), 0)` (`get_num_blocks_to_allocate`, `single_type_kv_cache_manager.py:216-268`, called with `apply_admission_cap` and `total_computed_tokens` by `kv_cache_manager.py:519-536`) and each state group at one block (`:1214-1225`), so a long hit needs no window blocks past those it claims. A request without a hit is gated at `Gate(tokens)` as before. Charging the whole window cap regardless of the hit refused mostly cached long prompts on a DSV4 rank with room for them (at DEP8 C=256 the full 16,425-block cap was charged to a request with 102,976 of its 103,433 tokens cached, on a rank with 17,323 blocks free). Simplification: a loaded prefix's skipped blocks are taken as all of it, which under-charges a loaded admission by at most the window's pages per ring.
+
+**Enforced:** `sim/kv` `KVCacheState.gateState`, used by `admissionGateRefuses` from `AllocateKVBlocks` and `sequenceFits`.
+
+**Verification:** `TestAdmissionGate_AGPUHitCountsAgainstTheWindowCap` (rapid: admitted at exactly vLLM's count, refused one block short), `TestAdmissionGate_ALoadedPrefixCountsAgainstTheWindowCap` (rapid) (`sim/kv`).
+
+#### INV-K10: An Engine Starts Only If One max_model_len Request Fits Its KV Cache
+
+**Statement:** After BLIS sizes each engine's (each DP rank's) KV pool, the run is refused at start-up -- the CLI exits 1 with a `level=fatal` line -- unless one request of `max_model_len` tokens fits: its token pages plus each bounded group at its admission cap, against the pool less the null block. The refusal is vLLM v0.31.0's (`_check_enough_kv_cache_memory`, `vllm/v1/core/kv_cache_utils.py:898-935`, applied per worker at `:2788-2800` after the null block is reserved at `:2779-2786`): "No available memory for the cache blocks ..." when no KV is left, else "To serve at least one request with the model's max seq len (N), (X GiB KV cache is needed, which is larger than the available KV cache memory (Y GiB). Based on the available memory, the estimated maximum model length is M. ..." with M vLLM's binary search (`_estimate_max_model_len_from_groups`, `:2531-2572`) and GiB rounded as `format_gib`. `max_model_len: auto` is fitted by the same search (`_auto_fit_max_model_len`, `:2575-2640`). An engine that fits starts unchanged.
+
+**Enforced:** `sim/kernelmodel` `checkEnoughKVCacheMemory`, `estimateMaxModelLen`, `requestBlocks` in `SettingsReserving`; `KVBudgetReserving` (no memory left).
+
+**Verification:** `TestStartupKVCheck_ExactlyEnoughStartsAndOneBlockShortIsRefused` (rapid boundary), `TestStartupKVCheck_ADEP8RankStartsOnlyWhereOneWindowFits`, `TestStartupKVCheck_ADEP8RankOnTheKVPoolPins` (with `BLIS_KVPOOL_PINS=1`) (`sim/kernelmodel`); `TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart`, `TestRunCmd_KernelBackend_ScenarioRefusals` (`cmd`).
+
+#### INV-K11: Each Prompt Block Is Hashed Once Per Engine
+
+**Statement:** An engine computes the SHA-256 block hash (`hash.HashBlock`) of a given prompt block -- a block's tokens together with the chain hash before it -- at most once, however many times the request is examined (a waiting request is re-examined every step), whichever lookup asks (`GetCachedBlocks`, the offload tail keys of `ReloadablePrefixEnd` / `cpuLoadPlan` / `beginCPULoad`, the router snapshot, allocation), and whether a later turn's prompt lives in the same token array or a fresh one. The memoised hashes equal `hash.ComputeBlockHashes` exactly, so outputs are byte-identical to the uncached path. It is an efficiency invariant: the 1P1D c512 corner spent 75% of its CPU re-hashing 100k-token prompts. It holds while an engine's distinct prompt blocks number at most `hash.MemoCapacity` (the memo is cleared beyond it) and output blocks are excluded (they are hashed once, at allocation).
+
+**Enforced:** `hash.ChainCache` (`sim/internal/hash/chain_cache.go`), one per GPU tier (`KVCacheState.chainOf`, `blockHash`).
+
+**Verification:** `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` (`sim/cluster`, rapid: random prompt lengths, shared prefixes, multi-turn growth, P/D on/off, CPU tier on/off; counts `hash.PromptBlockHashes()` (prompt blocks the chain caches hashed; output blocks are hashed once at allocation and excluded) and compares every instance's metrics with `hash.SetChainCacheOff(true)`); `TestChainCache_EqualsComputeBlockHashes` (`sim/internal/hash`).
 
 ### Batch formation
 
@@ -367,6 +466,95 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Verification:** `sim/prefix_cache_index_invariant_test.go` — `TestINV18_ListAndLookupStayConsistent` walks the list forward and backward after each of a long sequence of `RecordBlocks` calls that crosses capacity repeatedly, asserting the walked node set equals the `lookup` key set, the head/tail terminals are correct in both directions, and the `tail == nil ⟺ len(lookup) == 0` biconditional holds at every step (including the empty cache, the one-entry cache, and the at-capacity cache). The biconditional is checked in **both** directions: a nil tail with a non-empty map is the panic case, while a non-nil tail with an empty map is the mirror leak — an orphaned node the map can no longer reach, which degrades routing without ever reaching the panic. `TestINV18_EvictOldestPanicsOnInconsistentState` asserts the guard itself fires on a hand-built inconsistent cache, so the entry's "eviction at capacity can never fail" clause does not rest on dead code.
 
+### Metrics output
+
+These bind the measured-window aggregates of the `--metrics-path` file (`sim/metrics_measured.go`,
+#1938) and the cluster cache hit rate (#1904). The definitions mirror aiperf 0.12.0; the
+code comments cite the aiperf lines.
+
+#### INV-M1: Measured-Window Accounting Closes
+
+**Statement:** every request whose `Phase` is measured (not `warmup`) and that was sent before
+the horizon ends in exactly one of `measured_completed_requests`; `cancelled_requests` (in
+flight when the window closed -- queued, running, or in the P/D pipeline including KV transfer
+-- or completed after an explicit `MeasuredWindow.EndUs`); `context_overflow_requests` (prompt,
+or prompt plus output budget, past `MaxModelLen`); and `failed_requests` (a client timeout,
+which aiperf records as an error; any other drop; admission or routing rejection; gateway shed,
+eviction or expiry; decode-KV drop). It holds for colocated and disaggregated runs. The one
+open term is a request still in the gateway queue at the horizon. `completed_requests` stays
+the run-wide INV-1 term.
+
+**Enforced:** `Metrics.RecordUnserved` beside every instance drop counter, `Metrics.RecordTimeout`
+beside every timeout counter (it also marks the row so it is not cancelled too),
+`ClusterSimulator.recordUnserved` beside every cluster rejection, shed and decode-KV drop, and
+`projectPDMetrics`, which counts a measured parent still in the pipeline at the horizon
+(`MeasuredPipelineCancellations`) when it removes its rows.
+
+**Verification:** `TestMeasuredAccountingClosesOverClusterRuns` and
+`TestMeasuredAccountingClosesOverDisaggregatedRuns` (rapid, over random phases, deadlines,
+oversized prompts, token-bucket admission, tight decode KV and horizons; each run asserts it
+exercised the paths it claims); `TestBuildMeasured_InvariantsHoldOverRandomRequestSets`;
+`TestEnqueueRequest_UnservedDropsAreCountedByPhase`; `TestBuildMeasured_ATimeoutIsAFailureNotACancellation`.
+
+#### INV-M2: Derived Aggregates Are Exactly Their Definitions
+
+**Statement:** a request's aiperf latency is `FirstTokenTime + ΣITL`, the time of its last
+streamed token. vLLM v0.31.0 queues the final token's output (`v1/engine/output_processor.py:745`)
+before it frees the request (`:759`) and records finish stats (`:766`), and the chat stream
+yields that chunk (`entrypoints/openai/chat_completion/serving.py:828`) before usage and
+`[DONE]`, so the latency model's completion overhead, which E2E carries, is not in it.
+`request_itl = (latency − ttft)/(osl − 1)` over `osl ≥ 2`; `interactivity_pNN == 1000 /
+request_itl_pNN_ms` exactly; `output_tok_per_user_mean` averages `1000/request_itl` over records
+with a non-zero ITL only; `output_throughput_tok_s × measured_window_s` equals the measured output
+tokens; every `*_pNN` is numpy-linear over one value per measured request. Under time scaling by
+`s` the latency statistics and the window scale by `s` and the rates by `1/s`. Duplicating every
+request keeps every mean and the extreme percentiles and doubles counts and throughput; interior
+linear percentiles are not invariant under duplication (`[0,1]` p90 0.9, `[0,0,1,1]` p90 1.0).
+
+**Verification:** `TestBuildMeasured_PinsTheAiperfDefinitions`, `TestCalculatePercentile_MatchesNumpyLinear`,
+`TestMeasured_LatencyEndsAtTheLastTokenNotAtTheCompletionOverhead` (non-zero completion overhead),
+`TestBuildMeasured_PerUserMeanSkipsZeroITLRecords`, `TestBuildMeasured_TheWindowEndIsInclusive`,
+`TestBuildMeasured_InvariantsHoldOverRandomRequestSets`, `TestBuildMeasured_ScalingTimeScalesLatenciesAndInvertsRates`,
+`TestBuildMeasured_DuplicatingEveryRequestKeepsMeansAndExtremes`, and
+`TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength`.
+
+#### INV-M3: Cluster Cache Hit Rate Is Prompt-Lookup-Weighted
+
+**Statement:** `cache_hit_rate` is summed prompt-token prefix hits over summed prompt-token
+queries, recorded per admission as vLLM v0.31.0 counts them (`v1/core/sched/scheduler.py:1252-1256`,
+`v1/core/kv_cache_manager.py:253-262`): a new request's prompt is queried once, a re-admission
+after preemption is not counted (`v1/metrics/stats.py:132-143`), and decode growth and decode-pool
+admissions query nothing. It is the GPU prefix cache's local rate; `cpu_tier_hit_rate` is the
+offload tier's share of the same queried tokens. So the cluster rate lies within the rates of the
+instances that queried anything, and adding idle or decode-only instances leaves it unchanged.
+`KVThrashingRate` aggregates its own counts the same way.
+
+**Enforced:** `FormBatch` records `ScheduledRequest.Lookup` on a new prefill admission;
+`Metrics.recordPrefixLookup`; `aggregateMetrics` divides the sums.
+
+**Verification:** `TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt`,
+`TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing` (rapid),
+`TestAggregateCacheHitRateLiesWithinTheInstanceRates` (rapid),
+`TestAggregateCacheHitRate_IsTokenWeighted`, `TestAggregateCacheHitRate_TheDecodePoolDoesNotDiluteIt`,
+`TestPrefixLookups_APreemptedReadmissionIsNotANewQuery`.
+
+**Evidence:** #1904: four instances with three idle reported 0.2181 where the busy instance's
+rate was 0.8723.
+
+#### INV-M4: Only the Phase Decides What Is Measured
+
+**Statement:** adding warm-up requests (with their decode steps and prefix-cache lookups) to a
+run's records changes no measured aggregate, `cache_hit_rate` and `cpu_tier_hit_rate` included.
+With no phase set and no explicit window the measured set is every completed request:
+`step_interval_*` equals the legacy `itl_*`, and `e2e_*` equals stdout's when the completion
+overhead is zero. The file's `ttft_*` population is completed measured requests; stdout's (kept
+under `whole_run`) also counts a request that emitted a first token and did not complete, so the
+two agree only when there is none.
+
+**Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid, with
+lookups), `TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured` (step series, E2E and the
+TTFT population), `TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
+
 ### Autoscaling
 
 #### INV-19: Scale Decisions Carry a Non-Zero Delta
@@ -437,7 +625,124 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Hypothesis family:** Structural model — session lifecycle completeness.
 
+### Agentic replay
+
+These bind `blis replay --agentic-scenario inferencex-agentx-mvp` (#1937; driver
+`sim/workload/agentx_replay.go`), which reproduces aiperf 0.12.0's session-tree replay. They
+hold for any corpus, concurrency, window, grace period and service times; the behaviour they
+constrain is aiperf's (the code cites its source), and `TestAgentXRuntimeMatchesAiperf`
+checks it send for send against aiperf's own runtime.
+
+#### INV-AX1: Agentic Request Conservation
+
+**Statement:** every request the replay sends is injected into the cluster exactly once and
+ends exactly once, with one outcome:
+
+| outcome | how it ends | the stream then |
+|---|---|---|
+| `completed` | a response (non-P/D, or a P/D parent's completion, reported by ID) | continues |
+| `error` | a client timeout (aiperf's 6 h default); a cluster refusal -- admission or routing rejection, flow-control rejection or shed, gateway TTL expiry, in-flight eviction, P/D decode-KV drop (`SetUnservedHook`); an engine refusal other than context length | continues (aiperf records an error and dispatches the next turn) |
+| `context_overflow` | the engine refuses the prompt, or prompt plus output budget, past max_model_len | stops (non-final turn: trajectory death; a root's tree drains and recycles) |
+| `cancelled` | still in flight -- queued, running, in transfer or in the gateway queue -- when the run stops at the end of the grace period | -- (aiperf keeps no record) |
+
+A request the cluster re-injects while in flight (a REDIRECT drain) is the same request, not
+a new one. A superseded send (a timer the idle cap moved, a send held behind a barrier, a
+timer cancelled at the window end) is refused by the arrival gate before admission and is
+never a request, so INV-1 holds over the sent requests unchanged. At the end, the replay's
+in-flight count equals the cancelled count, which equals what the cluster still holds. No
+profiling request ends after the grace end, and the profiling phase completes no earlier
+than the window end (and, as aiperf's does, 10 s after the grace end when requests were
+cancelled while branch work was pending).
+
+**Enforced:** `AgentXReplay.Gate` (one confirmed send per dispatch; redirects pass),
+`OnComplete` / `OnUnserved` (one outcome, matched by request ID), `Finish` (the cancelled
+outcome); `ClusterSimulator.gateArrival` before `injectedByClass`, `notifyUnserved` in
+`recordUnserved`.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora` (rapid, harness, with random
+timeouts, refusals and overflows, and a coverage check that every outcome occurs); through
+the real cluster, `TestAgentXThroughPDDisaggregation`, `TestAgentXThroughFlowControlTTL`,
+`TestAgentXThroughAdmissionRejection`, `TestAgentXThroughRedirectDrain`,
+`TestAgentXContextOverflowEndsTheStream` (sim/cluster) and
+`TestReplayAgentX_DeterministicConservingAndTagged` (cmd).
+
+#### INV-AX2: Dependency Causality
+
+**Statement:** a profiling send of turn k of a stream instance happens only after (a) the
+same instance's turn k-1 completed (sends of one instance are consecutive turns, one in
+flight at a time); (b) every recorded replay-barrier predecessor of the turn in its tree
+completed, or was completed history at the lane's t*; and (c) for a root turn gated by
+SPAWN_JOIN, every child instance of the gating branches sent its final turn and it
+completed. A stream instance sends each turn at most once.
+
+**Enforced:** `submit` / `barrierReady` (barrier), `maybeSuspend` / `childDone` (joins),
+`dispatchNext` (closed loop).
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`,
+`TestAgentXServiceTimesDoNotReorderAStream` (rapid); hand-computed timelines in
+`agentx_replay_test.go`.
+
+#### INV-AX3: Lane Bound
+
+**Statement:** each lane holds at most one session tree at a time: a lane's next tree sends
+its first request no earlier than the last completion of the tree before it (the tree's root
+and every descendant drained), so at most C trees are live, while requests in flight may
+exceed C (subagents take no lane).
+
+**Enforced:** `maybeDrain` (aiperf's SessionTreeRegistry) is the only path that recycles a
+lane.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`.
+
+#### INV-AX4: Sending Window
+
+**Statement:** warm-up requests are sent with max_tokens 1 and only before the profiling
+phase starts (the warm-up's last return); profiling requests are sent only in
+[profile start, profile start + duration); every request carries `Phase` `warmup` or
+`profile` (`grace` once it completes after the window end).
+
+**Enforced:** `canSend`, `closeWindow`.
+
+**Verification:** `TestAgentXInvariantsHoldOverRandomCorpora`;
+`TestAgentXClosedLoopWarmupAndRecycle`.
+
 ### Latency model
+
+#### INV-K1: No BLIS-side Draft Cost
+
+**Statement:** For a speculating pool (`engine.speculative.num_spec_tokens = K > 0`), the adapter's step time for a batch equals `max(1, NoOverlap)` of blis-latency-kernel's `StepTime` for the verify-width batch: each decode scheduling `1 + K`, each prefill chunk its own tokens, under a decode threshold of at least `1 + K`. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside `StepTime`, and its weights and caches in `FixedBytes`, so any BLIS-side draft cost would count them twice.
+
+**Enforced:** `sim/kernelmodel` `batchOf` (the only place a BLIS batch becomes a kernel batch) and `Model.StepTime`.
+
+**Verification:** `TestNoDraftCostIsAddedOnTheBLISSide` (property test on the DeepSeek-V4.1-Flash DSpark scenario: BLIS's price equals the kernel's price of an independently built verify-width batch, and that price exceeds the same batch on the same deployment without a drafter); `TestTheDecodeThresholdCoversTheVerifyWidth`.
+
+#### INV-K2: Rejected Drafts Do Not Advance Computed
+
+**Statement:** After a speculative decode step, a request's `ProgressIndex` (the kernel's `ReqShape.Computed` on the next step) advances by the tokens granted as accepted (`1 <= g <= 1 + K`, the mean `1 + α·K` through the fractional carry), never by the verify width. The kernel reads `Computed` for KV reads, ring sizes, sparse selections and drafting eligibility, so a verify-width advance would price every later step at a context the engine rolled back.
+
+**Enforced:** `sim/simulator.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
+
+**Verification:** `TestRejectedDraftsDoNotAdvanceComputed` (`sim/kernelmodel`; a real DSpark simulation at α = 0.502); `TestSpecDecode_OutputTokenConservation` (`sim`).
+
+#### INV-K5: The Recorded Acceptance Is the Simulated One
+
+**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
+
+**Enforced:** `cmd/speculative_acceptance.go` (`resolveAcceptance`, `acceptanceRecordOf`), `cmd/root.go` `resolveSpeculativeConfig`.
+
+**Verification:** `TestAcceptancePrecedence`, `TestAcceptanceKSweepPicksTheProfileAtEachK`, `TestAcceptanceRefusals`, `TestAcceptanceIsAbsentWithoutSpeculation`, `TestAcceptanceRunReplayParity` (`cmd`).
+
+#### INV-R1: Admission Overhead Runs on the Endpoint's Render Threads, in Arrival Order
+
+**Statement:** With the front end on (`FrontendConfig.RendererNumWorkers = W > 0`; the CLI default is vLLM's `renderer_num_workers = 1`), a request's admission overhead (`LatencyModel.QueueingTime`, the kernel's `AdmissionOverhead`: chat template + tokenization) runs on one of its endpoint's render threads. Each endpoint has `api_server_count` API servers (vLLM's per-mode default: dp behind an internal- or hybrid-balancer replica, else 1) of `W` threads each. Arrivals go to the servers round-robin. Within a server a request starts at `max(arrival, earliest thread free)` in arrival order and holds that thread for its overhead, so a server never runs more than `W` renders at once and a request waits only while all `W` are busy (FIFO M/G/W). The request enters the wait queue when its render ends. Every arrival is rendered exactly once. A render that costs nothing, or a stage with a thread per request, gives `arrival + overhead`, which is the inert front end's uncontended delay; with zero overhead the run is byte-identical to the inert one. An internal/hybrid replica's ranks share one stage. An external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not rendered again.
+
+vLLM v0.31.0: `BaseRenderer._executor = ThreadPoolExecutor(max_workers=renderer_num_workers)` carries the tokenize step (`vllm/renderers/base.py:117-133`) and the V4 renderer's template step (`vllm/renderers/deepseek_v4.py:32-37`), one pool per API-server process. The API-server count defaults are in `vllm/entrypoints/cli/serve.py:105-127`.
+
+**Limitation:** BLIS picks a replica's rank when the request reaches the endpoint, whereas vLLM's balancer picks it after rendering. The cost itself stays in the kernel and registry.
+
+**Enforced:** `sim.Renderer.Admit` (called from `ArrivalEvent.Execute`); `sim.ShareRenderer` from `cluster.buildDPReplicas`.
+
+**Verification:** `TestRenderer_EachServerIsAFIFOQueueOfItsThreads` (rapid), `TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead` (rapid, metamorphic), `TestRenderQueue_ABurstWaitsForTheRenderThread`, `TestRenderQueue_FreeRenderIsByteIdenticalToNoRenderStage`, `TestRenderQueue_EveryArrivalIsRenderedOnce` (`sim`); `TestRenderStage_BelongsToTheEndpoint`, `TestRenderStage_AReplicaRendersOnItsDPServers` (`sim/cluster`); `TestFrontendFlagsDefaultToVLLMs` (`cmd`).
 
 #### Retired latency-model invariants
 
@@ -540,6 +845,94 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 **Evidence:** `detectDecodeCompletions()` in `sim/cluster/cluster.go` stamps `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()` (overhead fixed in issue #846). `projectPDMetrics()` computes the parent E2E metric as `decodeSchedulingDelay + decodeOwnE2E` (E2E under-count fixed in issue #1513).
 
+#### INV-PD-7: Prefill KV Hold
+
+**Statement:** With `DeploymentConfig.PDPrefillKVHold` (every kernel P/D run: a NIXL handoff), a finished prefill sub-request's KV blocks stay allocated on its prefill instance from prefill completion until one of these:
+
+- **(a)** The decode side's pull completes (`KVTransferCompletedEvent`).
+- **(b)** The decode engine aborts a request it had received: its prompt can never fit the decode KV, so the decode side rejects it. The blocks are freed at once.
+- **(c)** The decode engine never received the request (decode instance missing or unroutable at transfer start). No notice comes and no heartbeat renews the lease, so the blocks are freed at `prefill_complete + lease`.
+- **(d)** The decode engine had the request and vanished: unroutable mid-pull, or while the request waited for decode KV. The blocks are freed at `max(prefill_complete + lease, vanish + 2/3·lease)`.
+
+In case (d), heartbeats go out every `lease/6` and each extends the lease to `2/3·lease` from its send. So the true expiry lies in `[vanish + lease/2, vanish + 2/3·lease]`, which is 15–20 s after the vanish at vLLM's 30 s default; BLIS takes the upper end.
+
+A prompt that fits the decode KV but finds it full waits in the decode engine's FCFS queue (head-of-line, as vLLM's waiting queue), not dropped, and its prefill KV stays held meanwhile. Decode-side timeouts of a waiting request are not modelled.
+
+The held KV is a subset of what the prefill instance has allocated, equal to it when nothing else is queued or running there. It never exceeds the instance's capacity, and it is fully released by the end of an unbounded run.
+
+**Source:** vLLM v0.31.0:
+
+- `nixl/pull_scheduler.py:247-266`: `request_finished` returns `delay_free_blocks` with a lease deadline.
+- `:213-232`: an abort on the decode side before the pull, with `do_remote_prefill` still set, notifies the prefill side to free; a request the decode engine never saw sends nothing.
+- `nixl/base_worker.py:2902-3031`: `finished_sending` frees on pull completion.
+- `:3056-3096`, `base_scheduler.py:81-87` and `base_worker.py:563-567`: the 30 s lease, heartbeats every `lease//6`, each extending to `2/3·lease`.
+- `sched/scheduler.py`: the waiting queue stops at the first request it cannot allocate.
+
+**Verification:**
+
+- `sim/cluster/pd_kv_hold_test.go`:
+  - `TestPrefillKVHold_HeldFromPrefillEndUntilThePullCompletes`;
+  - `TestPrefillKVHold_HeldBlocksGateTheNextPrefill` (the hold costs capacity);
+  - `TestPrefillKVHold_DropAtTransferStartFreesAtOnce` (case b);
+  - `TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry` (case d, both terms);
+  - `TestPrefillKVHold_AmpleCapacityChangesNoLatency` (metamorphic);
+  - `TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity` (rapid: subset, equality, capacity, no leak, INV-1).
+- `sim/cluster/pd_decode_kv_wait_test.go`:
+  - `TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops`;
+  - `TestPDDecodeKVWait_HeadOfLineBlocks`;
+  - `TestPDDecodeKVWait_DecodeThatNeverHadTheRequestLeavesTheLease` (case c);
+  - `TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters` (case d, from the queue).
+
+**Evidence:** `sim.Request.RetainKVOnFinish` makes `processCompletions` skip the release. `ClusterSimulator.startPrefillHold` and `releasePrefillHold` (`sim/cluster/pd_kv_hold.go`) count each held block once across the holds that share it. `serveDecodeKVWaiters` (`sim/cluster/pd_events.go`) runs the decode KV queue.
+
+#### INV-PD-8: Decode-Side Load Path
+
+**Statement:** A decode sub-request's reservation takes the decode instance's own GPU prefix-cache hit first -- never on blocks another pull is still filling, which join the prefix cache only when that pull lands (`delay_cache_blocks`, `sched/scheduler.py:1216, 3052-3085`) -- (whole blocks, never the prompt's last token, none with prefix caching off) and the handoff moves and is priced for only the remaining blocks (`ParentRequest.PulledKVBlocks`). The decode instance's CPU offload tier is never consulted for that reservation, so under `--pd-decider always` a decode-pool CPU tier changes no latency.
+
+**Source:** vLLM v0.31.0 `v1/core/sched/scheduler.py:525-537, 949` (local hit, then `get_num_new_matched_tokens` for the rest), `v1/core/kv_cache_manager.py:290-299` (hit capped at `num_tokens - 1`), `nixl/pull_scheduler.py:149-177` (pull only the unhashed blocks), `multi_connector.py:134-141, 429-448` (the first connector reporting tokens loads them; NIXL, listed first, claims a remotely prefilled prompt).
+
+**Verification:** `sim/cluster/pd_decode_load_test.go` — `TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks`, `TestPDDecodeLoad_LocalHitStopsBeforeTheLastToken`, `TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff` (metamorphic), `TestPDDecodeLoad_InFlightBlocksAreNotAPrefixHit`; `sim/kv/remote_kv_test.go`; `sim/cluster/pd_offload_test.go` — `TestPDOffload_PrefillTierServesALaterTurnsPrefix` (the prefill pool's tier does serve its own prompts).
+
+**Evidence:** `sim.Simulator.ReserveRemoteKV` allocates through `sim.GPUTierAllocator` when the store has one.
+
+#### INV-PD-9: A Decode Engine Admits a Pull Only Where vLLM's Schedule Would
+
+**Statement:** A P/D handoff's decode-side KV is allocated, and its pull starts, at one of two points:
+- in the decode engine's schedule (the end of `scheduleBatch`); or
+- on a decode engine with no running or waiting request, once its last step has ended (`BusyUntil`).
+
+The schedule point requires all of the following:
+- running requests have already taken this step's slots;
+- the step preempted nothing;
+- the wait queue ahead is empty;
+- fewer than `max_num_seqs` requests run.
+
+Admission is FCFS and stops at the first handoff that does not fit. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
+
+Consequences:
+- A handoff holding transferred KV is never preempted and keeps its whole prompt until its pull lands.
+- No instance ever uses more blocks than it has.
+- Waiting requests that hold KV are scheduled before the rest.
+- Every new admission is gated on the whole prompt fitting (`full_sequence_must_fit`, every model).
+- A saturated pool queues its handoffs rather than thrashing.
+
+vLLM v0.31.0 sources:
+- `sched/scheduler.py:872-894` (WAITING phase, the KV-holding queue first);
+- `:1195-1229` (`reserved_blocks`, `delay_cache_blocks`, refusal breaks);
+- `:1258-1287` (WAITING_FOR_REMOTE_KVS);
+- `:3003-3036` (`_request_remaining_blocks`);
+- `kv_cache_manager.py:517-576`;
+- `config/scheduler.py:191` (`scheduler_reserve_full_isl` True).
+
+**Limitation:** a BLIS preemption restarts a request's output, whereas vLLM keeps generated tokens. Under long outputs, some growth preemption therefore remains.
+
+**Enforced:**
+- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (`sim/simulator.go`);
+- `KVCacheState.admissionGateRefuses` (`sim/kv`);
+- `serveDecodeKVWaiters`, `admitDecodeKVIfIdle`, `decodeAdmitEvent` (`sim/cluster/pd_events.go`).
+
+**Verification:** `TestPDDecodeAdmission_LawsHoldUnderRandomSaturation` (rapid; checked at every step: block bound, holders keep their KV, no pull starts inside a decode step, all complete), `TestPDDecodeAdmission_ASaturatedPoolQueuesRatherThanThrashes` (`sim/cluster`). Mutation-checked: admission at any event, admission in a preempting step, no reservation, no KV-holding-first and no full-prompt gate each fail.
+
 ### Pools and KV transfer
 
 #### INV-P2-1: Pool-Config Consistency
@@ -552,8 +945,10 @@ Note (issue #1513): the client-visible parent E2E metric is **not** `parent.Comp
 
 #### INV-P2-2: KV Transfer Contention
 
-**Status: not modelled yet ([#1922](https://github.com/inference-sim/inference-sim/issues/1922)).** Every P/D handoff is priced by the kernel through `DeploymentConfig.PDTransferTime` as if it were alone on the fabric: concurrent handoffs do not share bandwidth. The earlier model (one cluster-wide transfer counter dividing a configured bandwidth, each duration fixed at the transfer's start, behind `--pd-transfer-contention`) was removed with the simulator's own transfer formula, together with its bookkeeping and metrics, so no unreachable contention logic remains.
+**Statement:** With `--pd-transfer-contention` (`DeploymentConfig.PDTransferContention`), concurrent handoffs share the links they cross. Each handoff's demand -- payload, floor, and links with their full rates -- is the kernel's `PDTransferDemand` (blis-schemas `kernel.TransferDemand`); `kvtransfer.LinkArbiter` divides every link max-min fairly (progressive filling) among the undrained handoffs on it, re-dividing whenever one starts, drains or finishes. The floor is per handoff and never shared: a handoff completes at the later of start + floor and the tick its last byte drains. Laws: (1) a handoff alone completes at exactly `PDTransferTime` in ticks (the schemas law `PDTransferTime == PDTransferDemand.AloneTime()`, checked for every rank pair at startup and every handoff at run time); (2) no link carries more than its rate, and every undrained handoff has a saturated bottleneck link on which none is faster (max-min fairness); (3) handoffs on links nobody else uses finish exactly as alone; (4) doubling every link's rate never delays a handoff; (5) on one shared link set (every 1P1D handoff), no handoff is faster than alone and one more handoff never makes another finish earlier; (6) INV-PD-3 and INV-1 hold, at any horizon; (7) deterministic (INV-6), and run → replay byte-identical (INV-13). Max-min fairness is not monotone across different link sets in general (more traffic on one link can speed a flow on another); `TestLinkArbiter_MaxMinIsNotMonotoneAcrossLinks` pins the counterexample so no law claims it. Off (the default), every handoff is priced as if alone, byte-identical to before.
 
-**What it will state (#1922):** with contention on, transfers that cross the same link share that link's bandwidth fairly; each transfer's rate is its smallest share over the links it crosses, re-evaluated as transfers start and finish; the fixed floor is never shared; and a transfer alone completes at exactly the kernel's `PDTransferTime`. The links and their rates come from the kernel (`PDTransferDemand`, blis-schemas#46, blis-latency-kernel#29); the arbitration is the simulator's.
+**Verification:** `sim/kvtransfer/links_test.go` (laws 1-5, 7; rapid; `TestLinkArbiter_UnchangedRateKeepsItsAccounting` pins law 3's exactness by construction), `sim/cluster/pd_transfer_contention_test.go` (one-at-a-time identical, shared decode NIC doubles each, disjoint links identical, never faster than alone + INV-PD-3 + INV-1 at a horizon, refusals, wakes bounded by starts + finish ticks), `cmd/kernel_pd_fidelity_test.go` (CLI, run → replay).
 
-**Error until then:** about `T·ρ/(1−ρ)` added to each handoff, where `T` is one handoff's time and `ρ` the utilisation of the busiest shared link (for xP1D, the decode node's NIC: arrival rate × `T`). On GLM-5 3P1D with 8k-token prompts this is ~0.2% of TTFT at 20 req/s on 400G InfiniBand and ~8% on 100 GbE; ITL and colocated runs are unaffected.
+**Evidence:** `scheduleTransferCompletion` starts the handoff in the arbiter; `PDLinkWakeEvent` completes finished handoffs through the same `KVTransferCompletedEvent` an uncontended one takes. The handoff's queueing delay is its duration minus `TransferAloneTicks`, reported per run (`pd.transfer_queue_delay_*`).
+
+**Coverage limit:** the kernel's demand is one rank's pull at one rank's link rate, exact when the pools' TP widths match (blis-latency-kernel `pdTransferBytes`). NIXL's transfers do not share a LinkID with offload-tier I/O (the kernel prices those over the host link with `TierTime`), so handoffs and CPU-tier traffic do not contend.

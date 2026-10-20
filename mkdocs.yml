@@ -114,6 +114,12 @@ nav:
       - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md
+  - Validation:
+      - validation/index.md
+      - "InferenceX DSV4.1 Agentic": validation/inferencex-agentic.md
+      - "InferenceX Single-Turn": validation/inferencex-single-turn.md
+      - "Internal llm-d Deployments": validation/internal-deployments.md
+      - "llm-d Prism": validation/llm-d-prism.md
   - Reference:
       - reference/index.md
       - Project Structure: reference/project-structure.md
@@ -128,6 +134,7 @@ nav:
       - contributing/index.md
       - Extension Recipes: contributing/extension-recipes.md
       - PR Workflow: contributing/pr-workflow.md
+      - Changes Across the BLIS Repositories: contributing/cross-repo-changes.md
       - Automated Delivery (L1): contributing/automated-delivery.md
       - External PR Review: contributing/external-pr-review.md
       - RFC Template: contributing/rfc.md

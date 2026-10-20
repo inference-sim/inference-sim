@@ -114,20 +114,33 @@ func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
 }
 
 // TestPrintPDMetrics_PrintsThePDSection verifies the PD section's header and standard fields,
-// and that it reports no transfer-contention figures: contention is not modelled (INV-P2-2,
-// #1922), so a figure for it would describe nothing the run simulated.
+// and that it reports transfer-contention figures exactly when the run arbitrated links
+// (INV-P2-2, #1922): without contention a figure for it would describe nothing the run
+// simulated; with it, the queueing delay and each link's peak are printed.
 func TestPrintPDMetrics_PrintsThePDSection(t *testing.T) {
-	pd := &cluster.PDMetrics{DisaggregatedCount: 3, LoadImbalanceRatio: 1.0}
+	pd := &cluster.PDMetrics{DisaggregatedCount: 3, LoadImbalanceRatio: 1.0,
+		TransferQueueDelay: cluster.NewDistribution([]float64{0, 10})}
 
 	var buf bytes.Buffer
 	printPDMetrics(&buf, pd)
 	out := buf.String()
 
-	assert.NotContains(t, out, "Peak Concurrent Transfers", "no contention figure while contention is not modelled")
-	assert.NotContains(t, out, "Mean Transfer Queue Depth", "no contention figure while contention is not modelled")
+	assert.NotContains(t, out, "Peak Concurrent Transfers", "no contention figure without contention")
+	assert.NotContains(t, out, "Queueing Delay", "no contention figure without contention")
+	assert.NotContains(t, out, "Prefill KV Hold", "no hold figure when nothing was held")
 	// But the header and standard PD fields must still appear
 	assert.Contains(t, out, "=== PD Metrics ===", "PD Metrics header must always appear")
 	assert.Contains(t, out, "Disaggregated Requests: 3", "Disaggregated Requests must always appear")
+
+	pd.LinkPeakConcurrent = map[string]int{"nic/ingress/node/1": 2, "nic/egress/node/0": 1}
+	pd.PrefillKVHoldPeakTokens = 640
+	buf.Reset()
+	printPDMetrics(&buf, pd)
+	out = buf.String()
+	assert.Contains(t, out, "KV Transfer Queueing Delay (us): mean=5.0", "contention reports the queueing delay")
+	assert.Contains(t, out, "  Peak Concurrent Transfers (nic/egress/node/0): 1\n  Peak Concurrent Transfers (nic/ingress/node/1): 2\n",
+		"each link's peak, in link order")
+	assert.Contains(t, out, "Prefill KV Hold Peak (tokens): 640")
 }
 
 // TestPrintPDMetrics_NilPD_ProducesNoOutput verifies the nil-pd guard:

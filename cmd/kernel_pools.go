@@ -14,6 +14,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool, since each
@@ -21,6 +22,8 @@ import (
 // for that pool rather than by pool 0's copied to both.
 type kernelPools struct {
 	prefill, decode *kernelmodel.Model
+	// connector is the scenario's pd_transfer.connector.
+	connector string
 }
 
 // openKernelPools opens the prefill and decode pools of the run's scenario. It returns nil
@@ -51,6 +54,31 @@ func openKernelPools(catalogRoot string) *kernelPools {
 				"disaggregated run, but %v", err)
 		}
 		*c.dst = m
+	}
+	shape, err := kernelmodel.ShapeOf(kernelScenario, repos)
+	if err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	p.connector = shape.PDConnector
+	requireNIXLHandoff(p.connector)
+	if p.connector == "MultiConnector" {
+		// The schema states no MultiConnector children or their order, and the order decides
+		// which connector loads a request's KV: the first, in config order, that reports
+		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
+		// NIXL listed first, which it cannot check.
+		logrus.Warnf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
+			"listed before OffloadingConnector (the first connector reporting tokens loads them); "+
+			"blis-schemas does not state the children or their order, so this assumption is not "+
+			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
+			"prefilled prompts from the decode CPU tier", kernelScenario)
+	}
+	// NIXL's prefill backoff (nixl/base_scheduler.py:385-407): the prefill stops short of the
+	// last few prompt tokens and the decode side recomputes them. BLIS moves and decodes the
+	// whole prompt, so a pool that backs off is refused rather than simulated without it.
+	if b := p.prefill.PrefillBackoffTokens(); b > 0 {
+		logrus.Fatalf("scenario %q: under NIXL this model's decode engine recomputes the last %d prompt "+
+			"token(s) that the prefill engine does not compute (_prefill_backoff: a Mamba-state model, "+
+			"or multi-module MTP drafting K>1); BLIS does not model that recompute", kernelScenario, b)
 	}
 	// For the same reason every instance must belong to a pool: one with no role would run the
 	// first pool's engine with the global sizing, an engine the scenario did not describe.
@@ -98,7 +126,94 @@ func openKernelPools(catalogRoot string) *kernelPools {
 			"must agree", kernelScenario, ps.SpeculativeTokens,
 			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
 	}
+	kernelPDOpened = p
 	return p
+}
+
+// nixlConnectors are the pd_transfer connectors whose handoff BLIS models: vLLM v0.31.0's
+// NIXL connectors (NixlConnector is an alias of NixlPullConnector, nixl/connector.py:9-12), and
+// MultiConnector, which llm-d composes from a NixlConnector and an OffloadingConnector. The
+// schema cannot see a MultiConnector's children, so, as the blis-schemas rules pack does
+// (rules/v0_31 pack.go:964-968), it is taken to carry the NIXL one.
+var nixlConnectors = map[string]bool{
+	"NixlConnector": true, "NixlPullConnector": true, "NixlPushConnector": true, "MultiConnector": true,
+}
+
+// requireNIXLHandoff refuses a P/D scenario whose handoff is not NIXL's. What BLIS simulates
+// around a handoff is NIXL's protocol: the decode side reserves the blocks at transfer start
+// (WAITING_FOR_REMOTE_KVS), pulls only what its own prefix cache lacks, and the prefill side
+// holds its blocks until the pull completes or the lease expires (INV-PD-7). Another connector
+// (Mooncake, LMCache, P2P NCCL) moves and frees KV on other terms, which would be simulated as
+// NIXL's without a word.
+func requireNIXLHandoff(connector string) {
+	if !nixlConnectors[connector] {
+		logrus.Fatalf("scenario %q hands KV off with pd_transfer.connector %q; BLIS models NIXL's "+
+			"handoff (NixlConnector, NixlPullConnector, NixlPushConnector, or a MultiConnector over "+
+			"one), so state one of those", kernelScenario, connector)
+	}
+}
+
+// holdsPrefillKV reports whether the run's prefill engines hold a finished request's KV for
+// the decode pull: every NIXL handoff does (nixl/pull_scheduler.py:247-266 and
+// push_scheduler.py:260-270 at v0.31.0). False for a colocated run (nil receiver).
+func (p *kernelPools) holdsPrefillKV() bool {
+	return p != nil && nixlConnectors[p.connector]
+}
+
+// handoffPricing returns the run's handoff price and, when contention is on, the demand behind
+// it. Both nil for a colocated run, where contention is refused.
+func (p *kernelPools) handoffPricing(contention bool) (
+	func(int64, cluster.InstanceID, cluster.InstanceID) int64,
+	func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow,
+) {
+	if p == nil {
+		if contention {
+			logrus.Fatalf("--pd-transfer-contention needs a disaggregated run: " +
+				"pass --prefill-instances and --decode-instances with a P/D scenario")
+		}
+		return nil, nil
+	}
+	price := p.transferTime()
+	if !contention {
+		return price, nil
+	}
+	return price, p.transferDemand()
+}
+
+// transferDemand is the demand behind transferTime: the prefill pool kernel's
+// PDTransferDemand between the two instances' placements, as payload, floor and links. The
+// blis-schemas law that alone a demand costs its PDTransferTime is checked for every rank pair
+// up front (a block's handoff), so a kernel breaking it is refused before the run rather than
+// arbitrated.
+func (p *kernelPools) transferDemand() func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow {
+	firstDecode := prefillInstances
+	demand := func(tokens int64, from, to kernel.Placement) kvtransfer.Flow {
+		d := p.prefill.Kernel().PDTransferDemand(int(tokens), from, to)
+		if err := d.Check(); err != nil {
+			logrus.Fatalf("scenario %q: the kernel's demand for a %d-token handoff from %+v to %+v is "+
+				"malformed: %v", kernelScenario, tokens, from, to, err)
+		}
+		f := kvtransfer.Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
+		for _, l := range d.Links {
+			f.Links = append(f.Links, kvtransfer.Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
+		}
+		return f
+	}
+	for i := 0; i < prefillInstances; i++ {
+		for j := 0; j < decodeInstances; j++ {
+			from, to := p.prefill.PlacementOf(i), p.decode.PlacementOf(j)
+			if a, b := kvtransfer.AloneTicks(demand(blockSizeTokens, from, to)),
+				p.prefill.PDTransferTicks(blockSizeTokens, from, to); a != b {
+				logrus.Fatalf("scenario %q: the kernel's handoff demand from prefill rank %d to decode "+
+					"rank %d costs %d ticks alone but it prices the handoff at %d; blis-schemas requires "+
+					"PDTransferTime == PDTransferDemand.AloneTime()", kernelScenario, i, j, a, b)
+			}
+		}
+	}
+	return func(tokens int64, from, to cluster.InstanceID) kvtransfer.Flow {
+		return demand(tokens, p.prefill.PlacementOf(rankInPool(from, firstDecode)),
+			p.decode.PlacementOf(rankInPool(to, firstDecode)))
+	}
 }
 
 // requireSameKVCacheFormat refuses a disaggregated scenario whose pools state different KV
@@ -143,10 +258,15 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	seqs, toks := int64(s.MaxNumSeqs), int64(s.MaxNumBatchedTokens)
 	noCache := s.PrefixCachingDisabled
 	ml := int64(s.MaxModelLen)
+	state := s.SequenceState
+	hit := prefixHitOf(string(m.Role())+" pool", m)
+	logSequenceFixedCharge(string(m.Role())+" pool", s)
 	o := cluster.PoolOverrides{
 		TP: &tp, GPU: d.Hardware, LatencyModel: m, TotalKVBlocks: &blocks, MaxModelLen: &ml,
 		MaxNumSeqs: &seqs, MaxNumBatchedTokens: &toks, PrefixCachingDisabled: &noCache,
+		SequenceState: &state, PrefixHit: &hit,
 	}
+	poolEngineKnobs(m, &o)
 	// Each pool runs its own engine's scheduling policy, unless a flag or policy bundle chose
 	// one for the run, which then applies to every pool and is recorded where it departs.
 	stated := enginePolicyOf(m)
@@ -163,19 +283,32 @@ func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
 	return o
 }
 
-// requireWindowFits refuses an engine whose stated window one request could not fit in, as
-// vLLM does at startup, and an engine that states no window at all: unstated, vLLM derives it
-// from the model's max_position_embeddings, which no document the kernel reads carries.
+// logSequenceFixedCharge reports the per-sequence term of an engine's KV capacity (#1941):
+// the steady hold each decoding sequence's bounded state settles at, and the admission cap
+// vLLM gates a new request on and sizes its startup capacity figure by. Silent for a model
+// with no such caches, whose capacity it does not touch.
+func logSequenceFixedCharge(what string, s kernelmodel.Settings) {
+	if s.SequenceState.Hold == nil {
+		return
+	}
+	atCap := min(int64(s.MaxNumSeqs)*s.SequenceSteadyBlocks, s.KVBlocks)
+	logrus.Infof("KV capacity (%s): each sequence's bounded state (window rings, compressor/indexer/"+
+		"recurrent state) is held step by step: %d bytes per rank (%d blocks of %d bytes) once "+
+		"decoding, more while a prefill chunk is in flight; vLLM's admission gate caps it at %d "+
+		"bytes (%d blocks). At max_num_seqs %d the steady hold is %d of %d blocks (%.1f%%)",
+		what, s.SequenceSteadyBytes, s.SequenceSteadyBlocks, s.KVBytesPerBlock,
+		s.SequenceAdmissionBytes, s.SequenceAdmissionBlocks, s.MaxNumSeqs, atCap, s.KVBlocks,
+		100*float64(atCap)/float64(s.KVBlocks))
+}
+
+// requireWindowFits refuses an engine with no window at all: neither the deployment nor the
+// model graph states one, and vLLM would derive it from an HF config no document the kernel
+// reads carries. A window one request cannot fit in the KV cache is refused when the settings
+// are sized, with vLLM's start-up message (kernelmodel.checkEnoughKVCacheMemory).
 func requireWindowFits(what string, s kernelmodel.Settings) {
 	if s.MaxModelLen <= 0 {
-		logrus.Fatalf("scenario %q's %s states no engine.max_model_len; state the "+
-			"window the engine serves", kernelScenario, what)
-	}
-	if capacity := s.KVBlocks * int64(s.BlockSize); int64(s.MaxModelLen) > capacity {
-		logrus.Fatalf("scenario %q's %s states max_model_len %d, but one rank's KV "+
-			"budget holds %d tokens (%d blocks of %d); vLLM refuses to start such an engine. Lower "+
-			"max_model_len in the scenario", kernelScenario, what,
-			s.MaxModelLen, capacity, s.KVBlocks, s.BlockSize)
+		logrus.Fatalf("scenario %q's %s states no engine.max_model_len and its model graph no "+
+			"context window; state the window the engine serves", kernelScenario, what)
 	}
 }
 
@@ -262,6 +395,21 @@ func kernelTierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
+// shareTiersByNode places each engine's secondary tiers on the node the kernel places its rank
+// on, so a node's engines share one tier (sim.OffloadTierSharing). rankOf maps an instance to
+// its rank in m's pool.
+func shareTiersByNode(cfg *sim.KVOffloadConfig, m *kernelmodel.Model, rankOf func(string) int) {
+	if !cfg.IsEnabled() || len(cfg.Tiers) == 0 || m == nil {
+		return
+	}
+	cfg.Sharing = &sim.OffloadTierSharing{NodeOf: func(id string) int {
+		return m.PlacementOf(rankOf(id)).Node
+	}}
+}
+
+// instanceRank is a colocated run's instance index ("instance_<n>"), the rank the kernel places.
+func instanceRank(id string) int { return rankInPool(cluster.InstanceID(id), math.MaxInt) }
+
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
 // run, from the run's one pool: see priceOffload. It returns the legacy per-block charge, 0
 // when no kernel is open or with no legacy tier. A disaggregated run's pools are priced separately,
@@ -270,13 +418,15 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 	if kernelOpened == nil {
 		return 0
 	}
+	shareTiersByNode(cfg, kernelOpened, instanceRank)
 	return priceOffload(kernelOpened, cfg)
 }
 
 // priceOffload has m's kernel price every KV-offload transfer of m's pool: each secondary
 // tier through TierTime for its catalog device class, at the depth the transfer station is
-// serving, and the legacy CPU tier as one whole per-block reload charge, both at m's own
-// per-block bytes (SequenceVariableBytes).
+// serving, the offload CPU tier's CPU->GPU loads at cpu_dram (INV-K7), and the legacy CPU
+// tier as one whole per-block reload charge, all at m's own per-block bytes
+// (SequenceVariableBytes).
 //
 // TierTime's contract is a GPU↔tier transfer, while the station's secondary-tier jobs run
 // CPU↔tier; the kernel's price is applied to them deliberately -- the device and the host
@@ -285,6 +435,12 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 // kernel.TierTime: the slower of the device and the host link binds).
 func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 	perBlock := m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	if cfg.IsEnabled() {
+		cfg.CPUCopies = m.OffloadCopies()
+		if err := cfg.CheckFitsOneChunk(); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+	}
 	if (cfg.IsEnabled() || kvCPUBlocks > 0) && perBlock <= 0 {
 		logrus.Fatalf("the kernel prices a %d-token block at %d bytes; offload "+
 			"needs a block to occupy memory", blockSizeTokens, perBlock)
@@ -313,6 +469,25 @@ func priceOffload(m *kernelmodel.Model, cfg *sim.KVOffloadConfig) int64 {
 				return kernelTierTicks(m, class, write, bytes, inService)
 			}
 		}
+		// vLLM's CPU->GPU loads run one at a time on the handler's stream chain
+		// (kv_offload/cpu/gpu_worker.py:696-701 at v0.31.0), so each is priced alone.
+		kernelTierTicks(m, kernelCPUTier, false, perBlock, 1)
+		cfg.CPULoadTime = func(bytes int64) int64 {
+			return kernelTierTicks(m, kernelCPUTier, false, bytes, 1)
+		}
+		if cfg.Simple {
+			// The Simple connector's stores are device-to-host copies on their own stream
+			// (vllm/v1/simple_kv_offload/worker.py:164-167, 273-295 at v0.31.0).
+			kernelTierTicks(m, kernelCPUTier, true, perBlock, 1)
+			cfg.CPUStoreTime = func(bytes int64) int64 {
+				return kernelTierTicks(m, kernelCPUTier, true, bytes, 1)
+			}
+			if cfg.LazyOffload {
+				// target_free: 2 x ceil(max_num_batched_tokens / block_size) for one
+				// full-attention group (simple_kv_offload/manager.py:312-330).
+				cfg.LazyTargetFree = 2 * ((maxNumBatchedTokens + blockSizeTokens - 1) / blockSizeTokens)
+			}
+		}
 	}
 	if kvCPUBlocks <= 0 {
 		return 0
@@ -328,10 +503,21 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 	if !cfg.IsEnabled() && kvCPUBlocks <= 0 {
 		return
 	}
+	// A disaggregated engine with an offload tier runs both connectors, which only a
+	// MultiConnector composes: with kv_offloading_size set, vLLM overwrites kv_connector with
+	// the OffloadingConnector and kv_role with kv_both (vllm/config/vllm.py:1124-1158 at
+	// v0.31.0), so a plain NIXL connector and a tier cannot run together.
+	if p.connector != "MultiConnector" {
+		logrus.Fatalf("scenario %q offloads KV under P/D with pd_transfer.connector %q; vLLM runs a NIXL "+
+			"handoff and an offload tier together only through a MultiConnector (stating "+
+			"kv_offloading_size replaces kv_connector with OffloadingConnector, vllm/config/vllm.py:1124-1158), "+
+			"so state pd_transfer.connector: MultiConnector", kernelScenario, p.connector)
+	}
 	for _, c := range []struct {
-		m   *kernelmodel.Model
-		dst *cluster.PoolOverrides
-	}{{p.prefill, prefill}, {p.decode, decode}} {
+		role string
+		m    *kernelmodel.Model
+		dst  *cluster.PoolOverrides
+	}{{"prefill", p.prefill, prefill}, {"decode", p.decode, decode}} {
 		pool := cfg
 		// Each pool gets its own tier slice: priceOffload installs a per-pool ServiceTime.
 		pool.Tiers = append([]sim.KVOffloadTier(nil), cfg.Tiers...)
@@ -339,7 +525,14 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 		// hold different bytes per block, and the tiers' block capacity and job sizes follow.
 		if pool.IsEnabled() {
 			pool.PerBlockBytes = c.m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+			if err := pool.CheckFitsOneChunk(); err != nil {
+				logrus.Fatalf("%s pool: %v", c.role, err)
+			}
 		}
+		firstDecode := prefillInstances
+		shareTiersByNode(&pool, c.m, func(id string) int {
+			return rankInPool(cluster.InstanceID(id), firstDecode)
+		})
 		ticks := priceOffload(c.m, &pool)
 		c.dst.KVOffload = &pool
 		c.dst.KVTransferTicksPerBlock = &ticks

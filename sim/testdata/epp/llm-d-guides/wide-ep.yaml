@@ -1,0 +1,39 @@
+# EXTRACTED VERBATIM from llm-d/llm-d@4427f55cb6267cc07896968b4f69eda91a1efe75:guides/wide-ep/router/wide-ep.values.yaml
+# router.epp.pluginsCustomConfig[wide-ep-config.yaml] (block scalar, dedented) -- do not edit.
+# sha256(extracted text): 95d8ee7f735c1b0c124b12aaa3edba3ca1dfb0fcdaa4b72cf9f319b6251c6ee3
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+# Pin each request to a single DisaggregatedSet revision during
+# rollouts so prefill and decode never pair across revisions.
+- type: disaggregatedset-rollout-screener
+  parameters:
+    scope:
+      labelSelector: "disaggregatedset.x-k8s.io/name=wide-ep-nvidia-gpu-vllm"
+    revisionGating:
+      mode: max-role
+      requiredRoles: [prefill, decode]
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+- type: prefill-filter
+- type: decode-filter
+- type: prefix-cache-scorer
+- type: queue-scorer
+- type: active-request-scorer
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: prefix-cache-scorer
+    weight: 3
+  - pluginRef: queue-scorer
+    weight: 2
+  - pluginRef: active-request-scorer
+    weight: 2
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer

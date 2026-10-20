@@ -2,6 +2,7 @@ package kernelmodel
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,12 @@ func TestDefaultScenariosAreThePinnedKernelModulesFixtures(t *testing.T) {
 	if got == "" {
 		_, err := kernelModuleDir()
 		t.Fatalf("the scenario root did not resolve: %v", err)
+	}
+	if out, err := exec.Command("go", "list", "-m", "-f", "{{if .Replace}}{{.Replace.Path}}{{end}}", kernelModule).Output(); err == nil {
+		if r := strings.TrimSpace(string(out)); r != "" && !strings.Contains(r, "@") && strings.HasPrefix(got, filepath.Clean(filepath.Join(repoRoot(), r))) {
+			t.Skipf("go.mod replaces %s with the local checkout %s (a development pin); the "+
+				"module-cache check applies to a released pin", kernelModule, r)
+		}
 	}
 	if !strings.Contains(got, kernelModule+"@") {
 		t.Errorf("scenario root %q is not inside the module cache's %s@<version>", got,
@@ -85,12 +92,34 @@ func TestRequireReposNamesEachMissingRootAndHowToSetIt(t *testing.T) {
 // A copy of another release builds kernels too, and a renamed chip or a refitted
 // coefficient would then show up as a score that moved for no stated reason. Bumping the
 // kernel in go.mod moves the lock, and this fails until the copies are re-vendored.
+// An entry in testdata/upstream-prerelease.lock stands in for the kernel's while a pinned
+// kernel pre-release lags the unreleased upstreams it was developed against; it must name
+// the same repository and a different commit, so it cannot outlive the kernel's catching up.
 func TestTheVendoredCatalogAndRegistryAreTheLockedReleases(t *testing.T) {
 	t.Setenv(catalogEnv, "")
 	t.Setenv(registryEnv, "")
 	locked, err := LockedUpstreams()
 	if err != nil {
 		t.Fatal(err)
+	}
+	pre, err := PrereleaseUpstreams()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pre) > 0 {
+		t.Logf("TEMPORARY testdata/upstream-prerelease.lock: pre-release pins of PR heads; replace with release tags before merge")
+	}
+	for dest, p := range pre {
+		k, ok := locked[dest]
+		switch {
+		case !ok:
+			t.Errorf("upstream-prerelease.lock names %s, which blis-latency-kernel's lock does not", dest)
+		case p.Repository != k.Repository:
+			t.Errorf("upstream-prerelease.lock: %s is %s, the kernel locks %s", dest, p.Repository, k.Repository)
+		case p.Commit == k.Commit:
+			t.Errorf("TEMPORARY upstream-prerelease.lock (pre-release pins of PR heads; replace with release tags before merge) restates the kernel's %s lock (%s); delete the line", dest, k.Commit)
+		}
+		locked[dest] = p
 	}
 	for _, c := range []struct{ dest, root string }{
 		{"catalog", DefaultCatalog()},
@@ -105,8 +134,8 @@ func TestTheVendoredCatalogAndRegistryAreTheLockedReleases(t *testing.T) {
 			t.Fatalf("%s: %v", c.dest, err)
 		}
 		if got != u.Commit {
-			t.Errorf("vendored %s is %s; blis-latency-kernel's lock pins %s (%s) -- re-vendor "+
-				"it from that release (testdata/README.md says how)", c.dest, got, u.Tag, u.Commit)
+			t.Errorf("vendored %s is %s; the lock pins %s (%s) -- re-vendor it from that release "+
+				"(testdata/README.md says how)%s", c.dest, got, u.Tag, u.Commit, temporaryNote(pre, c.dest))
 		}
 	}
 }
@@ -174,4 +203,12 @@ func TestDefaultReposMatchesTheIndividualRoots(t *testing.T) {
 				c.name, c.got, c.want)
 		}
 	}
+}
+
+// temporaryNote marks a lock failure that involves a TEMPORARY pre-release pin.
+func temporaryNote(pre map[string]Upstream, dest string) string {
+	if _, ok := pre[dest]; !ok {
+		return ""
+	}
+	return " [TEMPORARY testdata/upstream-prerelease.lock: pre-release pins of PR heads; replace with release tags before merge]"
 }

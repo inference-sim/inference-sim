@@ -11,6 +11,12 @@ import (
 type ScorerConfig struct {
 	Name   string  `yaml:"name"`
 	Weight float64 `yaml:"weight"`
+	// Instance is the llm-d plugin instance name when the scorer comes from an
+	// EndpointPickerConfig (several instances of one scorer may share a profile).
+	Instance string `yaml:"-"`
+	// Params carries llm-d parameters of the data-layer-bound scorers
+	// (prefix-cache, token-load); the zero value means llm-d's defaults.
+	Params ScorerParams `yaml:"-"`
 }
 
 // scorerFunc computes per-instance scores in [0,1] for a scoring dimension.
@@ -85,6 +91,8 @@ var validScorerNames = map[string]bool{
 	"load-aware":           true,
 	"vllm-dp":              true,
 	"lora-affinity":        true,
+	"prefix-cache":         true,
+	"token-load":           true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.

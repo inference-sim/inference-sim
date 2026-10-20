@@ -18,6 +18,7 @@ import (
 // Also inlined in ComputeBlockHashes for hasher reuse.
 // TestComputeBlockHashes_MatchesManualChaining guards consistency between the two paths.
 func HashBlock(prevHash string, tokens []tokenid.TokenID) string {
+	blockHashes.Add(1)
 	h := sha256.New()
 	h.Write([]byte(prevHash))
 	var buf [20]byte // stack buffer: max int64 (19 digits) + pipe

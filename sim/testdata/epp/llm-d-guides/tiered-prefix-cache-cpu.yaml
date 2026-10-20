@@ -1,0 +1,41 @@
+# EXTRACTED VERBATIM from llm-d/llm-d@4427f55cb6267cc07896968b4f69eda91a1efe75:guides/tiered-prefix-cache/router/single-host/tiered-prefix-cache-cpu.values.yaml
+# router.epp.pluginsCustomConfig[tiered-prefix-cache-plugins.yaml] (block scalar, dedented) -- do not edit.
+# sha256(extracted text): a1fd2a8b058e719b42a0d55b649c39a60b2a5a3c3a90878c998cc1d9665f1eed
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: no-hit-lru-scorer
+  parameters:
+    # Use the HBM index for the cold-request check. If you do not
+    # set this, the router adds one more prefix producer.
+    prefixMatchInfoProducerName: gpu-prefix-cache-producer
+- type: approx-prefix-cache-producer
+  name: gpu-prefix-cache-producer
+- type: approx-prefix-cache-producer
+  name: cpu-prefix-cache-producer
+  parameters:
+    autoTune: false
+    # Unit: router blocks of 64 tokens.
+    # Value = CPU tier bytes per pod / (64 * KV bytes per token).
+    # Qwen3-32B KV is 256 KiB per token, so one block is 16 MiB.
+    # The default vLLM native overlay has 300 GiB: 300 GiB / 16 MiB = 19200.
+    # For other connectors, see the README.
+    lruCapacityPerServer: 19200
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: prefix-cache-scorer
+  name: gpu-prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: gpu-prefix-cache-producer
+- type: prefix-cache-scorer
+  name: cpu-prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: cpu-prefix-cache-producer
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+  - pluginRef: kv-cache-utilization-scorer
+  - pluginRef: gpu-prefix-cache-scorer
+  - pluginRef: cpu-prefix-cache-scorer
+  - pluginRef: no-hit-lru-scorer

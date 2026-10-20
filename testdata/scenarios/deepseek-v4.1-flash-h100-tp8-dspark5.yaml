@@ -1,0 +1,44 @@
+# DeepSeek-V4.1-Flash on one 8-GPU H100 node with expert parallelism, drafting five tokens a
+# step with DSpark, for the speculation tests and as a worked example (#1932).
+#
+# DSpark is a method vLLM 0.31.0 lists, so the 0.31.0 rules pack accepts it; the kernel prices
+# its parallel-block draft pass, its context stack and its resident weights and caches, so BLIS
+# prices only the 1 + 5 verify width. V4.1's sparse backends take a 64-token block on SM90, and
+# fp8 is served as the packed fp8_ds_mla record. max_model_len auto is fitted to one rank's KV
+# cache. max_num_seqs and max_num_batched_tokens are vLLM's served defaults on an 80 GiB Hopper
+# part (vllm/engine/arg_utils.py), stated because BLIS sizes the scheduler from the scenario.
+kind: Scenario
+name: deepseek-v4.1-flash-h100-tp8-dspark5
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v4.1-flash-h100-tp8-dspark5
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: true
+    engine:
+      block_size: 64
+      cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+      max_model_len: auto
+      gpu_memory_utilization: 0.8
+      engram_config:
+        cpu_offload: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 5

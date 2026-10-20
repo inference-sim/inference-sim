@@ -37,12 +37,23 @@ type PoolOverrides struct {
 	// own kernel, since pools of different widths hold different bytes per block.
 	KVOffload               *sim.KVOffloadConfig
 	KVTransferTicksPerBlock *int64
+	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
+	// different widths hold different state per sequence and per block (#1941).
+	SequenceState *sim.KVSequenceState
+	// PrefixHit is how the pool's KV cache groups cut a prefix hit (nil = use global).
+	PrefixHit *sim.KVPrefixHit
 
 	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
 	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
 	// its queue order and its preemption victim.
 	Scheduler        string
 	PreemptionPolicy string
+
+	// LongPrefillTokenThreshold is the pool engine's long_prefill_token_threshold (nil = use
+	// global; blis-schemas#75), and DPLoadBalancing its data_parallel_load_balancing mode
+	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
+	LongPrefillTokenThreshold *int64
+	DPLoadBalancing           string
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -68,6 +79,15 @@ func (o PoolOverrides) Validate(name string) error {
 	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
 		return fmt.Errorf("%s: PoolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
 	}
+	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
+		return fmt.Errorf("%s: PoolOverrides.SequenceState needs both Hold and Gate, or neither", name)
+	}
+	if o.LongPrefillTokenThreshold != nil && *o.LongPrefillTokenThreshold < 0 {
+		return fmt.Errorf("%s: PoolOverrides.LongPrefillTokenThreshold must be >= 0 when set, got %d", name, *o.LongPrefillTokenThreshold)
+	}
+	if !IsValidDPLoadBalancing(o.DPLoadBalancing) {
+		return fmt.Errorf("%s: PoolOverrides.DPLoadBalancing %q is not internal, hybrid or external", name, o.DPLoadBalancing)
+	}
 	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
 		return fmt.Errorf("%s: PoolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
 	}
@@ -80,7 +100,8 @@ func (o PoolOverrides) IsEmpty() bool {
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
 		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
-		o.Scheduler == "" && o.PreemptionPolicy == ""
+		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
+		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
 }
 
 // ResolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -123,11 +144,20 @@ func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimCon
 	if overrides.KVTransferTicksPerBlock != nil {
 		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
+	if overrides.SequenceState != nil {
+		resolved.SequenceState = *overrides.SequenceState
+	}
+	if overrides.PrefixHit != nil {
+		resolved.PrefixHit = *overrides.PrefixHit
+	}
 	if overrides.Scheduler != "" {
 		resolved.Scheduler = overrides.Scheduler
 	}
 	if overrides.PreemptionPolicy != "" {
 		resolved.PreemptionPolicy = overrides.PreemptionPolicy
+	}
+	if overrides.LongPrefillTokenThreshold != nil {
+		resolved.LongPrefillTokenThreshold = *overrides.LongPrefillTokenThreshold
 	}
 
 	return resolved

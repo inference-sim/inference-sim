@@ -88,7 +88,7 @@ func TestRunCmd_MoEDPPlacement_NodePools_NxM(t *testing.T) {
 	const logical = 2 // x dp 2 = 4 replicas x tp 2 = 8 GPUs: exactly the pool's one node
 	bundle := filepath.Join(t.TempDir(), "nodepools.yaml")
 	if err := os.WriteFile(bundle, []byte("node_pools:\n  - name: pool-b200\n    gpu_type: b200\n"+
-		"    gpus_per_node: 8\n    gpu_memory_gib: 180\n    initial_nodes: 1\n    min_nodes: 1\n"+
+		"    gpus_per_node: 8\n    gpu_memory_gib: 178.35107422\n    initial_nodes: 1\n    min_nodes: 1\n"+
 		"    max_nodes: 1\n    cost_per_hour: 40.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

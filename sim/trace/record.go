@@ -110,7 +110,11 @@ type KVTransferRecord struct {
 	ParentRequestID   string
 	TransferStartTime int64 // microseconds (sim clock)
 	TransferDuration  int64 // microseconds; >= 0 (clamped at recording site)
-	NumKVBlocks       int64
+	NumKVBlocks       int64 // the prompt's KV blocks
+	// PulledKVBlocks are the blocks the decode side's pull moved: NumKVBlocks less those its
+	// own prefix cache already held (INV-PD-8). Added beside NumKVBlocks, which keeps its
+	// meaning.
+	PulledKVBlocks    int64
 	PrefillInstanceID string
 	DecodeInstanceID  string
 }

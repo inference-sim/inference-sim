@@ -21,7 +21,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 1. **Locate the catalog** with `--catalog <path>` or the `BLIS_CATALOG` env var — no default, no search path, no remote fetch (`--catalog` wins, announced on stderr; neither is refused). Both name the catalog **clone root**. Clone `blis-catalog` at its pinned release tag and export it once (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
    ```bash
-   git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
+   git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
    export BLIS_CATALOG=$PWD/blis-catalog
    ```
 2. **A model runs iff it is in the catalog.** Its config is read from `<catalog>/models/<short-name>/config.json`; an absent entry is refused naming that path. No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by committing its config to `blis-catalog`.
@@ -112,6 +112,10 @@ GitHub Actions run on all PRs to main:
 
 - `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.9.0), tests, and a CLAUDE.md size-ceiling check.
 - `.github/workflows/docs.yml` — MkDocs site (PR build-only; deploy on push to main; versioned on tag).
+
+## Cross-Repository Changes (BLIS repositories)
+
+A change that also touches blis-schemas, blis-catalog, blis-registry or blis-latency-kernel follows the canonical process in blis-schemas (`docs/contributing/cross-repo-changes.md`); this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace`, and push schemas -> catalog/registry/kernel -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (schemas validators, snapshot pin check, push gate, `git merge-tree --write-tree origin/main HEAD`).
 
 ## Agent Behavioral Instructions
 

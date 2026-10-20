@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	blisschemas "github.com/inference-sim/blis-schemas"
+	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -49,6 +50,10 @@ type presetWorkload struct {
 	OutputTokensStdev int
 	OutputTokensMin   int
 	OutputTokensMax   int
+
+	// Acceptance is what the preset states about speculative acceptance -- its category,
+	// thinking mode and own measured value (#1939) -- nil when it states none.
+	Acceptance *acceptance.Workload
 }
 
 // presetFromShape reads the token distributions out of a catalog workload shape.
@@ -63,7 +68,16 @@ func presetFromShape(s *schemaworkload.Shape) presetWorkload {
 		OutputTokensStdev: s.Output.StdDev,
 		OutputTokensMin:   s.Output.Min,
 		OutputTokensMax:   s.Output.Max,
+		Acceptance:        acceptanceTermsOf(s),
 	}
+}
+
+// acceptanceTermsOf is a shape's acceptance terms, or nil when it states none.
+func acceptanceTermsOf(s *schemaworkload.Shape) *acceptance.Workload {
+	if t := s.AcceptanceTerms(); t.Category != "" || t.Thinking != "" || t.Value != nil {
+		return &t
+	}
+	return nil
 }
 
 // toPresetConfig converts a catalog preset into the library's PresetConfig. It is the ONE

@@ -48,7 +48,78 @@ The JSON output on stdout (and in the `--metrics-path` file when set) contains:
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
 | `catalog` | object | Model-catalog provenance: path, git revision, dirty flag — **`--metrics-path` file only, never stdout** (see [Catalog Provenance](#catalog-provenance)) |
 | `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}` — **`--metrics-path` file only, never stdout**; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)) |
+| `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file, the whole run's under `whole_run` — **file only** |
+| measured-window keys | — | `ttft_p50_ms`, `request_itl_*`, `interactivity_*`, `step_interval_*`, `output_throughput_tok_s`, … — **file only**; see [Measured-Window Aggregates](#measured-window-aggregates-metrics-path-file) |
+| `kernel_provenance` | object | Per-pool coefficient evidence, assumptions and skipped release rules — **file only**; see [Kernel Provenance](#kernel-provenance) |
+| `blis_version`, `kernel_version`, `schemas_version` | string | Build pins from the binary's build information (`"unknown"` when absent) — **file only** |
 | `requests` | array | Per-request detail records (omitted when empty; see [Per-Request Fields](#per-request-fields)) |
+
+### Measured-Window Aggregates (`--metrics-path` file)
+
+The results file carries aiperf 0.12.0's request metrics (#1938) over the **measured window**:
+requests whose `phase` is not `warmup` that completed (before the window's end, when one is
+set). With no phase set, that is every completed request. One value per request;
+percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
+
+| Field | Definition |
+|---|---|
+| `ttft_{mean,p50,p90,p95,p99}_ms` | arrival → first output token |
+| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival → last streamed token (aiperf's request latency; excludes the completion overhead stdout's E2E carries) |
+| `request_itl_{mean,p50,p90,p99}_ms` | per request `(latency − ttft) / (output_tokens − 1)`, requests with ≥ 2 output tokens: per **token** |
+| `interactivity_p50`, `interactivity_p90` | `1000 / request_itl_p50_ms`, `1000 / request_itl_p90_ms` (tokens/s/user) |
+| `output_tok_per_user_mean` | mean of `1000 / request_itl_ms` over requests with a non-zero ITL |
+| `step_interval_{mean,p90,p99}_ms` | the per-decode-step series `itl_*` summarizes, over measured requests completing in the window: per **step** |
+| `output_throughput_tok_s`, `measured_window_s`, `measured_window_source` | measured output tokens / window; `explicit` when the replay set the profiling window, `derived` (first measured arrival → last measured completion) otherwise |
+| `measured_completed_requests`, `cancelled_requests`, `context_overflow_requests`, `failed_requests` | counts in the window (INV-M1): cancelled = in flight when it closed or completed after its end; failed = timed out, dropped, rejected or shed |
+| `cpu_tier_hit_rate` | prompt tokens the CPU tier supplied / prompt tokens queried (measured admissions) |
+| `whole_run` | the whole-run `ttft_*`, `e2e_*` and `cache_hit_rate` stdout reports, for consumers of the old meaning (`blis calibrate`) |
+| `gateway_queue_delay_{mean,p90}_ms` | flow-control queueing per measured request (0 without flow control) |
+| `in_flight_requests_{mean,max}` | engine-side in-flight requests (dispatched, not completed), time-weighted over the window |
+| `kv_capacity_tokens_per_replica` | GPU KV pool of the smallest instance, tokens |
+
+In the file, `ttft_*`, `e2e_*` and `cache_hit_rate` take these measured-window values; stdout
+keeps the whole-run figures (TTFT there also counts requests that emitted a first token but did
+not complete), and the file repeats them under `whole_run`.
+The legacy `itl_*` keys are **unchanged on both channels** for backward compatibility — they
+remain per verification step under speculative decoding — and `completed_requests` stays the
+run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
+
+**Comparing a hit rate with aiperf 0.12.0.** Compare aiperf's `server_metrics_export.json`
+`vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with
+`whole_run.cache_hit_rate`, not with the measured-window `cache_hit_rate`. aiperf takes that
+total as last-profiling-scrape minus the scrape before the first PROFILING-tagged scrape
+(`server_metrics/accumulator.py:190-194, 387-401`), and in 0.12.0 a scrape at warmup start
+already carries the PROFILING tag. So the baseline precedes warmup, and the exported total
+counts warmup plus profiling. Real 0.12.0 exports confirm it: the profiling total equals the
+warmup total plus the post-start slices at every level. Under agentx replay the warmup prefills
+are cold, so that figure runs several points below the profiling window's own.
+
+### Kernel Provenance
+
+`kernel_provenance` is keyed by pool role (`colocated`, or `prefill` and `decode`), #1942:
+
+```json
+{
+  "kernel_provenance": {
+    "colocated": {
+      "method_counts": {"measured": 92, "vendor_spec": 15, "assumed": 47, "not_charged": 1},
+      "evidenced": 107, "total": 155, "evidence_source": "kernel",
+      "fallback_or_assumed": [{"Name": "attention_decode_floor_mla", "Set": "cost-model-attention", "Method": "assumed", "Scope": "hardware: h100"}],
+      "assumptions": [{"Name": "max_model_len", "Set": "blis-latency-kernel", "Method": "assumed", "Scope": "1048576: ..."}],
+      "skipped_rules": ["all2all-backend-known", "quantization-known", "..."],
+      "skipped_rule_findings": []
+    }
+  }
+}
+```
+
+The entries are blis-latency-kernel's own `kernel.CoefficientOrigin` records (hence their
+field-name keys); `evidenced`/`total` are its `Evidence()`. `fallback_or_assumed` lists the
+registry entries copied from another scope or assumed, `assumptions` the values the kernel
+supplied itself. `skipped_rules` are the scenario's release rules that neither the kernel nor
+BLIS enforces, and `skipped_rule_findings` what those rules report when the pack is run
+report-only. `evidence_source` is `kernel` when the counts are the kernel's `Evidence()`. A run
+no kernel priced writes `"kernel_provenance": {}`.
 
 ### Scheduling Delay
 

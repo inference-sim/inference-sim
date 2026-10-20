@@ -252,6 +252,22 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 	assertClusterINV1Conservation(t, cs, 5, noRejections, "KV pressure")
 }
 
+// decodeDropFixture is a 2P1D deployment whose decode instance holds 3 KV blocks while the
+// prefill instances hold plenty, with requests alternating between 2-block prompts, which the
+// decode instance serves (waiting for KV when it is full, as vLLM's waiting queue does), and
+// 4-block prompts, which it can never hold and so drops at transfer start.
+func decodeDropFixture(n int) (DeploymentConfig, []*sim.Request) {
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	prefillBlocks := int64(100)
+	config.PrefillOverrides.TotalKVBlocks = &prefillBlocks
+	requests := newShortRequests(n)
+	for i := 1; i < n; i += 2 {
+		requests[i].InputTokens = make([]sim.TokenID, 60) // 4 blocks: more than the decode KV
+	}
+	return config, requests
+}
+
 func newShortRequests(n int) []*sim.Request {
 	// Create requests with short input (20 tokens = 2 blocks at blockSize=16) and
 	// moderate output (10 tokens) to ensure decode phases overlap on the single
@@ -274,14 +290,10 @@ func newShortRequests(n int) []*sim.Request {
 
 func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	// Verify that droppedAtDecodeKV is triggered and counted in DroppedUnservable
-	// when decode instances have insufficient KV capacity for transferred input.
-	// Strategy: 1 decode instance with only 3 blocks (48 tokens). Each request needs
-	// 2 blocks (20 tokens). First request fills 2/3 blocks, second request tries to
-	// allocate 2 more but only 1 free → ReserveTransferredKV fails.
-	config := newTestDisaggDeploymentConfig(3, 2, 1)               // 2 prefill, 1 decode
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0) // 3 blocks = 48 tokens
-
-	requests := newShortRequests(4)
+	// when a decode instance can never hold a transferred prompt (decodeDropFixture:
+	// 4-block prompts against 3 decode blocks). A prompt that merely finds the decode KV
+	// full waits instead (TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops).
+	config, requests := decodeDropFixture(4)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
@@ -301,12 +313,9 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 // counterpart to TestPDParentMetrics_NoTokenExcludedFromLatency, driven through the
 // finalization path shared by blis run and blis replay (INV-13).
 func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
-	// Tight decode KV forces decode-side drops (same setup as
-	// TestDisaggregation_DroppedAtDecodeKV / the reservation-failure test).
-	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
-
-	requests := newShortRequests(4)
+	// Prompts the decode instance can never hold force decode-side drops beside served
+	// parents (decodeDropFixture, as TestDisaggregation_DroppedAtDecodeKV).
+	config, requests := decodeDropFixture(4)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
@@ -523,7 +532,7 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.ReserveTransferredKV(req)
+	_, ok := inst.ReserveTransferredKV(req)
 	if !ok {
 		t.Fatal("ReserveTransferredKV returned false, want true")
 	}
@@ -552,7 +561,7 @@ func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.ReserveTransferredKV(req)
+	_, ok := inst.ReserveTransferredKV(req)
 	if ok {
 		t.Error("ReserveTransferredKV returned true with insufficient capacity, want false")
 	}

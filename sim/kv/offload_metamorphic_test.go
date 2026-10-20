@@ -30,7 +30,7 @@ func TestOffload_LockSaturationRecompute(t *testing.T) {
 		oc.SetClock(10)
 		for _, toks := range [][]sim.TokenID{{3, 4}, {5, 6}} {
 			r := &sim.Request{ID: string(rune('Y')) + string(rune(toks[0])), InputTokens: toks}
-			oc.AllocateKVBlocks(r, 0, 2, nil)
+			admitOffload(oc, r, 0, 2, nil)
 			oc.MirrorToCPU([]*sim.Request{r})
 		}
 

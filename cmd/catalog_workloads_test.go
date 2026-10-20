@@ -558,9 +558,49 @@ func TestCatalogPresets_DuplicateSourceIsGone(t *testing.T) {
 		if parseErr != nil {
 			t.Fatalf("parse %s: %v", file, parseErr)
 		}
+		// A name another package exports (blis-schemas' acceptance.Workload, the Workload
+		// field of its acceptance.Request literal) is not cmd/'s surface: identifiers selected
+		// from an imported package, and the field keys of that package's composite literals,
+		// are skipped. Every other identifier is checked.
+		imported := map[string]bool{}
+		for _, imp := range parsed.Imports {
+			name := filepath.Base(strings.Trim(imp.Path.Value, `"`))
+			if imp.Name != nil {
+				name = imp.Name.Name
+			}
+			imported[name] = true
+		}
+		qualified := func(e ast.Expr) bool {
+			sel, ok := e.(*ast.SelectorExpr)
+			if !ok {
+				return false
+			}
+			x, ok := sel.X.(*ast.Ident)
+			return ok && imported[x.Name]
+		}
+		skip := map[*ast.Ident]bool{}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.SelectorExpr:
+				if qualified(v) {
+					skip[v.Sel] = true
+				}
+			case *ast.CompositeLit:
+				if qualified(v.Type) {
+					for _, el := range v.Elts {
+						if kv, ok := el.(*ast.KeyValueExpr); ok {
+							if key, ok := kv.Key.(*ast.Ident); ok {
+								skip[key] = true
+							}
+						}
+					}
+				}
+			}
+			return true
+		})
 		ast.Inspect(parsed, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
-			if !ok {
+			if !ok || skip[id] {
 				return true
 			}
 			if why, banned := bannedIdents[id.Name]; banned {

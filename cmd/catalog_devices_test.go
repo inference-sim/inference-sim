@@ -50,6 +50,17 @@ func historicalKVOffloadDevices() map[string]kvOffloadDevice {
 	}
 }
 
+// catalogKVOffloadDevices is the table the vendored catalog must state: the frozen
+// historical block with the deliberate changes since, each argued in the catalog entry's
+// own _comment (blis-catalog 5f6ecab): cpu_dram refitted to the H100 host link (InferenceX
+// CollectiveX swap_blocks) and the assumed DGX H100 NVMe RAID0 class added.
+func catalogKVOffloadDevices() map[string]kvOffloadDevice {
+	t := historicalKVOffloadDevices()
+	t["cpu_dram"] = kvOffloadDevice{ReadBandwidth: 27058.0, WriteBandwidth: 46089.0, BaseLatency: 19.3}
+	t["nvme_gen4_raid0_8x"] = kvOffloadDevice{ReadBandwidth: 5.0e4, WriteBandwidth: 3.0e4, BaseLatency: 100.0}
+	return t
+}
+
 // writeCatalogStorageDevices builds a catalog root holding devices/storage.yaml with the
 // given body and returns the root. Used by the device-table tests here and by the
 // retargeted YAML-parse tests in kv_offload_test.go / kv_offload_device_test.go.
@@ -152,7 +163,7 @@ func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bundled catalog device table must load: %v", err)
 	}
-	want := historicalKVOffloadDevices()
+	want := catalogKVOffloadDevices()
 
 	if !reflect.DeepEqual(got, want) {
 		// Report per class so a single drifted number is obvious.
@@ -192,7 +203,7 @@ func TestResolveKVOffload_CatalogClassResolvesHistoricalTriple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bundled catalog device table must load: %v", err)
 	}
-	for class, want := range historicalKVOffloadDevices() {
+	for class, want := range catalogKVOffloadDevices() {
 		cfg, err := resolveKVOffload(rampBlock(class, true), devices, 16)
 		if err != nil {
 			t.Fatalf("class %q must resolve: %v", class, err)

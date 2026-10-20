@@ -40,7 +40,7 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 		e := gotDep.Pools[0].Engine
 		if e.MaxNumSeqs != pc.MaxNumSeqs || e.MaxNumBatchedTokens != pc.MaxNumBatchedTokens ||
 			e.BlockSize != pc.BlockSize || e.EnablePrefixCaching == nil ||
-			*e.EnablePrefixCaching == pc.PrefixCachingDisabled || e.MaxModelLen != pc.MaxModelLen ||
+			*e.EnablePrefixCaching == pc.PrefixCachingDisabled || int(e.MaxModelLen) != pc.MaxModelLen ||
 			e.GPUMemoryUtilization != pc.GPUMemoryUtilization ||
 			gotDep.Pools[0].Parallel.EnableExpertParallel != pc.EnableExpertParallel {
 			t.Errorf("variant pool %+v does not carry %+v", gotDep.Pools[0], pc)

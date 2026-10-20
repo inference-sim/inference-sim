@@ -18,6 +18,10 @@ type PrefixCacheIndex struct {
 	blockSize   int
 	lruCapacity int
 	instances   map[string]*lruBlockCache
+	// capacityFor, when non-nil, sizes each instance's LRU when that instance's
+	// cache is first created (llm-d approx-prefix-cache-producer sizes per server
+	// at first Add: indexer.go:59-70). Nil ⇒ lruCapacity for every instance.
+	capacityFor func(instanceID string) int
 }
 
 // lruNode is an element of the doubly-linked list used for O(1) LRU eviction.
@@ -52,6 +56,22 @@ func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
 	}
 }
 
+// NewPrefixCacheIndexWithCapacity creates a prefix cache index whose per-instance
+// LRU capacity is resolved by capacityFor when the instance is first recorded.
+// Panics on blockSize <= 0 or nil capacityFor; a non-positive capacity returned
+// by capacityFor panics at record time (R3).
+func NewPrefixCacheIndexWithCapacity(blockSize int, capacityFor func(instanceID string) int) *PrefixCacheIndex {
+	if capacityFor == nil {
+		panic("NewPrefixCacheIndexWithCapacity: capacityFor must not be nil")
+	}
+	idx := NewPrefixCacheIndex(blockSize, 1)
+	idx.capacityFor = capacityFor
+	return idx
+}
+
+// BlockSize returns the index's block size in tokens.
+func (idx *PrefixCacheIndex) BlockSize() int { return idx.blockSize }
+
 // ComputeBlockHashes returns hierarchical block hashes for a token sequence.
 // Each block hash incorporates the previous block's hash, creating prefix-semantic
 // hashes: two requests sharing the first K blocks produce identical hashes for those K blocks.
@@ -85,15 +105,67 @@ func (idx *PrefixCacheIndex) MatchLength(hashes []string, instanceID string) int
 func (idx *PrefixCacheIndex) RecordBlocks(hashes []string, instanceID string) {
 	cache, exists := idx.instances[instanceID]
 	if !exists {
+		capacity := idx.lruCapacity
+		if idx.capacityFor != nil {
+			capacity = idx.capacityFor(instanceID)
+			if capacity <= 0 {
+				panic(fmt.Sprintf("PrefixCacheIndex.RecordBlocks: capacity for %q must be > 0, got %d", instanceID, capacity))
+			}
+		}
 		cache = &lruBlockCache{
 			lookup:   make(map[string]*lruNode),
-			capacity: idx.lruCapacity,
+			capacity: capacity,
 		}
 		idx.instances[instanceID] = cache
 	}
 	for _, h := range hashes {
 		cache.touch(h)
 	}
+}
+
+// RecordBlocksTailFirst records a prompt's hashes last block first, so the prompt's
+// head is the most recently used and the LRU evicts its tail first (llm-d main
+// approx indexer Add: requestcontrol/dataproducer/approximateprefix/indexer.go:94-103
+// at 981acb8a).
+func (idx *PrefixCacheIndex) RecordBlocksTailFirst(hashes []string, instanceID string) {
+	idx.RecordBlocks(nil, instanceID) // create the instance cache with its capacity
+	cache := idx.instances[instanceID]
+	for i := len(hashes) - 1; i >= 0; i-- {
+		cache.touch(hashes[i])
+	}
+}
+
+// MatchLengthGalloping returns the leading-run length found by llm-d main's
+// galloping search (approximateprefix/indexer.go:133-160 at 981acb8a): an
+// exponential probe for the first missing block followed by a binary search. It
+// equals MatchLength whenever the instance's held blocks of the prompt form a
+// prefix; otherwise it reports the run llm-d reports. Read-only (no recency).
+func (idx *PrefixCacheIndex) MatchLengthGalloping(hashes []string, instanceID string) int {
+	cache, exists := idx.instances[instanceID]
+	if !exists || len(hashes) == 0 {
+		return 0
+	}
+	has := func(i int) bool { _, ok := cache.lookup[hashes[i]]; return ok }
+	if !has(0) {
+		return 0
+	}
+	held, missing := 1, len(hashes)+1
+	for step := 1; held+step < missing; step *= 2 {
+		if !has(held + step - 1) {
+			missing = held + step
+			break
+		}
+		held += step
+	}
+	for missing-held > 1 {
+		mid := held + (missing-held)/2
+		if has(mid - 1) {
+			held = mid
+		} else {
+			missing = mid
+		}
+	}
+	return held
 }
 
 // InstanceBlockCount returns the number of cached blocks for an instance.

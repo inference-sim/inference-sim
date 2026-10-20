@@ -18,7 +18,7 @@ func TestOffload_CascadePinsAllTiers(t *testing.T) {
 
 	req := &sim.Request{ID: "r", InputTokens: tokens}
 	oc.SetClock(100)
-	oc.AllocateKVBlocks(req, 0, 4, nil) // 2 GPU blocks with hashes
+	admitOffload(oc, req, 0, 4, nil) // 2 GPU blocks with hashes
 	oc.MirrorToCPU([]*sim.Request{req})
 
 	// Both blocks landed in CPU and are pinned by 2 in-flight writes each -> evictable 0.
@@ -28,9 +28,9 @@ func TestOffload_CascadePinsAllTiers(t *testing.T) {
 	if oc.cpu.evictableCount() != 0 {
 		t.Fatalf("cascade writes must pin every mirrored block (evictable 0), got %d", oc.cpu.evictableCount())
 	}
-	// 2 blocks × 2 tiers = 4 Write jobs; per tier, 2 write jobs in service.
-	if w0, w1 := oc.station.ActiveJobs(0, kvtransfer.Write), oc.station.ActiveJobs(1, kvtransfer.Write); w0 != 2 || w1 != 2 {
-		t.Fatalf("each tier must have 2 cascade Write jobs, got tier0=%d tier1=%d", w0, w1)
+	// The request's 2 blocks go to each tier as one store job (tiering/manager.py:737-747).
+	if w0, w1 := oc.secondary[0].activeJobs(kvtransfer.Write), oc.secondary[1].activeJobs(kvtransfer.Write); w0 != 1 || w1 != 1 {
+		t.Fatalf("each tier must have 1 cascade store job, got tier0=%d tier1=%d", w0, w1)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestOffload_MirrorSkipsWhenFullPinned(t *testing.T) {
 
 	req := &sim.Request{ID: "r", InputTokens: []sim.TokenID{1, 2, 3, 4}}
 	oc.SetClock(10)
-	oc.AllocateKVBlocks(req, 0, 4, nil)
+	admitOffload(oc, req, 0, 4, nil)
 	oc.MirrorToCPU([]*sim.Request{req})
 
 	if oc.mirrorSkipped != 2 {
@@ -74,7 +74,7 @@ func TestOffload_PromptOnlySkipsDecode(t *testing.T) {
 		oc := NewOffloadCache(gpu, cfg)
 		req := &sim.Request{ID: "r", InputTokens: tokens}
 		oc.SetClock(1)
-		oc.AllocateKVBlocks(req, 0, 4, nil) // 2 prompt blocks (full, hashed)
+		admitOffload(oc, req, 0, 4, nil) // 2 prompt blocks (full, hashed)
 
 		// Append a FULL, HASHED "decode" block (index 2) beyond the prompt so the
 		// only thing gating its mirror is OffloadPromptOnly (not the Hash/full guard).
@@ -114,7 +114,7 @@ func TestOffload_OffloadableTokenClamp_SingleDecisionPoint(t *testing.T) {
 		oc := NewOffloadCache(gpu, cfg)
 		req := &sim.Request{ID: "r", InputTokens: promptTokens}
 		oc.SetClock(1)
-		oc.AllocateKVBlocks(req, 0, 4, nil) // 2 prompt blocks (full, hashed)
+		admitOffload(oc, req, 0, 4, nil) // 2 prompt blocks (full, hashed)
 
 		// Append TWO full, hashed "decode" blocks (indices 2 and 3) so computed KV
 		// (4 blocks) strictly exceeds InputLen/bs (2). Their mirror is gated only by
@@ -161,9 +161,9 @@ func TestOffload_PromptOnly_PartialTail_OffloadsExactlyOneChunk(t *testing.T) {
 	// completes the half-full tail block.
 	req := &sim.Request{ID: "r", InputTokens: []sim.TokenID{1, 2, 3}, OutputTokens: []sim.TokenID{9}}
 	oc.SetClock(1)
-	oc.AllocateKVBlocks(req, 0, 3, nil) // prefill: block0 [1,2] full+hashed, block1 [3] partial
+	admitOffload(oc, req, 0, 3, nil) // prefill: block0 [1,2] full+hashed, block1 [3] partial
 	req.ProgressIndex = 3               // prefill complete; next AllocateKVBlocks is a decode step
-	oc.AllocateKVBlocks(req, 3, 4, nil) // decode: appends output[0]=9 -> block1 [3,9] full, hashed
+	admitOffload(oc, req, 3, 4, nil) // decode: appends output[0]=9 -> block1 [3,9] full, hashed
 
 	// The tail block IS full and hashed (partial-fill path fired)...
 	keys := blockKeysFor([]sim.TokenID{1, 2, 3, 9}, 2) // keys[0]=block0, keys[1]=block1

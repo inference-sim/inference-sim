@@ -12,9 +12,14 @@ import (
 // is written to the --metrics-path file but NOT to the stdout MetricsOutput shape
 // (BC-5, BC-9, INV-6). BuildOutput (the value marshaled to stdout) must leave the
 // field nil so omitempty drops it; the file marshal populates it.
+//
+// The file's value is the measured window's prompt-lookup rate (#1938); with no phase set
+// every lookup is measured, so it equals the whole-run rate kept under whole_run.
 func TestEmitOutput_CacheHitRate_FileOnly(t *testing.T) {
 	m := NewMetrics()
-	m.CacheHitRate = 0.625
+	m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens = 800, 500
+	m.MeasuredPrefixCacheQueryTokens, m.MeasuredPrefixCacheHitTokens = 800, 500
+	m.CacheHitRate = m.PromptCacheHitRate()
 
 	// The stdout shape comes from BuildOutput — the field must be absent there.
 	out := m.BuildOutput("cluster")
@@ -48,6 +53,9 @@ func TestEmitOutput_CacheHitRate_FileOnly(t *testing.T) {
 	}
 	if *fileOut.CacheHitRate != 0.625 {
 		t.Errorf("file cache_hit_rate = %v, want 0.625", *fileOut.CacheHitRate)
+	}
+	if fileOut.WholeRun == nil || fileOut.WholeRun.CacheHitRate != 0.625 {
+		t.Errorf("whole_run.cache_hit_rate = %+v, want 0.625", fileOut.WholeRun)
 	}
 }
 

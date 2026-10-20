@@ -268,3 +268,20 @@ func TestKVOffloadConfig_ReadOnly_BC_G4(t *testing.T) {
 		})
 	}
 }
+
+// The CPU tier holds whole chunks, cpu_bytes // (per_block_bytes x blocks_per_chunk) as
+// vLLM's CPU spec sizes it, and a budget under one chunk is refused cleanly (an error the
+// CLI reports, never the cache constructor's panic).
+func TestKVOffloadConfig_CPUTierHoldsWholeChunks(t *testing.T) {
+	c := KVOffloadConfig{Enabled: true, CPUBytesToUse: 10 * 4096, PerBlockBytes: 4096, BlocksPerChunk: 4}
+	if got := c.CPUChunkCapacity(); got != 2 {
+		t.Errorf("capacity %d chunks, want 10 blocks // 4 = 2", got)
+	}
+	if err := c.CheckFitsOneChunk(); err != nil {
+		t.Errorf("a two-chunk budget was refused: %v", err)
+	}
+	c.CPUBytesToUse = 3 * 4096
+	if err := c.CheckFitsOneChunk(); err == nil || !strings.Contains(err.Error(), "smaller than one offload chunk") {
+		t.Errorf("a three-block budget at blocks_per_chunk 4 was not refused: %v", err)
+	}
+}

@@ -1,0 +1,483 @@
+{
+ "h100-tp8-0913": {
+  "1": {
+   "bound": {
+    "artifact_id": "10313397843",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34740442855/10313397843",
+    "github_run_id": "34740442855",
+    "jsonl_sha256": "56bcdf505d1e673ca83485dc06febad1bf7320789c856a44e6f944b2adc35774",
+    "row_id": 441865
+   }
+  },
+  "16": {
+   "bound": {
+    "artifact_id": "10313644879",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34740442855/10313644879",
+    "github_run_id": "34740442855",
+    "jsonl_sha256": "154a2321beaf27648b5d5e31009cbf4841cd0a00e4711b98d2844236bdb0682d",
+    "row_id": 441863
+   }
+  },
+  "2": {
+   "bound": {
+    "artifact_id": "10313198972",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34740442855/10313198972",
+    "github_run_id": "34740442855",
+    "jsonl_sha256": "7d9dfa3a4f1ed0c2d14ce10f0b5f8669d89c4ce809defd0766bb9ef594c2e969",
+    "row_id": 441864
+   }
+  },
+  "4": {
+   "bound": {
+    "artifact_id": "10313800355",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34740442855/10313800355",
+    "github_run_id": "34740442855",
+    "jsonl_sha256": "91f36e1e6d46ebecc3abcbd6b6fa105c244ea00d5dc781d380e344952e5be841",
+    "row_id": 441862
+   }
+  },
+  "8": {
+   "bound": {
+    "artifact_id": "10315473396",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34740442855/10315473396",
+    "github_run_id": "34740442855",
+    "jsonl_sha256": "ac5fccc247e43a5eda8c9c12b92abced9640f61ba2db5bcecb40eb496da8eb2a",
+    "row_id": 441861
+   }
+  }
+ },
+ "h100-tp8-0915": {
+  "1": {
+   "bound": {
+    "artifact_id": "10417777555",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35012513675/10417777555",
+    "github_run_id": "35012513675",
+    "jsonl_sha256": "37631827b3cac2fd9d2240d31e42f974839aef6c916997c6f7d16793b519a0fb",
+    "row_id": 442175
+   }
+  },
+  "16": {
+   "bound": {
+    "artifact_id": "10418498159",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35012513675/10418498159",
+    "github_run_id": "35012513675",
+    "jsonl_sha256": "7c84d4ec47892d965a298f59e6e5f737866b4ecbf3083fd7fc14f8f821034f8a",
+    "row_id": 442176
+   }
+  },
+  "2": {
+   "bound": {
+    "artifact_id": "10418283076",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35012513675/10418283076",
+    "github_run_id": "35012513675",
+    "jsonl_sha256": "aa9193d87303e073fd482ed674e41eca94884a075a80f0463aafcd08f8f54053",
+    "row_id": 442177
+   }
+  },
+  "4": {
+   "bound": {
+    "artifact_id": "10417666704",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35012513675/10417666704",
+    "github_run_id": "35012513675",
+    "jsonl_sha256": "eabe64db4178e0b70d272ad139b9f7f79da555af42176bedd4f64cbd4a676eec",
+    "row_id": 442178
+   }
+  },
+  "8": {
+   "bound": {
+    "artifact_id": "10417992466",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35012513675/10417992466",
+    "github_run_id": "35012513675",
+    "jsonl_sha256": "bb727138de6a8d4ad2eeff6a6cd51b022e24c6e08057b5369af7f6d8cf0fb53d",
+    "row_id": 442174
+   }
+  }
+ },
+ "h100-tp8-0918": {
+  "1": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c1",
+    "jsonl_sha256": "038dd79c308d16c1a8fc6fa7f9171c068810852abe15de9669d18264666efeb0",
+    "row_id": 442503
+   }
+  },
+  "16": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c16",
+    "jsonl_sha256": "13de4c2cb84aaed9f78f0eff8b27123b03daa2646db308660cab08c0413aed92",
+    "row_id": 442500
+   }
+  },
+  "2": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c2",
+    "jsonl_sha256": "75139dc676e3b3bb4e14dcfcd309dcb111ae76c0f4341c683129f0660765f368",
+    "row_id": 442501
+   }
+  },
+  "20": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c20",
+    "jsonl_sha256": "2cef5029fcbe4e3b6383c4403fe0a812d4742531df59b9009eb15a73acda3c97",
+    "row_id": 442505
+   }
+  },
+  "24": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c24",
+    "jsonl_sha256": "8b30d1898d26c443390fd7a7ada9e56a764e94d8a7b185a7047f14792cdf133e",
+    "row_id": 442506
+   }
+  },
+  "28": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c28_fd3bbc65d641539492f9",
+    "jsonl_sha256": "88d8ea3796fb086f57223e672eb49cad9f2b33fb92aa10244a3cdc2477ab6e8d",
+    "row_id": 442507
+   }
+  },
+  "4": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c4",
+    "jsonl_sha256": "f64c0df3ec1b47950b2965259e51164568f4ed6b3948e1a6c51d0c588efaa0aa",
+    "row_id": 442502
+   }
+  },
+  "8": {
+   "bound": {
+    "dir": "raw/gh/35314892357/c8",
+    "jsonl_sha256": "4559538265d537963d0568a6c8b2cb40289fbf504013b45191baf42010ce0089",
+    "row_id": 442504
+   }
+  }
+ },
+ "h200-tp4-0921": {
+  "1": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c1_3ff816f7fd6731e281fc",
+    "jsonl_sha256": "da639212ff447adbb7cc47e1ea4ec367a191351a88e193a3967e09338f1b9f49",
+    "row_id": 442749
+   }
+  },
+  "128": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c128_61eee2a18ecbef61ab13",
+    "jsonl_sha256": "67a94f5072178e8416ce4e8149e703a3aee560520cca19e2840ae6697a082eef",
+    "row_id": 442761
+   }
+  },
+  "16": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c16_b0ac6c1f7cefd3d4a69b",
+    "jsonl_sha256": "2522ebe8f6567ebfb093a7a183bacc99f2ebbf20ef7409b77cfed4f95b1db137",
+    "row_id": 442757
+   }
+  },
+  "2": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c2_cb8f18347fd98ecb6eef",
+    "jsonl_sha256": "2807cb618c49a8b7a90df9bb92b8b38c9d4325ef3f3114dc25304f59f0c7d2f9",
+    "row_id": 442760
+   }
+  },
+  "32": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c32_822586fc3b95797423d6",
+    "jsonl_sha256": "7dc3a7c8556d59e47c8ee1515a03f2cd5fb6640d6ef84d1bff2d54933530673a",
+    "row_id": 442751
+   }
+  },
+  "4": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c4_4371bb1e2f0ecd9fb259",
+    "jsonl_sha256": "503c666a2ea5dfe7df4fa76e4bec5d52f04682c0112bdc773e0a5bfd2e55bbbc",
+    "row_id": 442753
+   }
+  },
+  "64": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c64_ce69faa04951d0ba1413",
+    "jsonl_sha256": "6a45e3eccfb44a7e887bbe69cb9c21a31b8b8c7bfc69003a34a7c4b9196b17e8",
+    "row_id": 442754
+   }
+  },
+  "8": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp4_c8_4e48c17a23d98b9b4413",
+    "jsonl_sha256": "314e2de568b9779345efd371efe58ff2d941b55fd637a10d6cfa2f450614b413",
+    "row_id": 442746
+   }
+  }
+ },
+ "h200-tp8-0914": {
+  "128": {
+   "bound": {
+    "artifact_id": "10320428178",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10320428178",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "ccd8d6ba109a2ead9a5dcaf32ff6d5aa2a31bdc0597685534c62c6c44fb6c575",
+    "row_id": 441935
+   }
+  },
+  "16": {
+   "bound": {
+    "artifact_id": "10319264108",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319264108",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "478941e8ea8b73ac2fa64f1b55637e75011162590dcfe5038d3494f2dc017c57",
+    "row_id": 441929
+   }
+  },
+  "2": {
+   "bound": {
+    "artifact_id": "10319391693",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319391693",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "4f0801b9dfa542a62a2cd1c6457a975c8cec4d79670baaa09eb6c4e110a3bf47",
+    "row_id": 441928
+   }
+  },
+  "32": {
+   "bound": {
+    "artifact_id": "10319971517",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319971517",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "1f1c7dfee03f9d2867cedeffaf60976c1292a13b0f64bc6712d8753e1ebf08a4",
+    "row_id": 441933
+   }
+  },
+  "4": {
+   "bound": {
+    "artifact_id": "10319422703",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319422703",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "d6145a5396698036f0edb73127be364825c3a0f37bd20e8cb1aa346c638e2cf5",
+    "row_id": 441934
+   }
+  },
+  "64": {
+   "bound": {
+    "artifact_id": "10319064372",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319064372",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "2f39cf8181c6466b6aafa5e630a68f40a25836489470d2f3a8f4dfe140092d64",
+    "row_id": 441930
+   }
+  },
+  "8": {
+   "bound": {
+    "artifact_id": "10319840932",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34752640343/10319840932",
+    "github_run_id": "34752640343",
+    "jsonl_sha256": "f21d33c5f1f10a69d7d759583d81c8c5a480efc11d1b8bee57cb4c43dc43e272",
+    "row_id": 441932
+   }
+  }
+ },
+ "h200-tp8-0915": {
+  "1": {
+   "bound": {
+    "artifact_id": "10347304118",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10347304118",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "8d43575326a1dc5536ca728b52df390327d6b4576e78ddec5103d23278602d7a",
+    "row_id": 442127
+   }
+  },
+  "128": {
+   "bound": {
+    "artifact_id": "10368195364",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10368195364",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "066fb1aa321e3f3555fd5fb21878871891a917c63038478d05f09980edc080d1",
+    "row_id": 442128
+   }
+  },
+  "16": {
+   "bound": {
+    "artifact_id": "10358021383",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10358021383",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "1d155e36bd198be49c9ff87305c4240fa358bfccb0050324185cb325a3b808bf",
+    "row_id": 442132
+   }
+  },
+  "2": {
+   "bound": {
+    "artifact_id": "10357617014",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10357617014",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "0e8dedb21f847d40aadaf7cd24724d5bd033df5f41be3c9c8830a639b3ecd22c",
+    "row_id": 442134
+   }
+  },
+  "32": {
+   "bound": {
+    "artifact_id": "10363334915",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10363334915",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "12a67d60d264cb0f18386ff317fac2c966e76dae70a450e0c446e13fb14e4bd9",
+    "row_id": 442129
+   }
+  },
+  "4": {
+   "bound": {
+    "artifact_id": "10364235200",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10364235200",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "bef39f7e0ddb4a4e361efe4459d84fec947de3316b816687c051e5c496aeb650",
+    "row_id": 442131
+   }
+  },
+  "64": {
+   "bound": {
+    "artifact_id": "10389896725",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10389896725",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "13f0a30b0bc43c1786e911bb2d3a110fb09706ae1ba1bcc848e1e0e8c47ebfbe",
+    "row_id": 442133
+   }
+  },
+  "8": {
+   "bound": {
+    "artifact_id": "10356913801",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/34835741716/10356913801",
+    "github_run_id": "34835741716",
+    "jsonl_sha256": "3c12593316af4dacc8e42e18e58b4e44d21a0e8d49bfc654dec461074a7735b1",
+    "row_id": 442130
+   }
+  }
+ },
+ "h200-tp8-0916": {
+  "1": {
+   "bound": {
+    "artifact_id": "10419634983",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10419634983",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "26633156e0b59de33ec3c642e0f91a88c98b9266b1f4c6e5f883e3de06829278",
+    "row_id": 442208
+   }
+  },
+  "128": {
+   "bound": {
+    "artifact_id": "10421947890",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10421947890",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "eef510765e920e255cb180b56d6c86e70ccc17babcad59d8ec7234f83895a3dd",
+    "row_id": 442213
+   }
+  },
+  "16": {
+   "bound": {
+    "artifact_id": "10420696208",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10420696208",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "535ee079bd143ae842cac195c1b543432840e8fcafbd170ccad7b2fba8c4734c",
+    "row_id": 442210
+   }
+  },
+  "2": {
+   "bound": {
+    "artifact_id": "10420171681",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10420171681",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "17e6abbe2cb9bc438ae9e7094ab01af215fa3d21c39522dfa6f7a287b1aef875",
+    "row_id": 442211
+   }
+  },
+  "32": {
+   "bound": {
+    "artifact_id": "10421140288",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10421140288",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "86e46e6aa19b53f0c3bfe891aacbdb5872c00a83b81a848a866de228855623e9",
+    "row_id": 442207
+   }
+  },
+  "4": {
+   "bound": {
+    "artifact_id": "10420555668",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10420555668",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "73479d483c93cc50d6d07b2a19b3e819c18033b60027471b7a0933b5c5b40f85",
+    "row_id": 442214
+   }
+  },
+  "64": {
+   "bound": {
+    "artifact_id": "10420629269",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10420629269",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "97f6643feb10fe67c76876c842b3de1bc914794980db3c4b1c49fe77adad00f0",
+    "row_id": 442212
+   }
+  },
+  "8": {
+   "bound": {
+    "artifact_id": "10420421466",
+    "dir": "data/external/inferencex-dsv41-hopper-agentic/35020525087/10420421466",
+    "github_run_id": "35020525087",
+    "jsonl_sha256": "ab7f288b04d45825128bd0276ccb8fc0e1238fe700d757bf61b458ada82e7135",
+    "row_id": 442209
+   }
+  }
+ },
+ "h200-tp8-0921": {
+  "1": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c1_deb173ce194549605de2",
+    "jsonl_sha256": "f58c33ca90895428d21cd13a2c9813f2ec00fb2ec0f2dbc5370d82f430ffb749",
+    "row_id": 442752
+   }
+  },
+  "128": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c128_a6bcf280494821203458",
+    "jsonl_sha256": "3489adefef828b1a2138e4371bc02a3cec8df898cbf72bd28cb0370e3d0fb50b",
+    "row_id": 442747
+   }
+  },
+  "16": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c16_99db02ae95ab4b6c360c",
+    "jsonl_sha256": "b5a9c7f3e90de70ef679d4698456700f8f8676dfc43243f1f97ad7f6016cefaf",
+    "row_id": 442750
+   }
+  },
+  "2": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c2_a63b3dbd6d89e1e13826",
+    "jsonl_sha256": "c849fc9a6de09b7490e40dd426b32484b6aad69ad592af611be3ce1513c1e693",
+    "row_id": 442755
+   }
+  },
+  "32": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c32_9ae72a8173e9d098e1f4",
+    "jsonl_sha256": "e4e2378fd5b361a4ffaf59c9463281bdca9a32bd66f3632b4bc9845a30549e8b",
+    "row_id": 442758
+   }
+  },
+  "4": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c4_9838eec667758d46fdaf",
+    "jsonl_sha256": "df850b7d64271e56b8329ed526a763d1746f5705815886d405fc5b9dc3e9f79c",
+    "row_id": 442756
+   }
+  },
+  "64": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c64_e205cf6ca36e0ced6d12",
+    "jsonl_sha256": "eb8aaa68217e60fddddc676d5ee4b140ea0d8a7db29f83d921ae9ec6367cedff",
+    "row_id": 442759
+   }
+  },
+  "8": {
+   "bound": {
+    "dir": "raw/gh/35494445931/tp8_c8_752d82261f0eb06df3fc",
+    "jsonl_sha256": "30c5cdebab816f273dc3af4df29c4d069de7921fd88512e50ee039f29ac3e0ff",
+    "row_id": 442748
+   }
+  }
+ }
+}

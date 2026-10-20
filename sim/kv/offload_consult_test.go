@@ -68,7 +68,7 @@ func TestOffload_SecondaryHitInitiatesPromotionNotDirectToGPU(t *testing.T) {
 	if oc.cpu.lookup(keys[0]) != cpuHitPending {
 		t.Fatalf("the promoted block must be HIT_PENDING (-1) in CPU, got %v", oc.cpu.lookup(keys[0]))
 	}
-	if n := oc.station.ActiveJobs(0, kvtransfer.Read); n != 1 {
+	if n := oc.secondary[0].activeJobs(kvtransfer.Read); n != 1 {
 		t.Fatalf("exactly one Read (promotion) job must be in service on tier 0, got %d", n)
 	}
 }
@@ -123,7 +123,23 @@ func TestOffload_SameStepDedup(t *testing.T) {
 	if oc.promotionsFired != 1 {
 		t.Fatalf("two same-step consults of the same prefix must promote ONCE (C2 convoy), got %d", oc.promotionsFired)
 	}
-	if n := oc.station.ActiveJobs(0, kvtransfer.Read); n != 1 {
+	if n := oc.secondary[0].activeJobs(kvtransfer.Read); n != 1 {
 		t.Fatalf("only one Read job must exist after the dedup'd second consult, got %d", n)
 	}
+}
+
+// admitOffload allocates req as batch formation would over consecutive steps: a fresh request that
+// waits a round for the secondary tiers' existence check (a cold CPU miss, as vLLM's RETRY)
+// is admitted on the next round. For tests of behaviour after admission.
+func admitOffload(oc *OffloadCache, req *sim.Request, startIndex, endIndex int64, cached []int64) bool {
+	for range 8 {
+		if oc.AllocateKVBlocks(req, startIndex, endIndex, cached) {
+			return true
+		}
+		if !oc.IsDeferred(req.ID) {
+			return false
+		}
+		oc.PollDeferred(oc.clock)
+	}
+	return false
 }

@@ -17,6 +17,59 @@ type KVStore interface {
 	MirrorToCPU(batch []*Request) // Copy newly-completed full blocks to CPU tier. No-op for single-tier.
 }
 
+// ThrashCounts are the numerator and denominator of a KV store's KVThrashingRate. The
+// counts, not the rate, aggregate across instances (#1904).
+type ThrashCounts struct {
+	Events        int64
+	Opportunities int64
+}
+
+// ThrashCounter is the optional capability a KVStore implements to report ThrashCounts.
+// Both offload stores implement it; the single-tier store, which never thrashes, does not.
+type ThrashCounter interface {
+	ThrashCounts() ThrashCounts
+}
+
+// RequestBlockReporter is the optional capability a KVStore implements to report the GPU
+// blocks a request holds, in allocation order. Every production store implements it (the
+// offload stores report their GPU tier's). The cluster reads it to count, without double
+// counting a prefix-shared block, the KV a P/D prefill instance holds for decode pulls
+// (INV-PD-7). The slice is the store's own: callers must not modify it.
+type RequestBlockReporter interface {
+	RequestBlocks(reqID string) []int64
+}
+
+// PrefixHitReconciler is the capability a KVStore implements to cut a full-attention prefix
+// hit to the one every KV cache group of a hybrid model agrees on (sim.KVPrefixHit). Every
+// production store implements it (the offload stores delegate to their GPU tier).
+//
+//   - ReconcilePrefixHit takes the request's GetCachedBlocks result, already capped below its
+//     last prompt token, and returns the blocks the hit keeps. It also records the window
+//     tails the request will retain, so it is called once per admission attempt.
+//   - PrefixReplayTokens is the bounded-replay window: the last min(it, hit) tokens of a hit
+//     are computed again without being stored again (0: none).
+type PrefixHitReconciler interface {
+	ReconcilePrefixHit(req *Request, cached []int64) []int64
+	PrefixReplayTokens() int64
+}
+
+// RemoteKVReserver is the capability a KVStore implements to reserve a P/D decode
+// sub-request's prompt KV for an incoming NIXL pull. Every production store implements it.
+//
+//   - AllocateRemoteKV allocates on the GPU tier alone, consulting no offload tier: under a
+//     MultiConnector of NIXL and the OffloadingConnector, the KV of a remotely prefilled request
+//     is loaded by the first connector that reports tokens, which is NIXL, so the decode
+//     engine's own CPU tier never serves that prompt
+//     (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:134-141 and 429-448 at
+//     v0.31.0). It also registers none of the blocks in the prefix cache: vLLM allocates with
+//     delay_cache_blocks (sched/scheduler.py:1216) so no request hits on KV still in flight.
+//   - CacheRemoteKV registers them once the pull has landed (_update_waiting_for_remote_kv,
+//     sched/scheduler.py:3052-3085).
+type RemoteKVReserver interface {
+	AllocateRemoteKV(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
+	CacheRemoteKV(reqID string)
+}
+
 // DeferrableKVStore is the optional capability a KVStore implements when it can
 // defer a new prefill admission that needs KV blocks resident only on a secondary
 // (disk/object-store) offload tier, and re-poll it at each scheduler step instead
@@ -126,4 +179,35 @@ func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
 			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
 	}
 	return NewKVStoreFromConfig(cfg, 0)
+}
+
+// InflightPrefill is a request still prefilling after this step's schedule, with the tokens it
+// will have computed: vLLM's Scheduler._inflight_prefills (sched/scheduler.py:1276, 1324 at
+// v0.31.0).
+type InflightPrefill struct {
+	Req      *Request
+	Computed int64
+}
+
+// LoadHoldingKVStore is the optional capability of a store whose offload loads hold GPU blocks
+// from the moment they start, as vLLM's async loads do (WAITING_FOR_REMOTE_KVS): kv.OffloadCache
+// with a priced CPU load. Batch formation drains the requests it holds blocks for ahead of the
+// waiting queue (kv_holding_waiting, sched/scheduler.py:887), admits a landed one from the
+// prefix its load computed, without a new prefix lookup (:1041-1050), and tells it which
+// requests are still prefilling so a load leaves their remaining blocks free (:1194-1205).
+type LoadHoldingKVStore interface {
+	HoldsKV(id string) bool
+	LoadedPrefix(id string) (computed, gpuHitTokens int64, ok bool)
+	SetInflightPrefills(prefills []InflightPrefill)
+}
+
+// QuiescentKVStore is the optional capability a KVStore implements to report that nothing
+// in it can change on its own: no deferred admission, CPU load, store or secondary-tier
+// transfer is in flight. An idle engine may then park instead of polling (Simulator.SetParkOnEmpty).
+type QuiescentKVStore interface {
+	Quiescent() bool
+	// PollMisses is the counter a failed admission attempt advances; AddPollMisses adds to it
+	// what the polls a parked engine skipped would have.
+	PollMisses() int64
+	AddPollMisses(n int64)
 }

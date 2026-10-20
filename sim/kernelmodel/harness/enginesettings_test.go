@@ -283,7 +283,7 @@ func TestTheWindowMemoryAndExpertParallelSettingsResolveLikeTheOthers(t *testing
 			t.Errorf("engine %q: unpassed expert parallelism %v (%s), want vLLM's default false (resolved)",
 				tc.version, got.EnableExpertParallel, got.EPFrom)
 		}
-		if got.MaxModelLen != eng.MaxModelLen || got.WindowFrom != SourceScenario {
+		if got.MaxModelLen != int(eng.MaxModelLen) || got.WindowFrom != SourceScenario {
 			t.Errorf("engine %q: unpassed max_model_len %d (%s), want the scenario's %d", tc.version,
 				got.MaxModelLen, got.WindowFrom, eng.MaxModelLen)
 		}

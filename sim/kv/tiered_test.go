@@ -879,8 +879,8 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	// Fill 5 blocks → 2 free [5,6]
 	// New request needs 3 blocks (tokens 0..11)
 	// First attempt: need 3, have 2 → fails. Reload h0 → newStart=4, partial improvement.
-	// Commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false.
-	// RequestMap["newreq"]=[5] persists (commitCachedBlocks is a stable commit).
+	// Commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false, and the
+	// commit is undone: the request holds nothing, block5 is free with h0 intact.
 	blockSize := int64(4)
 	totalBlocks := int64(7)
 	gpu := NewKVCacheState(totalBlocks, blockSize)
@@ -920,14 +920,16 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	_, found := gpu.HashToBlock[h0]
 	require.True(t, found, "BC-5: h0 block must be preserved in HashToBlock")
 
-	// THEN BC-5: the reloaded block persists in RequestMap after tail failure.
-	// commitCachedBlocks is a stable commit; the check-then-act pre-check in the
-	// inner AllocateKVBlocks returns false without touching RequestMap.
-	require.Equal(t, 1, len(gpu.RequestMap["newreq"]), "BC-5: with fix, committed block stays in RequestMap even on tail failure")
-	committedID := gpu.RequestMap["newreq"][0]
-	committedBlk := gpu.Blocks[committedID]
-	require.Equal(t, h0, committedBlk.Hash, "BC-5: committed block must have h0 hash")
-	require.True(t, committedBlk.InUse, "BC-5: committed block must be InUse")
+	// THEN the refused request keeps no blocks: the reloaded prefix it was committed goes back
+	// to the free list with its hash, still a hit for the retry. It used to stay committed to
+	// the queued request, which then held blocks no running request could free; a pool that
+	// tight livelocked (found by TestEveryRunningRequestHoldsKVForItsComputedTokens).
+	require.Empty(t, gpu.RequestMap["newreq"], "a queued request must hold no blocks after a refused allocation")
+	reloadedID := gpu.HashToBlock[h0]
+	reloadedBlk := gpu.Blocks[reloadedID]
+	require.Equal(t, h0, reloadedBlk.Hash, "the reloaded block keeps h0")
+	require.False(t, reloadedBlk.InUse, "the reloaded block is free again")
+	require.Equal(t, []int64{reloadedID}, gpu.GetCachedBlocks(tokens), "the retry still hits the reloaded block")
 }
 
 func TestTieredKVCache_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {

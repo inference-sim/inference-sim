@@ -172,24 +172,17 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 		raw.PriorityInversions = detectPriorityInversions(perInstance, scheduler)
 		raw.HOLBlockingEvents = detectHOLBlocking(perInstance)
 
-		// KV cache metrics (PR12)
+		// KV cache metrics (PR12). The rates are the aggregate's, which weights each
+		// instance by its lookups rather than averaging per-instance rates (#1904).
 		totalPreemptions := int64(0)
-		cacheHitSum := 0.0
-		thrashingSum := 0.0
-		count := 0
 		for _, m := range perInstance {
 			totalPreemptions += m.PreemptionCount
-			cacheHitSum += m.CacheHitRate
-			thrashingSum += m.KVThrashingRate
-			count++
 		}
 		if aggregated.CompletedRequests > 0 {
 			raw.PreemptionRate = float64(totalPreemptions) / float64(aggregated.CompletedRequests)
 		}
-		if count > 0 {
-			raw.CacheHitRate = cacheHitSum / float64(count)
-			raw.KVThrashingRate = thrashingSum / float64(count)
-		}
+		raw.CacheHitRate = aggregated.CacheHitRate
+		raw.KVThrashingRate = aggregated.KVThrashingRate
 	}
 
 	return raw

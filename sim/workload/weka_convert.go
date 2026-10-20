@@ -57,12 +57,17 @@ func CountWekaSubagents(raw []byte) (groups, nested int, err error) {
 	return groups, nested, nil
 }
 
-// wekaSession is one JSONL line (one proxy session). Unknown fields are ignored
-// (standard encoding/json behavior — do NOT use DisallowUnknownFields; real
-// traces carry many fields we don't model: models, block_size, hash_id_scope).
+// wekaSession is one JSONL line (one proxy session, a Weka v7 trace). Unknown fields
+// are ignored (standard encoding/json behavior — do NOT use DisallowUnknownFields; real
+// traces carry fields we don't model: models, hash_id_scope, totals). ConvertWekaSession
+// reads only ID and the requests' timing and token counts; the AgentX replay
+// (agentx_tree.go) also reads the hash-id, model and subagent fields.
 type wekaSession struct {
-	ID       string        `json:"id"`
-	Requests []wekaRequest `json:"requests"`
+	ID           string        `json:"id"`
+	BlockSize    int           `json:"block_size"`
+	ToolTokens   int           `json:"tool_tokens"`
+	SystemTokens int           `json:"system_tokens"`
+	Requests     []wekaRequest `json:"requests"`
 }
 
 // wekaRequest is one entry in a session's requests[]: a main-agent request
@@ -70,16 +75,23 @@ type wekaSession struct {
 // "subagent"), which this converter refuses, or drops when asked to (#1477).
 type wekaRequest struct {
 	Type string  `json:"type"`     // "n", "s", or "subagent"
-	T    float64 `json:"t"`        // seconds since trace start (arrival)
+	T    float64 `json:"t"`        // seconds since trace start (arrival); a subagent's spawn time
 	In   *int    `json:"in"`       // effective o200k input tokens; read directly (never derived from hash_ids)
 	Out  *int    `json:"out"`      // output tokens (Anthropic-reported)
 	API  float64 `json:"api_time"` // real end-to-end server time (sec); used to recompute pure think
-	// The recorded model name (`model`) is intentionally NOT parsed: it is
-	// routing-significant at replay (buildRouterState filters instances by it),
-	// and Weka records claude-* which would never match the run's model → every request
-	// silently dropped. encoding/json simply ignores the key; the shared encoder
-	// leaves TraceRecord.Model empty. hash_ids / think_time / ttft are likewise
-	// not consumed (think is recomputed; hash_ids is future work).
+	// Model is the recorded model name (claude-*). ConvertWekaSession never copies it to
+	// a TraceRecord: it is routing-significant at replay (buildRouterState filters
+	// instances by it) and would match no simulated model. The AgentX chain detection
+	// uses it only to tell agents apart (same-model rule).
+	Model string `json:"model"`
+	// HashIDs are the request's 64-token prompt blocks in trace-local ids.
+	HashIDs []int64 `json:"hash_ids"`
+	// Subagent-group fields (type "subagent" only).
+	AgentID      string        `json:"agent_id"`
+	DurationMs   *float64      `json:"duration_ms"`
+	ToolTokens   int           `json:"tool_tokens"`
+	SystemTokens int           `json:"system_tokens"`
+	Requests     []wekaRequest `json:"requests"`
 }
 
 // ConvertWekaSession converts one Weka JSONL session into ordered TraceRecords

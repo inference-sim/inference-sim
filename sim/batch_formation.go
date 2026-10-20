@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"sort"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/internal/util"
@@ -52,6 +54,19 @@ type BatchContext struct {
 	// servability decision.
 	DecodeTokensPerStep func(req *Request) int64
 
+	// SpecVerifyWidth is the tokens a speculating decode schedules each step, K+1 (1 + its
+	// drafts), whatever is later accepted (#1627). vLLM v0.31.0 schedules
+	// num_tokens_with_spec - num_computed_tokens = 1 + K for a running decode, debits all of
+	// it from the token budget and allocates its KV slots
+	// (vllm/v1/core/sched/scheduler.py:671-684, 745-751, 825), while the request advances only
+	// by the accepted tokens. 0 when not speculating: a decode schedules what it advances.
+	SpecVerifyWidth int64
+
+	// DraftSlots is vLLM's max_num_new_slots_for_drafting: the query slots a parallel drafter
+	// adds per scheduled request (K-1 for DSpark), debited from max_num_batched_tokens beside
+	// the scheduled tokens (stepBudget). 0 when not speculating or drafting serially.
+	DraftSlots int64
+
 	// PrefixCachingDisabled suppresses cross-request prefix reuse, mirroring vLLM's
 	// --no-enable-prefix-caching (#1867).
 	//
@@ -65,6 +80,23 @@ type BatchContext struct {
 // ScheduledRequest carries metadata about a newly scheduled request.
 type ScheduledRequest struct {
 	Request *Request
+	// Lookup is the prefix-cache lookup of a new prefill admission, zero for a decode
+	// admission and for a request re-admitted after preemption (see PrefixLookup).
+	Lookup PrefixLookup
+}
+
+// PrefixLookup is one admission's prefix-cache lookup in prompt tokens, as vLLM v0.31.0
+// counts it: recorded when a new request is admitted, not when a lookup is attempted
+// (vllm/v1/core/sched/scheduler.py:1252-1256 "Record at admission so unscheduled lookups are
+// not counted"), with queries = the request's tokens and hits = its locally computed prefix
+// (vllm/v1/core/kv_cache_manager.py:253-262). A previously preempted request is kept out of
+// these counts, as PrefixCacheStats keeps it in separate preempted_* fields
+// (vllm/v1/metrics/stats.py:132-143). CPUHitTokens is the prefix the offload tier supplies
+// beyond the GPU hit, vLLM's external computed tokens.
+type PrefixLookup struct {
+	QueryTokens  int64
+	HitTokens    int64
+	CPUHitTokens int64
 }
 
 // PreemptedRequest carries metadata about a preempted request.
@@ -79,6 +111,28 @@ type BatchResult struct {
 	Preempted          []PreemptedRequest
 	PreemptionHappened bool
 }
+
+// stepBudget is a step's two token budgets, as vLLM v0.31.0's Scheduler.schedule keeps them:
+// token_budget (max_num_scheduled_tokens, which defaults to max_num_batched_tokens) and
+// input_budget (max_num_batched_tokens), the second also debited max_num_new_slots_for_drafting
+// for every scheduled request -- the query slots a parallel drafter adds to the forward pass
+// (scheduler.py:584-585, 632, 682, 788, 825-826, 888, 1073, 1313-1314). With no draft slots the
+// two budgets move together, so a non-drafting step is exactly the one-budget step it was.
+type stepBudget struct {
+	tokens, input, draftSlots int64
+}
+
+// room is the most a request may be scheduled: min(token_budget, input_budget - draft_slots).
+func (b *stepBudget) room() int64 { return min(b.tokens, b.input-b.draftSlots) }
+
+// open reports whether another request may be scheduled at all.
+func (b *stepBudget) open() bool { return b.tokens > 0 && b.input > b.draftSlots }
+
+// debit charges a request scheduled n tokens.
+func (b *stepBudget) debit(n int64) { b.tokens -= n; b.input -= n + b.draftSlots }
+
+// credit returns a preempted request's debit (scheduler.py:786-788).
+func (b *stepBudget) credit(n int64) { b.tokens += n; b.input += n + b.draftSlots }
 
 // PreemptionPolicy controls how preemption selects a victim from the running batch.
 type PreemptionPolicy string
@@ -131,13 +185,22 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		RunningBatch: ctx.RunningBatch,
 	}
 
-	tokenBudget := ctx.MaxNumBatchedTokens
+	bud := &stepBudget{tokens: ctx.MaxNumBatchedTokens, input: ctx.MaxNumBatchedTokens, draftSlots: ctx.DraftSlots}
+
+	// vLLM v0.31.0 drops long_prefill_token_threshold for a step whose scheduler holds one
+	// request, running or waiting: there is nobody for a long prefill to starve
+	// (vllm/v1/core/sched/scheduler.py:611-626, get_request_counts :2549-2551; vLLM #57951).
+	prefillCap := ctx.PrefillTokenThreshold
+	if len(result.RunningBatch.Requests)+ctx.WaitQ.Len() <= 1 {
+		prefillCap = 0
+	}
 
 	// Zero NumNewTokens for all running requests at the start of each scheduling pass.
 	// This prevents stale values from the prior step from causing phantom budget
 	// restoration when a request is preempted before being visited in this pass.
 	for _, req := range result.RunningBatch.Requests {
 		req.NumNewTokens = 0
+		req.scheduledTokens = 0
 	}
 
 	// Phase 1: Process continuing requests (chunked prefill + decode).
@@ -148,19 +211,19 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// Analog of vLLM v1 req_index -= 1 (scheduler.py:853).
 	reqIndex := 0
 	for reqIndex < len(result.RunningBatch.Requests) {
-		if tokenBudget <= 0 {
+		if !bud.open() {
 			logrus.Warnf("[tick %07d] token budget exhausted, deferring remaining requests to next step", ctx.Now)
 			break
 		}
 		req := result.RunningBatch.Requests[reqIndex]
 
-		numNewTokens := req.InputLen() - req.ProgressIndex
+		numNewTokens := req.PrefillEnd() - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
-			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-				numNewTokens = ctx.PrefillTokenThreshold
+			if 0 < prefillCap && prefillCap < numNewTokens {
+				numNewTokens = prefillCap
 			}
-			numNewTokens = min(numNewTokens, tokenBudget)
+			numNewTokens = min(numNewTokens, bud.room())
 			// Proactive MaxModelLen cap (BC-1): match vLLM scheduler.py:773-774.
 			// Note: the enqueue guard (len(InputTokens) < maxModelLen) guarantees
 			// maxAllowed >= 1 during prefill, so this clamp only reduces chunk size,
@@ -170,26 +233,37 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				numNewTokens = min(numNewTokens, maxAllowed)
 			}
 
-			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget, reqIndex)
+			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, bud, reqIndex)
 			reqIndex -= adj
 			if !canSchedule {
 				break
 			}
 
-			tokenBudget -= numNewTokens
+			bud.debit(numNewTokens)
 			req.NumNewTokens = int(numNewTokens)
+			req.scheduledTokens = numNewTokens
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
 		// Decode phase: allocate the accepted-token count for this step.
-		if req.ProgressIndex >= req.InputLen() && len(req.OutputTokens) > 0 {
+		if req.ProgressIndex >= req.PrefillEnd() && len(req.OutputTokens) > 0 {
 			// Base is 1 token/step. Under speculative decoding / MTP (#1528) the
 			// step advances by g = accepted tokens (1 + accepted drafts), proposed by
 			// the pure DecodeTokensPerStep peek. nil predicate ⇒ g=1 ⇒ byte-identical.
 			decodeTokens := int64(1)
+			// scheduled is what the step debits and allocates slots for: the advance, or a
+			// speculating decode's whole verify width (#1627), never less than the advance.
+			scheduled := int64(0)
 			if ctx.DecodeTokensPerStep != nil {
 				decodeTokens = ctx.DecodeTokensPerStep(req)
+				if ctx.SpecVerifyWidth > 0 {
+					scheduled = min(ctx.SpecVerifyWidth, bud.room())
+					if ctx.MaxModelLen > 0 {
+						scheduled = min(scheduled, max(ctx.MaxModelLen-1-req.ProgressIndex, 0))
+					}
+					decodeTokens = min(decodeTokens, scheduled)
+				}
 				// Cap g by remaining token budget (spec-decode only; g can exceed 1).
-				decodeTokens = min(decodeTokens, tokenBudget)
+				decodeTokens = min(decodeTokens, bud.room())
 				// Output-budget cap (#1657): land exactly ON the completion boundary,
 				// never past it. A running decode request is always at least one token
 				// short of the boundary — processCompletions completes every batch member
@@ -210,13 +284,15 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				decodeTokens = min(decodeTokens, max(ctx.MaxModelLen-1-req.ProgressIndex, 0))
 			}
 			if decodeTokens > 0 {
-				canSchedule, adj := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget, reqIndex)
+				scheduled = max(scheduled, decodeTokens)
+				canSchedule, adj := v.preemptForTokens(req, scheduled, &result, ctx, bud, reqIndex)
 				reqIndex -= adj
 				if !canSchedule {
 					break
 				}
-				tokenBudget -= decodeTokens
+				bud.debit(scheduled)
 				req.NumNewTokens = int(decodeTokens)
+				req.scheduledTokens = scheduled
 				ctx.ComputedTokens[req.ID] += decodeTokens
 			}
 		}
@@ -250,13 +326,46 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// single-tier KVCacheState does not, so reloadReporter stays nil and Phase 2 is
 	// byte-identical to the pre-#1699 loop (INV-6).
 	reloadReporter, _ := ctx.KVCache.(ReloadReportingKVStore)
+	// A hybrid model's KV cache groups cut the full-attention hit (PrefixHitReconciler).
+	reconciler, _ := ctx.KVCache.(PrefixHitReconciler)
+	var replayTokens int64
+	if reconciler != nil {
+		replayTokens = reconciler.PrefixReplayTokens()
+	}
+
+	// A store whose loads hold GPU blocks (vLLM's async loads): the requests it holds blocks for
+	// are drained ahead of the rest of the queue (kv_holding_waiting, sched/scheduler.py:887 at
+	// v0.31.0), and it learns which running requests are still prefilling, whose remaining
+	// blocks a load must leave free (_inflight_prefills, :1194-1205, 1324).
+	holder, _ := ctx.KVCache.(LoadHoldingKVStore)
+	var prefilling []InflightPrefill
+	if holder != nil {
+		holdsAny := false
+		for _, r := range ctx.WaitQ.Items() {
+			if holder.HoldsKV(r.ID) {
+				holdsAny = true
+				break
+			}
+		}
+		if holdsAny {
+			ctx.WaitQ.Reorder(func(q []*Request) {
+				sort.SliceStable(q, func(i, j int) bool { return holder.HoldsKV(q[i].ID) && !holder.HoldsKV(q[j].ID) })
+			})
+		}
+		for _, r := range result.RunningBatch.Requests {
+			if c := ctx.ComputedTokens[r.ID]; c < r.PrefillEnd() {
+				prefilling = append(prefilling, InflightPrefill{Req: r, Computed: c})
+			}
+		}
+		holder.SetInflightPrefills(prefilling)
+	}
 
 	// Phase 2: Dequeue new requests from wait queue.
 	// skipped counts requests set aside this step (offload-deferred). It is the scan
 	// cursor: with no deferrals it stays 0, so PeekAt(0)==Peek() and admissions use
 	// DequeueBatch — identical to the pre-#1591 head-only loop.
 	skipped := 0
-	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && tokenBudget > 0 && !result.PreemptionHappened {
+	for len(result.RunningBatch.Requests) < int(ctx.MaxNumSeqs) && ctx.WaitQ.Len() > skipped && bud.open() && !result.PreemptionHappened {
 		next := ctx.WaitQ.PeekAt(skipped)
 
 		// A request whose secondary-tier fetch is still in flight is not admittable
@@ -281,8 +390,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// IsDecodeSubRequest is set exclusively by KVTransferStartedEvent when it
 		// reserves KV on the decode pod (issue #1343), so this path fires only for
 		// requests that genuinely arrived via PD KV transfer.
-		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
-		if next.IsDecodeSubRequest {
+		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV. One
+		// preempted since holds no KV and resumes as a local prefill of its prompt and output,
+		// as vLLM's decode engine resumes it (sched/scheduler.py:1538-1580, 1084 at v0.31.0).
+		if next.IsDecodeSubRequest && next.preemptions == 0 {
 			decodeTokens := int64(1)
 			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
 			// g accepted tokens per step, same as a non-PD decode request. This whole
@@ -325,21 +436,34 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				// Token-budget cap: this alone may hit 0, which is transient (next step
 				// has fresh budget), so breaking here — like the KV-alloc-failure break
 				// below — is safe and does not strand the request.
-				decodeTokens = min(decodeTokens, tokenBudget)
+				decodeTokens = min(decodeTokens, bud.room())
 				if decodeTokens < 1 {
 					break
 				}
 			}
-			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
+			// A speculating decode schedules its verify width (#1627), within the budget and
+			// never below the advance.
+			scheduled := decodeTokens
+			if ctx.SpecVerifyWidth > 0 {
+				w := min(ctx.SpecVerifyWidth, bud.room())
+				if ctx.MaxModelLen > 0 {
+					// As Phase 1: num_new_tokens <= max_model_len - num_computed - 1
+					// (scheduler.py:686-692 at v0.31.0).
+					w = min(w, max(ctx.MaxModelLen-1-next.ProgressIndex, 0))
+				}
+				scheduled = max(decodeTokens, w)
+			}
+			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+scheduled, nil); !ok {
 				break
 			}
 			dequeueAdmitted(ctx.WaitQ, next, skipped)
 			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 			next.ScheduledStepIdx = ctx.StepCount
 			result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: next})
-			tokenBudget -= decodeTokens
+			bud.debit(scheduled)
 			next.State = StateRunning
 			next.NumNewTokens = int(decodeTokens)
+			next.scheduledTokens = scheduled
 			ctx.ComputedTokens[next.ID] = next.ProgressIndex + decodeTokens
 			continue
 		}
@@ -348,11 +472,36 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// without tracking which request produced them. When prefix caching is disabled,
 		// skip that lookup entirely so a new admission is billed from the start of its
 		// prompt instead of receiving credit for another request's cached blocks.
+		//
+		// The hit is capped at InputLen - 1 tokens, in whole blocks: a prompt that hits in
+		// full must still compute its last token for logits, so its last block is computed
+		// again (vLLM v0.31.0 KVCacheManager.get_computed_blocks,
+		// vllm/v1/core/kv_cache_manager.py:289-295, max_cache_hit_length =
+		// request.num_tokens - 1). Without the cap a block-aligned prompt that hits in full --
+		// a request resumed after preemption, or a first admission over another's prefix --
+		// is admitted with no work, claims none of its cached blocks and runs holding no KV
+		// (#1943).
+		// A request whose load has landed holds its blocks and is scheduled from the prefix the
+		// load computed, with no new prefix lookup (sched/scheduler.py:1041-1048 at v0.31.0).
+		loadedTo, loadGPUHit, loaded := int64(0), int64(0), false
+		if holder != nil {
+			loadedTo, loadGPUHit, loaded = holder.LoadedPrefix(next.ID)
+		}
+		maxHitBlocks := max(next.PrefillEnd()-1, 0) / ctx.KVCache.BlockSize()
 		var cachedBlocks []int64
-		if !ctx.PrefixCachingDisabled {
+		if !ctx.PrefixCachingDisabled && !loaded {
 			cachedBlocks = ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+			if util.Len64(cachedBlocks) > maxHitBlocks {
+				cachedBlocks = cachedBlocks[:maxHitBlocks]
+			}
+			if reconciler != nil {
+				cachedBlocks = reconciler.ReconcilePrefixHit(next, cachedBlocks)
+			}
 		}
 		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+		if loaded {
+			startIndex = loadedTo
+		}
 
 		// #1699/#1706: fold the same-step CPU->GPU-reloadable offload prefix into the
 		// computed baseline BEFORE the chunk/budget clamp, mirroring vLLM's ordering
@@ -369,22 +518,44 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// stays nil, computedStart == startIndex, and Phase 2 is byte-identical (INV-6).
 		// Secondary-tier-only runs are not counted here — they stay on the H3 deferral path.
 		computedStart := startIndex
-		if reloadReporter != nil {
+		if reloadReporter != nil && !loaded {
 			if reloadableEnd, ok := reloadReporter.ReloadablePrefixEnd(next, startIndex); ok && reloadableEnd > computedStart {
-				computedStart = reloadableEnd
+				// A reload covering the whole prompt still leaves its last token to compute:
+				// vLLM sets a loaded request's num_computed_tokens to num_tokens - 1 when the
+				// load covered all of it (Scheduler._update_waiting_for_remote_kv,
+				// vllm/v1/core/sched/scheduler.py:3095-3096 at v0.31.0), recomputing one token
+				// rather than the GPU hit's whole block (#1943).
+				computedStart = min(reloadableEnd, max(next.PrefillEnd()-1, 0))
 			}
 		}
 
-		numNewTokens := next.InputLen() - computedStart
-		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
-			numNewTokens = ctx.PrefillTokenThreshold
+		chunkFrom := func(from int64) int64 {
+			n := next.PrefillEnd() - from
+			if 0 < prefillCap && prefillCap < n {
+				n = prefillCap
+			}
+			n = min(n, bud.room())
+			// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running
+			// requests). For valid enqueued requests (input < maxModelLen), this is a no-op.
+			if ctx.MaxModelLen > 0 {
+				n = min(n, max(ctx.MaxModelLen-1-from, 0))
+			}
+			return n
 		}
-		numNewTokens = min(numNewTokens, tokenBudget)
-		// Proactive MaxModelLen cap (BC-2): BLIS safety extension (vLLM only caps running requests).
-		// For valid enqueued requests (input < maxModelLen), this is a no-op.
-		if ctx.MaxModelLen > 0 {
-			maxAllowed := max(ctx.MaxModelLen-1-computedStart, 0)
-			numNewTokens = min(numNewTokens, maxAllowed)
+		numNewTokens := chunkFrom(computedStart)
+		// The CPU tier's share of the hit, taken before the bounded-replay rewind below moves
+		// computedStart under startIndex (the replay is recomputed, not reloaded).
+		cpuHitTokens := computedStart - startIndex
+		// SWA bounded replay: the hit's last min(window, hit) tokens are computed again, without
+		// their KV being stored again (sched/scheduler.py:1059-1079, 3038-3050 at v0.31.0), so
+		// they are billed but allocate nothing. Simplification: a chunk the step budget ends
+		// inside the replayed range (vLLM's num_tokens_past_hit = 0, scheduler.py:1207-1208)
+		// is admitted without the replay.
+		if replay := min(replayTokens, computedStart); replay > 0 && computedStart == startIndex {
+			if n := chunkFrom(computedStart - replay); n > replay {
+				computedStart -= replay
+				numNewTokens = n
+			}
 		}
 		endIndex := computedStart + numNewTokens
 
@@ -407,18 +578,32 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
 		next.ScheduledStepIdx = ctx.StepCount
 
-		result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{
-			Request: next,
-		})
+		scheduled := ScheduledRequest{Request: next}
+		if next.preemptions == 0 && !ctx.PrefixCachingDisabled {
+			scheduled.Lookup = PrefixLookup{
+				QueryTokens:  next.InputLen(),
+				HitTokens:    startIndex,
+				CPUHitTokens: cpuHitTokens,
+			}
+			if loaded {
+				scheduled.Lookup.HitTokens, scheduled.Lookup.CPUHitTokens = loadGPUHit, loadedTo-loadGPUHit
+			}
+		}
+		result.NewlyScheduled = append(result.NewlyScheduled, scheduled)
 
 		// numNewTokens is the uncached remainder only (the reloaded prefix was folded into
 		// computedStart above), so it is both the billed prefill work (the StepTime input)
 		// and the chunk over which progress advances: ComputedTokens reaches endIndex, which
 		// sits past the whole reloaded prefix.
-		tokenBudget -= numNewTokens
+		bud.debit(numNewTokens)
 		next.State = StateRunning
 		next.NumNewTokens = int(numNewTokens)
+		next.scheduledTokens = numNewTokens
 		ctx.ComputedTokens[next.ID] = endIndex
+		if holder != nil && endIndex < next.PrefillEnd() {
+			prefilling = append(prefilling, InflightPrefill{Req: next, Computed: endIndex})
+			holder.SetInflightPrefills(prefilling)
+		}
 	}
 
 	return result
@@ -443,7 +628,7 @@ func dequeueAdmitted(wq *WaitQueue, req *Request, skipped int) {
 // The caller must apply reqIndex -= reqAdjustment after each call to prevent
 // element skipping when non-tail removal shifts elements left.
 // Analog of vLLM scheduler.py:853 (req_index -= 1).
-func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64, reqIndex int) (bool, int) {
+func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, bud *stepBudget, reqIndex int) (bool, int) {
 	adjustment := 0
 	for {
 		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
@@ -503,20 +688,28 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// With FCFS (tail-only eviction), unreachable because evicted
 			// requests are always unvisited (beyond reqIndex).
 			if preemptedRequest.NumNewTokens > 0 {
-				*tokenBudget += int64(preemptedRequest.NumNewTokens)
+				bud.credit(preemptedRequest.scheduledTokens)
 				preemptedRequest.NumNewTokens = 0
+				preemptedRequest.scheduledTokens = 0
 			}
 
 			// INV-2 (request lifecycle): preemption is the only place a request moves
-			// BACKWARD, running -> queued, and it is a full reset — progress, ITL, and
-			// TTFT return to their pre-prefill state. INV-2's statement enumerates only
-			// the forward queued -> running -> completed path, so this edge is code
-			// truth the statement does not yet name.
+			// BACKWARD, running -> queued. As vLLM's _preempt_request does
+			// (sched/scheduler.py:1538-1580 at v0.31.0), it frees the request's blocks and
+			// sets its computed tokens to 0, but keeps the output it emitted: the request
+			// resumes as one prefill of prompt and output (resumeEnd, PrefillEnd), whose step
+			// samples its next token. Its first token time and its inter-token history stand;
+			// a request preempted before its first token simply prefills again.
+			// A decoding request at ProgressIndex p has p - InputLen + 1 output tokens out (the
+			// first is the prefill's), so its resumed prefill covers p + 1 tokens; one preempted
+			// inside a resumed prefill keeps the resume it had.
+			if preemptedRequest.TTFTSet && preemptedRequest.ProgressIndex >= preemptedRequest.PrefillEnd() {
+				preemptedRequest.resumeEnd = preemptedRequest.ProgressIndex + 1
+			}
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
-			preemptedRequest.ITL = nil
-			preemptedRequest.specDecodeCarry = 0 // reset spec-decode carry with progress; re-prefill starts a fresh decode phase (#1528)
-			preemptedRequest.TTFTSet = false     // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
+			preemptedRequest.preemptions++
+			preemptedRequest.specDecodeCarry = 0 // spec tokens are dropped on preemption (scheduler.py:1561-1562)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)

@@ -180,3 +180,39 @@ func TestOffloadCPUTier_ConservationAndEvictableCounter(t *testing.T) {
 		}
 	}
 }
+
+// The readability journal answers "was this block readable at time t" for the
+// router's delayed CPU-tier view: a block counts from the moment it became
+// readable (a stored block, or a promotion once complete) until it was evicted;
+// a not-ready promotion never counts.
+func TestOffloadCPUTier_ReadabilityJournal(t *testing.T) {
+	now := int64(0)
+	c := newOffloadCPUTier(2)
+	c.journal = &cpuReadabilityJournal{now: func() int64 { return now }, readableAt: map[kvkey.BlockKey]int64{}, gone: map[kvkey.BlockKey][2]int64{}}
+	a, b, d := cpuTestKey(1), cpuTestKey(2), cpuTestKey(3)
+	now = 10
+	c.store(a)
+	now = 20
+	c.prepareStore([]kvkey.BlockKey{b})
+	now = 30
+	c.completeStore(b, true)
+	now = 40
+	c.store(d) // full: evicts a, the LRU head
+	j := c.journal
+	for _, tc := range []struct {
+		key  kvkey.BlockKey
+		at   int64
+		want bool
+	}{
+		{a, 5, false}, {a, 10, true}, {a, 39, true}, {a, 40, false},
+		{b, 25, false}, {b, 30, true}, {d, 39, false}, {d, 40, true},
+	} {
+		if got := j.readableAtTime(tc.key, tc.at); got != tc.want {
+			t.Errorf("%s at %d: %v, want %v", tc.key, tc.at, got, tc.want)
+		}
+	}
+	j.prune(40)
+	if _, kept := j.gone[a]; kept {
+		t.Error("prune must drop removals that ended by the view time")
+	}
+}

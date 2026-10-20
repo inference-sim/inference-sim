@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 )
 
 // Laws Settings must satisfy on every committed scenario, so a simulator sized from it is
@@ -40,8 +42,11 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 		}
 		eng, _ := m.Engine()
 		if s.BlockSize != eng.BlockSize || s.MaxNumSeqs != eng.MaxNumSeqs ||
-			s.MaxNumBatchedTokens != eng.MaxNumBatchedTokens || s.MaxModelLen != eng.MaxModelLen {
+			s.MaxNumBatchedTokens != eng.MaxNumBatchedTokens {
 			t.Errorf("%s: settings %+v do not restate the pool's engine %+v", e.Name(), s, eng)
+		}
+		if n, ok := eng.MaxModelLen.Stated(); ok && s.MaxModelLen != n {
+			t.Errorf("%s: max_model_len %d, the pool states %d", e.Name(), s.MaxModelLen, n)
 		}
 		if s.DataParallel != m.DataParallelWidth() {
 			t.Errorf("%s: dp %d, kernel resolved %d", e.Name(), s.DataParallel, m.DataParallelWidth())
@@ -62,5 +67,30 @@ func TestSettingsAreTheKernelsOwnAnswers(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no scenario produced settings; the laws were checked against nothing")
+	}
+}
+
+// max_model_len resolves as vLLM v0.31.0 starts the engine: a count is kept even when one rank
+// cannot hold it (the caller refuses that), unstated takes the graph's window, and auto takes
+// the graph's window shrunk to what one rank's KV cache holds.
+func TestMaxModelLenResolvesAsTheEngineStarts(t *testing.T) {
+	m := &Model{id: identity{defaultWindow: 1 << 20}}
+	for _, tt := range []struct {
+		name      string
+		stated    deployment.MaxModelLen
+		fitTokens int
+		want      int
+	}{
+		{"a stated count", 32768, 1000, 32768},
+		{"unstated", 0, 1000, 1 << 20},
+		{"auto, the cache holds less than the window", deployment.MaxModelLenAuto, 400_000, 400_000},
+		{"auto, the cache holds the whole window", deployment.MaxModelLenAuto, 4 << 20, 1 << 20},
+	} {
+		if got, _ := m.resolvedMaxModelLen(tt.stated, tt.fitTokens); got != tt.want {
+			t.Errorf("%s: max_model_len %d, want %d", tt.name, got, tt.want)
+		}
+	}
+	if got, _ := (&Model{}).resolvedMaxModelLen(deployment.MaxModelLenAuto, 1000); got != 0 {
+		t.Errorf("auto on a graph stating no window resolved to %d; it must stay unknown (0)", got)
 	}
 }

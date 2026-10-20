@@ -7,8 +7,8 @@ This tutorial walks through a complete capacity planning exercise: determining h
 !!! note "Set up the catalog and registry first"
     Every command below needs the catalog (`--catalog` or `BLIS_CATALOG`) and the registry
     (`--registry`). Clone both at their pinned releases —
-    `git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git`
-    and `git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git`
+    `git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git`
+    and `git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git`
     — and run `export BLIS_CATALOG=$PWD/blis-catalog` once. See [Quick Start](quickstart.md)
     and [Catalog compatibility](installation.md#catalog-compatibility).
 

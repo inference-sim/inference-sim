@@ -28,6 +28,7 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 | [RFC Template](rfc.md) | Large features: writing the tracking issue with holes/surfaces/contracts |
 | [RFC to Plan](templates/rfc-to-plan.md) | After RFC agreement: encode .archon, create sub-issues |
 | [PR Workflow](pr-workflow.md) | Every PR: worktree → plan → implement → review → commit |
+| [Changes Across the BLIS Repositories](cross-repo-changes.md) | A change that also touches blis-schemas, blis-catalog, blis-registry or blis-latency-kernel |
 | [Issue Comment Authority](issue-comment-authority.md) | Whether a comment on an issue overrides its body, and which comments count |
 | [Hypothesis Experiments](hypothesis.md) | Rigorous experiments to validate simulator behavior |
 

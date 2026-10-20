@@ -293,9 +293,9 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/generation_attention_perf.parquet (NVIDIA B300), 34632 full-attention points", role: primary}
       rationale: >
-        The minimum cost of a decode attention kernel, independent of context. Fitted jointly with attention_decode_rate over 34632 points; the pair takes the geometric error from 31.5x under a pure-KV-read model to 1.315x. Fitted on the vLLM collection (vllm/0.25.0) because BLIS prices vLLM serving.
+        The minimum cost of a decode attention kernel, independent of context. Fitted jointly with attention_decode_rate over 34632 points; the pair takes the geometric error from 31.4x under a pure-KV-read model to 1.315x. Fitted on the vLLM collection (vllm/0.25.0) because BLIS prices vLLM serving.
   - attention_decode_rate:
-      value: 6510000.0
+      value: 6468000.0
       units: bytes_per_us
       method: measured
       fitted: true
@@ -303,7 +303,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/generation_attention_perf.parquet (NVIDIA B300), 34632 full-attention points", role: primary}
       rationale: >
-        6.51 TB/s, which is 0.84 of this part's 7.75 TB/s datasheet bandwidth. Fitted jointly with attention_decode_floor over 34632 points (vllm/0.25.0); geometric error 1.315x. A decode attention kernel does not reach datasheet bandwidth, which is why the cost model carries a measured fraction rather than the peak.
+        6.47 TB/s, which is 0.84 of this part's 7.7 TB/s datasheet bandwidth. Fitted jointly with attention_decode_floor over 34632 points (vllm/0.25.0); geometric error 1.315x. A decode attention kernel does not reach datasheet bandwidth, which is why the cost model carries a measured fraction rather than the peak.
   - attention_decode_floor:
       value: 11.0
       units: us_per_transfer
@@ -435,7 +435,7 @@ coefficients:
       rationale: >
         The minimum cost of a windowed decode kernel, independent of context. Fitted on the vLLM lane (vllm/0.25.0) — the engine BLIS prices, and the lane every GQA and prefill entry in this set already uses, so a model with both kinds no longer sums two engines in one step. Paired with attention_decode_rate_swa over 29,662 windowed points; geometric error 1.250x.
   - attention_decode_rate_swa:
-      value: 3875000.0
+      value: 3850000.0
       units: bytes_per_us
       method: measured
       fitted: true
@@ -443,7 +443,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/generation_attention_perf.parquet (NVIDIA B300), 29,662 sliding-window decode points", role: primary}
       rationale: >
-        3.88 TB/s, 0.50 of this part's 7.750 TB/s datasheet bandwidth. A windowed kernel reads a bounded slice of the context rather than all of it and sustains materially less effective bandwidth than a full-attention kernel on the same silicon, so pricing it with the full-attention rate makes every windowed layer too cheap. Fitted on the vLLM lane (vllm/0.25.0) over 29,662 points.
+        3.85 TB/s, 0.50 of this part's 7.700 TB/s datasheet bandwidth. A windowed kernel reads a bounded slice of the context rather than all of it and sustains materially less effective bandwidth than a full-attention kernel on the same silicon, so pricing it with the full-attention rate makes every windowed layer too cheap. Fitted on the vLLM lane (vllm/0.25.0) over 29,662 points.
   - attention_decode_floor_swa:
       value: 10.5
       units: us_per_transfer
@@ -591,7 +591,7 @@ coefficients:
       rationale: >
         ASSUMED, not measured: this is this part's own measured attention-kernel decode floor, reused for the MLA kind. It is NOT a measurement of an MLA kernel, and the entry it replaces was. AISimulate's only MLA tables (mla_context_module_perf, mla_generation_module_perf) are MODULE measurements covering the whole MLA block including its down-projections, whereas this coefficient feeds the attention KERNEL alone -- blis-catalog prices qkv_proj and o_proj as separate GEMM nodes in the same layer, so a module-derived floor charges the projection weight read twice. The arithmetic confirms the identification rather than the naming: DeepSeek-V3's projections are 293.6 MB at fp8, 61.2 us to read at H200's 4.80 TB/s, against a measured module floor of 44.0 us minimum and 63.8 us median at 64 or fewer total tokens -- so the module floor IS the projection read. DIMENSION (derived). This part's OWN measured attention_decode_floor, which is a measurement of an attention kernel's launch-and-setup cost on this exact silicon. The MLA rate is fitted and kept: a latent-cache read plausibly shifts a RATE by 20% (the fitted MLA rates are 0.80x-1.13x of part-wide) but does not multiply a setup floor by six (the rejected module floors were 4.7x-6.2x). MAGNITUDE (the caveat). An MLA kernel's true setup may differ from a GQA kernel's; this entry asserts only that it is closer to this part's attention floor than to a module floor containing a projection read the model charges elsewhere. VALIDATED END-TO-END, which is what settles it: on the InferenceX corpus (573 points, vLLM lane) a 2x2 over the two terms gives overall TPOT mean|e| of 14.98% here against 17.43% for the module-derived floor, and kimi-k2.5 TPOT of 6.38% against 14.57% -- the module floor alone flips the kernel from beating AISimulate's 15.39% to losing to it. No chip family regresses and b200 improves (13.14% -> 13.03%). Per docs/methodology.md, no per-primitive fit ships without an end-to-end check; this is that check rejecting the measured-looking value. TO REPLACE THIS WITH A MEASUREMENT: an attention-only MLA sweep, measuring the kernel without its projections. Subtracting a modelled projection cost from the module figure would make this contingent on the GEMM envelope it must be independent of.
   - attention_decode_rate_mla:
-      value: 5270000
+      value: 5313000
       units: bytes_per_us
       method: measured
       fitted: true
@@ -599,7 +599,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/mla/vllm/0.25.0/mla_generation_module_perf.parquet (NVIDIA B300), model deepseek-ai/DeepSeek-V3, latent width 576 elements (kv_lora_rank 512 + qk_rope_head_dim 64, from blis-catalog models/deepseek-v3/graph.yaml), lane FLASHINFER_MLA, 1900 points", role: primary}
       rationale: >
-        5.27 TB/s, which is 0.68 of this part's 7.75 TB/s datasheet bandwidth. An MLA kernel reads ONE latent vector per token, of width kv_lora_rank + qk_rope_head_dim = 576 elements, so its byte count is a property of the checkpoint rather than of a KV-head count the sweep varies -- which is why the module table has no head columns and why this family was recorded as unfittable before. What makes the fit possible is that the vLLM module tables carry `model` and `architecture`, so the geometry is resolved from the catalog rather than assumed. Fitted jointly with the other member of this pair over 250 points in the linear regime; geometric error 1.202x there and 1.419x over the whole sweep, the difference being the floor-dominated rows at small context.
+        5.31 TB/s, which is 0.69 of this part's 7.70 TB/s datasheet bandwidth. An MLA kernel reads ONE latent vector per token, of width kv_lora_rank + qk_rope_head_dim = 576 elements, so its byte count is a property of the checkpoint rather than of a KV-head count the sweep varies -- which is why the module table has no head columns and why this family was recorded as unfittable before. What makes the fit possible is that the vLLM module tables carry `model` and `architecture`, so the geometry is resolved from the catalog rather than assumed. Fitted jointly with the other member of this pair over 250 points in the linear regime; geometric error 1.200x there and 1.419x over the whole sweep, the difference being the floor-dominated rows at small context.
   - attention_decode_floor_mla:
       value: 11.0
       units: us_per_transfer
@@ -640,3 +640,333 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/mla/vllm/0.27.0/mla_generation_module_perf.parquet (NVIDIA GB300), model deepseek-ai/DeepSeek-V3, latent width 576 elements (kv_lora_rank 512 + qk_rope_head_dim 64, from blis-catalog models/deepseek-v3/graph.yaml), lane FLASHINFER_MLA, 1455 points", role: primary}
       rationale: >
         5.60 TB/s, which is 0.70 of this part's 8.00 TB/s datasheet bandwidth. An MLA kernel reads ONE latent vector per token, of width kv_lora_rank + qk_rope_head_dim = 576 elements, so its byte count is a property of the checkpoint rather than of a KV-head count the sweep varies -- which is why the module table has no head columns and why this family was recorded as unfittable before. What makes the fit possible is that the vLLM module tables carry `model` and `architecture`, so the geometry is resolved from the catalog rather than assumed. Fitted jointly with the other member of this pair over 199 points in the linear regime; geometric error 1.200x there and 1.441x over the whole sweep, the difference being the floor-dominated rows at small context.
+  - attention_decode_rate_sparse_mla:
+      value: 1123200.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 207 decode points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        1.12 TB/s, 0.234 of this part's 4.8 TB/s datasheet bandwidth, for vLLM v0.31.0's FlashMLA sparse decode on SM90 -- one flash_mla_with_kvcache call per layer over the sliding window plus the indexer's top-k, query heads padded to 64 at every TP width, the 584 B V4 KV record. BYTES ARE COUNTED IN FLASHMLA'S 64-TOKEN BLOCKS: per request, 584 x 64 x (ceil(window tokens / 64) + ceil(selected tokens / 64)), which once the context fills the window and the top-512 is 10 blocks, 373,760 B, at ONE query token per request (the sweep's decode rows are isl 1; a multi-token decode, as under DSpark speculation, is outside what was measured). THE FLOOR is this part's part-wide attention_decode_floor (13.5 us), which blis-latency-kernel inherits for a kind with a rate and no floor. It over-prices the table's shortest reads: batch-1 rows of at most one block measure 9.8-11.8 us, so pinning costs 14%-38% there; a free floor lands at 13.3 us (1.181x against 1.182x) only because a linear form cannot follow the step between one and two blocks. THE ERROR DEPENDS ON BATCH, which the overall 1.182x (signed 1.055, 207 points, 1-130 blocks per request) hides. Signed by batch: 1: 0.99, 2: 1.04, 4: 1.07, 8: 1.09, 16: 1.08, 32: 1.05, 64: 1.25, 128: 1.45, 256: 1.10, 512: 0.80, 1024: 0.65. Neither a per-request term (floor + c x batch + bytes / rate: 1.179x) nor an occupancy form (floor + a x ceil(batch x blocks / P), P fitted at 64: 1.173x) removes it, so it is batch-dependent scheduling inside the call, not a missing term this form can carry. Trained on requests of <= 3 blocks and held out on >= 5 the rate predicts 1.210x (signed 0.827, n=16, all at batch <= 16); at exactly V4.1's 10 blocks 1.089x (signed 0.918, n=4, batch <= 8). AT VOLUME THE READ IS STILL FAR FROM HBM-BOUND: the marginal bandwidth (the least-squares slope of latency on bytes) is 0.85 TB/s, 18% of peak, over the 118 rows of at least 1 MB; 0.85 TB/s, 18% of peak, over the 39 rows of at least 10 MB; the 3 largest calls, 115 MB at batch 1024, read at 19.0%-19.1% of peak net of the floor. SO V4.1'S OPERATING POINT IS INSIDE THE MEASURED RANGE ON THE BLOCK AXIS ONLY: it reads 10 blocks per query at any context past about 1k tokens, at batches the sweep's batch x context <= 1M grid never pairs with 10 blocks; across the measured batches the signed error spans the range above. Nor on call volume: at the sweep's largest batch, 1024, V4.1's 10 blocks per request read 383 MB per call, 3.3x the largest measured call. WHY THIS SHIPS WHEN DEEPSEEK-V4-PRO'S WAS WITHDRAWN (methodology section 10.3): that rate was fitted on Pro's 128-head rows (the h128 instance, which Pro runs only below TP 2) and was to be charged against the kernel's selection rule for Pro's csa4 layers -- up to 262,912 tokens at a 1M context, far outside any measured row on the block axis. Every V4.1 sparse layer reads at most 640 tokens per query (128 window + top-512) on the h64 instance at every TP width. SCOPED TO THIS MODEL so no other sparse_mla deployment changes. WHAT THE TIMED OP DOES NOT CONTAIN: the 0.25.0 ratio-128 rows take their indices from metadata, while v0.31.0's V4.1 decode also launches compute_global_topk_indices_and_lens (a Triton kernel translating the indexer's top-k to cache slots) on every compressed (compress_ratio 1 or 2) layer -- a known gap, one small launch per layer not priced here. The FlashMLA SM90 sparse decode device code is unchanged between the pins vLLM 0.25.0 and 0.31.0 build (a6ec2ba, 0eee43b: renames only, the 584 B assert identical); its split-KV combine kernel's grid moves from (b, s_q, h) to (b*s_q, 1, h), inert at one query token, and gains 192/224/256-split cases that only requests needing more than 160 splits reach; the host API was rewritten, including skipping the split workspace for unsplit requests. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_h200.py.
+  - attention_decode_floor_block_index_scores:
+      value: 4.3
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, DeepSeek-V4-Flash-FP8 and V4-Pro-FP8 (64 index heads, head_dim 128, FP8 keys), 414 decode points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py, fp8_fp4_paged_mqa_logits decode call", role: supporting}
+      rationale: >
+        The launch-and-schedule floor of DeepGEMM's fp8_fp4_paged_mqa_logits, the lightning indexer's scoring scan that vLLM v0.31.0 runs on SM90 for every index-source layer of DeepSeek-V4.1 (FP8 keys and dense logits: MXFP4 keys and the sparse-logits path need SM100). Timed under CUDA graphs on the kernel itself, not a module. Fitted jointly with a per-row-key work rate over 414 points (geometric error 1.079x); the floor is identified by the 238 points whose work term is under 5% of it (1.050x, signed 0.984). The work rate is NOT committed -- see attention_decode_rate_block_index_scores. The measured checkpoints carry 64 index heads where V4.1 carries 32; a floor is a launch cost, and fitted on each checkpoint alone it is 4.29 us, 4.28 us. The kernel and scheduler are unchanged across the DeepGEMM pins of vLLM 0.25.0 and 0.31.0 except for zero-length bounds handling. Covers the logits kernel only: the top-k and V4.1's candidate select/mask kernels are separate launches this does not include. Consumed by no reader yet: the kernel prices a role: block_index_scores node with its layer kind's pair and needs to look this name up (attention_decode_<floor|rate>_<role>). Reproduce with scripts/fit_deepseek_v41_h200.py.
+  - attention_decode_rate_block_index_scores:
+      value: 3840000.0
+      units: bytes_per_us
+      method: assumed
+      fitted: false
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200): fitted throughput 5.35 TB/s-equivalent at 132 B/key, above the 4.8 TB/s HBM peak", role: upper_bound}
+        - {kind: model, cite: "NVIDIA AISimulate systems/h200_sxm.yaml mem_bw_empirical_scaling_factor (hbm_derate)", role: primary}
+      rationale: >
+        ASSUMED: NVIDIA's empirical HBM rate, BwPeak x hbm_derate = 4.8 TB/s x 0.8 -- the descriptor's observed correction, not a bound; the bound is BwPeak itself. Bytes are 132 per compressed index key per request (128 FP8 + one FP32 scale, _indexer_k_cache_head_dim), over ceil(context / compress_ratio) keys -- V4.1's compress ratios are 1 and 2, so the scan grows with context while the attention it feeds does not. WHY NOT THE MEASURED SLOPE: the only kernel-level sweep gives every query row the same block table, so its unique key footprint is at most 34.6 MB, and its fitted throughput, 5.35 TB/s-equivalent, exceeds the HBM datasheet peak, which an HBM read cannot -- consistent with the shared keys being served from cache. In serving each request's keys are its own and HBM-resident. Compute does not bind at one query token per request: 32 heads x 128 x 2 = 8,192 FLOP per 132 B key is 62 FLOP/B against an FP8 ridge of 412. DIRECTION: unknown at this fraction -- optimistic if this kernel streams index pages below NVIDIA's empirical HBM fraction, pessimistic if above. The real rate cannot exceed BwPeak, so this rate can be pessimistic by at most 1.25x (scan time over-priced); how optimistic it can be is not bounded. Under speculative decoding each request scores k+1 query rows against each key, so k = 5 brings it to 372 FLOP/B -- still under the ridge at datasheet peak, but at the 664 TFLOPS this kernel was measured sustaining (a lower bound on what it can) the scan could become compute-bound at as little as 0.46 of this rate. TO REPLACE IT: the same sweep with a distinct block table per query row, so the keys are read from HBM. Scoped to this model; consumed by no reader yet (see the floor).
+  - attention_decode_rate_sparse_mla:
+      value: 1105500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 207 decode points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        1.11 TB/s, 0.330 of this part's 3.35 TB/s datasheet bandwidth, for vLLM v0.31.0's FlashMLA sparse decode on SM90 -- one flash_mla_with_kvcache call per layer over the sliding window plus the indexer's top-k, query heads padded to 64 at every TP width, the 584 B V4 KV record. BYTES ARE COUNTED IN FLASHMLA'S 64-TOKEN BLOCKS: per request, 584 x 64 x (ceil(window tokens / 64) + ceil(selected tokens / 64)), which once the context fills the window and the top-512 is 10 blocks, 373,760 B, at ONE query token per request (the sweep's decode rows are isl 1; a multi-token decode, as under DSpark speculation, is outside what was measured). THE FLOOR is this part's part-wide attention_decode_floor (14.5 us), which blis-latency-kernel inherits for a kind with a rate and no floor. It over-prices the table's shortest reads: batch-1 rows of at most one block measure 10.1-10.6 us, so pinning costs 37%-44% there; a free floor lands at 13.8 us (1.187x against 1.198x) only because a linear form cannot follow the step between one and two blocks. THE ERROR DEPENDS ON BATCH, which the overall 1.198x (signed 1.057, 207 points, 1-130 blocks per request) hides. Signed by batch: 1: 1.02, 2: 1.06, 4: 1.09, 8: 1.12, 16: 1.10, 32: 1.06, 64: 1.28, 128: 1.44, 256: 1.02, 512: 0.73, 1024: 0.59. Neither a per-request term (floor + c x batch + bytes / rate: 1.186x) nor an occupancy form (floor + a x ceil(batch x blocks / P), P fitted at 64: 1.179x) removes it, so it is batch-dependent scheduling inside the call, not a missing term this form can carry. Trained on requests of <= 3 blocks and held out on >= 5 the rate predicts 1.175x (signed 0.853, n=16, all at batch <= 16); at exactly V4.1's 10 blocks 1.069x (signed 0.936, n=4, batch <= 8). AT VOLUME THE READ IS STILL FAR FROM HBM-BOUND: the marginal bandwidth (the least-squares slope of latency on bytes) is 0.76 TB/s, 23% of peak, over the 118 rows of at least 1 MB; 0.78 TB/s, 23% of peak, over the 39 rows of at least 10 MB; the 3 largest calls, 115 MB at batch 1024, read at 24.8%-25.2% of peak net of the floor. THE SAME KERNEL AS ON H200, NOT A SCALED HBM RATE: on the 207 rows both parts measure, this part's latency is a median 1.05x h200's (1.13x over the slowest tenth), where a read bound on HBM would be 1.43x (4.8 against 3.35 TB/s); so this rate is close to h200's (1.12 TB/s) and a larger fraction of this part's peak -- the cost per byte of reads this short, not a bandwidth -- and must not be rescaled between parts by BwPeak. This part's fitted rate is 0.984x h200's, a ratio that depends on row weighting: the fit is geometric over all 207 rows, 89 of them under 1 MB; on rows of at least 1 MB (10 MB) this part's marginal bandwidth is 0.90x (0.92x) h200's (0.85 and 0.85 TB/s there, 18% of its peak at 1 MB). SO V4.1'S OPERATING POINT IS INSIDE THE MEASURED RANGE ON THE BLOCK AXIS ONLY: it reads 10 blocks per query at any context past about 1k tokens, at batches the sweep's batch x context <= 1M grid never pairs with 10 blocks; across the measured batches the signed error spans the range above. Nor on call volume: at the sweep's largest batch, 1024, V4.1's 10 blocks per request read 383 MB per call, 3.3x the largest measured call. WHY THIS SHIPS WHEN DEEPSEEK-V4-PRO'S WAS WITHDRAWN (methodology section 10.3): that rate was fitted on Pro's 128-head rows (the h128 instance, which Pro runs only below TP 2) and was to be charged against the kernel's selection rule for Pro's csa4 layers -- up to 262,912 tokens at a 1M context, far outside any measured row on the block axis. Every V4.1 sparse layer reads at most 640 tokens per query (128 window + top-512) on the h64 instance at every TP width. SCOPED TO THIS MODEL so no other sparse_mla deployment changes. WHAT THE TIMED OP DOES NOT CONTAIN: the 0.25.0 ratio-128 rows take their indices from metadata, while v0.31.0's V4.1 decode also launches compute_global_topk_indices_and_lens (a Triton kernel translating the indexer's top-k to cache slots) on every compressed (compress_ratio 1 or 2) layer -- a known gap, one small launch per layer not priced here. The FlashMLA SM90 sparse decode device code is unchanged between the pins vLLM 0.25.0 and 0.31.0 build (a6ec2ba, 0eee43b: renames only, the 584 B assert identical); its split-KV combine kernel's grid moves from (b, s_q, h) to (b*s_q, 1, h), inert at one query token, and gains 192/224/256-split cases that only requests needing more than 160 splits reach; the host API was rewritten, including skipping the split workspace for unsplit requests. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_h200.py.
+  - attention_decode_floor_block_index_scores:
+      value: 4.9
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, DeepSeek-V4-Flash-FP8 and V4-Pro-FP8 (64 index heads, head_dim 128, FP8 keys), 414 decode points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py, fp8_fp4_paged_mqa_logits decode call", role: supporting}
+      rationale: >
+        The launch-and-schedule floor of DeepGEMM's fp8_fp4_paged_mqa_logits, the lightning indexer's scoring scan that vLLM v0.31.0 runs on SM90 for every index-source layer of DeepSeek-V4.1 (FP8 keys and dense logits: MXFP4 keys and the sparse-logits path need SM100). Timed under CUDA graphs on the kernel itself, not a module. Fitted jointly with a per-row-key work rate over 414 points (geometric error 1.086x); the floor is identified by the 246 points whose work term is under 5% of it (1.067x, signed 0.960). The work rate is NOT committed -- see attention_decode_rate_block_index_scores. The measured checkpoints carry 64 index heads where V4.1 carries 32; a floor is a launch cost, and fitted on each checkpoint alone it is 4.95 us, 4.90 us. The kernel and scheduler are unchanged across the DeepGEMM pins of vLLM 0.25.0 and 0.31.0 except for zero-length bounds handling. Covers the logits kernel only: the top-k and V4.1's candidate select/mask kernels are separate launches this does not include. Consumed by no reader yet: the kernel prices a role: block_index_scores node with its layer kind's pair and needs to look this name up (attention_decode_<floor|rate>_<role>). Reproduce with scripts/fit_deepseek_v41_h200.py.
+  - attention_decode_rate_block_index_scores:
+      value: 2680000.0
+      units: bytes_per_us
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100): fitted throughput 6.44 TB/s-equivalent at 132 B/key, above the 3.35 TB/s HBM peak", role: upper_bound}
+        - {kind: model, cite: "NVIDIA AISimulate systems/h100_sxm.yaml mem_bw_empirical_scaling_factor (hbm_derate)", role: primary}
+      rationale: >
+        ASSUMED: NVIDIA's empirical HBM rate, BwPeak x hbm_derate = 3.35 TB/s x 0.8 -- the descriptor's observed correction, not a bound; the bound is BwPeak itself. Bytes are 132 per compressed index key per request (128 FP8 + one FP32 scale, _indexer_k_cache_head_dim), over ceil(context / compress_ratio) keys -- V4.1's compress ratios are 1 and 2, so the scan grows with context while the attention it feeds does not. WHY NOT THE MEASURED SLOPE: the only kernel-level sweep gives every query row the same block table, so its unique key footprint is at most 34.6 MB, and its fitted throughput, 6.44 TB/s-equivalent, exceeds the HBM datasheet peak, which an HBM read cannot -- consistent with the shared keys being served from cache. In serving each request's keys are its own and HBM-resident. Compute does not bind at one query token per request: 32 heads x 128 x 2 = 8,192 FLOP per 132 B key is 62 FLOP/B against an FP8 ridge of 591. DIRECTION: unknown at this fraction -- optimistic if this kernel streams index pages below NVIDIA's empirical HBM fraction, pessimistic if above. The real rate cannot exceed BwPeak, so this rate can be pessimistic by at most 1.25x (scan time over-priced); how optimistic it can be is not bounded. Under speculative decoding each request scores k+1 query rows against each key, so k = 5 brings it to 372 FLOP/B -- still under the ridge at datasheet peak, but at the 799 TFLOPS this kernel was measured sustaining (a lower bound on what it can) the scan could become compute-bound at as little as 0.80 of this rate. TO REPLACE IT: the same sweep with a distinct block table per query row, so the keys are read from HBM. Scoped to this model; consumed by no reader yet (see the floor).
+  - attention_prefill_floor_sparse_mla:
+      value: 14.8
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        The per-call floor of V4.1's FlashMLA sparse PREFILL on SM90: 14.8 us, charged once per layer per rank in a step with prefill (a mixed step also pays the decode floor: FlashMLA launches the two regimes separately). Against the generic attention_prefill_floor of 18.5 us that priced this kernel before. THE FORM the kernel evaluates per layer, per rank, per step holding prefill: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query tokens of 64 x (ceil(min(p, window) / 64) + ceil(min(p / ratio, index_topk) / 64)) x 584 B x padded_heads / 64, p the query's position + 1 -- the decode rate's block-and-record count, per query. For V4.1 (window 128, top-512) every query past about 1k tokens reads 10 blocks, 373,760 B. The four replace the generic attention_prefill_floor / attention_prefill_work_scale pair for this kind; all four or none are used. Fitted jointly over the 1642 prefill rows (isl > 1) of sgl-project/DeepSeek-V4-Flash-FP8 in dsv4_hca_attn_module_perf.parquet (H200) that read at most V4.1's 10 blocks a query (batch 1-1024, chunks 4-8192 tokens): geometric error 1.067x, signed 1.003. The two-parameter form, floor + W / rate, gives 1.390x and biases with batch; the per-request and per-token terms are what remove it. Signed by batch: 1: 0.96, 2: 1.00, 4: 1.02, 8: 1.04, 16: 1.05, 32: 1.03, 64: 0.98, 128: 0.96, 256: 0.96, 512: 0.97, 1024: 0.98. Signed by blocks a query: 1: 1.04, 2: 1.07, 3: 0.98, 4: 1.06, 5: 1.02, 6: 0.95, 7: 1.00, 10: 0.81. HELD OUT: trained on <= 6 blocks, predicting 7-10 blocks 1.137x (signed 0.910, n=51); trained on chunks <= 2,048 tokens, predicting >= 3,072 1.036x (signed 1.001, n=126). AT V4.1'S READ: the 20 rows at exactly 10 blocks are all short chunks (<= 64 tokens, at step 65,536) and the fit under-prices them 1.311x (signed 0.806); long chunks at V4.1's read are not in the table (an 8,192-token chunk at step 65,536 crosses 11 blocks), and the 50 long-chunk (>= 1,024 tokens) rows beyond it, 11-67 blocks, extrapolate at 1.049x (signed 0.953) while the 60 short-chunk rows there do not (1.51x, signed 0.67: few queries over many blocks under-fill the part). One 8,192-token chunk at V4.1's full read prices at 1.39 ms a layer. WHAT THE TIMED OP CONTAINS: vLLM 0.25.0 DeepseekV4FlashMLAAttention.forward_mqa on the prefill branch under a CUDA graph -- the dequantize-and-gather of the SWA window and of the (ratio-128, at most 512-entry) compressed stream into a BF16 workspace, combine_topk_swa_indices, and flash_mla_sparse_fwd (SM90 sparse prefill, D_QK 512). NOT CONTAINED: projections, q/kv norms and rope (catalog GEMM and Elementwise nodes). V4.1's ratio-1/2 layers gather their FULL-length compressed stream before the kernel (v0.31.0 flashmla.py _forward_prefill, 'every cr>0 layer gathers a full-length compressed region'), which the measured ratio-128 rows hold only at 1/128 of the context; that gather stays priced by the catalog's prefill_dequant_gather node. VERSIONS: the SM90 sparse prefill device code is unchanged between the FlashMLA pins vLLM 0.25.0 and 0.31.0 build (a6ec2ba -> 0eee43b: csrc/sm90/prefill/sparse moved under csrc/kernels with include-path and namespace renames only); v0.31.0's _forward_prefill adds preallocated index workspaces and the full-length gather above, and keeps combined_topk = round_up(top_k + window, 128) = 640. SCOPED TO THIS MODEL: fitted on the h64 instance V4.1 runs at every TP width. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - attention_prefill_per_request_sparse_mla:
+      value: 1.323
+      units: us_per_request
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        1.323 us per prefill request per layer: the per-request work of the prefill branch (one gather and index-combine segment per request). Fitted with the floor, per-token term and rate; see attention_prefill_floor_sparse_mla for the form, the errors and the held-out results.
+  - attention_prefill_per_token_sparse_mla:
+      value: 0.049
+      units: us_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        0.049 us per prefill query token per layer, independent of how many keys the query reads: the query's own traffic -- 64 padded heads x 512 BF16 in and out, the gather and dequantize of its own window entry, its combined index row. At 0.049 us a token this is the cost of moving about 188 KB at this part's empirical HBM rate, the size of that per-query traffic. Fitted with the floor, per-request term and rate; see attention_prefill_floor_sparse_mla.
+  - attention_prefill_rate_sparse_mla:
+      value: 3159685.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        3.16 TB/s-equivalent: the rate over W, the 584 B record counted once per (query, key-slot) pair in 64-token blocks -- a WORK rate, not an HBM read, because in prefill every query of a request re-reads the same gathered workspace from cache; it is 0.66x this part's 4.8 TB/s datasheet bandwidth and must not be rescaled by BwPeak. Free of the floor and per-query terms the rate is 1.26 TB/s (1.390x), which is why the four are used together. See attention_prefill_floor_sparse_mla for the form and every error.
+  - attention_prefill_floor_block_index_scores:
+      value: 4.1
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        4.1 us per index-source layer per rank in a step with prefill. ASSUMED -- A PROXY KERNEL, fitted on measured rows: vLLM v0.31.0's prefill indexer runs DeepGEMM fp8_fp4_mqa_logits (the ragged kernel, sparse_attn_indexer.py prefill chunks, after cp_gather_indexer_k_quant_cache), and this is fitted on the PAGED kernel fp8_fp4_paged_mqa_logits that decode runs, at prefill shapes (dsv4_paged_mqa_logits_module_perf.parquet, isl > 1: b x isl query rows packed into one causal sequence, every row on one block table, 64 index heads). THE RAGGED KERNEL IS MEASURED, on another lane: AISimulate's sglang/0.5.14 glm5_mqa_logits_module_perf.parquet times deep_gemm.fp8_mqa_logits at GLM-5's indexer geometry, 32 index heads x 128, FP8 keys, ratio 1 -- V4.1's head count. Against those 2882 rows this proxy is 1.497x, signed 0.933; on the 518 rows of at least 4,096 query rows at a prefix of at least 8,192, signed 0.885 (1.164x); at V4.1's 8,192-token chunk (274 rows) signed 1.176, evaluated as the kernel will charge it, W scaled to 32 of 64 heads (an earlier review that read the table's num_heads, GLM-5's 64 ATTENTION heads, as index heads found the proxy over-pricing by 1.4-1.7x; at the config's 32 index heads it is not). So on the real kernel the proxy is within about 20% either way, under-pricing long chunks over long prefixes and over-pricing V4.1's chunk size; on its own paged rows it is signed 0.88 at 8,192 rows. NOT FITTED on the ragged rows because the lane decision (methodology section 2) is open: SGLang 0.5.14 calls upstream DeepGEMM's fp8_mqa_logits, vLLM v0.31.0 its fork's fp8_fp4_mqa_logits on the FP8 path, and the device code of the two pins has not been compared; the SGLang collector also splits large batches along the query axis. THE FORM per index-source layer, per rank, per step with prefill: t = attention_prefill_floor_block_index_scores + attention_prefill_per_token_block_index_scores x prefill query tokens + W / attention_prefill_rate_block_index_scores, W = sum over prefill query tokens of ceil(p / ratio) x 132 B x n_q / 64 -- every compressed key the query can see, at the 132 B FP8 key; n_q is the node's index heads (32 for V4.1 against the measured 64), a LINEAR head scaling that is itself assumed (the rows are compute-bound: the fitted rate is 906 TFLOPS at 64 heads x 128 x 2 FLOP a row-key, against 1979 FP8 dense peak). The three replace the generic prefill pair for this role. Fitted over 3504 rows (V4-Flash-FP8 and V4-Pro-FP8, both 64 index heads, head_dim 128, FP8 keys): 1.066x, signed 0.969; floor + rate alone 1.177x. Signed by query rows: 4: 0.96, 8: 0.96, 16: 0.96, 32: 0.97, 64: 0.98, 128: 1.02, 256: 0.98, 512: 1.01, 1024: 1.04, 1536: 1.01, 2048: 1.01, 3072: 0.98, 4096: 0.92, 6144: 0.90, 8192: 0.88. Per checkpoint: DeepSeek-V4-Flash-FP8 1.066x, DeepSeek-V4-Pro-FP8 1.066x. HELD OUT: trained on step <= 8,192, predicting >= 16,384 1.054x (signed 1.033, n=498); trained on <= 2,048 rows, predicting >= 4,096 1.142x (signed 0.884, n=968). NOT CONTAINED: the K gather (catalog index_prefill_k_gather), top_k_per_row_prefill and V4.1's candidate select/mask (catalog index_logits_topk), the indexer projections (catalog GEMMs). VERSIONS: the paged kernel and scheduler differ between the DeepGEMM pins of vLLM 0.25.0 and 0.31.0 only by renames and zero-length bounds handling (see the decode floor's rationale). TO REPLACE IT: a sweep of fp8_fp4_mqa_logits over (query rows, keys) at 32 and 64 index heads on H200, or a recorded lane decision for the ragged rows above. Scoped to this model. Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - attention_prefill_per_token_block_index_scores:
+      value: 0.00466
+      units: us_per_token
+      method: assumed
+      fitted: false
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        0.00466 us per prefill query token (one row: its query, weights and logits row setup), not scaled by heads. Fitted with the floor and rate; see attention_prefill_floor_block_index_scores for the form, the proxy and every error.
+  - attention_prefill_rate_block_index_scores:
+      value: 7298637.0
+      units: bytes_per_us
+      method: assumed
+      fitted: false
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        7.30 TB/s-equivalent over W (row-keys x 132 B x n_q / 64): a compute rate expressed per key byte -- every query row of a request reads the same keys, which is why it exceeds the 4.8 TB/s HBM peak and why, unlike the decode rate, the shared-block-table sweep is representative here. See attention_prefill_floor_block_index_scores.
+  - attention_prefill_floor_sparse_mla:
+      value: 15.5
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        The per-call floor of V4.1's FlashMLA sparse PREFILL on SM90: 15.5 us, charged once per layer per rank in a step with prefill (a mixed step also pays the decode floor: FlashMLA launches the two regimes separately). Against the generic attention_prefill_floor of 19.5 us that priced this kernel before. THE FORM the kernel evaluates per layer, per rank, per step holding prefill: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query tokens of 64 x (ceil(min(p, window) / 64) + ceil(min(p / ratio, index_topk) / 64)) x 584 B x padded_heads / 64, p the query's position + 1 -- the decode rate's block-and-record count, per query. For V4.1 (window 128, top-512) every query past about 1k tokens reads 10 blocks, 373,760 B. The four replace the generic attention_prefill_floor / attention_prefill_work_scale pair for this kind; all four or none are used. Fitted jointly over the 1642 prefill rows (isl > 1) of sgl-project/DeepSeek-V4-Flash-FP8 in dsv4_hca_attn_module_perf.parquet (H100) that read at most V4.1's 10 blocks a query (batch 1-1024, chunks 4-8192 tokens): geometric error 1.067x, signed 1.001. The two-parameter form, floor + W / rate, gives 1.389x and biases with batch; the per-request and per-token terms are what remove it. Signed by batch: 1: 0.96, 2: 1.00, 4: 1.02, 8: 1.04, 16: 1.04, 32: 1.03, 64: 0.97, 128: 0.96, 256: 0.96, 512: 0.96, 1024: 0.98. Signed by blocks a query: 1: 1.04, 2: 1.06, 3: 0.98, 4: 1.05, 5: 1.02, 6: 0.94, 7: 0.99, 10: 0.80. HELD OUT: trained on <= 6 blocks, predicting 7-10 blocks 1.136x (signed 0.906, n=51); trained on chunks <= 2,048 tokens, predicting >= 3,072 1.032x (signed 1.010, n=126). AT V4.1'S READ: the 20 rows at exactly 10 blocks are all short chunks (<= 64 tokens, at step 65,536) and the fit under-prices them 1.302x (signed 0.801); long chunks at V4.1's read are not in the table (an 8,192-token chunk at step 65,536 crosses 11 blocks), and the 50 long-chunk (>= 1,024 tokens) rows beyond it, 11-67 blocks, extrapolate at 1.099x (signed 0.910) while the 60 short-chunk rows there do not (1.54x, signed 0.65: few queries over many blocks under-fill the part). One 8,192-token chunk at V4.1's full read prices at 1.36 ms a layer. WHAT THE TIMED OP CONTAINS: vLLM 0.25.0 DeepseekV4FlashMLAAttention.forward_mqa on the prefill branch under a CUDA graph -- the dequantize-and-gather of the SWA window and of the (ratio-128, at most 512-entry) compressed stream into a BF16 workspace, combine_topk_swa_indices, and flash_mla_sparse_fwd (SM90 sparse prefill, D_QK 512). NOT CONTAINED: projections, q/kv norms and rope (catalog GEMM and Elementwise nodes). V4.1's ratio-1/2 layers gather their FULL-length compressed stream before the kernel (v0.31.0 flashmla.py _forward_prefill, 'every cr>0 layer gathers a full-length compressed region'), which the measured ratio-128 rows hold only at 1/128 of the context; that gather stays priced by the catalog's prefill_dequant_gather node. VERSIONS: the SM90 sparse prefill device code is unchanged between the FlashMLA pins vLLM 0.25.0 and 0.31.0 build (a6ec2ba -> 0eee43b: csrc/sm90/prefill/sparse moved under csrc/kernels with include-path and namespace renames only); v0.31.0's _forward_prefill adds preallocated index workspaces and the full-length gather above, and keeps combined_topk = round_up(top_k + window, 128) = 640. SCOPED TO THIS MODEL: fitted on the h64 instance V4.1 runs at every TP width. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - attention_prefill_per_request_sparse_mla:
+      value: 1.325
+      units: us_per_request
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        1.325 us per prefill request per layer: the per-request work of the prefill branch (one gather and index-combine segment per request). Fitted with the floor, per-token term and rate; see attention_prefill_floor_sparse_mla for the form, the errors and the held-out results.
+  - attention_prefill_per_token_sparse_mla:
+      value: 0.0571
+      units: us_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        0.0571 us per prefill query token per layer, independent of how many keys the query reads: the query's own traffic -- 64 padded heads x 512 BF16 in and out, the gather and dequantize of its own window entry, its combined index row. At 0.0571 us a token this is the cost of moving about 153 KB at this part's empirical HBM rate, the size of that per-query traffic. Fitted with the floor, per-request term and rate; see attention_prefill_floor_sparse_mla.
+  - attention_prefill_rate_sparse_mla:
+      value: 3509505.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_prefill", role: supporting}
+      rationale: >
+        3.51 TB/s-equivalent: the rate over W, the 584 B record counted once per (query, key-slot) pair in 64-token blocks -- a WORK rate, not an HBM read, because in prefill every query of a request re-reads the same gathered workspace from cache; it is 1.05x this part's 3.35 TB/s datasheet bandwidth and must not be rescaled by BwPeak. Free of the floor and per-query terms the rate is 1.20 TB/s (1.389x), which is why the four are used together. See attention_prefill_floor_sparse_mla for the form and every error.
+  - attention_prefill_floor_block_index_scores:
+      value: 4.7
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        4.7 us per index-source layer per rank in a step with prefill. ASSUMED -- A PROXY KERNEL, fitted on measured rows: vLLM v0.31.0's prefill indexer runs DeepGEMM fp8_fp4_mqa_logits (the ragged kernel, sparse_attn_indexer.py prefill chunks, after cp_gather_indexer_k_quant_cache), and this is fitted on the PAGED kernel fp8_fp4_paged_mqa_logits that decode runs, at prefill shapes (dsv4_paged_mqa_logits_module_perf.parquet, isl > 1: b x isl query rows packed into one causal sequence, every row on one block table, 64 index heads). THE RAGGED KERNEL IS MEASURED, on another lane: AISimulate's sglang/0.5.14 glm5_mqa_logits_module_perf.parquet times deep_gemm.fp8_mqa_logits at GLM-5's indexer geometry, 32 index heads x 128, FP8 keys, ratio 1 -- V4.1's head count. Against those 2882 rows this proxy is 1.504x, signed 0.903; on the 518 rows of at least 4,096 query rows at a prefix of at least 8,192, signed 0.822 (1.245x); at V4.1's 8,192-token chunk (274 rows) signed 1.094, evaluated as the kernel will charge it, W scaled to 32 of 64 heads (an earlier review that read the table's num_heads, GLM-5's 64 ATTENTION heads, as index heads found the proxy over-pricing by 1.4-1.7x; at the config's 32 index heads it is not). So on the real kernel the proxy is within about 20% either way, under-pricing long chunks over long prefixes and over-pricing V4.1's chunk size; on its own paged rows it is signed 0.86 at 8,192 rows. NOT FITTED on the ragged rows because the lane decision (methodology section 2) is open: SGLang 0.5.14 calls upstream DeepGEMM's fp8_mqa_logits, vLLM v0.31.0 its fork's fp8_fp4_mqa_logits on the FP8 path, and the device code of the two pins has not been compared; the SGLang collector also splits large batches along the query axis. THE FORM per index-source layer, per rank, per step with prefill: t = attention_prefill_floor_block_index_scores + attention_prefill_per_token_block_index_scores x prefill query tokens + W / attention_prefill_rate_block_index_scores, W = sum over prefill query tokens of ceil(p / ratio) x 132 B x n_q / 64 -- every compressed key the query can see, at the 132 B FP8 key; n_q is the node's index heads (32 for V4.1 against the measured 64), a LINEAR head scaling that is itself assumed (the rows are compute-bound: the fitted rate is 914 TFLOPS at 64 heads x 128 x 2 FLOP a row-key, against 1979 FP8 dense peak). The three replace the generic prefill pair for this role. Fitted over 3504 rows (V4-Flash-FP8 and V4-Pro-FP8, both 64 index heads, head_dim 128, FP8 keys): 1.073x, signed 0.969; floor + rate alone 1.173x. Signed by query rows: 4: 0.94, 8: 0.92, 16: 0.95, 32: 0.96, 64: 1.00, 128: 1.03, 256: 1.01, 512: 1.02, 1024: 1.05, 1536: 1.01, 2048: 1.01, 3072: 0.98, 4096: 0.90, 6144: 0.89, 8192: 0.86. Per checkpoint: DeepSeek-V4-Flash-FP8 1.073x, DeepSeek-V4-Pro-FP8 1.072x. HELD OUT: trained on step <= 8,192, predicting >= 16,384 1.036x (signed 1.015, n=498); trained on <= 2,048 rows, predicting >= 4,096 1.161x (signed 0.864, n=968). NOT CONTAINED: the K gather (catalog index_prefill_k_gather), top_k_per_row_prefill and V4.1's candidate select/mask (catalog index_logits_topk), the indexer projections (catalog GEMMs). VERSIONS: the paged kernel and scheduler differ between the DeepGEMM pins of vLLM 0.25.0 and 0.31.0 only by renames and zero-length bounds handling (see the decode floor's rationale). TO REPLACE IT: a sweep of fp8_fp4_mqa_logits over (query rows, keys) at 32 and 64 index heads on H100, or a recorded lane decision for the ragged rows above. Scoped to this model. Reproduce with scripts/fit_deepseek_v41_prefill.py.
+  - attention_prefill_per_token_block_index_scores:
+      value: 0.00441
+      units: us_per_token
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        0.00441 us per prefill query token (one row: its query, weights and logits row setup), not scaled by heads. Fitted with the floor and rate; see attention_prefill_floor_block_index_scores for the form, the proxy and every error.
+  - attention_prefill_rate_block_index_scores:
+      value: 7364876.0
+      units: bytes_per_us
+      method: assumed
+      fitted: false
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 model_executor/layers/sparse_attn_indexer.py prefill chunk loop, fp8_fp4_mqa_logits", role: supporting}
+      rationale: >
+        7.36 TB/s-equivalent over W (row-keys x 132 B x n_q / 64): a compute rate expressed per key byte -- every query row of a request reads the same keys, which is why it exceeds the 3.35 TB/s HBM peak and why, unlike the decode rate, the shared-block-table sweep is representative here. See attention_prefill_floor_block_index_scores.
+  - attention_decode_launch_floor_sparse_mla:
+      value: 10.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        The launch floor of V4.1's FlashMLA sparse DECODE on SM90: 10.0 us, what a one-block read costs at small batch (batch-1 rows: 1 block 10.2 us, 2 blocks 13.4 us, 10 blocks 15.4 us). Fitted jointly with the four other attention_decode_*_sparse_mla terms of this form. NOT named attention_decode_floor_sparse_mla on purpose: the kernel reads that name today as the floor of the committed single-rate pair, which was fitted over the 13.5 us part-wide floor, and would silently re-price it. THE FORM, per layer, per rank, per decode step (one flash_mla_with_kvcache call): t = max(attention_decode_launch_floor_sparse_mla + attention_decode_split_floor_sparse_mla x [B > 1] + B x 37,376 B / attention_decode_serial_rate_sparse_mla, sum over decode query rows q of (attention_decode_per_token_sparse_mla + blocks_q x 37,376 B / attention_decode_throughput_rate_sparse_mla)), blocks_q = ceil(min(ctx, window) / 64) + ceil(min(ctx // ratio, index_topk) / 64) -- 10 for V4.1 past about 1k tokens -- and B the largest blocks_q in the call. A query row is a query token: under speculative decoding a request contributes 1 + num_spec rows, each with its own top-k (the sweep is isl 1; that each row costs one row is the consumer's assumption, as for the committed rate). ALL-OR-NONE: the kernel uses this form only when all five entries resolve, otherwise the committed attention_decode_rate_sparse_mla over the part-wide floor. FIT: 1.061x (signed 0.965, n=200, rows of at most 10 blocks) against 1.176x (signed 1.069) for the committed rate over the 13.5 us floor on the same rows. Signed by batch: 1: 1.02, 2: 1.02, 4: 1.01, 8: 1.00, 16: 0.93, 32: 0.83, 64: 0.86, 128: 0.94, 256: 1.04, 512: 1.00, 1024: 1.02 (committed: 1: 1.06, 2: 1.07, 4: 1.08, 8: 1.09, 16: 1.08, 32: 1.05, 64: 1.25, 128: 1.45, 256: 1.10, 512: 0.80, 1024: 0.65). HELD OUT, refitted on the training side only: rows <= 256 -> >= 512 1.038x (signed 0.978, n=22; committed 1.375x); blocks <= 4 -> >= 6 1.059x (signed 1.005, n=9; committed 1.063x). NOT IDENTIFIED WITHOUT SATURATED ROWS: rows <= 64 -> >= 128 gives 1.941x (signed 1.941, n=52; committed 1.316x), because no training row reaches the throughput branch; the two throughput terms rest on the batch >= 256 rows, which are at 1/2/3 blocks. AT V4.1'S READ: the 4 rows at 10 blocks (batch <= 8) fit 1.044x (signed 1.017). At 10 blocks the throughput branch binds above about 48 query rows per rank (a latency branch of 16.3 us); that region, 10 blocks at many rows, is not in the table -- its batch x context <= 1M grid pairs 10 blocks only with batch <= 8 -- so there the form extrapolates the per-block throughput cost from 1-3 blocks to 10, linearly, as the committed rate does. Covers the FlashMLA call alone: compute_global_topk_indices_and_lens (one Triton launch per compressed layer) is not in the timed op. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_split_floor_sparse_mla:
+      value: 3.1
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        3.1 us added to the latency branch when any query in the call reads more than one block: the step the rows show between one block and two (the split-KV combine launch FlashMLA adds once it splits a request across SMs), after which a block costs little. Every V4.1 compressed layer past about 64 tokens reads more than one block; the window-only layers read one only up to 64 tokens. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_serial_rate_sparse_mla:
+      value: 115005.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        115,005 B/us over the largest request's 37,376-byte blocks: the cost of each further block on the latency branch's critical path, 0.325 us a block. NOT A BANDWIDTH -- 0.024 of this part's 4.8 TB/s -- but a per-block latency at a batch too small to fill the part, expressed in the registry's rate unit; B is the largest blocks_q, a choice the sweep's uniform rows cannot test. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_per_token_sparse_mla:
+      value: 0.05437
+      units: us_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        0.05437 us per decode query row on the throughput branch: each row's own traffic, its 64 padded heads of query in and output out, independent of how many blocks it reads. It is the decode counterpart of attention_prefill_per_token_sparse_mla and lands near it. Charged per query ROW (a request under speculation contributes 1 + num_spec). See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_throughput_rate_sparse_mla:
+      value: 1296735.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        1.30 TB/s, 0.270 of this part's 4.8 TB/s datasheet bandwidth, over every query row's blocks of 37,376 B on the throughput branch, i.e. once the call fills the part. Above the committed single rate (1.12 TB/s) because the per-row cost now carries what that rate had to absorb. Identified by the batch >= 256 rows at 1-3 blocks only; charged at 10 blocks it is extrapolated on the block axis. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision 03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- another engine, MoE kernel and checkpoint revision -- so it cannot arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until a vLLM V4.1 forward-pass measurement exists, see methodology section 10.5. Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_launch_floor_sparse_mla:
+      value: 10.3
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        The launch floor of V4.1's FlashMLA sparse DECODE on SM90: 10.3 us, what a one-block read costs at small batch (batch-1 rows: 1 block 10.4 us, 2 blocks 14.1 us, 10 blocks 16.3 us). Fitted jointly with the four other attention_decode_*_sparse_mla terms of this form. NOT named attention_decode_floor_sparse_mla on purpose: the kernel reads that name today as the floor of the committed single-rate pair, which was fitted over the 14.5 us part-wide floor, and would silently re-price it. THE FORM, per layer, per rank, per decode step (one flash_mla_with_kvcache call): t = max(attention_decode_launch_floor_sparse_mla + attention_decode_split_floor_sparse_mla x [B > 1] + B x 37,376 B / attention_decode_serial_rate_sparse_mla, sum over decode query rows q of (attention_decode_per_token_sparse_mla + blocks_q x 37,376 B / attention_decode_throughput_rate_sparse_mla)), blocks_q = ceil(min(ctx, window) / 64) + ceil(min(ctx // ratio, index_topk) / 64) -- 10 for V4.1 past about 1k tokens -- and B the largest blocks_q in the call. A query row is a query token: under speculative decoding a request contributes 1 + num_spec rows, each with its own top-k (the sweep is isl 1; that each row costs one row is the consumer's assumption, as for the committed rate). ALL-OR-NONE: the kernel uses this form only when all five entries resolve, otherwise the committed attention_decode_rate_sparse_mla over the part-wide floor. FIT: 1.060x (signed 0.964, n=200, rows of at most 10 blocks) against 1.193x (signed 1.071) for the committed rate over the 14.5 us floor on the same rows. Signed by batch: 1: 1.02, 2: 1.01, 4: 1.00, 8: 1.00, 16: 0.93, 32: 0.83, 64: 0.87, 128: 0.99, 256: 1.02, 512: 1.00, 1024: 1.01 (committed: 1: 1.10, 2: 1.09, 4: 1.10, 8: 1.12, 16: 1.10, 32: 1.06, 64: 1.28, 128: 1.44, 256: 1.02, 512: 0.73, 1024: 0.59). HELD OUT, refitted on the training side only: rows <= 256 -> >= 512 1.028x (signed 1.006, n=22; committed 1.502x); blocks <= 4 -> >= 6 1.058x (signed 1.004, n=9; committed 1.049x). NOT IDENTIFIED WITHOUT SATURATED ROWS: rows <= 64 -> >= 128 gives 1.829x (signed 1.829, n=52; committed 1.336x), because no training row reaches the throughput branch; the two throughput terms rest on the batch >= 256 rows, which are at 1/2/3 blocks. AT V4.1'S READ: the 4 rows at 10 blocks (batch <= 8) fit 1.039x (signed 0.981). At 10 blocks the throughput branch binds above about 46 query rows per rank (a latency branch of 16.5 us); that region, 10 blocks at many rows, is not in the table -- its batch x context <= 1M grid pairs 10 blocks only with batch <= 8 -- so there the form extrapolates the per-block throughput cost from 1-3 blocks to 10, linearly, as the committed rate does. Covers the FlashMLA call alone: compute_global_topk_indices_and_lens (one Triton launch per compressed layer) is not in the timed op. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_split_floor_sparse_mla:
+      value: 3.6
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        3.6 us added to the latency branch when any query in the call reads more than one block: the step the rows show between one block and two (the split-KV combine launch FlashMLA adds once it splits a request across SMs), after which a block costs little. Every V4.1 compressed layer past about 64 tokens reads more than one block; the window-only layers read one only up to 64 tokens. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_serial_rate_sparse_mla:
+      value: 145351.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        145,351 B/us over the largest request's 37,376-byte blocks: the cost of each further block on the latency branch's critical path, 0.257 us a block. NOT A BANDWIDTH -- 0.043 of this part's 3.35 TB/s -- but a per-block latency at a batch too small to fill the part, expressed in the registry's rate unit; B is the largest blocks_q, a choice the sweep's uniform rows cannot test. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_per_token_sparse_mla:
+      value: 0.06567
+      units: us_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        0.06567 us per decode query row on the throughput branch: each row's own traffic, its 64 padded heads of query in and output out, independent of how many blocks it reads. It is the decode counterpart of attention_prefill_per_token_sparse_mla and lands near it. Charged per query ROW (a request under speculation contributes 1 + num_spec). See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.
+  - attention_decode_throughput_rate_sparse_mla:
+      value: 1273642.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8 (64 query heads, the h64 kernel), 200 decode points at <= 10 blocks", role: primary}
+        - {kind: model, cite: "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py DeepseekV4FlashMLAAttention._forward_decode", role: supporting}
+      rationale: >
+        1.27 TB/s, 0.380 of this part's 3.35 TB/s datasheet bandwidth, over every query row's blocks of 37,376 B on the throughput branch, i.e. once the call fills the part. Above the committed single rate (1.11 TB/s) because the per-row cost now carries what that rate had to absorb. Identified by the batch >= 256 rows at 1-3 blocks only; charged at 10 blocks it is extrapolated on the block axis. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.

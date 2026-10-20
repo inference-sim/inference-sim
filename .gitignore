@@ -46,6 +46,7 @@ __pycache__/*
 !testdata/catalog/models/**/config.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
+!sim/workload/testdata/agentx/*.json
 data/
 *.txt
 

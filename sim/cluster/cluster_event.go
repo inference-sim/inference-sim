@@ -77,8 +77,18 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		if req != nil && req.Model != "" && inst.Model != req.Model {
 			continue
 		}
+		if rep := cs.endpointReplica(inst); rep != nil {
+			// One endpoint per data-parallel replica (#1909), listed at its rank 0.
+			if inst == rep.ranks[0] && rep.routable() {
+				snapshots = append(snapshots, cs.endpointSnapshot(rep))
+			}
+			continue
+		}
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
+		if cs.flowInFlightLoad != nil {
+			snap.InFlightTokens = cs.flowInFlightLoad.Tokens(string(inst.ID()))
+		}
 		snap.Model = inst.Model
 		snap.GPUType = inst.GPU()
 		snap.TPDegree = inst.TPDegree
@@ -130,6 +140,9 @@ func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 // decision so that drops and timeouts count against goodput (issue #1409, BC-5).
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
+	if !cs.gateArrival(e.request, e.time) {
+		return
+	}
 	cs.injectedByClass[e.request.SLOClass]++
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	// Fire the arrival hook (issue #1440): trace exporters see each fresh
@@ -175,6 +188,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			})
 		}
 		cs.rejectedRequests++
+		cs.recordUnserved(e.request)
 		// Populate per-tier shed counter for every admission rejection, regardless of policy.
 		tier := e.request.SLOClass
 		if tier == "" {
@@ -208,12 +222,14 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// Queue-rejected. NOT an admission rejection (Admit returned true).
 			// Accounted via gatewayQueue.RejectedCount() (INV-1: gateway_queue_rejected).
 			logrus.Debugf("[cluster] req %s: flow-control queue rejected", e.request.ID)
+			cs.recordUnserved(e.request)
 			return
 		case ShedVictim:
 			victim := cs.flowControlAdmission.LastShedVictim()
 			if victim == nil {
 				panic(fmt.Sprintf("FlowControlAdmission: ShedVictim outcome but nil victim for req %s", e.request.ID))
 			}
+			cs.recordUnserved(victim)
 			tier := victim.SLOClass
 			if tier == "" {
 				tier = "standard"
@@ -268,6 +284,11 @@ func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 // ClusterSimulator so the fork happens inside one event type rather than at the
 // two pre-existing call sites in AdmissionDecisionEvent and tryDispatchFromGatewayQueue.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
+	// llm-d main: the dispatch reservation ends once routing publishes the request's
+	// in-flight load (flowcontrol/controller/controller.go:324-330 at 981acb8a).
+	if t, ok := cs.saturationDetector.(sim.DispatchReservationTracker); ok {
+		t.ReleaseDispatch(e.request.ID)
+	}
 	if cs.poolsConfigured() {
 		cs.executeDisaggregatedRouting(e.request, e.time)
 	} else {
@@ -296,6 +317,7 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == e.targetInstance {
 			evicted = inst.EvictRequest(e.request)
+			inst.WakeIfParked(e.time)
 			break
 		}
 	}
@@ -307,12 +329,14 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	if cs.inFlightRequests[e.targetInstance] < 0 {
 		cs.inFlightRequests[e.targetInstance] = 0
 	}
+	cs.releaseInFlightLoad(e.request)
 
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnComplete(e.request.TenantID)
 	}
 
 	cs.gatewayEvicted++
+	cs.recordUnserved(e.request)
 	tier := e.request.SLOClass
 	if tier == "" {
 		tier = "standard"
@@ -340,6 +364,7 @@ func (e *GatewayQueueTTLEvent) Execute(cs *ClusterSimulator) {
 	}
 	logrus.Debugf("[cluster] gateway TTL expiry: req %s expired at tick %d", e.requestID, e.time)
 	cs.gatewayExpired++
+	cs.recordUnserved(req)
 	tier := req.SLOClass
 	if tier == "" {
 		tier = "standard"
@@ -406,6 +431,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	if len(filteredSnapshots) == 0 {
 		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", e.request.ID)
 		cs.routingRejections++
+		cs.recordUnserved(e.request)
 		return
 	}
 	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
@@ -504,6 +530,8 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		TenantID:     e.request.TenantID,
 		SLOClass:     e.request.SLOClass,
 		Model:        e.request.Model,
+		Phase:        e.request.Phase,
+		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
 	parent.PrefillSubReq = prefillSubReq
 

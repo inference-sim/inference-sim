@@ -125,7 +125,7 @@ func TestDeferral_ColdPhaseSequence(t *testing.T) {
 	if oc.cpu.lookup(keys[0]) != cpuHitPending {
 		t.Fatalf("round 2: the promoted block must be HIT_PENDING")
 	}
-	if n := oc.station.ActiveJobs(0, kvtransfer.Read); n != 1 {
+	if n := oc.secondary[0].activeJobs(kvtransfer.Read); n != 1 {
 		t.Fatalf("round 2: one Read job must be in service, got %d", n)
 	}
 
@@ -172,7 +172,7 @@ func TestDeferral_Metamorphic_StepVsBandwidth(t *testing.T) {
 	// Bandwidth surrogate: "delay is set by the disk" — service time of the run.
 	surrogate := func(readBW float64) int64 {
 		oc := deferOC(base, readBW)
-		return oc.station.ServiceTicks(0, kvtransfer.Read, 2*oc.perBlockBytes)
+		return oc.secondary[0].station.ServiceTicks(0, kvtransfer.Read, 2*oc.perBlockBytes)
 	}
 
 	dStep1 := delay(1000, 100)
@@ -306,7 +306,7 @@ func TestDeferral_NextDeferralWake(t *testing.T) {
 		if oc.AllocateKVBlocks(req, 0, 4, nil) {
 			t.Fatal("a warm secondary hit must defer while its promotion is in flight")
 		}
-		want, inFlight := oc.station.NextCompletion()
+		want, inFlight := oc.secondary[0].station.NextCompletion()
 		if !inFlight || want <= step+1 {
 			t.Fatalf("test setup: promotion must be in flight and slower than one tick, completion=(%d, %v)", want, inFlight)
 		}
@@ -331,6 +331,16 @@ func TestDeferral_NextDeferralWake(t *testing.T) {
 		got, ok := oc.NextDeferralWake(start)
 		if !ok || got != start+maxDeferTicks+1 {
 			t.Fatalf("stuck deferral: wake = (%d, %v), want the backstop tick (%d, true)", got, ok, start+maxDeferTicks+1)
+		}
+	})
+
+	t.Run("a CPU load wakes when it lands", func(t *testing.T) {
+		oc := deferOC(80, 7000)
+		oc.deferred["load"] = &deferralState{phase: deferLoading, tier: -1, startTick: step,
+			readyAt: step + 250}
+		got, ok := oc.NextDeferralWake(step)
+		if !ok || got != step+250 {
+			t.Fatalf("deferLoading: wake = (%d, %v), want the load's landing tick (%d, true)", got, ok, step+250)
 		}
 	})
 

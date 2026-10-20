@@ -56,12 +56,12 @@ git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
 
-git clone --branch 0.2.1 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.1 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate \
+  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate \
   --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
@@ -72,7 +72,7 @@ Every `blis run` and `blis replay` needs four inputs:
 - the **registry**, via `--registry <clone root>`;
 - a **scenario directory**, via `--scenarios <dir>` — any directory of scenario YAMLs. The
   kernel module ships its own at
-  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.1.0/testdata/aisimulate`
+  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`
   (present after `go build`), and `testdata/scenarios/` in this repository adds a P/D and an
   MTP example;
 - a **scenario**, via `--scenario <file name>` within that directory.

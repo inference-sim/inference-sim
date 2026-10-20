@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -85,6 +86,10 @@ type SimConfig struct {
 	// explicitly if ever needed.
 	SpeculativeConfig
 
+	// Frontend is the API-server render stage (INV-R1). Its zero value is inert: a request's
+	// admission overhead (LatencyModel.QueueingTime) is then an uncontended per-request delay.
+	Frontend FrontendConfig
+
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
 	// Shared with admission: same overrides flow from policy bundle slo_priorities.
@@ -97,6 +102,10 @@ type SimConfig struct {
 	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
 	// tag.
 	LatencyModel LatencyModel
+
+	// ServerSeriesIntervalUs, when > 0, records the per-engine server time series binned at
+	// this width (server_series.go). Zero is off and output is byte-identical (INV-6).
+	ServerSeriesIntervalUs int64
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -121,12 +130,35 @@ type Simulator struct {
 	longPrefillTokenThreshold int64
 	prefixCachingDisabled     bool
 	stepEvent                 Event
-	stepCount                 int
+	// busyUntil is when the last executed step ends (its start plus its duration). A step
+	// that empties the running batch leaves stepEvent nil at that step's START, so an
+	// arrival during the step must not start the next one before this (idleStepTime).
+	busyUntil int64
+	stepCount int
 	// Cumulative count of idle wakes superseded by scheduleStepBy — the one path whose
 	// effect is invisible in metrics (a cancelled step executes nothing), so without a
 	// counter a test cannot tell whether it exercised the path at all. Load-independent
 	// diagnostic, in the DeferralsStarted/promotionsFired family (#1586).
 	idleWakesSuperseded int64
+	// lockstep is the data-parallel group this rank steps with (#1909); nil for an
+	// independent engine.
+	lockstep *LockstepGroup
+	// preEventClock is Clock before the event being processed advanced it, so a lockstep
+	// dummy step can leave the clock at the rank's last real work.
+	preEventClock int64
+	// park is the wait of an engine whose step scheduled nothing (parkIdle); nil otherwise.
+	park *idlePark
+	// lastStepEmpty is whether the last executed step scheduled no tokens.
+	lastStepEmpty bool
+	// pollMissesAtStep is the KV store's PollMisses at the start of the last step.
+	pollMissesAtStep int64
+	// idlePolling disables parking (SetIdlePolling); eventsProcessed counts executed events.
+	idlePolling     bool
+	eventsProcessed int64
+	// curPriority is the priority of the event executing, -1 outside one.
+	curPriority int
+	// serverSeries records the vLLM /metrics series per engine; nil when off.
+	serverSeries *serverSeries
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -139,10 +171,18 @@ type Simulator struct {
 	// per-request fractional carry.
 	specEnabled       bool
 	specTokensPerStep float64
-	rng               *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	sloMap            *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
-	scheduler         InstanceScheduler
-	latencyModel      LatencyModel
+	// specVerifyWidth is what a speculating decode schedules a step, K+1 (#1627).
+	specVerifyWidth int64
+	// specDraftSlots is the drafter's extra query slots per request a step (vLLM
+	// max_num_new_slots_for_drafting).
+	specDraftSlots int64
+	rng            *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
+	sloMap         *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	scheduler      InstanceScheduler
+	latencyModel   LatencyModel
+	// renderer is the endpoint's render stage (INV-R1), shared by the ranks of an internal-balancer
+	// DP replica; nil when FrontendConfig is inert.
+	renderer *Renderer
 	// residentAdapters tracks this instance's finite resident LoRA adapter slots
 	// (capacity-bounded LRU). nil when the LoRA subsystem is inert (no adapters /
 	// capacity configured, or sim/lora not imported), in which case adapter handling
@@ -161,6 +201,11 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	// remoteKVAdmission admits requests whose KV a remote pull will fill (a P/D decode
+	// engine's handoffs), at the point of vLLM's schedule() where the WAITING phase runs: see
+	// SetRemoteKVAdmission. Nil on every instance that receives no handoff.
+	remoteKVAdmission func(now int64)
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -225,11 +270,27 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		maxModelLen:               cfg.MaxModelLen,
 		specEnabled:               cfg.IsEnabled(),
 		specTokensPerStep:         cfg.EffectiveTokensPerStep(),
+		specVerifyWidth:           int64(cfg.VerifyWidth()),
+		specDraftSlots:            cfg.DraftSlots(),
 		latencyModel:              latencyModel,
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}
+	if cfg.ServerSeriesIntervalUs > 0 {
+		s.serverSeries = newServerSeries(cfg.ServerSeriesIntervalUs)
+	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
 	s.scheduler = NewScheduler(cfg.Scheduler)
+
+	if err := cfg.Frontend.Validate(); err != nil {
+		return nil, fmt.Errorf("NewSimulator: %w", err)
+	}
+	if cfg.Frontend.Enabled() {
+		r, err := NewRenderer(max(cfg.Frontend.APIServerCount, 1), cfg.Frontend.RendererNumWorkers)
+		if err != nil {
+			return nil, err
+		}
+		s.renderer = r
+	}
 
 	// Defense-in-depth: reject a non-positive adapter capacity here rather than
 	// letting it reach newResidentSet as a panic. cmd/ validates via LoRAConfig.Validate,
@@ -351,9 +412,16 @@ func (sim *Simulator) ProcessNextEvent() Event {
 		return ev
 	}
 
+	sim.preEventClock = sim.Clock
 	sim.Clock = ev.Timestamp()
+	sim.eventsProcessed++
+	sim.curPriority = ev.Priority()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
+	if sim.park != nil && sim.WaitQ.Len() == 0 {
+		sim.dropPark(sim.Clock)
+	}
+	sim.curPriority = -1
 	return ev
 }
 
@@ -361,6 +429,7 @@ func (sim *Simulator) ProcessNextEvent() Event {
 // Call once after the event loop ends. Called by both sim.Run() (single-instance)
 // and ClusterSimulator.Run() (cluster mode via inst.Finalize()).
 func (sim *Simulator) Finalize() {
+	sim.finalizePark()
 	// Record conservation fields (BC-8, BC-9) — must happen in Finalize
 	// because cluster mode drives events via ProcessNextEvent() directly
 	// and never calls sim.Run().
@@ -535,10 +604,11 @@ func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	}
 }
 
-// scheduleStepBy makes sure a StepEvent fires no later than t. It schedules one at t
-// when none is pending, and supersedes a pending idle wake that is later than t, so
-// work that arrives during an idle wait is served at once (INV-8). Any other pending
-// step is left alone, exactly as the previous stepEvent == nil guards did.
+// scheduleStepBy makes sure a StepEvent fires no later than t. It arms one at t
+// (scheduleStepAt) when none is pending, and supersedes a pending idle wake that is later
+// than t, so work that arrives during an idle wait is served at once (INV-8, #1886). Any
+// other pending step is left alone, exactly as the previous stepEvent == nil guards did; a
+// lockstep rank's stepEvent is its group's step, which is never an idle wake.
 func (sim *Simulator) scheduleStepBy(t int64) {
 	if sim.stepEvent != nil {
 		pending, ok := sim.stepEvent.(*StepEvent)
@@ -547,6 +617,23 @@ func (sim *Simulator) scheduleStepBy(t int64) {
 		}
 		pending.cancelled = true
 		sim.idleWakesSuperseded++
+		sim.stepEvent = nil
+	}
+	sim.scheduleStepAt(t)
+}
+
+// scheduleStepAt arms this instance's next step at time t, or at the end of the step still
+// executing (idleStepTime, #1944). A data-parallel rank in a lockstep group (#1909) asks its
+// group instead, which steps every rank together; a group step sets every rank's busyUntil,
+// so neither path starts a step while one is running.
+func (sim *Simulator) scheduleStepAt(t int64) {
+	t = sim.idleStepTime(t)
+	if sim.park != nil {
+		t = sim.unpark(t)
+	}
+	if sim.lockstep != nil {
+		sim.lockstep.wake(t)
+		return
 	}
 	step := &StepEvent{time: t}
 	sim.stepEvent = step
@@ -615,6 +702,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
 		sim.Metrics.DroppedUnservable++
+		sim.Metrics.RecordUnserved(r, false)
 		delete(sim.Metrics.Requests, r.ID)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
 		if sim.OnRequestDone != nil {
@@ -631,6 +719,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
+			sim.Metrics.RecordUnserved(r, true)
 			delete(sim.Metrics.Requests, r.ID)
 			if sim.OnRequestDone != nil {
 				for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -645,6 +734,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
 				sim.Metrics.DroppedUnservable++
+				sim.Metrics.RecordUnserved(r, true)
 				delete(sim.Metrics.Requests, r.ID)
 				if sim.OnRequestDone != nil {
 					for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -662,6 +752,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
 		sim.Metrics.DroppedUnservable++
+		sim.Metrics.RecordUnserved(r, false)
 		delete(sim.Metrics.Requests, r.ID)
 		if sim.OnRequestDone != nil {
 			for _, next := range sim.OnRequestDone(r, sim.Clock) {
@@ -679,6 +770,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if r.Deadline > 0 && r.Deadline <= sim.Clock {
 		r.State = StateTimedOut
 		sim.Metrics.TimedOutRequests++
+		sim.Metrics.RecordTimeout(r)
 		if sim.OnRequestDone != nil {
 			for _, next := range sim.OnRequestDone(r, sim.Clock) {
 				sim.InjectArrival(next)
@@ -739,6 +831,12 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 		sim.scheduleStepBy(max(sim.Clock, clusterTime))
 	}
 }
+
+// idleStepTime is the earliest a step triggered at t by new work on an idle instance may
+// start: t, or the end of the step still executing when the batch it ran emptied. The engine
+// runs one forward pass at a time, so work arriving during a step waits for it to end, as it
+// does whenever the batch is not empty (scheduleNextStep).
+func (sim *Simulator) idleStepTime(t int64) int64 { return max(t, sim.busyUntil) }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
@@ -873,8 +971,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	}
 	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
 	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
-	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock)
+	sim.Metrics.recordCompletionOrder(req.ID, sim.Clock, max(outputTokens, 0), postDecodeOverhead)
 	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
+	sim.Metrics.StepOwners = append(sim.Metrics.StepOwners,
+		StepOwner{CompletionUs: lat + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
 	req.specDecodeCarry = 0
@@ -895,11 +995,13 @@ func (sim *Simulator) Step(now int64) {
 	}
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
+	sim.busyUntil = now + currStepAdvance
 	// Mirror in-use blocks to CPU tier (no-op for single-tier KVCacheState).
 	// Runs after execution (new full blocks exist) and before completions
 	// (completing requests' blocks are still in-use and can be mirrored).
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, currStepAdvance)
+	sim.recordServerStepEnd(now+currStepAdvance, len(remaining))
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
 }
 
@@ -907,6 +1009,9 @@ func (sim *Simulator) Step(now int64) {
 // and event scheduling for preemptions and newly scheduled requests.
 func (sim *Simulator) scheduleBatch(now int64) {
 	sim.stepCount += 1
+	if q, ok := sim.KVCache.(QuiescentKVStore); ok {
+		sim.pollMissesAtStep = q.PollMisses()
+	}
 
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
@@ -916,6 +1021,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// (vLLM static priority model; per-step recomputation removed).
 	sim.WaitQ.Reorder(func(reqs []*Request) {
 		sim.scheduler.OrderQueue(reqs, now)
+		holdingKVFirst(reqs)
 	})
 
 	// Cold-load pre-admission gate (LoRA, #1466): if the wait-queue head is a cold
@@ -948,6 +1054,8 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		// Pure peek: FormBatch sizes the decode step and caps g; the carry is
 		// committed with the granted count in executeBatchStep (#1528).
 		batchCtx.DecodeTokensPerStep = sim.peekDecodeTokens
+		batchCtx.SpecVerifyWidth = sim.specVerifyWidth
+		batchCtx.DraftSlots = sim.specDraftSlots
 	}
 	batchResult := sim.batchFormation.FormBatch(batchCtx)
 
@@ -960,6 +1068,8 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		sim.Metrics.PreemptionCount++
 	}
 
+	sim.admitRemoteKV(now, len(batchResult.Preempted) > 0)
+
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
 		sim.Schedule(&ScheduledEvent{
@@ -967,6 +1077,10 @@ func (sim *Simulator) scheduleBatch(now int64) {
 			Request: s.Request,
 		})
 		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
+		sim.Metrics.recordPrefixLookup(s.Request, s.Lookup)
+		if sim.serverSeries != nil {
+			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
+		}
 		sim.recordAdapterResidency(s.Request)
 	}
 
@@ -1127,13 +1241,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// Note: scheduled may be empty when all requests are idle (e.g., after
 	// Phase 1 preemption cascade). The LatencyModel contract requires StepTime to
 	// handle an empty batch (return >= 1), and the max(1, ...) floor below guarantees INV-3.
-	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
-	for _, req := range sim.RunningBatch.Requests {
-		if req.NumNewTokens > 0 {
-			scheduled = append(scheduled, req)
-		}
-	}
-	currStepAdvance := sim.latencyModel.StepTime(scheduled)
+	currStepAdvance := sim.latencyModel.StepTime(sim.scheduledRequests())
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()
@@ -1142,20 +1250,51 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// All LatencyModel implementations must return >= 1 per interface contract;
 	// this floor catches violations that would cause infinite livelock.
 	currStepAdvance = max(1, currStepAdvance)
+	sim.lastStepEmpty = len(sim.scheduledRequests()) == 0
+	sim.advanceBatch(now, currStepAdvance)
+	return currStepAdvance
+}
+
+// scheduledRequests is the running batch's members FormBatch allocated tokens to this
+// step: the requests the forward pass runs.
+func (sim *Simulator) scheduledRequests() []*Request {
+	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
+	for _, req := range sim.RunningBatch.Requests {
+		if req.NumNewTokens > 0 {
+			scheduled = append(scheduled, req)
+		}
+	}
+	return scheduled
+}
+
+// advanceBatch applies one step of currStepAdvance ticks to the running batch: progress,
+// ITL, TTFT and the KV usage observation.
+func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
+	var emitted int64
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
 	// Note: Per-request TTFT fields (FirstTokenTime, RequestTTFTs) are recorded inline
 	// because they are tightly coupled to the prefill/decode state transitions in this
-	// loop. Safety across preemption comes from the !req.TTFTSet guard below (TTFTSet is
-	// reset to false on preemption by batch_formation.go), not from overwrite idempotency —
-	// the guard ensures the block fires exactly once per prefill completion so FirstTokenTime
-	// always reflects the final re-prefill. TTFTSum and TotalOutputTokens are computed at
+	// loop. The !req.TTFTSet guard below fires once: a request preempted after its first token
+	// keeps it (batch_formation.go), as vLLM keeps a preempted request's output, and one
+	// preempted before it prefills again. TTFTSum and TotalOutputTokens are computed at
 	// completion time in recordRequestCompletion to avoid double-counting when a preempted
 	// request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < req.InputLen() {
+		if end := req.PrefillEnd(); req.ProgressIndex < end {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
+			if req.resumeEnd > req.InputLen() && req.ProgressIndex == end {
+				// A resumed prefill samples the request's next token (sched/scheduler.py:1084):
+				// its inter-token gap runs from the last token before the preemption.
+				emitted++
+				emittedAt := now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime()
+				last := req.ArrivalTime + req.FirstTokenTime
+				for _, itl := range req.ITL {
+					last += itl
+				}
+				req.ITL = append(req.ITL, max(emittedAt-last, 0))
+			}
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
 		} else {
@@ -1169,6 +1308,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				// per output token, so a step emitting g tokens pays g×OTPT. At the
 				// feature-off default NumNewTokens==1 ⇒ +=1 and 1×OTPT ⇒ byte-identical.
 				req.ProgressIndex += int64(req.NumNewTokens)
+				emitted += int64(req.NumNewTokens)
 				req.ITL = append(req.ITL, currStepAdvance+int64(req.NumNewTokens)*sim.latencyModel.OutputTokenProcessingTime())
 				if sim.specEnabled {
 					// Commit the carry with the GRANTED count (after FormBatch caps), so a
@@ -1177,23 +1317,25 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				}
 			}
 		}
-		// !req.TTFTSet guard: fires once per prefill completion (including re-prefill after
-		// preemption). TTFTSet is reset to false on preemption (batch_formation.go) so this
-		// block fires again on re-prefill, overwriting FirstTokenTime with the correct
-		// post-preemption TTFT. req.FirstTokenTime is a scalar assignment (not an
-		// accumulation), so overwriting it is safe. TTFTSum is not accumulated here;
+		// !req.TTFTSet guard: fires at the first prefill completion only; a preemption after it
+		// leaves the first token time as it was. TTFTSum is not accumulated here;
 		// it is accumulated exactly once at completion time in recordRequestCompletion.
 		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			emitted++ // the prefill-completing step samples the first token
+			if sim.serverSeries != nil {
+				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
+			}
 		}
 	}
 
+	if sim.serverSeries != nil {
+		sim.serverSeries.recordGeneration(now+currStepAdvance, emitted)
+	}
 	// Record KV cache usage observations after execution
 	sim.recordKVUsageMetrics(currStepAdvance)
-
-	return currStepAdvance
 }
 
 // processCompletions handles Phase 3: identifies completed requests, performs state
@@ -1241,7 +1383,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// the decode pre-check returns false before any state mutation (check-then-act
 			// pattern, matching vLLM kv_cache_manager.py:334-336), so RequestMap is
 			// preserved and Release frees all blocks from prior successful allocations.
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1303,7 +1445,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// InstanceSimulator.EvictRequest writes StateCompleted as a tombstone
 			// rather than a completion — see the note there.
 			req.State = StateCompleted
-			sim.KVCache.ReleaseKVBlocks(req)
+			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
 			sim.Schedule(&RequestLeftEvent{
@@ -1325,6 +1467,63 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	return remaining
 }
 
+// ReserveRemoteKV allocates the prompt KV of a P/D decode sub-request whose KV a NIXL pull is
+// about to bring (vLLM's WAITING_FOR_REMOTE_KVS) and returns how many prompt tokens the pull
+// must move. As vLLM's decode engine does, it first takes the prompt's local prefix-cache hit
+// -- full blocks, capped below the prompt's last token (kv_cache_manager.py:290-299 at
+// v0.31.0) -- and the connector is then asked only for the rest (sched/scheduler.py:525-537
+// and 949): NIXL pulls the blocks the decode cache lacks (nixl/pull_scheduler.py:149-177), and
+// the decode engine's own CPU offload tier is not consulted, nor are the blocks visible to the
+// prefix cache until the pull lands (sim.RemoteKVReserver). On
+// success ProgressIndex is set past the prompt so the request decodes once the pull lands.
+// Returns ok=false, allocating nothing, when the blocks do not fit.
+func (sim *Simulator) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
+	inputLen := req.InputLen()
+	if inputLen == 0 {
+		req.ProgressIndex = 0
+		return 0, true
+	}
+	bs := sim.KVCache.BlockSize()
+	var cached []int64
+	if !sim.prefixCachingDisabled {
+		cached = sim.KVCache.GetCachedBlocks(req.FullInputTokens())
+		for int64(len(cached))*bs > inputLen-1 {
+			cached = cached[:len(cached)-1]
+		}
+		// The hybrid groups cut the hit as on any admission (kv_cache_manager.py:295-300).
+		if r, ok := sim.KVCache.(PrefixHitReconciler); ok {
+			cached = r.ReconcilePrefixHit(req, cached)
+		}
+	}
+	local := int64(len(cached)) * bs
+	if !sim.remoteKVReserver().AllocateRemoteKV(req, local, inputLen, cached) {
+		return 0, false
+	}
+	req.ProgressIndex = inputLen
+	return inputLen - local, true
+}
+
+// CacheRemoteKV registers a decode sub-request's pulled blocks in the prefix cache once its
+// pull has landed (sim.RemoteKVReserver). Until then no other request hits on them.
+func (sim *Simulator) CacheRemoteKV(req *Request) { sim.remoteKVReserver().CacheRemoteKV(req.ID) }
+
+func (sim *Simulator) remoteKVReserver() RemoteKVReserver {
+	r, ok := sim.KVCache.(RemoteKVReserver)
+	if !ok {
+		panic(fmt.Sprintf("KV store %T cannot reserve KV for a remote pull (sim.RemoteKVReserver)", sim.KVCache))
+	}
+	return r
+}
+
+// releaseFinishedKV frees a finished request's KV blocks, unless the request's owner keeps
+// them past completion (Request.RetainKVOnFinish) and will release them itself.
+func (sim *Simulator) releaseFinishedKV(req *Request) {
+	if req.RetainKVOnFinish {
+		return
+	}
+	sim.KVCache.ReleaseKVBlocks(req)
+}
+
 // scheduleNextStep handles Phase 4: schedules the next step event based on
 // remaining requests, or starts a new batch if only WaitQ has pending work
 // (work-conserving property, INV-8).
@@ -1333,9 +1532,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		sim.RunningBatch.Requests = remaining
 		// estimate queue overhead from LR (sim.features)
 		//
-		pbe := StepEvent{time: now + currStepAdvance}
-		sim.Schedule(&pbe)
-		sim.stepEvent = &pbe
+		sim.scheduleStepAt(now + currStepAdvance)
 	} else {
 		sim.RunningBatch = nil
 		sim.stepEvent = nil
@@ -1370,18 +1567,117 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// nothing, and the next step at horizon+1 ends the run with the clock at the
 		// horizon, exactly as the crawl did. Inert at the default unlimited horizon.
 		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
-			next, idle := now+currStepAdvance, false
-			if wake, ok := sim.idleDeferralWake(now); ok && wake > next {
+			if sim.canPark() {
+				sim.parkIdle(now+currStepAdvance, currStepAdvance)
+				return
+			}
+			// A deferral makes the KV store non-quiescent, so an engine that waits on one
+			// never parks; it sleeps to the deferral's wake instead (#1886). A lockstep
+			// rank keeps stepping with its group.
+			next := now + currStepAdvance
+			if wake, ok := sim.idleDeferralWake(now); ok && wake > next && sim.lockstep == nil {
 				if wake > sim.Horizon {
 					wake = sim.Horizon
 				}
 				if wake > next {
-					next, idle = wake, true
+					step := &StepEvent{time: sim.idleStepTime(wake), idleWake: true}
+					sim.stepEvent = step
+					sim.Schedule(step)
+					return
 				}
 			}
-			pbe := StepEvent{time: next, idleWake: idle}
-			sim.Schedule(&pbe)
-			sim.stepEvent = &pbe
+			sim.scheduleStepAt(next)
 		}
 	}
 }
+
+// SetRemoteKVAdmission installs f as the engine's admission of remote-KV pulls (INV-PD-9).
+// vLLM v0.31.0 admits a request whose KV loads asynchronously inside schedule()'s WAITING
+// phase (sched/scheduler.py:872-894, 1195-1229, 1258-1287): after the running requests have taken their
+// slots, only in a step that preempted nothing, behind every waiting request ahead of it, and
+// only while fewer than max_num_seqs run. The engine calls f at exactly that point of each
+// schedule; f allocates the pulls that fit, in arrival order, and the engine with no work at
+// all admits whenever one arrives (HasWork).
+func (sim *Simulator) SetRemoteKVAdmission(f func(now int64)) { sim.remoteKVAdmission = f }
+
+// admitRemoteKV runs the remote-KV admission at the end of a schedule, when vLLM's WAITING
+// phase would reach it: no preemption this step (scheduler.py:873), the waiting queue drained
+// ahead of it (the queue is FCFS, holding-KV requests first, :885-889), and a running slot
+// free (max_num_active_reqs, :891-894).
+func (sim *Simulator) admitRemoteKV(now int64, preempted bool) {
+	if sim.remoteKVAdmission == nil || preempted || sim.WaitQ.Len() > 0 {
+		return
+	}
+	if sim.RunningBatch != nil && int64(len(sim.RunningBatch.Requests)) >= sim.maxNumSeqs {
+		return
+	}
+	sim.remoteKVAdmission(now)
+}
+
+// HasWork reports whether the engine has running or waiting requests, as vLLM's
+// has_unfinished_requests does. An engine without work schedules a newly arrived request at
+// once.
+func (sim *Simulator) HasWork() bool { return hasWork(sim) }
+
+// holdingKVFirst moves the waiting requests that already hold their KV -- P/D decode
+// sub-requests whose pull has landed (ProgressIndex set at reservation; a waiting request
+// otherwise holds none) -- ahead of the rest, keeping each group's order. vLLM v0.31.0 drains
+// its kv_holding_waiting queue before waiting (sched/scheduler.py:886-887). Without it a
+// preempted request at the head that cannot be readmitted blocks the handoffs holding the
+// blocks it needs, and the decode engine deadlocks (INV-PD-9). No-op when none holds KV.
+func holdingKVFirst(reqs []*Request) {
+	holds := func(r *Request) bool { return r.IsDecodeSubRequest && r.ProgressIndex > 0 }
+	for _, r := range reqs {
+		if holds(r) {
+			sort.SliceStable(reqs, func(i, j int) bool { return holds(reqs[i]) && !holds(reqs[j]) })
+			return
+		}
+	}
+}
+
+// FirstDecodeStepBlocks is the blocks a remote-KV request's first decode step takes beyond
+// the prompt it holds: one when the prompt fills its last block, else none. A speculating
+// engine's reservation already holds the step's slots (AllocateRemoteKV sizes them).
+func (sim *Simulator) FirstDecodeStepBlocks(req *Request) int64 {
+	if sim.specEnabled || req.InputLen()%sim.KVCache.BlockSize() != 0 {
+		return 0
+	}
+	return 1
+}
+
+// WaitingHolderBlocks is FirstDecodeStepBlocks summed over the waiting requests that hold
+// their KV (pulls that landed and have not run): the blocks they need before they can start.
+func (sim *Simulator) WaitingHolderBlocks() int64 {
+	var n int64
+	for _, r := range sim.WaitQ.Items() {
+		if r.IsDecodeSubRequest && r.ProgressIndex > 0 {
+			n += sim.FirstDecodeStepBlocks(r)
+		}
+	}
+	return n
+}
+
+// ReserveRemoteKVBehind is ReserveRemoteKV gated as vLLM gates an async-load admission
+// (sched/scheduler.py:1195-1205, kv_cache_manager.py:570-576 at v0.31.0): the allocation must
+// leave reserved blocks free -- what the other admitted remote-KV requests still need to run --
+// plus the request's own first-step blocks, "to avoid deadlock and predictable preemptions".
+// A refused reservation leaves no allocation behind.
+func (sim *Simulator) ReserveRemoteKVBehind(req *Request, reserved int64) (pulledTokens int64, ok bool) {
+	free := func() int64 { return sim.KVCache.TotalCapacity() - sim.KVCache.UsedBlocks() }
+	if free() < reserved+sim.FirstDecodeStepBlocks(req) {
+		return 0, false
+	}
+	pulled, ok := sim.ReserveRemoteKV(req)
+	if !ok {
+		return 0, false
+	}
+	if free() < reserved+sim.FirstDecodeStepBlocks(req) {
+		sim.KVCache.ReleaseKVBlocks(req)
+		req.ProgressIndex = 0
+		return 0, false
+	}
+	return pulled, true
+}
+
+// BusyUntil is when the engine's last executed step ends; its next schedule runs no earlier.
+func (sim *Simulator) BusyUntil() int64 { return sim.busyUntil }

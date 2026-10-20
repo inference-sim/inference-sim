@@ -1110,3 +1110,39 @@ func TestGatewayQueue_SLODeadline_EmptyQueue(t *testing.T) {
 		t.Fatalf("expected nil from empty slo-deadline queue, got %v", r)
 	}
 }
+
+// llm-d keeps a drained flow's key in its band until the flow is garbage-collected, so
+// round-robin resumes after the drained flow rather than restarting at the first key
+// (v0.10.0:pkg/epp/framework/plugins/flowcontrol/fairness/roundrobin/roundrobin.go:78-128).
+func TestGatewayQueue_RoundRobin_ResumesAfterDrainedFlow(t *testing.T) {
+	q := NewGatewayQueue("fifo", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+	for i, r := range []struct{ id, tenant string }{{"a1", "A"}, {"a2", "A"}, {"b1", "B"}, {"c1", "C"}} {
+		q.Enqueue(&sim.Request{ID: r.id, SLOClass: "standard", TenantID: r.tenant}, int64(i+1))
+	}
+	for i, want := range []string{"a1", "b1", "c1", "a2"} {
+		if got := q.DequeueGated(0); got == nil || got.ID != want {
+			t.Fatalf("dispatch %d: want %s, got %v", i, want, got)
+		}
+	}
+}
+
+// llm-d's dispatch cycle asks every band under its ceiling to pick, empty or not, and a
+// round-robin pick that finds nothing resets the cursor (processor.go:402-442 at v0.10.0),
+// so after the queue drains the next pick starts at the first flow again.
+func TestGatewayQueue_RoundRobin_EmptyCycleResetsCursor(t *testing.T) {
+	q := NewGatewayQueue("fifo", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+	q.Enqueue(&sim.Request{ID: "a1", SLOClass: "standard", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "b1", SLOClass: "standard", TenantID: "B"}, 2)
+	q.DequeueGated(0)
+	q.DequeueGated(0) // cursor at B
+	if q.DequeueGated(0) != nil {
+		t.Fatal("empty queue dispatched")
+	}
+	q.Enqueue(&sim.Request{ID: "c2", SLOClass: "standard", TenantID: "C"}, 3)
+	q.Enqueue(&sim.Request{ID: "a2", SLOClass: "standard", TenantID: "A"}, 4)
+	if got := q.DequeueGated(0); got == nil || got.ID != "a2" {
+		t.Fatalf("after an empty cycle the cursor restarts at A: want a2, got %v", got)
+	}
+}

@@ -1,0 +1,85 @@
+# EXTRACTED VERBATIM by scripts/extract_router_profiles.py -- do not edit.
+# source: an internal DeepSeek-V4.1 H200 llm-d deployment, router ConfigMap data[agentic-serving-gpu-cpu-plugins.yaml]
+# sha256(extracted text): 49e394e5ecb7121db9527d04f53d6abfe57e9d458efe05c8266bd23db9e3ae2a
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+# Real tokenization (vLLM's /v1/*/render), not the byte-packing estimate default.
+- type: token-producer
+  parameters:
+    modelName: deepseek-ai/DeepSeek-V4.1-Flash
+    vllm:
+      url: http://deepseek-v4-1-flash.__NAMESPACE__.svc.cluster.local:8000
+# GPU producer: precise/KV-event-based ground truth. No CPU-tier producer/scorer.
+- type: precise-prefix-cache-producer
+  name: precise-prefix-cache-producer
+  parameters:
+    tokenProcessorConfig:
+      blockSizeTokens: 64
+    speculativeIndexing: false
+    indexerConfig:
+      kvBlockIndexConfig:
+        enableMetrics: true
+        inMemoryConfig:
+          size: 10000000
+          podCacheSize: 1024
+      kvCacheBackendConfigs:
+      - name: gpu
+        weight: 1.0
+    kvEventsConfig:
+      topicFilter: "kv@"
+      concurrency: 16
+      discoverPods: true
+      podDiscoveryConfig:
+        podNamespace: __NAMESPACE__
+        podLabelSelector: app=deepseek-v4-1-flash
+        socketPort: 5557
+# Required for precise-prefix-cache-producer's pod discovery / KV-events subscriber
+# wiring - see the ConfigMap-level comment above.
+- type: endpoint-notification-source
+# Named to its own default (name == type) - do not rename, token-load-scorer resolves its
+# data key against the producer's default name.
+- type: inflight-load-producer
+  name: inflight-load-producer
+  parameters:
+    addEstimatedOutputTokens: false
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+# Hard-filters overloaded pods before the affinity filter runs. Also wired as flowControl's
+# saturationDetector below. concurrencyMode: requests, not hybrid - see the file header.
+- type: concurrency-detector
+  name: concurrency-guard
+  parameters:
+    concurrencyMode: requests
+    maxConcurrency: 256
+    headroom: 0                                       # routing cap = 256 * 1 = 256
+    inFlightLoadProducerName: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  name: gpu-prefix-cache-affinity-filter
+  parameters:
+    affinityThreshold: 0.5
+    explorationProbability: 0
+    inFlightLoadProducerName: inflight-load-producer
+    maxTTFTPenaltyMs: 4500
+    peakPrefillThroughput: 15000
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: token-load-scorer
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: concurrency-guard              # order matters: shed hot pods first
+  - pluginRef: gpu-prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+dataLayer:
+  sources:
+  - pluginRef: endpoint-notification-source
+    extractors:
+    - pluginRef: precise-prefix-cache-producer
+flowControl:
+  saturationDetector:
+    pluginRef: concurrency-guard
+  enableEviction: false
+  defaultRequestTTL: 300s
+  maxRequests: 4096
+  maxBytes: 4Gi
