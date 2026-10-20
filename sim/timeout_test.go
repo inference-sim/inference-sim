@@ -29,7 +29,7 @@ func TestEventQueue_SameTimestamp_PriorityOrder(t *testing.T) {
 	seq++
 	heap.Push(eq, eventEntry{event: &ArrivalEvent{time: tick, Request: &Request{ID: "r2"}}, seqID: seq})
 
-	// Pop and verify priority order: Arrival(0) < Step(2) < Timeout(5)
+	// Pop and verify priority order: PriorityArrival < PriorityStep < PriorityTimeout
 	e1 := heap.Pop(eq).(eventEntry)
 	e2 := heap.Pop(eq).(eventEntry)
 	e3 := heap.Pop(eq).(eventEntry)
