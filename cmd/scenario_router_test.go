@@ -277,6 +277,51 @@ func TestRun_PoolLabelsWithoutARouterBlockReachTheRouter(t *testing.T) {
 	}
 }
 
+// A scenario stating max_model_len: auto is refused at startup with the reason, on run and on
+// replay, whether it is a single colocated pool or the prefill or decode pool of a P/D deployment
+// (whose router block names its disaggregating configuration): BLIS cannot know the window vLLM
+// would fit to memory.
+func TestRunAndReplay_AutoMaxModelLenRefused(t *testing.T) {
+	const window = "      max_model_len: 32768\n"
+	const auto = "      max_model_len: auto\n"
+	pdTopology := []string{"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}
+	// The P/D fixture's prefill pool states its engine first; its decode pool's window follows
+	// "max_num_seqs: 256" a second time, so it is edited by the text around it.
+	decodeWindow := "  - role: decode\n    nodes: 1\n    parallel:\n      tp: 8\n      pp: 1\n      dp: 1\n" +
+		"      enable_expert_parallel: false\n    engine:\n      quantization: fp8\n      cache_dtype: fp8\n" +
+		"      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n"
+	trace := filepath.Join(t.TempDir(), "trace")
+	if _, stderr, err := runKernelCLI(t, "run", "--scenario", colocatedFixture, "--num-requests", "4", "--rate", "2",
+		"--trace-output", trace); err != nil {
+		t.Fatalf("source run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	for _, tt := range []struct {
+		name string
+		dir  string
+		args []string
+	}{
+		{"single instance", writeColocatedVariant(t, "max_model_len: 32768\n", "max_model_len: auto\n"), nil},
+		{"P/D prefill pool", writeScenarioVariant(t, window, auto), pdTopology},
+		{"P/D decode pool", writeScenarioVariant(t, decodeWindow+window, decodeWindow+auto), pdTopology},
+	} {
+		for _, command := range [][]string{
+			{"run", "--num-requests", "4", "--rate", "2"},
+			{"replay", "--trace-header", trace + ".yaml", "--trace-data", trace + ".csv"},
+		} {
+			t.Run(tt.name+" "+command[0], func(t *testing.T) {
+				args := append(append(append([]string(nil), command...), "--scenarios", tt.dir, "--scenario", "variant.yaml"), tt.args...)
+				_, stderr, err := runKernelCLI(t, args...)
+				if err == nil {
+					t.Fatalf("a scenario stating max_model_len: auto was accepted")
+				}
+				if !strings.Contains(stderr, "states max_model_len auto") || !strings.Contains(stderr, "variant.yaml") {
+					t.Errorf("the refusal must name the scenario and the auto window; stderr:\n%s", lastLines(stderr, 3))
+				}
+			})
+		}
+	}
+}
+
 // The router inputs are the scenario's: the four flags that carried them are not registered on
 // run or replay, as --tp is not, and are refused as unknown.
 func TestRunAndReplay_RouterDeploymentFlagsRemoved(t *testing.T) {
