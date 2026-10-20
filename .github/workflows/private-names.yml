@@ -30,7 +30,9 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -uo pipefail
-          RE=$(printf '%s\n' "${PATTERNS:-}" | grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' | paste -sd'|' -)
+          # grep -v exits 1 when it selects no lines (no secret, as on a fork pull request);
+          # under pipefail and bash -e that would kill the step before the skip below.
+          RE=$(printf '%s\n' "${PATTERNS:-}" | { grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' || true; } | paste -sd'|' -)
           if [ -z "$RE" ]; then echo "skipped: no pattern secret"; exit 0; fi
           export RE
           # match LABEL < input: print LABEL:<line number> per matching line; exit 1 on any match.

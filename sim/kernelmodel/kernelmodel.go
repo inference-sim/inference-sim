@@ -422,7 +422,7 @@ func (m *Model) PostDecodeFixedOverhead() int64 { return m.completionTicks }
 // meaning for the simulator.
 //
 // INV-K1 (no BLIS-side draft cost): the step price is the kernel's StepTime of exactly this
-// verify-width batch, floored at one tick, and nothing else. blis-latency-kernel v0.2.0 prices
+// verify-width batch, floored at one tick, and nothing else. blis-latency-kernel v0.3.0 prices
 // the drafter's passes, its context stack and its head inside StepTime, so a draft term added
 // here, or a Scheduled widened past 1 + K, would charge the drafts twice.
 func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
