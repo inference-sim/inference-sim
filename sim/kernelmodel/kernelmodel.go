@@ -355,6 +355,21 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
 }
 
+// EndpointPlacement reports whether one simulated engine rank fits on one
+// node, and whether its rack was declared rather than inferred solely for
+// conservative transfer pricing. A rank can cross a node boundary even when
+// rankGPUs <= gpusPerNode, so check both ends of its GPU allocation.
+func (m *Model) EndpointPlacement(rank int) (kernel.Placement, int, bool) {
+	p := m.PlacementOf(rank)
+	firstGPU := rank * m.id.rankGPUs
+	lastGPU := firstGPU + m.id.rankGPUs - 1
+	if m.id.gpusPerNode <= 0 {
+		return p, 0, m.id.gpusPerRack > 0
+	}
+	nodeCount := lastGPU/m.id.gpusPerNode - firstGPU/m.id.gpusPerNode + 1
+	return p, nodeCount, m.id.gpusPerRack > 0
+}
+
 // PDTransferTicks prices moving tokens tokens of one request's KV between two placements, as
 // the kernel prices it, rounded UP to a whole tick: a transfer is not complete until its last
 // byte lands, and a zero-tick transfer would let decode start in the same instant.

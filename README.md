@@ -123,6 +123,7 @@ Every multi-instance cluster routes with the real llm-d router (the Endpoint Pic
 in-process. It reads a deployment's own EndpointPickerConfig, EPP flags and `InferencePool` /
 `InferenceObjective` manifests, named by the scenario's `router:` block (and pod labels from
 `pools[].labels`); with none, it uses the router's built-in default configuration.
+Kernel-backed scenarios also expose simulated host and declared-rack identity to llm-d's topology plugins; the [routing guide](docs/guide/routing.md#topology-identity-in-kernel-backed-scenarios) explains the supported scope.
 
 ```bash
 ./blis run --scenarios examples/llm-d/scenarios \

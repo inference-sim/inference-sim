@@ -387,6 +387,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
+			if config.ScenarioEndpointTopology != nil {
+				inst.endpointTopology.MixedSources = true
+			}
 			inst.TPDegree = tpDegree
 			// #1529: cost = distinct-nodes-spanned × pool cost_per_hour. Single-node
 			// instances are 1× (unchanged); a multi-node TP instance is billed per node.
@@ -414,6 +417,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
+			if config.ScenarioEndpointTopology != nil {
+				inst.endpointTopology = config.ScenarioEndpointTopology(id)
+			}
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if inst.warmUpRemaining > 0 {
 				inst.TransitionTo(sim.InstanceStateWarmingUp)
@@ -1161,6 +1167,9 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.Model = model
 	inst.nodeID = nodeID
 	inst.allocatedGPUIDs = gpuIDs
+	if cs.config.ScenarioEndpointTopology != nil {
+		inst.endpointTopology.MixedSources = true
+	}
 	inst.TPDegree = tpDegree
 	inst.CostPerHour = costPerHour
 	inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount

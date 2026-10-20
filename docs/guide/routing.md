@@ -185,6 +185,39 @@ Everything the router reads comes from the simulated engines, with real engine s
 - **Endpoints.** Instances are pods of the pool, reconciled by the router's pod reconciler:
   ready while the instance is routable, not ready while it loads, drains or terminates.
 
+### Topology identity in kernel-backed scenarios
+
+For a kernel-backed scenario without `node_pools`, each synthetic Pod gets the
+host of its engine rank from the same scenario placement used to price P/D KV
+transfer. If `cluster.gpus_per_rack` is declared, it also gets that rack. The
+router's `topology-extractor`, `topology-affinity-filter` and
+`topology-affinity-scorer` then consume these labels through the normal endpoint
+reconciler. The signal is fixed when the worker's Pod appears; it is not a
+periodic engine-metrics scrape. These are simulated identities, not observed physical machines.
+Pass the router's `--allow-experimental-plugins` flag for its alpha topology
+plugins.
+
+This is a **host and declared-rack slice** of
+[topology issue #1962](https://github.com/inference-sim/inference-sim/issues/1962).
+The scenario schema does not declare zone or region placement, so BLIS does not
+invent those labels. The `topology-stamp-handler` is still unsupported. A
+kernel scenario combined with `node_pools` has two independent placements;
+topology plugins are refused until their alignment with transfer pricing can
+be checked. A rank spanning multiple nodes is also refused because one Pod
+cannot truthfully claim one host. When one endpoint groups multiple data-parallel
+ranks, topology plugins are likewise refused; without topology plugins, BLIS
+adds no derived host label to that Pod. The same-host P/D placement and
+transfer pricing follow-up is separate.
+
+BLIS refuses custom topology label keys, coordinator peer-topology headers
+and missing extractor references. The real router's affinity filter
+deliberately fails open if its scheduling stage has no peer or no candidate
+meets the requested affinity; a missing rack, zone or region value does not
+become a fabricated match. A tighter match can still satisfy a looser
+`minAffinity` setting: same-rack endpoints can match `minAffinity: zone`
+without any zone label. These are router policy semantics, not evidence of a
+local placement match.
+
 ## Decisions
 
 The router's decision becomes a BLIS dispatch:
@@ -254,14 +287,14 @@ and every signal it consumes is produced by the simulated engines.
 | Kind | Types |
 |---|---|
 | Profile handlers and pickers | `single-profile-handler`, `disagg-profile-handler`, `max-score-picker`, `random-picker`, `weighted-random-picker` |
-| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter` |
-| Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware` |
+| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement) |
+| Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware`, `topology-affinity-scorer` (kernel-backed placement) |
 | P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
 | Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
 | Admission | `probabilistic-admitter` |
 | Saturation detectors | `utilization-detector`, `concurrency-detector`, `max-saturation-detector` |
 | Flow control | `global-strict-fairness-policy`, `round-robin-fairness-policy`, `fcfs-ordering-policy`, `edf-ordering-policy`, `slo-deadline-ordering-policy`, `static-usage-limit-policy`, `strict-band-selection-policy`, `priority-holdback-policy`, `soft-reflective-ceiling-policy` |
-| Data layer | `metrics-data-source`, `core-metrics-extractor`, `endpoint-notification-source` |
+| Data layer | `metrics-data-source`, `core-metrics-extractor`, `endpoint-notification-source`, `topology-extractor` (kernel-backed placement) |
 | Request parsers | `openai-parser`, `vllmhttp-parser`, `sglanghttp-parser`, `anthropic-parser`, `passthrough-parser`, `vertexai-parser` |
 
 The flow-control layer (`featureGates: [flowControl]`) runs in full: priority bands, capacity
@@ -282,7 +315,8 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
 | `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
 | `p2p-source-producer`, `selective-kv-policy` | Peer KV pulls are not modeled by the simulated engines. |
-| `topology-*`, `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no topology labels, custom attributes or GPU telemetry. |
+| `topology-stamp-handler` | Coordinator/response-header topology propagation is not modeled; the supported extractor, filter and scorer are limited to the kernel-backed placement above. |
+| `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no custom attributes or GPU telemetry. |
 | `models-data-source`, `models-data-extractor`, `models-responder` | The simulated engines do not serve `/v1/models` yet; the workload sends only completions. |
 | `redis-syncer`, `thunder-agent`, `k8s-notification-source`, `k8s-peer-discovery`, `file-discovery`, `multicluster-*` | They need external services or another discovery source than the simulated deployment. |
 | More than one `InferencePool`; objective or rewrite manifests with `--endpoint-selector` | A run has one router for one pool; in standalone mode the router does not reconcile objectives or rewrites. |
