@@ -19,8 +19,10 @@
 #   - the adapter's typed max_model_len change: this branch's sim/kernelmodel/settings.go and
 #     sim/kernelmodel/harness/enginesettings.go.
 # It is verified for 63ffc020 only: re-running the line above reproduces the committed goldens
-# byte for byte except the catalog provenance "revision" (the throwaway commit's hash, which
-# depends on who made it and when, and which the test masks). For another commit the overlay may
+# byte for byte except the catalog provenance "revision", the hash of the bump commit. The
+# committed goldens record 8bd6b061, the hand-made bump commit they were produced from; this
+# script's bump commit has the same built files but a fixed identity and date, so its hash is
+# stable from run to run yet not 8bd6b061. The test masks the revision. For another commit the overlay may
 # not compile; the script then stops at the build. A commit that already pins this branch's
 # kernel and schemas is built as it is.
 #
@@ -34,7 +36,9 @@ commit=$1
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 tmp=$(mktemp -d)
-trap 'git worktree remove --force "$tmp/src" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+# Cleanup on every exit, failure included: remove the worktree, then prune its administrative
+# entry in case the removal itself failed, so no orphaned worktree is left behind.
+trap 'git worktree remove --force "$tmp/src" >/dev/null 2>&1 || true; rm -rf "$tmp"; git worktree prune' EXIT
 git worktree add -q --detach "$tmp/src" "$commit"
 deps=(github.com/inference-sim/blis-latency-kernel github.com/inference-sim/blis-schemas)
 pinned() { grep -E "^[[:space:]]*$2 " "$1/go.mod" | awk '{print $2}' || true; }

@@ -223,7 +223,7 @@ produced by `blis convert weka|otel|inference-perf|servegen`) through the same D
 and the same scenario-driven deployment path as `blis run`. A run's exported trace replayed
 with identical flags (including `--horizon`) yields byte-identical stdout (INV-13). The trace
 header records the router inputs (EPP flags with the configuration inlined, manifests, pod
-labels, gateway latency, scrape jitter), so a replay rebuilds the same router; a replay whose
+labels, gateway latency, scrape jitter, KV-event delay), so a replay rebuilds the same router; a replay whose
 scenario `router:` block, pool labels or router environment flags state a different router is
 refused.
 `blis observe` and `blis calibrate` are deprecated
