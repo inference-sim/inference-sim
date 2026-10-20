@@ -160,6 +160,39 @@ func TestSubmitPoll_SingleJobCompletionTime(t *testing.T) {
 	}
 }
 
+// NextCompletion reports the earliest in-service completion across all tiers, so a
+// caller can sleep until the station next changes state. It is a pure query.
+func TestNextCompletion(t *testing.T) {
+	s := mustNew(t, Config{Tiers: []TierConfig{
+		{NRead: 1, NWrite: 1, ReadBaseTicks: 100, WriteBaseTicks: 100, ReadBytesPerTick: 1, WriteBytesPerTick: 1},
+		{NRead: 1, NWrite: 1, ReadBaseTicks: 10, WriteBaseTicks: 10, ReadBytesPerTick: 1, WriteBytesPerTick: 1},
+	}})
+	if _, ok := s.NextCompletion(); ok {
+		t.Fatal("idle station must report no next completion")
+	}
+
+	s.Submit(TransferJob{Tier: 0, Direction: Read, Bytes: 0, SubmitTick: 0})  // completes at 100
+	s.Submit(TransferJob{Tier: 1, Direction: Write, Bytes: 0, SubmitTick: 5}) // completes at 15
+	s.Submit(TransferJob{Tier: 1, Direction: Write, Bytes: 0, SubmitTick: 5}) // tier 1's read thread takes it by fallback: completes at 15 too
+
+	got, ok := s.NextCompletion()
+	if !ok || got != 15 {
+		t.Fatalf("NextCompletion = (%d, %v), want (15, true): earliest across tiers", got, ok)
+	}
+	if again, _ := s.NextCompletion(); again != got {
+		t.Fatalf("NextCompletion must not mutate state: %d then %d", got, again)
+	}
+
+	s.Poll(15)
+	if got, ok := s.NextCompletion(); !ok || got != 100 {
+		t.Fatalf("after draining tier 1, NextCompletion = (%d, %v), want (100, true)", got, ok)
+	}
+	s.Poll(100)
+	if _, ok := s.NextCompletion(); ok {
+		t.Fatal("drained station must report no next completion")
+	}
+}
+
 // A Poll with a tick earlier than one already observed is a safe no-op: the
 // clock never moves backward (INV-3) and no completions are returned. The
 // documented precondition is a non-decreasing now; this verifies the station
