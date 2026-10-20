@@ -534,8 +534,10 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 func (sim *Simulator) IdleWakesSuperseded() int64 { return sim.idleWakesSuperseded }
 
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
-// with pending work. Used by gateway eviction to maintain INV-8 after removing
-// the last request from RunningBatch. The step starts at nextStepStart(time):
+// with pending work. Used by gateway eviction (sim/cluster/instance.go) to maintain
+// INV-8 after removing the last request from RunningBatch, and by adapter-load
+// completion (completeAdapterLoad) to re-form a step once a gated adapter is
+// resident. The step starts at nextStepStart(time):
 // no earlier than the end of the step still executing, nor than sim.Clock.
 func (sim *Simulator) ScheduleStepIfIdle(time int64) {
 	if sim.WaitQ.Len() > 0 {

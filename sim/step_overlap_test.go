@@ -66,6 +66,8 @@ func TestStep_NoOverlap_RequestArrivingDuringDrainingStep(t *testing.T) {
 		{"fixed: arrival mid-step", &fixedStepModel{stepTime: stepTicks}, 0, 700, nil},
 		{"fixed: arrival one tick after step start", &fixedStepModel{stepTime: stepTicks}, 0, 1, nil},
 		{"fixed: arrival one tick before step end", &fixedStepModel{stepTime: stepTicks}, 0, stepTicks - 1, nil},
+		// The last two are BC-3 boundaries, not exercises of the clamp: the arrival is
+		// at or after busyUntil, so the step starts at the arrival exactly as before.
 		{"fixed: arrival exactly at step end", &fixedStepModel{stepTime: stepTicks}, 0, stepTicks, nil},
 		{"fixed: arrival after engine idle", &fixedStepModel{stepTime: stepTicks}, 0, 2 * stepTicks, nil},
 		{
@@ -294,5 +296,60 @@ func TestScheduleStepBy_ComparesFlooredStartWithPendingWake(t *testing.T) {
 				t.Errorf("new step at %d starts before busyUntil %d (#1964)", step.time, tc.busy)
 			}
 		})
+	}
+}
+
+// TestIdleStepSites_FloorAtBusyUntil pins the #1964 floor at the two idle-engine
+// step-scheduling sites not reached through QueuedEvent: P/D decode injection
+// (EnqueueDecodeSubRequest, via scheduleStepBy) and the TimeoutEvent INV-8
+// defense-in-depth site (which keeps #1886's stepEvent == nil form).
+//
+// GIVEN an idle engine (no running batch, no pending step) whose last step is still
+// executing (busyUntil > Clock)
+// WHEN either site schedules a step at a time t in [Clock, busyUntil)
+// THEN the step starts at busyUntil, not at t; with t >= busyUntil it starts at t.
+func TestIdleStepSites_FloorAtBusyUntil(t *testing.T) {
+	const (
+		clock = int64(1000)
+		busy  = int64(2000)
+	)
+	newReq := func(id string) *Request {
+		return &Request{ID: id, InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 2),
+			State: StateQueued, ProgressIndex: 10}
+	}
+	sites := []struct {
+		name     string
+		schedule func(s *Simulator, at int64)
+	}{
+		{"EnqueueDecodeSubRequest", func(s *Simulator, at int64) {
+			s.EnqueueDecodeSubRequest(newReq("dec"), at)
+		}},
+		{"TimeoutEvent", func(s *Simulator, at int64) {
+			victim := newReq("victim")
+			s.WaitQ.Enqueue(victim)
+			s.WaitQ.Enqueue(newReq("survivor"))
+			(&TimeoutEvent{time: at, Request: victim}).Execute(s)
+		}},
+	}
+	for _, site := range sites {
+		for _, tc := range []struct{ at, want int64 }{
+			{clock, busy},        // at the clock, mid-step: floored
+			{busy - 1, busy},     // one tick before the step ends: floored
+			{busy, busy},         // exactly at the end: unchanged
+			{busy + 5, busy + 5}, // engine already free: unchanged
+		} {
+			t.Run(fmt.Sprintf("%s/t=%d", site.name, tc.at), func(t *testing.T) {
+				s := mustNewSimulator(t, newTestSimConfig())
+				s.Clock, s.busyUntil = clock, busy
+				site.schedule(s, tc.at)
+				step, ok := s.stepEvent.(*StepEvent)
+				if !ok {
+					t.Fatalf("no step scheduled for a non-empty wait queue (INV-8), got %T", s.stepEvent)
+				}
+				if step.time != tc.want {
+					t.Errorf("step at %d, want %d = max(t=%d, busyUntil=%d)", step.time, tc.want, tc.at, busy)
+				}
+			})
+		}
 	}
 }

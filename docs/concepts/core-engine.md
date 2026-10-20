@@ -24,7 +24,7 @@ The event queue is a min-heap ordered by event timestamp. Events represent state
 | Event Type | Trigger | Effect |
 |------------|---------|--------|
 | `ArrivalEvent` | Request enters system | Computes queueing delay (host overhead priced by the kernel), schedules `QueuedEvent` |
-| `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
+| `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` is pending, schedules one, or pulls a pending idle-wake step forward (work-conserving). The step starts no earlier than the end of the step still executing — an engine runs one step at a time (#1964) |
 | `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
 | `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
 | `RequestLeftEvent` | Request completes | Timeline marker for tracing (E2E metrics recorded in `processCompletions`) |

@@ -12,7 +12,7 @@ const testDefaultTimeoutUs = 300_000_000
 
 // TestEventQueue_SameTimestamp_PriorityOrder verifies BC-12: at equal timestamps,
 // events fire in priority order (lower priority number first).
-// StepEvent (priority 2) must fire before TimeoutEvent (priority 5).
+// StepEvent (PriorityStep) must fire before TimeoutEvent (PriorityTimeout).
 func TestEventQueue_SameTimestamp_PriorityOrder(t *testing.T) {
 	eq := &EventQueue{}
 	heap.Init(eq)
@@ -21,7 +21,7 @@ func TestEventQueue_SameTimestamp_PriorityOrder(t *testing.T) {
 	tick := int64(1000)
 	var seq int64
 
-	// Push TimeoutEvent first (priority 5), then StepEvent (priority 2)
+	// Push TimeoutEvent first (PriorityTimeout), then StepEvent (PriorityStep)
 	seq++
 	heap.Push(eq, eventEntry{event: &TimeoutEvent{time: tick, Request: &Request{ID: "r1"}}, seqID: seq})
 	seq++
@@ -150,7 +150,7 @@ func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 	sim.InjectArrival(r1)
 	sim.Run()
 
-	// With priority ordering, StepEvent (priority 2) fires before TimeoutEvent (priority 5).
+	// With priority ordering, StepEvent (PriorityStep) fires before TimeoutEvent (PriorityTimeout).
 	// The request should complete, not time out.
 	if r1.State != StateCompleted {
 		t.Errorf("BC-12: r1 state: got %s, want %s (completion should win at equal tick)", r1.State, StateCompleted)
@@ -392,7 +392,7 @@ func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) 
 //
 // Without the fix, TimeoutEvent.Execute nil'd sim.stepEvent when emptying
 // RunningBatch. The INV-8 guard then created a new StepEvent at the current tick,
-// which (priority 2 < timeout priority 5) fired before remaining TimeoutEvents,
+// which (PriorityStep < PriorityTimeout) fired before remaining TimeoutEvents,
 // pulling a queued seed that was immediately timed out. Each iteration left an
 // orphaned StepEvent at the scheduled future tick. These orphans fired in lock-step
 // with subsequent legitimate StepEvents, processing the batch N+1 times per tick

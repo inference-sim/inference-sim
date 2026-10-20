@@ -158,7 +158,7 @@ func (e *AdapterLoadCompletionEvent) Execute(sim *Simulator) {
 
 // TimeoutEvent models client-side request cancellation at the deadline tick.
 // Classification: mixed exogenous/endogenous (round-0 exogenous, follow-up endogenous).
-// Priority 5: fires after all other event types at equal timestamps (BC-12).
+// PriorityTimeout: fires after all other event types at equal timestamps (BC-12).
 type TimeoutEvent struct {
 	time    int64
 	Request *Request
@@ -212,8 +212,8 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 		// If batch is now empty, clear RunningBatch. Do NOT nil sim.stepEvent:
 		// leaving it pointing to the already-scheduled StepEvent prevents the
 		// INV-8 guard below from creating a duplicate StepEvent at the current
-		// tick. At the same tick, StepEvents fire before TimeoutEvents (priority
-		// 2 < 5), so a newly-created StepEvent would pull a queued request and
+		// tick. At the same tick, StepEvents fire before TimeoutEvents (PriorityStep
+		// < PriorityTimeout), so a newly-created StepEvent would pull a queued request and
 		// then its same-deadline TimeoutEvent would immediately time it out —
 		// cascading once per queued seed and leaving N orphaned StepEvents.
 		// The already-scheduled StepEvent fires at the correct future time and
