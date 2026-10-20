@@ -284,13 +284,20 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
 		if next.IsDecodeSubRequest {
 			decodeTokens := int64(1)
+			// A zero-output request is already at its completion boundary once its
+			// transferred KV is reserved (ProgressIndex == InputLen) and has no token
+			// to allocate. Admit it with zero decode work and let processCompletions
+			// finish it, as the non-PD path does (#1665).
+			if len(next.OutputTokens) == 0 {
+				decodeTokens = 0
+			}
 			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
 			// g accepted tokens per step, same as a non-PD decode request. This whole
 			// block is byte-identity-gated (I-4): unlike Phase 1, the pre-feature PD
 			// path applied NO MaxModelLen/budget cap, so caps fire ONLY when the
 			// feature is on (DecodeTokensPerStep != nil). Feature off ⇒ decodeTokens
 			// stays 1 and every line below is unchanged (BC-1/INV-6).
-			if ctx.DecodeTokensPerStep != nil {
+			if decodeTokens > 0 && ctx.DecodeTokensPerStep != nil {
 				decodeTokens = ctx.DecodeTokensPerStep(next)
 				// Output-budget cap (#1657): land exactly ON the completion boundary.
 				// Floored at 1 for the same reason the MaxModelLen cap below is: a
@@ -330,8 +337,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 					break
 				}
 			}
-			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
-				break
+			if decodeTokens > 0 {
+				if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {
+					break
+				}
 			}
 			dequeueAdmitted(ctx.WaitQ, next, skipped)
 			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)
