@@ -119,14 +119,13 @@ sessions.
 
 Every multi-instance cluster routes with the real llm-d router (the Endpoint Picker), embedded
 in-process. It reads a deployment's own EndpointPickerConfig, EPP flags and `InferencePool` /
-`InferenceObjective` manifests (`--epp-config`, `--epp-flags`, `--epp-manifests`); with none,
-it uses the router's built-in default configuration.
+`InferenceObjective` manifests, named by the scenario's `router:` block (and pod labels from
+`pools[].labels`); with none, it uses the router's built-in default configuration.
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 8 --rate 20 --num-requests 80 \
-  --epp-config examples/llm-d/prefix-affinity.yaml
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 8 --rate 20 --num-requests 80
 ```
 
 `--num-instances` cannot exceed the scenario pool's rank capacity (pool nodes × gpus_per_node /
@@ -159,12 +158,12 @@ KV handoff over the scenario's fabric.
 ./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
-  --epp-config examples/llm-d/pd.yaml \
   --rate 10 --num-requests 200
 ```
 
 Which requests are disaggregated is the router's decision: the EndpointPickerConfig's
-`disagg-profile-handler` and its P/D decider.
+`disagg-profile-handler` and its P/D decider. This scenario's `router:` block names one that
+disaggregates every request.
 
 → [Cluster simulation](docs/guide/cluster.md)
 

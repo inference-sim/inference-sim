@@ -437,8 +437,8 @@ func validateTopology(e *runner.Embedded, host cluster.GatewayHost) error {
 		}
 	}
 	return errors.New("the deployment has prefill and decode pools, but the router configuration has no " +
-		"disagg-profile-handler, so the router would serve every request from one flat pool; pass a " +
-		"disaggregating configuration with --epp-config (for example examples/llm-d/pd.yaml)")
+		"disagg-profile-handler, so the router would serve every request from one flat pool; state a " +
+		"disaggregating configuration in the scenario's router block (endpoint_picker_config; for example examples/llm-d/pd.yaml)")
 }
 
 // inertEPPFlags are router flags that change how a deployed router is served or observed

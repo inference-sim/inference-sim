@@ -81,6 +81,7 @@ func TestBothCommands_EngineAndDeploymentKnobsAreNotFlags(t *testing.T) {
 		"kv-transfer-bandwidth", "kv-transfer-base-latency",
 		"pd-transfer-bandwidth", "pd-transfer-base-latency", "pd-transfer-contention",
 		"comm-serialization-factor", "enforce-eager",
+		"epp-flags", "epp-config", "epp-manifests", "pod-labels",
 	}
 	for _, c := range []struct {
 		name string
@@ -149,10 +150,9 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"num-instances", "long-prefill-token-threshold",
-		// llm-d router inputs (cmd/router.go): replay must accept the same router
+		// llm-d router environment flags (cmd/router.go): replay must accept the same router
 		// configuration run does (INV-13).
-		"epp-flags", "epp-config", "epp-manifests", "pod-labels",
-		"gateway-latency", "epp-scrape-jitter",
+		"gateway-latency", "epp-scrape-jitter", "kv-event-delay",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

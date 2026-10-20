@@ -230,13 +230,14 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
-Replay also accepts the shared simulation flags `blis run` keeps — the llm-d router inputs (`--epp-flags`, `--epp-config`, `--epp-manifests`, `--pod-labels`, `--gateway-latency`, `--epp-scrape-jitter`), scheduling, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
+Replay also accepts the shared simulation flags `blis run` keeps — the llm-d router's environment flags (`--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay`; its deployment inputs are the scenario's `router:` block and pool labels), scheduling, `--num-instances`, P/D topology, LoRA, `--speculative-acceptance-rate`, KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
 
 A trace exported by `blis run` records the router inputs in its header (with any
-`--config-file` inlined). Replay rebuilds that router when no router flag is given; router
-flags that differ from the recorded router are refused. A trace without a recorded router (one
-from `blis observe` or `blis convert`) routes with the router the command line names, or the
-router's default configuration.
+configuration inlined). Replay rebuilds that router. A replay scenario that states a router
+(`router:` block or pool labels) must state the recorded one, and router environment flags must
+match the recorded ones; a difference is refused. A scenario that states no router replays the
+recorded one. A trace without a recorded router (one from `blis observe` or `blis convert`)
+routes with the router the scenario states, or the router's default configuration.
 
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from
@@ -730,13 +731,15 @@ The report uses two levels of analysis because they catch different problems. **
 - **Do not expect** `SchedulingDelay` to appear as a separately calibratable field in the calibration report. `blis calibrate` compares E2E and TTFT only — `scheduling_delay_ms` is not in `SimResult` (the format `blis replay` writes to `--results-path`). It is a simulator-internal diagnostic only.
 - **When scheduling delay matters:** If `blis run` or `blis replay` shows high scheduling delay (e.g., P99 > 500ms — exact thresholds are workload-dependent) **and** calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. When the observed deployment runs llm-d flow control, replay it in a cluster with the same
   EndpointPickerConfig (`featureGates: [flowControl]` and the deployment's `utilization-detector`
-  parameters, e.g. `queueDepthThreshold: 5`, `kvCacheUtilThreshold: 0.8`), then re-calibrate:
+  parameters, e.g. `queueDepthThreshold: 5`, `kvCacheUtilThreshold: 0.8`), named by the scenario's
+  `router.endpoint_picker_config` (here `flow-control.yaml` beside a copy of the scenario in
+  `my-scenarios/`), then re-calibrate:
 
     ```bash
     ./blis replay --trace-header trace.yaml --trace-data trace.csv \
       --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
-      --num-instances 2 --epp-config flow-control.yaml
+      --scenarios my-scenarios --registry $PWD/blis-registry \
+      --num-instances 2
     ```
 
     See [Admission Control](admission.md) for the flow-control configuration.

@@ -34,9 +34,8 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: cluster config
 		"num-instances",
 
-		// registerSimConfigFlags: the llm-d router's inputs (cmd/router.go)
-		"epp-flags", "epp-config", "epp-manifests", "pod-labels",
-		"gateway-latency", "epp-scrape-jitter",
+		// registerSimConfigFlags: the llm-d router's environment (cmd/router.go); its deployment inputs are the scenario's
+		"gateway-latency", "epp-scrape-jitter", "kv-event-delay",
 
 		// registerSimConfigFlags: priority, scheduler, and preemption
 		"scheduler", "preemption-policy",
@@ -1482,7 +1481,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		"--trace-header", headerPath, "--trace-data", dataPath,
 		"--num-instances", "4",
 		"--prefill-instances", "3", "--decode-instances", "1",
-		"--epp-config", pdAlwaysEPPConfig,
 		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
@@ -1621,7 +1619,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--num-instances", "2",
 			"--prefill-instances", "4", "--decode-instances", "0",
-			"--epp-config", pdAlwaysEPPConfig,
 			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)

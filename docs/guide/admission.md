@@ -18,17 +18,19 @@ up the `InferenceObjective` of that name; a request whose objective it does not 
 priority 0. A priority below 0 makes a request **sheddable**.
 
 The router reconciles `InferenceObjective` objects only for an `InferencePool`, so priorities
-apply when the EPP flags select a pool with `--pool-name` and the manifests (`--epp-manifests`)
-carry the pool and its objectives. With the default standalone pool (`--endpoint-selector`),
+apply when the EPP flags (`router.epp_flags`) select a pool with `--pool-name` and the manifests
+(`router.manifests`) carry the pool and its objectives. With the default standalone pool (`--endpoint-selector`),
 every request has priority 0 and nothing is sheddable.
 `examples/llm-d/inferencepool.yaml` holds a pool over every simulated pod and one objective per
-BLIS SLO class, at the same priorities as BLIS's engine SLO priority map; select it with
-`examples/llm-d/pool-flags.yaml`:
+BLIS SLO class, at the same priorities as BLIS's engine SLO priority map. A scenario selects it
+with `--pool-name=blis-pool --pool-namespace=default` in `router.epp_flags` and names it in
+`router.manifests`, as `examples/llm-d/scenarios/llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml`
+does:
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --num-instances 2 --workload-spec my-workload.yaml \
-  --epp-flags examples/llm-d/pool-flags.yaml --epp-manifests examples/llm-d/inferencepool.yaml
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
+  --scenarios examples/llm-d/scenarios \
+  --registry $PWD/blis-registry --num-instances 2 --workload-spec my-workload.yaml
 ```
 
 | SLO class | Objective priority | Sheddable |

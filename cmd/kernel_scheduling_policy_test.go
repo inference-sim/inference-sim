@@ -235,7 +235,7 @@ func TestRunCmd_PDSchedulerOverrideIsRecordedPerPool(t *testing.T) {
 		"      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      gpu_memory_utilization: 0.9\n      scheduling_policy: fcfs\n\npd_transfer")
 	path := filepath.Join(t.TempDir(), "metrics.json")
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--epp-config", pdAlwaysEPPConfig,
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1",
 		"--num-requests", "4", "--rate", "2", "--scheduler", "fcfs", "--metrics-path", path)
 	if err != nil {
@@ -276,7 +276,7 @@ func pdPolicyVariant(t *testing.T, prefillPolicy, decodePolicy string) string {
 
 // pdPolicyRunArgs is a 3P1D mixed-priority run of the scenario in dir.
 func pdPolicyRunArgs(t *testing.T, dir string) []string {
-	return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--epp-config", pdAlwaysEPPConfig,
+	return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "11",
 		"--workload-spec", mixedPriorityWorkload(t, 80, 512, 128)}
 }

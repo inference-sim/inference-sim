@@ -254,7 +254,7 @@ Every experiment must be reproducible from its artifacts alone:
 - No manual steps between script invocation and results
 
 ### ED-6: Config diff against reference experiments
-When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag, YAML field and router configuration file** (`--epp-config`, `--epp-flags`, `--epp-manifests`) between the two experiments. Document any differences. Even a single changed setting (e.g., the routing configuration) can invalidate the calibration.
+When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag, YAML field and router configuration file** (the scenario's `router:` block and the files it names) between the two experiments. Document any differences. Even a single changed setting (e.g., the routing configuration) can invalidate the calibration.
 
 Evidence: H10 routed with a least-loaded policy while H8 used round-robin (BLIS-native routing policies at the time). This shifted the preemption cliff, producing zero preemptions where H8 found 11%. The mismatch was not caught until post-publication code review.
 

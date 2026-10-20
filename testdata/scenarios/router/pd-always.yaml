@@ -1,6 +1,6 @@
 # llm-d's deploy/config/pd-epp-config.yaml with the always-disagg-pd-decider in place of the
 # prefix-based one: every request is disaggregated (prefill on a prefill-role pod, decode on a
-# decode-role pod). Tests that exercise the P/D path pass this with --epp-config.
+# decode-role pod). The P/D scenarios here name it in their router block.
 apiVersion: llm-d.ai/v1
 kind: EndpointPickerConfig
 plugins:

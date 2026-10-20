@@ -109,7 +109,8 @@ Check the output for clues:
 ## Step 5: Compare Router Configurations
 
 Every cluster run routes with the llm-d router; its configuration is an EndpointPickerConfig
-passed with `--epp-config` (see [Routing](../guide/routing.md)). With 4 instances at 40 req/s
+named by the scenario's `router:` block (see [Routing](../guide/routing.md)); the scenarios in
+`examples/llm-d/scenarios/` name the configurations in `examples/llm-d/`. With 4 instances at 40 req/s
 (near saturation), compare the router's built-in default configuration (queue, KV-cache
 utilization and prefix-cache scorers) with a load-only configuration:
 
@@ -122,20 +123,18 @@ utilization and prefix-cache scorers) with a load-only configuration:
 
 # Load-only: queue-scorer and kv-cache-utilization-scorer
 ./blis run \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --rate 40 --num-requests 4000 \
-  --epp-config examples/llm-d/load-only.yaml
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node-load-only.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 4 --rate 40 --num-requests 4000
 ```
 
 With uniform workloads (same prompt/output distribution), router configurations produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with **heterogeneous workloads**. Prefix-cache scoring pulls same-prefix requests onto the instance that already caches the prefix — which helps when there are many prefix groups, and can hurt when there is only one:
 
 ```bash
 ./blis run \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
   --num-instances 4 --rate 40 --num-requests 4000 \
-  --epp-config examples/llm-d/prefix-affinity.yaml \
   --prefix-tokens 512
 ```
 

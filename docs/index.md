@@ -69,7 +69,7 @@ directly to WaitQueue. See [Architecture](concepts/architecture.md).
 |---|---|---|
 | Latency pricing | The scenario fixes the deployment; the kernel prices every step, memory budget and transfer. | [Latency model](guide/latency-models.md) |
 | Workloads | Catalog presets, token distributions, multi-client YAML specs, closed-loop sessions. | [Workloads](guide/workloads.md) |
-| Routing | The real llm-d router (EPP) embedded in-process, configured by a deployment's own EndpointPickerConfig, flags and manifests (`--epp-config`, `--epp-flags`, `--epp-manifests`). | [Routing](guide/routing.md) |
+| Routing | The real llm-d router (EPP) embedded in-process, configured by a deployment's own EndpointPickerConfig, flags and manifests, named by the scenario's `router:` block. | [Routing](guide/routing.md) |
 | Admission and flow control | The llm-d router's admission and flow control (`featureGates: [flowControl]`); SLO goodput. | [Admission](guide/admission.md) |
 | Scheduling and preemption | Per-instance schedulers and preemption policies. | [Scheduling](guide/scheduling.md) |
 | P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |

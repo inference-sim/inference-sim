@@ -48,6 +48,7 @@ var removedRunFlags = []string{
 	"--kv-transfer-bandwidth", "--kv-transfer-base-latency",
 	"--pd-transfer-bandwidth", "--pd-transfer-base-latency", "--pd-transfer-contention",
 	"--comm-serialization-factor", "--enforce-eager",
+	"--epp-flags", "--epp-config", "--epp-manifests", "--pod-labels",
 }
 
 // TestDocExamplesPassDeploymentFlags: the deployment comes from a kernel scenario, so every

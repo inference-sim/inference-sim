@@ -61,7 +61,7 @@ func TestRunCmd_KernelBackend_KVOffloadUnderPrefixPressure(t *testing.T) {
 	}{
 		{"colocated", 48, 192, []string{"run", "--scenario", "glm-5-h200-fp8-sglang-tp8.yaml"}},
 		{"disaggregated", 96, 384, []string{"run", "--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
-			"--epp-config", pdAlwaysEPPConfig, "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}},
+			"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := tt.requests

@@ -378,7 +378,7 @@ const pdScenarios = "../testdata/scenarios"
 // and a per-role flag restating the scenario are each refused.
 func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 	pd := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
-		"--epp-config", pdAlwaysEPPConfig, "--num-requests", "30", "--rate", "6", "--seed", "1"}
+		"--num-requests", "30", "--rate", "6", "--seed", "1"}
 	for _, tt := range []struct {
 		name    string
 		args    []string
@@ -751,6 +751,10 @@ func writeScenarioVariant(t *testing.T, edits ...string) string {
 		}
 		body = strings.Replace(body, edits[i], edits[i+1], 1)
 	}
+	// The fixture's router block names its configuration relative to the fixture; the variant
+	// lives elsewhere, so it names the same file by absolute path.
+	body = strings.Replace(body, "endpoint_picker_config: "+pdAlwaysEPPConfig,
+		"endpoint_picker_config: "+absPath(t, filepath.Join(pdScenarios, pdAlwaysEPPConfig)), 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -762,7 +766,7 @@ func writeScenarioVariant(t *testing.T, edits ...string) string {
 // scenario did not describe; and what it accepts at the boundary.
 func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 	pd := func(dir string, extra ...string) []string {
-		return append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--epp-config", pdAlwaysEPPConfig,
+		return append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--num-requests", "6", "--rate", "3"}, extra...)
 	}
 	topology := []string{"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}
@@ -828,7 +832,7 @@ func lastLines(s string, n int) string {
 // (INV-13): replay opens the same pools, prices the same handoffs, and places the same ranks.
 func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
-	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--epp-config", pdAlwaysEPPConfig,
+	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "9",
 		"--horizon", "600000000"}
 	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "24", "--rate", "6",
@@ -856,7 +860,7 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 	dir := writeScenarioVariant(t,
 		"      gpu_memory_utilization: 0.9\n  - role: decode", draft+"  - role: decode",
 		"      gpu_memory_utilization: 0.9\n\npd_transfer", draft+"\npd_transfer")
-	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--epp-config", pdAlwaysEPPConfig,
+	common := []string{"--scenarios", dir, "--scenario", "variant.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "4",
 		"--horizon", "600000000"}
 	var prevE2E, firstE2E float64
@@ -903,7 +907,7 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 // tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
 // completes, and its exported trace replays byte-identically (INV-13).
 func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
-	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml", "--epp-config", pdAlwaysEPPConfig,
+	common := []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
 		"--horizon", "600000000"}
 	for _, tt := range []struct {

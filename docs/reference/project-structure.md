@@ -9,7 +9,7 @@ inference-sim/
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --workload-spec, --trace-level, --counterfactual-k, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --trace-output, --preemption-policy)
-│   ├── router.go              # The llm-d router's inputs on run and replay (--epp-flags, --epp-config, --epp-manifests, --pod-labels, --gateway-latency, --epp-scrape-jitter); records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
+│   ├── router.go              # The llm-d router's inputs: the scenario's router block and pool labels, plus --gateway-latency, --epp-scrape-jitter, --kv-event-delay on run and replay; records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
 │   ├── kernel_pools.go        # Builds each pool's deployment from the scenario: one blis-latency-kernel per pool, engine settings and KV budget from the scenario + kernel, P/D handoff priced by the kernel
 │   ├── kv_offload.go          # --kv-offload-config loading; each tier's device_class resolves against the catalog and the kernel prices the transfer
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go

@@ -1,4 +1,4 @@
-# pd-always.yaml under flow control with in-flight eviction: a revoked disaggregated request is
+# testdata/scenarios/router/pd-always.yaml under flow control with in-flight eviction: a revoked disaggregated request is
 # stopped at the stage it is in (its prefill, its KV transfer, or its decode).
 apiVersion: llm-d.ai/v1
 kind: EndpointPickerConfig

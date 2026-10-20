@@ -20,8 +20,9 @@ import (
 // clean tree and records "dirty": false as a CI checkout does). The router can only pick the one instance, and with the default configuration it
 // admits every request on arrival, so nothing a user reads may change.
 //
-// Regenerate with scripts/regen-main-single-goldens.sh (only when main's own single-instance output
-// changes, e.g. a kernel release); by hand:
+// Regenerate with `scripts/regen-main-single-goldens.sh 63ffc020` (only when main's own
+// single-instance output changes, e.g. a kernel release): it applies the bump to that commit itself
+// and reproduces these files byte for byte except the masked catalog "revision". By hand:
 //
 //	blis run --scenario <s> --scenarios <kernel testdata/aisimulate> --catalog testdata/catalog \
 //	  --registry testdata/registry --defaults-filepath defaults.yaml --num-instances 1 --rate 10 \

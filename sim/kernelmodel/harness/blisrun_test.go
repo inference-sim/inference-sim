@@ -27,7 +27,7 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 			MaxModelLen: 9472, GPUMemoryUtilization: 0.9, EnableExpertParallel: false},
 	} {
 		dst := filepath.Join(t.TempDir(), name)
-		if err := writeScenarioVariant(src, dst, pc); err != nil {
+		if err := writeScenarioVariant(src, dst, pc, nil); err != nil {
 			t.Fatalf("writeScenarioVariant: %v", err)
 		}
 		wantSc, wantDep, err := latencykernel.LoadBundle(src)
@@ -75,26 +75,51 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 	}
 }
 
+// Every point routes like vLLM's data-parallel balancer: the variant's router block names that
+// configuration, which `blis replay` reads from the scenario (#1950), and a committed scenario
+// that already states a router block is refused rather than overwritten.
+func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
+	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
+	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
+	pc := PointConfig{MaxNumSeqs: 8, MaxNumBatchedTokens: 4096, BlockSize: 16, MaxModelLen: 2048, GPUMemoryUtilization: 0.9}
+	want := &deployment.Router{EndpointPickerConfig: vllmDPLoadBalancerFile}
+	dst := filepath.Join(t.TempDir(), name)
+	if err := writeScenarioVariant(src, dst, pc, want); err != nil {
+		t.Fatalf("writeScenarioVariant: %v", err)
+	}
+	_, dep, err := latencykernel.LoadBundle(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dep.Router, want) {
+		t.Errorf("variant router block %+v, want %+v", dep.Router, want)
+	}
+	if err := writeScenarioVariant(dst, filepath.Join(t.TempDir(), name), pc, want); err == nil ||
+		!strings.Contains(err.Error(), "states a router block") {
+		t.Errorf("a scenario already stating a router block: got %v, want a refusal", err)
+	}
+}
+
 // The command line is a user's `blis replay` in pool mode: CONC concurrent one-round sessions,
 // every trace record replayed once and in order. It names no data-parallel width (the command
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
 func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	cfg := Config{Repos: testRepos(), Seed: 7}
-	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", "/d/epp.yaml", 40, 4)
+	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", 40, 4)
 	if args[0] != "replay" {
 		t.Fatalf("first argument %q, want replay", args[0])
 	}
 	line := strings.Join(args, " ")
 	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--trace-header /d/t.yaml",
 		"--trace-data /d/t.csv", "--session-mode closed-loop", "--concurrent-sessions 4",
-		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7", "--epp-config /d/epp.yaml",
+		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7",
 		"--catalog " + cfg.Repos.Catalog, "--registry " + cfg.Repos.Registry} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q lacks %q", line, want)
 		}
 	}
 	for _, banned := range []string{"--dp", "--num-instances", "--max-num-running-reqs", "--max-num-scheduled-tokens",
-		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon"} {
+		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon", "--epp-"} {
 		if strings.Contains(line, banned) {
 			t.Errorf("%q passes %s; the scenario and the trace are the only sources of the point", line, banned)
 		}
@@ -170,7 +195,7 @@ func TestAnAutoWindowReachesTheVariantAndIsRefused(t *testing.T) {
 	pc := PointConfig{MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, BlockSize: 16,
 		MaxModelLen: deployment.MaxModelLen(-1), GPUMemoryUtilization: 0.9}
 	dst := filepath.Join(t.TempDir(), name)
-	if err := writeScenarioVariant(src, dst, pc); err != nil {
+	if err := writeScenarioVariant(src, dst, pc, nil); err != nil {
 		t.Fatalf("writeScenarioVariant: %v", err)
 	}
 	_, dep, err := latencykernel.LoadBundle(dst)

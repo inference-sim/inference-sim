@@ -304,7 +304,7 @@ P99 diverges from mean sharply near saturation. A workload at 90% capacity may s
 
 The router scores endpoints from metrics it scrapes every `--refresh-metrics-interval` (an EPP
 flag). Between scrapes it sees stale queue and KV-cache values, so load-only configurations can
-send bursts to the same endpoint. Shorten the interval in `--epp-flags`, or add a scorer fed by the
+send bursts to the same endpoint. Shorten the interval in the scenario's `router.epp_flags`, or add a scorer fed by the
 router's own in-flight accounting (`active-request-scorer`), to reduce the effect.
 
 ### Configuration Equivalence at Low Load
