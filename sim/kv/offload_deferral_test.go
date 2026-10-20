@@ -267,6 +267,83 @@ func TestDeferral_RePollAtStepBoundaryNotCompletion(t *testing.T) {
 	}
 }
 
+// NextDeferralWake names the next tick at which a still-deferred request can change
+// state, so an idle scheduler can sleep until then instead of stepping 1 tick at a
+// time: none without pending deferrals, the next round for a deferRetry, the
+// earliest transfer completion while promoting, the R19 deadline if nothing is in
+// flight. Waking at the reported tick must be enough to admit (no step in between).
+func TestDeferral_NextDeferralWake(t *testing.T) {
+	const step = int64(1000)
+	tokens := []sim.TokenID{1, 2, 3, 4}
+
+	t.Run("no deferrals", func(t *testing.T) {
+		oc := deferOC(80, 7000)
+		if _, ok := oc.NextDeferralWake(step); ok {
+			t.Fatal("no deferred requests: there is nothing to wake for")
+		}
+	})
+
+	t.Run("deferRetry needs the next round", func(t *testing.T) {
+		oc := deferOC(80, 7000)
+		seedSecondary(oc, tokens)
+		oc.SetClock(step)
+		oc.PollDeferred(step)
+		if oc.AllocateKVBlocks(&sim.Request{ID: "r", InputTokens: tokens}, 0, 4, nil) {
+			t.Fatal("a cold secondary hit must defer")
+		}
+		if got, ok := oc.NextDeferralWake(step); !ok || got != step+1 {
+			t.Fatalf("deferRetry: wake = (%d, %v), want (%d, true)", got, ok, step+1)
+		}
+	})
+
+	t.Run("promoting wakes at the transfer completion", func(t *testing.T) {
+		oc := deferOC(80, 10) // slow disk: service ≫ 1 tick, so the wake must skip ahead
+		keys := seedSecondary(oc, tokens)
+		oc.markKnown(keys) // warm: promotion submitted at deferral time
+		req := &sim.Request{ID: "r", InputTokens: tokens}
+		oc.SetClock(step)
+		oc.PollDeferred(step)
+		if oc.AllocateKVBlocks(req, 0, 4, nil) {
+			t.Fatal("a warm secondary hit must defer while its promotion is in flight")
+		}
+		want, inFlight := oc.station.NextCompletion()
+		if !inFlight || want <= step+1 {
+			t.Fatalf("test setup: promotion must be in flight and slower than one tick, completion=(%d, %v)", want, inFlight)
+		}
+		got, ok := oc.NextDeferralWake(step)
+		if !ok || got != want {
+			t.Fatalf("promoting: wake = (%d, %v), want the completion tick (%d, true)", got, ok, want)
+		}
+		// Jumping straight there is enough: the promotion has landed and the request admits.
+		oc.SetClock(got)
+		if still := oc.PollDeferred(got); len(still) != 0 {
+			t.Fatalf("at the wake tick the deferral must resolve, still deferred: %v", still)
+		}
+		if !oc.AllocateKVBlocks(req, 0, 4, nil) {
+			t.Fatal("at the wake tick the request must admit")
+		}
+	})
+
+	t.Run("nothing in flight wakes at the R19 deadline", func(t *testing.T) {
+		oc := deferOC(80, 7000)
+		const start = int64(500)
+		oc.deferred["stuck"] = &deferralState{phase: deferPromoting, tier: -1, startTick: start}
+		got, ok := oc.NextDeferralWake(start)
+		if !ok || got != start+maxDeferTicks+1 {
+			t.Fatalf("stuck deferral: wake = (%d, %v), want the backstop tick (%d, true)", got, ok, start+maxDeferTicks+1)
+		}
+	})
+
+	t.Run("resolved and recompute states are not waited on", func(t *testing.T) {
+		oc := deferOC(80, 7000)
+		oc.deferred["done"] = &deferralState{phase: deferPromoting, resolved: true}
+		oc.deferred["miss"] = &deferralState{phase: deferPromoting, recompute: true}
+		if _, ok := oc.NextDeferralWake(step); ok {
+			t.Fatal("terminal deferral states admit on the next examination: nothing to wait for")
+		}
+	})
+}
+
 // INV-6 determinism: with several requests deferred concurrently against one disk,
 // PollDeferred's sorted-ID side-effect order makes station JobID assignment (and
 // therefore completion order and admission rounds) identical across runs.
