@@ -1,7 +1,7 @@
 # Vendored blis-catalog subset
 
 A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) release
-**`0.2.2`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
+**`0.3.0`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
 tests can resolve models, presets, chips and devices offline. Nothing here is edited: a file is
 either copied unchanged from that release or absent. Operators do not use this copy; they clone
 the release and point `--catalog` / `BLIS_CATALOG` at it
@@ -21,8 +21,8 @@ The release is not chosen here. blis-latency-kernel's `testdata/upstream.lock` p
 and registry its fixtures resolve against, and
 `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/kernelmodel`) fails when this
 copy's `.upstream-commit` differs from it. While a pinned kernel pre-release lags the unreleased catalog it was developed against,
-`testdata/upstream-prerelease.lock` names that commit instead (currently `dsv41/agentx-workload`
-`7e08580`); the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`
+`testdata/upstream-prerelease.lock` names that commit instead (none now: the file is absent);
+the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`
 (`cmd`) requires the copy to load with no problems through the production readers.
 
 ## Updating

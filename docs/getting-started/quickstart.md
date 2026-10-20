@@ -18,10 +18,10 @@ Every `blis run` / `blis replay` needs three things besides the binary:
   `--scenario <file name>` from `--scenarios <dir>`.
 
 ```bash
-git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
-export SCENARIOS=$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate
+export SCENARIOS=$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate
 ```
 
 A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is the kernel

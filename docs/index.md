@@ -18,11 +18,11 @@ deterministic: the same seed produces byte-identical results, and no GPU is need
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-git clone --branch 0.2.2 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.1.2 --depth 1 https://github.com/inference-sim/blis-registry.git
+git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
+git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate \
+  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate \
   --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
@@ -30,7 +30,7 @@ export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
 `blis run` and `blis replay` need a catalog (`--catalog` or `BLIS_CATALOG`, no default), a
 registry (`--registry`), a scenario directory (`--scenarios`, any directory of scenario YAMLs)
 and a scenario file name within it (`--scenario`). The kernel module's own scenarios are at
-`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.2.0/testdata/aisimulate`;
+`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`;
 `testdata/scenarios/` in this repository adds a P/D and an MTP example. The clones pin the
 releases BLIS is tested against — see
 [Catalog compatibility](getting-started/installation.md#catalog-compatibility).
