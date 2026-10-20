@@ -94,8 +94,8 @@ func TestAdoptKernelDeployment_SchedulingPolicySetsQueueOrderAndPreemption(t *te
 		{"fcfs", "fcfs", "fcfs", nil},
 		{"priority", "priority-fcfs", "fcfs", []string{"--preemption-policy", "fcfs"}},
 	} {
-		dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
-			"      gpu_memory_utilization: 0.9\n      scheduling_policy: "+tt.policy+"\n")
+		dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+			"      gpu_memory_utilization: 0.92\n      scheduling_policy: "+tt.policy+"\n")
 		cmd := &cobra.Command{}
 		registerSimConfigFlags(cmd)
 		if err := cmd.ParseFlags(append([]string{"--scenario", "variant.yaml", "--scenarios", dir,
@@ -119,7 +119,7 @@ func TestAdoptKernelDeployment_SchedulingPolicySetsQueueOrderAndPreemption(t *te
 // preemption against an explicit --preemption-policy fcfs -- critical requests do no worse with
 // priority preemption, and batch requests pay for it. Non-vacuous: the run preempts.
 func TestRunCmd_PrioritySchedulingPolicyPreemptsTheLeastUrgent(t *testing.T) {
-	dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.9\n",
+	dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
 		"      gpu_memory_utilization: 0.22\n      scheduling_policy: priority\n")
 	args := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--seed", "11",
 		"--workload-spec", mixedPriorityWorkload(t, 120, 6000, 600)}
