@@ -1,0 +1,51 @@
+# Kimi-K3 on four 8-GPU H200 nodes (32 GPUs), TP8 x DP4 with expert parallelism over 400G
+# InfiniBand, MTP drafting two tokens a step. A frontier-model, multi-node example.
+#
+# Deployment from InferenceX (kimi-k3 tp8dp4ep32 balanced agentic recipe; exp-id 438893):
+# gpu-memory-utilization 0.95, max-num-seqs 8, max-num-batched-tokens 4096, MTP K=2,
+# acceptance_rate (2.51 - 1) / 2 = 0.755, pinned in the scenario.
+kind: Scenario
+name: kimi-k3-h200-tp8dp4ep32-balanced
+engine_version: "0.31.0"
+
+model: kimi-k3
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+acceptance:
+  value:
+    num_spec_tokens: 2
+    acceptance_rate: 0.755
+    source: "SemiAnalysisAI/InferenceX agg-h200-tp8dp4ep32-balanced-agentic.yaml@5621849 (exp-id 438893): synthetic_acceptance_length 2.51, num_speculative_tokens 2 => alpha (2.51-1)/2 = 0.755"
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: kimi-k3-h200-tp8dp4ep32-balanced
+
+pools:
+  - role: colocated
+    nodes: 4
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 4
+      dp_local: 1
+      enable_expert_parallel: true
+      data_parallel_load_balancing: external
+    engine:
+      cache_dtype: fp8
+      block_size: 64
+      max_num_seqs: 8
+      max_num_batched_tokens: 4096
+      max_model_len: 262144
+      gpu_memory_utilization: 0.95
+      cudagraph_mode: PIECEWISE
+      all2all_backend: deepep_high_throughput
+      enable_prefix_caching: true
+      speculative:
+        method: mtp
+        num_spec_tokens: 2
