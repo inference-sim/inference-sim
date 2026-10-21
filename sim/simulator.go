@@ -1281,6 +1281,11 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 	// preempted before it prefills again. TTFTSum and TotalOutputTokens are computed at
 	// completion time in recordRequestCompletion to avoid double-counting when a preempted
 	// request re-runs from ProgressIndex=0.
+	//
+	// R21: range is safe here only because this loop and its callees mutate request
+	// fields, never the length of RunningBatch.Requests (preemption is in FormBatch,
+	// completion removal in processCompletions). If the body ever preempts or evicts,
+	// convert to an index-based loop that re-reads len() each pass, as FormBatch Phase 1 does.
 	for _, req := range sim.RunningBatch.Requests {
 		if end := req.PrefillEnd(); req.ProgressIndex < end {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
