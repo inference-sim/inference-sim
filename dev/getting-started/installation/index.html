@@ -3458,19 +3458,17 @@ is what the <em>documentation</em> promises, not a restriction the binary enforc
 (two documents) that states the model, the cluster's hardware, fabric, nodes and GPUs per
 node, the coefficient sets that price it, the engine version, and each pool's role,
 parallelism and engine settings. <code>--scenarios &lt;dir&gt;</code> is any directory of scenario YAMLs and
-<code>--scenario &lt;file name&gt;</code> picks one in it. Two directories are ready to use:</p>
-<ul>
-<li>the kernel module's own fixtures, downloaded by <code>go build</code>, at
-  <code>$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate</code>;</li>
-<li><code>testdata/scenarios/</code> in this repository: <code>glm-5-h200-3p1d-ib.yaml</code> (P/D) and
-  <code>glm-5-h200-tp8-mtp3.yaml</code> (MTP speculative decoding; it drafts tokens, so a run must also
-  state its acceptance -- <code>--speculative-acceptance-rate</code>, e.g. <code>0.7</code>, or select a registry
-  profile; see <a href="../../guide/latency-models/#speculative-acceptance-1939">Latency Models</a>).</li>
-</ul>
+<code>--scenario &lt;file name&gt;</code> picks one in it. This repository ships ready-to-run scenarios in
+<code>examplescenarios/</code> (speculative ones pin their acceptance, so no <code>--speculative-*</code> flag is
+needed): <code>deepseek-v4.1-flash-h100-tp8-dspark5.yaml</code> (the quickstart), an MoE
+<code>gpt-oss-120b-h100-fp4-vllm-tp2.yaml</code>, a <code>deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml</code>, a P/D
+<code>glm-5-h200-3p1d-ib.yaml</code>, and a multi-node <code>kimi-k3-h200-tp8dp4ep32-balanced.yaml</code>. See
+<a href="https://github.com/inference-sim/inference-sim/tree/main/examplescenarios"><code>examplescenarios/README.md</code></a>
+for details.</p>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenarios<span class="w"> </span><span class="k">$(</span>go<span class="w"> </span>env<span class="w"> </span>GOMODCACHE<span class="k">)</span>/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span>--catalog<span class="w"> </span>blis-catalog<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenarios<span class="w"> </span>examplescenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenario<span class="w"> </span>deepseek-v4.1-flash-h100-tp8-dspark5.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span>--catalog<span class="w"> </span><span class="nv">$PWD</span>/blis-catalog<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--num-requests<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
 <p><code>blis</code> carries the repository's <code>defaults.yaml</code> (the LoRA cost constants) compiled in, so it runs
