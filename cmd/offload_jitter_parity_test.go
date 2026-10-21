@@ -46,7 +46,7 @@ func TestINV13_RunReplayParity_Offload_Jitter(t *testing.T) {
 	cfg := jitterRampOffloadCfg(t, fixedSeed)
 	dir := t.TempDir()
 
-	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
+	cs1 := newRoutedCluster(cfg, requests)
 	if err := cs1.Run(); err != nil {
 		t.Fatalf("direct run failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestINV13_RunReplayParity_Offload_Jitter(t *testing.T) {
 		t.Fatalf("LoadTraceV2Requests: %v", err)
 	}
 
-	cs2 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(replayReqs), nil)
+	cs2 := newRoutedCluster(cfg, replayReqs)
 	if err := cs2.Run(); err != nil {
 		t.Fatalf("replay run failed: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestINV6_OffloadJitter_RunTwiceIdentical(t *testing.T) {
 	// Fresh requests per run: the simulator mutates Request objects, so reusing the
 	// same pointers would confound the determinism check.
 	runOnce := func() (map[string]float64, map[string]float64) {
-		cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(makeSharedPrefixRequests(4)), nil)
+		cs := newRoutedCluster(cfg, makeSharedPrefixRequests(4))
 		if err := cs.Run(); err != nil {
 			t.Fatalf("run failed: %v", err)
 		}

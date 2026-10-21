@@ -41,6 +41,11 @@ type secondaryTier struct {
 	// engines counts the engines on the tier: each brings its own read and write threads.
 	engines int
 	cfg     kvtransfer.TierConfig
+	// notify holds, per engine that publishes KV events for the tier (vLLM's per-tier
+	// enable_kv_events), the callback told each block that lands in (removed=false) or leaves the
+	// tier. A shared tier (sim.OffloadTierShares) tells every publishing engine on it: each of
+	// them can read the block from the shared files.
+	notify []func(key kvkey.BlockKey, removed bool)
 }
 
 // tierJob is one in-flight transfer on a tier and the engine that submitted it. A Read
@@ -95,9 +100,20 @@ func (s *secondaryTier) store(key kvkey.BlockKey) {
 		return
 	}
 	s.holds[key] = struct{}{}
+	for _, n := range s.notify {
+		n(key, false)
+	}
 }
 
-func (s *secondaryTier) drop(key kvkey.BlockKey) { delete(s.holds, key) }
+func (s *secondaryTier) drop(key kvkey.BlockKey) {
+	if _, had := s.holds[key]; !had {
+		return
+	}
+	delete(s.holds, key)
+	for _, n := range s.notify {
+		n(key, true)
+	}
+}
 
 func (s *secondaryTier) has(key kvkey.BlockKey) bool {
 	_, ok := s.holds[key]

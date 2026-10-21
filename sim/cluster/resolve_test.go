@@ -230,9 +230,7 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
 		PDTransferTime:   testPDTransferTime,
-		RoutingPolicy:    "round-robin",
 		PrefillOverrides: PoolOverrides{TP: &prefillTP},
 		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
 	}
@@ -279,9 +277,7 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
 		PDTransferTime:   testPDTransferTime,
-		RoutingPolicy:    "round-robin",
 		// No PrefillOverrides or DecodeOverrides — zero valued
 	}
 
@@ -313,9 +309,7 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
 		PDTransferTime:   testPDTransferTime,
-		RoutingPolicy:    "round-robin",
 		PrefillOverrides: PoolOverrides{TotalKVBlocks: &prefillKV},
 		DecodeOverrides:  PoolOverrides{TotalKVBlocks: &decodeKV},
 	}
@@ -525,9 +519,7 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 		NumInstances:     numInstances,
 		PrefillInstances: prefill,
 		DecodeInstances:  decode,
-		PDDecider:        "always",
 		PDTransferTime:   testPDTransferTime,
-		RoutingPolicy:    "round-robin",
 		PrefillOverrides: prefillOverrides,
 		DecodeOverrides:  decodeOverrides,
 	}
@@ -722,8 +714,6 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
-		RoutingPolicy:    "round-robin",
 		PrefillOverrides: PoolOverrides{TP: &zero}, // invalid: TP=0
 	}
 
@@ -760,8 +750,6 @@ func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 		},
 		NumInstances:    3,
 		SharedInstances: 3, // all instances are prefill-decode shared-role
-		PDDecider:       "always",
-		RoutingPolicy:   "round-robin",
 		PDTransferTime:  testPDTransferTime,
 	}
 
@@ -797,8 +785,6 @@ func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
-		RoutingPolicy:    "round-robin",
 		DecodeOverrides:  PoolOverrides{TP: &zero}, // invalid: TP=0
 	}
 
@@ -838,9 +824,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 		NumInstances:     4,
 		PrefillInstances: 2,
 		DecodeInstances:  2,
-		PDDecider:        "always",
 		PDTransferTime:   testPDTransferTime,
-		RoutingPolicy:    "round-robin",
 		PrefillOverrides: PoolOverrides{TotalKVBlocks: &prefillKV},
 		DecodeOverrides:  PoolOverrides{TotalKVBlocks: &decodeKV},
 	}

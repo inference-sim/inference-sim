@@ -56,18 +56,19 @@ clients:
         mean: 128
 ```
 
-Pair with weighted routing for cache-aware request distribution (the default profile uses `precise-prefix-cache`):
+In a cluster, the llm-d router's default configuration includes the `prefix-cache-scorer`, so
+follow-up turns tend to land on the instance that already caches the conversation (see
+[Routing](routing.md)):
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
-  --num-instances 4 --workload-spec chat.yaml \
-  --routing-policy weighted
+  --num-instances 4 --workload-spec chat.yaml
 ```
 
 ### RAG with Shared Prefixes
 
-Retrieval-augmented generation workloads share a common document context across requests. The `prefix_group` and `prefix_length` fields model this shared context, and prefix-aware routing (the default `precise-prefix-cache` scorer) ensures requests with the same prefix hit cached KV blocks on the same instance.
+Retrieval-augmented generation workloads share a common document context across requests. The `prefix_group` and `prefix_length` fields model this shared context, and prefix-aware routing (the llm-d router's `prefix-cache-scorer`) sends requests with the same prefix to the instance that caches it.
 
 ```yaml
 # rag.yaml
@@ -95,13 +96,12 @@ clients:
         mean: 64
 ```
 
-Run with weighted routing to maximize cache reuse (the default `precise-prefix-cache` scorer queries actual KV cache state):
+Run with a prefix-aware router configuration to maximize cache reuse:
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 4 --workload-spec rag.yaml \
-  --routing-policy weighted
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 4 --workload-spec rag.yaml
 ```
 
 ### Batch / Offline Processing
@@ -326,6 +326,10 @@ Requests can be tagged with SLO classes for per-class metric tracking:
 | `sheddable` | Can be dropped under load |
 | `batch` | Offline processing, latency-tolerant |
 | `background` | Lowest priority |
+
+In a cluster, the class reaches the llm-d router as the `x-llm-d-inference-objective` header,
+the name of an `InferenceObjective` whose priority drives the router's shedding and flow
+control; see [Admission Control](admission.md).
 
 !!! warning "All-or-nothing SLO class specification"
     If ANY client or cohort specifies `slo_class`, then ALL clients and cohorts must specify it. Mixed specifications (some explicit, some empty) are rejected during validation.
@@ -606,7 +610,7 @@ BLIS ships with example workload specs in `examples/`:
 
 | File | Description |
 |------|-------------|
-| `multiturn-chat-demo.yaml` | Multi-turn chat with prefix-aware weighted routing |
+| `multiturn-chat-demo.yaml` | Multi-turn chat with prefix-aware routing |
 | `prefix-affinity-demo.yaml` | Shared-prefix workload for cache testing |
 | `servegen-language.yaml` | ServeGen-derived language workload |
 | `inference-perf-shared-prefix.yaml` | inference-perf format compatibility |

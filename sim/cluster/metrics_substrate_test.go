@@ -41,9 +41,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
 			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
-		NumInstances:    numInstances,
-		RoutingPolicy:   "round-robin",
-		AdmissionPolicy: "always-admit",
+		NumInstances: numInstances,
 	}
 }
 

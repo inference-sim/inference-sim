@@ -110,6 +110,9 @@ func writeOffloadScenario(t *testing.T, dir, name, marker, offload string) strin
 	if err := os.WriteFile(filepath.Join(out, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(body, "endpoint_picker_config: "+pdAlwaysEPPConfig) {
+		withPDRouter(t, out)
+	}
 	return out
 }
 

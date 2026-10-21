@@ -77,7 +77,7 @@ func f() {
 			name: "ledger without CompletedRequests",
 			src: `package p
 func f() {
-	_ = m.StillQueued + m.StillRunning + cs.GatewayQueueDepth() + cs.GatewayQueueShed()
+	_ = m.StillQueued + m.StillRunning + cs.GatewayQueueDepth() + cs.GatewayQueueRejected()
 }`,
 			want: true,
 		},
@@ -97,7 +97,7 @@ func f() {
 			name: "non-vacuity floor over gateway counters",
 			src: `package p
 func f() {
-	shed := cs.GatewayQueueShed()
+	shed := cs.GatewayQueueRejected()
 	_ = len(requests) - shed
 }`,
 			want: false,
@@ -109,7 +109,7 @@ func f() {
 			name: "shed-accounting identity over cluster counters only",
 			src: `package p
 func f() {
-	_ = sum != snap.RejectedRequests + snap.GatewayQueueShed + snap.GatewayEvicted + snap.GatewayExpired
+	_ = sum != snap.RejectedRequests + snap.GatewayQueueRejected + snap.GatewayEvicted + snap.GatewayExpired
 }`,
 			want: false,
 		},
@@ -119,7 +119,7 @@ func f() {
 			name: "non-vacuity floor subtracting four gateway counters",
 			src: `package p
 func f() {
-	shed := cs.GatewayQueueShed()
+	shed := cs.GatewayQueueRejected()
 	rejected := cs.GatewayQueueRejected()
 	depth := cs.GatewayQueueDepth()
 	expired := cs.GatewayExpired()
@@ -237,16 +237,16 @@ func TestBucketAccessorsReturnCopies(t *testing.T) {
 }
 
 // TestBucketListsCoverTheEquation pins the bucket lists against INV-1's stated term
-// count: twelve terminal buckets, of which seven are cluster-only, plus
+// count: eleven terminal buckets, of which six are cluster-only, plus
 // RejectedRequests which belongs to the full-pipeline clause.
 func TestBucketListsCoverTheEquation(t *testing.T) {
 	if got := len(InstanceBuckets()); got != 5 {
 		t.Errorf("InstanceBuckets has %d entries, want 5 (INV-1's single-instance specialisation)", got)
 	}
-	if got := len(ClusterOnlyBuckets()); got != 8 {
-		t.Errorf("ClusterOnlyBuckets has %d entries, want 8 (seven cluster-only buckets plus RejectedRequests)", got)
+	if got := len(ClusterOnlyBuckets()); got != 7 {
+		t.Errorf("ClusterOnlyBuckets has %d entries, want 7 (six cluster-only buckets plus RejectedRequests)", got)
 	}
-	if got := len(InstanceBuckets()) + len(ClusterOnlyBuckets()) - 1; got != 12 {
-		t.Errorf("bucket lists cover %d of INV-1's twelve terms", got)
+	if got := len(InstanceBuckets()) + len(ClusterOnlyBuckets()) - 1; got != 11 {
+		t.Errorf("bucket lists cover %d of INV-1's eleven terms", got)
 	}
 }

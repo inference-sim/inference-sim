@@ -149,7 +149,7 @@ A good hypothesis is an intuitive claim about system behavior: "burst smoothing 
 
 Reading the code before hypothesizing is like writing structural tests — you end up testing the implementation, not the behavior. The value of hypothesis-driven experimentation is that *conceptual claims failing against the implementation* surfaces design limitations that code-aware experiments would avoid.
 
-Evidence: If H5 had read `admission.go:45` before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
+Evidence: If H5 had read the token-bucket admission code (`sim/admission.go:45` at the time) before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
 
 ### "Mechanism not plausible" is a valid resolution
 
@@ -254,9 +254,9 @@ Every experiment must be reproducible from its artifacts alone:
 - No manual steps between script invocation and results
 
 ### ED-6: Config diff against reference experiments
-When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag and YAML field** between the two experiments. Document any differences. Even a single changed flag (e.g., routing policy) can invalidate the calibration.
+When an experiment reuses calibration data from a prior experiment (e.g., "H8 found the preemption cliff at 2100 blocks, so we use 2100"), **diff every CLI flag, YAML field and router configuration file** (the scenario's `router:` block and the files it names) between the two experiments. Document any differences. Even a single changed setting (e.g., the routing configuration) can invalidate the calibration.
 
-Evidence: H10 used `--routing-policy least-loaded` while H8 used the default `round-robin`. This shifted the preemption cliff, producing zero preemptions where H8 found 11%. The mismatch was not caught until post-publication code review.
+Evidence: H10 routed with a least-loaded policy while H8 used round-robin (BLIS-native routing policies at the time). This shifted the preemption cliff, producing zero preemptions where H8 found 11%. The mismatch was not caught until post-publication code review.
 
 ---
 
@@ -278,7 +278,7 @@ Evidence: H10 claimed "CPU tier increases total effective capacity" — but `New
 
 Before labeling a result as "surprising," compute the expected value from the system's parameters. If the result matches the calculation, it is not a surprise — it is the expected outcome of a mechanism you didn't initially consider.
 
-Evidence: H5 labeled 96% rejection as a "surprise." But `admission.go:45` charges `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
+Evidence: H5 labeled 96% rejection as a "surprise." But the token-bucket admission (`sim/admission.go:45` at the time) charged `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
 
 ### RCV-3: Check the mechanism, not just the direction
 

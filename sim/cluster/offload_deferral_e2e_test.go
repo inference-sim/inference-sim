@@ -227,9 +227,8 @@ func TestClusterSimulator_SupersededIdleWake_DoesNotAdvanceClusterClock(t *testi
 
 	run := func() (*ClusterSimulator, *clockSampler) {
 		cfg := DeploymentConfig{
-			SimConfig:        offloadE2ECfgReadBW(7, 0.1), // ~123 ms per 3-block promotion
-			NumInstances:     2,
-			CacheSignalDelay: DefaultCacheSignalDelay,
+			SimConfig:    offloadE2ECfgReadBW(7, 0.1), // ~123 ms per 3-block promotion
+			NumInstances: 2,
 		}
 		cs := NewClusterSimulator(cfg, NewSliceRequestSource(cyclingPrefixWorkloadSpaced(7, 24, 4, 40_000)), nil)
 		// Interval 1 so a snapshot lands in essentially every loop iteration, including
@@ -325,7 +324,7 @@ func TestClusterSimulator_IdleWakeClampedToHorizon(t *testing.T) {
 	cfg := offloadE2ECfgReadBW(7, 0.1)
 	cfg.Horizon = horizon
 	cs := NewClusterSimulator(
-		DeploymentConfig{SimConfig: cfg, NumInstances: 1, CacheSignalDelay: DefaultCacheSignalDelay},
+		DeploymentConfig{SimConfig: cfg, NumInstances: 1},
 		NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 

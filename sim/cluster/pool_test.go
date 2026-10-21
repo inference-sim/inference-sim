@@ -3,8 +3,6 @@ package cluster
 import (
 	"strconv"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // TestValidatePoolTopology verifies BC-PD-2 (invalid pool configs return errors)
@@ -196,62 +194,6 @@ func instanceName(i int) string {
 	return "instance_" + strconv.Itoa(i)
 }
 
-// TestFilterSnapshotsByPool verifies snapshot filtering by pool role.
-func TestFilterSnapshotsByPool(t *testing.T) {
-	membership := map[string]PoolRole{
-		"instance_0": PoolRolePrefill,
-		"instance_1": PoolRolePrefill,
-		"instance_2": PoolRoleDecode,
-		"instance_3": PoolRoleDecode,
-	}
-	snapshots := []sim.RoutingSnapshot{
-		{ID: "instance_0"},
-		{ID: "instance_1"},
-		{ID: "instance_2"},
-		{ID: "instance_3"},
-		{ID: "instance_4"}, // unassigned — filtered out for any specific role
-	}
-
-	t.Run("prefill pool", func(t *testing.T) {
-		got := FilterSnapshotsByPool(snapshots, membership, PoolRolePrefill)
-		if len(got) != 2 {
-			t.Fatalf("prefill filter: got %d snapshots, want 2", len(got))
-		}
-		if got[0].ID != "instance_0" || got[1].ID != "instance_1" {
-			t.Errorf("prefill filter: got IDs %v, want [instance_0, instance_1]",
-				[]string{got[0].ID, got[1].ID})
-		}
-	})
-
-	t.Run("decode pool", func(t *testing.T) {
-		got := FilterSnapshotsByPool(snapshots, membership, PoolRoleDecode)
-		if len(got) != 2 {
-			t.Fatalf("decode filter: got %d snapshots, want 2", len(got))
-		}
-		if got[0].ID != "instance_2" || got[1].ID != "instance_3" {
-			t.Errorf("decode filter: got IDs %v, want [instance_2, instance_3]",
-				[]string{got[0].ID, got[1].ID})
-		}
-	})
-
-	t.Run("empty input", func(t *testing.T) {
-		got := FilterSnapshotsByPool(nil, membership, PoolRolePrefill)
-		if len(got) != 0 {
-			t.Errorf("empty input: got %d snapshots, want 0", len(got))
-		}
-	})
-
-	t.Run("order preserved", func(t *testing.T) {
-		// Decode instances are instance_2, instance_3 — input order preserved
-		got := FilterSnapshotsByPool(snapshots, membership, PoolRoleDecode)
-		for i, snap := range got {
-			if i > 0 && got[i-1].ID >= snap.ID {
-				t.Errorf("order not preserved: %q >= %q", got[i-1].ID, snap.ID)
-			}
-		}
-	})
-}
-
 // TestPoolRole_String verifies PoolRole has meaningful string representation,
 // including the shared-role PoolRolePrefillDecode (issue #1276).
 func TestPoolRole_String(t *testing.T) {
@@ -352,98 +294,6 @@ func TestBuildPoolMembershipFromIndices_WithShared(t *testing.T) {
 	}
 }
 
-// TestFilterSnapshotsByPool_SharedRole verifies issue #1276 BC-1: a shared-role
-// instance is returned by both the prefill and decode filters — BLIS analogue
-// of llm-d roles_test.go (Permalink 4).
-func TestFilterSnapshotsByPool_SharedRole(t *testing.T) {
-	membership := map[string]PoolRole{
-		"prefill-only":   PoolRolePrefill,
-		"decode-only":    PoolRoleDecode,
-		"shared-pd-pod":  PoolRolePrefillDecode,
-		"unassigned-pod": PoolRole(0), // explicit zero — not in any pool
-	}
-	snapshots := []sim.RoutingSnapshot{
-		{ID: "prefill-only"},
-		{ID: "decode-only"},
-		{ID: "shared-pd-pod"},
-		{ID: "unassigned-pod"},
-	}
-
-	t.Run("prefill filter includes shared-role", func(t *testing.T) {
-		got := FilterSnapshotsByPool(snapshots, membership, PoolRolePrefill)
-		ids := idsOf(got)
-		want := []string{"prefill-only", "shared-pd-pod"}
-		if !equalIDs(ids, want) {
-			t.Errorf("prefill filter IDs = %v, want %v", ids, want)
-		}
-	})
-
-	t.Run("decode filter includes shared-role", func(t *testing.T) {
-		got := FilterSnapshotsByPool(snapshots, membership, PoolRoleDecode)
-		ids := idsOf(got)
-		want := []string{"decode-only", "shared-pd-pod"}
-		if !equalIDs(ids, want) {
-			t.Errorf("decode filter IDs = %v, want %v", ids, want)
-		}
-	})
-
-	t.Run("shared appears in both results — BC-1 core invariant", func(t *testing.T) {
-		pf := FilterSnapshotsByPool(snapshots, membership, PoolRolePrefill)
-		df := FilterSnapshotsByPool(snapshots, membership, PoolRoleDecode)
-		if !containsID(pf, "shared-pd-pod") || !containsID(df, "shared-pd-pod") {
-			t.Errorf("shared-pd-pod must appear in BOTH filters: prefill=%v, decode=%v",
-				idsOf(pf), idsOf(df))
-		}
-	})
-
-	t.Run("unassigned pod appears in neither", func(t *testing.T) {
-		pf := FilterSnapshotsByPool(snapshots, membership, PoolRolePrefill)
-		df := FilterSnapshotsByPool(snapshots, membership, PoolRoleDecode)
-		if containsID(pf, "unassigned-pod") || containsID(df, "unassigned-pod") {
-			t.Errorf("unassigned pod leaked into a filter: prefill=%v, decode=%v",
-				idsOf(pf), idsOf(df))
-		}
-	})
-}
-
-func idsOf(snaps []sim.RoutingSnapshot) []string {
-	out := make([]string, len(snaps))
-	for i, s := range snaps {
-		out[i] = s.ID
-	}
-	return out
-}
-
-func containsID(snaps []sim.RoutingSnapshot, id string) bool {
-	for _, s := range snaps {
-		if s.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func equalIDs(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	// order-insensitive (the filter preserves input order, but we don't
-	// care about ordering for these assertions)
-	seen := make(map[string]int, len(a))
-	for _, x := range a {
-		seen[x]++
-	}
-	for _, x := range b {
-		seen[x]--
-	}
-	for _, v := range seen {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
-}
-
 // TestPoolRoleEncode_BitmaskIdentity verifies that PoolRoleEncode does not
 // overlap with PoolRolePrefill / PoolRoleDecode / PoolRolePrefillDecode — a
 // prerequisite for E/P/D set-membership filtering (GAP-4, issue #1264).
@@ -472,9 +322,9 @@ func TestPoolRoleEncode_BitmaskIdentity(t *testing.T) {
 // TestValidatePoolTopology_Encode verifies the encode-instances validation rules.
 func TestValidatePoolTopology_Encode(t *testing.T) {
 	tests := []struct {
-		name                                           string
-		prefill, decode, shared, encode, total         int
-		wantErr                                        bool
+		name                                   string
+		prefill, decode, shared, encode, total int
+		wantErr                                bool
 	}{
 		{"valid 1p/1d/0s/1e in total=3", 1, 1, 0, 1, 3, false},
 		{"decode-only + encode rejected by PD pair rule (shared=0 requires both p and d)", 0, 2, 0, 1, 3, true},
@@ -519,25 +369,6 @@ func TestBuildPoolMembershipFromIndices_Encode(t *testing.T) {
 		if got := membership[c.id]; got != c.role {
 			t.Errorf("membership[%q] = %v, want %v", c.id, got, c.role)
 		}
-	}
-}
-
-// TestFilterSnapshotsByPool_Encode verifies encode-pool filtering returns
-// only encode-role instances and excludes prefill/decode/shared pods.
-func TestFilterSnapshotsByPool_Encode(t *testing.T) {
-	membership := map[string]PoolRole{
-		"p-only":   PoolRolePrefill,
-		"d-only":   PoolRoleDecode,
-		"shared":   PoolRolePrefillDecode,
-		"enc-pod":  PoolRoleEncode,
-		"enc-pod2": PoolRoleEncode,
-	}
-	snaps := []sim.RoutingSnapshot{
-		{ID: "p-only"}, {ID: "d-only"}, {ID: "shared"}, {ID: "enc-pod"}, {ID: "enc-pod2"},
-	}
-	got := FilterSnapshotsByPool(snaps, membership, PoolRoleEncode)
-	if len(got) != 2 || got[0].ID != "enc-pod" || got[1].ID != "enc-pod2" {
-		t.Errorf("encode filter = %v, want [enc-pod, enc-pod2]", idsOf(got))
 	}
 }
 

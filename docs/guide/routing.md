@@ -1,284 +1,342 @@
-# Routing Policies
+# Routing with the llm-d Router
 
-This guide covers how BLIS distributes incoming requests across instances in cluster mode. For single-instance simulation, routing is not applicable. For instance-level request ordering, see [Scheduling & Priority](scheduling.md).
+Every cluster simulation routes with the **llm-d router**, the Endpoint Picker (EPP) of
+[llm-d-router](https://github.com/llm-d/llm-d-router). BLIS has no routing, admission or
+flow-control logic of its own: it runs the router's real code in-process, configured by the
+same files a real deployment gives it, and feeds it signals produced by the simulated engines.
+Two consequences follow.
+
+- **Configuration parity.** A deployment's `EndpointPickerConfig`, its `InferencePool`,
+  `InferenceObjective` and `InferenceModelRewrite` manifests, and its EPP flags run in BLIS
+  unchanged, and the other way around. There is no BLIS-specific routing configuration.
+- **Behavioral fidelity.** BLIS makes the routing, admission and flow-control decisions the
+  router would make given the same signals. The remaining differences between a simulation and
+  a real deployment come from engine modeling, not from routing.
+
+For instance-level request ordering (the engine's own scheduler), see
+[Scheduling & Priority](scheduling.md).
 
 ```bash
-# Quick example: compare round-robin vs weighted routing
+# The router's built-in configuration over four instances (the scenario states no router)
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 4 --rate 100 --num-requests 500 \
-  --routing-policy weighted --trace-level decisions --summarize-trace
+  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
+
+# A real deployment's router configuration, unchanged, named by the scenario's router block
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
+  --scenarios examples/llm-d/scenarios \
+  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Available Policies
+## The router's inputs
 
-| Policy | Flag Value | Strategy |
-|--------|-----------|----------|
-| **Round-robin** | `round-robin` | Cyclic assignment — request N goes to instance N % k |
-| **Least-loaded** | `least-loaded` | Send to the instance with lowest `EffectiveLoad` |
-| **Weighted** | `weighted` | Composable multi-scorer pipeline (default: llm-d parity) |
-| **Always-busiest** | `always-busiest` | Pathological template — sends to the most loaded instance (for testing) |
+The router's inputs are a deployment property, so the scenario states them, as `parallel:`
+states the tensor-parallel width: the deployment's `router:` block and each pool's `labels`
+(blis-schemas `spec/deployment`). There are no router flags for them; `--epp-flags`,
+`--epp-config`, `--epp-manifests` and `--pod-labels` were removed, as `--tp` was, and are
+refused as unknown flags.
 
-## Weighted Scoring (Composable Pipeline)
-
-The `weighted` routing policy is the most flexible. It combines multiple scoring dimensions, each evaluating instances on a `[0, 1]` scale:
-
-```bash
---routing-policy weighted --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
+```yaml
+kind: Deployment
+name: my-deployment
+pools:
+  - role: colocated
+    nodes: 4
+    labels: {app: vllm}          # labels on this pool's model-server pods
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine: {...}
+router:
+  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]
+  endpoint_picker_config: epp-config.yaml   # relative to this scenario file
+  manifests: [inferencepool.yaml]
 ```
 
-### Available Scorers
-
-| Scorer | What It Measures | llm-d Equivalent |
-|--------|-----------------|------------------|
-| `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
-| `precise-prefix-cache` | Actual KV cache state query with min-max normalization; all-equal (including all-zero) → 1.0 (llm-d parity) | precise-prefix-cache-scorer |
-| `no-hit-lru` | LRU positional scoring for cold requests (warm = 0.5) | no-hit-lru-scorer |
-| `queue-depth` | Queue depth: `QueueDepth` only (min-max normalized) | queue-scorer |
-| `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
-| `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
-| `active-requests` | In-flight requests: `(maxCount - count) / maxCount` | active-request-scorer |
-| `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
-| `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
-| `vllm-dp` | vLLM data-parallel routing: `waiting × 4 + running` (inverted min-max) | DPLBAsyncMPClient.get_core_engine_for_request |
-| `prefix-cache` | `matched/total` prefix blocks from an llm-d prefix producer (optionally blended with a match-length term) | prefix-cache-scorer |
-| `token-load` | `1 − min(inFlight + uncached incoming tokens, threshold)/threshold`; idle = 1.0 | token-load-scorer |
-
-!!! note "Prefix-affinity is a scorer, not a standalone policy"
-    The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
-
-### Default Profile
-
-When `--routing-scorers` is not specified, the default profile is:
-
-```
-precise-prefix-cache:2, queue-depth:1, kv-utilization:1
-```
-
-This matches the llm-d production scoring pipeline. Weights are relative — only ratios matter. `[2, 1, 1]` behaves identically to `[0.5, 0.25, 0.25]`.
-
-## vLLM Data-Parallel Routing
-
-BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
-
-```bash
-# Oracle mode (immediate signals — best for algorithmic studies):
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --routing-scorers "vllm-dp:1" \
-  --snapshot-refresh-interval 0
-
-# Staleness-matched mode (matches vLLM's 100ms coordinator interval):
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --routing-scorers "vllm-dp:1" \
-  --snapshot-refresh-interval 100000
-```
-
-This replicates vLLM's `DPLBAsyncMPClient` formula: selecting the instance with the lowest `waiting × 4 + running` score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.
-
-**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). Using `--snapshot-refresh-interval 100000` matches this staleness interval. The default 50ms (`--snapshot-refresh-interval 50000`) matches llm-d's `RefreshMetricsInterval`. Pass `--snapshot-refresh-interval 0` for oracle mode (immediate signals, no staleness) — the cleanest baseline for algorithmic comparisons.
-
-**Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. The `vllm-dp` scorer does not model this. In staleness-matched mode it will concentrate more traffic per snapshot window than real vLLM would.
-
-**Inside a DP replica (#1909):** a scenario with `dp > 1` on an MoE model shows the router one endpoint per replica. The cluster itself then picks the rank with vLLM v0.31.0's own balancer formula, its 100 ms coordinator period and the per-assignment waiting increment; `vllm-dp` is not involved. See [Latency Models](latency-models.md#data-and-expert-parallelism-moe).
-
-**Note:** Do not compose `vllm-dp` with other scorers unless comparing hybrid strategies. For vLLM parity, use `vllm-dp:1` alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.
-
-## Signal Freshness
-
-> **Canonical source:** Signal freshness tiers are specified in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md) (INV-7). The descriptions below provide additional user-facing context; `invariants.md` is authoritative if they diverge.
-
-!!! warning "Not all routing signals are equally fresh"
-    In production inference serving systems (e.g., llm-d), the router is a separate process from the inference engines. Some signals are maintained at the router level, while others require periodic reporting from instances. BLIS models this asymmetry.
-
-### Why Signals Have Different Staleness
-
-Different signals originate from different places in the system:
-
-- **Router-local signals** are maintained by the router itself — they're always current because the router controls them directly.
-- **Instance-internal signals** live on the inference engine and must be communicated to the router — they're inherently stale by the reporting interval.
-
-BLIS models three signal freshness tiers:
-
-| Tier | Signals | Source | Freshness |
-|------|---------|--------|-----------|
-| **Router-local** | InFlightRequests, `prefix-affinity` router-side cache index | Router increments InFlightRequests at dispatch, decrements at completion; the `prefix-affinity` scorer's router-side LRU index is updated after each routing decision | Always fresh — router owns this state |
-| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | Default (`--snapshot-refresh-interval 50000`): Periodic at 50ms (llm-d parity). When `--snapshot-refresh-interval 0`: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single `/metrics` endpoint. |
-| **Periodic (precise prefix-cache query)** | `precise-prefix-cache` / `no-hit-lru` cache-block hit counts | Actual instance KV cache state (via `CachedSnapshotProvider`) | Governed by `--cache-signal-delay` (default 50ms; set to 0 for synchronous ground-truth queries). Distinct from the router-local `prefix-affinity` index above. |
-
-!!! info "DES semantics of 'Immediate' mode"
-    "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.
-
-### Staleness Impact
-
-At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using `kv-utilization:1` alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.
-
-!!! tip "Safe zone for `--snapshot-refresh-interval`"
-    Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default `prefix-affinity:3, queue-depth:2, kv-utilization:2`). The default composite profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) is resilient — queue-depth's QueueDepth signal complements stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (`precise-prefix-cache` has its own staleness model via `--cache-signal-delay`). For staleness-critical deployments, consider adding `load-balance` which reads EffectiveLoad (includes synchronous InFlightRequests).
-
-## When to Use Which Policy
-
-| Workload | Recommended Policy | Why |
-|----------|-------------------|-----|
-| Uniform traffic, no prefix sharing | `least-loaded` or `weighted` with `queue-depth:1` | Load balance is the only signal that matters |
-| RAG with shared system prompts | `weighted` default or `precise-prefix-cache:3,queue-depth:1` | Prefix-aware scoring maximizes KV cache reuse |
-| Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
-| Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
-
-## Example: Comparing Policies
-
-BLIS includes a routing comparison script:
-
-```bash
-chmod +x examples/routing-comparison.sh
-./examples/routing-comparison.sh
-```
-
-This runs 5 configurations and shows TTFT p99, target distribution, and throughput for each. See `examples/routing-comparison.sh` for the full script.
-
-## llm-d EndpointPickerConfig (`--epp-config`)
-
-`--epp-config <file>` ingests an llm-d router `EndpointPickerConfig` verbatim (YAML
-comments allowed) on `blis run` and `blis replay`. It replaces `--routing-policy`,
-`--routing-scorers`, the P/D routing flags (`--prefill-routing-scorers`,
-`--decode-routing-scorers`, `--pd-decider`, `--pd-prefix-threshold`) and the
-flow-control flags; setting any of them alongside it is refused. The ingested
-config, its sha256 and the BLIS mapping of every plugin are written to the
-`--metrics-path` file as the `epp` block (never to stdout).
-
-```bash
-blis run --scenario <file> --scenarios <dir> --registry <root> --rate 10 --num-requests 200 \
-  --epp-config optimized-baseline-cpu-tier.yaml --epp-version v0.10.0 --metrics-path out.json
-```
-
-`--epp-version` selects the llm-d-router release whose plugin semantics BLIS
-mirrors: `main@981acb8a` (default, alias `main`) or `v0.10.0` (the EPP image
-`ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.10.0`, which our calibration deployments run).
-Use the release your router runs; the deltas are listed below.
-
-### What runs
-
-The profile runs llm-d's order: producers over all candidates, filters in profile
-order, weighted scorers over the survivors (each clamped to [0, 1]), then the
-max-score pick. If the filters remove every candidate, the request is rejected at
-routing, as llm-d fails it. A `disagg-profile-handler` config runs BLIS's
-decode-first P/D routing: the `decode` profile picks the decode pod, the prefill
-decider decides, and the `prefill` profile picks the prefill pod. The scenario
-must define prefill/decode pools exactly when the config is disaggregated.
-
-| llm-d plugin | BLIS implementation |
-|---|---|
-| `prefix-cache-affinity-filter` | filter: sticky set (match ratio ≥ `affinityThreshold`), exploration (seeded), TTFT gate `inFlightTokens / peakPrefillThroughput · 1000` |
-| `concurrency-detector` | filter (`maxConcurrency·(1+headroom)` per endpoint, requests/tokens/hybrid) and, as `flowControl.saturationDetector`, the gateway saturation |
-| `token-load-scorer`, `prefix-cache-scorer` | `token-load`, `prefix-cache` scorers |
-| `queue-scorer`, `kv-cache-utilization-scorer`, `active-request-scorer`, `running-requests-size-scorer`, `load-aware-scorer`, `lora-affinity-scorer` | the existing scorers (defaults only; parameters are refused) |
-| `no-hit-lru-scorer` | `no-hit-lru`, bound to an llm-d prefix producer |
-| `approx-prefix-cache-producer` | router-side LRU per instance: autoTune capacity = the instance's GPU KV blocks, block size = engine block size floored at 64, `maxPrefixTokensToMatch` cap; a trailing partial block counts |
-| a second approx producer (e.g. the tiered guide's `cpu-prefix-cache-producer`) | exactly as llm-d: its own router-side LRU, sized by `lruCapacityPerServer` (or the GPU block count under `autoTune`), credited at PreRequest. `--epp-cpu-tier-view <name>` is a BLIS opt-in that makes the named approx producer report each instance's CPU-offload-tier-resident prefix instead (#1912); it is listed in the `epp` block's `deviations` |
-| `precise-prefix-cache-producer` | the instance's KV view frozen for `--cache-signal-delay` (KV-event propagation): GPU blocks plus, with an offload tier, CPU-tier blocks (read as of the same snapshot time) weighted by `kvCacheBackendConfigs`; speculative indexing with `speculativeTTL` |
-| `inflight-load-producer` | router-side in-flight tokens: uncached prompt tokens charged at routing, released at the first token (or, with `addEstimatedOutputTokens`, prefill at the first token and the rest at completion) |
-| `max-score-picker`, `single-profile-handler` | argmax with a seeded uniform tie-break; one profile |
-| `disagg-profile-handler`, `prefill-filter`, `decode-filter` | decode-first P/D routing; role filters = pool membership |
-| `always-disagg-pd-decider`, `prefix-based-pd-decider` | `always`; llm-d's rule `input − cachedBlocks·blockSize ≥ nonCachedTokens` (with `promptTokens`), on the decode pod's match info |
-| `flowControl` (`featureGates: [flowControl]`) | gateway queue: `maxRequests`, `maxBytes`, `defaultRequestTTL`, `priorityBands` (caps, round-robin fairness) |
-
-Accepted as inert, and listed in the `epp` block: `token-producer`,
-`endpoint-notification-source`, metrics/model data sources and extractors, request
-parsers, `request-attribute-reporter`, `disaggregatedset-rollout-screener` (one
-revision), `dataLayer`, `kvEventsConfig`, index storage sizing,
-`syncCrossReplicaState`, other feature gates. An inert plugin keeps only the
-parameters with no simulation meaning (endpoints, credentials, metric names,
-headers, rollout scoping); any other parameter is refused. Two inert-plugin
-parameters do carry meaning and are mapped: `metrics-data-source.interval` sets
-`--snapshot-refresh-interval` (rounded to the EPP's 50 ms base tick; an explicit
-conflicting flag is refused) and `static-usage-limit-policy.threshold` sets one
-saturation ceiling for every band when that policy is in force. Any other plugin
-type, and any parameter BLIS does not model (for example `ttftSource:
-latencyPredictor`, `enableEviction: true`, `maxNumOfEndpoints > 1`, `stageOrder:
-prefill-first`, E/P/D, zero scorer weights), is refused by name.
-
-### Modeling choices
-
-- **Tie-break.** llm-d's max-score picker orders candidates from a map, shuffles
-  (v0.10.0) or rotates ties by a request counter (main); both are a uniform pick
-  among the tied maxima. BLIS draws that pick from the seeded router RNG (INV-6).
-- **Weights.** llm-d sums `weight · score`; BLIS divides the weights by their total,
-  which preserves the argmax.
-- **Hashing.** The approx producer chains SHA-256 block hashes where llm-d uses
-  xxhash64; prefix semantics are identical.
-- **Request bytes.** Flow-control byte limits use 4 bytes per prompt token (llm-d's
-  `averageCharactersPerToken`); llm-d counts request body bytes.
-- **Output estimate (main).** llm-d main estimates output tokens by an
-  `outlen-bucket` request header; BLIS requests carry none, so main's unknown-bucket
-  value (1000) applies.
-- **P/D charges.** A disaggregated request's prefill charge is released at the
-  decode stream's first token, as llm-d does; its prefill request counter follows
-  BLIS's in-flight count (prefill completion), not llm-d's StartOfStream. A prefill
-  sub-request that ends without completing (timeout, drop) ends the request and
-  releases all of its charges, as llm-d frees every entry on stream end.
-- **Scheduling timing.** Producers run once per request over every candidate of
-  both pools before any profile; PreRequest work (index recording, in-flight
-  charges, no-hit-lru moves) runs once both P/D picks are made and not at all if
-  scheduling fails, as in llm-d's director. llm-d applies the approx index update
-  asynchronously (a goroutine in PreRequest); BLIS applies it synchronously at
-  PreRequest, so a request scheduled in the same instant sees it slightly sooner.
-- **Rejections.** A request the filters cannot place is a routing rejection
-  (INV-1) and is reported to the session driver, so closed-loop runs continue.
-- **Tokenization.** Without a `token-producer` (or with its `estimate` backend)
-  llm-d hashes byte-packed pseudo-tokens; BLIS uses the request's token IDs, so
-  token counts and block boundaries only approximate llm-d's (noted in the `epp`
-  block). With the vLLM render backend the two agree.
-- **Prefix match unit.** llm-d main prefers an endpoint's `CachePrefixMatchUnit`
-  metric; BLIS uses the engine block size.
-
-### Release deltas (`--epp-version`)
-
-| Plugin | v0.10.0 | main@981acb8a |
+| Input | Scenario field | What it is |
 |---|---|---|
-| concurrency-detector filter | no fail-open: all dropped ⇒ empty (`v0.10.0:…/concurrency/detector.go:187-209`) | `failOpen` (default true) returns all; tokens/hybrid count the request's own uncached tokens, an idle endpoint always passes (`main:…/detector.go:249-298`) |
-| concurrency-detector saturation | in-flight only | + dispatch reservations between flow-control dispatch and routing (`main:…/detector.go:139-228`) |
-| prefix-cache-affinity-filter | missing in-flight signal = zero load; negative threshold accepted | missing signal skips the TTFT gate; threshold must be in [0, 1] (`main:…/prefixcacheaffinity/plugin.go:141-250`) |
-| inflight-load-producer | output = round(input·`outputRatio`=1.5); role-blind | output = 1000 (unknown bucket); `outputRatio` removed; prefill-role pods charged prompt only, decode-role pods output only (`main:…/inflightload/producer.go:508-545`) |
-| approx-prefix-cache-producer | block 0 inserted first (LRU evicts a prompt's head), linear match | last block first (evicts the tail), galloping match (`main:…/approximateprefix/indexer.go:94-160`). The `blockSizeTokens` default (16 vs 64) has no effect: both releases floor the block size at 64 |
-| precise producer tier weights | a tier missing from `kvCacheBackendConfigs` weighs 1.0 | weighs 0.0 (`main:pkg/kvcache/prefix_match.go:44-45`) |
-| disagg-profile-handler | an empty prefill result falls back to decode-only (refused at load: a concurrency-detector in the prefill profile is not accepted under v0.10.0) | the request fails |
-| config schema | `llm-d.ai/v1alpha1` only | also `llm-d.ai/v1`; `noEndpointRequestTTL` (inert), `bandSelectionPolicyPluginRef` (refused) |
+| EPP flags | `router.epp_flags` | The router's command-line flags, verbatim, one entry per flag (a Helm chart's `epp.flags` rendered as `--name=value`). They select the pool (`--pool-name` or `--endpoint-selector`) and set the router's own knobs (`--refresh-metrics-interval`, `--metrics-staleness-threshold`, `--feature-gates`, ...). A `--config-file` flag is read relative to the scenario file. |
+| EndpointPickerConfig | `router.endpoint_picker_config` | The router configuration file, as the EPP reads it with `--config-file`. Naming it here and with an EPP `--config-file`/`--config-text` flag is refused. |
+| Manifests | `router.manifests` | Kubernetes YAML files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects through its own reconcilers; other kinds (the model servers' Deployments, Services, ...) are ignored. |
+| Pod labels | `pools[].labels` | Labels on the pool's simulated model-server pods, so an `InferencePool` selector or a label filter from a real deployment matches. A label every pool states with one value is on every pod; any other is on its own pool's pods only. BLIS sets `llm-d.ai/role` from each prefill and decode pool's role (blis-schemas refuses a pool label that contradicts it) and `llm-d.ai/inference-serving=true` on every pod. |
 
-### llm-d conformance
+Paths are relative to the scenario file's directory. A file that cannot be read is refused at
+startup, naming the scenario and the field. Each input is parsed by the router's own code: the
+flags by the EPP's flag set, the configuration by its config loader, the manifests by its
+reconcilers. A value the real router rejects is rejected here with the router's message.
+`examples/llm-d/scenarios/` holds scenarios that route with each configuration in
+`examples/llm-d/`.
 
-`test/llmd-conformance/{main,v0_10_0}` are separate Go modules that run
-llm-d-router's own plugin code and BLIS's ports on the same randomized endpoint
-states (rapid) and require identical outputs: filtered sets, per-endpoint scores,
-saturation, the P/D decision, the full profile's pick (within BLIS's tied maxima)
-and its empty-result failure, and the in-flight ledger over PreRequest /
-ResponseBody sequences. Generators vary per-endpoint block size and totals,
-attribute presence, tier-weighted match, role labels, output estimation and client
-caps, exploration, and endpoint counts down to zero. On v0.10.0 two more
-properties run whole configurations: the two deployed colocated routers
-with the campaign's router knobs patched in (affinity peakPrefillThroughput,
-maxTTFTPenaltyMs and threshold; guard maxConcurrency, mode, token cap and
-headroom), ingested by BLIS and built by llm-d's factories from the same YAML; and
-flow control, where llm-d's own FlowController (registry, FCFS, global-strict and
-round-robin fairness, static usage-limit ceiling, capacity checks, HoL-blocking
-dispatch), stepped on a fake clock, and BLIS's gateway queue see one sequence of
-arrivals and dispatch cycles. Not compared differentially: the approx producer's
-index (llm-d updates it asynchronously) and the flow-control TTL, which llm-d
-enforces with real-time context deadlines; both are unit-tested against the cited
-semantics. Run locally
-(needs network access for the modules and the Go toolchain they pin):
+`blis run --trace-output` records the resolved inputs, inline (the configuration's contents, not
+its path), in the trace header, with the seed the router ran with, and `blis replay` routes with
+them, so a replay reproduces the run's routing whatever `--seed` it is given (INV-13). A replay
+whose scenario states no router replays the recorded one. A replay whose scenario does state one
+(a router block or pool labels) must state the recorded router, and a router environment flag
+(below) given to `replay` must match the header's; otherwise the replay is refused, never
+silently preferred over the header.
 
-```bash
-cd test/llmd-conformance/main && go test ./... -rapid.checks=5000
-cd ../v0_10_0 && go test ./... -rapid.checks=5000
-```
+**Defaults.** With no EPP flags, BLIS runs a standalone router whose pool is every simulated
+pod: `--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`. With
+no configuration, the router uses its built-in default configuration (queue, KV-cache
+utilization and prefix-cache scorers). BLIS installs no `InferenceObjective` of its own: request
+priorities come only from the deployment's objectives, which the router reconciles for an
+`InferencePool` (`--pool-name`). A request whose objective has no `InferenceObjective`, and every
+request in standalone mode, gets priority 0, as in a deployment.
+`examples/llm-d/inferencepool.yaml` defines one objective per BLIS SLO class.
 
-The `llm-d conformance` workflow runs both on every PR and push to `main`; it
-needs network access (module and toolchain downloads), which GitHub-hosted runners
-have, and is intended to be a required status check.
+**As an API server would.** The manifests are admitted the way a cluster admits them: custom
+resources get their CRD defaults (an `InferenceObjective` `poolRef` without a `group` gets
+`inference.networking.k8s.io`), both served `InferenceObjective` versions (`llm-d.ai/v1` and
+`llm-d.ai/v1alpha2`) are reconciled, unknown or duplicate fields are errors (strict field
+validation), and a router resource at a version no CRD serves is an error. The CRDs are those of the llm-d-router and Gateway API Inference Extension versions BLIS
+builds against.
 
-## Further Reading
+## The environment around the router
 
-- [Scheduling & Priority](scheduling.md) — instance-level request ordering
-- [Admission Control](admission.md) — the gate before routing
-- [Cluster Architecture](../concepts/architecture.md) — how the routing pipeline works internally
-- [Configuration Reference](../reference/configuration.md#routing-policy) — all routing flags
-- [Metrics & Results](results.md) — understanding trace summaries and regret analysis
+Three BLIS flags model the environment, not routing:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--gateway-latency` | 0 µs | Time from a request's arrival to the router's first look at it: the network and proxy hops before the Endpoint Picker. |
+| `--epp-scrape-jitter` | 0 µs | Upper bound of a seeded phase offset for each endpoint's metrics collection. At 0 every endpoint is scraped in phase. |
+| `--kv-event-delay` | 0 µs | Time from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them: the event transport and the router's processing. At 0 the router has every event of the steps that have ended. |
+
+The router itself takes zero simulated time to decide.
+
+**EPP flags with no effect.** Flags that change how a deployed router is served or observed,
+never what it decides (`--ha-*`, `--drain-timeout`, `--tracing`, `--health-checking`, TLS,
+certificate, gRPC and metrics-endpoint flags, `--emit-endpoint-scores`), are accepted and have no
+effect in a simulation; a run that sets one says so on stderr. The legacy metric-name flags
+(`--total-queued-requests-metric`, ...) must name a series the simulated engines publish.
+
+**Router logs.** The router's errors go to stderr as BLIS errors, so they show at every `--log`
+level except `fatal` and `panic`; its informational messages appear with `--log debug` or
+`--log trace`.
+
+**One instance.** A single-instance cluster also runs the router: it can only pick that
+instance, but its admission and flow control still apply. With the default configuration it
+admits every request at once, and results are identical to a run without a router.
+
+## What the router sees
+
+Everything the router reads comes from the simulated engines, with real engine semantics.
+
+**Inside a DP replica (#1909):** a scenario with `dp > 1` on an MoE model shows the router one endpoint per replica. The cluster itself then picks the rank with vLLM v0.31.0's own balancer formula, its 100 ms coordinator period and the per-assignment waiting increment (`data_parallel_load_balancing` `internal`, the default, or `hybrid`; under `external` the router sees every rank). See [Latency Models](latency-models.md#data-and-expert-parallelism-moe).
+
+- **Requests.** Each arrival is the request Envoy would hand the router: an OpenAI
+  `/v1/completions` body whose `prompt` is the request's tokens, with `max_tokens` and `stream`.
+  The model is the deployment's model, or the request's LoRA adapter. The headers carry
+  `x-llm-d-inference-objective` (the request's SLO class), `x-llm-d-inference-fairness-id` (its
+  tenant), when the request has a TTFT target `x-llm-d-slo-ttft-ms`, and when it has a client
+  timeout `x-llm-d-inference-ttl`: its lifetime (deadline minus arrival) as a Go duration. Flow
+  control takes the shorter of that and the configured queue budget (60 s by default), and an
+  `edf-ordering-policy` orders by it; the client still gives up at its deadline, counted as
+  timed out. The router's request handler, parser and Director process it exactly as in a
+  deployment.
+- **Multimodal requests.** A request carrying image, audio or video tokens is sent as a client
+  sends media: a chat completion (`/v1/chat/completions`) whose message has an `image_url`,
+  `input_audio` or `video_url` part per modality. The router's token producer sees the media
+  items (its estimate backend from the parts; a vLLM render backend from BLIS's simulated
+  renderer, which renders the request's tokens with each modality's placeholder span, after the
+  text, and a hash of that span). With an encode pool, `always-disagg-multimodal-decider` then
+  sends such a request to the encode pods the router picks (every one in `x-llm-d-encoder-hosts-ports`, in order); as in
+  BLIS's own encode stage, encoding takes no simulated time, and the choice is recorded in the
+  decision trace and on the request.
+- **Prompt content.** BLIS token values are placeholders: a workload models prompt lengths and
+  which prompts share a prefix, nothing more, and a replayed trace draws new placeholder values.
+  The router, which hashes prompt content, is therefore shown canonical tokens: each KV block of
+  a prompt (the last one possibly partial) is identified by its prefix chain, and every chain
+  has fixed canonical tokens. Two prompts are equal exactly where they share a chain of whole
+  blocks, as the engines' prefix caches see them, so a router block size that is a multiple of
+  the engine's block size hashes the canonical prompt as it would the original, and a run and its
+  replay show the router identical prompts.
+- **Metrics.** Each engine publishes vLLM's Prometheus series at the end of every step, with
+  vLLM's semantics: `vllm:num_requests_waiting`, `vllm:num_requests_running`,
+  `vllm:kv_cache_usage_perc`, `vllm:num_preemptions_total`, `vllm:cache_config_info` and, when
+  LoRA is active, `vllm:lora_requests_info` with the running and waiting adapter sets. The
+  router scrapes them on its own schedule (`--refresh-metrics-interval`) through its own data
+  source and extractor, so a scrape that lands mid-step sees the previous step's values, as in
+  vLLM. Endpoints present at the start of a run have been scraped before the first request
+  arrives; their periodic scrapes then keep their `--epp-scrape-jitter` phase. Endpoints that
+  appear later (autoscaling, lifecycle) start cold, as on discovery.
+- **KV-cache events.** With a `precise-prefix-cache-producer` in the configuration, each engine
+  publishes vLLM's KV events: a stored block when a block hash enters its prefix cache (a full
+  prefill or decode block, or one reloaded from a CPU tier) and a removed block when one leaves,
+  at the end of the step, as vLLM does. The router receives them `--kv-event-delay` later, in
+  order per engine, and ingests them synchronously (no ZMQ subscriber). The events carry the
+  blocks' tokens as the router saw them, so the router's index holds, per pod, exactly the
+  blocks the engine can serve from its cache. A terminated instance's blocks are cleared.
+  Speculative indexing (`speculativeIndexing`) expires its entries on simulated time. With a CPU
+  KV tier (`--kv-cpu-blocks`, or the `--kv-offload-config` chain), a block that becomes ready on
+  the CPU tier, or leaves it, is published as a location event on tier `cpu`, in the same
+  ordered stream, so the router indexes each block on every tier that holds it. A file-system
+  tier behind the CPU tier publishes only when its `enable_kv_events` is set (vLLM's default is
+  off): a block written to it is a location event on tier `shared_storage`, the medium llm-d's
+  file-system backend publishes, which the prefix scorer weighs 0.4 by default
+  (`kvCacheBackendConfigs`). With it off, the router cannot follow a block whose only copy is on
+  that tier: when the block is promoted back to the CPU tier, its location event names a block
+  the router has forgotten and is skipped, as llm-d skips it. A terminated instance's clear
+  travels the same delayed stream, after every batch the instance published. A chain's
+  canonical tokens stay fixed until the router has received the last removal of its block.
+- **Prompt rendering.** The `token-producer` plugin's vLLM backend calls a render endpoint; the
+  simulated model server answers it with the request's token IDs.
+- **Responses.** The router sees the response headers when the engine accepts a streaming
+  request, the first chunk when the first token is delivered, and the final chunk, with
+  `usage` (prompt tokens and the tokens actually generated), when the response completes. A
+  non-streaming response arrives whole at completion. A request that times out or is dropped
+  ends with the termination cause the router's stream handler would report.
+- **Endpoints.** Instances are pods of the pool, reconciled by the router's pod reconciler:
+  ready while the instance is routable, not ready while it loads, drains or terminates.
+
+## Decisions
+
+The router's decision becomes a BLIS dispatch:
+
+- the endpoint it picks serves the request;
+- under disaggregation, the prefill endpoint the `disagg-profile-handler` names in
+  `x-llm-d-prefiller-host-port` runs the prefill, and the KV moves to the picked endpoint, which
+  serves the response. KV transfer is priced by the latency kernel, as before;
+- a request the router does not dispatch lands in exactly one INV-1 bucket:
+
+| Router outcome | BLIS bucket |
+|---|---|
+| Admission denial: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | `rejected_requests` (admission) |
+| No endpoint can serve it (no candidates, every filter or screener eliminated all) | `routing_rejections` |
+| Flow control rejects it: queues at capacity | `gateway_queue_rejected` |
+| It waits in flow control past its queue-wait budget (TTL) | `gateway_expired` |
+| Its client deadline passes while the router holds it (the client disconnects; the router cancels it) | `timed_out_requests` |
+| It is still waiting in flow control when the run ends | `gateway_queue_depth` |
+
+The outcomes are an explicit allow-list keyed on the router's status code and its
+`x-llm-d-request-dropped-reason`. A rejection that matches none of them (an internal error, a
+malformed request) is not a routing outcome: it ends the run with an error rather than being
+counted as shedding. So does a run in which the router holds requests that nothing can release.
+
+With `--trace-level decisions`, each routing record carries the scores the router's primary
+scheduling profile gave every endpoint; `--counterfactual-k` ranks them.
+
+## Fidelity, and BLIS's former router
+
+The acceptance criterion is behavioral fidelity to llm-d: given the same configuration and the
+same signals, BLIS makes the decisions the router makes. It is not agreement with BLIS's former
+native router, which ranked instances on instantaneous engine state that no real router has. The
+two agree where routing cannot matter and differ, as they should, where signal freshness does.
+
+Measured on `llama-3.1-70b-instruct-h200-tp4-4node`, seed 42 (BLIS main at `0d092d4e` vs this
+branch, the same kernel and schemas; mean TTFT / p99 TTFT in ms):
+
+| Workload | Former native router | llm-d default configuration | llm-d with `examples/llm-d/inflight-load.yaml` |
+|---|---|---|---|
+| 4 instances, 10 req/s, 800 requests | 87.7 / 119.4 | 87.5 / 118.6 | 87.7 / 119.4 |
+| 4 instances, 40 req/s, 2000 requests | 96.8 / 129.6 | 184.6 / 385.1 | 105.5 / 189.7 |
+| 8 instances, 80 req/s, 3000 requests | 95.5 / 129.5 | 401.8 / 964.5 | 105.4 / 186.0 |
+
+Completed requests agree exactly, and E2E latency and throughput within 1.2%, in every cell. The
+difference is placement under load:
+
+- The default configuration ranks endpoints only on scraped metrics. llm-d scrapes at
+  `--refresh-metrics-interval` (50 ms, which is also the minimum it accepts), and a vLLM engine
+  updates its gauges only at the end of a step, so between scrapes every request sees the same
+  ranking and goes to the same endpoint. That herding is what the real router does with this
+  configuration; it is the effect a capacity plan should see.
+- The router's own in-flight bookkeeping is current at every decision. A configuration that
+  scores on it, as `examples/llm-d/inflight-load.yaml` does with llm-d's
+  `inflight-load-producer` and `active-request-scorer`, comes within 10% of the former
+  router's mean TTFT.
+- `--epp-scrape-jitter` (here 50 ms) de-phases the endpoints' scrapes and moves the default
+  configuration's mean TTFT by 6-7%; staleness, not phase, dominates.
+
+What is not yet measured: a comparison against traces of a real llm-d deployment.
+
+## Supported plugins
+
+A configuration may use these plugin types. Each was audited in the router fork: every clock
+read, background loop, blocking wait and random draw it makes goes through the hosting runtime,
+and every signal it consumes is produced by the simulated engines.
+
+| Kind | Types |
+|---|---|
+| Profile handlers and pickers | `single-profile-handler`, `disagg-profile-handler`, `max-score-picker`, `random-picker`, `weighted-random-picker` |
+| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter` |
+| Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware` |
+| P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
+| Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
+| Admission | `probabilistic-admitter` |
+| Saturation detectors | `utilization-detector`, `concurrency-detector`, `max-saturation-detector` |
+| Flow control | `global-strict-fairness-policy`, `round-robin-fairness-policy`, `fcfs-ordering-policy`, `edf-ordering-policy`, `slo-deadline-ordering-policy`, `static-usage-limit-policy`, `strict-band-selection-policy`, `priority-holdback-policy`, `soft-reflective-ceiling-policy` |
+| Data layer | `metrics-data-source`, `core-metrics-extractor`, `endpoint-notification-source` |
+| Request parsers | `openai-parser`, `vllmhttp-parser`, `sglanghttp-parser`, `anthropic-parser`, `passthrough-parser`, `vertexai-parser` |
+
+The flow-control layer (`featureGates: [flowControl]`) runs in full: priority bands, capacity
+limits, queue-wait budgets, the 1 ms dispatch tick and the 1 s expiry sweep.
+
+## Refused at startup
+
+Anything that cannot be simulated faithfully is refused before the simulation starts, with the
+reason. Nothing degrades silently. Plugins are checked after the configuration is loaded and
+before any of them does work, wherever the configuration references them: under `plugins:`, or
+only through a reference such as a flow-control `fairnessPolicyRef`.
+
+| What | Why |
+|---|---|
+| `burst-prefix-cache-producer` | It blocks a request on a sealing timer the hosting runtime does not model. |
+| `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, `prefix-cache-affinity-filter` | They call or consume an external latency-predictor service. |
+| `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
+| `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
+| `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
+| `p2p-source-producer`, `selective-kv-policy` | Peer KV pulls are not modeled by the simulated engines. |
+| `topology-*`, `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no topology labels, custom attributes or GPU telemetry. |
+| `models-data-source`, `models-data-extractor`, `models-responder` | The simulated engines do not serve `/v1/models` yet; the workload sends only completions. |
+| `redis-syncer`, `thunder-agent`, `k8s-notification-source`, `k8s-peer-discovery`, `file-discovery`, `multicluster-*` | They need external services or another discovery source than the simulated deployment. |
+| More than one `InferencePool`; objective or rewrite manifests with `--endpoint-selector` | A run has one router for one pool; in standalone mode the router does not reconcile objectives or rewrites. |
+| A pool with more than one target port | Several ports make each pod several endpoints (data-parallel ranks behind one pod); BLIS simulates each rank as its own pod. |
+| Prefill and decode pools with a configuration that has no `disagg-profile-handler` | The router would serve every request from one flat pool; pass a disaggregating configuration (for example `examples/llm-d/pd.yaml`). |
+| An encode pool on the command line (`--encode-instances`) | No scenario describes the engine an encode pod runs (a blis-schemas deployment's roles are colocated, prefill and decode), as on BLIS `main`. Encode pools are available through the Go API (`DeploymentConfig.EncodeInstances`). |
+| A `token-producer` whose vLLM backend discovers endpoints (`vllm.endpointDiscovery`) | It probes pods for model limits on its own schedule, outside the simulation. Use a fixed `url`, or the estimate backend. |
+| A `precise-prefix-cache-producer` whose `tokenProcessorConfig.blockSizeTokens` (default 16) is not the engines' KV block size | Its keys would never match the engines' blocks. |
+| A `precise-prefix-cache-producer` with a Redis or cost-aware index, or non-vLLM `kvEventsConfig.engineType`; with LoRA adapters in the deployment | Redis is an external service; the cost-aware index's lookups have no fixed order; the engines publish vLLM's events and their prefix caches do not key blocks by adapter. |
+| A `core-metrics-extractor` that, for some pod, reads an engine other than vLLM (by `defaultEngine` or the pod's engine label, `llm-d.ai/engine-type` by default), or a vLLM mapping naming series the engines do not publish; a `metrics-data-source` path other than `/metrics` | The simulated engines publish vLLM's series at `/metrics`; anything else would read nothing. |
+
+Also outside the model: conditional decode (`Prefer: if-available`), and the P/D sidecar's
+MoRIIO parallel prefill-and-decode dispatch (BLIS always runs prefill, then the KV transfer,
+then decode). BLIS hosts the router's Endpoint Picker only: llm-d's coordinator and its E/P/D
+`pipeline:` (multimodal encode, then prefill, then decode, as in llm-d's coordinator
+disaggregation guide) are not simulated, so E/P/D parity is the EPP's decisions alone.
+
+## From BLIS's former routing features
+
+BLIS no longer has its own routing, admission or flow control. Each former feature either maps
+to an llm-d configuration or is dropped.
+
+| Former BLIS feature | llm-d configuration |
+|---|---|
+| `--routing-policy weighted --routing-scorers ...` | A scheduling profile with the matching scorers and weights, and `max-score-picker`. |
+| scorer `prefix-affinity` | `approx-prefix-cache-producer` + `prefix-cache-scorer` |
+| scorer `precise-prefix-cache` | `precise-prefix-cache-producer` + `prefix-cache-scorer` (with a `token-producer`), indexing the engines' KV events |
+| scorers `queue-depth`, `kv-utilization`, `active-requests`, `running-requests`, `load-aware`, `no-hit-lru` | `queue-scorer`, `kv-cache-utilization-scorer`, `active-request-scorer`, `running-requests-size-scorer`, `load-aware-scorer`, `no-hit-lru-scorer` |
+| `--lora-scorer-weight` | `lora-affinity-scorer` in the profile |
+| `--routing-policy round-robin`, `least-loaded`, `always-busiest`; scorers `load-balance`, `vllm-dp` | Dropped: the llm-d router has no such policy. The nearest configurations are `random-picker`, and `queue-scorer` or `load-aware-scorer` with `max-score-picker`. |
+| `--admission-policy gaie-legacy` | The router's default admission: with the `flowControl` gate off, the legacy admission controller sheds sheddable requests (priority < 0) when the saturation detector reports a saturated pool. Its thresholds are `utilization-detector` parameters. |
+| `--admission-policy tier-shed` | `InferenceObjective` priorities with the legacy admission controller, or flow-control priority bands and a usage-limit policy. |
+| `--admission-policy token-bucket`, `reject-all`; `tenant_budgets` | Dropped. Per-tenant fairness is the fairness ID (the request's tenant) with `round-robin-fairness-policy`. |
+| `--flow-control` | `featureGates: [flowControl]` |
+| `--saturation-detector`, `--queue-depth-threshold`, `--kv-cache-util-threshold`, `--max-concurrency` | `utilization-detector` or `concurrency-detector` and their parameters |
+| `--dispatch-order fifo`, `slo-deadline`; `--slo-targets` | `fcfs-ordering-policy`, `slo-deadline-ordering-policy` |
+| `--fairness-policy` | `global-strict-fairness-policy`, `round-robin-fairness-policy` |
+| `--max-gateway-queue-depth`, `--per-band-capacity` | `flowControl.maxRequests`, a priority band's capacity |
+| `--usage-limit-threshold` | `static-usage-limit-policy` |
+| `--request-ttl` | `flowControl.defaultRequestTTL` |
+| `--queue-shedding`, `--dispatch-tick-interval`, `--in-flight-eviction` | Dropped: BLIS-only behaviors. llm-d's dispatch tick is fixed at 1 ms; its in-flight eviction is `flowControl.enableEviction` ([admission](admission.md)). |
+| `--pd-decider always`, `prefix-threshold`; `--pd-prefix-threshold` | `disagg-profile-handler` with `always-disagg-pd-decider` or `prefix-based-pd-decider` (`nonCachedTokens`) |
+| `--prefill-routing-scorers`, `--decode-routing-scorers` | The `prefill` and `decode` scheduling profiles |
+| `--encode-decider` | The disaggregation handler's encode decider (`always-disagg-multimodal-decider` for `multimodal`) |
+| `--admission-latency`, `--routing-latency` | `--gateway-latency` |
+| `--snapshot-refresh-interval` | The EPP flag `--refresh-metrics-interval`: staleness now comes from the scrape itself |
+| `--cache-signal-delay` | `--kv-event-delay`: a fixed delay from an engine publishing its KV events to the router ingesting them (the old flag refreshed a snapshot of every cache at most every 50 ms) |
+| `examples/epp-*.yaml` | The llm-d configurations themselves (`deploy/config/` in llm-d-router) |
+
+## Further reading
+
+- [Cluster Simulation](cluster.md) — the cluster pipeline around the router.
+- [Architecture](../concepts/architecture.md) — how the router is embedded.
+- [The llm-d router fork](../contributing/llm-d-router-fork.md) — how the fork hosts the router
+  and how it is kept current.
+- [Invariants](../contributing/standards/invariants.md) — INV-1, INV-6, INV-7, INV-9 and INV-13
+  as they apply to the router.

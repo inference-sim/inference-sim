@@ -1,0 +1,28 @@
+# llm-d's deploy/config/sim-epp-kvcache-config.yaml with its environment variables substituted,
+# speculative indexing on.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: token-producer
+  parameters:
+    modelName: llama-3.1-70b-instruct
+    vllm:
+      url: http://render.blis.local:8000
+- type: precise-prefix-cache-producer
+  parameters:
+    speculativeIndexing: true
+    tokenProcessorConfig:
+      blockSizeTokens: 16
+    kvEventsConfig:
+      zmqEndpoint: tcp://0.0.0.0:5557
+- type: prefix-cache-scorer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: max-score-picker
+- type: single-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker
+  - pluginRef: prefix-cache-scorer
+    weight: 10

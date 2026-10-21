@@ -160,21 +160,21 @@ func identityOf(in latencykernel.Inputs) identity {
 	}
 	pl := pool.Parallel
 	return identity{
-		model:         in.Scenario.Model,
-		hardware:      in.Chip.Name,
-		memoryGiB:     in.Chip.MemoryGiB,
-		smCount:       in.Chip.SMCount,
-		experts:       experts,
-		expertsPerTok: topK,
-		defaultWindow: in.Model.Global.DefaultWindow(),
-		role:          pool.Role,
-		firstNode:     first,
-		poolNodes:     pool.Nodes,
-		gpusPerNode:   in.Scenario.Cluster.GPUsPerNode,
-		gpusPerRack:   in.Scenario.Cluster.GPUsPerRack,
-		rankGPUs:      max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
-		tpRanks:       max(1, pl.TP),
-		latentKV:      allLatent(in.Model),
+		model:          in.Scenario.Model,
+		hardware:       in.Chip.Name,
+		memoryGiB:      in.Chip.MemoryGiB,
+		smCount:        in.Chip.SMCount,
+		experts:        experts,
+		expertsPerTok:  topK,
+		defaultWindow:  in.Model.Global.DefaultWindow(),
+		role:           pool.Role,
+		firstNode:      first,
+		poolNodes:      pool.Nodes,
+		gpusPerNode:    in.Scenario.Cluster.GPUsPerNode,
+		gpusPerRack:    in.Scenario.Cluster.GPUsPerRack,
+		rankGPUs:       max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
+		tpRanks:        max(1, pl.TP),
+		latentKV:       allLatent(in.Model),
 		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
 		prefix:         prefixLayoutOf(in.Model, pool),
 	}
@@ -617,8 +617,9 @@ type Deployment struct {
 
 // Shape is what a scenario's deployment states beyond any one pool, read without building a
 // kernel: its pools' roles, in declaration order, and whether it states an offload hierarchy;
-// and what its Scenario states that no kernel prices: its acceptance pin and its workload
-// binding, which the simulator's speculative acceptance resolves from (#1939).
+// what its Scenario states that no kernel prices: its acceptance pin and its workload
+// binding, which the simulator's speculative acceptance resolves from (#1939); and the llm-d
+// router's inputs -- the router block and each pool's pod labels.
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
@@ -631,6 +632,13 @@ type Shape struct {
 	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
 	LongPrefillTokenThresholds []int
 	DPLoadBalancings           []deployment.DPLoadBalancing
+	// Router is the deployment's router block, or nil when it states none. Its paths are
+	// relative to Dir.
+	Router *deployment.Router
+	// Labels are each pool's pod labels, parallel to Roles; nil for a pool that states none.
+	Labels []map[string]string
+	// Dir is the directory of the scenario file, against which the router block's paths resolve.
+	Dir string
 
 	Model           string
 	Acceptance      *acceptance.Pin
@@ -639,12 +647,14 @@ type Shape struct {
 
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
-	sc, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	path := filepath.Join(r.Scenarios, scenario)
+	sc, dep, err := latencykernel.LoadBundle(path)
 	if err != nil {
 		return Shape{}, err
 	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
-		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload}
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload,
+		Router: dep.Router, Labels: make([]map[string]string, len(dep.Pools)), Dir: filepath.Dir(path)}
 	if dep.PDTransfer != nil {
 		sh.PDConnector = dep.PDTransfer.Connector
 	}
@@ -655,6 +665,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	}
 	for i, p := range dep.Pools {
 		sh.Roles[i] = p.Role
+		sh.Labels[i] = p.Labels
 		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, p.Engine.LongPrefillTokenThreshold)
 		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
 	}

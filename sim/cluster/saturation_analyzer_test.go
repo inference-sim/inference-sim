@@ -10,10 +10,10 @@ import (
 // tokensInUse + queueLength*avgInputTokens, and model-level RequiredCapacity/SpareCapacity signals.
 func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 	cfg := V2SaturationAnalyzerConfig{
-		KvCacheThreshold:  0.8,  // k1 = totalKvCapTokens * 0.8
-		ScaleUpThreshold:  0.8,  // RequiredCapacity when demand/supply > 1/0.8
-		ScaleDownBoundary: 0.4,  // SpareCapacity when demand/supply < 0.4
-		AvgInputTokens:    512,  // for queue-to-demand conversion
+		KvCacheThreshold:  0.8, // k1 = totalKvCapTokens * 0.8
+		ScaleUpThreshold:  0.8, // RequiredCapacity when demand/supply > 1/0.8
+		ScaleDownBoundary: 0.4, // SpareCapacity when demand/supply < 0.4
+		AvgInputTokens:    512, // for queue-to-demand conversion
 	}
 	analyzer := NewV2SaturationAnalyzer(cfg)
 
@@ -22,7 +22,7 @@ func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
+		name  string
 		input ModelSignals
 		// Expected outputs — use -1 to skip check
 		wantRequiredPositive bool
@@ -33,8 +33,8 @@ func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 		checkAggregation bool // sum(vc.Supply)==TotalSupply, sum(vc.Demand)==TotalDemand
 	}{
 		{
-			name:                "zero replicas — all-zero output",
-			input:               ModelSignals{ModelID: "m1", Replicas: nil},
+			name:                 "zero replicas — all-zero output",
+			input:                ModelSignals{ModelID: "m1", Replicas: nil},
 			wantRequiredPositive: false,
 			wantSparePositive:    false,
 			wantTotalSupplyZero:  true,
@@ -49,8 +49,8 @@ func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 						InstanceID:            "i1",
 						Variant:               NewVariantSpec("A100", 1),
 						TotalKvCapacityTokens: 10000,
-						KvTokensInUse:         9000,  // 90% used
-						QueueDepth:            10,     // additional demand: 10 * 512 = 5120 tokens
+						KvTokensInUse:         9000, // 90% used
+						QueueDepth:            10,   // additional demand: 10 * 512 = 5120 tokens
 						CostPerHour:           10.0,
 					},
 					{
@@ -76,7 +76,7 @@ func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 						InstanceID:            "i1",
 						Variant:               NewVariantSpec("A100", 1),
 						TotalKvCapacityTokens: 10000,
-						KvTokensInUse:         500,  // 5% used — very idle
+						KvTokensInUse:         500, // 5% used — very idle
 						QueueDepth:            0,
 						CostPerHour:           10.0,
 					},
@@ -234,7 +234,7 @@ func TestV2SaturationAnalyzerK1K2(t *testing.T) {
 	// We verify this indirectly: with low demand relative to k1, SpareCapacity should be
 	// positive even if k2 would be higher.
 	cfg := V2SaturationAnalyzerConfig{
-		KvCacheThreshold:  0.5,  // k1 = 10000 * 0.5 = 5000 tokens
+		KvCacheThreshold:  0.5, // k1 = 10000 * 0.5 = 5000 tokens
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    512,
