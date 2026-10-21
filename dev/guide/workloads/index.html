@@ -953,7 +953,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -2247,6 +2247,8 @@
       
         
       
+        
+      
     
     
     
@@ -2318,6 +2320,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2557,10 +2587,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2578,8 +2608,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2713,10 +2743,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2734,8 +2764,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2897,10 +2927,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2918,8 +2948,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3919,14 +3949,15 @@
 <a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
 <a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
 </code></pre></div>
-<p>Pair with weighted routing for cache-aware request distribution (the default profile uses <code>precise-prefix-cache</code>):</p>
+<p>In a cluster, the llm-d router's default configuration includes the <code>prefix-cache-scorer</code>, so
+follow-up turns tend to land on the instance that already caches the conversation (see
+<a href="../routing/">Routing</a>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>chat.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>chat.yaml
 </code></pre></div>
 <h3 id="rag-with-shared-prefixes">RAG with Shared Prefixes<a class="headerlink" href="#rag-with-shared-prefixes" title="Permanent link">&para;</a></h3>
-<p>Retrieval-augmented generation workloads share a common document context across requests. The <code>prefix_group</code> and <code>prefix_length</code> fields model this shared context, and prefix-aware routing (the default <code>precise-prefix-cache</code> scorer) ensures requests with the same prefix hit cached KV blocks on the same instance.</p>
+<p>Retrieval-augmented generation workloads share a common document context across requests. The <code>prefix_group</code> and <code>prefix_length</code> fields model this shared context, and prefix-aware routing (the llm-d router's <code>prefix-cache-scorer</code>) sends requests with the same prefix to the instance that caches it.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># rag.yaml</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2"</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">aggregate_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
@@ -3951,11 +3982,10 @@
 <a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
 <a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
 </code></pre></div>
-<p>Run with weighted routing to maximize cache reuse (the default <code>precise-prefix-cache</code> scorer queries actual KV cache state):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>rag.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
+<p>Run with a prefix-aware router configuration to maximize cache reuse:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>examples/llm-d/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>rag.yaml
 </code></pre></div>
 <h3 id="batch-offline-processing">Batch / Offline Processing<a class="headerlink" href="#batch-offline-processing" title="Permanent link">&para;</a></h3>
 <p>Non-interactive workloads (summarization, data extraction) tolerate latency and typically have higher token counts. Use <code>batch</code> or <code>background</code> SLO classes so per-class metrics track them separately from latency-sensitive traffic.</p>
@@ -4243,6 +4273,9 @@
 </tr>
 </tbody>
 </table>
+<p>In a cluster, the class reaches the llm-d router as the <code>x-llm-d-inference-objective</code> header,
+the name of an <code>InferenceObjective</code> whose priority drives the router's shedding and flow
+control; see <a href="../admission/">Admission Control</a>.</p>
 <div class="admonition warning">
 <p class="admonition-title">All-or-nothing SLO class specification</p>
 <p>If ANY client or cohort specifies <code>slo_class</code>, then ALL clients and cohorts must specify it. Mixed specifications (some explicit, some empty) are rejected during validation.</p>
@@ -4597,7 +4630,7 @@ Use them with <code>blis run</code>, <code>blis observe</code> (deprecated, #190
 <tbody>
 <tr>
 <td><code>multiturn-chat-demo.yaml</code></td>
-<td>Multi-turn chat with prefix-aware weighted routing</td>
+<td>Multi-turn chat with prefix-aware routing</td>
 </tr>
 <tr>
 <td><code>prefix-affinity-demo.yaml</code></td>

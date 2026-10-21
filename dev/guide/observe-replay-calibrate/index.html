@@ -953,7 +953,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -2297,6 +2297,8 @@
       
         
       
+        
+      
     
     
     
@@ -2368,6 +2370,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2607,10 +2637,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2628,8 +2658,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2763,10 +2793,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2784,8 +2814,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2947,10 +2977,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2968,8 +2998,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4463,7 +4493,13 @@
 </tr>
 </tbody>
 </table>
-<p>Replay also accepts the shared simulation flags <code>blis run</code> keeps — routing, admission, scheduling, flow control, saturation detection, <code>--num-instances</code>, P/D topology, LoRA, the speculative acceptance flags (<code>--speculative-acceptance-rate</code>/<code>-length</code> and the selectors; a run's <code>--workload</code> preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
+<p>Replay also accepts the shared simulation flags <code>blis run</code> keeps — the llm-d router's environment flags (<code>--gateway-latency</code>, <code>--epp-scrape-jitter</code>, <code>--kv-event-delay</code>; its deployment inputs are the scenario's <code>router:</code> block and pool labels), scheduling, saturation detection, <code>--num-instances</code>, P/D topology, LoRA, the speculative acceptance flags (<code>--speculative-acceptance-rate</code>/<code>-length</code> and the selectors; a run's <code>--workload</code> preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
+<p>A trace exported by <code>blis run</code> records the router inputs in its header (with any
+configuration inlined). Replay rebuilds that router. A replay scenario that states a router
+(<code>router:</code> block or pool labels) must state the recorded one, and router environment flags must
+match the recorded ones; a difference is refused. A scenario that states no router replays the
+recorded one. A trace without a recorded router (one from <code>blis observe</code> or <code>blis convert</code>)
+routes with the router the scenario states, or the router's default configuration.</p>
 <div class="admonition note">
 <p class="admonition-title">Replay with the same scenario and flags as the run</p>
 <p>The deployment is not round-tripped through the trace header: replay rebuilds it from
@@ -4633,8 +4669,7 @@ subsetting tip below for the selection semantics.</p>
 <p>Each round is an independent HTTP request, so a session-aware gateway/EPP
 (session-affinity or predictive-least-loaded pinning) needs the session id on
 the wire to keep a session's rounds on one instance (issue #1505). <code>blis observe</code>
-emits it on the <code>--session-id-header</code> header — default <code>x-session-id</code>, matching
-the current custom scorers — for every request carrying a session id:</p>
+emits it on the <code>--session-id-header</code> header — default <code>x-session-id</code> — for every request carrying a session id:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>blis<span class="w"> </span>observe<span class="w"> </span>--server-url<span class="w"> </span>http://localhost:8000<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span>--corpus-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--corpus-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--concurrent-sessions<span class="w"> </span><span class="m">8</span><span class="w"> </span>--total-sessions<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
@@ -5149,13 +5184,17 @@ instrumentation outside BLIS's scope.</p>
 <li>Scheduling delay is already <strong>factored into E2E and TTFT</strong>. A real server's TTFT includes queue wait implicitly — it cannot be decomposed from execution time externally. Mathematically, <code>SchedulingDelay = (batch selection time) − ArrivalTime</code> and <code>TTFT ≥ SchedulingDelay</code> always (per INV-5 Causality: <code>arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time</code>). <code>blis calibrate</code> compares E2E and TTFT end-to-end; a good MAPE on those metrics confirms the scheduling model is correct, even without a direct scheduling delay comparison.</li>
 <li><strong>Do not expect</strong> <code>SchedulingDelay</code> to appear as a separately calibratable field in the calibration report. <code>blis calibrate</code> compares E2E and TTFT only — <code>scheduling_delay_ms</code> is not in <code>SimResult</code> (the format <code>blis replay</code> writes to <code>--results-path</code>). It is a simulator-internal diagnostic only.</li>
 <li>
-<p><strong>When scheduling delay matters:</strong> If <code>blis run</code> or <code>blis replay</code> shows high scheduling delay (e.g., P99 &gt; 500ms — exact thresholds are workload-dependent) <strong>and</strong> calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. Enable flow control to add explicit queue depth gating that better models servers with admission backpressure, then re-calibrate:</p>
+<p><strong>When scheduling delay matters:</strong> If <code>blis run</code> or <code>blis replay</code> shows high scheduling delay (e.g., P99 &gt; 500ms — exact thresholds are workload-dependent) <strong>and</strong> calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. When the observed deployment runs llm-d flow control, replay it in a cluster with the same
+  EndpointPickerConfig (<code>featureGates: [flowControl]</code> and the deployment's <code>utilization-detector</code>
+  parameters, e.g. <code>queueDepthThreshold: 5</code>, <code>kvCacheUtilThreshold: 0.8</code>), named by the scenario's
+  <code>router.endpoint_picker_config</code> (here <code>flow-control.yaml</code> beside a copy of the scenario in
+  <code>my-scenarios/</code>), then re-calibrate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>&lt;dir<span class="w"> </span>of<span class="w"> </span>scenario<span class="w"> </span>files&gt;<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>my-scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
+<p>See <a href="../admission/">Admission Control</a> for the flow-control configuration.</p>
 </li>
 </ul>
 <hr />
@@ -5259,6 +5298,11 @@ instrumentation outside BLIS's scope.</p>
 </tbody>
 </table>
 <p>Headers are only sent when the field is non-empty, so non-GIE servers are unaffected.</p>
+<p>These are the router's deprecated header names, which it still accepts as aliases of
+<code>x-llm-d-inference-objective</code> and <code>x-llm-d-inference-fairness-id</code>. The simulated cluster's
+embedded llm-d router receives the same two fields under the current names and takes
+priorities from the <code>InferenceObjective</code> manifests it is given; see
+<a href="../admission/">Admission Control</a>.</p>
 <h3 id="how-gie-resolves-priority">How GIE resolves priority<a class="headerlink" href="#how-gie-resolves-priority" title="Permanent link">&para;</a></h3>
 <p>GIE does not accept a priority integer directly from the client. Instead, priority is resolved server-side through a CRD lookup:</p>
 <ol>

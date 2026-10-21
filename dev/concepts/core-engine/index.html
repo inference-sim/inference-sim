@@ -1316,7 +1316,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -2208,6 +2208,8 @@
       
         
       
+        
+      
     
     
     
@@ -2279,6 +2281,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2518,10 +2548,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2539,8 +2569,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2674,10 +2704,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2695,8 +2725,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2858,10 +2888,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2879,8 +2909,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4170,7 +4200,7 @@ coefficients the scenario names. See the <a href="../../guide/latency-models/">L
 </table>
 <h3 id="conservation-invariant-inv-1">Conservation Invariant (INV-1)<a class="headerlink" href="#conservation-invariant-inv-1" title="Permanent link">&para;</a></h3>
 <p>At simulation end, for a <strong>single-instance</strong> run: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code></p>
-<p>That five-term form is the single-instance specialisation, not the general rule. The canonical form is a twelve-term cluster equation: a cluster run adds seven buckets for routing rejections, the gateway queue (depth, shed, rejected), in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical <a href="../../contributing/standards/invariants/">INV-1</a> for the full equation and the shared helpers that implement it.</p>
+<p>That five-term form is the single-instance specialisation, not the general rule. The canonical form is an eleven-term cluster equation: a cluster run adds six buckets for the embedded llm-d router's outcomes — routing rejections, flow-control queue depth and capacity rejections, in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical <a href="../../contributing/standards/invariants/">INV-1</a> for the full equation and the shared helpers that implement it.</p>
 <p>This is the fundamental accounting invariant that ensures no requests are silently lost.</p>
 <h2 id="determinism">Determinism<a class="headerlink" href="#determinism" title="Permanent link">&para;</a></h2>
 <p>BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).</p>

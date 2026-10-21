@@ -950,7 +950,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -1844,6 +1844,8 @@
       
         
       
+        
+      
     
     
     
@@ -1916,6 +1918,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2158,10 +2188,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
             
   
   
@@ -2179,8 +2209,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2317,10 +2347,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_11" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_12" checked>
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
             
   
   
@@ -2338,8 +2368,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2904,10 +2934,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="">
             
   
   
@@ -2925,8 +2955,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3908,7 +3938,7 @@
 <hr />
 <h3 id="r3-validate-all-numeric-parameters">R3: Validate ALL numeric parameters<a class="headerlink" href="#r3-validate-all-numeric-parameters" title="Permanent link">&para;</a></h3>
 <p>Every numeric flag (<code>--rate</code>, <code>--fitness-weights</code>, <code>--kv-cpu-blocks</code>, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).</p>
-<p><strong>Evidence:</strong> <code>--rate 0</code> caused an infinite loop deep in the simulation. <code>--snapshot-refresh-interval</code> was added without validation (#281).</p>
+<p><strong>Evidence:</strong> <code>--rate 0</code> caused an infinite loop deep in the simulation. A snapshot-refresh-interval flag was added without validation (#281).</p>
 <p><strong>Additional evidence:</strong> Issues #508, #509, #382, #383, #384 (fix #520) — <code>NewTieredKVCache</code> accepted <code>cpuBlocks &lt;= 0</code>, <code>NewKVStore</code> did not validate <code>KVOffloadThreshold</code> range or <code>KVTransferBandwidth &gt; 0</code>, and <code>NewSimulator</code> accepted <code>MaxRunningReqs &lt;= 0</code>. Library callers bypass CLI validation entirely.</p>
 <p><strong>Check:</strong> For every new numeric parameter — whether CLI flag or library constructor argument — add validation. CLI: <code>logrus.Fatalf</code> in <code>cmd/root.go</code>. Library: <code>panic</code> or <code>error</code> return in the constructor. Validation must appear before the first consumption site (validate-before-use).</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 6.</p>
@@ -3996,13 +4026,10 @@
 <p><em>Previously: principle in CLAUDE.md "Configuration design" section. Promoted to numbered rule for checkability.</em></p>
 <hr />
 <h3 id="r17-document-signal-freshness-for-routing-inputs">R17: Document signal freshness for routing inputs<a class="headerlink" href="#r17-document-signal-freshness-for-routing-inputs" title="Permanent link">&para;</a></h3>
-<p>Routing snapshot signals have different freshness guarantees due to DES event ordering. Scorer authors must understand which signals are synchronously fresh and which are stale. Any scorer intended for high-rate routing must either use a synchronously-fresh signal or be combined with one that does.</p>
-<p><strong>Evidence:</strong> H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.</p>
-<p><strong>Freshness hierarchy:</strong>
-- <strong>Synchronous (cluster-owned):</strong> InFlightRequests — always fresh (gateway counter)
-- <strong>Immediate/Periodic (instance-owned):</strong> QueueDepth, BatchSize, KVUtilization, CacheHitRate, PreemptionCount — Immediate when <code>--snapshot-refresh-interval=0</code>, Periodic when <code>&gt;0</code></p>
-<p><strong>Check:</strong> When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad). The <code>queue-depth</code> scorer reads only QueueDepth (Periodic) for GIE parity; the <code>load-balance</code> scorer reads EffectiveLoad (includes synchronous InFlightRequests).</p>
-<p><strong>Enforced:</strong> Design review, scorer implementation review.</p>
+<p>Routing signals have different freshness. The embedded llm-d router reads two kinds: the vLLM Prometheus series each engine publishes at the end of every step (<code>sim/engine_metrics.go</code>), which the router scrapes on its own cadence (EPP flag <code>--refresh-metrics-interval</code>, phase-offset by <code>--epp-scrape-jitter</code>), and the router's own in-flight bookkeeping (for example <code>inflight-load-producer</code>), which is updated synchronously on each dispatch and response. A scrape that lands mid-step sees the previous step's values.</p>
+<p><strong>Evidence:</strong> H3 hypothesis experiment (#279) — a KV-utilization scorer produced 200x worse distribution uniformity than a queue-depth scorer at rate=5000, because its signal was stale. See issues #282, #283.</p>
+<p><strong>Check:</strong> When adding an engine signal the router consumes, publish it with vLLM's semantics and at vLLM's update point (step end), and document its freshness: scraped (as stale as the scrape interval) or router-local (synchronous). When an experiment depends on a router signal, state which kind it is and the scrape interval used.</p>
+<p><strong>Enforced:</strong> Design review, review of <code>sim/engine_metrics.go</code> and <code>sim/llmd</code> changes.</p>
 <hr />
 <h3 id="r18-cli-flag-precedence-over-defaults">R18: CLI flag precedence over defaults<a class="headerlink" href="#r18-cli-flag-precedence-over-defaults" title="Permanent link">&para;</a></h3>
 <p>When the CLI binary loads default values from <code>defaults.yaml</code>, it must not silently overwrite user-provided flag values. Always check <code>cmd.Flags().Changed("&lt;flag&gt;")</code> before applying a default. A user who explicitly passes <code>--lora-load-base-latency-us 50</code> must get 50, not the <code>defaults.yaml</code> value.</p>
@@ -4060,7 +4087,7 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R14:</strong> No method spans multiple module responsibilities</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R15:</strong> Stale PR references resolved</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R16:</strong> Config params grouped by module</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R17:</strong> Routing scorer signals documented for freshness tier</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R17:</strong> Router-consumed engine signals documented for freshness (scraped vs router-local)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R18:</strong> CLI flag values not silently overwritten by defaults.yaml</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R19:</strong> Unbounded retry/requeue loops have circuit breakers</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R20:</strong> Detectors and analyzers handle degenerate inputs (empty, skewed, zero)</li>

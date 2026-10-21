@@ -1072,7 +1072,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -1964,6 +1964,8 @@
       
         
       
+        
+      
     
     
     
@@ -2035,6 +2037,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2274,10 +2304,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2295,8 +2325,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2430,10 +2460,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2451,8 +2481,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2614,10 +2644,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2635,8 +2665,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3404,7 +3434,7 @@ if it is in the catalog — nothing is fetched at run time.</p>
 </tbody>
 </table>
 <h2 id="cluster-mode">Cluster Mode<a class="headerlink" href="#cluster-mode" title="Permanent link">&para;</a></h2>
-<p>Scale to 4 instances with routing. <code>--num-instances</code> cannot exceed the scenario pool's rank
+<p>Scale to 4 instances behind the router. <code>--num-instances</code> cannot exceed the scenario pool's rank
 capacity (pool nodes × gpus_per_node / (pp × tp × pcp)); the single-node scenario above holds
 two TP4 engines, so this uses the committed four-node fixture in <code>testdata/scenarios/</code> (up to
 eight instances):</p>
@@ -3412,10 +3442,9 @@ eight instances):</p>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
-<p>This simulates a 4-instance cluster receiving 100 requests/second. The <code>weighted</code> routing policy uses the default scorer profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) to distribute requests across instances.</p>
+<p>This simulates a 4-instance cluster receiving 100 requests/second. Every cluster run routes with the llm-d router (the Endpoint Picker) embedded in the simulator; with no router configuration it uses the router's built-in default configuration (queue, KV-cache utilization and prefix-cache scorers). A real deployment's router configuration is stated by the scenario's <code>router:</code> block and pool labels; see <a href="../../guide/routing/">Routing</a>.</p>
 <div class="admonition note">
 <p class="admonition-title">Multi-instance output format</p>
 <p>In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has <code>"instance_id": "cluster"</code>. If piping to <code>jq</code>, use <code>--slurp</code> to handle multiple JSON objects: <code>./blis run ... 2&gt;/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'</code> to extract the cluster summary.</p>
@@ -3440,7 +3469,7 @@ eight instances):</p>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="../tutorial/">Tutorial: Capacity Planning</a></strong> — Full walkthrough: find the right instance count for your workload</li>
-<li><strong><a href="../../guide/routing/">Routing Policies</a></strong> — Understand and compare routing strategies</li>
+<li><strong><a href="../../guide/routing/">Routing with the llm-d Router</a></strong> — Configure the router and compare configurations</li>
 <li><strong><a href="../../guide/latency-models/">Latency Model</a></strong> — What the kernel prices and how scenarios are structured</li>
 <li><strong><a href="../../reference/configuration/">Configuration Reference</a></strong> — Complete CLI flag reference</li>
 </ul>

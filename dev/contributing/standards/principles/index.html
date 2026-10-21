@@ -950,7 +950,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -1844,6 +1844,8 @@
       
         
       
+        
+      
     
     
     
@@ -1916,6 +1918,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2158,10 +2188,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
             
   
   
@@ -2179,8 +2209,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2317,10 +2347,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_11" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_12" checked>
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
             
   
   
@@ -2338,8 +2368,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2650,10 +2680,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="">
             
   
   
@@ -2671,8 +2701,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3354,13 +3384,13 @@
 <h2 id="separation-of-concerns">Separation of Concerns<a class="headerlink" href="#separation-of-concerns" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>sim/</code> is a library — never call <code>os.Exit</code>, <code>logrus.Fatalf</code>, or terminate the process. Return errors. Only <code>cmd/</code> may terminate. <em>(Enforced by R6)</em></li>
-<li>Cluster-level policies (admission, routing) receive <code>*RouterState</code> with global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.</li>
+<li>Admission, routing and flow control are the embedded llm-d router's (<code>sim/llmd</code>), which sees the cluster only through <code>cluster.GatewayHost</code> and the engines' published metrics. Cluster-level consumers (autoscaler, saturation analyzer) receive <code>*RouterState</code> with a global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.</li>
 <li>Bridge types (<code>RouterState</code>, <code>RoutingSnapshot</code>) live in <code>sim/</code> to avoid import cycles.</li>
-<li>Unidirectional dependency: <code>cmd/ -&gt; sim/cluster/ -&gt; sim/</code> and <code>sim/cluster/ -&gt; sim/trace/</code>. <code>sim/</code> never imports subpackages.</li>
+<li>Unidirectional dependency: <code>cmd/ -&gt; sim/llmd/ -&gt; sim/cluster/ -&gt; sim/</code> and <code>sim/cluster/ -&gt; sim/trace/</code>. <code>sim/</code> never imports subpackages.</li>
 </ul>
 <h2 id="interface-design">Interface Design<a class="headerlink" href="#interface-design" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Single-method interfaces where possible (<code>AdmissionPolicy</code>, <code>RoutingPolicy</code>, <code>InstanceScheduler</code>).</li>
+<li>Single-method interfaces where possible (<code>InstanceScheduler</code>).</li>
 <li>Query methods must be pure — no side effects, no state mutation, no destructive reads. Separate <code>Get()</code> and <code>Consume()</code> for query-and-clear.</li>
 <li>Factory functions must validate inputs: <code>IsValid*()</code> check + switch/case + panic on unknown.</li>
 <li>Interfaces defined by behavioral contract, not one implementation's data model. <em>(Enforced by R13)</em></li>
@@ -3485,7 +3515,7 @@
 <td>CLAUDE.md (pointer), <code>docs/contributing/index.md</code> (landing page table)</td>
 </tr>
 <tr>
-<td>Extension recipes (policies, scorers, KV tiers)</td>
+<td>Extension recipes (schedulers, KV tiers, trace records)</td>
 <td><code>docs/contributing/extension-recipes.md</code></td>
 <td>—</td>
 </tr>

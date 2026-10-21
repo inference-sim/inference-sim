@@ -767,10 +767,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-compare-routing-policies" class="md-nav__link">
+  <a href="#step-5-compare-router-configurations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Compare Routing Policies
+        Step 5: Compare Router Configurations
       
     </span>
   </a>
@@ -1110,7 +1110,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -2002,6 +2002,8 @@
       
         
       
+        
+      
     
     
     
@@ -2073,6 +2075,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2312,10 +2342,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2333,8 +2363,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2468,10 +2498,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2489,8 +2519,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2652,10 +2682,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2673,8 +2703,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3288,10 +3318,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-compare-routing-policies" class="md-nav__link">
+  <a href="#step-5-compare-router-configurations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Compare Routing Policies
+        Step 5: Compare Router Configurations
       
     </span>
   </a>
@@ -3399,7 +3429,7 @@ pool's <code>nodes</code>, and add a <code>cluster.fabric</code> (a multi-node c
 <p>This means for 40 req/s, you need at minimum <code>ceil(40/11) = 4</code> instances. Let's verify with simulation.</p>
 <div class="admonition info">
 <p class="admonition-title"><code>--rate</code> is the total arrival rate</p>
-<p>The <code>--rate</code> flag specifies the <strong>total</strong> arrival rate across the cluster, not per-instance. With <code>--rate 40 --num-instances 4</code>, each instance receives roughly 40/4 = 10 req/s (distributed by the routing policy).</p>
+<p>The <code>--rate</code> flag specifies the <strong>total</strong> arrival rate across the cluster, not per-instance. With <code>--rate 40 --num-instances 4</code>, each instance receives roughly 40/4 = 10 req/s (distributed by the llm-d router).</p>
 </div>
 <h2 id="step-2-baseline-single-instance-at-low-load">Step 2: Baseline — Single Instance at Low Load<a class="headerlink" href="#step-2-baseline-single-instance-at-low-load" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
@@ -3452,47 +3482,39 @@ pool's <code>nodes</code>, and add a <code>cluster.fabric</code> (a multi-node c
 <li>High <code>scheduling_delay_p99_ms</code> → queue saturation (requests waiting in the WaitQ)</li>
 <li>Low <code>preemption_count</code> + low <code>scheduling_delay</code> + high TTFT → compute saturation</li>
 </ul>
-<h2 id="step-5-compare-routing-policies">Step 5: Compare Routing Policies<a class="headerlink" href="#step-5-compare-routing-policies" title="Permanent link">&para;</a></h2>
-<p>With 4 instances at 40 req/s (near saturation), compare routing strategies:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Round-robin (baseline)</span>
+<h2 id="step-5-compare-router-configurations">Step 5: Compare Router Configurations<a class="headerlink" href="#step-5-compare-router-configurations" title="Permanent link">&para;</a></h2>
+<p>Every cluster run routes with the llm-d router; its configuration is an EndpointPickerConfig
+named by the scenario's <code>router:</code> block (see <a href="../../guide/routing/">Routing</a>); the scenarios in
+<code>examples/llm-d/scenarios/</code> name the configurations in <code>examples/llm-d/</code>. With 4 instances at 40 req/s
+(near saturation), compare the router's built-in default configuration (queue, KV-cache
+utilization and prefix-cache scorers) with a load-only configuration:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># The router's built-in default configuration</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--routing-policy<span class="w"> </span>round-robin
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># Weighted (default profile)</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># Least-loaded</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">  </span>--routing-policy<span class="w"> </span>least-loaded
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Load-only: queue-scorer and kv-cache-utilization-scorer</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node-load-only.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span>--scenarios<span class="w"> </span>examples/llm-d/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span>
 </code></pre></div>
-<p>With uniform workloads (same prompt/output distribution), routing policies produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with <strong>heterogeneous workloads</strong>. Prefix-aware scorers pull same-prefix requests onto the instance that already caches the prefix — which helps when there are many prefix groups, and hurts when there is only one:</p>
+<p>With uniform workloads (same prompt/output distribution), router configurations produce similar results because all instances are roughly equally loaded. Routing differentiation becomes meaningful with <strong>heterogeneous workloads</strong>. Prefix-cache scoring pulls same-prefix requests onto the instance that already caches the prefix — which helps when there are many prefix groups, and can hurt when there is only one:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>examples/llm-d/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">"prefix-affinity:5,queue-depth:1"</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span>
 </code></pre></div>
-<p>Here every request shares the same 512-token prefix, so the heavy prefix weight sends nearly everything to one instance and TTFT p99 climbs to minutes, while round-robin with the same <code>--prefix-tokens 512</code> stays near 140ms. Watch for this hot-spotting whenever prefix weights dominate load-balancing weights.</p>
+<p>Here every request shares the same 512-token prefix. When the prefix-cache weight dominates the load-balancing weights, requests concentrate on the instance holding the prefix. Compare <code>ttft_p99_ms</code> against the load-only configuration with the same <code>--prefix-tokens 512</code>, and watch for this hot-spotting whenever prefix weights dominate load weights.</p>
 <h2 id="step-6-evaluate-with-fitness-scores">Step 6: Evaluate with Fitness Scores<a class="headerlink" href="#step-6-evaluate-with-fitness-scores" title="Permanent link">&para;</a></h2>
 <p>For automated comparison across many configurations, use fitness evaluation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">8</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">40</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">4000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
 </code></pre></div>
 <p>The fitness score is a weighted sum of normalized metrics — <strong>higher is better</strong>. Each latency metric is normalized to a [0, 1] range using <code>1/(1+x/1000)</code>, and throughput is normalized to [0, 1] using <code>throughput/max_throughput</code>. With weights <code>p99_ttft:3, mean_e2e:1, throughput:2</code>, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).</p>
 <div class="admonition warning">
@@ -3507,12 +3529,12 @@ pool's <code>nodes</code>, and add a <code>cluster.fabric</code> (a multi-node c
 <li><strong>Measure capacity under load</strong> — run at high arrival rates (e.g., <code>--rate 500</code>) to measure saturated throughput; low-load measurements underestimate capacity due to small batch sizes</li>
 <li><strong>Saturation is non-linear</strong> — TTFT degrades super-linearly as you approach capacity. Scaling from 2→4 instances can cut TTFT p99 by more than 400x, not just 2x, because the per-instance excess rate drops below zero</li>
 <li><strong>Check the bottleneck type</strong> — preemption count, scheduling delay, and raw TTFT tell you whether to add instances, add memory, or tune batch size</li>
-<li><strong>Routing matters for heterogeneous workloads</strong> — with uniform traffic, routing policies produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-aware and load-aware routing differ sharply — in either direction</li>
+<li><strong>Routing matters for heterogeneous workloads</strong> — with uniform traffic, router configurations produce similar results; with prefix-heavy or mixed-SLO workloads, prefix-aware and load-aware configurations differ sharply — in either direction</li>
 <li><strong>Deterministic replay</strong> — use <code>--seed</code> to get identical results for A/B comparisons</li>
 </ol>
 <h2 id="whats-next">What's Next<a class="headerlink" href="#whats-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="../../guide/routing/">Routing Policies</a></strong> — deep dive into scorer composition and signal freshness</li>
+<li><strong><a href="../../guide/routing/">Routing with the llm-d Router</a></strong> — the router's inputs, supported plugins and the signals it sees</li>
 <li><strong><a href="../../guide/kv-cache/">KV Cache &amp; Memory</a></strong> — tune KV blocks, prefix caching, and chunked prefill</li>
 <li><strong><a href="../../guide/results/">Metrics &amp; Results</a></strong> — understand all output fields and common patterns</li>
 </ul>

@@ -953,7 +953,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -1435,10 +1435,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#snapshot-staleness-effects" class="md-nav__link">
+  <a href="#metrics-staleness-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Snapshot Staleness Effects
+        Metrics Staleness Effects
       
     </span>
   </a>
@@ -1446,10 +1446,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#policy-equivalence-at-low-load" class="md-nav__link">
+  <a href="#configuration-equivalence-at-low-load" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Policy Equivalence at Low Load
+        Configuration Equivalence at Low Load
       
     </span>
   </a>
@@ -2185,6 +2185,8 @@
       
         
       
+        
+      
     
     
     
@@ -2256,6 +2258,34 @@
     
   
     Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
   
 
     
@@ -2495,10 +2525,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
             
   
   
@@ -2516,8 +2546,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2651,10 +2681,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
             
   
   
@@ -2672,8 +2702,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2835,10 +2865,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="0">
             
   
   
@@ -2856,8 +2886,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3649,10 +3679,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#snapshot-staleness-effects" class="md-nav__link">
+  <a href="#metrics-staleness-effects" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Snapshot Staleness Effects
+        Metrics Staleness Effects
       
     </span>
   </a>
@@ -3660,10 +3690,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#policy-equivalence-at-low-load" class="md-nav__link">
+  <a href="#configuration-equivalence-at-low-load" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Policy Equivalence at Low Load
+        Configuration Equivalence at Low Load
       
     </span>
   </a>
@@ -4096,7 +4126,8 @@ omits the block.</p>
 </div>
 <h3 id="saturation-detection">Saturation Detection<a class="headerlink" href="#saturation-detection" title="Permanent link">&para;</a></h3>
 <p>Post-hoc saturation analysis classifies a completed run as <code>STABLE</code>, <code>BACKLOGGED</code> or
-<code>OVERLOADED</code>. It is distinct from the real-time flow-control detector. Select detectors with
+<code>OVERLOADED</code>. It is distinct from the llm-d router's saturation detector, which gates admission
+and flow control during the run. Select detectors with
 <code>--detectors &lt;name|comma-list|all&gt;</code> (<code>composite</code>, <code>threshold</code>, <code>backlog-drift</code>, <code>peak-rate</code>),
 tune them with <code>--saturation-config</code>, and write the per-event verdict trace with
 <code>--saturation-report</code>:</p>
@@ -4185,7 +4216,7 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 <tr>
 <td><code>gateway_queue_delay_ms</code></td>
 <td>ms</td>
-<td>Time spent in the gateway queue — omitted when flow control is disabled</td>
+<td>Time from the router enqueuing the request in flow control to its dispatch — omitted when flow control (<code>featureGates: [flowControl]</code>) is off</td>
 </tr>
 <tr>
 <td><code>session_id</code></td>
@@ -4222,18 +4253,18 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 </tr>
 <tr>
 <td><strong>Rejected Requests (Admission)</strong></td>
-<td>Admission policy rejected the request at cluster ingress</td>
-<td>Check token bucket capacity or admission policy</td>
+<td>The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority &lt; 0) from a saturated pool</td>
+<td>Check the <code>InferenceObjective</code> priorities and the saturation detector's parameters; see <a href="../admission/">Admission Control</a></td>
 </tr>
 <tr>
 <td><strong>Shed (tier)</strong></td>
-<td>Per-SLO-class breakdown of admission rejections under overload — printed as indented sub-items beneath Rejected Requests (Admission)</td>
-<td>Adjust <code>slo_priorities</code> in the policy bundle or raise admission thresholds</td>
+<td>Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission)</td>
+<td>Raise the class's <code>InferenceObjective</code> priority, or the detector's thresholds</td>
 </tr>
 <tr>
 <td><strong>Rejected Requests (Routing)</strong></td>
-<td>No routable instances for the request's model — all instances are <code>Loading</code> or <code>Draining</code></td>
-<td>Increase <code>initial_nodes</code>, reduce <code>loading_delay.mean</code>, or stagger drain operations</td>
+<td>No endpoint could serve the request: no ready candidates (all instances <code>Loading</code> or <code>Draining</code>), or every filter eliminated all</td>
+<td>Increase <code>initial_nodes</code>, reduce <code>loading_delay.mean</code>, stagger drain operations, or check the router configuration's filters</td>
 </tr>
 <tr>
 <td><strong>Dropped Unservable</strong></td>
@@ -4252,16 +4283,28 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 </tr>
 <tr>
 <td><strong>Gateway Queue Depth (horizon)</strong></td>
-<td>Requests still waiting in the gateway queue when the simulation ended — printed only when <code>&gt; 0</code></td>
+<td>Requests still waiting in the router's flow control when the simulation ended — printed only when <code>&gt; 0</code></td>
 <td>Reduce arrival rate or increase cluster capacity</td>
 </tr>
 <tr>
-<td><strong>Gateway Queue Shed</strong></td>
-<td>Requests shed from the gateway queue because it was full — printed only when <code>&gt; 0</code></td>
-<td>Increase <code>--max-gateway-queue-depth</code> or enable <code>--flow-control</code> with a saturation detector</td>
+<td><strong>Gateway Queue Rejected</strong></td>
+<td>Requests flow control rejected because its queues were at capacity — printed only when <code>&gt; 0</code></td>
+<td>Raise <code>flowControl.maxRequests</code> or the priority band's capacity in the EndpointPickerConfig</td>
+</tr>
+<tr>
+<td><strong>Gateway Expired (TTL)</strong></td>
+<td>Requests that waited in flow control past their queue-wait budget — printed only when <code>&gt; 0</code></td>
+<td>Raise <code>flowControl.defaultRequestTTL</code>, or add capacity</td>
+</tr>
+<tr>
+<td><strong>Encode Routing Rejections</strong></td>
+<td>Requests rejected at an encode stage — printed only when <code>&gt; 0</code></td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
+<p>Each counter is one INV-1 bucket; see <a href="../admission/">Admission Control</a> for how router outcomes
+map onto them.</p>
 <div class="admonition note">
 <p class="admonition-title">Stdout-only vs JSON counters</p>
 <p><strong>Dropped Unservable</strong>, <strong>Timed Out Requests</strong>, and <strong>Length-Capped Requests</strong> also appear as fields in the <code>--metrics-path</code> JSON output (see <a href="#primary-metrics-json-output">Primary Metrics</a>: <code>dropped_unservable</code>, <code>timed_out_requests</code>, <code>length_capped_requests</code>).</p>
@@ -4355,7 +4398,7 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 </tr>
 </tbody>
 </table>
-<p>Cold vs. warm TTFT split reveals prefix cache effectiveness: if <code>TTFT warm</code> ≈ <code>TTFT cold</code>, prefix caching is not activating for continuations — check <code>--cache-signal-delay</code> and scorer configuration.</p>
+<p>Cold vs. warm TTFT split reveals prefix cache effectiveness: if <code>TTFT warm</code> ≈ <code>TTFT cold</code>, prefix caching is not activating for continuations — check that the router configuration includes the <code>prefix-cache-scorer</code> and that its weight is not dominated by load scorers.</p>
 <h2 id="pd-disaggregation-metrics">PD Disaggregation Metrics<a class="headerlink" href="#pd-disaggregation-metrics" title="Permanent link">&para;</a></h2>
 <p>When PD disaggregation is active (<code>--prefill-instances &gt; 0</code>), BLIS prints a <code>=== PD Metrics ===</code> block:</p>
 <table>
@@ -4416,10 +4459,13 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 <p>As arrival rate increases past per-instance service capacity (μ ≈ 1/step_time), TTFT p99 grows super-linearly. The queue growth rate <code>excess = λ/k - μ</code> determines how quickly latency degrades.</p>
 <h3 id="tail-latency-spikes">Tail Latency Spikes<a class="headerlink" href="#tail-latency-spikes" title="Permanent link">&para;</a></h3>
 <p>P99 diverges from mean sharply near saturation. A workload at 90% capacity may show 2x mean TTFT but 10x P99 TTFT.</p>
-<h3 id="snapshot-staleness-effects">Snapshot Staleness Effects<a class="headerlink" href="#snapshot-staleness-effects" title="Permanent link">&para;</a></h3>
-<p>With <code>kv-utilization</code> scorer alone at <code>--snapshot-refresh-interval 100ms</code>: +354% TTFT degradation. The default composite scorer mitigates ~99% of this effect.</p>
-<h3 id="policy-equivalence-at-low-load">Policy Equivalence at Low Load<a class="headerlink" href="#policy-equivalence-at-low-load" title="Permanent link">&para;</a></h3>
-<p>All routing policies produce equivalent results (within 5%) at low utilization. Differentiation requires moderate-to-high load where queueing dynamics dominate.</p>
+<h3 id="metrics-staleness-effects">Metrics Staleness Effects<a class="headerlink" href="#metrics-staleness-effects" title="Permanent link">&para;</a></h3>
+<p>The router scores endpoints from metrics it scrapes every <code>--refresh-metrics-interval</code> (an EPP
+flag). Between scrapes it sees stale queue and KV-cache values, so load-only configurations can
+send bursts to the same endpoint. Shorten the interval in the scenario's <code>router.epp_flags</code>, or add a scorer fed by the
+router's own in-flight accounting (<code>active-request-scorer</code>), to reduce the effect.</p>
+<h3 id="configuration-equivalence-at-low-load">Configuration Equivalence at Low Load<a class="headerlink" href="#configuration-equivalence-at-low-load" title="Permanent link">&para;</a></h3>
+<p>Router configurations produce near-equivalent results at low utilization. Differentiation requires moderate-to-high load where queueing dynamics dominate.</p>
 <h3 id="host-overhead">Host Overhead<a class="headerlink" href="#host-overhead" title="Permanent link">&para;</a></h3>
 <p>blis-latency-kernel prices host work outside the GPU step: per-request queueing (tokenization
 and preprocessing) delays enqueue, creating an event gap, but does not occupy the GPU;

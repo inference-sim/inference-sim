@@ -14,7 +14,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../pr-workflow/">
+        <link rel="next" href="../llm-d-router-fork/">
       
       
         
@@ -950,7 +950,7 @@
   <span class="md-ellipsis">
     
   
-    Routing Policies
+    Routing (llm-d router)
   
 
     
@@ -1844,6 +1844,8 @@
       
         
       
+        
+      
     
     
     
@@ -1968,10 +1970,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#adding-new-policy-templates" class="md-nav__link">
+  <a href="#routing-admission-and-flow-control" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding New Policy Templates
+        Routing, Admission and Flow Control
       
     </span>
   </a>
@@ -1979,10 +1981,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adding-new-scorers-weighted-routing" class="md-nav__link">
+  <a href="#adding-new-instance-schedulers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding New Scorers (Weighted Routing)
+        Adding New Instance Schedulers
       
     </span>
   </a>
@@ -2081,6 +2083,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2315,10 +2345,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_10" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_10" id="__nav_8_10_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
             
   
   
@@ -2336,8 +2366,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_10">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2474,10 +2504,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
             
   
   
@@ -2495,8 +2525,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2661,10 +2691,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_13" >
         
           
-          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8_13" id="__nav_8_13_label" tabindex="">
             
   
   
@@ -2682,8 +2712,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3242,10 +3272,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#adding-new-policy-templates" class="md-nav__link">
+  <a href="#routing-admission-and-flow-control" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding New Policy Templates
+        Routing, Admission and Flow Control
       
     </span>
   </a>
@@ -3253,10 +3283,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adding-new-scorers-weighted-routing" class="md-nav__link">
+  <a href="#adding-new-instance-schedulers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Adding New Scorers (Weighted Routing)
+        Adding New Instance Schedulers
       
     </span>
   </a>
@@ -3373,53 +3403,19 @@
 
 <h1 id="blis-extension-recipes">BLIS Extension Recipes<a class="headerlink" href="#blis-extension-recipes" title="Permanent link">&para;</a></h1>
 <p>Step-by-step guides for extending BLIS. Each recipe lists the exact files to touch, the order, and examples to follow.</p>
-<h2 id="adding-new-policy-templates">Adding New Policy Templates<a class="headerlink" href="#adding-new-policy-templates" title="Permanent link">&para;</a></h2>
-<p>To add a new policy template (e.g., a new routing algorithm):</p>
+<h2 id="routing-admission-and-flow-control">Routing, Admission and Flow Control<a class="headerlink" href="#routing-admission-and-flow-control" title="Permanent link">&para;</a></h2>
+<p>BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process (<a href="../../guide/routing/">Routing</a>). New routing, admission or flow-control behavior belongs in <a href="https://github.com/llm-d/llm-d-router">llm-d-router</a>, as a plugin or configuration, not in this repository.</p>
+<p>A new llm-d plugin type becomes usable in BLIS once it is audited and added to the supported list in <code>sim/llmd/support.go</code>: read every clock read, goroutine, blocking wait, random draw and map iteration it makes, route the decision-relevant ones through the hosting runtime in the fork, check that every signal it consumes is produced by the simulated engines, and add a test in <code>sim/llmd</code>. Until then it is refused at startup with the reason in the unsupported list. See <a href="../llm-d-router-fork/">The llm-d router fork</a>.</p>
+<h2 id="adding-new-instance-schedulers">Adding New Instance Schedulers<a class="headerlink" href="#adding-new-instance-schedulers" title="Permanent link">&para;</a></h2>
+<p>To add a new instance-level scheduler (wait-queue ordering):</p>
 <ol>
-<li><strong>Implement the interface</strong> in the corresponding file:</li>
-<li><code>AdmissionPolicy</code> → <code>sim/admission.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
-<li><code>RoutingPolicy</code> → <code>sim/routing.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
-<li><code>InstanceScheduler</code> → <code>sim/scheduler.go</code> (instance-level: receives <code>requests</code> + <code>clock</code> only)</li>
-<li>
-<p>Note: <code>RouterState</code> is a bridge type in <code>sim/</code> to avoid import cycles — see <code>sim/router_state.go</code></p>
-</li>
-<li>
-<p><strong>Register in two places</strong> (both required):</p>
-</li>
-<li>Add policy name to valid names map in <code>sim/bundle.go</code> (e.g., <code>validRoutingPolicies</code>) and corresponding <code>IsValid*</code> function</li>
-<li>Add <code>case</code> to factory function in the same policy file (e.g., <code>NewRoutingPolicy</code> in <code>sim/routing.go</code>)</li>
-<li>
-<p>CLI error messages auto-derive from <code>ValidAdmissionPolicyNames()</code> etc. — no manual update needed</p>
-</li>
-<li>
-<p><strong>Add tests</strong> following BDD naming: <code>TestMyPolicy_Scenario_Behavior</code></p>
-</li>
-<li>Test observable behavior, not internal structure</li>
-<li>Include empty-snapshots panic test for routing policies (defensive programming convention)</li>
-<li>
-<p>Use <code>&amp;RouterState{Snapshots: snapshots, Clock: clock}</code> in test setup</p>
-</li>
-<li>
-<p><strong>Update documentation</strong>: the relevant <code>docs/</code> guide and README policy lists. Touch <code>CLAUDE.md</code> only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.</p>
-</li>
-</ol>
-<p><strong>Important:</strong> For composite load signals, use <code>snap.EffectiveLoad()</code> — never compute <code>QueueDepth + BatchSize + InFlightRequests</code> inline. For queue-depth-only signals, use <code>snap.QueueDepth</code> directly.</p>
-<p>Examples:
-- See <code>RejectAll</code> in <code>sim/admission.go</code> for a simple admission template (constant return)
-- See <code>newPrefixAffinityScorer</code> in <code>sim/routing_prefix_scorer.go</code> for a stateful scorer with observer-based state updates (the prefix-affinity scorer uses a router-side <code>PrefixCacheIndex</code> to track per-instance block hash history)</p>
-<h2 id="adding-new-scorers-weighted-routing">Adding New Scorers (Weighted Routing)<a class="headerlink" href="#adding-new-scorers-weighted-routing" title="Permanent link">&para;</a></h2>
-<p>To add a new scoring dimension for the <code>weighted</code> routing policy (e.g., predicted-latency):</p>
-<ol>
-<li><strong>Implement the scorer function</strong> in <code>sim/routing_scorers.go</code> (stateless) or a new file (stateful) — a <code>scorerFunc</code> that takes <code>(*Request, []RoutingSnapshot)</code> and returns <code>map[string]float64</code> with scores in [0,1] per instance. Stateful scorers also return an <code>observerFunc</code> called after each routing decision.</li>
-<li><strong>Register the scorer</strong> in <code>sim/routing_scorers.go</code>: add to <code>validScorerNames</code> map + <code>newScorerWithObserver</code> factory switch</li>
-<li><strong>Add behavioral tests</strong> — monotonicity, boundary values, INV-1/INV-2 conformance</li>
-<li>Extension friction: <strong>2 touch points</strong> (implementation + registration in <code>newScorerWithObserver</code>). Stateful scorers (like prefix-affinity) may use a separate file (e.g., <code>sim/routing_prefix_scorer.go</code>) but the registration point is the same <code>newScorerWithObserver</code> switch in <code>sim/routing_scorers.go</code>.</li>
-<li><strong>Stateful scorers</strong> return an <code>observerFunc</code> alongside the <code>scorerFunc</code> from <code>newScorerWithObserver</code>. The <code>observerFunc</code> signature is <code>func(req *Request, targetInstance string)</code> and is called after each routing decision to update scorer state. The scorer and observer share state via closure.</li>
+<li><strong>Implement the <code>InstanceScheduler</code> interface</strong> in <code>sim/scheduler.go</code> (receives <code>requests</code> + <code>clock</code> only).</li>
+<li><strong>Register in two places</strong> (both required): add the name to <code>validSchedulers</code> in <code>sim/bundle.go</code>, and add a <code>case</code> to <code>NewScheduler</code> in <code>sim/scheduler.go</code>. CLI error messages derive from <code>ValidSchedulerNames()</code>.</li>
+<li><strong>Add tests</strong> following BDD naming: <code>TestMyScheduler_Scenario_Behavior</code>. Test observable behavior, not internal structure.</li>
+<li><strong>Update documentation</strong>: the relevant <code>docs/</code> guide. Touch <code>CLAUDE.md</code> only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.</li>
 </ol>
 <p>Examples:
-- See <code>scoreLoadBalance</code> in <code>sim/routing_scorers.go</code> for a simple stateless scorer
-- See <code>scoreQueueDepth</code> for a scorer with edge case handling (uniform load)
-- See <code>newPrefixAffinityScorer</code> in <code>sim/routing_prefix_scorer.go</code> for a stateful scorer with observer and router-side cache</p>
+- See <code>PriorityFCFSScheduler</code> and <code>SJFScheduler</code> in <code>sim/scheduler.go</code>.</p>
 <h2 id="extending-kv-cache-tiers">Extending KV Cache Tiers<a class="headerlink" href="#extending-kv-cache-tiers" title="Permanent link">&para;</a></h2>
 <p>To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):</p>
 <ol>
@@ -3443,14 +3439,14 @@
 <li><strong>Define the record struct</strong> in <code>sim/trace/record.go</code> (pure data, no <code>sim/</code> dependency)</li>
 <li><strong>Add a slice field</strong> to <code>SimulationTrace</code> in <code>sim/trace/trace.go</code> (e.g., <code>Scales []ScaleRecord</code>)</li>
 <li><strong>Add a recording method</strong> to <code>SimulationTrace</code> (e.g., <code>RecordScale(ScaleRecord)</code>)</li>
-<li><strong>Hook recording</strong> into the cluster event pipeline in <code>sim/cluster/cluster_event.go</code> (guard with <code>if cs.trace != nil</code> for zero-overhead default)</li>
+<li><strong>Hook recording</strong> into the cluster pipeline (e.g. <code>sim/cluster/gateway.go</code> for router decisions, <code>sim/cluster/cluster_event.go</code> for scaling events; guard with <code>if cs.trace != nil</code> for zero-overhead default)</li>
 <li><strong>Update <code>Summarize()</code></strong> in <code>sim/trace/summary.go</code> to aggregate the new record type</li>
 <li><strong>Add behavioral tests</strong> in <code>sim/trace/*_test.go</code></li>
 </ol>
 <p>Examples:
 - See <code>AdmissionRecord</code> in <code>sim/trace/record.go</code> for a simple record
 - See <code>RoutingRecord</code> with <code>CandidateScore</code> for a record with nested counterfactual data
-- See <code>computeCounterfactual()</code> in <code>sim/cluster/counterfactual.go</code> for derived computation that lives in <code>sim/cluster/</code> (not <code>sim/trace/</code>) because it needs <code>sim.RoutingSnapshot</code></p>
+- See <code>counterfactual()</code> in <code>sim/cluster/gateway.go</code> for derived computation that lives in <code>sim/cluster/</code> (not <code>sim/trace/</code>): it ranks the scores the router's primary scheduling profile gave every endpoint</p>
 <h2 id="adding-fields-to-tracev2-format">Adding Fields to TraceV2 Format<a class="headerlink" href="#adding-fields-to-tracev2-format" title="Permanent link">&para;</a></h2>
 <p>To add a new field to TraceV2 CSV output (e.g., observability metadata like <code>vllm_priority</code>):</p>
 <ol>
@@ -3547,11 +3543,11 @@
 <li><strong>Add field to <code>Request</code></strong> in <code>sim/request.go</code> (runtime state, zero-value safe). When constructing <code>Request</code> structs, use <code>RequestState</code> typed constants (<code>StateQueued</code>, <code>StateRunning</code>, <code>StateCompleted</code>) — never bare strings.</li>
 <li><strong>Add field to <code>RequestMetrics</code></strong> in <code>sim/metrics_utils.go</code> (JSON output struct, use <code>omitempty</code> for backward compatibility)</li>
 <li><strong>Update <code>NewRequestMetrics()</code> constructor</strong> in <code>sim/metrics_utils.go</code> to propagate the new field from <code>Request</code> to <code>RequestMetrics</code></li>
-<li><strong>Set the field</strong> at the appropriate event (e.g., <code>RoutingDecisionEvent</code> for cluster-level, or completion for computed metrics)</li>
+<li><strong>Set the field</strong> at the appropriate point (e.g., dispatch in <code>sim/cluster/gateway.go</code> for cluster-level, or completion for computed metrics)</li>
 <li><strong>Add behavioral tests</strong> covering multi-instance, single-instance, and standalone boundaries</li>
 </ol>
 <p>Examples:
-- See <code>HandledBy</code> (#181) — set by <code>RoutingDecisionEvent</code>, zero-value when used outside cluster pipeline (suppressed from JSON via <code>omitempty</code>)
+- See <code>HandledBy</code> (#181) — derived from the instance a request was dispatched to, zero-value outside the cluster pipeline (suppressed from JSON via <code>omitempty</code>)
 - See <code>SLOClass</code>/<code>TenantID</code> (PR10) — set during workload generation, propagated at injection</p>
 
 
@@ -3605,13 +3601,13 @@
         
         
           
-          <a href="../pr-workflow/" class="md-footer__link md-footer__link--next" aria-label="Next: PR Workflow">
+          <a href="../llm-d-router-fork/" class="md-footer__link md-footer__link--next" aria-label="Next: The llm-d Router Fork">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                PR Workflow
+                The llm-d Router Fork
               </div>
             </div>
             <div class="md-footer__button md-icon">
