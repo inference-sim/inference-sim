@@ -21,24 +21,24 @@ Every `blis run` / `blis replay` needs three things besides the binary:
 git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
 git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
-export SCENARIOS=$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate
+export SCENARIOS=examplescenarios
 ```
 
-A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is the kernel
-module's own set (present after `go build`); `testdata/scenarios/` in this repository adds a
-P/D and an MTP example. The clones pin the releases BLIS is tested against — see
-[Catalog compatibility](installation.md#catalog-compatibility).
+A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is this
+repository's ready-to-run set (`examplescenarios/`). The clones pin the releases BLIS is tested
+against — see [Catalog compatibility](installation.md#catalog-compatibility).
 
 ## Single-Instance Simulation
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $SCENARIOS --registry $PWD/blis-registry \
+./blis run --scenarios $SCENARIOS \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
 
-This runs 100 requests at 10 requests/second through one Llama-3.1-70B-Instruct engine on
-H200 (FP8, vLLM, TP4), priced by `blis-latency-kernel`.
+This runs 100 requests at 10 requests/second through one DeepSeek-V4.1-Flash engine on an
+8-GPU H100 node (FP8, vLLM, TP8 with expert parallelism and DSpark speculative decoding),
+priced by `blis-latency-kernel`.
 
 !!! note "The scenario states the deployment"
     There are no `--model`, `--hardware` or `--tp` flags. Model, hardware, parallelism, block
@@ -79,14 +79,14 @@ BLIS prints diagnostic logs to stderr and results to stdout. You'll see log line
 ## Cluster Mode
 
 Scale to 4 instances behind the router. `--num-instances` cannot exceed the scenario pool's rank
-capacity (pool nodes × gpus_per_node / (pp × tp × pcp)); the single-node scenario above holds
-two TP4 engines, so this uses the committed four-node fixture in `testdata/scenarios/` (up to
-eight instances):
+capacity (pool nodes × gpus_per_node / (pp × tp × pcp)); the single-node scenario above is one
+rank, so this uses the two-node `gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml` (2 × 8 ÷ TP2 = 8
+ranks, up to eight instances):
 
 ```bash
 ./blis run \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenarios examplescenarios \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
   --num-instances 4 \
   --rate 100 --num-requests 500
 ```
@@ -100,19 +100,19 @@ This simulates a 4-instance cluster receiving 100 requests/second. Every cluster
 
 ```bash
 # Higher traffic rate
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+./blis run --scenarios examplescenarios \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
   --num-instances 8 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+./blis run --scenarios examplescenarios \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
-# A different deployment: pick another scenario (one node, TP4: at most 2 instances)
-./blis run --scenario gpt-oss-120b-h200-fp4-vllm-tp4.yaml \
-  --scenarios $SCENARIOS --registry $PWD/blis-registry \
+# A different deployment: pick another scenario (single-node TP2: up to 4 instances)
+./blis run --scenarios examplescenarios \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --registry $PWD/blis-registry \
   --num-instances 2 --rate 100 --num-requests 500
 ```
 

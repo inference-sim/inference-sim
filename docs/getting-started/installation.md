@@ -86,21 +86,20 @@ Every `blis run` and `blis replay` names a **scenario**: a
 (two documents) that states the model, the cluster's hardware, fabric, nodes and GPUs per
 node, the coefficient sets that price it, the engine version, and each pool's role,
 parallelism and engine settings. `--scenarios <dir>` is any directory of scenario YAMLs and
-`--scenario <file name>` picks one in it. Two directories are ready to use:
-
-- the kernel module's own fixtures, downloaded by `go build`, at
-  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`;
-- `testdata/scenarios/` in this repository: `glm-5-h200-3p1d-ib.yaml` (P/D) and
-  `glm-5-h200-tp8-mtp3.yaml` (MTP speculative decoding; it drafts tokens, so a run must also
-  state its acceptance -- `--speculative-acceptance-rate`, e.g. `0.7`, or select a registry
-  profile; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)).
+`--scenario <file name>` picks one in it. This repository ships ready-to-run scenarios in
+`examplescenarios/` (speculative ones pin their acceptance, so no `--speculative-*` flag is
+needed): `deepseek-v4.1-flash-h100-tp8-dspark5.yaml` (the quickstart), an MoE
+`gpt-oss-120b-h100-fp4-vllm-tp2.yaml`, a `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml`, a P/D
+`glm-5-h200-3p1d-ib.yaml`, and a multi-node `kimi-k3-h200-tp8dp4ep32-balanced.yaml`. See
+[`examplescenarios/README.md`](https://github.com/inference-sim/inference-sim/tree/main/examplescenarios)
+for details.
 
 ## Verify the Build
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate \
-  --registry $PWD/blis-registry --catalog blis-catalog \
+./blis run --scenarios examplescenarios \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
+  --registry $PWD/blis-registry --catalog $PWD/blis-catalog \
   --num-requests 10
 ```
 

@@ -1,0 +1,38 @@
+# gpt-oss-120b on one 8-GPU H100 node, TP2, FP4 (nvfp4 weights, fp8 KV) under vLLM. An MoE
+# example.
+#
+# The 8k/1k workload (ISL 8192 / OSL 1024) is set on the command line, not in the scenario —
+# see examplescenarios/README.md. No speculative decoding, so `blis run` needs no
+# --speculative-* flag.
+kind: Scenario
+name: gpt-oss-120b-h100-fp4-vllm-tp2
+engine_version: "0.29.0"
+
+model: gpt-oss-120b
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: gpt-oss-120b-h100-fp4-vllm-tp2
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 2
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: nvfp4
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.92
