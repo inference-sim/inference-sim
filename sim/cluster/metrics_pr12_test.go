@@ -55,15 +55,13 @@ func TestCollectRawMetrics_IncludesCacheHitRate(t *testing.T) {
 
 // The law #1904 states: replicating a one-instance run across N instances, with N-1 of them
 // idle, leaves the cluster hit rate unchanged. Prefix affinity alone keeps every request on
-// the instance that holds the shared prefix, so the busy instance sees the one-instance
+// the instance that holds the shared prefix (pinnedGateway stands in for it), so the busy instance sees the one-instance
 // run's exact lookups; an unweighted mean would report a quarter of it.
 func TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt(t *testing.T) {
 	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 100_000)
 	run := func(n int) (*ClusterSimulator, *sim.Metrics) {
-		config := baseDeploymentConfig(n)
-		config.RoutingPolicy = "weighted"
-		config.RoutingScorerConfigs = []sim.ScorerConfig{{Name: "prefix-affinity", Weight: 1.0}}
-		cs := NewClusterSimulator(config, NewSliceRequestSource(copyRequests(requests)), nil)
+		cs := NewClusterSimulator(baseDeploymentConfig(n), NewSliceRequestSource(copyRequests(requests)), nil)
+		cs.SetGateway(pinnedGateway())
 		if err := cs.Run(); err != nil {
 			t.Fatal(err)
 		}
@@ -91,9 +89,7 @@ func TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt(t *testing.T) {
 // The cluster rate is the instances' summed hit tokens over their summed lookup tokens.
 func TestAggregateCacheHitRate_IsTokenWeighted(t *testing.T) {
 	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 100_000)
-	config := baseDeploymentConfig(2)
-	config.RoutingPolicy = "round-robin"
-	cs := NewClusterSimulator(config, NewSliceRequestSource(copyRequests(requests)), nil)
+	cs := NewClusterSimulator(baseDeploymentConfig(2), NewSliceRequestSource(copyRequests(requests)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}

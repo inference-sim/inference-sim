@@ -32,7 +32,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 
 One canonical form per command. `--help` and the guides carry the full flag surface — by home:
 
-- SLO goodput, flow-control, dispatch ordering → `docs/guide/admission.md`
+- routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
 - KV-offload (`--kv-offload-config`) → `docs/guide/kv-offload-calibration.md`
 - closed-loop/corpus sessions, `replay` (`observe`/`calibrate` are deprecated, #1901) → `docs/guide/observe-replay-calibrate.md`
@@ -64,7 +64,7 @@ go test ./...                      # all tests
 go test ./sim/...                  # a package tree
 go test ./sim/... -run TestKVCache # a single test
 go test -cover ./...               # with coverage
-golangci-lint run ./...            # lint (v2.9.0); run before pushing
+golangci-lint run ./...            # lint (v2.14.0); run before pushing
 ```
 
 ## Development Guidelines
@@ -91,14 +91,14 @@ BLIS follows a layered design-document hierarchy (read the design guidelines fir
 
 Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
-- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (twelve-term cluster form; five-term single-instance form).
+- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (eleven-term cluster form; five-term single-instance form).
 - **INV-6 Determinism** — same seed ⇒ byte-identical **stdout**; wall-clock timing goes to stderr.
 - **INV-13 Run/Replay parity** — a trace exported by `run` and replayed with identical flags (including `--horizon`) yields byte-identical stdout; unsupported replay features `logrus.Fatalf` at startup.
 - **NS-6 Catalog is authoritative and read-only** — see *Catalog and deployment rules* above; binds the CLI only.
 
 ### Notable subsystems (pointers)
 
-Routing scorers + the default profile (`precise-prefix-cache:2,queue-depth:1,kv-utilization:1`): `docs/guide/routing.md`. LoRA control plane, MoE data-parallel placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for policies, scorers, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
+Every cluster run routes with the real llm-d router (EPP) embedded in-process (`sim/llmd`); BLIS has no routing/admission/flow-control logic of its own: `docs/guide/routing.md`. LoRA control plane, MoE data-parallel placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for schedulers, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
 
 ### Code Style
 
@@ -110,7 +110,7 @@ Routing scorers + the default profile (`precise-prefix-cache:2,queue-depth:1,kv-
 
 GitHub Actions run on all PRs to main:
 
-- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.9.0), tests, and a CLAUDE.md size-ceiling check.
+- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, and a CLAUDE.md size-ceiling check.
 - `.github/workflows/docs.yml` — MkDocs site (PR build-only; deploy on push to main; versioned on tag).
 
 ## Cross-Repository Changes (BLIS repositories)
@@ -186,7 +186,7 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 
 ## Active Technologies
 
-- Go 1.24+ with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
+- Go 1.27.2+ (the llm-d router requires it) with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
 - In-memory node/GPU inventory maps; no external storage.
 
 ## Change History

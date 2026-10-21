@@ -9,6 +9,7 @@ package harness
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +60,10 @@ func RequireBlis(path string) error {
 //
 // A scenario stating more than one pool is refused: the corpus scores aggregated serving, and
 // the resolved settings describe one engine.
-func writeScenarioVariant(src, dst string, pc PointConfig) error {
+//
+// A non-nil router becomes the variant's router block (its paths relative to dst's directory); a
+// committed scenario that already states one is refused rather than overwritten.
+func writeScenarioVariant(src, dst string, pc PointConfig, router *deployment.Router) error {
 	sc, dep, err := latencykernel.LoadBundle(src)
 	if err != nil {
 		return err
@@ -68,6 +72,12 @@ func writeScenarioVariant(src, dst string, pc PointConfig) error {
 		return fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
 	}
 	applyPointConfig(&dep.Pools[0], pc)
+	if router != nil {
+		if dep.Router != nil {
+			return fmt.Errorf("%s states a router block; the harness routes every point with its own", src)
+		}
+		dep.Router = router
+	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -192,10 +202,10 @@ func mainPhase(pl PointLengths) replayRun {
 //
 // The pool is CONC + copies, so the first CONC main requests start together at
 // primeMainStartUs, in trace order, exactly as the cold main phase starts at 0, and each later
-// one is admitted at a main completion. copies is the deployment's dp width: round-robin
-// routing puts copy j on replica j and then main request i on replica (copies + i) mod dp =
-// i mod dp, the replica it has in the cold run, and main request 0 lands on a replica holding
-// its prompt.
+// one is admitted at a main completion. copies is the deployment's dp width: the harness's
+// router places by requests in flight (vllm-dp-lb.epp.yaml), so each copy goes to a replica not
+// yet holding one, every replica ends up holding request 0's prompt, and the main phase starts
+// on idle replicas as in the cold run.
 const (
 	primeMainStartUs = int64(10_000_000_000)    // 10^4 s: after any single warm-up copy completes
 	primeHoldUs      = int64(1_000_000_000_000) // 10^6 s: after any main phase completes
@@ -225,6 +235,16 @@ func primedPhase(pl PointLengths, copies int) replayRun {
 	return replayRun{header: h, records: records, sessions: n + copies, pool: pl.Concurrency + copies}
 }
 
+// vllmDPLoadBalancer is the router configuration of every point: vLLM's data-parallel load
+// balancer sends a request to the rank with the fewest requests in flight, and BLIS simulates
+// each rank as a replica behind the llm-d router, so the router places by requests in flight.
+//
+//go:embed vllm-dp-lb.epp.yaml
+var vllmDPLoadBalancer []byte
+
+// vllmDPLoadBalancerFile is the name the variant scenario's router block gives that configuration.
+const vllmDPLoadBalancerFile = "vllm-dp-lb.epp.yaml"
+
 // runBlis runs one point through `blis replay` in a fresh temporary directory and returns the
 // --metrics-path output.
 func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*sim.MetricsOutput, error) {
@@ -234,8 +254,13 @@ func runBlis(cfg Config, scenarioName string, pc PointConfig, run replayRun) (*s
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
+	// The router places like vLLM's own data-parallel balancer: the variant's router block names
+	// vllm-dp-lb.epp.yaml, written beside it.
+	if err := os.WriteFile(filepath.Join(dir, vllmDPLoadBalancerFile), vllmDPLoadBalancer, 0o644); err != nil {
+		return nil, err
+	}
 	if err := writeScenarioVariant(filepath.Join(cfg.Repos.Scenarios, scenarioName),
-		filepath.Join(dir, scenarioName), pc); err != nil {
+		filepath.Join(dir, scenarioName), pc, &deployment.Router{EndpointPickerConfig: vllmDPLoadBalancerFile}); err != nil {
 		return nil, err
 	}
 	records := run.records

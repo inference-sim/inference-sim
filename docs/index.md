@@ -41,7 +41,7 @@ releases BLIS is tested against — see
 
 | Repository | Role | Holds |
 |---|---|---|
-| **inference-sim** | *simulates* | Arrivals, admission, routing, scheduling, KV block accounting, placement, metrics. |
+| **inference-sim** | *simulates* | Arrivals, the embedded llm-d router (admission, flow control, routing), scheduling, KV block accounting, placement, metrics. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. |
 | [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
 | [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
@@ -53,12 +53,12 @@ traffic through the stack and asks the kernel for every cost; the kernel compute
 catalog's facts and the registry's coefficients.
 
 ```
-Request Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion
-                                            ↓              ↓
-                                      KV Allocation   Step pricing (blis-latency-kernel)
+Request Arrival → llm-d router (admission, flow control, routing) → WaitQueue → Batch Formation → Step Execution → Completion
+                                                                       ↓              ↓
+                                                                 KV Allocation   Step pricing (blis-latency-kernel)
 ```
 
-Admission and Routing apply in cluster mode (multi-instance). Single-instance mode skips
+The llm-d router applies in cluster mode (multi-instance). Single-instance mode skips
 directly to WaitQueue. See [Architecture](concepts/architecture.md).
 
 ---
@@ -69,8 +69,8 @@ directly to WaitQueue. See [Architecture](concepts/architecture.md).
 |---|---|---|
 | Latency pricing | The scenario fixes the deployment; the kernel prices every step, memory budget and transfer. | [Latency model](guide/latency-models.md) |
 | Workloads | Catalog presets, token distributions, multi-client YAML specs, closed-loop sessions. | [Workloads](guide/workloads.md) |
-| Routing | llm-d-style weighted scoring across instances (`--routing-policy weighted`). | [Routing](guide/routing.md) |
-| Admission and flow control | Token bucket, tier shedding, gateway queue (`--flow-control`), SLO goodput. | [Admission](guide/admission.md) |
+| Routing | The real llm-d router (EPP) embedded in-process, configured by a deployment's own EndpointPickerConfig, flags and manifests, named by the scenario's `router:` block. | [Routing](guide/routing.md) |
+| Admission and flow control | The llm-d router's admission and flow control (`featureGates: [flowControl]`); SLO goodput. | [Admission](guide/admission.md) |
 | Scheduling and preemption | Per-instance schedulers and preemption policies. | [Scheduling](guide/scheduling.md) |
 | P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |
 | KV caching and offload | Prefix caching and tiered offload over catalog storage devices. | [KV cache](guide/kv-cache.md) |

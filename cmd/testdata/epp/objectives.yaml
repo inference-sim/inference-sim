@@ -1,0 +1,34 @@
+# An InferencePool over the simulated pods (label app=vllm) with a critical and a sheddable
+# InferenceObjective.
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: vllm
+spec:
+  selector:
+    matchLabels:
+      app: vllm
+  targetPorts:
+  - number: 8000
+  endpointPickerRef:
+    name: epp
+    port:
+      number: 9002
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: critical
+spec:
+  priority: 4
+  poolRefs:
+  - name: vllm
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: sheddable
+spec:
+  priority: -2
+  poolRefs:
+  - name: vllm

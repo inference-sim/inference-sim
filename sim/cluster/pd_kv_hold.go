@@ -49,7 +49,7 @@ func (c *ClusterSimulator) startPrefillHold(parent *ParentRequest) {
 		panic(fmt.Sprintf("startPrefillHold: %s is already held", parent.ID))
 	}
 	instID := string(parent.PrefillInstanceID)
-	inst := c.instanceByID(instID)
+	inst := c.instanceByID(InstanceID(instID))
 	if inst == nil {
 		panic(fmt.Sprintf("startPrefillHold: prefill instance %q of %s not found", instID, parent.ID))
 	}
@@ -83,7 +83,7 @@ func (c *ClusterSimulator) releasePrefillHold(parent *ParentRequest) {
 			delete(refs, b)
 		}
 	}
-	inst := c.instanceByID(instID)
+	inst := c.instanceByID(InstanceID(instID))
 	inst.ReleaseHeldKV(parent.PrefillSubReq)
 	inst.WakeIfParked(c.clock)
 }
@@ -146,13 +146,3 @@ func (c *ClusterSimulator) PrefillKVHoldPeakTokens() int64 {
 
 // PrefillKVHeld reports how many parents' prefill KV is held right now.
 func (c *ClusterSimulator) PrefillKVHeld() int { return len(c.prefillHolds) }
-
-// instanceByID returns the instance with the given ID, or nil.
-func (c *ClusterSimulator) instanceByID(id string) *InstanceSimulator {
-	for _, inst := range c.instances {
-		if string(inst.ID()) == id {
-			return inst
-		}
-	}
-	return nil
-}

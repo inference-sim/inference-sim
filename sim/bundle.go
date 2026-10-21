@@ -14,44 +14,25 @@ import (
 // PolicyBundle holds unified policy configuration, loadable from a YAML file.
 // Nil pointer fields mean "not set in YAML" — they do not override DeploymentConfig.
 // String fields use empty string for "not set".
+//
+// Admission, routing and flow control are not part of a bundle: they are the llm-d router's,
+// configured by the deployment's router inputs (see sim/llmd).
 type PolicyBundle struct {
-	Admission         AdmissionConfig               `yaml:"admission"`
-	Routing           RoutingConfig                 `yaml:"routing"`
 	Priority          PriorityConfig                `yaml:"priority"`
 	Scheduler         string                        `yaml:"scheduler"`
 	Preemption        PreemptionConfig              `yaml:"preemption"`
-	TenantBudgets     map[string]float64            `yaml:"tenant_budgets"`     // nil = no tenant enforcement
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
 }
 
-// AdmissionConfig holds admission policy configuration.
-type AdmissionConfig struct {
-	Policy                string   `yaml:"policy"`
-	TokenBucketCapacity   *float64 `yaml:"token_bucket_capacity"`
-	TokenBucketRefillRate *float64 `yaml:"token_bucket_refill_rate"`
-	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
-	TierShedThreshold   *int `yaml:"tier_shed_threshold"`    // nil = use default (0)
-	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
-	// GAIE-legacy options: only used when policy = "gaie-legacy".
-	GAIEQDThreshold *float64 `yaml:"gaie_qd_threshold"` // nil = use default (5)
-	GAIEKVThreshold *float64 `yaml:"gaie_kv_threshold"` // nil = use default (0.8)
-	// SLOPriorities overrides default SLO class → priority mappings.
-	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
-	SLOPriorities map[string]int   `yaml:"slo_priorities,omitempty"`
-	SLOTargets    map[string]int64 `yaml:"slo_targets,omitempty"` // Per-SLO-class TTFT targets in µs for slo-deadline ordering
-}
-
-// RoutingConfig holds routing policy configuration.
-type RoutingConfig struct {
-	Policy  string         `yaml:"policy"`
-	Scorers []ScorerConfig `yaml:"scorers"`
-}
-
 // PriorityConfig holds priority policy configuration.
 type PriorityConfig struct {
 	Policy string `yaml:"policy"`
+	// SLOPriorities overrides the default SLO class to engine priority mapping used by priority
+	// scheduling and preemption. nil = defaults (critical=4, standard=3, batch=-1,
+	// sheddable=-2, background=-3).
+	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
 }
 
 // PreemptionConfig holds preemption policy configuration.
@@ -127,29 +108,12 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies      = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
-	validRoutingPolicies        = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
-	validSchedulers             = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validPreemptionPolicies     = map[string]bool{"": true, "fcfs": true, "priority": true}
-	validDisaggregationDeciders = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
-	validEncodeDeciders         = map[string]bool{"": true, "never": true, "always": true, "multimodal": true}
-	validSaturationDetectors    = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
+	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
 )
-
-// IsValidAdmissionPolicy returns true if name is a recognized admission policy.
-func IsValidAdmissionPolicy(name string) bool { return validAdmissionPolicies[name] }
-
-// IsValidRoutingPolicy returns true if name is a recognized routing policy.
-func IsValidRoutingPolicy(name string) bool { return validRoutingPolicies[name] }
 
 // IsValidScheduler returns true if name is a recognized scheduler.
 func IsValidScheduler(name string) bool { return validSchedulers[name] }
-
-// ValidAdmissionPolicyNames returns sorted valid admission policy names (excluding empty).
-func ValidAdmissionPolicyNames() []string { return validNamesList(validAdmissionPolicies) }
-
-// ValidRoutingPolicyNames returns sorted valid routing policy names (excluding empty).
-func ValidRoutingPolicyNames() []string { return validNamesList(validRoutingPolicies) }
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
 func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }
@@ -159,24 +123,6 @@ func IsValidPreemptionPolicy(name string) bool { return validPreemptionPolicies[
 
 // ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
 func ValidPreemptionPolicyNames() []string { return validNamesList(validPreemptionPolicies) }
-
-// IsValidDisaggregationDecider returns true if name is a recognized disaggregation decider.
-func IsValidDisaggregationDecider(name string) bool { return validDisaggregationDeciders[name] }
-
-// ValidDisaggregationDeciderNames returns sorted valid disaggregation decider names (excluding empty).
-func ValidDisaggregationDeciderNames() []string { return validNamesList(validDisaggregationDeciders) }
-
-// IsValidEncodeDecider returns true if name is a recognized encode decider (GAP-4, issue #1264).
-func IsValidEncodeDecider(name string) bool { return validEncodeDeciders[name] }
-
-// ValidEncodeDeciderNames returns sorted valid encode decider names (excluding empty).
-func ValidEncodeDeciderNames() []string { return validNamesList(validEncodeDeciders) }
-
-// IsValidSaturationDetector returns true if name is a recognized saturation detector.
-func IsValidSaturationDetector(name string) bool { return validSaturationDetectors[name] }
-
-// ValidSaturationDetectorNames returns sorted valid saturation detector names (excluding empty).
-func ValidSaturationDetectorNames() []string { return validNamesList(validSaturationDetectors) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {
@@ -197,68 +143,11 @@ func validNames(m map[string]bool) string {
 
 // Validate checks that all policy names and parameter ranges in the bundle are valid.
 func (b *PolicyBundle) Validate() error {
-	if !validAdmissionPolicies[b.Admission.Policy] {
-		return fmt.Errorf("unknown admission policy %q; valid options: %s", b.Admission.Policy, validNames(validAdmissionPolicies))
-	}
-	if !validRoutingPolicies[b.Routing.Policy] {
-		return fmt.Errorf("unknown routing policy %q; valid options: %s", b.Routing.Policy, validNames(validRoutingPolicies))
-	}
 	if !validSchedulers[b.Scheduler] {
 		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(validSchedulers))
 	}
 	if !validPreemptionPolicies[b.Preemption.Policy] {
 		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(validPreemptionPolicies))
-	}
-	// Parameter range validation (reject negative, NaN, and Inf)
-	if err := validateFloat("token_bucket_capacity", b.Admission.TokenBucketCapacity); err != nil {
-		return err
-	}
-	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
-		return err
-	}
-	// Validate tier-shed parameters when present.
-	if b.Admission.TierShedThreshold != nil && *b.Admission.TierShedThreshold < 0 {
-		return fmt.Errorf("tier_shed_threshold must be >= 0, got %d", *b.Admission.TierShedThreshold)
-	}
-	// No range check on TierShedMinPriority: GAIE priorities are arbitrary integers
-	// with no bounds (InferenceObjective.spec.priority is *int, negative allowed).
-	// The only semantic boundary is priority < 0 → sheddable.
-	// Validate GAIE-legacy parameters when present.
-	// NaN/Inf checks are required because IEEE 754 NaN comparisons always return false
-	// (e.g., NaN <= 0 is false), so NaN would silently pass the <= 0 guard.
-	if b.Admission.GAIEQDThreshold != nil {
-		v := *b.Admission.GAIEQDThreshold
-		if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
-			return fmt.Errorf("gaie_qd_threshold must be a finite value > 0, got %v", v)
-		}
-	}
-	if b.Admission.GAIEKVThreshold != nil {
-		v := *b.Admission.GAIEKVThreshold
-		if v <= 0 || v > 1.0 || math.IsNaN(v) || math.IsInf(v, 0) {
-			return fmt.Errorf("gaie_kv_threshold must be a finite value in (0, 1.0], got %v", v)
-		}
-	}
-	// Validate tenant budgets: each value must be in [0, 1].
-	for tenantID, v := range b.TenantBudgets {
-		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
-			return fmt.Errorf("tenant_budgets[%q] must be in [0, 1], got %v", tenantID, v)
-		}
-	}
-	// Validate scorer configs if present
-	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))
-	for i, sc := range b.Routing.Scorers {
-		if !IsValidScorer(sc.Name) {
-			return fmt.Errorf("routing scorer[%d]: unknown scorer %q; valid: %s",
-				i, sc.Name, strings.Join(ValidScorerNames(), ", "))
-		}
-		if scorerSeen[sc.Name] {
-			return fmt.Errorf("routing scorer[%d]: duplicate scorer %q; each scorer may appear at most once", i, sc.Name)
-		}
-		scorerSeen[sc.Name] = true
-		if sc.Weight <= 0 || math.IsNaN(sc.Weight) || math.IsInf(sc.Weight, 0) {
-			return fmt.Errorf("routing scorer[%d] %q: weight must be a finite positive number, got %v",
-				i, sc.Name, sc.Weight)
-		}
 	}
 	// Validate autoscaler config.
 	if math.IsNaN(b.Autoscaler.IntervalUs) || math.IsInf(b.Autoscaler.IntervalUs, 0) {
@@ -367,20 +256,6 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if ls < 0 {
 		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be >= 0, got %v", ls)
-	}
-	return nil
-}
-
-// validateFloat checks that a float parameter is non-negative and finite.
-func validateFloat(name string, val *float64) error {
-	if val == nil {
-		return nil
-	}
-	if math.IsNaN(*val) || math.IsInf(*val, 0) {
-		return fmt.Errorf("%s must be a finite number, got %f", name, *val)
-	}
-	if *val < 0 {
-		return fmt.Errorf("%s must be non-negative, got %f", name, *val)
 	}
 	return nil
 }

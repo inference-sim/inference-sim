@@ -1,0 +1,22 @@
+# The router configuration of the accuracy harness. A benchmark point is one client against one
+# vLLM server with data-parallel ranks, and vLLM's own DP load balancer sends each request to the
+# rank with the fewest requests in flight. BLIS simulates each rank as its own replica behind the
+# llm-d router, so the harness configures the router to place the same way: score endpoints by
+# requests in flight, pick the best.
+#
+# Not modeled: newer vLLM releases also weight a rank's waiting requests more heavily once its
+# KV-cache usage passes 50%. That term is version-dependent and is left out; it only matters
+# for points whose ranks run under KV pressure.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: inflight-load-producer
+- type: active-request-scorer
+- type: max-score-picker
+- type: single-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: active-request-scorer
+    weight: 1
+  - pluginRef: max-score-picker

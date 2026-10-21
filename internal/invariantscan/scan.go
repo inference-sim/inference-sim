@@ -38,12 +38,11 @@ var instanceBuckets = []string{
 
 // clusterOnlyBuckets are the buckets that exist only above a single instance, as Go
 // field or accessor names. RejectedRequests is included: it is not one of INV-1's
-// twelve terminal buckets but appears on the right-hand side of the full-pipeline
+// eleven terminal buckets but appears on the right-hand side of the full-pipeline
 // clause, and a sum combining it with the others is still a hand-rolled ledger.
 var clusterOnlyBuckets = []string{
 	"RoutingRejections",
 	"GatewayQueueDepth",
-	"GatewayQueueShed",
 	"GatewayQueueRejected",
 	"GatewayEvicted",
 	"GatewayExpired",

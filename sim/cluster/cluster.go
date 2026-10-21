@@ -17,6 +17,8 @@ import (
 // Events from all instances are processed in global timestamp order;
 // ties are broken by lowest instance index for determinism.
 type ClusterSimulator struct {
+	// abortErr is the error the gateway aborted the run with (GatewayHost.Abort).
+	abortErr          error
 	config            DeploymentConfig
 	instances         []*InstanceSimulator
 	rng               *sim.PartitionedRNG
@@ -32,18 +34,15 @@ type ClusterSimulator struct {
 	// single-node speed.
 	maxNodesSpanned int
 
-	// Online routing pipeline fields
+	// Request pipeline: arrivals go to the gateway, which dispatches or rejects them.
 	clusterEvents     ClusterEventQueue
 	seqCounter        int64
-	admissionLatency  int64
-	routingLatency    int64
-	admissionPolicy   sim.AdmissionPolicy
-	priorityMap       *sim.SLOPriorityMap
-	snapshotProvider  *CachedSnapshotProvider
-	routingPolicy     sim.RoutingPolicy
-	rejectedRequests  int            // EC-2: count of requests rejected by admission policy
-	routingRejections int            // I13: count of requests rejected at routing (no routable instances)
-	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
+	gateway           Gateway
+	daemonQueued      int            // daemon gateway callbacks in clusterEvents (they do not keep the run alive)
+	rejectedRequests  int            // INV-1: requests an admission check refused
+	routingRejections int            // INV-1: requests no endpoint could serve
+	gatewayRejected   int            // INV-1: requests flow control rejected at capacity
+	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + flow-control rejections and expiries + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
 	injectedByClass  map[string]int64
@@ -54,21 +53,18 @@ type ClusterSimulator struct {
 	// sample per change, and measuredUnserved the measured-phase requests the cluster itself
 	// never served (rejected, shed, dropped at decode KV). Both feed the --metrics-path
 	// measured-window aggregates (#1938).
-	inFlightSamples       []sim.InFlightSample
-	measuredUnserved      int
-	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil unless --in-flight-eviction set)
-	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
-	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
-	requestTTL            int64                     // gateway queue request TTL in microseconds; 0 = disabled
-	dispatchTickInterval  int64                     // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity)
-	dispatchTickPending   bool                      // true when a GatewayDispatchTickEvent is already scheduled
-	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
-	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
+	inFlightSamples  []sim.InFlightSample
+	measuredUnserved int
+	gatewayEvicted   int                 // INV-1: requests the gateway evicted in flight
+	gatewayExpired   int                 // INV-1: requests that expired in flow control
+	gatewayTimedOut  int                 // INV-1: requests whose client deadline passed in the gateway (counted in TimedOutRequests)
+	poolMembership   map[string]PoolRole // instance ID → pool role (nil when disaggregation disabled)
 
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
+	pdEvictedAfterPrefill     int                       // INV-1: parents the gateway evicted in transfer or decode (counted gatewayEvicted)
 	// transfersInitiated counts every request that reaches
 	// KVTransferStartedEvent (issue #1343: both successful reservations
 	// that enter the transfer pipeline AND drop-at-start cases where the
@@ -82,10 +78,10 @@ type ClusterSimulator struct {
 	// successful promotions, late drops (decode pod became non-routable
 	// mid-transfer), and degenerate completions scheduled by dropAtStart.
 	transfersCompleted      int
-	pdPrefillCompletedCount int               // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
+	pdPrefillCompletedCount int // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount  int // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount   int // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV       int // requests dropped due to insufficient KV at decode
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
@@ -96,27 +92,19 @@ type ClusterSimulator struct {
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
 	// heldKVPeakTokens is each instance's peak of distinct held tokens.
-	prefillHolds     map[string][]int64
+	prefillHolds map[string][]int64
 	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
 	decodeKVWaiters map[string][]decodeKVWaiter
 	// pullFirstStepBlocks are, per decode instance, the first-step blocks of its pulls in flight
 	// (sim.Simulator.FirstDecodeStepBlocks): part of the reservation new pulls leave free.
 	pullFirstStepBlocks map[string]int64
-	heldBlockRefs    map[string]map[int64]int
-	heldKVPeakTokens map[string]int64
-	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
+	heldBlockRefs       map[string]map[int64]int
+	heldKVPeakTokens    map[string]int64
 
-	// E/P/D disaggregation state (GAP-4, issue #1264).
-	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
-	encodeDecider           sim.EncodeDecider
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
-
-	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
-	tenantTracker *TenantTracker
 
 	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
 	autoscaler      *autoscalerPipeline
@@ -127,11 +115,6 @@ type ClusterSimulator struct {
 	// request (which carries SessionID). Separate from the per-instance closure to
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
-
-	// cacheQueryFn maps instance IDs to KV cache query functions for precise
-	// prefix cache scoring. Built after instance construction; deferred instances
-	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
-	cacheQueryFn map[string]func([]sim.TokenID) int
 
 	// Data-parallel lockstep replicas (#1909). replicaOf maps each rank's instance ID to
 	// its replica; both nil when every instance is an independent engine.
@@ -144,23 +127,6 @@ type ClusterSimulator struct {
 	// startupErr is why construction could not build the deployment faithfully (an
 	// ungroupable DP replica); Run returns it before simulating anything.
 	startupErr error
-
-	// Cache block staleness is managed by CachedSnapshotProvider via
-	// ObservabilityConfig.CacheBlocks (unified in #1060).
-
-	// Flow control state (issue #882, GIE parity).
-	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
-	flowControlEnabled   bool
-	saturationDetector   sim.SaturationDetector
-	gatewayQueue         *GatewayQueue
-	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
-
-	// llm-d inflight-load-producer trackers of the routing policy (nil without an
-	// EPP pipeline). flowInFlightLoad is the one whose tokens RoutingSnapshot.InFlightTokens
-	// carries (the flow-control concurrency detector's binding).
-	routingPipeline      *sim.RoutingPipeline
-	inFlightLoadTrackers []*sim.InFlightLoadTracker
-	flowInFlightLoad     *sim.InFlightLoadTracker
 
 	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
@@ -186,13 +152,13 @@ type ClusterSimulator struct {
 	// Determinism (INV-6): the hook sees requests in the same monotonic
 	// non-decreasing ArrivalTime order the cluster enqueues them.
 	// fireArrivalHook() panics on a regression.
-	arrivalHook         func(*sim.Request)
+	arrivalHook func(*sim.Request)
 	// arrivalGate, when set, decides at each arrival whether the client sends it
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
 	arrivalGate ArrivalGate
 	// unservedHook, when set, is told of every request the cluster refuses or drops
 	// (arrival_gate.go). Nil for every workload but the agentic replay.
-	unservedHook func(req *sim.Request, now int64) []*sim.Request
+	unservedHook        func(req *sim.Request, now int64) []*sim.Request
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
@@ -295,52 +261,20 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
-	// Construct SLO priority map from config overrides (nil-safe: defaults used when empty).
-	priorityMap := sim.NewSLOPriorityMap(config.SLOPriorityOverrides)
-
-	// Bypass generic factory for policies needing custom params (research.md D-2).
-	var admissionPolicy sim.AdmissionPolicy
-	switch config.AdmissionPolicy {
-	case "tier-shed":
-		if config.TierShedMinPriority == 0 {
-			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
-		}
-		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
-	case "gaie-legacy":
-		qdThreshold := config.GAIEQDThreshold
-		if qdThreshold == 0 {
-			qdThreshold = 5.0 // GAIE DefaultQueueDepthThreshold (config.go:31)
-		}
-		kvThreshold := config.GAIEKVThreshold
-		if kvThreshold == 0 {
-			kvThreshold = 0.8 // GAIE DefaultKVCacheUtilThreshold (config.go:33)
-		}
-		admissionPolicy = sim.NewGAIELegacyAdmission(qdThreshold, kvThreshold, priorityMap)
-	default:
-		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
-	}
-
 	cs := &ClusterSimulator{
 		config:           config,
 		instances:        make([]*InstanceSimulator, 0, config.NumInstances),
 		rng:              rng,
 		requestSource:    requestSource,
 		clusterEvents:    make(ClusterEventQueue, 0),
-		admissionLatency: config.AdmissionLatency,
-		routingLatency:   config.RoutingLatency,
-		admissionPolicy:  admissionPolicy,
-		priorityMap:      priorityMap,
-		snapshotProvider: nil, // set after unified construction loop below
-		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:            simTrace,
 		inFlightRequests: make(map[string]int, config.NumInstances),
 		shedByTier:       make(map[string]int),
 		injectedByClass:  make(map[string]int64),
 	}
 
-	// PD disaggregation: set pool membership (topology already validated above).
-	// Decider construction is deferred until after cs.cacheQueryFn is built
-	// (PrefixThresholdDecider consumes the map).
+	// PD disaggregation: set pool membership (topology already validated above). The gateway
+	// decides per request whether and where to disaggregate.
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		cs.poolMembership = prePoolMembership
 		cs.parentRequests = make(map[string]*ParentRequest)
@@ -359,8 +293,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		// Per-pool routing policies and the disaggregation decider are created after
 		// the construction loop (both need cacheQueryFn from instances).
 
-		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances, decider=%q",
-			config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.PDDecider)
+		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances",
+			config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
 
 		// Issue #1276 D-2: shared-role pods resolve config via decode-wins precedence.
 		// Warn when PrefillOverrides would have been applicable but is silently discarded.
@@ -506,92 +440,6 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	// Bind each data-parallel replica's ranks into a lockstep group (#1909).
 	cs.startupErr = cs.buildDPReplicas(config, instanceMap)
 
-	// Initialize snapshot provider with exactly the placed instances.
-	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
-	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
-	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval, config.CacheSignalDelay))
-
-	// Build cacheQueryFn from the unified snapshot provider (#1060).
-	// When CacheSignalDelay > 0, CachedSnapshotProvider manages stale snapshots.
-	// When CacheSignalDelay == 0, oracle mode: closures query live instance state.
-	cs.cacheQueryFn = cs.snapshotProvider.BuildCacheQueryFn()
-
-	// Create routing policies now that cacheQueryFn is available.
-	if config.RoutingPipeline != nil {
-		// llm-d EPP data layer + filter stage (#1907/#1908/#1912/#1930), shared by the
-		// default/decode and prefill profiles as llm-d shares plugin instances.
-		all := append(append(append([]sim.ScorerConfig{}, config.RoutingScorerConfigs...), config.PrefillScorerConfigs...), config.DecodeScorerConfigs...)
-		resolved, err := sim.ResolveRoutingPipeline(all, config.RoutingPipeline)
-		if err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: routing pipeline: %v", err))
-		}
-		cs.routingPipeline = sim.NewRoutingPipeline(resolved, cs.routingEnv(rng), cs.cacheQueryFn)
-		cs.routingPolicy = sim.NewWeightedRoutingOnPipeline(config.RoutingScorerConfigs, resolved.Filters, config.BlockSizeTokens,
-			rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn, cs.routingPipeline)
-		if len(config.PrefillScorerConfigs) > 0 {
-			cs.prefillRoutingPolicy = sim.NewWeightedRoutingOnPipeline(config.PrefillScorerConfigs, resolved.PrefillFilters, config.BlockSizeTokens,
-				rng.ForSubsystem("prefill-router"), cs.cacheQueryFn, cs.routingPipeline)
-		}
-		if len(config.DecodeScorerConfigs) > 0 {
-			cs.decodeRoutingPolicy = sim.NewWeightedRoutingOnPipeline(config.DecodeScorerConfigs, resolved.Filters, config.BlockSizeTokens,
-				rng.ForSubsystem("decode-router"), cs.cacheQueryFn, cs.routingPipeline)
-		}
-	} else {
-		if routingScorersNeedPipeline(config.RoutingScorerConfigs) {
-			cs.routingPolicy = sim.NewRoutingPolicyWithPipeline(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens,
-				rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn, nil, cs.routingEnv(rng))
-			if src, ok := cs.routingPolicy.(sim.PipelineSource); ok {
-				cs.routingPipeline = src.Pipeline()
-			}
-		} else {
-			cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
-		}
-		if len(config.PrefillScorerConfigs) > 0 {
-			cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
-		}
-		if len(config.DecodeScorerConfigs) > 0 {
-			cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
-		}
-	}
-	if cs.routingPipeline != nil {
-		// P/D: PreRequest waits until both profiles have picked (llm-d runs it once
-		// after scheduling and not at all on a scheduling error).
-		cs.routingPipeline.SetDeferred(cs.poolsConfigured())
-		cs.inFlightLoadTrackers = cs.routingPipeline.InFlightLoadTrackers()
-		name := ""
-		if config.FlowControlConcurrency != nil {
-			name = config.FlowControlConcurrency.InFlightLoadProducerName
-		}
-		cs.flowInFlightLoad = cs.routingPipeline.InFlightLoadTracker(name)
-	}
-
-	// PD disaggregation: construct the decider now that cacheQueryFn is available.
-	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
-	// ignore state but share the same construction point.
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
-		switch {
-		case config.PDPrefixBased != nil:
-			// llm-d prefix-based-pd-decider on the EPP data layer (--epp-config).
-			if cs.routingPipeline == nil {
-				panic("ClusterSimulator: PDPrefixBased requires an EPP RoutingPipeline")
-			}
-			cs.disaggregationDecider = sim.NewLLMDPrefixPDDecider(*config.PDPrefixBased, cs.routingPipeline)
-		case config.PDDecider == "prefix-threshold":
-			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens), cs.cacheQueryFn)
-		default:
-			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
-		}
-	}
-
-	// E/P/D disaggregation (GAP-4, issue #1264): construct the encode decider
-	// only when the encode pool is active. When EncodeInstances == 0, cs.encodeDecider
-	// stays nil and the encode stage in executeDisaggregatedRouting is a no-op,
-	// preserving byte-for-byte behavior for pre-PR runs (BC-EPD-1).
-	if config.EncodeInstances > 0 {
-		cs.encodeDecider = sim.NewEncodeDecider(config.EncodeDecider)
-		logrus.Infof("[cluster] E/P/D enabled: %d encode instances, decider=%q", config.EncodeInstances, config.EncodeDecider)
-	}
-
 	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
 	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
 	// The default WVA pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine →
@@ -630,130 +478,72 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		)
 	}
 
-	// Flow control: per-band gateway queue with FlowControlAdmission policy (issue #882, #1191).
-	// When disabled (default), the pipeline is unchanged — requests flow directly
-	// from admission to routing (BC-1 pass-through equivalence).
-	// Must be initialized BEFORE TenantBudgetAdmission so budget wrapping decorates FlowControlAdmission.
-	if config.FlowControlEnabled {
-		dispatchOrder := config.FlowControlDispatchOrder
-		if dispatchOrder == "" {
-			dispatchOrder = "fifo"
-		}
-		cs.flowControlEnabled = true
-		gq := buildGatewayQueue(config, dispatchOrder, cs.priorityMap)
-		cs.gatewayQueue = gq
-		cs.requestTTL = config.FlowControlRequestTTL
-		if cs.requestTTL < 0 {
-			panic(fmt.Sprintf("ClusterSimulator: FlowControlRequestTTL must be >= 0, got %d", cs.requestTTL))
-		}
-		cs.dispatchTickInterval = config.FlowControlDispatchTickInterval
-		if cs.dispatchTickInterval < 0 {
-			panic(fmt.Sprintf("ClusterSimulator: FlowControlDispatchTickInterval must be >= 0, got %d", cs.dispatchTickInterval))
-		}
-		if cs.dispatchTickInterval == 0 {
-			cs.dispatchTickInterval = 1000 // default 1ms (llm-d parity)
-		}
-		if config.FlowControlConcurrency != nil {
-			cs.saturationDetector = sim.NewConcurrencyDetectorFromConfig(*config.FlowControlConcurrency)
-		} else {
-			cs.saturationDetector = sim.NewSaturationDetector(
-				config.FlowControlDetector,
-				config.FlowControlQueueDepthThreshold,
-				config.FlowControlKVCacheUtilThreshold,
-				config.FlowControlMaxConcurrency,
-			)
-		}
-		fcAdmission := NewFlowControlAdmission(gq)
-		cs.flowControlAdmission = fcAdmission
-		cs.admissionPolicy = fcAdmission
-		if config.FlowControlInFlightEviction {
-			cs.evictionTracker = NewEvictionTracker()
-		}
-		fairness := config.FlowControlFairnessPolicy
-		if fairness == "" {
-			fairness = "global-strict"
-		}
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d, queueShedding=%v, inFlightEviction=%v",
-			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL, config.FlowControlQueueShedding, config.FlowControlInFlightEviction)
-	}
-
-	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
-	// totalCapacity = NumInstances × MaxNumSeqs (batch size proxy for cluster-wide capacity).
-	// Wraps whichever admission policy is active (including FlowControlAdmission when flow control enabled).
-	if config.TenantBudgets != nil {
-		totalCapacity := config.NumInstances * int(config.MaxNumSeqs)
-		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
-			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxNumSeqs=%d); all budgeted tenants will be immediately over-budget — MaxNumSeqs must be > 0",
-				config.NumInstances, config.MaxNumSeqs)
-		}
-		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
-		cs.admissionPolicy = sim.NewTenantBudgetAdmission(cs.admissionPolicy, cs.tenantTracker, cs.priorityMap)
-	}
-
-	// Startup warning: horizon too small for pipeline (BC-1)
-	pipelineLatency := cs.admissionLatency + cs.routingLatency
-	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
-		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
-			cs.config.Horizon, pipelineLatency)
-	}
-
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
 
-	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
-	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
-	// admission → routing → instance injection. The callback returns nil so the per-instance
-	// simulator does not inject locally.
-	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil || cs.inFlightLoadTrackers != nil {
-		for _, inst := range cs.instances {
-			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-				// llm-d inflight-load-producer: EndOfStream (or any terminal state)
-				// releases the request's remaining token charge.
-				cs.releaseInFlightLoad(req)
-				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
-				if cs.tenantTracker != nil {
-					cs.tenantTracker.OnComplete(req.TenantID)
-				}
-				// Remove from eviction tracker on normal completion (BC-3).
-				if cs.evictionTracker != nil {
-					cs.evictionTracker.Untrack(req.ID)
-				}
-				if onRequestDone == nil {
-					return nil
-				}
-				nextReqs := onRequestDone(req, tick)
-				for _, next := range nextReqs {
-					cs.pushArrival(next, next.ArrivalTime)
-				}
-				return nil // don't inject locally — route through cluster pipeline
-			}
-		}
+	for _, inst := range cs.instances {
+		cs.wireInstance(inst)
 	}
-
 	return cs
 }
 
-// registerInstanceCacheQueryFn adds a cacheQueryFn entry for a single instance,
-// choosing between stale (snapshot) and oracle (live) modes based on
-// ObservabilityConfig.CacheBlocks (#1060).
-// Called from NodeReadyEvent.Execute (deferred instances).
-// Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
-func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
-	if cs.snapshotProvider.IsStaleCacheMode() {
-		// Stale mode: register with CachedSnapshotProvider; the closure delegates
-		// to CacheQuery at call time, picking up refreshed snapshots automatically.
-		cs.snapshotProvider.AddCacheInstance(id, inst)
-		idStr := string(id)
-		cs.cacheQueryFn[idStr] = func(tokens []sim.TokenID) int {
-			return cs.snapshotProvider.CacheQuery(idStr, tokens)
+// wireInstance connects an instance's request lifecycle to the gateway and to session
+// follow-ups. Follow-ups route through the cluster pipeline, never injected locally (BC-9).
+func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
+	inst.sim.OnFirstToken = func(req *sim.Request, at int64) {
+		if parent := cs.parentOf(req); parent != nil {
+			// A disaggregated response streams from the decode instance.
+			if req.IsDecodeSubRequest && parent.OriginalRequest != nil {
+				cs.gateway.OnFirstToken(parent.OriginalRequest, at)
+			}
+			return
 		}
-	} else {
-		// Oracle mode: closure captures inst directly for live-state queries.
-		idStr := string(id)
-		cs.cacheQueryFn[idStr] = func(tokens []sim.TokenID) int {
-			return inst.GetCachedBlockCount(tokens)
+		cs.gateway.OnFirstToken(req, at)
+	}
+	inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+		if parent := cs.parentOf(req); parent != nil {
+			// Decode completions report in detectDecodeCompletions, at parent granularity; a
+			// prefill that does not complete ends its parent here.
+			if !req.IsDecodeSubRequest && req.State != sim.StateCompleted {
+				cs.parentDone(parent, tick, doneOutcome(req))
+			}
+		} else {
+			cs.gateway.OnDone(req, doneTime(inst, req, tick), doneOutcome(req))
 		}
+		if cs.sessionCallback == nil {
+			return nil
+		}
+		for _, next := range cs.sessionCallback(req, tick) {
+			cs.pushArrival(next, next.ArrivalTime)
+		}
+		return nil // don't inject locally — route through cluster pipeline
+	}
+	inst.onTransition = func(inst *InstanceSimulator) {
+		if cs.gateway != nil {
+			cs.gateway.OnInstanceChange(inst)
+		}
+	}
+}
+
+// doneTime is when the client observes the end of a request that reached a terminal state at
+// tick: a completed response ends when its last token is delivered.
+func doneTime(inst *InstanceSimulator, req *sim.Request, tick int64) int64 {
+	if req.State == sim.StateCompleted {
+		if t, ok := inst.Metrics().RequestCompletionTimes[req.ID]; ok {
+			return max(tick, int64(t))
+		}
+	}
+	return tick
+}
+
+func doneOutcome(req *sim.Request) DoneOutcome {
+	switch req.State {
+	case sim.StateCompleted:
+		return DoneCompleted
+	case sim.StateTimedOut:
+		return DoneTimedOut
+	default:
+		return DoneDropped
 	}
 }
 
@@ -857,6 +647,16 @@ func (c *ClusterSimulator) Run() error {
 
 	// 1. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
+	if c.gateway == nil && newDefaultGateway != nil {
+		c.gateway = newDefaultGateway()
+	}
+	if c.gateway == nil {
+		panic("ClusterSimulator.Run: no gateway installed (SetGateway)")
+	}
+	if err := c.gateway.Start(c); err != nil {
+		return fmt.Errorf("gateway: %w", err)
+	}
+	defer c.gateway.Stop()
 
 	// Phase 1C: schedule the first ScalingTickEvent when the autoscaler is enabled (T015).
 	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
@@ -889,6 +689,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
+	var lastProgress int64
 	for {
 		// Find earliest cluster event time
 		clusterTime := int64(math.MaxInt64)
@@ -909,18 +710,42 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
-		// Both queues empty: done
-		if clusterTime == math.MaxInt64 && instanceIdx == -1 {
+		// Done when no instance work and no request work remain. Daemon events (router
+		// background loops) never keep the run alive on their own.
+		if instanceIdx == -1 && len(c.clusterEvents) == c.daemonQueued {
+			if c.gateway.Pending() == 0 {
+				break
+			}
+			// The gateway still holds requests and only its own timers can release them. A run that
+			// cannot make progress is an error, never a result (R1).
+			if len(c.clusterEvents) == 0 {
+				return fmt.Errorf("gateway holds %d request(s) and no event can release them", c.gateway.Pending())
+			}
+			if c.clock-lastProgress > gatewayStallLimitUs && c.clock > c.gatewayHeldUntil(lastProgress) {
+				return fmt.Errorf("gateway holds %d request(s) and nothing but its own timers has happened for %d µs of simulated time",
+					c.gateway.Pending(), gatewayStallLimitUs)
+			}
+		} else if clusterTime == math.MaxInt64 && instanceIdx == -1 {
 			break
 		}
 
 		// BC-4: Cluster events at time T processed before instance events at time T
 		// Using <= ensures cluster events drain first when timestamps are equal
+		if instanceIdx == -1 && clusterTime != math.MaxInt64 {
+			c.maybeFastForward()
+			clusterTime = c.clusterEvents[0].event.Timestamp()
+		}
+		if c.abortErr != nil {
+			return fmt.Errorf("gateway: %w", c.abortErr)
+		}
 		if clusterTime <= instanceTime {
 			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
 			c.clock = entry.event.Timestamp()
 			if c.clock > c.config.Horizon {
 				break
+			}
+			if cb, ok := entry.event.(*CallbackEvent); !ok || !cb.daemon {
+				lastProgress = c.clock
 			}
 			entry.event.Execute(c)
 		} else {
@@ -930,6 +755,7 @@ func (c *ClusterSimulator) Run() error {
 				break
 			}
 			inst := c.instances[instanceIdx]
+			lastProgress = c.clock
 			// A lockstep data-parallel step (#1909) runs in the leader's queue but advances
 			// every rank of its replica, so each rank's completions are accounted.
 			members := c.eventMembers(inst)
@@ -940,12 +766,6 @@ func (c *ClusterSimulator) Run() error {
 			c.counterScratch = before
 
 			ev := inst.ProcessNextEvent()
-			// StartOfStream: first token releases prompt tokens, on every rank the event advanced.
-			for _, m := range members {
-			for _, t := range c.inFlightLoadTrackers {
-					t.ObserveInstance(string(m.ID()))
-				}
-			}
 
 			// If ProcessNextEvent() skipped a cancelled TimeoutEvent or a superseded
 			// idle-wake StepEvent (lazy cancellation — inst.Clock was not advanced),
@@ -964,6 +784,9 @@ func (c *ClusterSimulator) Run() error {
 
 		c.recordInFlight()
 		c.maybeDeliverProgressSnapshot(false)
+	}
+	if c.abortErr != nil {
+		return fmt.Errorf("gateway: %w", c.abortErr)
 	}
 
 	c.maybeDeliverProgressSnapshot(true)
@@ -990,6 +813,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	c.aggregatedMetrics = c.aggregateMetrics()
+	c.aggregatedMetrics.TimedOutRequests += c.gatewayTimedOut // client deadlines that passed while the gateway held the request
 
 	// R1/INV-1: PD disaggregation conservation correction.
 	// Each disaggregated request generates two sub-requests (prefill + decode) that
@@ -1011,7 +835,7 @@ func (c *ClusterSimulator) Run() error {
 	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
 	// Count them as StillRunning for conservation.
 	//
-	// Distinguish four sub-states of "prefill completed but decode not done":
+	// Distinguish five sub-states of "prefill completed but decode not done":
 	// - pendingDecodeCompletions: decode sub-requests already injected into instances
 	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
 	// - pdInTransfer: requests still in KV transfer or cluster event queue
@@ -1021,12 +845,14 @@ func (c *ClusterSimulator) Run() error {
 	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
 	// - timed-out decodes: counted in pdDecodeTimedOutCount; already in instance
 	//   TimedOutRequests via aggregateMetrics(). Subtracted here to keep pdInTransfer = 0.
-	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
+	// - gateway-evicted in transfer or decode: counted in pdEvictedAfterPrefill and in
+	//   gatewayEvicted. Subtracted here.
+	pdInTransfer := c.pdInTransfer()
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
 	} else if pdInTransfer < 0 {
-		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
-			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.pdDecodeTimedOutCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
+		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, evictedAfterPrefill=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
+			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.pdDecodeTimedOutCount, c.droppedAtDecodeKV, c.pdEvictedAfterPrefill, len(c.pendingDecodeCompletions))
 	}
 
 	// INV-PD-6: Project sub-request metrics to parent-request granularity.
@@ -1035,16 +861,15 @@ func (c *ClusterSimulator) Run() error {
 	// user-facing distributions reflect the full request lifecycle.
 	c.projectPDMetrics()
 
-	// Flow control: log gateway queue state at simulation end
-	if c.flowControlEnabled && c.gatewayQueue.Len() > 0 {
-		logrus.Warnf("[cluster] %d requests remain in gateway queue at simulation end", c.gatewayQueue.Len())
+	if n := c.GatewayQueueDepth(); n > 0 {
+		logrus.Warnf("[cluster] %d requests remain in the gateway at simulation end", n)
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
-			logrus.Warnf("[cluster] all %d requests rejected by admission policy %q — no requests completed",
-				c.rejectedRequests, c.config.AdmissionPolicy)
+			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
+				c.rejectedRequests)
 		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,
@@ -1055,6 +880,13 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	return nil
+}
+
+// pdInTransfer is the disaggregated parents whose prefill completed and whose decode is on no
+// instance and not yet terminal: in KV transfer, or in the cluster event queue (see Run).
+func (c *ClusterSimulator) pdInTransfer() int {
+	return c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV -
+		c.pdEvictedAfterPrefill - len(c.pendingDecodeCompletions)
 }
 
 // instanceCounters is the terminal-request counters of one instance before an event.
@@ -1106,8 +938,6 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 	if inst.State == sim.InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(sim.InstanceStateTerminated)
 		c.releaseInstanceGPUs(inst)
-		c.snapshotProvider.RemoveCacheInstance(inst.ID())
-		delete(c.cacheQueryFn, string(inst.ID()))
 		// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug —
 		// a missing completion event or an early-termination race.
 		if c.inFlightRequests[instID] != 0 {
@@ -1130,6 +960,41 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 		}
 	}
 }
+
+// maybeFastForward lets an idle gateway advance its background work to the next request work
+// when nothing but gateway background events comes before it.
+func (c *ClusterSimulator) maybeFastForward() {
+	ff, ok := c.gateway.(IdleFastForwarder)
+	if !ok {
+		return
+	}
+	if cb, ok := c.clusterEvents[0].event.(*CallbackEvent); !ok || !cb.daemon {
+		return
+	}
+	next := int64(math.MaxInt64)
+	for _, e := range c.clusterEvents {
+		if cb, ok := e.event.(*CallbackEvent); ok && cb.daemon {
+			continue
+		}
+		next = min(next, e.event.Timestamp())
+	}
+	if next != math.MaxInt64 && next > c.clock {
+		ff.FastForwardIdle(next)
+	}
+}
+
+// gatewayHeldUntil is the latest time the gateway's own timers can still release a request it
+// holds (0 when it does not say).
+func (c *ClusterSimulator) gatewayHeldUntil(since int64) int64 {
+	if h, ok := c.gateway.(GatewayHoldHorizon); ok {
+		return h.HeldUntil(since)
+	}
+	return 0
+}
+
+// gatewayStallLimitUs bounds how long a run continues on router timers alone while the gateway
+// holds requests and nothing else can happen: one simulated hour.
+const gatewayStallLimitUs = int64(3600 * 1e6)
 
 // nextSeqID returns the next monotonically increasing sequence ID for event ordering.
 func (c *ClusterSimulator) nextSeqID() int64 {
@@ -1186,12 +1051,6 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		})
 	}
 
-	var gatewayQueueDepth, gatewayQueueShed int
-	if c.gatewayQueue != nil {
-		gatewayQueueDepth = c.gatewayQueue.Len()
-		gatewayQueueShed = c.gatewayQueue.ShedCount()
-	}
-
 	clock := c.clock
 	if isFinal {
 		clock = min(c.clock, c.config.Horizon)
@@ -1208,8 +1067,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		InstanceSnapshots: instanceSnaps,
 		RejectedRequests:  c.rejectedRequests,
 		RoutingRejections: c.routingRejections,
-		GatewayQueueDepth: gatewayQueueDepth,
-		GatewayQueueShed:  gatewayQueueShed,
+		GatewayQueueDepth: c.GatewayQueueDepth(),
 		GatewayEvicted:    c.gatewayEvicted,
 		GatewayExpired:    c.gatewayExpired,
 		ActiveInstances:   activeCount,
@@ -1236,8 +1094,10 @@ func (c *ClusterSimulator) completedRequestsTotal() int {
 	return total
 }
 
+// timedOutRequestsTotal counts timeouts in the instances and client deadlines that passed while
+// the gateway held the request (INV-1's timed_out term).
 func (c *ClusterSimulator) timedOutRequestsTotal() int {
-	total := 0
+	total := c.gatewayTimedOut
 	for _, inst := range c.instances {
 		total += inst.Metrics().TimedOutRequests
 	}
@@ -1304,47 +1164,14 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.TPDegree = tpDegree
 	inst.CostPerHour = costPerHour
 	inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
+	cs.wireInstance(inst)
 	inst.TransitionTo(sim.InstanceStateLoading)
-
-	if cs.snapshotProvider == nil {
-		// snapshotProvider is nil — can only happen in unit tests that bypass
-		// NewClusterSimulator. Release GPUs so they are not held by a phantom
-		// instance (R1: no silent data loss).
-		logrus.Warnf("[cluster] addLiveInstance: snapshotProvider is nil for instance %s — releasing GPUs and skipping", id)
-		cs.releaseInstanceGPUs(inst)
-		return false
-	}
-	cs.snapshotProvider.AddInstance(id, inst)
 
 	cs.scheduleInstanceLoadedEvent(inst)
 	cs.instances = append(cs.instances, inst)
 	cs.inFlightRequests[string(id)] = 0
-
-	// Register with cacheQueryFn for precise prefix scoring.
-	// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
-	if cs.cacheQueryFn != nil {
-		cs.registerInstanceCacheQueryFn(id, inst)
-	}
-
-	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
-	onRequestDone := cs.sessionCallback
-	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
-		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-			if cs.tenantTracker != nil {
-				cs.tenantTracker.OnComplete(req.TenantID)
-			}
-			if cs.evictionTracker != nil {
-				cs.evictionTracker.Untrack(req.ID)
-			}
-			if onRequestDone == nil {
-				return nil
-			}
-			nextReqs := onRequestDone(req, tick)
-			for _, next := range nextReqs {
-				cs.pushArrival(next, next.ArrivalTime)
-			}
-			return nil // don't inject locally — route through cluster pipeline
-		}
+	if cs.gateway != nil {
+		cs.gateway.OnInstanceChange(inst)
 	}
 
 	return true
@@ -1389,31 +1216,6 @@ func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
-}
-
-// buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
-// Filters by IsRoutable() for parity with buildRouterState (R23), then by pool role.
-// Model filter is intentionally omitted: all instances in a DeploymentConfig share config.Model,
-// so pool-role filtering is sufficient. If multi-model PD clusters are added, add model filtering here.
-// Preserves instance order from c.instances for determinism (R2).
-//
-// INV-7: refreshes stale cache snapshots before sampling so the disaggregated routing
-// path observes the same cache-block view as buildRouterState under Periodic mode.
-func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
-	// Refresh stale cache snapshots if interval has elapsed (#919, #1060).
-	// No-op when CacheBlocks.Mode != Periodic (oracle mode).
-	c.snapshotProvider.RefreshCacheIfNeeded(c.clock)
-
-	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))
-	for _, inst := range c.instances {
-		if !inst.IsRoutable() {
-			continue
-		}
-		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
-		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
-		allSnapshots = append(allSnapshots, snap)
-	}
-	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
 }
 
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
@@ -1494,6 +1296,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
+		c.parentDone(parent, parent.CompletionTime, DoneCompleted)
 
 		// Issue #884: trigger session follow-up for the original (parent) request.
 		// The per-instance OnRequestDone fires for the decode sub-request (no
@@ -1538,6 +1341,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++
+		c.parentDone(parent, c.clock, DoneTimedOut)
 
 		if c.sessionCallback != nil {
 			origCopy := *parent.OriginalRequest
@@ -1690,28 +1494,16 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 // GatewayQueueDepth returns the number of requests still in the gateway queue
 // at simulation end. Returns 0 when flow control is disabled.
 func (c *ClusterSimulator) GatewayQueueDepth() int {
-	if c.gatewayQueue == nil {
+	if c.gateway == nil {
 		return 0
 	}
-	return c.gatewayQueue.Len()
-}
-
-// GatewayQueueShed returns the number of requests shed (evicted victims) from the gateway queue
-// due to capacity limits. Returns 0 when flow control is disabled.
-func (c *ClusterSimulator) GatewayQueueShed() int {
-	if c.gatewayQueue == nil {
-		return 0
-	}
-	return c.gatewayQueue.ShedCount()
+	return c.gateway.Pending()
 }
 
 // GatewayQueueRejected returns the number of requests rejected from the gateway queue
 // (queue full, incoming could not displace any entry). Returns 0 when flow control is disabled.
 func (c *ClusterSimulator) GatewayQueueRejected() int {
-	if c.gatewayQueue == nil {
-		return 0
-	}
-	return c.gatewayQueue.RejectedCount()
+	return c.gatewayRejected
 }
 
 // GatewayEvicted returns the number of requests evicted in-flight from instances
@@ -1724,83 +1516,6 @@ func (c *ClusterSimulator) GatewayEvicted() int {
 // via TTL (INV-1: gw_expired bucket).
 func (c *ClusterSimulator) GatewayExpired() int {
 	return c.gatewayExpired
-}
-
-// tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.
-// Called on enqueue and by the periodic GatewayDispatchTickEvent (llm-d parity).
-// Builds fresh RouterState at dispatch time for late binding (BC-3).
-// Returns true if a request was dispatched, false if saturated or queue empty.
-func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
-	if c.gatewayQueue == nil || c.gatewayQueue.Len() == 0 {
-		return false
-	}
-	// Schedule periodic dispatch tick if not already pending (BC-3).
-	// Demand-driven: only active while queue is non-empty.
-	if c.dispatchTickInterval > 0 && !c.dispatchTickPending {
-		c.dispatchTickPending = true
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &GatewayDispatchTickEvent{
-				At:       c.clock + c.dispatchTickInterval,
-				Interval: c.dispatchTickInterval,
-			},
-			seqID: c.nextSeqID(),
-		})
-	}
-	// Build fresh state for late binding (BC-3)
-	state := buildRouterState(c, nil)
-	sat := c.saturationDetector.Saturation(state)
-	if math.IsNaN(sat) || math.IsInf(sat, 0) {
-		panic(fmt.Sprintf("tryDispatchFromGatewayQueue: saturation=%f is not finite — detector bug", sat))
-	}
-
-	// Eviction trigger (BC-1): if saturated and a non-sheddable request is waiting,
-	// evict one sheddable in-flight request to free capacity.
-	if sat >= 1.0 && c.evictionTracker != nil && c.evictionTracker.Len() > 0 {
-		if c.gatewayQueue.HasNonSheddableWaiting() {
-			c.tryEvictOne()
-			return false
-		}
-	}
-
-	// Per-band HoL blocking: DequeueGated checks saturation against per-band ceilings
-	// and halts dispatch if any band's ceiling is exceeded (GIE parity).
-	req := c.gatewayQueue.DequeueGated(sat)
-	if req == nil {
-		logrus.Debugf("[cluster] tryDispatch: held (saturation=%.2f, snapshots=%d, queueLen=%d)",
-			sat, len(state.Snapshots), c.gatewayQueue.Len())
-		return false
-	}
-	req.GatewayDispatchTime = c.clock
-	if t, ok := c.saturationDetector.(sim.DispatchReservationTracker); ok {
-		t.ReserveDispatch(req.ID) // no-op unless the detector counts reservations (llm-d main)
-	}
-
-	// Schedule routing (BC-9). RoutingDecisionEvent.Execute branches internally on
-	// cs.poolsConfigured() for the disaggregated vs standard path — no fork here.
-	heap.Push(&c.clusterEvents, clusterEventEntry{
-		event: &RoutingDecisionEvent{
-			time:    c.clock + c.routingLatency,
-			request: req,
-		},
-		seqID: c.nextSeqID(),
-	})
-	return true
-}
-
-// tryEvictOne pops the most-evictable request and schedules its termination.
-func (c *ClusterSimulator) tryEvictOne() {
-	victim, instanceID := c.evictionTracker.Pop()
-	if victim == nil {
-		return
-	}
-	heap.Push(&c.clusterEvents, clusterEventEntry{
-		event: &GatewayEvictionEvent{
-			time:           c.clock,
-			request:        victim,
-			targetInstance: instanceID,
-		},
-		seqID: c.nextSeqID(),
-	})
 }
 
 // Trace returns the decision trace collected during simulation.
@@ -2316,399 +2031,6 @@ func pdParentTerminal(parent *ParentRequest) bool {
 		return true
 	}
 	return parent.CompletionTime > 0 && parent.DecodeSubReq == nil
-}
-
-// executeStandardRouting performs non-disaggregated routing: select a target over
-// all routable instances, record the decision, increment in-flight/tenant counters,
-// record warm-up, and inject the request into the target instance. Used when pool
-// topology is not configured (plain DES routing). Called by RoutingDecisionEvent.Execute.
-//
-// Parameter `time` is the scheduled event time (already advanced by routingLatency
-// from admission). Injection happens at `time` — no additional offset.
-func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64) {
-	state := buildRouterState(cs, req)
-
-	// Guard: if no routable instances are available (e.g., all model-M instances are Loading
-	// or Draining), routing policies panic on empty snapshot sets. Treat as rejection instead.
-	// Uses Warn so users understand why requests are dropping (visible at default log level).
-	// I13: Use routingRejections counter to distinguish from admission rejections.
-	if len(state.Snapshots) == 0 {
-		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", req.ID, req.Model)
-		cs.routingRejections++
-		cs.recordUnserved(req)
-		return
-	}
-
-	decision := cs.routingPolicy.Route(req, state)
-	if decision.TargetInstance == "" {
-		// llm-d: every candidate filtered out ⇒ "no endpoints available" and the
-		// request fails (scheduler_profile.go:126-129, director.go:333-344, v0.10.0).
-		logrus.Debugf("[cluster] req %s: rejected at routing (%s)", req.ID, decision.Reason)
-		cs.eppRejected(req)
-		return
-	}
-	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", req.ID, decision.TargetInstance, decision.Reason)
-
-	// #181: Stamp request with assigned instance for per-request metrics
-	req.AssignedInstance = decision.TargetInstance
-
-	// Record routing decision if tracing is enabled (BC-3, BC-4, BC-5, BC-6)
-	if cs.trace != nil {
-		record := trace.RoutingRecord{
-			RequestID:      req.ID,
-			Clock:          cs.clock,
-			ChosenInstance: decision.TargetInstance,
-			Reason:         decision.Reason,
-			Scores:         copyScores(decision.Scores),
-		}
-		if cs.trace.Config.CounterfactualK > 0 {
-			record.Candidates, record.Regret = computeCounterfactual(
-				decision.TargetInstance, decision.Scores,
-				state.Snapshots, cs.trace.Config.CounterfactualK,
-			)
-		}
-		cs.trace.RecordRouting(record)
-	}
-
-	// A replica endpoint (#1909) hands the request to one of its ranks through vLLM's
-	// internal DP load balancer; the rank is the engine that serves it.
-	if rep := cs.replicaOf[decision.TargetInstance]; rep != nil && cs.endpointReplica(rep.ranks[0]) != nil {
-		decision.TargetInstance = string(cs.pickRank(rep, time).ID())
-		req.AssignedInstance = decision.TargetInstance
-	}
-
-	// Find target instance, increment in-flight count, and inject request
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decision.TargetInstance {
-			// Increment in-flight AFTER target validation — gives next routing decision
-			// visibility into this routing decision (#170)
-			cs.inFlightRequests[decision.TargetInstance]++
-			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
-			if cs.tenantTracker != nil {
-				cs.tenantTracker.OnStart(req.TenantID)
-			}
-
-			// T042: record warm-up requests for TTFT factor application (Phase 1A).
-			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-			if warmUpCount > 0 && len(inst.WarmUpRequestIDs()) < warmUpCount {
-				inst.RecordWarmUpRequest(req.ID)
-			}
-
-			inst.InjectRequestOnline(req, time)
-			// Track routed sheddable requests for in-flight eviction (BC-3).
-			if cs.evictionTracker != nil {
-				cs.evictionTracker.Track(req, decision.TargetInstance, cs.priorityMap)
-			}
-			return
-		}
-	}
-
-	// Should never reach here (policy contract ensures valid target)
-	panic(fmt.Sprintf("executeStandardRouting: invalid TargetInstance %q", decision.TargetInstance))
-}
-
-// executeDisaggregatedRouting performs PD disaggregation routing: select a decode pod
-// first (llm-d parity), then decide whether to disaggregate. If disaggregate=false,
-// inject directly to the selected decode pod. If disaggregate=true, store the decode
-// pod in a ParentRequest and schedule a PrefillRoutingEvent.
-//
-// Parameter `time` is the scheduled event time (already advanced by routingLatency
-// from admission). Both the non-disaggregated injection and the PrefillRoutingEvent
-// fire at `time` — no additional offset.
-func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time int64) {
-	// Step 1: route to decode pool first (llm-d parity: decode pod always selected first).
-	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
-	if len(filteredSnapshots) == 0 {
-		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", req.ID)
-		cs.routingRejections++
-		cs.recordUnserved(req)
-		return
-	}
-	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
-	policy := cs.decodeRoutingPolicy
-	if policy == nil {
-		policy = cs.routingPolicy
-	}
-	if cs.routingPipeline != nil {
-		// llm-d produces once per request over every candidate, before any profile.
-		all := append(append([]sim.RoutingSnapshot{}, filteredSnapshots...), cs.buildPoolFilteredSnapshots(PoolRolePrefill)...)
-		cs.routingPipeline.BeginRequest(req, dedupSnapshots(all), cs.clock)
-	}
-	decodeDecision := policy.Route(req, state)
-	if decodeDecision.TargetInstance == "" {
-		// llm-d: no decode endpoint ⇒ the request fails (ProcessResults, disagg_profile_handler.go).
-		logrus.Debugf("[cluster] req %s: rejected at decode routing (%s)", req.ID, decodeDecision.Reason)
-		cs.eppRejected(req)
-		return
-	}
-	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", req.ID, decodeDecision.TargetInstance)
-
-	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
-	// RouterState so the decider can query per-pod state (cache presence, load) and
-	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
-	// state.SelectedInstance tells the decider which snapshot was pre-selected by
-	// the decode routing policy — PrefixThresholdDecider queries the selected
-	// pod's cacheQueryFn closure for per-pod prefix cache state (matches llm-d's
-	// PrefixBasedPDDecider reading endpoint.Get(PrefixCacheMatchInfoKey)).
-	state.SelectedInstance = decodeDecision.TargetInstance
-	disaggDecision := cs.disaggregationDecider.Decide(req, state)
-	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
-
-	// If the decider overrode the decode pod (joint D+P policies), retarget.
-	// Empty string = keep the pod pre-selected by the decode routing policy.
-	// The override must be a member of the decode-pool snapshot set; the downstream
-	// instance lookup panics otherwise (see decodeInst == nil guard below).
-	if disaggDecision.DecodePodOverride != "" {
-		decodeDecision.TargetInstance = disaggDecision.DecodePodOverride
-	}
-
-	// Record disaggregation decision if tracing is enabled (BC-PD-17).
-	if cs.trace != nil {
-		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
-			RequestID:    req.ID,
-			Clock:        cs.clock,
-			Disaggregate: disaggDecision.Disaggregate,
-		})
-	}
-
-	// Find the target decode instance object (used in both paths below).
-	var decodeInst *InstanceSimulator
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decodeDecision.TargetInstance {
-			decodeInst = inst
-			break
-		}
-	}
-	if decodeInst == nil {
-		// The routing policy contract requires Route to return a TargetInstance from the
-		// provided snapshot set; a panic here indicates a policy implementation bug.
-		panic(fmt.Sprintf("executeDisaggregatedRouting: invalid decode TargetInstance %q returned by routing policy", decodeDecision.TargetInstance))
-	}
-
-	// Encode stage (GAP-4, issue #1264). Synchronous under option A
-	// (zero-duration): we make a routing decision on the encode pool, record
-	// a trace entry, and carry the chosen encode instance ID forward to the
-	// parent (for the disagg path) or discard it after trace recording (for
-	// the non-disagg path). No encode sub-request is injected into an instance.
-	// No-op when cs.encodeDecider == nil (the default when --encode-instances 0),
-	// preserving byte-for-byte pre-PR behavior (BC-EPD-1).
-	var encodeInstanceID string
-	if cs.encodeDecider != nil && cs.encodeDecider.ShouldEncode(req, decodeDecision.TargetInstance) {
-		encodeSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleEncode)
-		if len(encodeSnapshots) == 0 {
-			logrus.Warnf("[cluster] req %s: no routable instances in encode pool — request rejected at encode routing", req.ID)
-			cs.encodeRoutingRejections++
-			cs.recordUnserved(req)
-			return
-		}
-		encodeState := &sim.RouterState{Snapshots: encodeSnapshots, Clock: cs.clock}
-		// Encode routing uses the main routingPolicy in this PR; per-pool scorer
-		// config is a follow-up (design doc D6).
-		encodeDecision := cs.routingPolicy.Route(req, encodeState)
-		encodeInstanceID = encodeDecision.TargetInstance
-		logrus.Debugf("[cluster] req %s: encode pod selected → %s", req.ID, encodeInstanceID)
-
-		if cs.trace != nil {
-			record := trace.EncodeRoutingRecord{
-				ParentRequestID: req.ID,
-				Clock:           cs.clock,
-				ChosenInstance:  encodeInstanceID,
-				Scores:          copyScores(encodeDecision.Scores),
-			}
-			if cs.trace.Config.CounterfactualK > 0 {
-				record.Candidates, record.Regret = computeCounterfactual(
-					encodeInstanceID, encodeDecision.Scores,
-					encodeSnapshots, cs.trace.Config.CounterfactualK,
-				)
-			}
-			cs.trace.RecordEncodeRouting(record)
-		}
-	}
-
-	if !disaggDecision.Disaggregate {
-		if cs.routingPipeline != nil {
-			cs.routingPipeline.Commit(req.ID) // decode-only: scheduling complete
-		}
-		// Step 3a: local path — inject directly to the selected decode pod.
-		// Non-disaggregated requests route exclusively to the decode pool, not to all
-		// instances via buildRouterState().
-		req.AssignedInstance = decodeDecision.TargetInstance
-
-		// Record standard routing trace for BC-TRACE-COMPAT: consumers expect
-		// len(tr.Routings) == numRequests.
-		if cs.trace != nil {
-			record := trace.RoutingRecord{
-				RequestID:      req.ID,
-				Clock:          cs.clock,
-				ChosenInstance: decodeDecision.TargetInstance,
-				Reason:         decodeDecision.Reason,
-				Scores:         copyScores(decodeDecision.Scores),
-			}
-			if cs.trace.Config.CounterfactualK > 0 {
-				record.Candidates, record.Regret = computeCounterfactual(
-					decodeDecision.TargetInstance, decodeDecision.Scores,
-					filteredSnapshots, cs.trace.Config.CounterfactualK,
-				)
-			}
-			cs.trace.RecordRouting(record)
-		}
-
-		cs.inFlightRequests[decodeDecision.TargetInstance]++
-		if cs.tenantTracker != nil {
-			cs.tenantTracker.OnStart(req.TenantID)
-		}
-		warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-		if warmUpCount > 0 && len(decodeInst.WarmUpRequestIDs()) < warmUpCount {
-			decodeInst.RecordWarmUpRequest(req.ID)
-		}
-		decodeInst.InjectRequestOnline(req, time)
-		if cs.evictionTracker != nil {
-			cs.evictionTracker.Track(req, decodeDecision.TargetInstance, cs.priorityMap)
-		}
-		return
-	}
-
-	// Step 3b: disaggregated path — decode pod pre-selected, route prefill next.
-	parent := NewParentRequest(req, cs.config.BlockSizeTokens)
-	parent.DecodeInstanceID = InstanceID(decodeDecision.TargetInstance)
-	if encodeInstanceID != "" {
-		parent.EncodeInstanceID = InstanceID(encodeInstanceID)
-	}
-	cs.parentRequests[parent.ID] = parent
-
-	// Create prefill sub-request: same input, no output (completes after prefill).
-	// InputTokens is a slice-header alias of req.InputTokens (#1445) — the
-	// sub-request views the same underlying token buffer, no flatten. If
-	// Request.InputTokens ever becomes lazy/chained, this site must update.
-	prefillSubReq := &sim.Request{
-		ID:           parent.PrefillSubReqID,
-		InputTokens:  req.InputTokens,
-		MaxOutputLen: req.MaxOutputLen,
-		Deadline:     req.Deadline,
-		PrefixGroup:  req.PrefixGroup,
-		State:        sim.StateQueued,
-		ArrivalTime:  req.ArrivalTime,
-		TenantID:     req.TenantID,
-		SLOClass:     req.SLOClass,
-		Model:        req.Model,
-		Phase:        req.Phase,
-		RetainKVOnFinish: cs.config.PDPrefillKVHold,
-	}
-	parent.PrefillSubReq = prefillSubReq
-	if cs.routingPipeline != nil {
-		cs.routingPipeline.AliasPrefill(prefillSubReq.ID, parent.ID) // llm-d: one request, a prefill and a decode charge
-	}
-
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &PrefillRoutingEvent{
-			time:      time,
-			request:   prefillSubReq,
-			parentReq: parent,
-		},
-		seqID: cs.nextSeqID(),
-	})
-}
-
-// routingScorersNeedPipeline reports whether a scorer list uses a data-layer-bound
-// scorer (prefix-cache, token-load).
-func routingScorersNeedPipeline(cfgs []sim.ScorerConfig) bool {
-	for _, c := range cfgs {
-		if c.Name == "prefix-cache" || c.Name == "token-load" {
-			return true
-		}
-	}
-	return false
-}
-
-// routingEnv exposes the per-instance facts the llm-d data layer reads: the engine
-// block size, each instance's GPU KV block count (approx autoTune), and — when the
-// instances have a CPU offload tier — the CPU-tier prefix view (#1912, oracle:
-// read live, no signal delay).
-func (cs *ClusterSimulator) routingEnv(rng *sim.PartitionedRNG) sim.RoutingEnv {
-	env := sim.RoutingEnv{
-		EngineBlockSize: int(cs.config.BlockSizeTokens),
-		FilterRNG:       rng.ForSubsystem("router-filter"),
-	}
-	if cs.poolMembership != nil {
-		env.Role = func(id string) string {
-			switch cs.poolMembership[id] {
-			case PoolRolePrefill:
-				return "prefill"
-			case PoolRoleDecode:
-				return "decode"
-			}
-			return ""
-		}
-	}
-	byID := make(map[string]*InstanceSimulator, len(cs.instances))
-	for _, inst := range cs.instances {
-		byID[string(inst.ID())] = inst
-	}
-	env.KVBlocks = func(id string) int64 {
-		inst, ok := byID[id]
-		if !ok || inst.sim == nil || inst.sim.KVCache == nil {
-			return 0
-		}
-		return inst.sim.KVCache.TotalCapacity()
-	}
-	// The CPU tier reaches the router through the same KV-event stream as the GPU
-	// tier, so it is frozen with the GPU view for --cache-signal-delay.
-	var asOf func() int64
-	if cs.snapshotProvider.IsStaleCacheMode() {
-		asOf = cs.snapshotProvider.CacheSnapshotTime
-	}
-	var cpu map[string]func([]sim.TokenID) int
-	for _, inst := range cs.instances {
-		if fn := inst.cpuTierPrefixFn(asOf); fn != nil {
-			if cpu == nil {
-				cpu = make(map[string]func([]sim.TokenID) int)
-			}
-			cpu[string(inst.ID())] = fn
-		}
-	}
-	env.CPUTierCacheFn = cpu
-	return env
-}
-
-// releaseInFlightGroup releases every llm-d in-flight charge of a failed request.
-func (cs *ClusterSimulator) releaseInFlightGroup(groupID string) {
-	for _, t := range cs.inFlightLoadTrackers {
-		t.ReleaseGroup(groupID)
-	}
-}
-
-// releaseInFlightLoad applies a request's end to the llm-d in-flight ledger.
-func (cs *ClusterSimulator) releaseInFlightLoad(req *sim.Request) {
-	for _, t := range cs.inFlightLoadTrackers {
-		t.OnRequestDone(req)
-	}
-}
-
-// dedupSnapshots drops repeated instance IDs (a shared-role pod is in both pools),
-// keeping the first occurrence.
-func dedupSnapshots(in []sim.RoutingSnapshot) []sim.RoutingSnapshot {
-	seen := make(map[string]bool, len(in))
-	out := in[:0]
-	for _, s := range in {
-		if !seen[s.ID] {
-			seen[s.ID] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// eppRejected ends a request the EPP routing pipeline could not place (an empty
-// filter result, as llm-d fails it): counted as a routing rejection (INV-1), its
-// queued PreRequest work dropped and its in-flight charges released, and reported
-// through recordUnserved so closed-loop drivers learn it ended.
-func (cs *ClusterSimulator) eppRejected(req *sim.Request) {
-	cs.routingRejections++
-	if cs.routingPipeline != nil {
-		cs.routingPipeline.Discard(req.ID)
-	}
-	cs.releaseInFlightGroup(req.ID)
-	cs.recordUnserved(req)
 }
 
 // ServerSeries is the per-engine server time series of every instance, one engine per

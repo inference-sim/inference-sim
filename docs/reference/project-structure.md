@@ -8,7 +8,8 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --snapshot-refresh-interval, --trace-output, --preemption-policy)
+│   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --workload-spec, --trace-level, --counterfactual-k, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --trace-output, --preemption-policy)
+│   ├── router.go              # The llm-d router's inputs: the scenario's router block and pool labels, plus --gateway-latency, --epp-scrape-jitter, --kv-event-delay on run and replay; records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
 │   ├── kernel_pools.go        # Builds each pool's deployment from the scenario: one blis-latency-kernel per pool, engine settings and KV budget from the scenario + kernel, P/D handoff priced by the kernel
 │   ├── kv_offload.go          # --kv-offload-config loading; each tier's device_class resolves against the catalog and the kernel prices the transfer
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
@@ -30,16 +31,13 @@ inference-sim/
 │   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, PolicyConfig, WorkloadConfig, ...) — composed into SimConfig via embedding (R16).
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor (validates MaxModelLen vs KV capacity), event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, EnqueueRequest (MaxModelLen + KV capacity guards), processCompletions (proactive MaxModelLen cap at maxModelLen-1 boundary), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
-│   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
-│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() used by load-balance, least-loaded, and admission), RoutingDecision (TargetInstance + Reason + Scores), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
-│   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
-│   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
-│   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
-│   ├── slo_priority.go        # SLOPriorityMap: BLIS/llm-d convention (higher=urgent) for cluster layer; InvertForVLLM() converts to vLLM convention (lower=urgent) at instance entry (EnqueueRequest)
+│   ├── routing.go             # RoutingSnapshot: a lightweight view of one instance's live state (EffectiveLoad()), read by the model autoscaler; routing itself is the llm-d router's
+│   ├── engine_metrics.go      # EngineMetrics: the vLLM Prometheus series a model server publishes at the end of each step (waiting/running requests, KV usage, preemptions, LoRA sets), which the llm-d router scrapes
+│   ├── slo_priority.go        # SLOPriorityMap: SLO class → priority (higher=urgent; overridable via the bundle's priority.slo_priorities); InvertForVLLM() converts to vLLM convention (lower=urgent) at instance entry (EnqueueRequest)
 │   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
 │   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
-│   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
-│   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
+│   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) built by the cluster for its own policies
+│   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft, Timeout) with (timestamp, priority, seqID) ordering
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
 │   ├── kv_store.go            # KVStore interface (12 methods: +SetClock, +ConsumePendingTransferLatency, +MirrorToCPU), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
@@ -59,7 +57,7 @@ inference-sim/
 │   ├── cache.go               # KVCacheState (single-tier GPU)
 │   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
-├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel v0.1.0) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
+├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel v0.2.0) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
 │   ├── kernelmodel.go         # The LatencyModel adapter
 │   ├── capacity.go            # KV block budget from the kernel's memory methods, per data-parallel rank
 │   ├── settings.go            # Settings: everything one engine is sized from (block size, batch limits, max_model_len, KV budget), per data-parallel rank, answered by the scenario + kernel
@@ -67,13 +65,23 @@ inference-sim/
 │   └── harness/               # Closed-loop runs against the AISimulate accuracy corpus (used by cmd/metricscore)
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
-│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
-│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
-│   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
-│   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
+│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, hands arrivals to the Gateway, and aggregates metrics; Run() returns error
+│   ├── cluster_event.go       # ClusterArrivalEvent, ScalingTickEvent, ScaleActuationEvent; cluster event queue
+│   ├── gateway.go             # Gateway interface (everything between arrival and dispatch: admission, flow control, endpoint picking), GatewayHost, Placement, Rejection (INV-1 buckets), IdleFastForwarder; sim/llmd is the production implementation
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
 │   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
+├── sim/llmd/                  # The embedded llm-d router (Endpoint Picker), from the inference-sim fork of llm-d-router; see docs/guide/routing.md and docs/contributing/llm-d-router-fork.md
+│   ├── gateway.go             # Gateway (implements cluster.Gateway): builds the router from EPP flags, EndpointPickerConfig and manifests; translates arrivals into router requests, router decisions into dispatches, router errors into INV-1 buckets; DefaultEPPFlags
+│   ├── runtime.go             # hosting.Runtime on the cluster event loop: fixed Epoch + simulation clock, timers and deadlines as (daemon) cluster events, seeded named random streams
+│   ├── clock.go               # desClock: the router's clock (tickers and timers) on simulated time
+│   ├── coroutine.go           # Coroutine scheduler: the router's goroutines run one at a time under a single baton, parked until their ready predicate holds; watchdog for unconverted blocking calls
+│   ├── server.go              # The simulated model servers' HTTP surface for the router: /metrics (published vLLM series) and /v1/completions/render (prompt token IDs)
+│   ├── manifests.go           # Kubernetes manifest parsing (InferencePool, InferenceObjective, InferenceModelRewrite) and the default per-SLO-class InferenceObjectives
+│   └── kvevents.go            # the engines' KV-cache events to the router's precise-prefix-cache-producer (ordered, delayed, canonical tokens)
+│   └── prompt.go              # canonical prompt tokens the router sees (prefix-chain blocks), so a replay shows it the run's prompts
+│   └── crd_defaults.go        # applies the router CRDs' defaults to manifests, as an API server does (CRD copies in crds/)
+│   └── support.go             # supported / unsupported plugin types and startup checks: audited plugins run, anything else is refused before its constructor runs, with the reason
 ├── sim/workload/              # ServeGen-informed workload generation
 │   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)
@@ -96,7 +104,7 @@ inference-sim/
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
 ├── sim/trace/                 # Decision trace recording
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
-│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
+│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore, P/D and KV-transfer records (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
 │                               # (The model catalog is NOT in this repo: it is the external blis-catalog
 │                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
@@ -116,8 +124,8 @@ inference-sim/
 │   │   └── tutorial.md        # Capacity planning walkthrough
 │   ├── guide/                 # Task-oriented user guides
 │   │   ├── index.md           # Guide overview
-│   │   ├── routing.md         # Routing policies
-│   │   ├── admission.md       # Admission control
+│   │   ├── routing.md         # Routing with the embedded llm-d router
+│   │   ├── admission.md       # Admission and flow control (the llm-d router's)
 │   │   ├── scheduling.md      # Scheduling & priority
 │   │   ├── latency-models.md  # Latency pricing (blis-latency-kernel)
 │   │   ├── kv-cache.md        # KV cache & memory management
@@ -141,6 +149,7 @@ inference-sim/
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides
+│   │   ├── llm-d-router-fork.md # The llm-d router fork: seams, release updates, hosting lint, patch budget
 │   │   ├── pr-workflow.md     # PR development workflow
 │   │   ├── rfc.md             # RFC template for large features
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards

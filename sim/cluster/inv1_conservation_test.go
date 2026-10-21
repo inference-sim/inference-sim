@@ -14,7 +14,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// clusterLedgerTerms lists INV-1's twelve cluster-level bucket names in the order
+// clusterLedgerTerms lists INV-1's eleven cluster-level bucket names in the order
 // the registry states them. TestINV1_HelperMatchesRegistry asserts this equals the
 // terms parsed out of docs/contributing/standards/invariants.md, so the helper
 // cannot drift from the statement it claims to enforce.
@@ -26,14 +26,13 @@ var clusterLedgerTerms = []string{
 	"timed_out",
 	"routing_rejections",
 	"gateway_queue_depth",
-	"gateway_queue_shed",
 	"gateway_queue_rejected",
 	"gateway_evicted",
 	"gateway_expired",
 	"encode_routing_rejections",
 }
 
-// clusterLedger holds the twelve terminal buckets of INV-1's canonical
+// clusterLedger holds the eleven terminal buckets of INV-1's canonical
 // cluster-level equation. It is a plain struct so the equation can be unit-tested
 // and diffed against the registry without running a simulation.
 type clusterLedger struct {
@@ -44,7 +43,6 @@ type clusterLedger struct {
 	timedOut                int
 	routingRejections       int
 	gatewayQueueDepth       int
-	gatewayQueueShed        int
 	gatewayQueueRejected    int
 	gatewayEvicted          int
 	gatewayExpired          int
@@ -64,7 +62,6 @@ func (l clusterLedger) terms() []int {
 		l.timedOut,
 		l.routingRejections,
 		l.gatewayQueueDepth,
-		l.gatewayQueueShed,
 		l.gatewayQueueRejected,
 		l.gatewayEvicted,
 		l.gatewayExpired,
@@ -104,7 +101,6 @@ func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 		timedOut:                m.TimedOutRequests,
 		routingRejections:       cs.RoutingRejections(),
 		gatewayQueueDepth:       cs.GatewayQueueDepth(),
-		gatewayQueueShed:        cs.GatewayQueueShed(),
 		gatewayQueueRejected:    cs.GatewayQueueRejected(),
 		gatewayEvicted:          cs.GatewayEvicted(),
 		gatewayExpired:          cs.GatewayExpired(),
@@ -118,10 +114,10 @@ func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 // pre-#1720 sums did implicitly by comparing against a bare fixture count.
 const noRejections = 0
 
-// assertClusterINV1Conservation asserts INV-1's canonical twelve-term equation at
+// assertClusterINV1Conservation asserts INV-1's canonical eleven-term equation at
 // cluster level:
 //
-//	total - rejected == <the twelve buckets>
+//	total - rejected == <the eleven buckets>
 //
 // rejected is taken separately from total rather than pre-subtracted by the caller,
 // so a fixture that must not reject anything can pass noRejections and have a
@@ -171,7 +167,7 @@ func instanceAccounted(m *sim.Metrics) int {
 
 // assertInstanceINV1Conservation asserts the five-term single-instance
 // specialisation of INV-1. Valid only against per-instance metrics: a cluster has
-// a router, a gateway queue and possibly an encode pool, whose seven buckets this
+// a router, a gateway queue and possibly an encode pool, whose six buckets this
 // equation omits. Cluster-level callers must use assertClusterINV1Conservation,
 // and TestINV1_NoInlineClusterConservationSums flags calls made against a cluster
 // aggregate.
@@ -202,7 +198,7 @@ func sortedStringKeys[V any](m map[string]V) []string {
 const invariantsRegistryPath = "../../docs/contributing/standards/invariants.md"
 
 // parseINV1RegistryEquations returns the term lists of INV-1's two stated forms as
-// written in the registry: the canonical twelve-term cluster equation first, then
+// written in the registry: the canonical eleven-term cluster equation first, then
 // the five-term single-instance specialisation.
 //
 // Both are whole-line backticked expressions whose left-hand side is
@@ -242,7 +238,7 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 		found = append(found, terms)
 	}
 	if len(found) != 2 {
-		t.Fatalf("expected exactly 2 `injected_requests == ...` equations in %s (the twelve-term cluster form and the five-term single-instance form), found %d — the registry was restructured, so this test and the helpers need re-checking against it",
+		t.Fatalf("expected exactly 2 `injected_requests == ...` equations in %s (the eleven-term cluster form and the five-term single-instance form), found %d — the registry was restructured, so this test and the helpers need re-checking against it",
 			path, len(found))
 	}
 	// Select by term count rather than document order, so reordering the two
@@ -253,7 +249,7 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 
 // TestINV1_HelperMatchesRegistry asserts the helper's term list is the registry's
 // term list. The registry says a shared conservation helper "should be generated
-// from the twelve-term list above"; nothing enforced that, so a bucket added to the
+// from the eleven-term list above"; nothing enforced that, so a bucket added to the
 // statement could sit there for months with no test asserting it — which is how
 // issue #1720's findings arose in the first place.
 func TestINV1_HelperMatchesRegistry(t *testing.T) {
@@ -264,7 +260,7 @@ func TestINV1_HelperMatchesRegistry(t *testing.T) {
 		registry []string
 		helper   []string
 	}{
-		{"twelve-term cluster equation", eqs[0], clusterLedgerTerms},
+		{"eleven-term cluster equation", eqs[0], clusterLedgerTerms},
 		{"five-term single-instance specialisation", eqs[1], instanceLedgerTerms},
 	} {
 		inRegistry := make(map[string]bool, len(tc.registry))
@@ -371,7 +367,7 @@ func isAggregateMetricsCall(e ast.Expr) bool {
 // TestINV1_NoInstanceHelperOnClusterMetrics stops the five-term specialisation from
 // becoming a sanctioned weak cluster assertion. The AST guard above only sees
 // inline sums, so a cluster test that called assertInstanceINV1Conservation with
-// cs.AggregatedMetrics() would assert five of twelve terms with nothing
+// cs.AggregatedMetrics() would assert five of eleven terms with nothing
 // complaining — the same gap in a new shape.
 func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 	entries, err := os.ReadDir(".")
@@ -412,7 +408,7 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 					clusterAggregate = true
 				}
 				if clusterAggregate {
-					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all twelve buckets",
+					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all eleven buckets",
 						name, fset.Position(call.Pos()).Line)
 				}
 			}
@@ -481,7 +477,6 @@ var ledgerFieldSources = map[string]string{
 	"timedOut":                "TimedOutRequests",
 	"routingRejections":       "RoutingRejections",
 	"gatewayQueueDepth":       "GatewayQueueDepth",
-	"gatewayQueueShed":        "GatewayQueueShed",
 	"gatewayQueueRejected":    "GatewayQueueRejected",
 	"gatewayEvicted":          "GatewayEvicted",
 	"gatewayExpired":          "GatewayExpired",
@@ -570,14 +565,13 @@ func TestClusterLedger_Accounted(t *testing.T) {
 		timedOut:                16,
 		routingRejections:       32,
 		gatewayQueueDepth:       64,
-		gatewayQueueShed:        128,
-		gatewayQueueRejected:    256,
-		gatewayEvicted:          512,
-		gatewayExpired:          1024,
-		encodeRoutingRejections: 2048,
+		gatewayQueueRejected:    128,
+		gatewayEvicted:          256,
+		gatewayExpired:          512,
+		encodeRoutingRejections: 1024,
 	}
-	if got, want := l.accounted(), 4095; got != want {
-		t.Errorf("accounted() = %d, want %d — a bucket is missing from the sum (got bits: %012b)", got, want, got)
+	if got, want := l.accounted(), 2047; got != want {
+		t.Errorf("accounted() = %d, want %d — a bucket is missing from the sum (got bits: %011b)", got, want, got)
 	}
 	for i, v := range l.terms() {
 		if v == 0 {
@@ -587,7 +581,7 @@ func TestClusterLedger_Accounted(t *testing.T) {
 }
 
 // TestClusterLedger_StringNamesEveryTerm verifies the failure message carries all
-// twelve buckets, so a violation is diagnosable without re-running under a
+// eleven buckets, so a violation is diagnosable without re-running under a
 // debugger.
 func TestClusterLedger_StringNamesEveryTerm(t *testing.T) {
 	s := clusterLedger{gatewayExpired: 7}.String()

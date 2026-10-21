@@ -143,14 +143,16 @@ two line up with the client's as follows:
 The client sends `2*CONC` copies of request 0, waits for all of them to finish, and only then
 starts the main phase. No warm-up request is in any metric. What matters is the state a drained
 warm-up leaves in the simulator. From the code paths every point runs (single-tier GPU KV cache,
-round-robin routing, FCFS, always-admit, no offload tier):
+placement by requests in flight through the embedded llm-d router, FCFS, the router's default
+admission, no offload tier):
 
 - **KV cache.** It keeps released blocks' hashes (`sim/kv/cache.go`, `ReleaseKVBlocks`).
   Cross-request reuse reads them only in `sim/batch_formation.go`, which skips `GetCachedBlocks`
-  when prefix caching is disabled. The other readers are the offload tiers and the weighted
-  router's prefix scorers, and these runs use neither. Request 0's prompt is the only main-phase
+  when prefix caching is disabled. The other readers are the offload tiers and a router
+  configuration with a prefix-cache producer, and these runs use neither. Request 0's prompt is the only main-phase
   prompt the warm-up cached, because no other main prompt shares a block with it.
-- **Router.** The round-robin counter (`sim/routing.go`) advances by the number of copies.
+- **Router.** Nothing: every warm-up copy has completed, so every replica has zero requests in
+  flight when the main phase starts (`sim/kernelmodel/harness/vllm-dp-lb.epp.yaml`).
 - **Everything else.** The FCFS scheduler, batch formation and the kernel adapter hold no
   per-request state, no step price reads the clock, and a drained engine holds no KV block.
 

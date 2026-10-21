@@ -46,7 +46,7 @@
 
 <!-- Which invariants does this PR maintain or test? Full details: docs/contributing/standards/invariants.md -->
 
-- [ ] Request conservation (INV-1): assert it with a shared helper, not a hand-rolled sum — `assertClusterINV1Conservation` (12 terms) for anything cluster-level, `assertInstanceINV1Conservation` / `assertINV1Conservation` (5 terms) for per-instance metrics only
+- [ ] Request conservation (INV-1): assert it with a shared helper, not a hand-rolled sum — `assertClusterINV1Conservation` (11 terms) for anything cluster-level, `assertInstanceINV1Conservation` / `assertINV1Conservation` (5 terms) for per-instance metrics only
 - [ ] Request lifecycle: queued -> running -> completed (INV-2)
 - [ ] KV block conservation: allocated + free == total (INV-4)
 - [ ] Causality: arrival <= schedule <= completion (INV-5)

@@ -53,3 +53,7 @@ pools:
 
 pd_transfer:
   connector: NixlConnector
+
+# The router disaggregates every request (router/pd-always.yaml, beside this file).
+router:
+  endpoint_picker_config: router/pd-always.yaml
