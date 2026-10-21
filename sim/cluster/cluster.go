@@ -835,7 +835,7 @@ func (c *ClusterSimulator) Run() error {
 	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
 	// Count them as StillRunning for conservation.
 	//
-	// Distinguish four sub-states of "prefill completed but decode not done":
+	// Distinguish five sub-states of "prefill completed but decode not done":
 	// - pendingDecodeCompletions: decode sub-requests already injected into instances
 	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
 	// - pdInTransfer: requests still in KV transfer or cluster event queue
@@ -847,12 +847,12 @@ func (c *ClusterSimulator) Run() error {
 	//   TimedOutRequests via aggregateMetrics(). Subtracted here to keep pdInTransfer = 0.
 	// - gateway-evicted in transfer or decode: counted in pdEvictedAfterPrefill and in
 	//   gatewayEvicted. Subtracted here.
-	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - c.pdEvictedAfterPrefill - len(c.pendingDecodeCompletions)
+	pdInTransfer := c.pdInTransfer()
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
 	} else if pdInTransfer < 0 {
-		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
-			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.pdDecodeTimedOutCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
+		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, evictedAfterPrefill=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
+			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.pdDecodeTimedOutCount, c.droppedAtDecodeKV, c.pdEvictedAfterPrefill, len(c.pendingDecodeCompletions))
 	}
 
 	// INV-PD-6: Project sub-request metrics to parent-request granularity.
@@ -880,6 +880,13 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	return nil
+}
+
+// pdInTransfer is the disaggregated parents whose prefill completed and whose decode is on no
+// instance and not yet terminal: in KV transfer, or in the cluster event queue (see Run).
+func (c *ClusterSimulator) pdInTransfer() int {
+	return c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV -
+		c.pdEvictedAfterPrefill - len(c.pendingDecodeCompletions)
 }
 
 // instanceCounters is the terminal-request counters of one instance before an event.

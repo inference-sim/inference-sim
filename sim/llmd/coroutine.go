@@ -9,7 +9,10 @@ import (
 
 // watchdog bounds how long (wall clock) a coroutine may run without yielding. Router work takes no
 // simulated time, so a coroutine that does not yield is blocked on something the runtime cannot
-// see — an unconverted blocking call — and the simulation would otherwise hang.
+// see — an unconverted blocking call — and the simulation would otherwise hang. It can abort a run
+// (a panic, never a result) but never changes one: a run that completes is the same run whether or
+// not the watchdog was armed. A coroutine starved of CPU for two minutes on an overloaded host would
+// trip it falsely; that host-dependent abort is the accepted price of failing loudly over hanging.
 const watchdog = 2 * time.Minute
 
 // scheduler runs the router's goroutines as coroutines under a single baton. Exactly one of the
@@ -70,7 +73,7 @@ func (s *scheduler) run(c *coroutine) {
 	c.resume <- struct{}{}
 	select {
 	case <-c.yielded:
-	case <-time.After(watchdog): //blis:wallclock-ok diagnostic watchdog, never affects results
+	case <-time.After(watchdog): //blis:wallclock-ok diagnostic watchdog: may abort a run, never changes its results
 		panic(fmt.Sprintf("llmd: router coroutine %d ran %v without yielding: it is blocked on a wait the "+
 			"hosting runtime cannot observe (an unconverted blocking call in the router fork)", c.id, watchdog))
 	}

@@ -108,7 +108,7 @@ type RawMetrics struct {
 	// before any drop/route decision. Used as the goodput denominator (issue #1409, BC-6).
 	// Empty SLOClass requests appear under the "" key.
 	InjectedByClass map[string]int64
-	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_shed + gw_rejected + gw_evicted + gw_expired + encode_routing_rejections
+	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_rejected + gw_evicted + gw_expired + encode_routing_rejections (the eleven-term form, docs/contributing/standards/invariants.md)
 	GatewayQueueDepth       int // Requests still in gateway queue at horizon (issue #882)
 	GatewayQueueRejected    int // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
 	GatewayEvicted          int // Requests evicted in-flight from instances (#1228)

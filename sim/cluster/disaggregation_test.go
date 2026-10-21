@@ -228,10 +228,10 @@ func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
 	// The pdInTransfer correction ensures requests mid-transfer are counted in StillRunning.
 	assertClusterINV1Conservation(t, cs, 10, noRejections, "bounded horizon")
 	// Verify pdInTransfer accounting is non-negative (no over-subtraction)
-	pdInTransfer := cs.pdPrefillCompletedCount - cs.pdDecodeCompletedCount - cs.droppedAtDecodeKV - len(cs.pendingDecodeCompletions)
-	if pdInTransfer < 0 {
-		t.Errorf("pdInTransfer = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d)",
-			pdInTransfer, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.droppedAtDecodeKV, len(cs.pendingDecodeCompletions))
+	if pdInTransfer := cs.pdInTransfer(); pdInTransfer < 0 {
+		t.Errorf("pdInTransfer = %d, must be >= 0 (prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, evictedAfterPrefill=%d, pendingDecode=%d)",
+			pdInTransfer, cs.pdPrefillCompletedCount, cs.pdDecodeCompletedCount, cs.pdDecodeTimedOutCount, cs.droppedAtDecodeKV,
+			cs.pdEvictedAfterPrefill, len(cs.pendingDecodeCompletions))
 	}
 }
 
