@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -88,7 +87,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, sim.WithKVOffload(offload))
 
 	// Direct run.
-	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
+	cs1 := newRoutedCluster(cfg, requests)
 	if err := cs1.Run(); err != nil {
 		t.Fatalf("direct run failed: %v", err)
 	}
@@ -115,7 +114,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 		t.Fatalf("LoadTraceV2Requests: %v", err)
 	}
 
-	cs2 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(replayReqs), nil)
+	cs2 := newRoutedCluster(cfg, replayReqs)
 	if err := cs2.Run(); err != nil {
 		t.Fatalf("replay run failed: %v", err)
 	}

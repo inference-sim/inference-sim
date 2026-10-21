@@ -77,7 +77,7 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 }
 
 func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
-	// GIVEN trace with counterfactual k=2 and weighted scoring
+	// GIVEN trace with counterfactual k=2 and a gateway that scores both instances
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             10000000,
@@ -87,15 +87,14 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 			LatencyModel:        testFakeLatency(),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		},
-		NumInstances:         2,
-		RoutingPolicy:        "weighted",
-		RoutingScorerConfigs: sim.DefaultScorerConfigs(),
-		TraceLevel:           "decisions",
-		CounterfactualK:      2,
+		NumInstances:    2,
+		TraceLevel:      "decisions",
+		CounterfactualK: 2,
 	}
 	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs.SetGateway(&fakeGateway{scores: map[string]float64{"instance_0": 1, "instance_1": 0.5}})
 
 	// WHEN run
 	mustRun(t, cs)
@@ -105,18 +104,25 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	if tr == nil {
 		t.Fatal("expected non-nil trace")
 	}
+	if len(tr.Routings) == 0 {
+		t.Fatal("expected routing records")
+	}
 	for i, r := range tr.Routings {
-		if len(r.Candidates) == 0 {
-			t.Errorf("routing[%d]: expected candidates with k=2, got none", i)
+		if len(r.Candidates) != 2 {
+			t.Errorf("routing[%d]: expected 2 candidates with k=2, got %d", i, len(r.Candidates))
 		}
-		if len(r.Candidates) > 2 {
-			t.Errorf("routing[%d]: expected at most 2 candidates, got %d", i, len(r.Candidates))
+		wantRegret := 0.0
+		if r.ChosenInstance == "instance_1" {
+			wantRegret = 0.5
+		}
+		if r.Regret != wantRegret {
+			t.Errorf("routing[%d]: chose %s, regret = %v, want %v", i, r.ChosenInstance, r.Regret, wantRegret)
 		}
 	}
 }
 
-func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
-	// GIVEN token bucket admission that rejects some requests
+func TestClusterSimulator_TraceWithAdmissionRejections_RecordsRejections(t *testing.T) {
+	// GIVEN a gateway that rejects every other request at admission
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             5000000,
@@ -126,15 +132,13 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 			LatencyModel:        testFakeLatency(),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
 		},
-		NumInstances:          1,
-		AdmissionPolicy:       "token-bucket",
-		TokenBucketCapacity:   2,        // very small: only 2 tokens
-		TokenBucketRefillRate: 0.000001, // near-zero refill
-		TraceLevel:            "decisions",
+		NumInstances: 1,
+		TraceLevel:   "decisions",
 	}
 	requests := testGenerateRequests(42, 5000000, 5.0/1e6, 10,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
 	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs.SetGateway(rejectEveryOtherGateway())
 
 	// WHEN run
 	mustRun(t, cs)
@@ -151,7 +155,10 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 		}
 	}
 	if rejections == 0 {
-		t.Error("expected some rejections with tiny token bucket, got 0")
+		t.Error("expected some rejections, got 0")
+	}
+	if rejections != cs.RejectedRequests() {
+		t.Errorf("trace rejections %d != RejectedRequests %d", rejections, cs.RejectedRequests())
 	}
 	// Routing records should be fewer than admissions (rejected requests don't route)
 	if len(tr.Routings) >= len(tr.Admissions) {

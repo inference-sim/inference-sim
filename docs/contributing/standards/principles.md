@@ -5,13 +5,13 @@ Principles guide design decisions. The [antipattern rules](rules.md) are specifi
 ## Separation of Concerns
 
 - `sim/` is a library — never call `os.Exit`, `logrus.Fatalf`, or terminate the process. Return errors. Only `cmd/` may terminate. *(Enforced by R6)*
-- Cluster-level policies (admission, routing) receive `*RouterState` with global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.
+- Admission, routing and flow control are the embedded llm-d router's (`sim/llmd`), which sees the cluster only through `cluster.GatewayHost` and the engines' published metrics. Cluster-level consumers (autoscaler, saturation analyzer) receive `*RouterState` with a global view. Instance-level policies (priority, scheduler) receive only local data. Never leak cluster state to instance-level code.
 - Bridge types (`RouterState`, `RoutingSnapshot`) live in `sim/` to avoid import cycles.
-- Unidirectional dependency: `cmd/ -> sim/cluster/ -> sim/` and `sim/cluster/ -> sim/trace/`. `sim/` never imports subpackages.
+- Unidirectional dependency: `cmd/ -> sim/llmd/ -> sim/cluster/ -> sim/` and `sim/cluster/ -> sim/trace/`. `sim/` never imports subpackages.
 
 ## Interface Design
 
-- Single-method interfaces where possible (`AdmissionPolicy`, `RoutingPolicy`, `InstanceScheduler`).
+- Single-method interfaces where possible (`InstanceScheduler`).
 - Query methods must be pure — no side effects, no state mutation, no destructive reads. Separate `Get()` and `Consume()` for query-and-clear.
 - Factory functions must validate inputs: `IsValid*()` check + switch/case + panic on unknown.
 - Interfaces defined by behavioral contract, not one implementation's data model. *(Enforced by R13)*
@@ -93,7 +93,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | System invariants (INV-1–INV-19, plus INV-A, INV-A2, INV-W3, the LoRA family INV-L*, INV-PD-* and INV-P2-*) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness), CONTRIBUTING.md (count), `docs/contributing/index.md` (landing page table), `mkdocs.yml` (nav label), `.github/PULL_REQUEST_TEMPLATE.md` (INV-1 checklist), `.github/ISSUE_TEMPLATE/bug_report.md` (INV-1 formula), `docs/contributing/templates/micro-plan.md` (sanity checklist), `docs/contributing/hypothesis.md` (INV-1 formula), `.claude/skills/hypothesis-experiment/SKILL.md` (INV-1 formula) |
 | Engineering principles | `docs/contributing/standards/principles.md` | CLAUDE.md (summary) |
 | Agent trust boundaries | `docs/contributing/standards/agent-trust.md` | CLAUDE.md (pointer), `docs/contributing/index.md` (landing page table) |
-| Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |
+| Extension recipes (schedulers, KV tiers, trace records) | `docs/contributing/extension-recipes.md` | — |
 | RFC template | `docs/contributing/rfc.md` | CONTRIBUTING.md (summary) |
 | RFC-to-plan prompt | `docs/contributing/templates/rfc-to-plan.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |

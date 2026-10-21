@@ -16,21 +16,21 @@ import (
 // for final reporting. Useful for evaluating system performance
 // and debugging behavior over time.
 type Metrics struct {
-	CompletedRequests int     // Number of requests completed
-	TotalInputTokens  int     // Total number of input tokens
-	TotalOutputTokens int     // Total number of output tokens
-	SimEndedTime      int64   // Sim clock time in ticks when simulation ends
-	KVBlocksUsed      float64 // Integral of KVBlockUsage over time
-	PeakKVBlocksUsed  int64   // Max number of simultaneously used KV blocks
+	CompletedRequests    int     // Number of requests completed
+	TotalInputTokens     int     // Total number of input tokens
+	TotalOutputTokens    int     // Total number of output tokens
+	SimEndedTime         int64   // Sim clock time in ticks when simulation ends
+	KVBlocksUsed         float64 // Integral of KVBlockUsage over time
+	PeakKVBlocksUsed     int64   // Max number of simultaneously used KV blocks
 	PreemptionCount      int64   // Total preemption events (PR12)
 	KVAllocationFailures int64   // KV allocation failures for the final decode token at completion; non-zero indicates a cache accounting anomaly (#183)
 	CacheHitRate         float64 // Cumulative cache hit rate at finalization (PR12). Intentional observability signal: set by cluster/instance.go Finalize() from KVStore.CacheHitRate(). Read-only statistic — does not feed back into state evolution.
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end
-	DroppedUnservable    int // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
-	LengthCappedRequests int // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
-	TimedOutRequests     int // Requests cancelled by client timeout
+	DroppedUnservable    int     // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
+	LengthCappedRequests int     // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
+	TimedOutRequests     int     // Requests cancelled by client timeout
 
 	TTFTSum int64 // Total time-to-first-token sum (in ticks)
 	ITLSum  int64 // Total ITL sum across requests (in ticks)
@@ -425,9 +425,8 @@ type emitOptions struct {
 	overrides  []ScenarioOverride
 	provenance map[string]KernelPoolProvenance
 	versions   *BuildVersions
-	agentic   any
-	pd        *PDOutput
-	epp       *EPPProvenance
+	agentic    any
+	pd         *PDOutput
 	acceptance *AcceptanceRecord
 	prefix     map[string]PrefixCacheRecord
 	series     *ServerSeriesOutput
@@ -443,13 +442,6 @@ func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
 // two builds of one commit can differ in them, so they stay off stdout (INV-6).
 func WithBuildVersions(v *BuildVersions) EmitOption {
 	return func(o *emitOptions) { o.versions = v }
-}
-
-// WithEPPProvenance records the ingested llm-d EndpointPickerConfig (#1930: config
-// sha256, plugins and their BLIS mapping, the scheduling profile, flow control) in
-// the --metrics-path file only, like WithCatalogProvenance. Nil leaves it absent.
-func WithEPPProvenance(p *EPPProvenance) EmitOption {
-	return func(o *emitOptions) { o.epp = p }
 }
 
 // WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
@@ -535,7 +527,6 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		output.Overrides = resolvedOpts.overrides
 		output.Acceptance = resolvedOpts.acceptance
 		output.PrefixCache = resolvedOpts.prefix
-		output.EPP = resolvedOpts.epp
 		output.Agentic = resolvedOpts.agentic
 		output.PD = resolvedOpts.pd
 		output.ServerSeries = resolvedOpts.series
@@ -558,9 +549,9 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 		// so incomplete requests appear with zero-valued metrics.
 		for _, id := range sortedRequestIDs(m.Requests) {
 			detail := m.Requests[id]
-			detail.TTFT = m.RequestTTFTs[id] / 1e3                               // zero if not in map
-			detail.E2E = m.RequestE2Es[id] / 1e3                                 // zero if not in map
-			detail.ITL = m.RequestITLs[id] / 1e3                                 // ticks → ms (consistent with TTFT, E2E)
+			detail.TTFT = m.RequestTTFTs[id] / 1e3                                // zero if not in map
+			detail.E2E = m.RequestE2Es[id] / 1e3                                  // zero if not in map
+			detail.ITL = m.RequestITLs[id] / 1e3                                  // ticks → ms (consistent with TTFT, E2E)
 			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
 			output.Requests = append(output.Requests, detail)
 		}

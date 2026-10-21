@@ -17,7 +17,7 @@ What is wrong? Be specific about the incorrect behavior.
 
 **Expected behavior**
 What should happen? Reference an invariant if applicable:
-- Request conservation (INV-1): single-instance is the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out`; a cluster run must use all 12 terms (add routing_rejections + the six gateway/encode buckets)
+- Request conservation (INV-1): single-instance is the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out`; a cluster run must use all 11 terms (add routing_rejections and the five gateway/encode buckets: gateway_queue_depth, gateway_queue_rejected, gateway_evicted, gateway_expired, encode_routing_rejections)
 - Request lifecycle: queued -> running -> completed (no invalid transitions)
 - KV block conservation: allocated + free == total
 - Causality: arrival <= schedule <= completion

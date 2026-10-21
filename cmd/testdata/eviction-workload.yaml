@@ -1,0 +1,34 @@
+# Long sheddable requests and short critical ones at a rate that saturates the pool, so flow
+# control revokes in-flight sheddable requests for queued critical ones.
+version: "2"
+seed: 11
+category: language
+aggregate_rate: 1000.0
+num_requests: 2000
+clients:
+  - id: "background"
+    slo_class: "sheddable"
+    rate_fraction: 0.5
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 512
+    output_distribution:
+      type: exponential
+      params:
+        mean: 1024
+  - id: "interactive"
+    slo_class: "critical"
+    rate_fraction: 0.5
+    arrival:
+      process: poisson
+    input_distribution:
+      type: exponential
+      params:
+        mean: 256
+    output_distribution:
+      type: exponential
+      params:
+        mean: 64

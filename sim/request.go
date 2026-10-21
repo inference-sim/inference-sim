@@ -58,7 +58,7 @@ type Request struct {
 
 	InputTokens  []TokenID // Prompt tokens
 	OutputTokens []TokenID // Pre-specified output tokens (already known for the simulation)
-	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
+	MaxOutputLen int       // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
 	State         RequestState // queued, running, completed
 	ProgressIndex int64        // Total number of input tokens processed so far + number of output tokens generated so far
@@ -72,7 +72,10 @@ type Request struct {
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
 	ITL              []int64 // List of inter-token latencies
-	Priority         float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
+	// GeneratedTokens is the number of output tokens the engine generated, set when the request
+	// completes; it is what a model server reports as usage.completion_tokens.
+	GeneratedTokens int
+	Priority        float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
 	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
 	// not recomputed per step.
 
@@ -121,7 +124,7 @@ type Request struct {
 	Deadline int64
 
 	// Per-request SLO TTFT target in microseconds (0 = no target).
-	// Used by slo-deadline dispatch ordering: deadline = GatewayEnqueueTime + SLOTargetUs.
+	// Sent to the router as x-llm-d-slo-ttft-ms (slo-deadline-ordering-policy reads it).
 	// Distinct from Deadline (hard timeout). Set from workload spec or trace.
 	SLOTargetUs int64
 
@@ -178,6 +181,9 @@ type Request struct {
 	// when a preemption returns the debit.
 	scheduledTokens int64
 }
+
+// AdapterPinned reports whether the request holds a pin on its LoRA adapter's resident slot.
+func (req *Request) AdapterPinned() bool { return req.adapterPinned }
 
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {

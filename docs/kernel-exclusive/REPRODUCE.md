@@ -6,13 +6,13 @@ prints, the command is right.
 
 ## What you need
 
-This repository, Go 1.24 or later, and the measurement corpora. Every other input is pinned to a
+This repository, Go 1.27.2 or later, and the measurement corpora. Every other input is pinned to a
 tagged release and reaches you without a separate checkout:
 
 | input | release | how it arrives |
 |---|---|---|
 | blis-latency-kernel | `v0.3.0` | `go.mod`; its scenario fixtures (`testdata/aisimulate`) are read from the module cache |
-| blis-schemas | `v0.4.0` | `go.mod` |
+| blis-schemas | `v0.5.0` | `go.mod` (adds the deployment `router:` block) |
 | blis-catalog | `0.3.0` | vendored subset at `testdata/catalog` |
 | blis-registry | `v0.2.0` | vendored coefficient sets at `testdata/registry` |
 

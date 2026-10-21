@@ -86,7 +86,7 @@ func pdKnobVariant(t *testing.T, prefillEng, decodeEng, prefillPar, decodePar st
 		[]byte(edit(body[:at], prefillEng, prefillPar)+edit(body[at:], decodeEng, decodePar)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	return withPDRouter(t, dir)
 }
 
 // Each P/D pool runs its own engine.long_prefill_token_threshold (blis-schemas#75), as vLLM
@@ -99,7 +99,7 @@ func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	const threshold = "      long_prefill_token_threshold: 256\n"
 	run := func(dir string, extra ...string) (string, string, error) {
 		return runKernelCLI(t, append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
-			"--pd-decider", "always", "--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
+			"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
 			"--seed", "11", "--horizon", "600000000", "--num-requests", "20", "--rate", "100000", "--prompt-tokens", "16000",
 			"--prompt-tokens-stdev", "0", "--prompt-tokens-min", "16000", "--prompt-tokens-max", "16000"},
 			extra...)...)
@@ -168,7 +168,7 @@ func TestPDPoolsResolveTheirOwnDPLoadBalancing(t *testing.T) {
 	}
 	run := func(extra ...string) (string, error) {
 		_, stderr, err := runKernelCLI(t, append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
-			"--pd-decider", "always", "--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
+			"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
 			"--seed", "11", "--horizon", "600000000", "--num-requests", "10", "--rate", "8"}, extra...)...)
 		return stderr, err
 	}

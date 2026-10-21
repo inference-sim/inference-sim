@@ -1,0 +1,20 @@
+# Prefix-cache-aware routing with load balancing, adapted from llm-d-router deploy/config/epp-estimate-prefix-cache-config.yaml.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: single-profile-handler
+- type: approx-prefix-cache-producer
+- type: prefix-cache-scorer
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: prefix-cache-scorer
+    weight: 3
+  - pluginRef: queue-scorer
+    weight: 1
+  - pluginRef: kv-cache-utilization-scorer
+    weight: 1
+  - pluginRef: max-score-picker

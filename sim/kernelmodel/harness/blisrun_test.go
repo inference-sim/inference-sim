@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
@@ -26,7 +27,7 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 			MaxModelLen: 9472, GPUMemoryUtilization: 0.9, EnableExpertParallel: false},
 	} {
 		dst := filepath.Join(t.TempDir(), name)
-		if err := writeScenarioVariant(src, dst, pc); err != nil {
+		if err := writeScenarioVariant(src, dst, pc, nil); err != nil {
 			t.Fatalf("writeScenarioVariant: %v", err)
 		}
 		wantSc, wantDep, err := latencykernel.LoadBundle(src)
@@ -74,6 +75,31 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 	}
 }
 
+// Every point routes like vLLM's data-parallel balancer: the variant's router block names that
+// configuration, which `blis replay` reads from the scenario (#1950), and a committed scenario
+// that already states a router block is refused rather than overwritten.
+func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
+	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
+	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
+	pc := PointConfig{MaxNumSeqs: 8, MaxNumBatchedTokens: 4096, BlockSize: 16, MaxModelLen: 2048, GPUMemoryUtilization: 0.9}
+	want := &deployment.Router{EndpointPickerConfig: vllmDPLoadBalancerFile}
+	dst := filepath.Join(t.TempDir(), name)
+	if err := writeScenarioVariant(src, dst, pc, want); err != nil {
+		t.Fatalf("writeScenarioVariant: %v", err)
+	}
+	_, dep, err := latencykernel.LoadBundle(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dep.Router, want) {
+		t.Errorf("variant router block %+v, want %+v", dep.Router, want)
+	}
+	if err := writeScenarioVariant(dst, filepath.Join(t.TempDir(), name), pc, want); err == nil ||
+		!strings.Contains(err.Error(), "states a router block") {
+		t.Errorf("a scenario already stating a router block: got %v, want a refusal", err)
+	}
+}
+
 // The command line is a user's `blis replay` in pool mode: CONC concurrent one-round sessions,
 // every trace record replayed once and in order. It names no data-parallel width (the command
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
@@ -93,7 +119,7 @@ func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 		}
 	}
 	for _, banned := range []string{"--dp", "--num-instances", "--max-num-running-reqs", "--max-num-scheduled-tokens",
-		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon"} {
+		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon", "--epp-"} {
 		if strings.Contains(line, banned) {
 			t.Errorf("%q passes %s; the scenario and the trace are the only sources of the point", line, banned)
 		}

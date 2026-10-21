@@ -95,7 +95,6 @@ func sameShapeRequests(n int) []*sim.Request {
 // some same-clock completions on different instances complete in an order other than ID order.
 func TestCompletionIndex_IsTheClustersCompletionOrder(t *testing.T) {
 	cfg := newTestDeploymentConfig(3)
-	cfg.RoutingPolicy = "round-robin"
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(sameShapeRequests(12)), nil)
 	seen := recordCompletions(cs)
 	mustRun(t, cs)

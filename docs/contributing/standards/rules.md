@@ -51,7 +51,7 @@ Go map iteration is non-deterministic. Any `for k, v := range someMap` that feed
 
 Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
 
-**Evidence:** `--rate 0` caused an infinite loop deep in the simulation. `--snapshot-refresh-interval` was added without validation (#281).
+**Evidence:** `--rate 0` caused an infinite loop deep in the simulation. A snapshot-refresh-interval flag was added without validation (#281).
 
 **Additional evidence:** Issues #508, #509, #382, #383, #384 (fix #520) — `NewTieredKVCache` accepted `cpuBlocks <= 0`, `NewKVStore` did not validate `KVOffloadThreshold` range or `KVTransferBandwidth > 0`, and `NewSimulator` accepted `MaxRunningReqs <= 0`. Library callers bypass CLI validation entirely.
 
@@ -227,17 +227,13 @@ Configuration parameters must be grouped by module — not added to a monolithic
 
 ### R17: Document signal freshness for routing inputs
 
-Routing snapshot signals have different freshness guarantees due to DES event ordering. Scorer authors must understand which signals are synchronously fresh and which are stale. Any scorer intended for high-rate routing must either use a synchronously-fresh signal or be combined with one that does.
+Routing signals have different freshness. The embedded llm-d router reads two kinds: the vLLM Prometheus series each engine publishes at the end of every step (`sim/engine_metrics.go`), which the router scrapes on its own cadence (EPP flag `--refresh-metrics-interval`, phase-offset by `--epp-scrape-jitter`), and the router's own in-flight bookkeeping (for example `inflight-load-producer`), which is updated synchronously on each dispatch and response. A scrape that lands mid-step sees the previous step's values.
 
-**Evidence:** H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.
+**Evidence:** H3 hypothesis experiment (#279) — a KV-utilization scorer produced 200x worse distribution uniformity than a queue-depth scorer at rate=5000, because its signal was stale. See issues #282, #283.
 
-**Freshness hierarchy:**
-- **Synchronous (cluster-owned):** InFlightRequests — always fresh (gateway counter)
-- **Immediate/Periodic (instance-owned):** QueueDepth, BatchSize, KVUtilization, CacheHitRate, PreemptionCount — Immediate when `--snapshot-refresh-interval=0`, Periodic when `>0`
+**Check:** When adding an engine signal the router consumes, publish it with vLLM's semantics and at vLLM's update point (step end), and document its freshness: scraped (as stale as the scrape interval) or router-local (synchronous). When an experiment depends on a router signal, state which kind it is and the scrape interval used.
 
-**Check:** When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad). The `queue-depth` scorer reads only QueueDepth (Periodic) for GIE parity; the `load-balance` scorer reads EffectiveLoad (includes synchronous InFlightRequests).
-
-**Enforced:** Design review, scorer implementation review.
+**Enforced:** Design review, review of `sim/engine_metrics.go` and `sim/llmd` changes.
 
 ---
 
@@ -335,7 +331,7 @@ For PR authors — check each rule before submitting:
 - [ ] **R14:** No method spans multiple module responsibilities
 - [ ] **R15:** Stale PR references resolved
 - [ ] **R16:** Config params grouped by module
-- [ ] **R17:** Routing scorer signals documented for freshness tier
+- [ ] **R17:** Router-consumed engine signals documented for freshness (scraped vs router-local)
 - [ ] **R18:** CLI flag values not silently overwritten by defaults.yaml
 - [ ] **R19:** Unbounded retry/requeue loops have circuit breakers
 - [ ] **R20:** Detectors and analyzers handle degenerate inputs (empty, skewed, zero)

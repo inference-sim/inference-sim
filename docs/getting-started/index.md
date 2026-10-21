@@ -1,6 +1,6 @@
 # What is BLIS?
 
-**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics, scheduling policies, and token generation — all without requiring real GPUs.
+**BLIS** (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters routed by the embedded llm-d router, KV-cache dynamics, scheduling policies, and token generation — all without requiring real GPUs.
 
 ---
 
@@ -9,7 +9,7 @@
 Deploying LLM inference at scale requires answering capacity planning questions that are expensive to answer with real hardware:
 
 - **How many instances do I need** to serve 1,000 requests/second at p99 TTFT < 200ms?
-- **Which routing policy** minimizes tail latency for my workload mix?
+- **Which router configuration** minimizes tail latency for my workload mix?
 - **How much KV cache memory** do I need before preemptions degrade throughput?
 - **What happens at 2x traffic** — does latency degrade gracefully or catastrophically?
 
@@ -20,7 +20,7 @@ Running these experiments on real GPUs costs thousands of dollars and takes days
 | Audience | Use Case |
 |----------|----------|
 | **Capacity planners** | Determine instance counts, GPU memory, and parallelism configurations before procurement |
-| **Platform engineers** | Compare routing policies, tune scorer weights, evaluate admission control strategies |
+| **Platform engineers** | Compare llm-d router configurations (scorer weights, admission, flow control) before deploying them |
 | **Researchers** | Run controlled experiments on scheduling, batching, and caching algorithms |
 | **Developers** | Validate new policies against existing ones before deploying to production |
 

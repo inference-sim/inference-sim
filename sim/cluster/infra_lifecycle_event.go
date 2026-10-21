@@ -212,10 +212,6 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(sim.InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
-		if cs.snapshotProvider != nil {
-			cs.snapshotProvider.RemoveCacheInstance(inst.ID())
-		}
-		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -225,7 +221,7 @@ type drainWait struct{}
 
 func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(sim.InstanceStateDraining)
-	// Routing exclusion handled by buildRouterState() via inst.IsRoutable().
+	// The gateway removes the endpoint when it observes the transition.
 
 	// I3: If the instance is already idle (no queued or running requests), transition
 	// immediately to Terminated and release GPUs. Otherwise the drain completion check
@@ -234,10 +230,6 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(sim.InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
-		if cs.snapshotProvider != nil {
-			cs.snapshotProvider.RemoveCacheInstance(inst.ID())
-		}
-		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -247,7 +239,6 @@ type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(sim.InstanceStateDraining)
-	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
 	// The instance remains alive while processing in-flight and late-arriving requests.
 	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
 	// in the main event loop (cluster.go), which transitions the instance to Terminated.

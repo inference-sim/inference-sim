@@ -117,8 +117,8 @@ func TestComputePerSLODistributions_MissingRequests_StillComputesPresent(t *test
 func TestBuildLatencyResults_ConvertsTicksToMs(t *testing.T) {
 	m := sim.NewMetrics()
 	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", SLOClass: "critical"}
-	m.RequestTTFTs["r1"] = 50_000 // 50 ms in µs ticks
-	m.RequestITLs["r1"] = 30_000  // 30 ms in µs ticks
+	m.RequestTTFTs["r1"] = 50_000   // 50 ms in µs ticks
+	m.RequestITLs["r1"] = 30_000    // 30 ms in µs ticks
 	m.RequestE2Es["r1"] = 2_000_000 // 2 s in µs ticks
 
 	rl := BuildLatencyResults(m)["r1"]
@@ -229,9 +229,9 @@ func TestSLOAttainmentMultiDim_AndCombination_AllDimsMustPass(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprintf("good_%d", i)
 		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "A"}
-		m.RequestTTFTs[id] = 50 * 1e3   // 50 ms
-		m.RequestITLs[id] = 30 * 1e3    // 30 ms
-		m.RequestE2Es[id] = 2000 * 1e3  // 2 s
+		m.RequestTTFTs[id] = 50 * 1e3  // 50 ms
+		m.RequestITLs[id] = 30 * 1e3   // 30 ms
+		m.RequestE2Es[id] = 2000 * 1e3 // 2 s
 	}
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprintf("bad_%d", i)

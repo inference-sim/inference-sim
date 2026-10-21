@@ -295,7 +295,7 @@ BLIS records per-request and aggregate metrics throughout the simulation.
 
 At simulation end, for a **single-instance** run: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out`
 
-That five-term form is the single-instance specialisation, not the general rule. The canonical form is a twelve-term cluster equation: a cluster run adds seven buckets for routing rejections, the gateway queue (depth, shed, rejected), in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical [INV-1](../contributing/standards/invariants.md) for the full equation and the shared helpers that implement it.
+That five-term form is the single-instance specialisation, not the general rule. The canonical form is an eleven-term cluster equation: a cluster run adds six buckets for the embedded llm-d router's outcomes — routing rejections, flow-control queue depth and capacity rejections, in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical [INV-1](../contributing/standards/invariants.md) for the full equation and the shared helpers that implement it.
 
 This is the fundamental accounting invariant that ensures no requests are silently lost.
 

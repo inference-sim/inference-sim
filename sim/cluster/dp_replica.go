@@ -157,75 +157,39 @@ func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica 
 	return cs.replicaOf[string(inst.ID())]
 }
 
-// routable is whether the replica takes traffic: every rank must.
-func (rep *dpReplica) routable() bool {
-	for _, inst := range rep.ranks {
-		if !inst.IsRoutable() {
-			return false
-		}
+// EndpointRanks implements GatewayHost: the engines behind the router endpoint id. An instance
+// that is its own endpoint is one engine. A data-parallel replica behind vLLM's internal (or
+// hybrid) balancer is one endpoint, rank 0's pod, serving every rank's engine: vLLM labels each
+// engine's gauges with its index (vllm/v1/metrics/loggers.py:480-486, :509-584 at v0.31.0),
+// and llm-d-router reads a pod's waiting and running requests as the sum over those series and
+// its KV cache usage as the max (pkg/epp/framework/plugins/datalayer/extractor/metrics/
+// extractor.go:146-164, spec.go:147). Ranks 1..dp-1 of such a replica are no endpoint: nil.
+func (cs *ClusterSimulator) EndpointRanks(id InstanceID) []*InstanceSimulator {
+	inst := cs.instanceByID(id)
+	if inst == nil {
+		return nil
 	}
-	return true
+	rep := cs.endpointReplica(inst)
+	if rep == nil {
+		return []*InstanceSimulator{inst}
+	}
+	if inst != rep.ranks[0] {
+		return nil
+	}
+	return rep.ranks
 }
 
-// endpointSnapshot is the router's view of a replica: one pod, its signals aggregated over
-// the ranks as llm-d's endpoint picker aggregates the pod's per-engine series.
-//
-// vLLM v0.31.0 labels each gauge with the engine index, one series per DP rank
-// (vllm/v1/metrics/loggers.py:480-486, :509-584). llm-d-router reads a pod's waiting and
-// running requests as the SUM over those series and its KV cache usage as the MAX
-// (pkg/epp/framework/plugins/datalayer/extractor/metrics/extractor.go:146-164, spec.go:147,
-// llm-d-router#3085; v0.10.0 read the first series alone). In-flight requests and tokens
-// are tracked per endpoint (inflightload/producer.go), so they sum over the ranks too, as
-// do the capacity and occupancy counts. Latency averages are the ranks' mean; resident
-// adapters their union.
-func (cs *ClusterSimulator) endpointSnapshot(rep *dpReplica) sim.RoutingSnapshot {
-	agg := sim.NewRoutingSnapshot(rep.id)
-	var ttft, itl, avgIn, avgOut, hit float64
-	n := float64(len(rep.ranks))
-	for _, inst := range rep.ranks {
-		s := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
-		agg.QueueDepth += s.QueueDepth
-		agg.BatchSize += s.BatchSize
-		agg.FreeKVBlocks += s.FreeKVBlocks
-		agg.PreemptionCount += s.PreemptionCount
-		agg.TotalKvCapacityTokens += s.TotalKvCapacityTokens
-		agg.KvTokensInUse += s.KvTokensInUse
-		agg.DispatchRate += s.DispatchRate
-		agg.InFlightRequests += cs.inFlightRequests[string(inst.ID())]
-		agg.MaxBatchSize += float64(inst.MaxBatchSize())
-		agg.KVUtilization = max(agg.KVUtilization, s.KVUtilization)
-		ttft += s.TTFT
-		itl += s.ITL
-		avgIn += s.AvgInTokens
-		avgOut += s.AvgOutTokens
-		hit += s.CacheHitRate
-		for a := range s.ResidentAdapters {
-			if agg.ResidentAdapters == nil {
-				agg.ResidentAdapters = make(map[string]bool)
-			}
-			agg.ResidentAdapters[a] = true
-		}
+// rankFor is the engine that serves a request the router sent to endpoint inst: inst itself, or,
+// for a replica endpoint, the rank vLLM's internal DP balancer picks (pickRank).
+func (cs *ClusterSimulator) rankFor(inst *InstanceSimulator) *InstanceSimulator {
+	if rep := cs.endpointReplica(inst); rep != nil && inst == rep.ranks[0] {
+		return cs.pickRank(rep, cs.clock)
 	}
-	agg.TTFT, agg.ITL = ttft/n, itl/n
-	agg.AvgInTokens, agg.AvgOutTokens = avgIn/n, avgOut/n
-	agg.CacheHitRate = hit / n
-	// The EPP charges in-flight tokens to the endpoint it picked, the replica (#1907/#1908).
-	if cs.flowInFlightLoad != nil {
-		agg.InFlightTokens = cs.flowInFlightLoad.Tokens(rep.id)
-	}
-	lead := rep.ranks[0]
-	agg.Model = lead.Model
-	agg.GPUType = lead.GPU()
-	agg.TPDegree = lead.TPDegree
-	agg.CostPerHour = 0
-	for _, inst := range rep.ranks {
-		agg.CostPerHour += inst.CostPerHour
-	}
-	return agg
+	return inst
 }
 
 // A replica endpoint's prefix-cache view is rank 0's cache alone, under rank 0's
-// instance ID, which is the endpoint's: the cacheQueryFn entry needs no aggregation.
+// instance ID, which is the endpoint's: only rank 0 publishes KV events to the router.
 //
 // vLLM publishes each rank's KV events on its own port, base + rank
 // (vllm/distributed/kv_events.py:355-356, :530-563 at v0.31.0). llm-d-router subscribes an

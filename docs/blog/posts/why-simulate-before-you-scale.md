@@ -17,7 +17,7 @@ categories:
 
 # Why Simulate Before You Scale
 
-> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.
+> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed. BLIS's own routing policies were also removed: every cluster run routes with the embedded llm-d router, configured by the scenario's `router:` block ([routing guide](../../guide/routing.md)), so the `--routing-policy` commands below no longer run.
 
 Deploying large language models in production is one of the most expensive infrastructure decisions an organization can make. A single high-end GPU costs upwards of $30,000, and a production cluster can run into millions per year. Yet most teams make their first scaling decisions based on rough estimates, vendor benchmarks, or — worst of all — trial and error on live hardware.
 

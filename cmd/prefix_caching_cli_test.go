@@ -44,7 +44,7 @@ func prefixCachingTestDeployment(t *testing.T, batch sim.BatchConfig) cluster.De
 
 func runPrefixCachingConfig(t *testing.T, cfg cluster.DeploymentConfig, reqs []*sim.Request) (*cluster.ClusterSimulator, map[string]float64, map[string]float64) {
 	t.Helper()
-	cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newRoutedCluster(cfg, reqs)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("simulation failed: %v", err)
 	}

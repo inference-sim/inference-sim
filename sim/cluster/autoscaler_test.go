@@ -28,7 +28,7 @@ func (c *countingCollector) Collect(_ *sim.RouterState) []ModelSignals {
 // nopAnalyzer is a no-op Analyzer that returns an empty AnalyzerResult.
 type nopAnalyzer struct{}
 
-func (n *nopAnalyzer) Name() string                        { return "nop" }
+func (n *nopAnalyzer) Name() string                          { return "nop" }
 func (n *nopAnalyzer) Analyze(_ ModelSignals) AnalyzerResult { return AnalyzerResult{} }
 
 // nopEngine is a no-op Engine that never emits ScaleDecisions.
@@ -103,10 +103,11 @@ func wireAutoscaler(cs *ClusterSimulator) *countingCollector {
 
 // TestScalingTickScheduling verifies autoscaler tick firing behavior.
 // Sub-tests:
-//   (a) ModelAutoscalerIntervalUs=0 → no ScalingTickEvent fires (autoscaler disabled).
-//   (b) interval=60s, horizon=200s → ticks fire at t=0, 60s, 120s, 180s (4 total).
-//   (c) HPAScrapeDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
-//   (d) HPAScrapeDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
+//
+//	(a) ModelAutoscalerIntervalUs=0 → no ScalingTickEvent fires (autoscaler disabled).
+//	(b) interval=60s, horizon=200s → ticks fire at t=0, 60s, 120s, 180s (4 total).
+//	(c) HPAScrapeDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
+//	(d) HPAScrapeDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
 //
 // Tests (a) and (b) fail before T015 (first tick scheduling) is implemented.
 // Tests (c) and (d) fail before T013 (ScaleActuationEvent scheduling) is implemented.
@@ -247,12 +248,12 @@ func TestNilComponentGuard(t *testing.T) {
 	// wiredCollector is a separate instance that would only accumulate calls if the nil
 	// guard were bypassed (which would panic on a nil interface call first).
 	cases := []struct {
-		name            string
-		wiredCollector  *countingCollector // the collector passed to the pipeline (may be nil)
-		nilCollector    bool               // when true, pass nil as Collector to the pipeline
-		analyzer        Analyzer
-		engine          Engine
-		actuator        Actuator
+		name           string
+		wiredCollector *countingCollector // the collector passed to the pipeline (may be nil)
+		nilCollector   bool               // when true, pass nil as Collector to the pipeline
+		analyzer       Analyzer
+		engine         Engine
+		actuator       Actuator
 	}{
 		{name: "nil_collector", nilCollector: true, analyzer: &nopAnalyzer{}, engine: &nopEngine{}, actuator: &nopActuator{}},
 		{name: "nil_analyzer", analyzer: nil, engine: &nopEngine{}, actuator: &nopActuator{}},
@@ -294,14 +295,19 @@ func TestNilComponentGuard(t *testing.T) {
 //
 // Scenario A (window=0): passes on first signal — backward-compatible with default.
 // Scenario B (scale-up, window=120s, always-signal): ticks 0,60s,120s,180s,240s,300s,360s
-//   → 2 applications (at 120s and 300s).
+//
+//	→ 2 applications (at 120s and 300s).
+//
 // Scenario C (scale-down, window=120s, always-signal): symmetric to B → 2 applications.
 // Scenario D (scale-up, window=120s, signal absent at t=60s):
-//   t=0 suppressed; t=60s absent → timer reset; t=120s new timer; t=180s suppressed;
-//   t=240s passes → 1 application.
+//
+//	t=0 suppressed; t=60s absent → timer reset; t=120s new timer; t=180s suppressed;
+//	t=240s passes → 1 application.
+//
 // Scenario E (direction flip): scale-up signal ticks 0–1, then scale-down from tick 2.
-//   Scale-up timer cleared on direction flip; scale-down timer starts fresh at t=120s.
-//   → 0 scale-up Apply(), 1 scale-down Apply() (at t=240s).
+//
+//	Scale-up timer cleared on direction flip; scale-down timer starts fresh at t=120s.
+//	→ 0 scale-up Apply(), 1 scale-down Apply() (at t=240s).
 func TestStabilizationWindowFilter(t *testing.T) {
 	const (
 		windowUs   = 120_000_000 // 2 minutes in μs
@@ -452,7 +458,7 @@ func (e *interruptAtTickEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []S
 
 // directionFlipEngine emits scale-up for ticks < flipAtTick, then scale-down from flipAtTick onward.
 type directionFlipEngine struct {
-	tick      int
+	tick       int
 	flipAtTick int
 }
 
@@ -566,8 +572,8 @@ func TestGPUInventory(t *testing.T) {
 			newA100Inst("warmup", 1, sim.InstanceStateWarmingUp),
 			newA100Inst("active", 1, sim.InstanceStateActive),
 			newA100Inst("draining", 1, sim.InstanceStateDraining),
-			newA100Inst("scheduling", 1, sim.InstanceStateScheduling),   // must NOT subtract
-			newA100Inst("terminated", 1, sim.InstanceStateTerminated),   // must NOT subtract
+			newA100Inst("scheduling", 1, sim.InstanceStateScheduling), // must NOT subtract
+			newA100Inst("terminated", 1, sim.InstanceStateTerminated), // must NOT subtract
 		}
 		v := NewVariantSpec("A100", 1)
 		if got := cs.gpuInventory().FreeSlots(v); got != 4 {
@@ -601,4 +607,3 @@ func TestGPUInventory(t *testing.T) {
 		}
 	})
 }
-

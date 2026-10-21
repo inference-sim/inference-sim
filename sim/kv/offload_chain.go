@@ -2,8 +2,8 @@ package kv
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
@@ -65,6 +65,9 @@ type OffloadCache struct {
 	// cascadeQueue holds one request's newly stored chunks of this step until flushCascades
 	// submits them as one store job per tier.
 	cascadeQueue []kvkey.BlockKey
+	// secondaryNames are the secondary tiers' KV-event tier names; secondaryEvents which publish.
+	secondaryNames  []string
+	secondaryEvents []bool
 
 	// H3 (#1591) step-boundary re-poll state. deferred tracks new prefill admissions
 	// set aside waiting for a secondary→CPU fetch (keyed by Request.ID). lookups is vLLM's
@@ -164,6 +167,8 @@ func NewOffloadCache(gpu *KVCacheState, cfg sim.KVOffloadConfig, opts ...Offload
 
 	oc.jitterStddev = make([]float64, len(cfg.Tiers))
 	for i, t := range cfg.Tiers {
+		oc.secondaryNames = append(oc.secondaryNames, kvEventMedium(t.Type))
+		oc.secondaryEvents = append(oc.secondaryEvents, t.EnableKVEvents)
 		oc.jitterStddev[i] = t.LatencyJitterStddev
 		if t.LatencyJitterStddev > 0 && oc.rng == nil {
 			panic(fmt.Sprintf("NewOffloadCache: tier %d sets latency_jitter_stddev>0 but no RNG was supplied (WithOffloadRNG); jitter requires a seeded RNG for determinism (#1581 INV-6)", i))
@@ -595,10 +600,13 @@ func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, 
 				h := string(tail.blockKey(i))
 				start := i * bs
 				gpuBlk.Tokens = append(gpuBlk.Tokens[:0], tokens[start:start+bs]...)
-				gpuBlk.Hash = h
 				gpuBlk.RefCount = 0
 				gpuBlk.InUse = false
-				o.gpu.HashToBlock[h] = gpuBlk.ID
+				parent := prevHash
+				if i > startBlock {
+					parent = string(tail.blockKey(i - 1))
+				}
+				o.gpu.cacheBlock(gpuBlk, parent, h)
 				o.gpu.appendToFreeList(gpuBlk)
 				o.reloadCount++
 				reloadCount++
@@ -745,7 +753,7 @@ func (o *OffloadCache) MirrorToCPU(batch []*sim.Request) {
 				}
 			}
 			key := kvkey.BlockKey(o.gpu.Blocks[blockIDs[(c+1)*bpc-1]].Hash) // the last block's hash
-			if blk, ok := o.cpu.blocks[key]; ok { // already resident: refresh recency, no re-cascade
+			if blk, ok := o.cpu.blocks[key]; ok {                           // already resident: refresh recency, no re-cascade
 				if blk.refCnt == 0 {
 					o.cpu.touch(blk)
 				}
@@ -812,34 +820,6 @@ func (o *OffloadCache) flushCascades() {
 	}
 }
 
-// EnableCPUTierHistory starts journaling CPU-tier readability so
-// CPUTierPrefixBlockCountAt can answer for an earlier time. Blocks already readable
-// count as readable since the start.
-func (o *OffloadCache) EnableCPUTierHistory() {
-	if o.cpu.journal != nil {
-		return
-	}
-	j := &cpuReadabilityJournal{now: func() int64 { return o.clock }, readableAt: map[kvkey.BlockKey]int64{}, gone: map[kvkey.BlockKey][2]int64{}}
-	for k, blk := range o.cpu.blocks {
-		if blk.refCnt >= 0 {
-			j.readableAt[k] = math.MinInt64
-		}
-	}
-	o.cpu.journal = j
-}
-
-// CPUTierPrefixBlockCountAt is CPUTierPrefixBlockCount as of time at (<= the
-// current clock), from the readability journal; it also forgets history before at.
-// Panics unless EnableCPUTierHistory was called (R3).
-func (o *OffloadCache) CPUTierPrefixBlockCountAt(tokens []sim.TokenID, at int64) int {
-	j := o.cpu.journal
-	if j == nil {
-		panic("OffloadCache.CPUTierPrefixBlockCountAt: EnableCPUTierHistory not called")
-	}
-	j.prune(at)
-	return o.cpuPrefixBlocks(tokens, func(k kvkey.BlockKey) bool { return j.readableAtTime(k, at) })
-}
-
 // CPUTierPrefixBlockCount returns the number of leading full blocks of tokens that
 // are readable in the CPU offload tier (cpuHit), in whole chunks, stopping at the first
 // chunk that is not. A pure query: no tier state or recency changes. It is the CPU-tier
@@ -888,3 +868,69 @@ func (o *OffloadCache) PollMisses() int64 { return o.offloadMissCount }
 
 // AddPollMisses implements sim.QuiescentKVStore: charges n polls' worth of failed admissions.
 func (o *OffloadCache) AddPollMisses(n int64) { o.offloadMissCount += n }
+
+// EnableKVEvents implements sim.KVEventSource: the GPU tier's prefix cache publishes, and so do
+// the CPU tier (Tier "cpu"; its keys are the GPU block hashes) and every secondary tier whose
+// enable_kv_events is set (Tier = the medium its vLLM backend publishes, kvEventMedium), in one
+// ordered stream.
+func (o *OffloadCache) EnableKVEvents() {
+	o.gpu.EnableKVEvents()
+	o.cpu.notify = func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier("cpu", string(key), removed) }
+	for i, tier := range o.secondary {
+		if !o.secondaryEvents[i] {
+			continue // vLLM's enable_kv_events is off for this tier: it publishes nothing
+		}
+		name := o.secondaryNames[i]
+		tier.notify = append(tier.notify, func(key kvkey.BlockKey, removed bool) { o.gpu.recordTier(name, string(key), removed) })
+	}
+}
+
+// kvEventMedium is the medium a secondary tier's KV events carry: llm-d's filesystem offload
+// backend (llmd_fs_backend) publishes "SHARED_STORAGE", which the router indexes as
+// "shared_storage".
+func kvEventMedium(tierType string) string {
+	if tierType == "fs" {
+		return "shared_storage"
+	}
+	return tierType
+}
+
+// TierBlockHashes returns the hashes of the blocks the secondary tiers publishing as medium hold,
+// sorted (nil when none does).
+func (o *OffloadCache) TierBlockHashes(medium string) []string {
+	held := map[kvkey.BlockKey]bool{}
+	for i, n := range o.secondaryNames {
+		if n == medium {
+			for k := range o.secondary[i].holds {
+				held[k] = true
+			}
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(held))
+	for k := range held {
+		out = append(out, string(k))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TakeKVEvents implements sim.KVEventSource.
+func (o *OffloadCache) TakeKVEvents() []sim.KVEvent { return o.gpu.TakeKVEvents() }
+
+// CachedBlockHashes implements sim.KVEventSource: the GPU tier's cached blocks.
+func (o *OffloadCache) CachedBlockHashes() []string { return o.gpu.CachedBlockHashes() }
+
+// CPUBlockHashes implements sim.KVEventSource: the CPU tier's ready blocks.
+func (o *OffloadCache) CPUBlockHashes() []string {
+	out := make([]string, 0, len(o.cpu.blocks))
+	for k, blk := range o.cpu.blocks {
+		if blk.refCnt >= 0 {
+			out = append(out, string(k))
+		}
+	}
+	sort.Strings(out)
+	return out
+}

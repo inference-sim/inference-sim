@@ -46,64 +46,15 @@ type offloadCPUBlock struct {
 // so eviction is O(1) and never selects a locked block (BC-C4); the evictable
 // counter is maintained only at ref_cnt transitions that cross zero.
 type offloadCPUTier struct {
+	// notify, when set, is told each block that becomes readable (removed=false) or leaves the tier.
+	notify    func(key kvkey.BlockKey, removed bool)
 	blocks    map[kvkey.BlockKey]*offloadCPUBlock
 	lruHead   *offloadCPUBlock // oldest evictable (evict first)
 	lruTail   *offloadCPUBlock // newest evictable
 	capacity  int64
-	used      int64                  // == len(blocks): every allocated block (ref_cnt -1, 0, or n)
-	evictable int64                  // == count of ref_cnt==0 blocks (== LRU list length); maintained O(1)
-	evictions int64                  // total blocks evicted (diagnostic)
-	journal   *cpuReadabilityJournal // nil unless a delayed router view is enabled
-}
-
-// cpuReadabilityJournal records when blocks became readable and when readable
-// blocks left the tier, so the router can see the tier as it was at an earlier
-// time (the KV-event view delayed by --cache-signal-delay).
-type cpuReadabilityJournal struct {
-	now        func() int64
-	readableAt map[kvkey.BlockKey]int64
-	gone       map[kvkey.BlockKey][2]int64 // [readable from, removed at), earliest still relevant
-}
-
-func (j *cpuReadabilityJournal) readable(key kvkey.BlockKey) {
-	if j != nil {
-		j.readableAt[key] = j.now()
-	}
-}
-
-func (j *cpuReadabilityJournal) removed(key kvkey.BlockKey) {
-	if j == nil {
-		return
-	}
-	from, ok := j.readableAt[key]
-	if !ok {
-		return
-	}
-	delete(j.readableAt, key)
-	if _, kept := j.gone[key]; !kept {
-		j.gone[key] = [2]int64{from, j.now()}
-	}
-}
-
-// readableAtTime reports whether key was readable at time at (at <= now).
-func (j *cpuReadabilityJournal) readableAtTime(key kvkey.BlockKey, at int64) bool {
-	if from, ok := j.readableAt[key]; ok && from <= at {
-		return true
-	}
-	if iv, ok := j.gone[key]; ok && iv[0] <= at && at < iv[1] {
-		return true
-	}
-	return false
-}
-
-// prune drops removal records that end at or before at; views are never asked
-// about an earlier time again.
-func (j *cpuReadabilityJournal) prune(at int64) {
-	for k, iv := range j.gone {
-		if iv[1] <= at {
-			delete(j.gone, k)
-		}
-	}
+	used      int64 // == len(blocks): every allocated block (ref_cnt -1, 0, or n)
+	evictable int64 // == count of ref_cnt==0 blocks (== LRU list length); maintained O(1)
+	evictions int64 // total blocks evicted (diagnostic)
 }
 
 func newOffloadCPUTier(capacity int64) *offloadCPUTier {
@@ -150,7 +101,9 @@ func (t *offloadCPUTier) store(key kvkey.BlockKey) bool {
 	t.appendToTail(blk)
 	t.used++
 	t.evictable++
-	t.journal.readable(key)
+	if t.notify != nil {
+		t.notify(key, false)
+	}
 	return true
 }
 
@@ -200,7 +153,9 @@ func (t *offloadCPUTier) completeStore(key kvkey.BlockKey, ok bool) {
 		blk.refCnt = 0
 		t.appendToTail(blk)
 		t.evictable++
-		t.journal.readable(key)
+		if t.notify != nil {
+			t.notify(key, false) // readable now
+		}
 	} else {
 		delete(t.blocks, key)
 		t.used-- // a -1 block is off the LRU, so no unlink / evictable change
@@ -246,9 +201,11 @@ func (t *offloadCPUTier) evict(n int64) int64 {
 		victim := t.lruHead
 		t.unlink(victim)
 		delete(t.blocks, victim.key)
-		t.journal.removed(victim.key)
 		t.used--
 		t.evictable--
+		if t.notify != nil {
+			t.notify(victim.key, true)
+		}
 		t.evictions++
 		cnt++
 	}

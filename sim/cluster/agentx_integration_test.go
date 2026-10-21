@@ -169,10 +169,14 @@ func TestAgentXThroughPDDisaggregation(t *testing.T) {
 	}
 }
 
+// A request that expires in the gateway's flow control (the router's queue TTL) is an error
+// outcome for its stream, which sends its next turn as usual. The gateway is the test stand-in,
+// expiring every third request; the llm-d router's own flow control is exercised in sim/llmd.
 func TestAgentXThroughFlowControlTTL(t *testing.T) {
-	cfg := newFlowControlTTLConfig(1, 2000, "concurrency")
-	cfg.FlowControlMaxConcurrency = 1
-	r := runAgentXOn(t, cfg, 3, nil)
+	n := 0
+	gw := &fakeGateway{disaggregate: true, rejectAs: RejectedGatewayExpired,
+		reject: func(*sim.Request) bool { n++; return n%3 == 0 }}
+	r := runAgentXOn(t, newTestDeploymentConfig(1), 3, func(cs *ClusterSimulator) { cs.SetGateway(gw) })
 	out := r.checkConservation(t)
 	if r.cs.GatewayExpired() == 0 || out[sim.AgenticError] != r.cs.GatewayExpired() {
 		t.Fatalf("%d queue expiries, %d error outcomes", r.cs.GatewayExpired(), out[sim.AgenticError])
@@ -182,12 +186,12 @@ func TestAgentXThroughFlowControlTTL(t *testing.T) {
 	}
 }
 
+// An admission rejection is an error outcome for its stream, which sends its next turn as usual.
+// The gateway is the test stand-in, rejecting every third request.
 func TestAgentXThroughAdmissionRejection(t *testing.T) {
-	cfg := newTestDeploymentConfig(1)
-	cfg.AdmissionPolicy = "token-bucket"
-	cfg.TokenBucketCapacity = 400
-	cfg.TokenBucketRefillRate = 50
-	r := runAgentXOn(t, cfg, 3, nil)
+	n := 0
+	gw := &fakeGateway{disaggregate: true, reject: func(*sim.Request) bool { n++; return n%3 == 0 }}
+	r := runAgentXOn(t, newTestDeploymentConfig(1), 3, func(cs *ClusterSimulator) { cs.SetGateway(gw) })
 	out := r.checkConservation(t)
 	if r.cs.RejectedRequests() == 0 || out[sim.AgenticError] != r.cs.RejectedRequests() {
 		t.Fatalf("%d admission rejections, %d error outcomes", r.cs.RejectedRequests(), out[sim.AgenticError])
@@ -218,7 +222,6 @@ func TestAgentXThroughRedirectDrain(t *testing.T) {
 	cfg := newTestDeploymentConfig(2)
 	cfg.InstanceLifecycle = InstanceLifecycleConfig{DrainPolicy: string(DrainPolicyRedirect)}
 	cfg.BatchConfig = sim.NewBatchConfig(1, 2048, 0) // one running request: the rest queue
-	cfg.RoutingPolicy = "round-robin"
 	redirected := 0
 	r := runAgentXOn(t, cfg, 8, func(cs *ClusterSimulator) {
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &drainAt{at: 0, inst: 0}, seqID: cs.nextSeqID()})

@@ -11,8 +11,8 @@ page adds the cross-repository steps around them.
 ## Repinning
 
 1. `go.mod`: the kernel and blis-schemas at their pushed heads' pseudo-versions (release tags
-   before merge). Never commit a `replace`; run `go mod tidy`, and tidy the
-   `llmd-conformance` modules too.
+   before merge). Never commit a `replace` for a blis-* module (the llm-d router's `replace` to
+   the inference-sim fork is the one exception); run `go mod tidy`.
 2. `testdata/registry` and `testdata/catalog`: re-vendor from the registry and catalog heads,
    updating each `.upstream-commit` stamp.
 3. `testdata/upstream-prerelease.lock`: the same two heads (TEMPORARY). Empty it once the

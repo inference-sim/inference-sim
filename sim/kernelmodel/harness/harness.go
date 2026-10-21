@@ -268,14 +268,16 @@ func scaled(v int64, factor float64) int64 {
 // them, and only then starts the main phase; the warm-up requests are in no metric. So the main
 // phase starts against an idle engine whose only memory of the warm-up is whatever state
 // outlives a drained request. In this simulator, on the configuration every point runs
-// (single-tier GPU KV cache, round-robin routing, FCFS scheduling, always-admit), that is:
+// (single-tier GPU KV cache, placement by requests in flight like vLLM's DP balancer, FCFS
+// scheduling, the router's default admission), that is:
 //
 //   - the KV cache's block-hash map, which keeps the hashes of released blocks
 //     (sim/kv/cache.go ReleaseKVBlocks). It is read for cross-request reuse only when prefix
 //     caching is enabled (sim/batch_formation.go skips GetCachedBlocks when
 //     PrefixCachingDisabled); there is no offload tier to read it otherwise. The only main
 //     request whose prompt it holds is request 0: the others share no prefix with it;
-//   - the round-robin router's counter (sim/routing.go), advanced by the number of copies.
+//   - nothing in the router: every warm-up copy has completed, so every replica has zero
+//     requests in flight when the main phase starts.
 //
 // The scheduler, batch formation and the kernel adapter carry no state between requests, no
 // step price reads the clock, and a drained engine holds no KV block.
@@ -283,8 +285,8 @@ func scaled(v int64, factor float64) int64 {
 // So where prefix caching is DISABLED, the main phase from an empty engine (mainPhase) is the
 // main phase after the warm-up, and Run scores it. Where it is ENABLED, Run scores the main phase
 // with request 0's prompt cached (primedPhase): dp copies of request 0 run to completion first,
-// one per replica, so every replica holds request 0's prompt and the router counter has moved by
-// a multiple of dp, and the main phase then starts on an idle engine. That is the drained
+// one per replica (each copy goes to a replica with none in flight), so every replica holds
+// request 0's prompt, and the main phase then starts on an idle engine. That is the drained
 // warm-up's state with dp copies in place of 2*CONC: the copies are token-for-token the same
 // prompt, so how many ran changes no block the main phase can read
 // (TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan). RunCold gives the empty-engine run of

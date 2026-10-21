@@ -1,10 +1,6 @@
 package cluster
 
-import (
-	"fmt"
-
-	"github.com/inference-sim/inference-sim/sim"
-)
+import "fmt"
 
 // PoolRole identifies which PD-disaggregation stages an instance serves.
 // Encoded as a bitmask so a single instance can belong to multiple pools
@@ -108,10 +104,11 @@ func ValidatePoolTopology(prefill, decode, shared, encode, total int) error {
 // Caller must validate prefill+decode+shared+encode <= total before calling.
 //
 // Index layout:
-//   [0, prefill)                          — prefill-only
-//   [prefill, prefill+decode)             — decode-only
-//   [prefill+decode, prefill+decode+shared) — shared-role (PoolRolePrefillDecode)
-//   [prefill+decode+shared, prefill+decode+shared+encode) — encode-only (PoolRoleEncode)
+//
+//	[0, prefill)                          — prefill-only
+//	[prefill, prefill+decode)             — decode-only
+//	[prefill+decode, prefill+decode+shared) — shared-role (PoolRolePrefillDecode)
+//	[prefill+decode+shared, prefill+decode+shared+encode) — encode-only (PoolRoleEncode)
 func BuildPoolMembershipFromIndices(total, prefill, decode, shared, encode int) map[string]PoolRole {
 	if prefill+decode+shared+encode > total {
 		panic(fmt.Sprintf("BuildPoolMembershipFromIndices: prefill(%d)+decode(%d)+shared(%d)+encode(%d)=%d exceeds total(%d)",
@@ -131,28 +128,4 @@ func BuildPoolMembershipFromIndices(total, prefill, decode, shared, encode int) 
 		membership[fmt.Sprintf("instance_%d", i)] = PoolRoleEncode
 	}
 	return membership
-}
-
-// FilterSnapshotsByPool returns snapshots for instances whose role includes
-// the requested role bits (set-membership). A shared-role instance
-// (PoolRolePrefillDecode) appears in both the PoolRolePrefill and
-// PoolRoleDecode result lists — BLIS analogue of llm-d's bylabel filter
-// semantics (issue #1276, Permalink 3).
-//
-// Order is preserved (stable relative to the input slice).
-//
-// Enforces INV-PD-2 (pool exclusivity): prefill sub-requests route only to prefill-role
-// instances, decode only to decode-role. Every role-scoped routing decision funnels
-// through here, so a change to this filter changes pool exclusivity for all callers.
-// PoolRoleEncode is filtered by the same mechanism, but INV-PD-2's statement names
-// prefill and decode only, so whether the invariant covers the encode pool is an open
-// question — do not read this comment as widening it.
-func FilterSnapshotsByPool(snapshots []sim.RoutingSnapshot, membership map[string]PoolRole, role PoolRole) []sim.RoutingSnapshot {
-	filtered := make([]sim.RoutingSnapshot, 0, len(snapshots))
-	for _, snap := range snapshots {
-		if membership[snap.ID].Has(role) {
-			filtered = append(filtered, snap)
-		}
-	}
-	return filtered
 }

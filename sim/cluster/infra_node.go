@@ -28,7 +28,6 @@ func IsValidNodeState(s string) bool {
 	return ok
 }
 
-
 // Node represents a single machine in a node pool.
 // Carries a fixed inventory of GPUs tracked as allocated or free.
 type Node struct {

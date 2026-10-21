@@ -673,7 +673,7 @@ func TestInstanceSimulator_EvictRequest_ReleasesAdapterPin(t *testing.T) {
 	require.GreaterOrEqual(t, inst.BatchSize(), 1, "a1 should be running (pinned) before eviction")
 
 	// Gateway in-flight eviction of the running (pinned) a1.
-	if !inst.EvictRequest(a1) {
+	if !inst.EvictRequest(a1, 0) {
 		t.Fatal("EvictRequest(a1) returned false; expected the running request to be found")
 	}
 

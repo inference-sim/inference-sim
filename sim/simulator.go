@@ -159,6 +159,8 @@ type Simulator struct {
 	curPriority int
 	// serverSeries records the vLLM /metrics series per engine; nil when off.
 	serverSeries *serverSeries
+	// abortPending is set by NoteAbort until the next step publishes the engine's state.
+	abortPending bool
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
@@ -206,6 +208,19 @@ type Simulator struct {
 	// engine's handoffs), at the point of vLLM's schedule() where the WAITING phase runs: see
 	// SetRemoteKVAdmission. Nil on every instance that receives no handoff.
 	remoteKVAdmission func(now int64)
+	// remoteKVWaiting is how many handoffs wait for this engine's KV before their pull starts
+	// (SetRemoteKVWaiting): requests in vLLM's waiting queue that BLIS holds outside WaitQ.
+	remoteKVWaiting int
+	// OnFirstToken is an optional callback invoked once per prefill completion, when a request's
+	// first output token is produced. at is the simulated time the client receives that token
+	// (ArrivalTime + FirstTokenTime). It must not mutate simulation state. Nil = no callback.
+	OnFirstToken func(req *Request, at int64)
+
+	// engineMetrics is the state this engine publishes on its metrics endpoint.
+	engineMetrics engineMetricsLog
+	// kvEventSink receives the KV events of each step (SetKVEventSink); nil publishes none.
+	kvEventSink     func(at int64, events []KVEvent)
+	adapterCapacity int
 
 	progressHook               ProgressHook
 	simClockProgressIntervalUs int64
@@ -329,6 +344,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			return nil, fmt.Errorf("NewSimulator: NewResidentAdapterSetFunc returned nil for capacity %d", *cfg.AdapterCapacity)
 		}
 		s.residentAdapters = rs
+		s.adapterCapacity = *cfg.AdapterCapacity
 		s.adapterCost = ac
 	} else if cfg.HasAdapters() && cfg.AdapterCapacity == nil {
 		// Adapters declared but no capacity: the resident set stays inert and every
@@ -594,6 +610,18 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // only way a test can assert it reached that path: the superseded step executes nothing,
 // so it leaves no trace in any metric. 0 for a run that never slept on a deferral.
 func (sim *Simulator) IdleWakesSuperseded() int64 { return sim.idleWakesSuperseded }
+
+// NoteAbort records that a request was aborted between steps (a gateway eviction). As in vLLM,
+// whose scheduler keeps a finished request until its next step, the engine runs one more step at
+// time now (or when the step still executing ends, #1944), so its published metrics and KV events
+// show the state after the abort even when nothing is left to run. A parked engine is woken
+// (the abort may have freed KV); a lockstep rank asks its group (scheduleStepAt).
+func (sim *Simulator) NoteAbort(now int64) {
+	sim.abortPending = true
+	if sim.stepEvent == nil {
+		sim.scheduleStepAt(now)
+	}
+}
 
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
@@ -912,6 +940,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	if outputTokens > 0 {
 		sim.Metrics.TotalOutputTokens += outputTokens
 	}
+	req.GeneratedTokens = max(outputTokens, 0)
 
 	var itlSum int64
 	for _, v := range req.ITL {
@@ -991,8 +1020,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 func (sim *Simulator) Step(now int64) {
 	if sim.RunningBatch == nil && sim.WaitQ.Len() == 0 {
 		sim.stepEvent = nil
+		if sim.abortPending {
+			// The step after an abort that left nothing to run: it publishes the engine's
+			// state after the abort (NoteAbort).
+			sim.abortPending = false
+			sim.publishEngineMetrics(now)
+			sim.publishKVEvents(now)
+		}
 		return
 	}
+	sim.abortPending = false
 	sim.scheduleBatch(now)
 	currStepAdvance := sim.executeBatchStep(now)
 	sim.busyUntil = now + currStepAdvance
@@ -1003,6 +1040,8 @@ func (sim *Simulator) Step(now int64) {
 	remaining := sim.processCompletions(now, currStepAdvance)
 	sim.recordServerStepEnd(now+currStepAdvance, len(remaining))
 	sim.scheduleNextStep(now, currStepAdvance, remaining)
+	sim.publishEngineMetrics(now + currStepAdvance)
+	sim.publishKVEvents(now + currStepAdvance)
 }
 
 // scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,
@@ -1328,6 +1367,9 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 			if sim.serverSeries != nil {
 				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
 			}
+			if sim.OnFirstToken != nil {
+				sim.OnFirstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			}
 		}
 	}
 
@@ -1599,6 +1641,12 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 // schedule; f allocates the pulls that fit, in arrival order, and the engine with no work at
 // all admits whenever one arrives (HasWork).
 func (sim *Simulator) SetRemoteKVAdmission(f func(now int64)) { sim.remoteKVAdmission = f }
+
+// SetRemoteKVWaiting records how many handoffs wait for this engine's KV before their pull can
+// start. vLLM holds them in the decode engine's waiting queue (sched/scheduler.py:1195-1229 at
+// v0.31.0), so they count in the engine's published vllm:num_requests_waiting, the series the
+// router reads; BLIS queues them beside the engine (cluster decodeKVWaiters), and adds them here.
+func (sim *Simulator) SetRemoteKVWaiting(n int) { sim.remoteKVWaiting = n }
 
 // admitRemoteKV runs the remote-KV admission at the end of a schedule, when vLLM's WAITING
 // phase would reach it: no preemption this step (scheduler.py:873), the waiting queue drained

@@ -39,7 +39,6 @@ func adapterStepOverheadInflatesLatency(t *testing.T, injected bool) {
 			var calls int
 			config.LatencyModel = countingModel{step: 500, calls: &calls}
 		}
-		config.RoutingPolicy = "round-robin"
 		capVal := 8
 		base, bw, fp := 1000.0, 2.0e6, 2.0e6
 		k7 := 1.0

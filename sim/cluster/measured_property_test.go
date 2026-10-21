@@ -51,12 +51,11 @@ func TestMeasuredAccountingClosesOverClusterRuns(t *testing.T) {
 			}
 		}
 		config.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "", 1, 1, false, 400)
-		if rapid.Bool().Draw(rt, "tokenBucket") { // a small bucket rejects at admission
-			config.AdmissionPolicy = "token-bucket"
-			config.TokenBucketCapacity = float64(rapid.IntRange(100, 3000).Draw(rt, "bucket"))
-			config.TokenBucketRefillRate = 1000
-		}
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		if every := rapid.IntRange(0, 4).Draw(rt, "rejectEvery"); every > 0 { // the gateway rejects at admission
+			k := 0
+			cs.SetGateway(&fakeGateway{disaggregate: true, reject: func(*sim.Request) bool { k++; return k%every == 0 }})
+		}
 		if err := cs.Run(); err != nil {
 			rt.Fatal(err)
 		}
@@ -79,11 +78,10 @@ func TestAggregateCacheHitRateLiesWithinTheInstanceRates(t *testing.T) {
 			float64(rapid.IntRange(0, 10).Draw(rt, "shared"))/10, 16*rapid.IntRange(1, 16).Draw(rt, "prefixBlocks"),
 			rapid.IntRange(1, 64).Draw(rt, "suffix"), 4, rapid.Int64Range(100, 50_000).Draw(rt, "gap"))
 		config := baseDeploymentConfig(rapid.IntRange(1, 4).Draw(rt, "instances"))
-		config.RoutingPolicy = rapid.SampledFrom([]string{"round-robin", "weighted"}).Draw(rt, "routing")
-		if config.RoutingPolicy == "weighted" {
-			config.RoutingScorerConfigs = []sim.ScorerConfig{{Name: "prefix-affinity", Weight: 1}, {Name: "queue-depth", Weight: 1}}
-		}
 		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		if rapid.Bool().Draw(rt, "pinned") { // concentrated (affinity) or spread (round-robin)
+			cs.SetGateway(pinnedGateway())
+		}
 		if err := cs.Run(); err != nil {
 			rt.Fatal(err)
 		}
@@ -112,10 +110,8 @@ func TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing(t *testing.T) {
 			16*rapid.IntRange(1, 16).Draw(rt, "prefixBlocks"), rapid.IntRange(1, 64).Draw(rt, "suffix"),
 			8, rapid.Int64Range(50_000, 200_000).Draw(rt, "gap"))
 		run := func(n int) (*ClusterSimulator, float64) {
-			config := baseDeploymentConfig(n)
-			config.RoutingPolicy = "weighted"
-			config.RoutingScorerConfigs = []sim.ScorerConfig{{Name: "prefix-affinity", Weight: 1}}
-			cs := NewClusterSimulator(config, NewSliceRequestSource(copyRequests(requests)), nil)
+			cs := NewClusterSimulator(baseDeploymentConfig(n), NewSliceRequestSource(copyRequests(requests)), nil)
+			cs.SetGateway(pinnedGateway())
 			if err := cs.Run(); err != nil {
 				rt.Fatal(err)
 			}

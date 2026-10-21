@@ -264,8 +264,7 @@ func newTestColocatedConfig() DeploymentConfig {
 			LatencyModel:        testFakeLatency(),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
 		},
-		NumInstances:  1,
-		RoutingPolicy: "round-robin",
+		NumInstances: 1,
 	}
 }
 

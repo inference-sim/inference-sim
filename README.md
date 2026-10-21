@@ -8,11 +8,11 @@ engines.
 
 It is built for three things, done robustly and with high fidelity:
 
-- **Configuration search and optimization** — which parallelism, engine limits, routing
-  profile and P/D split serve a workload best.
+- **Configuration search and optimization** — which parallelism, engine limits, router
+  configuration and P/D split serve a workload best.
 - **Capacity planning** — how many GPUs and instances a target rate and SLO need.
-- **Policy discovery** — designing and comparing routing, admission, scheduling and
-  autoscaling policies before they ship.
+- **Policy discovery** — comparing llm-d router configurations, scheduling and autoscaling
+  policies before they ship.
 
 BLIS is CPU-only and deterministic: the same seed produces byte-identical results, and no GPU
 is needed.
@@ -25,7 +25,7 @@ A BLIS run draws on five repositories. Each owns one kind of thing.
 
 | Repository | Role | Holds |
 |---|---|---|
-| **inference-sim** (this one) | *simulates* | The end-to-end simulation: arrivals, admission, routing, scheduling, KV block accounting, placement, metrics. |
+| **inference-sim** (this one) | *simulates* | The end-to-end simulation: arrivals, the embedded llm-d router (admission, flow control, routing), scheduling, KV block accounting, placement, metrics. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. The only latency backend. |
 | [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets — declared facts, nothing fitted. |
 | [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | Coefficient sets the kernel prices with, each with its provenance and scope. |
@@ -49,7 +49,7 @@ registry. Nothing is fetched at run time.
 
 ## Install and run
 
-Requires Go 1.24+.
+Requires Go 1.27.2+.
 
 ```bash
 git clone https://github.com/inference-sim/inference-sim.git
@@ -117,13 +117,15 @@ sessions.
 
 ### Routing
 
-Multi-instance clusters with llm-d-style weighted scoring (default profile
-`precise-prefix-cache:2,queue-depth:1,kv-utilization:1`).
+Every multi-instance cluster routes with the real llm-d router (the Endpoint Picker), embedded
+in-process. It reads a deployment's own EndpointPickerConfig, EPP flags and `InferencePool` /
+`InferenceObjective` manifests, named by the scenario's `router:` block (and pod labels from
+`pools[].labels`); with none, it uses the router's built-in default configuration.
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
-  --num-instances 8 --routing-policy weighted --rate 20 --num-requests 80
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
+  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --num-instances 8 --rate 20 --num-requests 80
 ```
 
 `--num-instances` cannot exceed the scenario pool's rank capacity (pool nodes × gpus_per_node /
@@ -134,13 +136,15 @@ copy a scenario, raise `cluster.nodes` and the pool's `nodes`, and add a `cluste
 
 ### Admission and flow control
 
-Token-bucket and tier-shedding admission, a gateway queue with saturation-gated dispatch, and
-SLO goodput.
+The llm-d router's admission and flow control: its legacy admission controller sheds sheddable
+requests from a saturated pool, and with `featureGates: [flowControl]` in the
+EndpointPickerConfig requests wait in priority bands with capacity limits and queue-wait budgets.
+SLO classes reach the router as `InferenceObjective` names. SLO goodput is reported per class.
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
-  --num-instances 4 --flow-control --rate 200 --num-requests 1000
+  --num-instances 4 --rate 200 --num-requests 1000
 ```
 
 → [Admission](docs/guide/admission.md)
@@ -153,9 +157,13 @@ KV handoff over the scenario's fabric.
 ```bash
 ./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
-  --num-instances 4 --prefill-instances 3 --decode-instances 1 --pd-decider always \
+  --num-instances 4 --prefill-instances 3 --decode-instances 1 \
   --rate 10 --num-requests 200
 ```
+
+Which requests are disaggregated is the router's decision: the EndpointPickerConfig's
+`disagg-profile-handler` and its P/D decider. This scenario's `router:` block names one that
+disaggregates every request.
 
 → [Cluster simulation](docs/guide/cluster.md)
 

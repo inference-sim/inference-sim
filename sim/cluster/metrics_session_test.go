@@ -223,4 +223,3 @@ func TestComputeSessionMetrics_SessionCount(t *testing.T) {
 		t.Errorf("SessionCount: got %d, want 2", got.SessionCount)
 	}
 }
-

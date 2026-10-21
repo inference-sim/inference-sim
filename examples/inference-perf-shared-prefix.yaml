@@ -25,7 +25,7 @@
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
 #     --scenarios testdata/scenarios --registry $PWD/blis-registry \
-#     --num-instances 4 --routing-policy weighted \
+#     --num-instances 4 \
 #     --workload-spec examples/inference-perf-shared-prefix.yaml \
 #     --horizon 60000000
 #

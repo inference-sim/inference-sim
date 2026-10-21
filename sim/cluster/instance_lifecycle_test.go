@@ -133,7 +133,7 @@ func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
 // The previous version of this test was a no-op: it relied on a manual event loop that
 // never ran (clusterEvents is empty before Run()), so DrainWaitQueue returned [] and
 // no redirection occurred. This version seeds requests directly into inst0's WaitQ
-// using InjectRequestOnline — the same path RoutingDecisionEvent uses — so the drain
+// using InjectRequestOnline — the same path gateway dispatch uses — so the drain
 // genuinely redirects work.
 func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	// GIVEN a 2-instance cluster with no workload (empty request list — we seed manually)
@@ -165,7 +165,7 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	})
 
 	// Seed requests directly into inst0's WaitQ (bypassing admission/routing),
-	// mirroring what RoutingDecisionEvent does, so they are present at drain time.
+	// mirroring what gateway dispatch does, so they are present at drain time.
 	// EnqueueRequest puts the request in WaitQ immediately (unlike InjectArrivalAt
 	// which schedules an ArrivalEvent that would only fire during Run()).
 	for _, req := range seeded {
@@ -342,6 +342,7 @@ func TestInstanceLifecycleConfig_Validation(t *testing.T) {
 		})
 	}
 }
+
 // ─── INV-14 clause 2: the seeding carve-out ──────────────────────────────────
 
 // TestINV14_SeedingCarveOutAcceptsAnyFirstTransition covers the clause the

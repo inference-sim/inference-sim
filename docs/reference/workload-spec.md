@@ -41,7 +41,7 @@ Each entry in the `clients` list defines a traffic source:
 | `multimodal` | object | No | Multimodal token generation |
 | `reasoning` | object | No | Reasoning multi-turn behavior |
 | `timeout` | int64 | No | Per-request timeout in µs. nil = default (300s for sessions). 0 = no timeout |
-| `slo_target_us` | int64 | No | Per-request SLO TTFT target in µs. nil/0 = no target. Used by `--dispatch-order slo-deadline` |
+| `slo_target_us` | int64 | No | Per-request SLO TTFT target in µs. nil/0 = no target. Carried on the request and into exported TraceV2 files, and sent to the embedded llm-d router as the `x-llm-d-slo-ttft-ms` header (whole milliseconds, rounded up), which its `slo-deadline-ordering-policy` reads (see [Routing](../guide/routing.md)) |
 
 ## Arrival Process
 

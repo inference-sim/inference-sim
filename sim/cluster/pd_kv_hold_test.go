@@ -137,7 +137,7 @@ type pdDrainAt struct {
 func (e *pdDrainAt) Timestamp() int64 { return e.time }
 func (e *pdDrainAt) Priority() int    { return 5 }
 func (e *pdDrainAt) Execute(cs *ClusterSimulator) {
-	cs.instanceByID(string(e.inst)).TransitionTo(sim.InstanceStateDraining)
+	cs.instanceByID(e.inst).TransitionTo(sim.InstanceStateDraining)
 }
 
 // A decode side that vanishes mid-pull sends neither a completion notice nor more heartbeats,

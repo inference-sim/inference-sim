@@ -6,8 +6,8 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 
 | Guide | When to Use |
 |-------|-------------|
-| [Routing Policies](routing.md) | Choosing and configuring how requests are distributed across instances |
-| [Admission Control](admission.md) | Rate-limiting and traffic shaping at the cluster gateway |
+| [Routing (llm-d router)](routing.md) | Configuring the embedded llm-d router that distributes requests across instances |
+| [Admission Control](admission.md) | The router's admission, flow control and request priorities |
 | [Scheduling & Priority](scheduling.md) | Controlling request processing order within each instance |
 | [Latency Model](latency-models.md) | blis-latency-kernel: what it prices, scenario structure, P/D, DP/EP, speculation, offload, LoRA |
 | [KV Cache & Memory](kv-cache.md) | Tuning GPU/CPU memory allocation, prefix caching, and chunked prefill |
@@ -21,7 +21,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 
 **Capacity planning:** [Quick Start](../getting-started/quickstart.md) → [Tutorial](../getting-started/tutorial.md) → [Cluster Simulation](cluster.md) → [Metrics & Results](results.md)
 
-**Routing optimization:** [Routing Policies](routing.md) → [Cluster Simulation](cluster.md) → [Metrics & Results](results.md)
+**Routing optimization:** [Routing (llm-d router)](routing.md) → [Cluster Simulation](cluster.md) → [Metrics & Results](results.md)
 
 **Memory tuning:** [KV Cache & Memory](kv-cache.md) → [Metrics & Results](results.md)
 

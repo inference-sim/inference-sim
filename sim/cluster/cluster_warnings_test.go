@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // captureLogOutput runs fn and returns the log output as a string.
@@ -28,52 +30,14 @@ func captureLogOutput(fn func()) string {
 	return buf.String()
 }
 
-func TestClusterSimulator_HorizonTooSmall_WarnsAtStartup(t *testing.T) {
-	// GIVEN horizon (100) < admissionLatency (200) + routingLatency (300) = 500
-	config := newTestDeploymentConfig(1)
-	config.Horizon = 100
-	config.AdmissionLatency = 200
-	config.RoutingLatency = 300
-	workload := newTestRequests(10)
-
-	// WHEN the cluster simulator is constructed
-	output := captureLogOutput(func() {
-		NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
-	})
-
-	// THEN a warning about horizon being too small MUST be logged
-	if !strings.Contains(output, "horizon") || !strings.Contains(output, "pipeline latency") {
-		t.Errorf("expected warning about horizon < pipeline latency, got: %q", output)
-	}
-}
-
-func TestClusterSimulator_HorizonSufficient_NoWarning(t *testing.T) {
-	// GIVEN horizon (10000) >= admissionLatency (200) + routingLatency (300) = 500
-	config := newTestDeploymentConfig(1)
-	config.Horizon = 10000
-	config.AdmissionLatency = 200
-	config.RoutingLatency = 300
-	workload := newTestRequests(10)
-
-	// WHEN the cluster simulator is constructed
-	output := captureLogOutput(func() {
-		NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
-	})
-
-	// THEN no horizon warning MUST be logged
-	if strings.Contains(output, "horizon") && strings.Contains(output, "pipeline latency") {
-		t.Errorf("unexpected horizon warning for sufficient horizon, got: %q", output)
-	}
-}
-
 func TestClusterSimulator_AllRejected_WarnsAfterRun(t *testing.T) {
-	// GIVEN a cluster with reject-all admission policy
+	// GIVEN a cluster whose gateway rejects every request at admission
 	config := newTestDeploymentConfig(1)
 	config.Horizon = 100000
-	config.AdmissionPolicy = "reject-all"
 	workload := newTestRequests(5)
 
 	cs := NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
+	cs.SetGateway(&fakeGateway{reject: func(*sim.Request) bool { return true }})
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {

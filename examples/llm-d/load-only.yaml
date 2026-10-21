@@ -1,0 +1,16 @@
+# Load-only routing (no prefix awareness), adapted from llm-d-router deploy/config/epp-config.yaml with the prefix-cache scorer replaced by load scorers.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: single-profile-handler
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+    weight: 1
+  - pluginRef: kv-cache-utilization-scorer
+    weight: 1
+  - pluginRef: max-score-picker

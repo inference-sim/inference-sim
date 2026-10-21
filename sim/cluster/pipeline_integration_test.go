@@ -17,7 +17,7 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 	// Build a cluster with 2 instances, autoscaler interval = 30s, horizon = 100s.
 	// Inject enough load to trigger at least one tick.
 	cfg := newTestDeploymentConfig(2)
-	cfg.Horizon = 100_000_000 // 100s
+	cfg.Horizon = 100_000_000                  // 100s
 	cfg.ModelAutoscalerIntervalUs = 30_000_000 // 30s tick
 
 	// Generate some requests that will be in-flight during autoscaler ticks
@@ -26,9 +26,9 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 		requests[i] = &sim.Request{
 			ID:           fmt.Sprintf("req-%d", i),
 			Model:        "test-model",
-			ArrivalTime:  int64(i) * 1_000_000, // 1s apart
-			InputTokens:  make([]sim.TokenID, 100),      // 100 input tokens
-			OutputTokens: make([]sim.TokenID, 50),        // 50 output tokens
+			ArrivalTime:  int64(i) * 1_000_000,     // 1s apart
+			InputTokens:  make([]sim.TokenID, 100), // 100 input tokens
+			OutputTokens: make([]sim.TokenID, 50),  // 50 output tokens
 			State:        sim.StateQueued,
 		}
 		// Fill with dummy token IDs

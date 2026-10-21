@@ -11,8 +11,8 @@ import (
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
-// PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
-// Priority 4: after RoutingDecisionEvent (2), before KV transfer events.
+// PrefillRoutingEvent injects a prefill sub-request on the prefill instance the gateway chose.
+// Priority 4: before KV transfer events.
 type PrefillRoutingEvent struct {
 	time      int64
 	request   *sim.Request // Prefill sub-request
@@ -22,84 +22,31 @@ type PrefillRoutingEvent struct {
 func (e *PrefillRoutingEvent) Timestamp() int64 { return e.time }
 func (e *PrefillRoutingEvent) Priority() int    { return 4 }
 
-// Execute routes the prefill sub-request to a prefill pool instance using pool-filtered snapshots.
+// Execute injects the prefill sub-request on the prefill instance the gateway chose.
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
-	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRolePrefill)
-	if len(filteredSnapshots) == 0 {
-		logrus.Warnf("[cluster] prefill req %s: no routable instances in prefill pool — request rejected at routing", e.request.ID)
-		if cs.routingPipeline != nil {
-			cs.routingPipeline.Discard(e.parentReq.ID)
-		}
-		cs.releaseInFlightGroup(e.parentReq.ID)
-		cs.routingRejections++
-		cs.recordUnserved(e.request)
-		return
-	}
-	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
+	target := string(e.parentReq.PrefillInstanceID)
+	logrus.Debugf("[cluster] prefill req %s → instance %s", e.request.ID, target)
 
-	policy := cs.prefillRoutingPolicy
-	if policy == nil {
-		policy = cs.routingPolicy
-	}
-	decision := policy.Route(e.request, state)
-	if decision.TargetInstance == "" {
-		// llm-d main: a required prefill profile with no result fails the request
-		// (disagg_profile_handler.go:536-540 at 981acb8a). The v0.10.0 decode-only
-		// fallback is refused at --epp-config load time.
-		logrus.Debugf("[cluster] prefill req %s: rejected at routing (%s)", e.request.ID, decision.Reason)
-		cs.eppRejected(e.parentReq.OriginalRequest)
-		return
-	}
-	if cs.routingPipeline != nil {
-		cs.routingPipeline.Commit(e.parentReq.ID) // decode and prefill picked: PreRequest
-	}
-
-	logrus.Debugf("[cluster] prefill req %s → instance %s", e.request.ID, decision.TargetInstance)
-
-	e.request.AssignedInstance = decision.TargetInstance
-	e.parentReq.PrefillInstanceID = InstanceID(decision.TargetInstance)
+	e.request.AssignedInstance = target
 	e.parentReq.PrefillEnqueueTime = e.time
 
-	// Record prefill routing decision if tracing is enabled (BC-PD-17, BC-PD-19)
 	if cs.trace != nil {
-		record := trace.PrefillRoutingRecord{
+		cs.trace.RecordPrefillRouting(trace.PrefillRoutingRecord{
 			ParentRequestID: e.parentReq.ID,
 			Clock:           cs.clock,
-			ChosenInstance:  decision.TargetInstance,
-			Scores:          copyScores(decision.Scores),
-		}
-		if cs.trace.Config.CounterfactualK > 0 {
-			record.Candidates, record.Regret = computeCounterfactual(
-				decision.TargetInstance, decision.Scores,
-				filteredSnapshots, cs.trace.Config.CounterfactualK,
-			)
-		}
-		cs.trace.RecordPrefillRouting(record)
+			ChosenInstance:  target,
+		})
 	}
 
 	// Register as pending prefill completion for detection in event loop
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
 
-	// Find target instance and inject
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decision.TargetInstance {
-			cs.inFlightRequests[decision.TargetInstance]++
-			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement in PD mode.
-			// PD disaggregation semantics: OnStart is called once here (prefill) and once in
-			// KVTransferCompletedEvent (decode), so one parent request consumes 2 capacity slots —
-			// one on the prefill pool, one on the decode pool. IsOverBudget reflects actual
-			// resource occupancy across both pools. OnComplete fires symmetrically via
-			// OnRequestDone when each sub-request finishes.
-			if cs.tenantTracker != nil {
-				cs.tenantTracker.OnStart(e.request.TenantID)
-			}
-			inst.InjectRequestOnline(e.request, e.time)
-			return
-		}
+	inst := cs.instanceByID(InstanceID(target))
+	if inst == nil {
+		panic(fmt.Sprintf("PrefillRoutingEvent: gateway chose unknown prefill instance %q", target))
 	}
-	// The routing policy contract requires Route to return a TargetInstance from the
-	// provided snapshot set; a panic here indicates a policy implementation bug.
-	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q returned by routing policy", decision.TargetInstance))
+	cs.inFlightRequests[target]++
+	inst.InjectRequestOnline(e.request, e.time)
 }
 
 // KVTransferStartedEvent fires when a prefill sub-request completes.
@@ -156,6 +103,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		SLOClass:           orig.SLOClass,
 		Model:              orig.Model,
 		Phase:              orig.Phase,
+		Adapter:            orig.Adapter,
 		IsDecodeSubRequest: true,
 	}
 
@@ -217,6 +165,7 @@ func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *Paren
 		inst.sim.SetRemoteKVAdmission(func(now int64) { cs.serveDecodeKVWaiters(inst, now) })
 	}
 	cs.decodeKVWaiters[id] = append(cs.decodeKVWaiters[id], decodeKVWaiter{parent: parent, req: req})
+	inst.sim.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
 }
 
 // serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs, in arrival order,
@@ -245,10 +194,6 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 		cs.pullFirstStepBlocks[id] += inst.sim.FirstDecodeStepBlocks(w.req)
 		q = q[1:]
 		w.parent.DecodeSubReq = w.req
-		// llm-d in-flight load: the client stream is now the decode sub-request.
-		for _, t := range cs.inFlightLoadTrackers {
-			t.SetStream(w.parent.ID, w.req)
-		}
 		w.parent.PulledKVBlocks = (pulled + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
 		scheduleTransferCompletion(cs, w.parent, now)
 	}
@@ -257,6 +202,7 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 	} else {
 		cs.decodeKVWaiters[id] = q
 	}
+	inst.sim.SetRemoteKVWaiting(len(q))
 }
 
 // DecodeKVWaiting reports how many handoffs wait for decode KV right now.
@@ -298,7 +244,6 @@ const (
 // incrementing transfersCompleted, without attempting to release KV
 // (nothing was reserved) or promote state.
 func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, release prefillRelease) {
-	cs.releaseInFlightGroup(e.parentReq.ID)
 	switch release {
 	case freeNow:
 		cs.releasePrefillHold(e.parentReq)
@@ -309,6 +254,7 @@ func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, release prefi
 	}
 	cs.droppedAtDecodeKV++
 	cs.recordUnserved(e.parentReq.OriginalRequest)
+	cs.parentDone(e.parentReq, e.time, DoneDropped)
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
 	e.parentReq.CompletionTime = e.time
@@ -480,9 +426,9 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	if decodeInst == nil {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances at transfer complete — routing invariant violated; KV cannot be released",
 			decodeInstID, e.parentReq.ID)
-		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
+		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
 		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
@@ -495,9 +441,9 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq)
 		decodeInst.WakeIfParked(e.time)
-		cs.releaseInFlightGroup(e.parentReq.ID)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
+		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
 		// A decode side that went away mid-pull sends no completion notice and no more
@@ -548,14 +494,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	cs.inFlightRequests[decodeInstID]++
-	// Phase 1B-2a: track decode slot for fair-share (see PrefillRoutingEvent
-	// comment for PD slot-doubling semantics). OnStart placement here (after
-	// routability re-check) ensures balance: a failed late-drop releases KV
-	// without calling OnStart, matching the zero OnComplete calls for the
-	// dropped decode sub-request.
-	if cs.tenantTracker != nil {
-		cs.tenantTracker.OnStart(decodeSubReq.TenantID)
-	}
 	// Register decode sub-request so detectDecodeCompletions can stamp
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
@@ -588,6 +526,6 @@ type decodeAdmitEvent struct {
 	inst *InstanceSimulator
 }
 
-func (e *decodeAdmitEvent) Timestamp() int64 { return e.time }
-func (e *decodeAdmitEvent) Priority() int    { return 5 }
+func (e *decodeAdmitEvent) Timestamp() int64             { return e.time }
+func (e *decodeAdmitEvent) Priority() int                { return 5 }
 func (e *decodeAdmitEvent) Execute(cs *ClusterSimulator) { cs.admitDecodeKVIfIdle(e.inst, e.time) }

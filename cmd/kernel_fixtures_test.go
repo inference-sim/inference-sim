@@ -9,6 +9,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/inference-sim/sim/llmd"
 )
 
 // kernelTestScenario is the committed blis-latency-kernel scenario in-process CLI tests run on:
@@ -108,12 +109,19 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, b
 				PolicyConfig: sim.NewPolicyConfig("fcfs", ""),
 				LatencyModel: m,
 			},
-			NumInstances:    1,
-			AdmissionPolicy: "always-admit",
-			RoutingPolicy:   "round-robin",
+			NumInstances: 1,
 		},
 		Model:      m,
 		BlockSize:  block,
 		BlockBytes: m.Kernel().SequenceVariableBytes(int(block)),
 	}
+}
+
+// newRoutedCluster builds a cluster over reqs routed the way `blis run` routes one with no
+// router flags: the embedded llm-d router with its default configuration. Every cluster run
+// needs a gateway (ClusterSimulator.Run refuses to start without one).
+func newRoutedCluster(cfg cluster.DeploymentConfig, reqs []*sim.Request) *cluster.ClusterSimulator {
+	cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(reqs), nil)
+	cs.SetGateway(newGateway(routerInputs{EPPFlags: append([]string(nil), llmd.DefaultEPPFlags()...)}, cfg.Model))
+	return cs
 }

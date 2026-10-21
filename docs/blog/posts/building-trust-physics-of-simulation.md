@@ -17,7 +17,7 @@ categories:
 
 # The Physics of High-Fidelity Distributed Inference Platform Simulation
 
-> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed.
+> **Editor's note (2026-10):** BLIS now prices with blis-latency-kernel exclusively; the roofline and trained-physics backends described here were removed. BLIS's own routing, admission and flow control were also removed: every cluster run routes with the embedded llm-d router, configured by the scenario's `router:` block ([routing guide](../../guide/routing.md)), so the `--tp`, `--routing-policy` and `--routing-scorers` commands below no longer run.
 
 Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.
 

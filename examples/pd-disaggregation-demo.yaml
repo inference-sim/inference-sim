@@ -22,8 +22,15 @@
 #     --registry $PWD/blis-registry \
 #     --num-instances 4 \
 #     --prefill-instances 3 --decode-instances 1 \
-#     --pd-decider always \
 #     --rate 10 --num-requests 200
+#
+#   Disaggregation is the llm-d router's decision; the scenario's router: block names its
+#   configuration (examples/llm-d/scenarios/glm-5-h200-3p1d-ib-pd.yaml names
+#   examples/llm-d/pd.yaml). examples/llm-d/pd.yaml is an
+#   EndpointPickerConfig whose disagg-profile-handler runs a "prefill" and a
+#   "decode" scheduling profile; prefill and decode pods carry the llm-d.ai/role
+#   label automatically, so prefill-filter and decode-filter select them.
+#   Without a disagg-profile-handler no request is disaggregated.
 #
 # ============================================================================
 # KV transfer pricing
@@ -34,22 +41,16 @@
 #   placements; the scenario's pd_transfer block names the connector.
 #
 # ============================================================================
-# Decider Strategies
+# P/D deciders (llm-d plugins)
 # ============================================================================
 #
-#   never             All requests stay co-located (no disaggregation)
-#   always            All requests go through prefill pool then KV transfer
-
-admission:
-  policy: always-admit
-
-routing:
-  policy: weighted
-  scorers:
-    - name: queue-depth
-      weight: 2.0
-    - name: kv-utilization
-      weight: 2.0
+#   always-disagg-pd-decider  Every request goes through the prefill pool, then
+#                             KV transfer, then decode (examples/llm-d/pd.yaml)
+#   prefix-based-pd-decider   Disaggregates a request when its non-cached prompt
+#                             tokens reach nonCachedTokens (llm-d-router
+#                             deploy/config/pd-epp-config.yaml)
+#
+#   See docs/guide/routing.md for the supported plugins.
 
 priority:
   policy: constant

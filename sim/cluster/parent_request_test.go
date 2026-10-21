@@ -9,10 +9,10 @@ import (
 // TestNewParentRequest_NumKVBlocks verifies ceiling-division math for KV block computation.
 func TestNewParentRequest_NumKVBlocks(t *testing.T) {
 	tests := []struct {
-		name           string
-		inputLen       int
-		blockSize      int64
-		wantNumBlocks  int64
+		name          string
+		inputLen      int
+		blockSize     int64
+		wantNumBlocks int64
 	}{
 		{"empty input", 0, 16, 0},
 		{"one token", 1, 16, 1},
@@ -96,13 +96,13 @@ func TestNewParentRequest_PanicOnNegativeBlockSize(t *testing.T) {
 	NewParentRequest(req, -1)
 }
 
-// TestNewParentRequest_EncodeInstanceIDZero verifies that the canonical
+// TestNewParentRequest_NoEncoders verifies that the canonical
 // constructor initializes EncodeInstanceID to the zero value (empty InstanceID),
 // indicating "encode did not fire for this parent" (GAP-4, issue #1264).
-func TestNewParentRequest_EncodeInstanceIDZero(t *testing.T) {
+func TestNewParentRequest_NoEncoders(t *testing.T) {
 	req := &sim.Request{ID: "req-enc-init", InputTokens: make([]sim.TokenID, 16)}
 	pr := NewParentRequest(req, 16)
-	if pr.EncodeInstanceID != "" {
-		t.Errorf("EncodeInstanceID = %q, want empty at construction", pr.EncodeInstanceID)
+	if len(pr.EncodeInstanceIDs) != 0 {
+		t.Errorf("EncodeInstanceIDs = %v, want none at construction", pr.EncodeInstanceIDs)
 	}
 }

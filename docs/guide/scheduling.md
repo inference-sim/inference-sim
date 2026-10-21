@@ -1,6 +1,6 @@
 # Scheduling & Priority
 
-Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any routing policy with any scheduler.
+Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any router configuration with any scheduler.
 
 ```bash
 # Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
@@ -25,7 +25,7 @@ sheddable  → Priority 6.0
 background → Priority 7.0  (least urgent)
 ```
 
-This follows **vLLM's convention: lower integer = more urgent**. The cluster layer (admission, routing, gateway queue) continues to use the llm-d convention (higher = more urgent); the inversion happens at the cluster→instance dispatch boundary.
+This follows **vLLM's convention: lower integer = more urgent**. The llm-d router (admission, flow control, routing) uses the llm-d convention (higher = more urgent), with priorities from its InferenceObjectives (see [Admission Control](admission.md)); the inversion happens at the cluster→instance dispatch boundary.
 
 SLO class is set in your workload spec:
 
@@ -40,7 +40,7 @@ clients:
 Custom priority values can be overridden via the policy bundle:
 
 ```yaml
-admission:
+priority:
   slo_priorities:
     batch: 0   # make batch non-sheddable
 ```
@@ -101,6 +101,6 @@ By default (`--preemption-policy fcfs`), the tail of the running batch is evicte
 
 ## Further Reading
 
-- [Routing Policies](routing.md) — the upstream decision (which instance)
+- [Routing](routing.md) — the upstream decision (which instance)
 - [Cluster Simulation](cluster.md) — the full request pipeline from arrival to completion
 - [Core Engine: Scheduling Policies](../concepts/core-engine.md#scheduling-policies) — implementation details and DES mechanics

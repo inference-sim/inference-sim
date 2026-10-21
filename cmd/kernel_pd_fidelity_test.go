@@ -16,7 +16,7 @@ import (
 // pdBurst is a 3P1D GLM-5 burst whose prefills finish in the same steps, so their handoffs
 // overlap on the prefill nodes' NIC egress and the decode node's NIC ingress.
 var pdTopology = []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-3p1d-ib.yaml",
-	"--pd-decider", "always", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "1",
+	"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "1",
 	"--horizon", "600000000"}
 
 var pdBurst = append(append([]string(nil), pdTopology...), "--num-requests", "40", "--rate", "500", "--prompt-tokens", "2000", "--prompt-tokens-stdev", "0",
@@ -193,7 +193,8 @@ func TestRunCmd_KernelBackend_PDHandoffRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "mooncake.yaml"), []byte(mooncake), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "mooncake.yaml", "--pd-decider", "always",
+	withPDRouter(t, dir)
+	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "mooncake.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--num-requests", "2", "--rate", "1"); err == nil ||
 		!strings.Contains(stderr, "BLIS models NIXL's handoff") {
 		t.Errorf("a MooncakeConnector handoff must be refused; err=%v\n%s", err, lastLines(stderr, 3))

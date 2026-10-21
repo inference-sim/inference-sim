@@ -51,27 +51,26 @@ func TestDPLockstep_LoadOnOneRankSlowsTheOther(t *testing.T) {
 	}
 }
 
-// A replica is one router endpoint, listed under rank 0's ID, whose queue and running
-// counts are its ranks' sums and whose KV utilization is the largest rank's.
-func TestDPReplica_IsOneEndpointWithAggregatedSignals(t *testing.T) {
+// A replica is one router endpoint, under rank 0's ID, behind which every rank serves; the
+// other ranks are no endpoint of their own. The router reads the endpoint's signals from all of
+// its ranks (sim/llmd renders one series per engine).
+func TestDPReplica_IsOneEndpointOverItsRanks(t *testing.T) {
 	cfg := newTestDeploymentConfig(4)
 	cfg.DPLockstepRanks = 2
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-	state := buildRouterState(cs, nil)
-	var ids []string
-	for _, s := range state.Snapshots {
-		ids = append(ids, s.ID)
+	var endpoints []string
+	for _, inst := range cs.Instances() {
+		ranks := cs.EndpointRanks(inst.ID())
+		if ranks == nil {
+			continue
+		}
+		endpoints = append(endpoints, string(inst.ID()))
+		if len(ranks) != 2 || ranks[0] != inst {
+			t.Errorf("endpoint %s serves %d ranks led by %v, want its 2 ranks led by itself", inst.ID(), len(ranks), ranks[0].ID())
+		}
 	}
-	if want := []string{"instance_0", "instance_2"}; !reflect.DeepEqual(ids, want) {
-		t.Fatalf("endpoints = %v, want %v", ids, want)
-	}
-	cs.inFlightRequests["instance_0"], cs.inFlightRequests["instance_1"] = 2, 3
-	snap := cs.endpointSnapshot(cs.replicaOf["instance_0"])
-	if snap.InFlightRequests != 5 {
-		t.Errorf("endpoint in-flight = %d, want the ranks' sum 5", snap.InFlightRequests)
-	}
-	if want := cs.instances[0].TotalKvCapacityTokens() * 2; snap.TotalKvCapacityTokens != want {
-		t.Errorf("endpoint KV capacity = %d, want %d", snap.TotalKvCapacityTokens, want)
+	if want := []string{"instance_0", "instance_2"}; !reflect.DeepEqual(endpoints, want) {
+		t.Fatalf("endpoints = %v, want %v", endpoints, want)
 	}
 }
 
@@ -306,7 +305,12 @@ func TestDPLoadBalancing_ExternalEveryRankIsAnEndpoint(t *testing.T) {
 		cfg.DPLockstepRanks = dp
 		cfg.DPLoadBalancing = mode
 		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-		snaps := buildRouterState(cs, nil).Snapshots
+		var snaps []InstanceID
+		for _, inst := range cs.Instances() {
+			if cs.EndpointRanks(inst.ID()) != nil {
+				snaps = append(snaps, inst.ID())
+			}
+		}
 		want := replicas
 		if mode == DPLoadBalancingExternal {
 			want = dp * replicas
@@ -315,9 +319,9 @@ func TestDPLoadBalancing_ExternalEveryRankIsAnEndpoint(t *testing.T) {
 			rt.Fatalf("mode %s, %d replicas of dp %d: %d endpoints, want %d", mode, replicas, dp, len(snaps), want)
 		}
 		if mode == DPLoadBalancingExternal {
-			for i, s := range snaps {
-				if s.ID != string(cs.instances[i].ID()) {
-					rt.Fatalf("endpoint %d is %s, want rank %s", i, s.ID, cs.instances[i].ID())
+			for i, id := range snaps {
+				if id != cs.instances[i].ID() {
+					rt.Fatalf("endpoint %d is %s, want rank %s", i, id, cs.instances[i].ID())
 				}
 			}
 		}

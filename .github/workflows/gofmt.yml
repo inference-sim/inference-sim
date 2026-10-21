@@ -1,0 +1,40 @@
+name: gofmt
+
+# Every Go file a pull request adds or changes must be gofmt-clean. Only changed files are
+# checked: files the PR does not touch are left as they are.
+on:
+  pull_request:
+    branches: [main, 'feature/**', llm-d-r]
+
+jobs:
+  changed-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: gofmt changed Go files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base" HEAD -- '*.go')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no Go file changed"
+            exit 0
+          fi
+          bad=$(gofmt -l "${files[@]}")
+          if [ -n "$bad" ]; then
+            echo "::error::these changed Go files are not gofmt-clean (run gofmt -w):"
+            echo "$bad"
+            gofmt -d $bad
+            exit 1
+          fi

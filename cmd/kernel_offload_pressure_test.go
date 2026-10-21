@@ -65,8 +65,7 @@ func TestRunCmd_KernelBackend_KVOffloadUnderPrefixPressure(t *testing.T) {
 		// A tier beside the NIXL handoff runs through a MultiConnector (vllm/config/vllm.py:1124-1158).
 		{"disaggregated", 96, 384, []string{"run", "--scenarios",
 			writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector"), "--scenario", "variant.yaml",
-			"--pd-decider", "always", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1",
-			"--routing-policy", "round-robin"}},
+			"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := tt.requests

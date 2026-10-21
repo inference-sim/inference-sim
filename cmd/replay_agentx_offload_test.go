@@ -40,8 +40,7 @@ func TestReplayAgentX_ScenarioOffloadBlockIsTheTiers(t *testing.T) {
 		{name: "colocated", scenario: "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"},
 		{name: "1P1D MultiConnector", scenario: "deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml",
 			withBlock: scenarios,
-			topology: []string{"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1",
-				"--pd-decider", "always"}},
+			topology:  []string{"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			withBlock, plain := tc.withBlock, scenarios
@@ -110,5 +109,5 @@ func writeScenarioWithout(t *testing.T, dir, name, block string) string {
 	if err := os.WriteFile(filepath.Join(out, name), []byte(strings.Replace(body, block, "", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return withPDRouter(t, out)
 }
