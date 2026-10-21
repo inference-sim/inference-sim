@@ -20,8 +20,9 @@ import (
 var docExampleRoots = []string{
 	"../CLAUDE.md",
 	"../README.md",
-	"../docs",     // the mkdocs site, minus docs/plans (skipped below)
-	"../examples", // YAML fixtures whose header comments are copy-paste commands
+	"../docs",             // the mkdocs site, minus docs/plans (skipped below)
+	"../examples",         // YAML fixtures whose header comments are copy-paste commands
+	"../examplescenarios", // ready-to-run scenarios + their README's copy-paste commands
 	"../scripts",
 }
 

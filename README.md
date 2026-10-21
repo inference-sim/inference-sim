@@ -60,8 +60,8 @@ git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog
 git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 export BLIS_CATALOG=$PWD/blis-catalog
 
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios $(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate \
+./blis run --scenarios examplescenarios \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
   --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
@@ -70,23 +70,25 @@ Every `blis run` and `blis replay` needs four inputs:
 
 - the **catalog**, via `--catalog <clone root>` or `BLIS_CATALOG` (no default; the flag wins);
 - the **registry**, via `--registry <clone root>`;
-- a **scenario directory**, via `--scenarios <dir>` — any directory of scenario YAMLs. The
-  kernel module ships its own at
-  `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`
-  (present after `go build`), and `testdata/scenarios/` in this repository adds a P/D and an
-  MTP example;
+- a **scenario directory**, via `--scenarios <dir>` — any directory of scenario YAMLs. This
+  repository ships ready-to-run ones in [`examplescenarios/`](examplescenarios/);
 - a **scenario**, via `--scenario <file name>` within that directory.
 
 The clones are pinned to the releases BLIS is tested against; see
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
+
+The quickstart's `--rate 10 --num-requests 100` is a synthetic workload for a quick first run.
+[`examplescenarios/`](examplescenarios/) also ships MoE deployments to try the same commands
+against — `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml` (B300, MTP) and the multi-node
+`kimi-k3-h200-tp8dp4ep32-balanced.yaml`; each file's header records its provenance.
 
 The run prints JSON metrics on stdout — TTFT, ITL and E2E distributions
 (`ttft_mean_ms`, `itl_p99_ms`, `e2e_p99_ms`, ...), throughput (`responses_per_sec`,
 `tokens_per_sec`), `completed_requests` and `preemption_count`. See
 [Interpreting Results](docs/guide/results.md).
 
-The examples below use `testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml`, the
-same deployment on four nodes, so they can run several instances.
+The examples below use `examplescenarios/gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml`, a two-node
+deployment (2 nodes × 8 GPUs ÷ TP2 = 8 ranks), so they can run up to eight instances.
 
 ---
 
@@ -105,10 +107,10 @@ Named presets from the catalog, token distributions, multi-client YAML specs, cl
 sessions.
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --registry $PWD/blis-registry \
   --workload chatbot --rate 20 --num-requests 500
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --registry $PWD/blis-registry \
   --workload-spec examples/servegen-language.yaml
 ```
@@ -123,8 +125,8 @@ in-process. It reads a deployment's own EndpointPickerConfig, EPP flags and `Inf
 `pools[].labels`); with none, it uses the router's built-in default configuration.
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
-  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+./blis run --scenarios examples/llm-d/scenarios \
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml --registry $PWD/blis-registry \
   --num-instances 8 --rate 20 --num-requests 80
 ```
 
@@ -142,7 +144,7 @@ EndpointPickerConfig requests wait in priority bands with capacity limits and qu
 SLO classes reach the router as `InferenceObjective` names. SLO goodput is reported per class.
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --registry $PWD/blis-registry \
   --num-instances 4 --rate 200 --num-requests 1000
 ```
@@ -155,7 +157,7 @@ A scenario with `prefill` and `decode` pools gets one kernel per pool; the kerne
 KV handoff over the scenario's fabric.
 
 ```bash
-./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
+./blis run --scenarios examplescenarios --scenario glm-5-h200-3p1d-ib.yaml \
   --registry $PWD/blis-registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
   --rate 10 --num-requests 200
@@ -188,7 +190,7 @@ byte-identical stdout.
 
 ```bash
 ./blis replay --trace-header t.yaml --trace-data d.csv \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
+  --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --registry $PWD/blis-registry
 ```
 

@@ -1,0 +1,47 @@
+# DeepSeek-V4.1-Flash on one 8-GPU H100 node with expert parallelism, drafting five tokens a
+# step with DSpark. The README quickstart scenario.
+#
+# Deployment from InferenceX (DeepSeek-V4.1-Flash agentic run, H100 TP8; arm h100-tp8-0918,
+# InferenceX commit 578048f90375). DSpark K=5 acceptance (AL 4.07) is pinned in the scenario so
+# `blis run` works with no --speculative-* flags.
+kind: Scenario
+name: deepseek-v4.1-flash-h100-tp8-dspark5
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+acceptance:
+  value:
+    num_spec_tokens: 5
+    acceptance_length: 4.07
+    source: "SemiAnalysisAI/InferenceX golden_al_distribution (blis-registry acceptance/inferencex-golden-al.yaml): deepseek-v4.1-flash dspark K=5, thinking off, coding => AL 4.07"
+
+cluster:
+  hardware: h100
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v4.1-flash-h100-tp8-dspark5
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: true
+    engine:
+      block_size: 64
+      cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+      max_model_len: auto
+      gpu_memory_utilization: 0.8
+      engram_config:
+        cpu_offload: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 5
