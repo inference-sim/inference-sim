@@ -2,17 +2,22 @@
 
 BLIS routes with the real llm-d router (see [Routing](../guide/routing.md)). It imports the
 router from the [inference-sim fork of llm-d-router](https://github.com/inference-sim/llm-d-router),
-branch `llm-d-r`, through a `replace` directive in `go.mod`:
+branch `llm-d-r`, through a `replace` directive in `go.mod`, pinned to a release tag on the fork:
 
 ```
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router <pseudo-version>
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis
 ```
 
-While a fork change is under review, the `replace` names the PR's head in its author's fork
-(`github.com/<author>/llm-d-router <pseudo-version>`), because a commit that is only on a pull
-request is not fetchable from `inference-sim/llm-d-router` directly. Once the fork PR merges
-with a merge commit (which keeps its commits' hashes), the `replace` moves to
-`inference-sim/llm-d-router` at the same hash.
+The `replace` is required, not a shortcut: the fork's `go.mod` keeps the upstream module path
+`github.com/llm-d/llm-d-router` (so its own imports resolve unchanged), and Go only lets a
+module be required under the path it declares. Fork releases are tagged `vX.Y.Z-blis` on
+`llm-d-r` merge commits; BLIS pins a tag, never a branch head or a bare pseudo-version.
+
+While a fork change is under review, the `replace` may temporarily name the PR's head in its
+author's fork (`github.com/<author>/llm-d-router <pseudo-version>`), because a commit that is
+only on a pull request is not fetchable from `inference-sim/llm-d-router` directly. Once the
+fork PR merges with a merge commit (which keeps its commits' hashes) and that merge commit is
+tagged, the `replace` moves to `inference-sim/llm-d-router` at the tag.
 
 This page is for whoever maintains that fork and the BLIS side that hosts it.
 
@@ -60,7 +65,7 @@ outcome mapping.
 ## Updating to a new llm-d release
 
 The fork is a permanent patch set on llm-d-router release tags; nothing is upstreamed. A
-release is **merged** into `llm-d-r`, never rebased: BLIS pins a commit on `llm-d-r`, and a
+release is **merged** into `llm-d-r`, never rebased: BLIS pins a tagged commit on `llm-d-r`, and a
 rebase would rewrite the hashes and orphan that pin.
 
 1. Bring the fork's `main` to the release tag (a fast-forward):
@@ -75,8 +80,10 @@ rebase would rewrite the hashes and orphan that pin.
 4. Update `upstream_base` in `hack/hosting-lint/budget.txt` to the release and run
    `go run ./hack/hosting-lint -budget`.
 5. Run the fork's tests, and BLIS's against the branch (a local `replace`). Open a PR into
-   `llm-d-r` and merge it with **a merge commit**. Then, in BLIS, point the `replace` at that
-   merge commit's pseudo-version and run `go test ./sim/llmd/...`. New plugin types in the
+   `llm-d-r` and merge it with **a merge commit**, then tag that merge commit with the next
+   `vX.Y.Z-blis` release and push the tag. In BLIS, point the `replace` at the tag
+   (`go mod edit -replace github.com/llm-d/llm-d-router=github.com/inference-sim/llm-d-router@vX.Y.Z-blis && go mod tidy`)
+   and run `go test ./sim/llmd/...`. New plugin types in the
    release are refused by BLIS until they are audited and added to `sim/llmd/support.go`'s
    supported list.
 
