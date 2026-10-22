@@ -256,9 +256,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		})
 	}
 
-	// Extract PartitionedRNG before struct literal so routing policy can use SubsystemRouter.
-	// The routing policy exclusively owns the SubsystemRouter partition — do not reuse
-	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
+	// The cluster's PartitionedRNG. The embedded router draws from its own "epp" partition
+	// (sim/llmd/runtime.go); give each other consumer its own subsystem so draws never interleave.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
 	cs := &ClusterSimulator{
@@ -289,9 +288,6 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		}
 		cs.heldBlockRefs = make(map[string]map[int64]int)
 		cs.heldKVPeakTokens = make(map[string]int64)
-
-		// Per-pool routing policies and the disaggregation decider are created after
-		// the construction loop (both need cacheQueryFn from instances).
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances",
 			config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
@@ -1140,7 +1136,7 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 // placement that succeeded while the cluster is already running.
 // Called from NodeReadyEvent.Execute (deferred placement) and DirectActuator.scaleUp
 // (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
-// which bulk-initialises the snapshot provider with a full instance map.
+// which builds its instances in one pass.
 //
 // simCfg must already have GPU set (pool-authoritative, SC-004).
 // Returns true on success. On false, GPU allocations have been released — callers
@@ -1376,8 +1372,9 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	return c.aggregatedMetrics
 }
 
-// RejectedRequests returns the count of requests rejected by the admission policy (EC-2).
-// Returns 0 if AlwaysAdmit is used or if no requests were rejected by TokenBucket.
+// RejectedRequests returns the count of requests an admission check of the embedded router
+// refused (an admitter plugin, or the legacy admission controller shedding a sheddable
+// request from a saturated pool) (EC-2).
 func (c *ClusterSimulator) RejectedRequests() int {
 	return c.rejectedRequests
 }

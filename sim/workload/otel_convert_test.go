@@ -58,11 +58,11 @@ func TestConvertOTelTrace_DeltaReconstruction(t *testing.T) {
 		t.Errorf("session id = %q, want sess-1", recs[0].SessionID)
 	}
 	// Model MUST be empty even though every span records "gpt": TraceRecord.Model
-	// is routing-significant (buildRouterState filters instances by it), so a
-	// recorded name differing from --model would drop every request at routing.
+	// becomes Request.Model at replay, which keys the per-model metrics, so a recorded
+	// name differing from the simulated model would be reported as a phantom model.
 	for i, r := range recs {
 		if r.Model != "" {
-			t.Errorf("round %d Model = %q, want empty (recorded model must not reach the routing-significant field)", i, r.Model)
+			t.Errorf("round %d Model = %q, want empty (recorded model must not reach TraceRecord.Model)", i, r.Model)
 		}
 	}
 }

@@ -218,10 +218,6 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 // block's hash, so each iteration hashes only blockSize tokens plus a
 // fixed-length prev hash (O(K * blockSize) total, down from O(K^2 * blockSize)
 // with flat-prefix hashing). Breaks on first miss.
-//
-// CO-CHANGE: SnapshotCachedBlocksFn (same file) replicates this algorithm on a
-// frozen map[string]int64 snapshot. If this loop, the hash chain logic, or the
-// break condition changes, update SnapshotCachedBlocksFn to match.
 func (kvc *KVCacheState) GetCachedBlocks(tokens []sim.TokenID) (blockIDs []int64) {
 	for _, h := range kvc.chainOf(tokens) {
 		blockId, ok := kvc.HashToBlock[h]
@@ -239,34 +235,6 @@ func (kvc *KVCacheState) chainOf(tokens []sim.TokenID) []string {
 		kvc.chains = hash.NewChainCache(int(kvc.BlockSizeTokens))
 	}
 	return kvc.chains.Chain(tokens)
-}
-
-// SnapshotCachedBlocksFn returns a function that queries a frozen copy of the
-// current HashToBlock map. The returned function counts consecutive cached prefix
-// blocks for given tokens using the snapshot, NOT the live state.
-// Used for stale cache signal simulation (issue #919).
-//
-// The snapshot captures HashToBlock at call time. Subsequent allocations/releases
-// do NOT affect the returned function's results.
-//
-// CO-CHANGE: GetCachedBlocks (same file) implements the same algorithm on live
-// HashToBlock state. If this loop, the hash chain logic, or the break condition
-// changes, update GetCachedBlocks to match.
-func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
-	snapshot := make(map[string]int64, len(kvc.HashToBlock))
-	for k, v := range kvc.HashToBlock {
-		snapshot[k] = v
-	}
-	return func(tokens []sim.TokenID) int {
-		count := 0
-		for _, h := range kvc.chainOf(tokens) {
-			if _, ok := snapshot[h]; !ok {
-				break
-			}
-			count++
-		}
-		return count
-	}
 }
 
 // AllocateKVBlocks handles KV Block allocation for both prefill and decode.

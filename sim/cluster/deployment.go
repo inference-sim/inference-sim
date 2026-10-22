@@ -5,13 +5,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
-// DefaultCacheSignalDelay is the default propagation delay for prefix cache
-// signals in microseconds (50ms). Only affects precise-prefix-cache and
-// no-hit-lru scorers; has no observable effect on other routing policies.
-// Models aggregate signal staleness from production llm-d metrics polling.
-// Set to 0 for oracle mode (live cache state).
-const DefaultCacheSignalDelay int64 = 50_000
-
 // DeploymentConfig describes a cluster where all instances share identical
 // hardware and model configuration. NumInstances must be >= 1.
 type DeploymentConfig struct {
