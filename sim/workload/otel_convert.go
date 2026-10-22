@@ -40,8 +40,7 @@ type otelStatus struct {
 
 type otelAttributes struct {
 	// The recorded model name (gen_ai.request.model) is intentionally NOT parsed:
-	// it must not reach TraceRecord.Model (routing-significant — see
-	// EncodeSessionToTraceRecords), and encoding/json simply ignores the key.
+	// it must not reach TraceRecord.Model (see EncodeSessionToTraceRecords), and encoding/json simply ignores the key.
 	InputTokens  *int `json:"gen_ai.usage.input_tokens"`
 	OutputTokens *int `json:"gen_ai.usage.output_tokens"`
 	// Presence of this key (even empty) marks an LLM chat span when name doesn't.

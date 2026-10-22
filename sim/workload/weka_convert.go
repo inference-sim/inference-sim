@@ -80,8 +80,8 @@ type wekaRequest struct {
 	Out  *int    `json:"out"`      // output tokens (Anthropic-reported)
 	API  float64 `json:"api_time"` // real end-to-end server time (sec); used to recompute pure think
 	// Model is the recorded model name (claude-*). ConvertWekaSession never copies it to
-	// a TraceRecord: it is routing-significant at replay (buildRouterState filters
-	// instances by it) and would match no simulated model. The AgentX chain detection
+	// a TraceRecord: at replay it would become Request.Model, which keys the per-model
+	// metrics, and would match no simulated model. The AgentX chain detection
 	// uses it only to tell agents apart (same-model rule).
 	Model string `json:"model"`
 	// HashIDs are the request's 64-token prompt blocks in trace-local ids.

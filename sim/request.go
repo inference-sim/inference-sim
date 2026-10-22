@@ -96,12 +96,12 @@ type Request struct {
 	// Agentic identifies a request of an agentic session-tree replay (#1937); nil otherwise.
 	Agentic *AgenticTag
 
-	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
-	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
+	// Cluster routing metadata. Set when the cluster dispatches the request to the instance
+	// the router chose; zero-value outside the cluster (e.g., direct sim.Simulator tests).
 	AssignedInstance string // Instance ID this request was routed to
 
-	// Model tag for multi-model routing (empty = default model).
-	// Phase 0: carried through the pipeline but not read by any routing policy.
+	// Model tag (empty = default model). Keys the per-model metrics block
+	// (cluster.ComputePerModelMetrics); the router never reads it.
 	Model string
 
 	// Adapter is the LoRA adapter id serving this request (registry key; #1464).
@@ -196,7 +196,7 @@ func (req Request) String() string {
 // and synthesis). Using a derived method instead of a new boolean field keeps
 // a single source of truth and avoids a TraceV2 schema change.
 //
-// GAP-4 (issue #1264): consumed by MultimodalEncodeDecider.ShouldEncode.
+// Read by the llm-d gateway (sim/llmd) to send the request as a multimodal chat message.
 func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }
