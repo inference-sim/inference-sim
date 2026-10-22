@@ -495,3 +495,92 @@ func TestExampleRouterScenariosRun(t *testing.T) {
 		t.Fatalf("non-vacuity: found %d example scenarios", n)
 	}
 }
+
+// Explicit simulated Node manifests give each kernel-placed Pod geography
+// without guessing it from network bandwidth. The same declared topology is
+// read by both run and replay, and the real EPP chooses the in-zone decoder.
+func TestScenarioRouter_DeclaredZoneRunReplayParity(t *testing.T) {
+	const epp = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: prefill-filter
+- type: decode-filter
+- type: max-score-picker
+- type: topology-extractor
+- type: topology-affinity-filter
+  parameters:
+    minAffinity: zone
+- type: disagg-profile-handler
+  parameters:
+    stageOrder: prefill-first
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: topology-affinity-filter
+  - pluginRef: max-score-picker
+`
+	config := writeRouterFile(t, "zone-epp.yaml", epp)
+	const nodes = `apiVersion: v1
+kind: Node
+metadata:
+  name: blis-node-0
+  labels:
+    topology.kubernetes.io/zone: zone-a
+    topology.kubernetes.io/region: region-1
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: blis-node-1
+  labels:
+    topology.kubernetes.io/zone: zone-a
+    topology.kubernetes.io/region: region-1
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: blis-node-2
+  labels:
+    topology.kubernetes.io/zone: zone-a
+    topology.kubernetes.io/region: region-1
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: blis-node-3
+  labels:
+    topology.kubernetes.io/zone: zone-b
+    topology.kubernetes.io/region: region-1
+`
+	nodeFile := writeRouterFile(t, "nodes.yaml", nodes)
+	dir := routerVariant(t, filepath.Join(pdScenarios, pdDPScenario),
+		"router:\n  epp_flags:\n  - --endpoint-selector=llm-d.ai/inference-serving=true\n  - --endpoint-target-ports=8000\n  - --allow-experimental-plugins\n  endpoint_picker_config: zone-epp.yaml\n  manifests:\n  - nodes.yaml\n",
+		map[string]string{"zone-epp.yaml": config, "nodes.yaml": nodeFile},
+		"router:\n  endpoint_picker_config: router/pd-always.yaml\n", "",
+		"  gpus_per_rack: 12\n", "  gpus_per_rack: 4\n")
+	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
+		"--prefill-instances", "1", "--decode-instances", "1", "--seed", "7", "--horizon", "600000000"}
+	trace := filepath.Join(t.TempDir(), "trace")
+	out, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "8", "--rate", "4", "--trace-output", trace}, common...)...)
+	if err != nil {
+		t.Fatalf("zone topology run: %v\n%s", err, lastLines(stderr, 12))
+	}
+	if got := instanceMetricInt(t, out, "instance_2", "completed_requests"); got != 8 {
+		t.Fatalf("in-zone decoder completed %d of 8 requests", got)
+	}
+	if got := instanceMetricInt(t, out, "instance_3", "completed_requests"); got != 0 {
+		t.Fatalf("out-of-zone decoder completed %d of 8 requests", got)
+	}
+	replayed, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", trace + ".yaml", "--trace-data", trace + ".csv"}, common...)...)
+	if err != nil {
+		t.Fatalf("zone topology replay: %v\n%s", err, lastLines(stderr, 12))
+	}
+	if replayed != out {
+		t.Error("declared zone topology changed run/replay output")
+	}
+}

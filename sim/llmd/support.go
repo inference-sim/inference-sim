@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/llm-d/llm-d-router/cmd/epp/runner"
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	"github.com/llm-d/llm-d-router/pkg/epp/config"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
@@ -32,11 +33,18 @@ func topologyConfig(raw []byte) (bool, error) {
 			Name       string         `json:"name"`
 			Parameters map[string]any `json:"parameters"`
 		} `json:"plugins"`
+		SchedulingProfiles []struct {
+			Name string `json:"name"`
+		} `json:"schedulingProfiles"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return false, nil // the router's own loader reports malformed config
 	}
 	extractors := map[string]bool{}
+	profiles := map[string]bool{}
+	for _, profile := range doc.SchedulingProfiles {
+		profiles[profile.Name] = true
+	}
 	type consumerRef struct{ plugin, producer string }
 	var consumers []consumerRef
 	for _, p := range doc.Plugins {
@@ -60,11 +68,20 @@ func topologyConfig(raw []byte) (bool, error) {
 			if header, _ := p.Parameters["peerTopologyHeader"].(string); header != "" {
 				return false, fmt.Errorf("%s peerTopologyHeader requires a coordinator; BLIS embeds one EPP", p.Type)
 			}
+		case "topology-stamp-handler":
+			producer, _ := p.Parameters["topologyProducerName"].(string)
+			consumers = append(consumers, consumerRef{p.Type, cmp.Or(producer, "topology-extractor")})
+			if header, _ := p.Parameters["headerName"].(string); header != "" && !strings.EqualFold(header, reqcommon.PeerTopologyHeaderKey) {
+				return false, fmt.Errorf("%s headerName %q is not supported; use %q", p.Type, header, reqcommon.PeerTopologyHeaderKey)
+			}
+			if profile, _ := p.Parameters["profileName"].(string); profile != "" && !profiles[profile] {
+				return false, fmt.Errorf("%s profileName %q has no scheduling profile", p.Type, profile)
+			}
 		}
 	}
 	for _, c := range consumers {
 		if !extractors[c.producer] {
-			return false, fmt.Errorf("%s needs topology-extractor %q; without it affinity silently fails open", c.plugin, c.producer)
+			return false, fmt.Errorf("%s needs topology-extractor %q; without it the plugin has no topology to use", c.plugin, c.producer)
 		}
 	}
 	return len(extractors) > 0 || len(consumers) > 0, nil
@@ -90,6 +107,7 @@ var supported = map[string]bool{
 	"always-disagg-multimodal-decider": true,
 	"label-selector-filter":            true,
 	"topology-affinity-filter":         true,
+	"topology-stamp-handler":           true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -174,7 +192,6 @@ var unsupported = map[string]string{
 	"file-discovery":                            "endpoints come from the simulated deployment, not from a discovery file",
 	"multicluster-file-discovery":               "multi-cluster routing is not simulated",
 	"disaggregatedset-rollout-screener":         "its revision split draws from process-wide randomness",
-	"topology-stamp-handler":                    "coordinator and response-header topology propagation is not modeled",
 	"models-data-source":                        "the simulated engines do not serve /v1/models yet",
 	"models-data-extractor":                     "the simulated engines do not serve /v1/models yet",
 	"models-responder":                          "the simulated workload sends only completions requests",

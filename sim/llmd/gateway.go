@@ -141,6 +141,9 @@ type Gateway struct {
 	canonCapacity int
 	// rawConfig is the EndpointPickerConfig text, for checking pods that appear during the run.
 	rawConfig []byte
+	// nodeLocations are explicit synthetic Node manifests matched to the worker's
+	// actual simulated host; the scenario/fabric alone does not define geography.
+	nodeLocations map[string]cluster.EndpointTopology
 	// topologyRequested guards against silently running an affinity plugin with
 	// missing or ambiguous placement (its normal behavior is to fail open).
 	topologyRequested bool
@@ -151,11 +154,14 @@ type Gateway struct {
 	// receives ("request", ID), each dispatch ("dispatch", "ID <context error>") and the usage of
 	// each completed response ("usage", "ID tokens").
 	observe func(kind, detail string)
-	server  *handlers.StreamingServer
-	pool    *datalayer.EndpointPool
-	gknn    common.GKNN
-	kube    client.Client
-	pods    *controller.PodReconciler
+	// responseHeaderObserved is a test hook for headers the real EPP's response
+	// processors wrote. The callback must copy the map if it retains it.
+	responseHeaderObserved func(requestID string, headers map[string]string)
+	server                 *handlers.StreamingServer
+	pool                   *datalayer.EndpointPool
+	gknn                   common.GKNN
+	kube                   client.Client
+	pods                   *controller.PodReconciler
 
 	endpoints map[cluster.InstanceID]*endpoint
 	byIP      map[string]cluster.InstanceID
@@ -273,7 +279,19 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	if err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
+	scheme := newScheme()
+	res, err := parseManifests(scheme, g.opts.Manifests, poolNamespace(eppOpts))
+	if err != nil {
+		return err
+	}
+	if g.topologyRequested {
+		g.nodeLocations, err = nodeLocations(res.nodes)
+		if err != nil {
+			return fmt.Errorf("simulated Node topology: %w", err)
+		}
+	}
 	var podLabels []map[string]string
+	var resolved []cluster.EndpointTopology
 	for _, inst := range host.Instances() {
 		if host.EndpointRanks(inst.ID()) == nil {
 			continue // a data-parallel rank behind its replica's endpoint (#1909)
@@ -283,17 +301,18 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 			return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", labelErr)
 		}
 		podLabels = append(podLabels, labels)
+		resolved = append(resolved, podLocation(labels))
+	}
+	if g.topologyRequested {
+		if err := validateLocationHierarchy(resolved); err != nil {
+			return fmt.Errorf("simulated Node topology: %w", err)
+		}
 	}
 	g.rawConfig = config
 	if err := checkRawConfig(config, podLabels, int(host.BlockSizeTokens())); err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
 
-	scheme := newScheme()
-	res, err := parseManifests(scheme, g.opts.Manifests, poolNamespace(eppOpts))
-	if err != nil {
-		return err
-	}
 	if err := g.resolvePool(eppOpts, res); err != nil {
 		return err
 	}
@@ -444,7 +463,9 @@ func (g *Gateway) reconcileResources(res *resources, objs []client.Object) error
 		req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: o.GetName()}}
 		var err error
 		switch o.(type) {
-		case *giev1.InferencePool:
+		case *corev1.Node, *giev1.InferencePool:
+			// The fake client keeps Nodes for topology, but the router's
+			// objective and rewrite reconcilers do not reconcile them.
 		case *v1alpha2.InferenceModelRewrite:
 			_, err = rwRec.Reconcile(g.ctx, req)
 		default:
@@ -561,7 +582,10 @@ func (g *Gateway) podLabelsForInstance(inst *cluster.InstanceSimulator) (map[str
 		}
 		return labels, nil
 	}
-	t := inst.EndpointTopology()
+	t, err := overlayNodeLocation(inst.EndpointTopology(), g.nodeLocations)
+	if err != nil {
+		return nil, fmt.Errorf("instance %s: %w", inst.ID(), err)
+	}
 	if g.topologyRequested {
 		switch {
 		case t.MixedSources:
@@ -988,6 +1012,9 @@ func (g *Gateway) responseHeaders(f *flight) {
 		ct = "text/event-stream"
 	}
 	g.server.HandleResponseHeaders(f.ctx, f.reqCtx, responseHeaders(map[string]string{":status": "200", "content-type": ct}))
+	if g.responseHeaderObserved != nil {
+		g.responseHeaderObserved(f.req.ID, f.reqCtx.Response.Headers)
+	}
 	g.rt.co.settle()
 }
 
@@ -1289,6 +1316,15 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 	labels, err := g.podLabelsForInstance(inst)
 	if err != nil {
 		return fmt.Errorf("instance %s, added during the run: %w", inst.ID(), err)
+	}
+	resolved := []cluster.EndpointTopology{podLocation(labels)}
+	for _, ep := range g.endpoints {
+		resolved = append(resolved, podLocation(ep.pod.Labels))
+	}
+	if g.topologyRequested {
+		if err := validateLocationHierarchy(resolved); err != nil {
+			return fmt.Errorf("instance %s, added during the run: simulated Node topology: %w", inst.ID(), err)
+		}
 	}
 	if err := checkRawConfig(g.rawConfig, []map[string]string{labels}, int(g.host.BlockSizeTokens())); err != nil {
 		return fmt.Errorf("instance %s, added during the run: the router configuration cannot be simulated faithfully: %w", inst.ID(), err)

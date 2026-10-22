@@ -39,6 +39,7 @@ func newScheme() *runtime.Scheme {
 
 // resources are the router-relevant objects of a deployment's manifests.
 type resources struct {
+	nodes          []*corev1.Node
 	pools          []*giev1.InferencePool
 	objectives     []*apixv1.InferenceObjective
 	objectivesV1a2 []*v1alpha2.InferenceObjective
@@ -49,6 +50,9 @@ type resources struct {
 
 func (r *resources) objects() []client.Object {
 	var out []client.Object
+	for _, o := range r.nodes {
+		out = append(out, o)
+	}
 	for _, o := range r.pools {
 		out = append(out, o)
 	}
@@ -106,9 +110,13 @@ func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*res
 			return nil, fmt.Errorf("manifest document %d: %w", i, err)
 		}
 		if mo, ok := obj.(metav1.Object); ok && mo.GetNamespace() == "" {
-			mo.SetNamespace(namespace)
+			if _, isNode := obj.(*corev1.Node); !isNode {
+				mo.SetNamespace(namespace)
+			}
 		}
 		switch o := obj.(type) {
+		case *corev1.Node:
+			res.nodes = append(res.nodes, o)
 		case *giev1.InferencePool:
 			res.pools = append(res.pools, o)
 		case *apixv1.InferenceObjective:
