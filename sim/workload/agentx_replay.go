@@ -11,11 +11,13 @@ import (
 
 // AgentXReplay drives aiperf 0.12.0's --scenario inferencex-agentx-mvp against the
 // simulated cluster: C session-tree lanes snapshotted mid-trace, a warm-up that primes
-// every live stream, then a closed-loop profiling window in which subagents fan out
-// beside their parent, joins gate later parent turns, recorded replay barriers order
-// streams, a 10 s global idle cap pulls in timers (and, when a run states one, a per-trace
-// idle cap pulls in a single tree's timers while others stay busy), and drained trees recycle
-// into the next root. It is a closed-loop driver with the same contract as SessionManager and
+// every live stream (optionally followed by an accelerated cache-pressure substage that
+// replays the live trajectories under a per-lane request quota before the measured window),
+// then a closed-loop profiling window in which subagents fan out beside their parent, joins
+// gate later parent turns, recorded replay barriers order streams, a 10 s global idle cap
+// pulls in timers (and, when a run states one, a per-trace idle cap pulls in a single tree's
+// timers while others stay busy), and drained trees recycle into the next root. It is a
+// closed-loop driver with the same contract as SessionManager and
 // SessionPoolDriver: OnComplete returns the follow-ups a completion causes (wired as the
 // cluster's onRequestDone). Because aiperf moves and cancels timers after it sets them, a
 // follow-up's ArrivalTime is the send it is scheduled for, and Gate (the cluster's
@@ -42,6 +44,17 @@ type AgentXReplay struct {
 	inFlight      int
 	idleSinceUs   int64 // -1: not idle
 	warmupLeft    int
+	// accelOn is the accelerated cache-pressure warmup substage (aiperf
+	// _start_accelerated_warmup): once the baseline primers return, the live trajectories are
+	// replayed through the real closed loop with zero idle delay and max_tokens 1, gated by a
+	// per-lane wire-request quota. accelBudgetReached latches once every lane has admitted its
+	// quota, after which no further accelerated turn is admitted and the substage drains.
+	accelOn            bool
+	accelBudgetReached bool
+	// accelAdmitted counts each lane's admitted accelerated cache-pressure wire requests,
+	// keyed by lane index so it survives a recycle mid-substage (aiperf
+	// _cache_warmup_requests_by_lane, keyed by the stable trajectory lane). len == lanes.
+	accelAdmitted []int
 	// released are barrier-released sends not yet on the wire: aiperf issues them from a
 	// task (ReplayBarrierCoordinator._dispatch_pending), after the return that released
 	// them has finished, including its idle-cap check.
@@ -125,6 +138,7 @@ type agxPhase int
 
 const (
 	agxWarmup agxPhase = iota
+	agxAccel           // accelerated cache-pressure warmup: live trajectories replayed, quota-gated
 	agxProfile
 	agxClosed // sending window over; in-flight requests may finish until the grace end
 	agxDone
@@ -149,18 +163,18 @@ type agxDispatch struct {
 	recycle   bool
 	windowEnd bool // the sending window's duration timeout
 	// refusal, when set, is the client receiving the error response for that send.
-	refusal     *agxDispatch
-	outcome     string
-	refusing    bool // its error response is on the way
-	warmup      bool
-	warmupExtra bool // a request-bounded cache-pressure warmup extra (chains the lane's next)
-	start       bool // session start (acquires the tree slot)
-	childPath   bool // sent via dispatch_child_turn (refusal drains the child's join)
-	first       bool // a spawned child's turn 0 (refusal rolls the child back)
-	shiftable   bool // a LoopScheduler timer (the idle cap moves it); child spawn sleeps are not
-	dueUs       int64
-	state       agxDispatchState
-	ph          *sim.Request // the request pushed for the current due time
+	refusal   *agxDispatch
+	outcome   string
+	refusing  bool // its error response is on the way
+	warmup    bool
+	accel     bool // an accelerated cache-pressure warmup turn (zero delay, max_tokens 1, quota-gated)
+	start     bool // session start (acquires the tree slot)
+	childPath bool // sent via dispatch_child_turn (refusal drains the child's join)
+	first     bool // a spawned child's turn 0 (refusal rolls the child back)
+	shiftable bool // a LoopScheduler timer (the idle cap moves it); child spawn sleeps are not
+	dueUs     int64
+	state     agxDispatchState
+	ph        *sim.Request // the request pushed for the current due time
 }
 
 // agxInstance is one session tree: a lane's trace minted once (its prompts share a
@@ -184,15 +198,10 @@ type agxInstance struct {
 	inFlight    int
 	idleSinceUs int64
 
-	// warmupExtra is the lane's remaining request-bounded cache-pressure warmup requests
-	// (aiperf --warmup-requests-per-lane): sent after the lane's snapshot primers, one at a
-	// time, each a one-token re-send of the lane's primer turn (warmupStream/warmupTurn), so
-	// it reuses the same cache prefix. warmupPrimersLeft counts primers of this lane still in
-	// flight; the extra chain starts when it reaches 0. Both set up in Start.
-	warmupExtra       int
-	warmupPrimersLeft int
-	warmupStream      *agxStream
-	warmupTurn        int32
+	// handoffTurns are turns deferred at this lane's quota boundary (aiperf
+	// _quota_handoff_turns): the next turn of a stream the accelerated substage stopped short
+	// of, which profiling resumes from. Keyed by stream to keep at most one per stream.
+	handoffTurns map[*agxStream]*agxDispatch
 
 	barrierOn bool
 	completed map[agxRef]bool
@@ -289,11 +298,12 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 func (x *AgentXReplay) newInstance(lane int, tr *AgentXTrace) *agxInstance {
 	in := &agxInstance{
 		id: len(x.instances), lane: lane, trace: tr,
-		salt:        agxMix(uint64(x.cfg.Seed), uint64(len(x.instances))+1),
-		completed:   map[agxRef]bool{},
-		future:      map[int32]*agxJoin{},
-		overlapDone: map[int32]bool{},
-		idleSinceUs: -1,
+		salt:         agxMix(uint64(x.cfg.Seed), uint64(len(x.instances))+1),
+		completed:    map[agxRef]bool{},
+		future:       map[int32]*agxJoin{},
+		overlapDone:  map[int32]bool{},
+		handoffTurns: map[*agxStream]*agxDispatch{},
+		idleSinceUs:  -1,
 	}
 	in.root = x.newStream(in, 0, false)
 	x.instances = append(x.instances, in)
@@ -376,8 +386,6 @@ func (x *AgentXReplay) Start() []*sim.Request {
 	maxLead := math.Inf(-1)
 	for li, l := range x.lanes {
 		in := x.laneInst[li]
-		var last *agxStream
-		var lastTurn int32
 		for _, st := range l.states {
 			if st.next < 1 {
 				continue
@@ -386,25 +394,20 @@ func (x *AgentXReplay) Start() []*sim.Request {
 			lead := l.tStarMs - l.trace.convs[st.conv].turns[st.next-1].tsMs
 			preps = append(preps, prep{&agxDispatch{inst: in, stream: s, turn: st.next - 1, warmup: true, start: true}, lead})
 			maxLead = math.Max(maxLead, lead)
-			in.warmupPrimersLeft++
-			last, lastTurn = s, st.next-1
-		}
-		// Arm the lane's request-bounded cache-pressure extras: re-send its last primer turn
-		// n times once the primers return (aiperf's --warmup-requests-per-lane). A lane with no
-		// primer stream has nothing to continue, so it takes no extras.
-		if x.cfg.WarmupRequestsPerLane > 0 && last != nil {
-			in.warmupExtra = x.cfg.WarmupRequestsPerLane
-			in.warmupStream, in.warmupTurn = last, lastTurn
 		}
 	}
-	extras := 0
-	for _, in := range x.laneInst {
-		extras += in.warmupExtra
-	}
-	x.warmupLeft = len(preps) + extras
-	x.stats.WarmupRequests = len(preps) + extras
+	x.warmupLeft = len(preps)
+	x.stats.WarmupRequests = len(preps)
 	if len(preps) == 0 {
-		x.startProfiling(0)
+		// No request precedes t*, so there is no baseline priming to wait for. With the
+		// accelerated cache-pressure warmup enabled, jump straight to it (aiperf
+		// _execute_warmup: `if not prepared: _start_accelerated_warmup`); otherwise go to
+		// profiling.
+		if x.cacheWarmupEnabled() {
+			x.startAccel(0)
+		} else {
+			x.startProfiling(0)
+		}
 	} else {
 		for _, p := range preps {
 			off := (maxLead - p.lead) / 1000.0
@@ -421,29 +424,101 @@ func (x *AgentXReplay) Start() []*sim.Request {
 	return out
 }
 
-// chainWarmupExtra advances the lane's request-bounded cache-pressure warmup after a warmup
-// request returns: when the lane's snapshot primers have all returned, it sends the lane's
-// extras one at a time (each a one-token re-send of the primer turn), so profiling waits for
-// the whole quota (aiperf --warmup-requests-per-lane). A no-op unless the lane has extras.
-func (x *AgentXReplay) chainWarmupExtra(d *agxDispatch) {
-	in := d.inst
-	if in == nil {
+// cacheWarmupEnabled reports whether a request-bounded cache-pressure warmup runs after the
+// baseline primers (aiperf _cache_warmup_enabled; only the per-lane request count is modelled,
+// not the time-bounded duration).
+func (x *AgentXReplay) cacheWarmupEnabled() bool { return x.cfg.WarmupRequestsPerLane > 0 }
+
+// startAccel is aiperf _start_accelerated_warmup + _dispatch_accelerated_trajectory: replay
+// every lane from its post-snapshot state through the real closed loop with zero idle delay
+// and max_tokens 1, gated by the per-lane request quota. It is the profiling dispatch run
+// early -- the same seed as startProfiling, but as accelerated warmup turns.
+func (x *AgentXReplay) startAccel(now int64) {
+	x.phase = agxAccel
+	x.accelOn = true
+	x.nowUs = now
+	x.accelAdmitted = make([]int, len(x.lanes))
+	for li, l := range x.lanes {
+		in := x.laneInst[li]
+		in.barrierOn = true
+		for c, n := range l.completed {
+			for k := int32(0); k < n; k++ {
+				in.completed[agxRef{c, k}] = true
+			}
+		}
+		x.seedSnapshot(in, l)
+		for _, st := range l.states {
+			if st.waiting {
+				continue
+			}
+			s := x.streamForState(in, st)
+			// Zero idle delay: the accelerated substage ignores st.offsetMs. Quota-gated.
+			x.dispatchAccel(in, &agxDispatch{inst: in, stream: s, turn: st.next, start: st.conv == 0})
+		}
+	}
+	// If the substage put nothing on the wire and holds nothing behind the barrier (every
+	// lane was undispatchable, e.g. all roots waiting on children), there is nothing to drain,
+	// so hand straight off to profiling rather than stalling.
+	if !x.accelWorkPending() {
+		x.startProfiling(now)
+	}
+}
+
+// accelWorkPending reports whether the accelerated substage still has work on the wire or
+// held behind the barrier (a barrier-held turn does not count toward inFlight but will issue).
+func (x *AgentXReplay) accelWorkPending() bool {
+	if x.inFlight > 0 || len(x.released) > 0 {
+		return true
+	}
+	for _, in := range x.instances {
+		if len(in.held) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// dispatchAccel submits one accelerated-warmup turn, enforcing the per-lane quota: a lane that
+// has already admitted its quota defers the turn (stashed for the profiling handoff) instead
+// of sending it (aiperf _admit_cache_warmup_turn DEFER).
+func (x *AgentXReplay) dispatchAccel(in *agxInstance, d *agxDispatch) {
+	d.accel = true
+	d.warmup = true
+	if x.accelAdmitted[in.lane] >= x.cfg.WarmupRequestsPerLane {
+		in.handoffTurns[d.stream] = d // DEFER: profiling resumes this stream from here
+		x.latchAccelBudget()
 		return
 	}
-	if !d.warmupExtra {
-		// A primer returned. Start the extras only once every primer of this lane is back, so
-		// the extras pressure a fully warmed prefix.
-		if in.warmupPrimersLeft > 0 {
-			in.warmupPrimersLeft--
-		}
-		if in.warmupPrimersLeft > 0 || in.warmupExtra == 0 {
+	x.accelAdmitted[in.lane]++
+	x.stats.WarmupRequests++ // accelerated extras remain warmup requests
+	x.latchAccelBudget()
+	x.submit(d)
+}
+
+// dispatchTurn submits a turn, routing it through the accelerated-warmup quota gate while the
+// accel substage is live and as a normal profiling send otherwise. Used by the join-turn
+// dispatch sites, which fire a gated root turn the instant its children complete.
+func (x *AgentXReplay) dispatchTurn(in *agxInstance, d *agxDispatch) {
+	if x.phase == agxAccel {
+		x.dispatchAccel(in, d)
+		return
+	}
+	x.submit(d)
+}
+
+// latchAccelBudget sets accelBudgetReached once every lane has admitted its quota (aiperf
+// _cache_warmup_request_budget_reached): after that, in-flight accel turns drain and profiling
+// starts. Iterates the ordered laneInst slice (INV-6).
+func (x *AgentXReplay) latchAccelBudget() {
+	if x.accelBudgetReached {
+		return
+	}
+	for _, n := range x.accelAdmitted {
+		if n < x.cfg.WarmupRequestsPerLane {
 			return
 		}
-	} else if in.warmupExtra == 0 {
-		return
 	}
-	in.warmupExtra--
-	x.submit(&agxDispatch{inst: in, stream: in.warmupStream, turn: in.warmupTurn, warmup: true, warmupExtra: true})
+	x.accelBudgetReached = true
 }
 
 // streamForState returns the lane tree's stream for a snapshot state, creating children.
@@ -478,58 +553,104 @@ func (x *AgentXReplay) startProfiling(now int64) {
 	// phase's duration timeout, not a scheduler timer.
 	x.push(&agxDispatch{state: agxTimer, windowEnd: true}, x.windowEndUs)
 
-	for li, l := range x.lanes {
-		in := x.laneInst[li]
-		in.barrierOn = true
-		for c, n := range l.completed {
-			for k := int32(0); k < n; k++ {
-				in.completed[agxRef{c, k}] = true
+	if x.accelOn {
+		// The accelerated substage already seeded every lane and advanced its streams, so
+		// profiling resumes from those advanced positions (the deferred quota turns) rather
+		// than re-seeding the snapshot.
+		x.accelOn = false
+		x.dispatchHandoff(now)
+	} else {
+		for li, l := range x.lanes {
+			in := x.laneInst[li]
+			in.barrierOn = true
+			for c, n := range l.completed {
+				for k := int32(0); k < n; k++ {
+					in.completed[agxRef{c, k}] = true
+				}
+			}
+			x.seedSnapshot(in, l)
+			for _, st := range l.states {
+				if st.waiting {
+					continue
+				}
+				s := x.streamForState(in, st)
+				d := &agxDispatch{inst: in, stream: s, turn: st.next, start: st.conv == 0}
+				if delay := st.offsetMs / 1000.0; delay > 0 {
+					x.schedule(d, now+int64(math.Round(delay*1e6)), true)
+				} else {
+					x.submit(d)
+				}
 			}
 		}
-		hasRoot := false
-		var root agxState
-		for _, st := range l.states {
-			if st.conv == 0 {
-				hasRoot, root = true, st
-			}
+	}
+	// observe_idle_root: aiperf arms the per-trace watchdog once every lane's initial timers
+	// are installed, so a tree whose first profiling request is scheduled past the cap is
+	// pulled in without waiting for a return. A tree with a request dispatched now is in
+	// flight and the cap no-ops on it (idleSinceUs stays -1 until that request returns).
+	for _, in := range x.instances {
+		x.enforceTraceIdleCap(in, false)
+	}
+}
+
+// seedSnapshot is BranchOrchestrator.seed_snapshot for one lane: track every live child
+// against the root, seed its join gate memberships, count descendants, and hold a lane credit
+// for a rootless-but-dispatchable lane. Shared by the accelerated substage and profiling.
+func (x *AgentXReplay) seedSnapshot(in *agxInstance, l *agxLane) {
+	hasRoot := false
+	var root agxState
+	for _, st := range l.states {
+		if st.conv == 0 {
+			hasRoot, root = true, st
 		}
-		// seed_snapshot: every live child is tracked against the root; its gate memberships
-		// seed joins (a rootless lane's children are tracked with no gate).
-		for _, st := range l.states {
-			if st.conv == 0 {
+	}
+	for _, st := range l.states {
+		if st.conv == 0 {
+			continue
+		}
+		s := x.streamForState(in, st)
+		s.tracked = true
+		if hasRoot && st.joinTurn >= 0 && st.branch >= 0 {
+			j := x.seededJoin(in, root, st.joinTurn)
+			p := j.prereq(st.branch)
+			p.expected++
+			p.registered = true
+			s.gates = []agxGateRef{{st.joinTurn, st.branch}}
+		}
+		in.descendants++
+		in.outstanding++
+	}
+	hasDispatchableRoot := hasRoot && !root.waiting
+	anyDispatchable := false
+	for _, st := range l.states {
+		if !st.waiting {
+			anyDispatchable = true
+		}
+	}
+	if !hasDispatchableRoot && anyDispatchable {
+		// acquire_lane_credit: the lane holds its slot without a root credit.
+		in.open = true
+		in.rootPending = hasRoot
+	}
+}
+
+// dispatchHandoff resumes profiling from the positions the accelerated substage advanced each
+// stream to (aiperf's _quota_handoff_turns handoff): each deferred turn is sent as a profiling
+// turn at its recorded offset on the tree's shared replay clock. Iterates the ordered
+// instances/childStreams slices (INV-6).
+func (x *AgentXReplay) dispatchHandoff(now int64) {
+	for _, in := range x.instances {
+		streams := append([]*agxStream{in.root}, in.childStreams...)
+		for _, s := range streams {
+			d := in.handoffTurns[s]
+			if d == nil {
 				continue
 			}
-			s := x.streamForState(in, st)
-			s.tracked = true
-			if hasRoot && st.joinTurn >= 0 && st.branch >= 0 {
-				j := x.seededJoin(in, root, st.joinTurn)
-				p := j.prereq(st.branch)
-				p.expected++
-				p.registered = true
-				s.gates = []agxGateRef{{st.joinTurn, st.branch}}
-			}
-			in.descendants++
-			in.outstanding++
-		}
-		hasDispatchableRoot := hasRoot && !root.waiting
-		anyDispatchable := false
-		for _, st := range l.states {
-			if !st.waiting {
-				anyDispatchable = true
-			}
-		}
-		if !hasDispatchableRoot && anyDispatchable {
-			// acquire_lane_credit: the lane holds its slot without a root credit.
-			in.open = true
-			in.rootPending = hasRoot
-		}
-		for _, st := range l.states {
-			if st.waiting {
-				continue
-			}
-			s := x.streamForState(in, st)
-			d := &agxDispatch{inst: in, stream: s, turn: st.next, start: st.conv == 0}
-			if delay := st.offsetMs / 1000.0; delay > 0 {
+			delete(in.handoffTurns, s)
+			d.accel = false
+			d.warmup = false
+			d.childPath = s.child
+			tn := &in.trace.convs[s.conv].turns[d.turn]
+			if delay := agxOffset(tn.tsMs, x.lanes[in.lane].tStarMs) / 1000.0; delay > 0 {
 				x.schedule(d, now+int64(math.Round(delay*1e6)), true)
 			} else {
 				x.submit(d)
@@ -565,9 +686,10 @@ func (x *AgentXReplay) seededJoin(in *agxInstance, root agxState, gated int32) *
 }
 
 // canSend is the profiling stop checks: the duration window (DurationStopCondition) for
-// every send, and recycle/new sessions likewise.
+// every send, and recycle/new sessions likewise. Warmup (baseline primers and the
+// accelerated substage) has no window.
 func (x *AgentXReplay) canSend() bool {
-	return x.phase == agxWarmup || (x.phase == agxProfile && x.nowUs < x.windowEndUs)
+	return x.phase == agxWarmup || x.phase == agxAccel || (x.phase == agxProfile && x.nowUs < x.windowEndUs)
 }
 
 // submit is ReplayIssueGate.submit + CreditIssuer._issue_credit_ready /
@@ -608,13 +730,20 @@ func (x *AgentXReplay) issue(d *agxDispatch) {
 	x.push(d, x.nowUs)
 	x.inFlight++
 	in.inFlight++ // this tree's share, for the per-trace watchdog
-	if d.warmup {
+	// A baseline primer is a single isolated send: no overlap spawn, not counted as a
+	// profiling request. An accelerated-warmup turn drives the real loop (so it spawns like a
+	// profiling root), but is still warmup and not counted as a profiling request.
+	if d.warmup && !d.accel {
 		return
 	}
 	if d.stream.child {
-		x.stats.SubagentRequests++
+		if !d.accel {
+			x.stats.SubagentRequests++
+		}
 	} else {
-		x.stats.MainRequests++
+		if !d.accel {
+			x.stats.MainRequests++
+		}
 		x.overlapSpawn(d)
 	}
 }
@@ -743,7 +872,10 @@ func (x *AgentXReplay) dispatchRecycle(lane int) {
 	in := x.newInstance(lane, tr)
 	in.barrierOn = true
 	x.laneInst[lane] = in
-	x.submit(&agxDispatch{inst: in, stream: in.root, turn: 0, start: true})
+	// A recycle during the accelerated substage is itself quota-gated: the fresh root's turn 0
+	// counts against (and is stopped by) the lane's warmup request quota, so a lane whose trees
+	// drain under compression cannot recycle unboundedly.
+	x.dispatchTurn(in, &agxDispatch{inst: in, stream: in.root, turn: 0, start: true})
 }
 
 // overlapSpawn is BranchOrchestrator.on_credit_issued: a SPAWN branch that started
@@ -808,6 +940,14 @@ func (x *AgentXReplay) spawn(in *agxInstance, branches []int32, originMs float64
 	}
 	in.descendants += len(kids)
 	in.outstanding += len(kids)
+	// During the accelerated substage every spawned child starts at once (zero idle delay)
+	// and is quota-gated, like every other accelerated turn.
+	if x.phase == agxAccel {
+		for _, k := range kids {
+			x.dispatchAccel(in, &agxDispatch{inst: in, stream: k.s, turn: 0, childPath: true, first: true})
+		}
+		return
+	}
 	for _, k := range kids {
 		d := &agxDispatch{inst: in, stream: k.s, turn: 0, childPath: true, first: true}
 		if k.offset > 0 {
@@ -956,13 +1096,30 @@ func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 			x.stats.WarmupFailures++
 		}
 	}
-	if x.phase != agxWarmup && now > x.windowEndUs {
+	if x.phase == agxProfile && now > x.windowEndUs {
 		req.Phase = sim.PhaseGrace
 	}
-	if d.warmup {
+	// A baseline primer return (synthesized warmup): once every primer is back, either start
+	// the accelerated cache-pressure substage or go straight to profiling.
+	if d.warmup && !d.accel {
 		x.warmupLeft--
-		x.chainWarmupExtra(d)
 		if x.warmupLeft == 0 {
+			if x.cacheWarmupEnabled() {
+				x.startAccel(now)
+			} else {
+				x.startProfiling(now)
+			}
+		}
+		x.enforceIdleCap(true)
+		return
+	}
+	// An accelerated-warmup turn return: advance the live trajectory through the real loop
+	// (zero delay, quota-gated in dispatch), then hand off to profiling once every lane has
+	// hit its quota and the substage has drained.
+	if d.accel {
+		x.onReturn(d, outcome == sim.AgenticContextOverflow)
+		x.issueReleased()
+		if x.accelOn && x.accelBudgetReached && !x.accelWorkPending() {
 			x.startProfiling(now)
 		}
 		x.enforceIdleCap(true)
@@ -1026,11 +1183,16 @@ func (x *AgentXReplay) onReturn(d *agxDispatch, overflow bool) {
 }
 
 // dispatchNext is _dispatch_next_turn: the stream's next turn after its recorded
-// end-to-start delay, from this completion.
+// end-to-start delay, from this completion. During the accelerated substage the delay is
+// dropped and the turn is quota-gated (aiperf _handle_accelerated_warmup_return).
 func (x *AgentXReplay) dispatchNext(d *agxDispatch) {
 	s := d.stream
-	tn := &d.inst.trace.convs[s.conv].turns[d.turn+1]
 	nd := &agxDispatch{inst: d.inst, stream: s, turn: d.turn + 1, childPath: s.child}
+	if x.phase == agxAccel {
+		x.dispatchAccel(d.inst, nd)
+		return
+	}
+	tn := &d.inst.trace.convs[s.conv].turns[d.turn+1]
 	if tn.delayMs > 0 {
 		x.schedule(nd, x.nowUs+msToUs(tn.delayMs), true)
 		return
@@ -1087,7 +1249,7 @@ func (x *AgentXReplay) childDone(s *agxStream) {
 		if j.blocked {
 			in.active = nil
 			// dispatch_join_turn -> issue_credit for the gated turn.
-			x.submit(&agxDispatch{inst: in, stream: in.root, turn: j.gated})
+			x.dispatchTurn(in, &agxDispatch{inst: in, stream: in.root, turn: j.gated})
 		} else {
 			delete(in.future, g.gated)
 		}
@@ -1130,7 +1292,7 @@ func (x *AgentXReplay) rollbackChild(s *agxStream) {
 	if in.active != nil && in.active.satisfied() {
 		j := in.active
 		in.active = nil
-		x.submit(&agxDispatch{inst: in, stream: in.root, turn: j.gated})
+		x.dispatchTurn(in, &agxDispatch{inst: in, stream: in.root, turn: j.gated})
 	}
 	x.maybeDrain(in)
 }

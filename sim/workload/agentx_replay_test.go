@@ -220,45 +220,137 @@ func TestAgentXPerTraceIdleCap(t *testing.T) {
 	}
 }
 
-// TestAgentXPerLaneWarmup is aiperf's request-bounded cache-pressure warmup
-// (--warmup-requests-per-lane): after a lane's snapshot primers, it sends N extra one-token
-// warmup requests re-sending the primer turn, and profiling waits for all of them. The extras
-// are warmup (not counted as main/subagent requests) and the profiling turns are unchanged.
-func TestAgentXPerLaneWarmup(t *testing.T) {
-	c := agxCorpus(t, threeTurnTrace(t, "A")) // t* = 5 s: turn 0 is the lane's primer
+// TestAgentXPerTraceIdleCapArmsInitialWork: the per-trace cap must be armed at profiling
+// start (aiperf's observe_idle_root after the initial timers are installed), so a tree whose
+// FIRST profiling request -- not a follow-up after a return -- is scheduled past the cap is
+// pulled in. t* = 1 s (ratio 0.01 of the 100 s span) makes turn 0 the warmup primer and
+// turn 1 the first profiling request, scheduled 99 s out.
+func TestAgentXPerTraceIdleCapArmsInitialWork(t *testing.T) {
+	c := agxCorpus(t, wekaLine(t, "A", wreq(0, 1, 128, 5, 1, 2), wreq(100, 1, 192, 5, 1, 2, 3)))
 
-	// Baseline: synthesized primer only (one warmup request).
-	base := runAgentX(t, c, agxCfg(1, 0.5, 20), fixedService(sec))
-	if st := base.x.Stats(); st.WarmupRequests != 1 {
-		t.Fatalf("baseline warmup requests %d, want 1", st.WarmupRequests)
+	// Without the cap, profiling starts at 1 s but the first request (turn 1) is 99 s out, so
+	// nothing is issued inside a 50 s window.
+	base := agxCfg(1, 0.01, 50)
+	base.IdleCapUs = 0
+	hb := runAgentX(t, c, base, fixedService(sec))
+	checkIssues(t, hb, []agxWant{{0, "A", 0, sim.PhaseWarmup}})
+	if st := hb.x.Stats(); st.TraceIdleCapJumps != 0 {
+		t.Errorf("baseline must not fire the per-trace cap: %+v", st)
 	}
 
-	cfg := agxCfg(1, 0.5, 20)
-	cfg.WarmupRequestsPerLane = 3
+	// With a 20 s cap, the first profiling request is pulled in to 21 s (warmup returns at
+	// 1 s, + 20 s cap) -- armed at profiling start, before any return.
+	cfg := agxCfg(1, 0.01, 50)
+	cfg.IdleCapUs = 0
+	cfg.TraceIdleCapUs = 20 * sec
 	h := runAgentX(t, c, cfg, fixedService(sec))
-	// One primer (t = 0) then three extras (t = 1, 2, 3), each the primer turn, one token.
 	checkIssues(t, h, []agxWant{
 		{0, "A", 0, sim.PhaseWarmup},
-		{1 * sec, "A", 0, sim.PhaseWarmup},
-		{2 * sec, "A", 0, sim.PhaseWarmup},
-		{3 * sec, "A", 0, sim.PhaseWarmup},
-		{4 * sec, "A", 1, sim.PhaseProfile}, // profiling starts only after every warmup returns
+		{21 * sec, "A", 1, sim.PhaseProfile}, // first profiling request, armed at start
+		{22 * sec, "A", 0, sim.PhaseProfile},
 	})
-	for i := 0; i < 4; i++ {
+	if st := h.x.Stats(); st.TraceIdleCapJumps == 0 {
+		t.Errorf("the per-trace cap should have armed the initial timer: %+v", st)
+	}
+}
+
+// sixTurnTrace is one stream of six turns, each extending the prior hash prefix, used to
+// exercise an accelerated warmup that stops mid-stream.
+func sixTurnTrace(t *testing.T, id string) string {
+	return wekaLine(t, id,
+		wreq(0, 1, 100, 5, 1),
+		wreq(1, 1, 110, 5, 1, 2),
+		wreq(2, 1, 120, 5, 1, 2, 3),
+		wreq(3, 1, 130, 5, 1, 2, 3, 4),
+		wreq(4, 1, 140, 5, 1, 2, 3, 4, 5),
+		wreq(5, 1, 150, 5, 1, 2, 3, 4, 5, 6))
+}
+
+// TestAgentXAcceleratedWarmupAdvancesTurns: the request-bounded cache-pressure warmup
+// (aiperf --warmup-requests-per-lane) advances each live trajectory through its REAL next
+// turns with zero idle delay and max_tokens 1 -- not a repeated primer -- and profiling
+// resumes from the advanced position, not the snapshot. t* = 0 (ratio 0), quota 2: accel
+// sends turns 0 and 1, defers at turn 2, and profiling resumes at turn 2.
+func TestAgentXAcceleratedWarmupAdvancesTurns(t *testing.T) {
+	c := agxCorpus(t, sixTurnTrace(t, "R"))
+	cfg := agxCfg(1, 0, 60)
+	cfg.WarmupRequestsPerLane = 2
+	h := runAgentX(t, c, cfg, fixedService(sec))
+
+	// The two accelerated turns are the stream's real turns 0 and 1 (growing prompts), warmup
+	// phase, one token each -- not the same primer twice.
+	checkIssues(t, h, []agxWant{
+		{0, "R", 0, sim.PhaseWarmup},
+		{1 * sec, "R", 1, sim.PhaseWarmup},
+		{4 * sec, "R", 2, sim.PhaseProfile}, // profiling resumes from the ADVANCED turn 2
+		{5 * sec, "R", 3, sim.PhaseProfile},
+	})
+	if h.issued[0].in >= h.issued[1].in {
+		t.Errorf("accelerated turns must advance (turn 1 prompt %d should exceed turn 0 prompt %d)", h.issued[1].in, h.issued[0].in)
+	}
+	for i := 0; i < 2; i++ {
 		if h.issued[i].out != 1 {
-			t.Errorf("warmup request %d max_tokens %d, want 1", i, h.issued[i].out)
+			t.Errorf("accelerated warmup turn %d max_tokens %d, want 1", i, h.issued[i].out)
 		}
 	}
+	// The first measured (profiling) turn is the advanced turn 2, never the snapshot turn 0.
+	var firstProfile int
+	for _, is := range h.issued {
+		if is.phase == sim.PhaseProfile {
+			firstProfile = is.tag.Turn
+			break
+		}
+	}
+	if firstProfile != 2 {
+		t.Errorf("profiling resumed at turn %d, want the advanced turn 2", firstProfile)
+	}
+	if st := h.x.Stats(); st.WarmupRequests != 2 {
+		t.Errorf("warmup requests %d, want 2 accelerated extras (no baseline primer at t*=0)", st.WarmupRequests)
+	}
+}
+
+// TestAgentXAcceleratedWarmupNoBaselinePrimer: a lane whose first request is at t* has no
+// baseline primer, but the accelerated cache-pressure stage still runs (aiperf
+// _execute_warmup: `if not prepared: _start_accelerated_warmup`). Profiling does not start
+// until the quota is spent.
+func TestAgentXAcceleratedWarmupNoBaselinePrimer(t *testing.T) {
+	c := agxCorpus(t, threeTurnTrace(t, "A")) // ratio 0 -> turn 0 is AT t*, nothing precedes it
+	cfg := agxCfg(1, 0, 20)
+	cfg.WarmupRequestsPerLane = 2
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	checkIssues(t, h, []agxWant{
+		{0, "A", 0, sim.PhaseWarmup}, // accelerated, not a baseline primer
+		{1 * sec, "A", 1, sim.PhaseWarmup},
+	})
 	st := h.x.Stats()
-	if st.WarmupRequests != 4 {
-		t.Errorf("warmup requests %d, want 4 (1 primer + 3 per-lane extras)", st.WarmupRequests)
+	if st.WarmupRequests != 2 {
+		t.Errorf("warmup requests %d, want 2 (accelerated extras, no baseline primer)", st.WarmupRequests)
 	}
-	// The extras are warmup, so the profiling main-request count matches the baseline's.
-	if st.MainRequests != base.x.Stats().MainRequests {
-		t.Errorf("main requests %d changed from baseline %d", st.MainRequests, base.x.Stats().MainRequests)
+	if ps, _ := h.x.Window(); ps == 0 {
+		t.Errorf("profiling must start after the accelerated stage, not at time 0")
 	}
-	if ps, _ := h.x.Window(); ps != 4*sec {
-		t.Errorf("profiling started at %d, want 4 s (after the last warmup extra returned)", ps)
+}
+
+// TestAgentXAcceleratedWarmupPerLane: the quota is per lane. Two lanes, quota 2 each, so four
+// accelerated warmup requests in all, and a lane with no baseline primer still gets its quota.
+func TestAgentXAcceleratedWarmupPerLane(t *testing.T) {
+	a := wekaLine(t, "A", wreq(0, 1, 128, 5, 1, 2), wreq(10, 1, 192, 5, 1, 2, 3), wreq(20, 1, 256, 5, 1, 2, 3, 4))
+	b := wekaLine(t, "B", wreq(0, 1, 128, 5, 10, 11), wreq(10, 1, 192, 5, 10, 11, 12), wreq(20, 1, 256, 5, 10, 11, 12, 13))
+	c := agxCorpus(t, a, b)
+	cfg := agxCfg(2, 0, 900)
+	cfg.WarmupRequestsPerLane = 2
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	warm := 0
+	for _, is := range h.issued {
+		if is.phase == sim.PhaseWarmup {
+			warm++
+		}
+	}
+	if warm != 4 {
+		t.Errorf("%d warmup requests issued, want 4 (2 per lane x 2 lanes)", warm)
+	}
+	if st := h.x.Stats(); st.WarmupRequests != 4 {
+		t.Errorf("WarmupRequests stat %d, want 4", st.WarmupRequests)
 	}
 }
 
