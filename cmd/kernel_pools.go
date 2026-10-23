@@ -26,6 +26,43 @@ type kernelPools struct {
 	connector string
 }
 
+// scenarioEndpointTopology uses the same role-specific kernel placements that
+// price KV handoffs. Node and rack names are global within one simulated
+// cluster, so replicas in different pools never get colliding host identities.
+// No zone or region is invented; rack is emitted only when declared.
+func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
+	if model == nil {
+		return nil, nil
+	}
+	out := make(map[cluster.InstanceID]cluster.EndpointTopology, total)
+	for n := 0; n < total; n++ {
+		m, rank := model, n
+		if pools != nil {
+			switch {
+			case n < prefill:
+				m = pools.prefill
+			case n < prefill+decode:
+				m, rank = pools.decode, n-prefill
+			default:
+				return nil, fmt.Errorf("instance_%d has no kernel pool placement", n)
+			}
+		}
+		if rank >= m.RankCapacity() {
+			return nil, fmt.Errorf("instance_%d rank %d exceeds the %s pool's %d-rank capacity", n, rank, m.Role(), m.RankCapacity())
+		}
+		placement, nodeCount, rackDeclared := m.EndpointPlacement(rank)
+		t := cluster.EndpointTopology{NodeCount: nodeCount}
+		if nodeCount == 1 {
+			t.Hostname = fmt.Sprintf("blis-node-%d", placement.Node)
+		}
+		if rackDeclared && nodeCount == 1 {
+			t.Rack = fmt.Sprintf("blis-rack-%d", placement.Rack)
+		}
+		out[cluster.InstanceID(fmt.Sprintf("instance_%d", n))] = t
+	}
+	return out, nil
+}
+
 // openKernelPools opens the prefill and decode pools of the run's scenario. It returns nil
 // when no kernel is open or the run is not disaggregated, and is fatal when a disaggregated
 // run's scenario does not state both pools -- a P/D topology on the CLI over a colocated

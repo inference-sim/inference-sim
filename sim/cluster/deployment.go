@@ -46,6 +46,13 @@ type DeploymentConfig struct {
 	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
 	// When non-empty, activates PlacementManager for GPU inventory tracking.
 	NodePools []NodePoolConfig
+	// ScenarioEndpointTopology is derived from the kernel-backed scenario's
+	// per-rank placement, when present. It is not a second placement scheduler.
+	// NodePools and this map use independent coordinates; the gateway refuses
+	// topology-aware routing when both are present. NodePool-based topology is
+	// outside this first routing slice until its placement and kernel pricing
+	// can be aligned.
+	ScenarioEndpointTopology EndpointTopologyResolver `json:"-" yaml:"-"`
 
 	// Phase 1A: Instance lifecycle configuration (loading delay, warm-up, drain policy).
 	// Zero value is safe: no loading delay, no warm-up, WAIT drain policy.

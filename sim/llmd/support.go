@@ -13,12 +13,79 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/llm-d/llm-d-router/cmd/epp/runner"
+	reqcommon "github.com/llm-d/llm-d-router/pkg/common/request"
 	"github.com/llm-d/llm-d-router/pkg/epp/config"
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	runserver "github.com/llm-d/llm-d-router/pkg/epp/server"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
+
+// topologyConfig admits only the single-EPP, default-label form that BLIS
+// can feed from its synthetic Pods. In particular, a peer header requires a
+// coordinator that this embedded gateway does not run. It verifies static
+// producer references; a filter used before peer selection still follows the
+// real router's intentional fail-open semantics and is not reinterpreted here.
+func topologyConfig(raw []byte) (bool, error) {
+	var doc struct {
+		Plugins []struct {
+			Type       string         `json:"type"`
+			Name       string         `json:"name"`
+			Parameters map[string]any `json:"parameters"`
+		} `json:"plugins"`
+		SchedulingProfiles []struct {
+			Name string `json:"name"`
+		} `json:"schedulingProfiles"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return false, nil // the router's own loader reports malformed config
+	}
+	extractors := map[string]bool{}
+	profiles := map[string]bool{}
+	for _, profile := range doc.SchedulingProfiles {
+		profiles[profile.Name] = true
+	}
+	type consumerRef struct{ plugin, producer string }
+	var consumers []consumerRef
+	for _, p := range doc.Plugins {
+		switch p.Type {
+		case "topology-extractor":
+			extractors[cmp.Or(p.Name, p.Type)] = true
+			for _, field := range []struct{ key, expected string }{
+				{"hostname", "kubernetes.io/hostname"},
+				{"rack", "topology.kubernetes.io/rack"},
+				{"zone", "topology.kubernetes.io/zone"},
+				{"region", "topology.kubernetes.io/region"},
+			} {
+				key, expected := field.key, field.expected
+				if value, _ := p.Parameters[key].(string); value != "" && value != expected {
+					return false, fmt.Errorf("topology-extractor %s label %q is not supported; synthetic Pods use %q", key, value, expected)
+				}
+			}
+		case "topology-affinity-filter", "topology-affinity-scorer":
+			producer, _ := p.Parameters["topologyProducerName"].(string)
+			consumers = append(consumers, consumerRef{p.Type, cmp.Or(producer, "topology-extractor")})
+			if header, _ := p.Parameters["peerTopologyHeader"].(string); header != "" {
+				return false, fmt.Errorf("%s peerTopologyHeader requires a coordinator; BLIS embeds one EPP", p.Type)
+			}
+		case "topology-stamp-handler":
+			producer, _ := p.Parameters["topologyProducerName"].(string)
+			consumers = append(consumers, consumerRef{p.Type, cmp.Or(producer, "topology-extractor")})
+			if header, _ := p.Parameters["headerName"].(string); header != "" && !strings.EqualFold(header, reqcommon.PeerTopologyHeaderKey) {
+				return false, fmt.Errorf("%s headerName %q is not supported; use %q", p.Type, header, reqcommon.PeerTopologyHeaderKey)
+			}
+			if profile, _ := p.Parameters["profileName"].(string); profile != "" && !profiles[profile] {
+				return false, fmt.Errorf("%s profileName %q has no scheduling profile", p.Type, profile)
+			}
+		}
+	}
+	for _, c := range consumers {
+		if !extractors[c.producer] {
+			return false, fmt.Errorf("%s needs topology-extractor %q; without it the plugin has no topology to use", c.plugin, c.producer)
+		}
+	}
+	return len(extractors) > 0 || len(consumers) > 0, nil
+}
 
 // supported lists the router plugin types a simulation runs faithfully. Each one was audited in
 // the fork: every clock read, background loop, blocking wait and random draw it makes goes
@@ -39,6 +106,8 @@ var supported = map[string]bool{
 	"encode-filter":                    true,
 	"always-disagg-multimodal-decider": true,
 	"label-selector-filter":            true,
+	"topology-affinity-filter":         true,
+	"topology-stamp-handler":           true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
@@ -50,6 +119,7 @@ var supported = map[string]bool{
 	"no-hit-lru-scorer":            true,
 	"active-request-scorer":        true,
 	"context-length-aware":         true,
+	"topology-affinity-scorer":     true,
 	// P/D deciders
 	"always-disagg-pd-decider": true,
 	"prefix-based-pd-decider":  true,
@@ -83,6 +153,7 @@ var supported = map[string]bool{
 	"metrics-data-source":          true,
 	"core-metrics-extractor":       true,
 	"endpoint-notification-source": true,
+	"topology-extractor":           true,
 	// request parsing: the simulated workload sends only token-ID completions requests, and the
 	// parsers are pure functions of the request and response bytes
 	"openai-parser":      true,
@@ -121,10 +192,6 @@ var unsupported = map[string]string{
 	"file-discovery":                            "endpoints come from the simulated deployment, not from a discovery file",
 	"multicluster-file-discovery":               "multi-cluster routing is not simulated",
 	"disaggregatedset-rollout-screener":         "its revision split draws from process-wide randomness",
-	"topology-affinity-filter":                  "the simulated pods carry no topology labels",
-	"topology-affinity-scorer":                  "the simulated pods carry no topology labels",
-	"topology-extractor":                        "the simulated pods carry no topology labels",
-	"topology-stamp-handler":                    "the simulated pods carry no topology labels",
 	"models-data-source":                        "the simulated engines do not serve /v1/models yet",
 	"models-data-extractor":                     "the simulated engines do not serve /v1/models yet",
 	"models-responder":                          "the simulated workload sends only completions requests",

@@ -39,6 +39,7 @@ func newScheme() *runtime.Scheme {
 
 // resources are the router-relevant objects of a deployment's manifests.
 type resources struct {
+	nodes          []*corev1.Node
 	pools          []*giev1.InferencePool
 	objectives     []*apixv1.InferenceObjective
 	objectivesV1a2 []*v1alpha2.InferenceObjective
@@ -49,6 +50,9 @@ type resources struct {
 
 func (r *resources) objects() []client.Object {
 	var out []client.Object
+	for _, o := range r.nodes {
+		out = append(out, o)
+	}
 	for _, o := range r.pools {
 		out = append(out, o)
 	}
@@ -64,9 +68,10 @@ func (r *resources) objects() []client.Object {
 	return out
 }
 
-// parseManifests decodes multi-document Kubernetes YAML. Kinds the router does not read (the
-// model servers' own Deployments, Services, ConfigMaps, ...) are accepted and ignored, because a
-// real deployment's manifest set carries them too; unknown group-versions are an error. Custom
+// parseManifests decodes multi-document Kubernetes YAML. BLIS retains Node records for
+// declared topology; kinds neither BLIS nor the router reads (the model servers' own
+// Deployments, Services, ConfigMaps, ...) are accepted and ignored. Unknown group-versions
+// are an error. Custom
 // resources get their CRD defaults, as on admission to an API server.
 func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*resources, error) {
 	decoder := serializer.NewCodecFactory(scheme, serializer.EnableStrict).UniversalDeserializer() // unknown or duplicate fields are errors, as with strict field validation on admission
@@ -106,9 +111,13 @@ func parseManifests(scheme *runtime.Scheme, docs []byte, namespace string) (*res
 			return nil, fmt.Errorf("manifest document %d: %w", i, err)
 		}
 		if mo, ok := obj.(metav1.Object); ok && mo.GetNamespace() == "" {
-			mo.SetNamespace(namespace)
+			if _, isNode := obj.(*corev1.Node); !isNode {
+				mo.SetNamespace(namespace)
+			}
 		}
 		switch o := obj.(type) {
+		case *corev1.Node:
+			res.nodes = append(res.nodes, o)
 		case *giev1.InferencePool:
 			res.pools = append(res.pools, o)
 		case *apixv1.InferenceObjective:

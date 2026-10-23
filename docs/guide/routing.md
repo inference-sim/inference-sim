@@ -185,6 +185,53 @@ Everything the router reads comes from the simulated engines, with real engine s
 - **Endpoints.** Instances are pods of the pool, reconciled by the router's pod reconciler:
   ready while the instance is routable, not ready while it loads, drains or terminates.
 
+### Topology identity in kernel-backed scenarios
+
+For a kernel-backed scenario without `node_pools`, each synthetic Pod gets the
+host of its engine rank from the same placement used to price P/D KV transfer.
+If `cluster.gpus_per_rack` is declared, it gets that rack too. The real router's
+`topology-extractor`, `topology-affinity-filter` and
+`topology-affinity-scorer` read those labels through their normal Pod
+reconciler. Pass `--allow-experimental-plugins` for these alpha plugins.
+
+A scenario does not say which zone or region contains a node. To model those
+levels, include one explicit Kubernetes `Node` document per used simulated host
+in `router.manifests`. Its `metadata.name` must match the simulated host, such
+as `blis-node-0`, and it must declare both `topology.kubernetes.io/zone` and
+`topology.kubernetes.io/region`. BLIS matches the worker's actual placement to
+that Node, copies only those declared levels onto the synthetic Pod, and
+refuses missing, conflicting or inconsistent rack → zone → region mappings.
+These Node documents are **simulation fixtures**, not a live Kubernetes API
+lookup or a replacement for the router's deployable manifests. Without them,
+BLIS does not invent zone or region. A zone/region choice can change routing,
+but the current kernel has no separate cross-zone or cross-region transfer
+price: those paths retain its inter-node fabric price.
+
+The real `topology-stamp-handler` can also write the selected prefiller's
+location to the response's `x-peer-topology` header. BLIS runs one embedded
+Endpoint Picker, so it exercises the handler's actual header output but does
+not forward that header through a coordinator to a second decode picker.
+Configurations that read `peerTopologyHeader` remain refused. The signal is
+fixed when a worker Pod appears, rather than refreshed by an engine-metrics
+scrape.
+
+This is topology-plugin support for the placements BLIS can represent, within
+[topology issue #1962](https://github.com/inference-sim/inference-sim/issues/1962).
+A kernel scenario combined with `node_pools` still has two independent
+placement systems, so topology plugins are refused until their relation to
+KV-transfer pricing can be checked. A rank spanning multiple nodes cannot
+claim one host. A single endpoint grouping multiple data-parallel ranks is
+also refused for topology routing; without a topology plugin, BLIS adds no
+derived host label to it. Same-host P/D placement and transfer pricing are a
+separate follow-up.
+
+BLIS refuses custom topology label keys, coordinator peer-topology headers and
+missing extractor references. The real router's affinity filter deliberately
+fails open if its scheduling stage has no peer or no candidate meets the
+requested affinity. A tighter match can satisfy a looser `minAffinity`:
+same-rack endpoints can match `minAffinity: zone` even without a zone label.
+That is a router policy rule, not evidence of a local transfer path.
+
 ## Decisions
 
 The router's decision becomes a BLIS dispatch:
@@ -249,19 +296,20 @@ What is not yet measured: a comparison against traces of a real llm-d deployment
 
 A configuration may use these plugin types. Each was audited in the router fork: every clock
 read, background loop, blocking wait and random draw it makes goes through the hosting runtime,
-and every signal it consumes is produced by the simulated engines.
+and every signal it consumes is supplied by simulated engines or explicit cluster state.
 
 | Kind | Types |
 |---|---|
 | Profile handlers and pickers | `single-profile-handler`, `disagg-profile-handler`, `max-score-picker`, `random-picker`, `weighted-random-picker` |
-| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter` |
-| Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware` |
+| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement) |
+| Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware`, `topology-affinity-scorer` (kernel-backed placement) |
 | P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
 | Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
 | Admission | `probabilistic-admitter` |
 | Saturation detectors | `utilization-detector`, `concurrency-detector`, `max-saturation-detector` |
 | Flow control | `global-strict-fairness-policy`, `round-robin-fairness-policy`, `fcfs-ordering-policy`, `edf-ordering-policy`, `slo-deadline-ordering-policy`, `static-usage-limit-policy`, `strict-band-selection-policy`, `priority-holdback-policy`, `soft-reflective-ceiling-policy` |
-| Data layer | `metrics-data-source`, `core-metrics-extractor`, `endpoint-notification-source` |
+| Data layer | `metrics-data-source`, `core-metrics-extractor`, `endpoint-notification-source`, `topology-extractor` (kernel-backed placement) |
+| Response handlers | `topology-stamp-handler` (emits the header; no coordinator forwarding) |
 | Request parsers | `openai-parser`, `vllmhttp-parser`, `sglanghttp-parser`, `anthropic-parser`, `passthrough-parser`, `vertexai-parser` |
 
 The flow-control layer (`featureGates: [flowControl]`) runs in full: priority bands, capacity
@@ -282,7 +330,8 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
 | `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
 | `p2p-source-producer`, `selective-kv-policy` | Peer KV pulls are not modeled by the simulated engines. |
-| `topology-*`, `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no topology labels, custom attributes or GPU telemetry. |
+| `peerTopologyHeader` across separate EPPs | BLIS runs one EPP and does not model a coordinator forwarding stamped topology to a second EPP; the stamp handler’s response-header output is supported. |
+| `endpoint-attribute-*`, `label-producer`, `dcgm-*` | The simulated pods carry no custom attributes or GPU telemetry. |
 | `models-data-source`, `models-data-extractor`, `models-responder` | The simulated engines do not serve `/v1/models` yet; the workload sends only completions. |
 | `redis-syncer`, `thunder-agent`, `k8s-notification-source`, `k8s-peer-discovery`, `file-discovery`, `multicluster-*` | They need external services or another discovery source than the simulated deployment. |
 | More than one `InferencePool`; objective or rewrite manifests with `--endpoint-selector` | A run has one router for one pool; in standalone mode the router does not reconcile objectives or rewrites. |
