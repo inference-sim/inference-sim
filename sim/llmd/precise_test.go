@@ -3,6 +3,7 @@ package llmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -101,8 +102,8 @@ func TestPrecisePrefix_RoutesToTheInstanceHoldingTheBlocks(t *testing.T) {
 			t.Errorf("prefix group %d spread over %v; precise prefix routing keeps it where its blocks are", g, where)
 		}
 	}
-	if len(run.gw.kvIngest) != 1 {
-		t.Fatalf("%d precise-prefix producers receive KV events, want 1", len(run.gw.kvIngest))
+	if len(run.gw.req.PrefixIndexes) != 1 || !run.gw.router.WantsKVEvents() {
+		t.Fatalf("%d precise-prefix producers receive KV events, want 1", len(run.gw.req.PrefixIndexes))
 	}
 }
 
@@ -169,11 +170,7 @@ func TestPrecisePrefix_IndexFollowsTheEnginesCache(t *testing.T) {
 	dep.KVCacheConfig = sim.NewKVCacheConfig(200, 16, 0, 0, 0, 0)
 	run := runPrecise(t, dep, prefixGroups(6, 5, 128, 15000), preciseConfig(""), Options{})
 	for _, inst := range run.cs.Instances() {
-		ep := run.gw.endpoints[inst.ID()]
-		got, err := run.gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
-		if err != nil {
-			t.Fatal(err)
-		}
+		got := kvBlocks(t, run.gw, inst.ID(), "")
 		want := inst.CachedBlockHashes()
 		if len(want) == 0 {
 			t.Fatalf("%s caches no block; the check would be vacuous", inst.ID())
@@ -280,9 +277,8 @@ func TestPrecisePrefix_ClearIsOrderedWithDelayedBatches(t *testing.T) {
 	if !strings.HasPrefix(seq, "terminate,deliver") || !strings.HasSuffix(seq, ",clear "+string(victim)) {
 		t.Fatalf("after termination: %s; want the in-flight batches delivered, then the clear, then nothing", seq)
 	}
-	ep := gw.endpoints[victim]
-	if got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port)); err != nil || len(got) != 0 {
-		t.Fatalf("the terminated pod still indexes %d blocks (%v)", len(got), err)
+	if got := kvBlocks(t, gw, victim, ""); len(got) != 0 {
+		t.Fatalf("the terminated pod still indexes %d blocks", len(got))
 	}
 }
 
@@ -343,13 +339,8 @@ func TestPrecisePrefix_IndexFollowsEveryTier(t *testing.T) {
 			run := runPrecise(t, dep, prefixGroups(10, 4, 256, 15000), preciseConfig(""), Options{})
 			cpuBlocks := 0
 			for _, inst := range run.cs.Instances() {
-				ep := run.gw.endpoints[inst.ID()]
-				pod := ep.ip + ":" + fmt.Sprint(ep.port)
 				for tier, want := range map[string][]string{"gpu": inst.CachedBlockHashes(), "cpu": inst.CPUBlockHashes()} {
-					got, err := run.gw.kvIngest[0].HostedPodTierBlocks(pod, tier)
-					if err != nil {
-						t.Fatal(err)
-					}
+					got := kvBlocks(t, run.gw, inst.ID(), tier)
 					if tier == "cpu" {
 						cpuBlocks += len(want)
 					}
@@ -524,18 +515,13 @@ func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
 			}
 			fsBlocks := 0
 			for _, inst := range cs.Instances() {
-				ep := gw.endpoints[inst.ID()]
-				pod := ep.ip + ":" + fmt.Sprint(ep.port)
 				want := map[string][]string{"gpu": inst.CachedBlockHashes(), "cpu": inst.CPUBlockHashes(), "shared_storage": inst.TierBlockHashes("shared_storage")}
 				fsBlocks += len(want["shared_storage"])
 				if !events {
 					want["shared_storage"] = nil
 				}
 				for _, tier := range []string{"gpu", "cpu", "shared_storage"} {
-					got, err := gw.kvIngest[0].HostedPodTierBlocks(pod, tier)
-					if err != nil {
-						t.Fatal(err)
-					}
+					got := kvBlocks(t, gw, inst.ID(), tier)
 					if !events {
 						// The router loses a block whose only copy is on the silent tier: its
 						// promotion back to CPU is a location-only store of a key the router no
@@ -613,9 +599,14 @@ func TestPrecisePrefix_NoEventsWithPrefixCachingDisabled(t *testing.T) {
 		t.Errorf("%d KV event batches delivered with prefix caching disabled", delivered)
 	}
 	for _, inst := range cs.Instances() {
-		ep := gw.endpoints[inst.ID()]
-		if got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port)); err != nil || len(got) != 0 {
-			t.Errorf("%s: the router indexes %d blocks (%v)", inst.ID(), len(got), err)
+		if got := kvBlocks(t, gw, inst.ID(), ""); len(got) != 0 {
+			t.Errorf("%s: the router indexes %d blocks", inst.ID(), len(got))
 		}
 	}
+}
+
+// goListModuleDir is the directory of module mod in the build list.
+func goListModuleDir(mod string) (string, error) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", mod).Output()
+	return strings.TrimSpace(string(out)), err
 }

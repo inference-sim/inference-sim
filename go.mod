@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.3.0
-	github.com/inference-sim/blis-schemas v0.5.0
+	github.com/inference-sim/blis-schemas v0.6.0 // TEMPORARY: v0.6.0 is released once inference-sim/blis-schemas#100 merges
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -125,4 +125,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6
+// The one committed replace: the fork keeps upstream's module path (docs/contributing/llm-d-router-fork.md).
+// TEMPORARY: v1.0.0-blis.1 is tagged once inference-sim/llm-d-router#3 merges.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1

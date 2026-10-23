@@ -1,11 +1,10 @@
 package llmd
 
 import (
-	"encoding/json"
-	"errors"
-	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-schemas/embed"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -39,7 +38,11 @@ func TestCheckMetricSpecs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := checkRawConfig([]byte(tc.config), nil, 16)
+			config := ""
+			if tc.config != "" {
+				config = "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\n" + tc.config
+			}
+			err := refusal(t, testDeployment(2), config, nil)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("refused: %v", err)
@@ -114,10 +117,10 @@ schedulingProfiles:
 }
 
 // refusal starts a router over dep with config and returns the startup error.
-func refusal(t *testing.T, dep cluster.DeploymentConfig, config string, labels func(cluster.InstanceID, cluster.PoolRole) map[string]string) error {
+func refusal(t *testing.T, dep cluster.DeploymentConfig, config string, labels func(cluster.InstanceID, cluster.PoolRole) map[string]string, extraFlags ...string) error {
 	t.Helper()
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
-	flags := DefaultEPPFlags()
+	flags := append(DefaultEPPFlags(), extraFlags...)
 	if config != "" {
 		flags = append(flags, "--config-text="+config)
 	}
@@ -180,30 +183,67 @@ func TestPDTopologyNeedsADisaggregatingConfig(t *testing.T) {
 // mapping the simulated engines do not publish is refused, with the default configuration too;
 // and a token-producer that discovers render endpoints is refused before the router is built.
 func TestCheckRawConfig_EngineLabelsAndEndpointDiscovery(t *testing.T) {
-	sglang := []map[string]string{{"llm-d.ai/engine-type": "vllm"}, {"llm-d.ai/engine-type": "sglang"}}
-	if err := checkRawConfig(nil, sglang, 16); err == nil || !strings.Contains(err.Error(), `"sglang"`) {
+	engine := func(key, value string) func(cluster.InstanceID, cluster.PoolRole) map[string]string {
+		return func(id cluster.InstanceID, _ cluster.PoolRole) map[string]string {
+			if id == "instance_1" {
+				return map[string]string{key: value}
+			}
+			return map[string]string{key: "vllm"}
+		}
+	}
+	if err := refusal(t, testDeployment(2), "", engine("llm-d.ai/engine-type", "sglang")); err == nil || !strings.Contains(err.Error(), `"sglang"`) {
 		t.Errorf("default configuration, an sglang pod: got %v, want a refusal naming sglang", err)
 	}
-	if err := checkRawConfig(nil, []map[string]string{{"llm-d.ai/engine-type": "vllm"}}, 16); err != nil {
+	if err := refusal(t, testDeployment(2), "", engine("llm-d.ai/engine-type", "vllm")); err != nil {
 		t.Errorf("vllm pods must run: %v", err)
 	}
-	custom := "plugins:\n- type: core-metrics-extractor\n  parameters:\n    engineLabelKey: example.com/engine\n"
-	if err := checkRawConfig([]byte(custom), []map[string]string{{"example.com/engine": "sglang"}}, 16); err == nil {
+	head := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\n"
+	custom := head + "plugins:\n- type: core-metrics-extractor\n  parameters:\n    engineLabelKey: example.com/engine\n"
+	if err := refusal(t, testDeployment(2), custom, engine("example.com/engine", "sglang")); err == nil {
 		t.Errorf("a custom engineLabelKey selecting sglang must be refused")
 	}
-	discovery := "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      endpointDiscovery:\n        discoverModelLimits: true\n"
-	if err := checkRawConfig([]byte(discovery), nil, 16); err == nil || !strings.Contains(err.Error(), "endpointDiscovery") {
+	discovery := head + "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      endpointDiscovery:\n        discoverModelLimits: true\n"
+	if err := refusal(t, testDeployment(2), discovery, nil); err == nil || !strings.Contains(err.Error(), "endpointDiscovery") {
 		t.Errorf("token-producer endpoint discovery: got %v, want a refusal", err)
 	}
-	if err := checkRawConfig([]byte("plugins:\n- type: metrics-data-source\n  parameters:\n    path: /stats\n"), nil, 16); err == nil {
-		t.Errorf("a metrics path other than /metrics must be refused")
+	if err := refusal(t, testDeployment(2), head+"plugins:\n- type: metrics-data-source\n  parameters:\n    path: /stats\n", nil); err == nil || !strings.Contains(err.Error(), "/stats") {
+		t.Errorf("a metrics path other than /metrics must be refused, got %v", err)
 	}
-	if err := checkRawConfig([]byte("plugins:\n- type: token-producer\n  parameters:\n    vllm:\n      url: http://x\n      endpointDiscovery: false\n"), nil, 16); err != nil {
-		t.Errorf("endpointDiscovery: false must run: %v", err)
+	for _, ok := range []string{
+		head + "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      url: http://localhost:8000\n",
+	} {
+		if err := refusal(t, testDeployment(2), ok, nil); err != nil && strings.Contains(err.Error(), "endpointDiscovery") {
+			t.Errorf("a token-producer with a fixed url must not be refused for discovery: %v", err)
+		}
 	}
-	fixed := "plugins:\n- type: token-producer\n  parameters:\n    modelName: m\n    vllm:\n      url: http://localhost:8000\n"
-	if err := checkRawConfig([]byte(fixed), nil, 16); err != nil {
-		t.Errorf("token-producer with a fixed url must run: %v", err)
+}
+
+// TestCheckEngineSignals: the facts the router reports are compared with what the simulated
+// engines produce, the implicit extractor included.
+func TestCheckEngineSignals(t *testing.T) {
+	vllm := embed.MetricsExtractor{Name: "core-metrics-extractor", Implicit: true}
+	for _, tc := range []struct {
+		name string
+		req  embed.Requirements
+		pods []map[string]string
+		want string
+	}{
+		{"implicit extractor, vllm pods", embed.Requirements{Extractors: []embed.MetricsExtractor{vllm}}, []map[string]string{{"llm-d.ai/engine-type": "vllm"}}, ""},
+		{"implicit extractor, an sglang pod", embed.Requirements{Extractors: []embed.MetricsExtractor{vllm}}, []map[string]string{{"llm-d.ai/engine-type": "sglang"}}, `"sglang" engine`},
+		{"block size", embed.Requirements{PrefixIndexes: []embed.PrefixIndex{{Name: "p", BlockSize: 64, EngineType: "vllm"}}}, nil, "KV block size is 16"},
+		{"KV-event engine", embed.Requirements{PrefixIndexes: []embed.PrefixIndex{{Name: "p", BlockSize: 16, EngineType: "sglang"}}}, nil, "reads sglang KV events"},
+		{"metrics path", embed.Requirements{MetricsSources: []embed.MetricsSource{{Name: "m", Path: "/stats"}}}, nil, `scrapes "/stats"`},
+		{"optional custom series", embed.Requirements{Extractors: []embed.MetricsExtractor{{Name: "x", Engines: []embed.EngineMapping{{Name: "vllm",
+			Custom: []embed.CustomMetric{{Series: "vllm:not_published", Optional: true}}}}}}}, nil, ""},
+		{"required custom series", embed.Requirements{Extractors: []embed.MetricsExtractor{{Name: "x", Engines: []embed.EngineMapping{{Name: "vllm",
+			Series: map[string]string{"kvUsageSpec": "vllm:kv_cache_usage_perc{a=\"b\"}"}, Custom: []embed.CustomMetric{{Series: "vllm:not_published"}}}}}}}, nil, `custom metric "vllm:not_published"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkEngineSignals(tc.req, tc.pods, 16)
+			if (tc.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("checkEngineSignals = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -217,40 +257,45 @@ func TestMultipleTargetPortsAreRefused(t *testing.T) {
 	}
 }
 
-// TestCheckEPPFlags: a legacy metric flag naming an unpublished series is refused; flags that only
-// change how a deployed router is served are reported as inert.
-func TestCheckEPPFlags(t *testing.T) {
-	if _, err := checkEPPFlags([]string{"--total-queued-requests-metric=sglang:num_queue_reqs"}); err == nil {
-		t.Errorf("an unpublished legacy metric must be refused")
+// TestCheckMetricFlags: a legacy metric flag naming an unpublished series is refused.
+func TestCheckMetricFlags(t *testing.T) {
+	if err := checkMetricFlags(map[string]string{"total-queued-requests-metric": "sglang:num_queue_reqs"}); err == nil ||
+		!strings.Contains(err.Error(), "--total-queued-requests-metric=sglang:num_queue_reqs") {
+		t.Errorf("an unpublished legacy metric must be refused, got %v", err)
 	}
-	if _, err := checkEPPFlags([]string{"--total-queued-requests-metric=vllm:num_requests_waiting"}); err != nil {
+	if err := checkMetricFlags(map[string]string{"total-queued-requests-metric": "vllm:num_requests_waiting"}); err != nil {
 		t.Errorf("a published legacy metric must run: %v", err)
-	}
-	inert, err := checkEPPFlags([]string{"--tracing=true", "--ha-enable-leader-election", "--refresh-metrics-interval=20ms"})
-	if err != nil || strings.Join(inert, " ") != "--ha-enable-leader-election --tracing" {
-		t.Errorf("inert = %v, %v; want --ha-enable-leader-election --tracing", inert, err)
 	}
 }
 
-// TestUnsupportedPluginIsRefusedBeforeItsConstructorRuns: a plugin type the simulation does not
-// support is refused at its factory, so its real constructor (which may start goroutines, timers
-// or external work) never runs, whether the configuration names it under plugins: or reaches it
-// only through a flow-control reference.
-func TestUnsupportedPluginIsRefusedBeforeItsConstructorRuns(t *testing.T) {
-	const typ = "blis-test-constructor-recorder"
-	ran := false
-	fwkplugin.Register(typ, fwkplugin.StabilityStable, func(string, *json.Decoder, fwkplugin.Handle) (fwkplugin.Plugin, error) {
-		ran = true
-		return nil, errors.New("the real constructor ran")
-	})
-	t.Cleanup(func() { delete(fwkplugin.Registry, typ); delete(fwkplugin.RegistryMetadata, typ) })
-	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: " + typ + "\n- type: queue-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: queue-scorer\n  - pluginRef: max-score-picker\n"
+// TestSignalPolicyRefusesThroughTheRouter: a type the fork can host but BLIS's signal policy
+// refuses (session affinity: the simulated workload sends no session header) is refused at startup
+// with BLIS's reason; that the router consults the policy before the plugin's constructor runs is
+// the fork's guarantee (its pkg/embed tests and blis-schemas embedtest).
+func TestSignalPolicyRefusesThroughTheRouter(t *testing.T) {
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: session-affinity-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: session-affinity-scorer\n  - pluginRef: max-score-picker\n"
 	err := refusal(t, testDeployment(2), config, nil)
-	if err == nil || !strings.Contains(err.Error(), typ) || !strings.Contains(err.Error(), "not been audited") {
-		t.Fatalf("want %s refused as not audited, got %v", typ, err)
+	if err == nil || !strings.Contains(err.Error(), `plugin "session-affinity-scorer" (type session-affinity-scorer): the simulated workload sends no session header`) {
+		t.Fatalf("want session-affinity-scorer refused by BLIS's signal policy, got %v", err)
 	}
-	if ran {
-		t.Fatal("the unsupported plugin's constructor ran before the refusal")
+}
+
+// TestAllow: BLIS's policy allows exactly its supported types, and gives each refused type its
+// recorded reason or the generic one.
+func TestAllow(t *testing.T) {
+	for typ := range supported {
+		if ok, reason := allow(typ); !ok || reason != "" {
+			t.Errorf("allow(%s) = %v, %q; want allowed", typ, ok, reason)
+		}
+		if signalReasons[typ] != "" {
+			t.Errorf("%s is both supported and refused", typ)
+		}
+	}
+	if ok, reason := allow("dcgm-extractor"); ok || reason != "the simulated engines publish no DCGM GPU telemetry" {
+		t.Errorf("allow(dcgm-extractor) = %v, %q", ok, reason)
+	}
+	if ok, reason := allow("blis-test-unknown-type"); ok || reason != notAudited {
+		t.Errorf("allow(unknown) = %v, %q", ok, reason)
 	}
 }
 
