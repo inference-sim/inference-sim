@@ -1036,6 +1036,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What the router sees">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#topology-identity-in-kernel-backed-scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topology identity in kernel-backed scenarios
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3282,6 +3299,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What the router sees">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#topology-identity-in-kernel-backed-scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topology identity in kernel-backed scenarios
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3581,6 +3615,47 @@ admits every request at once, and results are identical to a run without a route
 <li><strong>Endpoints.</strong> Instances are pods of the pool, reconciled by the router's pod reconciler:
   ready while the instance is routable, not ready while it loads, drains or terminates.</li>
 </ul>
+<h3 id="topology-identity-in-kernel-backed-scenarios">Topology identity in kernel-backed scenarios<a class="headerlink" href="#topology-identity-in-kernel-backed-scenarios" title="Permanent link">&para;</a></h3>
+<p>For a kernel-backed scenario without <code>node_pools</code>, each synthetic Pod gets the
+host of its engine rank from the same placement used to price P/D KV transfer.
+If <code>cluster.gpus_per_rack</code> is declared, it gets that rack too. The real router's
+<code>topology-extractor</code>, <code>topology-affinity-filter</code> and
+<code>topology-affinity-scorer</code> read those labels through their normal Pod
+reconciler. Pass <code>--allow-experimental-plugins</code> for these alpha plugins.</p>
+<p>A scenario does not say which zone or region contains a node. To model those
+levels, include one explicit Kubernetes <code>Node</code> document per used simulated host
+in <code>router.manifests</code>. Its <code>metadata.name</code> must match the simulated host, such
+as <code>blis-node-0</code>, and it must declare both <code>topology.kubernetes.io/zone</code> and
+<code>topology.kubernetes.io/region</code>. BLIS matches the worker's actual placement to
+that Node, copies only those declared levels onto the synthetic Pod, and
+refuses missing, conflicting or inconsistent rack → zone → region mappings.
+These Node documents are <strong>simulation fixtures</strong>, not a live Kubernetes API
+lookup or a replacement for the router's deployable manifests. Without them,
+BLIS does not invent zone or region. A zone/region choice can change routing,
+but the current kernel has no separate cross-zone or cross-region transfer
+price: those paths retain its inter-node fabric price.</p>
+<p>The real <code>topology-stamp-handler</code> can also write the selected prefiller's
+location to the response's <code>x-peer-topology</code> header. BLIS runs one embedded
+Endpoint Picker, so it exercises the handler's actual header output but does
+not forward that header through a coordinator to a second decode picker.
+Configurations that read <code>peerTopologyHeader</code> remain refused. The signal is
+fixed when a worker Pod appears, rather than refreshed by an engine-metrics
+scrape.</p>
+<p>This is topology-plugin support for the placements BLIS can represent, within
+<a href="https://github.com/inference-sim/inference-sim/issues/1962">topology issue #1962</a>.
+A kernel scenario combined with <code>node_pools</code> still has two independent
+placement systems, so topology plugins are refused until their relation to
+KV-transfer pricing can be checked. A rank spanning multiple nodes cannot
+claim one host. A single endpoint grouping multiple data-parallel ranks is
+also refused for topology routing; without a topology plugin, BLIS adds no
+derived host label to it. Same-host P/D placement and transfer pricing are a
+separate follow-up.</p>
+<p>BLIS refuses custom topology label keys, coordinator peer-topology headers and
+missing extractor references. The real router's affinity filter deliberately
+fails open if its scheduling stage has no peer or no candidate meets the
+requested affinity. A tighter match can satisfy a looser <code>minAffinity</code>:
+same-rack endpoints can match <code>minAffinity: zone</code> even without a zone label.
+That is a router policy rule, not evidence of a local transfer path.</p>
 <h2 id="decisions">Decisions<a class="headerlink" href="#decisions" title="Permanent link">&para;</a></h2>
 <p>The router's decision becomes a BLIS dispatch:</p>
 <ul>
@@ -3686,7 +3761,7 @@ difference is placement under load:</p>
 <h2 id="supported-plugins">Supported plugins<a class="headerlink" href="#supported-plugins" title="Permanent link">&para;</a></h2>
 <p>A configuration may use these plugin types. Each was audited in the router fork: every clock
 read, background loop, blocking wait and random draw it makes goes through the hosting runtime,
-and every signal it consumes is produced by the simulated engines.</p>
+and every signal it consumes is supplied by simulated engines or explicit cluster state.</p>
 <table>
 <thead>
 <tr>
@@ -3701,11 +3776,11 @@ and every signal it consumes is produced by the simulated engines.</p>
 </tr>
 <tr>
 <td>Filters</td>
-<td><code>decode-filter</code>, <code>prefill-filter</code>, <code>encode-filter</code>, <code>label-selector-filter</code></td>
+<td><code>decode-filter</code>, <code>prefill-filter</code>, <code>encode-filter</code>, <code>label-selector-filter</code>, <code>topology-affinity-filter</code> (kernel-backed placement)</td>
 </tr>
 <tr>
 <td>Scorers</td>
-<td><code>queue-scorer</code>, <code>kv-cache-utilization-scorer</code>, <code>prefix-cache-scorer</code>, <code>load-aware-scorer</code>, <code>running-requests-size-scorer</code>, <code>lora-affinity-scorer</code>, <code>token-load-scorer</code>, <code>no-hit-lru-scorer</code>, <code>active-request-scorer</code>, <code>context-length-aware</code></td>
+<td><code>queue-scorer</code>, <code>kv-cache-utilization-scorer</code>, <code>prefix-cache-scorer</code>, <code>load-aware-scorer</code>, <code>running-requests-size-scorer</code>, <code>lora-affinity-scorer</code>, <code>token-load-scorer</code>, <code>no-hit-lru-scorer</code>, <code>active-request-scorer</code>, <code>context-length-aware</code>, <code>topology-affinity-scorer</code> (kernel-backed placement)</td>
 </tr>
 <tr>
 <td>P/D deciders</td>
@@ -3729,7 +3804,11 @@ and every signal it consumes is produced by the simulated engines.</p>
 </tr>
 <tr>
 <td>Data layer</td>
-<td><code>metrics-data-source</code>, <code>core-metrics-extractor</code>, <code>endpoint-notification-source</code></td>
+<td><code>metrics-data-source</code>, <code>core-metrics-extractor</code>, <code>endpoint-notification-source</code>, <code>topology-extractor</code> (kernel-backed placement)</td>
+</tr>
+<tr>
+<td>Response handlers</td>
+<td><code>topology-stamp-handler</code> (emits the header; no coordinator forwarding)</td>
 </tr>
 <tr>
 <td>Request parsers</td>
@@ -3777,8 +3856,12 @@ only through a reference such as a flow-control <code>fairnessPolicyRef</code>.<
 <td>Peer KV pulls are not modeled by the simulated engines.</td>
 </tr>
 <tr>
-<td><code>topology-*</code>, <code>endpoint-attribute-*</code>, <code>label-producer</code>, <code>dcgm-*</code></td>
-<td>The simulated pods carry no topology labels, custom attributes or GPU telemetry.</td>
+<td><code>peerTopologyHeader</code> across separate EPPs</td>
+<td>BLIS runs one EPP and does not model a coordinator forwarding stamped topology to a second EPP; the stamp handler’s response-header output is supported.</td>
+</tr>
+<tr>
+<td><code>endpoint-attribute-*</code>, <code>label-producer</code>, <code>dcgm-*</code></td>
+<td>The simulated pods carry no custom attributes or GPU telemetry.</td>
 </tr>
 <tr>
 <td><code>models-data-source</code>, <code>models-data-extractor</code>, <code>models-responder</code></td>
