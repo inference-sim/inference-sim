@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
-	attrtopology "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/topology"
 )
 
 // The synthetic Nodes supply explicit geography; the kernel placement still
@@ -68,16 +66,8 @@ func TestGateway_DeclaredZoneAndRegionChangeDecodeChoice(t *testing.T) {
 					"instance_1": {tc.decode1Zone, tc.decode1Reg},
 					"instance_2": {tc.decode2Zone, tc.decode2Reg},
 				}[id]
-				if ep.pod.Labels["topology.kubernetes.io/zone"] != want.zone || ep.pod.Labels["topology.kubernetes.io/region"] != want.region {
-					t.Errorf("pod %s geography = %v, want %+v", id, ep.pod.Labels, want)
-				}
-				attrs := gw.emb.Datastore.PodList(func(endpoint fwkdl.Endpoint) bool { return endpoint.GetMetadata().Name == ep.pod.Name })
-				if len(attrs) != 1 {
-					t.Fatalf("pod %s yielded %d router endpoints", id, len(attrs))
-				}
-				got, ok := fwkdl.ReadAttribute[*attrtopology.Topology](attrs[0].GetAttributes(), attrtopology.TopologyAttributeKey)
-				if !ok || got.Zone != want.zone || got.Region != want.region {
-					t.Errorf("EPP topology for %s = %+v (present %v), want %+v", id, got, ok, want)
+				if ep.ep.Labels["topology.kubernetes.io/zone"] != want.zone || ep.ep.Labels["topology.kubernetes.io/region"] != want.region {
+					t.Errorf("pod %s geography = %v, want %+v", id, ep.ep.Labels, want)
 				}
 			}
 		})

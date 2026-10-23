@@ -1,11 +1,21 @@
 package llmd
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim/cluster"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
+	sigsyaml "sigs.k8s.io/yaml"
+
+	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
 const rackLabel = "topology.kubernetes.io/rack"
@@ -131,5 +141,34 @@ func podLocation(labels map[string]string) cluster.EndpointTopology {
 		Rack:     labels[rackLabel],
 		Zone:     labels[corev1.LabelTopologyZone],
 		Region:   labels[corev1.LabelTopologyRegion],
+	}
+}
+
+// manifestNodes returns the Node records of a deployment's manifests, which declare the zone and
+// region of the simulated hosts (nodeLocations). Every other document is the router's to read
+// (embed.Config.Manifests), which refuses a malformed one first; here it is skipped.
+func manifestNodes(docs []byte) ([]*corev1.Node, error) {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(corev1.AddToScheme(scheme))
+	decoder := serializer.NewCodecFactory(scheme, serializer.EnableStrict).UniversalDeserializer()
+	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(docs)))
+	var nodes []*corev1.Node
+	for i := 0; ; i++ {
+		doc, err := reader.Read()
+		if err == io.EOF {
+			return nodes, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("manifest document %d: %w", i, err)
+		}
+		var tm metav1.TypeMeta
+		if sigsyaml.Unmarshal(doc, &tm) != nil || tm.APIVersion != "v1" || tm.Kind != "Node" {
+			continue
+		}
+		obj, _, err := decoder.Decode(doc, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("manifest document %d: %w", i, err)
+		}
+		nodes = append(nodes, obj.(*corev1.Node))
 	}
 }

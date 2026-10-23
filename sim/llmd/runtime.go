@@ -8,8 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/llm-d/llm-d-router/pkg/common/hosting"
-	"k8s.io/utils/clock"
+	"github.com/inference-sim/blis-schemas/embed"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -39,17 +38,19 @@ const (
 	PriorityHousekeeper = cluster.PriorityGatewayBackground + 3 // cleanup loops
 )
 
-// desRuntime is the hosting.Runtime of a router embedded in the DES. Every router action runs on
+// desRuntime is the embed.Runtime of a router embedded in the DES. Every router action runs on
 // the simulation goroutine or on a coroutine that holds the baton, so the router is a
 // deterministic function of the configuration, the seed and the sequence of calls BLIS makes.
 type desRuntime struct {
-	host         Host
-	seed         int64
+	host Host
+	seed int64
+	// scope names the router's pool (embed.Pool.ID) in every stream seed. The constructor draws
+	// no randomness, so it is set once the router reports its pool (setScope), before any draw.
 	scope        string
+	scoped       bool
 	streams      map[string]*desRand
 	locals       map[any]any
 	co           *scheduler
-	clk          *desClock
 	server       *modelServers
 	scrapeJitter time.Duration
 	// warm makes collectors started now take their first sample synchronously, before any
@@ -60,20 +61,26 @@ type desRuntime struct {
 	periodics []*periodic
 }
 
-var _ hosting.Runtime = (*desRuntime)(nil)
+var (
+	_ embed.Runtime      = (*desRuntime)(nil)
+	_ embed.RoundTripper = (*desRuntime)(nil)
+)
 
-func newDESRuntime(host Host, seed int64, scope string, scrapeJitter time.Duration) *desRuntime {
+func newDESRuntime(host Host, seed int64, scrapeJitter time.Duration) *desRuntime {
 	rt := &desRuntime{
 		host:         host,
 		seed:         seed,
-		scope:        scope,
 		streams:      map[string]*desRand{},
 		locals:       map[any]any{},
 		scrapeJitter: scrapeJitter,
 	}
 	rt.co = newScheduler()
-	rt.clk = &desClock{rt: rt}
 	return rt
+}
+
+// setScope fixes the pool identity the random streams are seeded with.
+func (rt *desRuntime) setScope(scope string) {
+	rt.scope, rt.scoped = scope, true
 }
 
 func (rt *desRuntime) Now() time.Time { return toTime(rt.host.Now()) }
@@ -88,13 +95,9 @@ func toMicros(d time.Duration) int64 {
 	return us
 }
 
-func (rt *desRuntime) Clock() clock.WithTicker { return rt.clk }
-
 func (rt *desRuntime) Go(fn func()) { rt.co.spawn(fn) }
 
 func (rt *desRuntime) Park(ready func() bool) { rt.co.park(ready) }
-
-func (rt *desRuntime) Hosted() bool { return true }
 
 func (rt *desRuntime) Local(key any, init func() any) any {
 	if v, ok := rt.locals[key]; ok {
@@ -105,7 +108,12 @@ func (rt *desRuntime) Local(key any, init func() any) any {
 	return v
 }
 
-func (rt *desRuntime) Rand(stream string) hosting.Rand {
+func (rt *desRuntime) Rand(stream string) embed.Rand {
+	if !rt.scoped {
+		// embed.Constructor draws no randomness; a draw before the pool is known would seed a
+		// stream without the pool's identity.
+		panic(fmt.Sprintf("llmd: the router drew from random stream %q before its pool was known", stream))
+	}
 	if r, ok := rt.streams[stream]; ok {
 		return r
 	}

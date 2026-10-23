@@ -294,9 +294,11 @@ What is not yet measured: a comparison against traces of a real llm-d deployment
 
 ## Supported plugins
 
-A configuration may use these plugin types. Each was audited in the router fork: every clock
-read, background loop, blocking wait and random draw it makes goes through the hosting runtime,
-and every signal it consumes is supplied by simulated engines or explicit cluster state.
+A configuration may use these plugin types. Each was audited in the router fork (every clock
+read, background loop, blocking wait and random draw it makes goes through the hosting runtime),
+and BLIS allows it because every signal it consumes is supplied by simulated engines or explicit
+cluster state. The fork refuses the types it cannot host; BLIS refuses, through the router's
+plugin policy, the types whose signals the simulation does not produce.
 
 | Kind | Types |
 |---|---|

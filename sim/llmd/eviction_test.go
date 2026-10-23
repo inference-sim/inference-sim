@@ -193,11 +193,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 				for _, h := range inst.CachedBlockHashes() {
 					engineHas = engineHas || h == first
 				}
-				ep := gw.endpoints[inst.ID()]
-				got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
-				if err != nil {
-					t.Fatal(err)
-				}
+				got := kvBlocks(t, gw, inst.ID(), "")
 				return true, engineHas, got[engineKey(first)]
 			}
 		}
@@ -244,11 +240,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 					for _, h := range inst.CachedBlockHashes() {
 						v.stillHeldEngine = v.stillHeldEngine || h == first
 					}
-					ep := gw.endpoints[inst.ID()]
-					got, err := gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
-					if err != nil {
-						t.Fatal(err)
-					}
+					got := kvBlocks(t, gw, inst.ID(), "")
 					v.stillHeldRouter = got[engineKey(first)]
 				}
 			}
@@ -312,12 +304,8 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 		}
 		// With the precise prefix cache, the router indexes exactly what each engine caches: no
 		// block of a cancelled transfer.
-		if len(res.gw.kvIngest) > 0 {
-			ep := res.gw.endpoints[inst.ID()]
-			got, err := res.gw.kvIngest[0].HostedPodBlocks(ep.ip + ":" + fmt.Sprint(ep.port))
-			if err != nil {
-				t.Fatal(err)
-			}
+		if res.gw.router.WantsKVEvents() {
+			got := kvBlocks(t, res.gw, inst.ID(), "")
 			want := inst.CachedBlockHashes()
 			if len(got) != len(want) {
 				t.Errorf("%s: the router indexes %d blocks, the engine caches %d", inst.ID(), len(got), len(want))
@@ -330,8 +318,9 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 			}
 		}
 	}
-	if inFlight, _ := res.gw.emb.RequestEvictor.Stats(); inFlight != 0 {
-		t.Errorf("the router still tracks %d requests as in flight", inFlight)
+	if res.gw.flightsDispatched == 0 || res.gw.flightsEnded != res.gw.flightsDispatched {
+		t.Errorf("the router was handed %d flights and %d were ended; every dispatched request's response must end once",
+			res.gw.flightsDispatched, res.gw.flightsEnded)
 	}
 	if res.gw.LiveCoroutines() != 0 || len(res.gw.flights) != 0 {
 		t.Errorf("%d coroutines, %d flights left after the run", res.gw.LiveCoroutines(), len(res.gw.flights))
