@@ -14,6 +14,8 @@
 //   - sim/kv/: KV cache implementations (single-tier GPU, tiered GPU+CPU)
 //   - sim/kernelmodel/: the blis-latency-kernel adapter (the production LatencyModel)
 //   - sim/cluster/: Multi-instance cluster orchestration
+//   - sim/llmd/: the embedded llm-d router, which makes every admission, routing and
+//     flow-control decision
 //   - sim/workload/: Workload generation and trace replay
 //   - sim/trace/: Decision trace recording
 //
@@ -26,8 +28,6 @@
 // The extension points are single-method or small interfaces:
 //   - LatencyModel: step time, queueing time, output processing overhead
 //   - KVStore: block allocation, eviction, prefix caching, capacity queries
-//   - RoutingPolicy: select target instance given cluster snapshots
-//   - AdmissionPolicy: accept or reject incoming requests
 //   - InstanceScheduler: order requests within a single instance's wait queue
 //   - SLOPriorityMap: map SLO class → priority value; InvertForVLLM converts cluster-convention (higher=urgent) to instance-convention (lower=urgent) at EnqueueRequest
 //   - BatchFormation: form batches from waiting requests with KV constraints

@@ -21,13 +21,13 @@ type CandidateScore struct {
 	FreeKVBlocks     int64
 }
 
-// RoutingRecord captures a single routing policy decision with optional counterfactual analysis.
+// RoutingRecord captures one routing decision of the embedded router, with optional counterfactual analysis.
 type RoutingRecord struct {
 	RequestID      string
 	Clock          int64
 	ChosenInstance string
 	Reason         string
-	Scores         map[string]float64 // from RoutingDecision.Scores (may be nil)
+	Scores         map[string]float64 // from Placement.Scores, the router's primary-profile scores (may be nil)
 	Candidates     []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
 	Regret         float64            // max(alternative scores) - score(chosen); 0 if chosen is best
 }
@@ -49,14 +49,12 @@ type RoutingRecord struct {
 // To detect case 1: check for the absence of a PrefillRoutingRecord with a
 // matching ParentRequestID in the trace. To detect case 2: check the
 // absence of a KVTransferRecord for a given ParentRequestID.
-// Note: DecodeRoutingRecord is never emitted; the decode pod is pre-selected at
-// executeDisaggregatedRouting time (no second routing decision).
+// Note: DecodeRoutingRecord is never emitted; the router chooses the decode pod together
+// with the prefill pod (no second routing decision).
 type DisaggregationRecord struct {
 	RequestID string
-	// Clock is the simulation time at which the routing (and disaggregation)
-	// decision was made: admission_time + routingLatency. Since #1261 unified
-	// the PD and standard routing paths under RoutingDecisionEvent, this value
-	// reflects the routing-fire time rather than the admission time.
+	// Clock is the simulation time at which the router's routing (and
+	// disaggregation) decision was dispatched.
 	Clock        int64
 	Disaggregate bool // true = routed to prefill pool; false = standard routing to decode pool
 }
@@ -67,9 +65,9 @@ type PrefillRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64
 	ChosenInstance  string
-	// Scores maps instance ID → composite routing score (higher = more preferred).
-	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
-	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
+	// Scores maps instance ID → routing score (higher = more preferred). Never set today:
+	// the prefill choice is recorded without scores.
+	Scores     map[string]float64 // nil
 	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
 	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
@@ -80,16 +78,16 @@ type DecodeRoutingRecord struct {
 	ParentRequestID string
 	Clock           int64
 	ChosenInstance  string
-	// Scores maps instance ID → composite routing score (higher = more preferred).
-	// Values are raw weighted-scorer outputs; not normalized. Nil when scoring is disabled.
-	Scores     map[string]float64 // from RoutingDecision.Scores (may be nil)
+	// Scores maps instance ID → routing score (higher = more preferred). Never emitted
+	// today (see DisaggregationRecord).
+	Scores     map[string]float64 // nil
 	Candidates []CandidateScore   // top-k candidates sorted by score desc (nil if k=0)
 	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
 
 // EncodeRoutingRecord captures an encode pool routing decision (GAP-4, issue #1264).
-// Emitted when an EncodeDecider approves encoding for a request during
-// executeDisaggregatedRouting. Under option A (zero-duration encode), the record
+// Emitted once per encoder the router chose for a request (recordRouting,
+// sim/cluster/gateway.go). Under option A (zero-duration encode), the record
 // reflects a routing decision only — no encode sub-request is injected.
 // ParentRequestID equals the request ID (one encode record per parent).
 type EncodeRoutingRecord struct {

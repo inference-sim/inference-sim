@@ -15,7 +15,7 @@
 // This package is a subpackage of sim/ and registers its capabilities into sim/ via
 // init() — there is NO reverse import (sim/ never imports sim/lora). Cross-cutting
 // fields that must live on sim/ bridge types (Request.Adapter, SimConfig.LoRAConfig,
-// RoutingSnapshot resident-set) are defined in sim/, not here.
+// ResidentAdapterSet) are defined in sim/, not here.
 //
 // # Determinism (Principle II)
 //

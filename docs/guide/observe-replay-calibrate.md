@@ -343,8 +343,9 @@ blis replay --trace-header corpus.yaml --trace-data corpus.csv \
 
 The recorded source model names are pure provenance and are dropped during
 conversion — all calls are simulated under the scenario's model. (They are deliberately not
-written into the trace: `TraceRecord.Model` is routing-significant, and a name
-that differs from the simulated model would filter out every request at routing.)
+written into the trace: `TraceRecord.Model` becomes the request's model at replay, and
+a name that differs from the simulated model would report every request under a model
+the run never simulated.)
 `--concurrent-sessions` implies closed-loop session semantics; without it,
 replay behaves as a standard fixed/closed-loop replay.
 
