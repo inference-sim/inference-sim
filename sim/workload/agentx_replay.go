@@ -13,8 +13,9 @@ import (
 // simulated cluster: C session-tree lanes snapshotted mid-trace, a warm-up that primes
 // every live stream, then a closed-loop profiling window in which subagents fan out
 // beside their parent, joins gate later parent turns, recorded replay barriers order
-// streams, a 10 s global idle cap pulls in timers, and drained trees recycle into the next
-// root. It is a closed-loop driver with the same contract as SessionManager and
+// streams, a 10 s global idle cap pulls in timers (and, when a run states one, a per-trace
+// idle cap pulls in a single tree's timers while others stay busy), and drained trees recycle
+// into the next root. It is a closed-loop driver with the same contract as SessionManager and
 // SessionPoolDriver: OnComplete returns the follow-ups a completion causes (wired as the
 // cluster's onRequestDone). Because aiperf moves and cancels timers after it sets them, a
 // follow-up's ArrivalTime is the send it is scheduled for, and Gate (the cluster's
@@ -63,13 +64,20 @@ type AgentXReplay struct {
 
 // AgentXReplayConfig is the scenario's run choices.
 type AgentXReplayConfig struct {
-	Concurrency int     // session-tree lanes
-	Seed        int64   // --random-seed (lane snapshot seeds; prompt content salt)
-	DurationUs  int64   // benchmark duration (sending window)
-	GraceUs     int64   // grace period; math.MaxInt64 = .inf
-	IdleCapUs   int64   // global system-idle cap
-	MinRatio    float64 // trajectory start window
-	MaxRatio    float64
+	Concurrency int   // session-tree lanes
+	Seed        int64 // --random-seed (lane snapshot seeds; prompt content salt)
+	DurationUs  int64 // benchmark duration (sending window)
+	GraceUs     int64 // grace period; math.MaxInt64 = .inf
+	IdleCapUs   int64 // global system-idle cap
+	// TraceIdleCapUs is the per-trace (per-session-tree) idle cap, aiperf's
+	// --trace-idle-gap-cap-seconds. 0 = unset (the scenario default): no per-tree watchdog.
+	TraceIdleCapUs int64
+	// WarmupRequestsPerLane is aiperf's --warmup-requests-per-lane: after the snapshot
+	// primers, each lane sends this many extra one-token cache-pressure warmup requests
+	// before profiling starts. 0 = synthesized primers only (the scenario default).
+	WarmupRequestsPerLane int
+	MinRatio              float64 // trajectory start window
+	MaxRatio              float64
 	// RequestTimeoutUs is the client's per-request timeout: aiperf's
 	// --request-timeout-seconds default, 6 h (config/endpoint.py:52). A timed-out request
 	// is an error record. 0 disables it.
@@ -95,18 +103,22 @@ type AgentXStats struct {
 	Cancelled          int // in flight when the grace period ended
 	// CancelledRefused counts the cancelled requests the server had already refused, whose
 	// error response had not reached the client when the run stopped (a round trip).
-	CancelledRefused  int
-	Completed         int // ended with a response
-	Errors            int // timed out, or refused by the cluster or the engine (not overflow)
-	WarmupFailures    int // warm-up requests that ended in an error (aiperf aborts such a run)
-	ContextOverflows  int // refused by the engine's context check
-	IdleCapJumps      int
-	IdleCapSkippedUs  int64
-	BarrierHeld       int // sends held behind a replay barrier
-	JoinSuspensions   int // parent turns suspended on a SPAWN_JOIN
-	ChildrenSpawned   int
-	ChildrenRefused   int // child first turns refused after the window closed
-	DelayedChildSpawn int
+	CancelledRefused int
+	Completed        int // ended with a response
+	Errors           int // timed out, or refused by the cluster or the engine (not overflow)
+	WarmupFailures   int // warm-up requests that ended in an error (aiperf aborts such a run)
+	ContextOverflows int // refused by the engine's context check
+	IdleCapJumps     int
+	IdleCapSkippedUs int64
+	// TraceIdleCapJumps/SkippedUs are the per-trace watchdog's activity, apart from the
+	// global cap's: a tree idled past the per-trace cap and had its own timers advanced.
+	TraceIdleCapJumps     int
+	TraceIdleCapSkippedUs int64
+	BarrierHeld           int // sends held behind a replay barrier
+	JoinSuspensions       int // parent turns suspended on a SPAWN_JOIN
+	ChildrenSpawned       int
+	ChildrenRefused       int // child first turns refused after the window closed
+	DelayedChildSpawn     int
 }
 
 type agxPhase int
@@ -137,17 +149,18 @@ type agxDispatch struct {
 	recycle   bool
 	windowEnd bool // the sending window's duration timeout
 	// refusal, when set, is the client receiving the error response for that send.
-	refusal   *agxDispatch
-	outcome   string
-	refusing  bool // its error response is on the way
-	warmup    bool
-	start     bool // session start (acquires the tree slot)
-	childPath bool // sent via dispatch_child_turn (refusal drains the child's join)
-	first     bool // a spawned child's turn 0 (refusal rolls the child back)
-	shiftable bool // a LoopScheduler timer (the idle cap moves it); child spawn sleeps are not
-	dueUs     int64
-	state     agxDispatchState
-	ph        *sim.Request // the request pushed for the current due time
+	refusal     *agxDispatch
+	outcome     string
+	refusing    bool // its error response is on the way
+	warmup      bool
+	warmupExtra bool // a request-bounded cache-pressure warmup extra (chains the lane's next)
+	start       bool // session start (acquires the tree slot)
+	childPath   bool // sent via dispatch_child_turn (refusal drains the child's join)
+	first       bool // a spawned child's turn 0 (refusal rolls the child back)
+	shiftable   bool // a LoopScheduler timer (the idle cap moves it); child spawn sleeps are not
+	dueUs       int64
+	state       agxDispatchState
+	ph          *sim.Request // the request pushed for the current due time
 }
 
 // agxInstance is one session tree: a lane's trace minted once (its prompts share a
@@ -163,6 +176,23 @@ type agxInstance struct {
 	rootPending bool
 	outstanding int // descendants live or registered
 	drained     bool
+
+	// inFlight and idleSinceUs are this tree's share of the global idle accounting, for the
+	// per-trace idle cap (replay_dependencies.py's per-root watchdog): sends on the wire for
+	// this tree's root and every descendant stream, and when the last of them returned.
+	// idleSinceUs is -1 while the tree is busy.
+	inFlight    int
+	idleSinceUs int64
+
+	// warmupExtra is the lane's remaining request-bounded cache-pressure warmup requests
+	// (aiperf --warmup-requests-per-lane): sent after the lane's snapshot primers, one at a
+	// time, each a one-token re-send of the lane's primer turn (warmupStream/warmupTurn), so
+	// it reuses the same cache prefix. warmupPrimersLeft counts primers of this lane still in
+	// flight; the extra chain starts when it reaches 0. Both set up in Start.
+	warmupExtra       int
+	warmupPrimersLeft int
+	warmupStream      *agxStream
+	warmupTurn        int32
 
 	barrierOn bool
 	completed map[agxRef]bool
@@ -230,8 +260,8 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 	if cfg.Concurrency < 1 {
 		return nil, fmt.Errorf("concurrency must be at least 1, got %d", cfg.Concurrency)
 	}
-	if cfg.DurationUs <= 0 || cfg.GraceUs < 0 || cfg.IdleCapUs < 0 {
-		return nil, fmt.Errorf("duration must be positive and grace and idle cap non-negative")
+	if cfg.DurationUs <= 0 || cfg.GraceUs < 0 || cfg.IdleCapUs < 0 || cfg.TraceIdleCapUs < 0 {
+		return nil, fmt.Errorf("duration must be positive and grace and idle caps non-negative")
 	}
 	if len(c.Traces) == 0 {
 		return nil, fmt.Errorf("empty trace pool")
@@ -263,6 +293,7 @@ func (x *AgentXReplay) newInstance(lane int, tr *AgentXTrace) *agxInstance {
 		completed:   map[agxRef]bool{},
 		future:      map[int32]*agxJoin{},
 		overlapDone: map[int32]bool{},
+		idleSinceUs: -1,
 	}
 	in.root = x.newStream(in, 0, false)
 	x.instances = append(x.instances, in)
@@ -345,6 +376,8 @@ func (x *AgentXReplay) Start() []*sim.Request {
 	maxLead := math.Inf(-1)
 	for li, l := range x.lanes {
 		in := x.laneInst[li]
+		var last *agxStream
+		var lastTurn int32
 		for _, st := range l.states {
 			if st.next < 1 {
 				continue
@@ -353,10 +386,23 @@ func (x *AgentXReplay) Start() []*sim.Request {
 			lead := l.tStarMs - l.trace.convs[st.conv].turns[st.next-1].tsMs
 			preps = append(preps, prep{&agxDispatch{inst: in, stream: s, turn: st.next - 1, warmup: true, start: true}, lead})
 			maxLead = math.Max(maxLead, lead)
+			in.warmupPrimersLeft++
+			last, lastTurn = s, st.next-1
+		}
+		// Arm the lane's request-bounded cache-pressure extras: re-send its last primer turn
+		// n times once the primers return (aiperf's --warmup-requests-per-lane). A lane with no
+		// primer stream has nothing to continue, so it takes no extras.
+		if x.cfg.WarmupRequestsPerLane > 0 && last != nil {
+			in.warmupExtra = x.cfg.WarmupRequestsPerLane
+			in.warmupStream, in.warmupTurn = last, lastTurn
 		}
 	}
-	x.warmupLeft = len(preps)
-	x.stats.WarmupRequests = len(preps)
+	extras := 0
+	for _, in := range x.laneInst {
+		extras += in.warmupExtra
+	}
+	x.warmupLeft = len(preps) + extras
+	x.stats.WarmupRequests = len(preps) + extras
 	if len(preps) == 0 {
 		x.startProfiling(0)
 	} else {
@@ -373,6 +419,31 @@ func (x *AgentXReplay) Start() []*sim.Request {
 	out := x.flush()
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ArrivalTime < out[j].ArrivalTime })
 	return out
+}
+
+// chainWarmupExtra advances the lane's request-bounded cache-pressure warmup after a warmup
+// request returns: when the lane's snapshot primers have all returned, it sends the lane's
+// extras one at a time (each a one-token re-send of the primer turn), so profiling waits for
+// the whole quota (aiperf --warmup-requests-per-lane). A no-op unless the lane has extras.
+func (x *AgentXReplay) chainWarmupExtra(d *agxDispatch) {
+	in := d.inst
+	if in == nil {
+		return
+	}
+	if !d.warmupExtra {
+		// A primer returned. Start the extras only once every primer of this lane is back, so
+		// the extras pressure a fully warmed prefix.
+		if in.warmupPrimersLeft > 0 {
+			in.warmupPrimersLeft--
+		}
+		if in.warmupPrimersLeft > 0 || in.warmupExtra == 0 {
+			return
+		}
+	} else if in.warmupExtra == 0 {
+		return
+	}
+	in.warmupExtra--
+	x.submit(&agxDispatch{inst: in, stream: in.warmupStream, turn: in.warmupTurn, warmup: true, warmupExtra: true})
 }
 
 // streamForState returns the lane tree's stream for a snapshot state, creating children.
@@ -536,6 +607,7 @@ func (x *AgentXReplay) issue(d *agxDispatch) {
 	d.state = agxReady
 	x.push(d, x.nowUs)
 	x.inFlight++
+	in.inFlight++ // this tree's share, for the per-trace watchdog
 	if d.warmup {
 		return
 	}
@@ -591,11 +663,13 @@ func (x *AgentXReplay) Gate(req *sim.Request, now int64) (bool, []*sim.Request) 
 	case agxTimer:
 		delete(x.byPlaceholder, req)
 		d.ph = nil
+		in := d.inst
 		x.removeTimer(d)
 		x.fire(d)
 		if d.shiftable {
 			// LoopScheduler's drain observer re-checks the idle cap after a scheduler task.
 			x.enforceIdleCap(false)
+			x.enforceTraceIdleCap(in, false)
 		}
 		x.issueReleased()
 		x.maybeComplete()
@@ -864,6 +938,12 @@ func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 	if x.inFlight == 0 {
 		x.idleSinceUs = now
 	}
+	if in := d.inst; in != nil {
+		in.inFlight--
+		if in.inFlight == 0 {
+			in.idleSinceUs = now
+		}
+	}
 	req.Agentic.Outcome = outcome
 	switch outcome {
 	case sim.AgenticCompleted:
@@ -881,6 +961,7 @@ func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 	}
 	if d.warmup {
 		x.warmupLeft--
+		x.chainWarmupExtra(d)
 		if x.warmupLeft == 0 {
 			x.startProfiling(now)
 		}
@@ -889,6 +970,7 @@ func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 	}
 	x.onReturn(d, outcome == sim.AgenticContextOverflow)
 	x.enforceIdleCap(true)
+	x.enforceTraceIdleCap(d.inst, true)
 	x.issueReleased()
 	x.maybeComplete()
 }
@@ -1133,6 +1215,55 @@ func (x *AgentXReplay) enforceIdleCap(afterReturn bool) {
 	x.stats.IdleCapSkippedUs += shift
 	for _, t := range x.timers {
 		x.push(t, max(now, t.dueUs-shift))
+	}
+}
+
+// enforceTraceIdleCap is aiperf's per-trace idle watchdog (replay_dependencies.py:295-327),
+// the global cap scoped to one session tree: when nothing of this tree is in flight, its own
+// pending scheduler timers move earlier by the same amount so the tree is never idle longer
+// than the per-trace cap, while every other tree's timing is untouched. At concurrency >= 2 a
+// tree can idle while others are busy, which the global cap (keyed on the whole system being
+// idle) never catches; this is what carries the offered concurrency the run saw.
+// afterReturn is true on a credit return (which starts a new idle interval for the tree).
+func (x *AgentXReplay) enforceTraceIdleCap(in *agxInstance, afterReturn bool) {
+	// Profiling only: aiperf arms the per-trace watchdog after warmup, and never once the
+	// sending window has closed.
+	if x.cfg.TraceIdleCapUs <= 0 || x.phase != agxProfile || in == nil {
+		return
+	}
+	if in.inFlight > 0 {
+		in.idleSinceUs = -1
+		return
+	}
+	now := x.nowUs
+	if afterReturn || in.idleSinceUs < 0 {
+		in.idleSinceUs = now
+	}
+	// This tree's shiftable timers, in schedule order (INV-6: the x.timers slice, never a
+	// map). A recycle timer has no owning instance (t.inst == nil) and belongs to a drained
+	// tree's lane, not this live tree, so t.inst == in excludes it.
+	budget := max(0, x.cfg.TraceIdleCapUs-(now-in.idleSinceUs))
+	earliest := int64(math.MaxInt64)
+	any := false
+	for _, t := range x.timers {
+		if t.inst == in {
+			earliest = min(earliest, t.dueUs)
+			any = true
+		}
+	}
+	if !any {
+		return
+	}
+	shift := earliest - now - budget
+	if shift <= 0 {
+		return
+	}
+	x.stats.TraceIdleCapJumps++
+	x.stats.TraceIdleCapSkippedUs += shift
+	for _, t := range x.timers {
+		if t.inst == in {
+			x.push(t, max(now, t.dueUs-shift))
+		}
 	}
 }
 
@@ -1385,6 +1516,8 @@ type AgentXSummary struct {
 	ProfileCompleteUs          int64   `json:"profile_complete_us"`
 	IdleCapJumps               int     `json:"idle_cap_jumps"`
 	IdleCapSkippedS            float64 `json:"idle_cap_skipped_s"`
+	TraceIdleCapJumps          int     `json:"trace_idle_cap_jumps"`
+	TraceIdleCapSkippedS       float64 `json:"trace_idle_cap_skipped_s"`
 	BarrierHeld                int     `json:"barrier_holds"`
 	JoinSuspensions            int     `json:"join_suspensions"`
 	ChildrenSpawned            int     `json:"children_spawned"`
@@ -1403,6 +1536,7 @@ func (x *AgentXReplay) Summary(c *AgentXCorpus, maxContextLength int, verified b
 		CorpusSHA256: c.SHA256, CorpusSHA256Verified: verified,
 		ProfileStartUs: x.profileUs, WindowEndUs: x.windowEndUs, ProfileCompleteUs: x.completeUs,
 		IdleCapJumps: s.IdleCapJumps, IdleCapSkippedS: float64(s.IdleCapSkippedUs) / 1e6,
+		TraceIdleCapJumps: s.TraceIdleCapJumps, TraceIdleCapSkippedS: float64(s.TraceIdleCapSkippedUs) / 1e6,
 		BarrierHeld: s.BarrierHeld, JoinSuspensions: s.JoinSuspensions, ChildrenSpawned: s.ChildrenSpawned,
 		UnspawnableSkipped: s.UnspawnableSkipped, WarmupFailures: s.WarmupFailures,
 	}

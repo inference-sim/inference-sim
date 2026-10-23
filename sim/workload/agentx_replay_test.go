@@ -163,6 +163,115 @@ func flatTrace(t *testing.T, id string) string {
 		wreq(3, 1, 192, 5, 1, 2, 3))
 }
 
+// TestAgentXPerTraceIdleCap is the per-trace idle watchdog (aiperf
+// --trace-idle-gap-cap-seconds): with two lanes and the global cap off, tree A idles 100 s
+// between turn 0 and turn 1 while tree B stays active (3 s cadence). The per-trace cap (20 s)
+// fires on A alone -- A's turn 1 is pulled from 100 s to 21 s (A#0 returned at 1 s + 20 s) --
+// while B's recorded cadence is untouched. At concurrency >= 2 the global cap can never do
+// this: tree B is always in flight across A's gap, so the system is never system-idle.
+func TestAgentXPerTraceIdleCap(t *testing.T) {
+	a := wekaLine(t, "A", wreq(0, 1, 128, 5, 1, 2), wreq(100, 1, 192, 5, 1, 2, 3))
+	b := wekaLine(t, "B",
+		wreq(0, 1, 128, 5, 10, 11),
+		wreq(3, 1, 160, 5, 10, 11, 12),
+		wreq(6, 1, 192, 5, 10, 11, 12, 13))
+	c := agxCorpus(t, a, b)
+
+	// Baseline: no per-trace cap, global cap off -> A's 100 s gap is honoured in full, so
+	// A#1 falls outside the 25 s window and never sends.
+	base := agxCfg(2, 0, 25)
+	base.IdleCapUs = 0
+	hb := runAgentX(t, c, base, fixedService(sec))
+	checkIssues(t, hb, []agxWant{
+		{0, "A", 0, sim.PhaseProfile},
+		{0, "B", 0, sim.PhaseProfile},
+		{3 * sec, "B", 1, sim.PhaseProfile},
+		{6 * sec, "B", 2, sim.PhaseProfile},
+		{7 * sec, "A", 0, sim.PhaseProfile}, // A's tree drained and recycled
+	})
+	if st := hb.x.Stats(); st.TraceIdleCapJumps != 0 {
+		t.Errorf("baseline must not fire the per-trace cap: %+v", st)
+	}
+
+	// With the per-trace cap, A#1 is pulled in to 21 s; B's cadence is byte-identical.
+	cfg := agxCfg(2, 0, 25)
+	cfg.IdleCapUs = 0
+	cfg.TraceIdleCapUs = 20 * sec
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	checkIssues(t, h, []agxWant{
+		{0, "A", 0, sim.PhaseProfile},
+		{0, "B", 0, sim.PhaseProfile},
+		{3 * sec, "B", 1, sim.PhaseProfile},
+		{6 * sec, "B", 2, sim.PhaseProfile},
+		{7 * sec, "A", 0, sim.PhaseProfile},
+		{21 * sec, "A", 1, sim.PhaseProfile}, // pulled in by the per-trace cap (1 + 20)
+		{22 * sec, "B", 0, sim.PhaseProfile}, // B's tree recycles after its window
+	})
+	if st := h.x.Stats(); st.TraceIdleCapJumps == 0 {
+		t.Errorf("the per-trace cap should have fired: %+v", st)
+	}
+	// Tree B's turns are identical with and without the cap: the watchdog advanced only A.
+	for _, w := range []agxWant{
+		{0, "B", 0, sim.PhaseProfile}, {3 * sec, "B", 1, sim.PhaseProfile}, {6 * sec, "B", 2, sim.PhaseProfile},
+	} {
+		if !agxHasIssue(hb, w) || !agxHasIssue(h, w) {
+			t.Errorf("tree B turn %d at %d s must be unchanged by the per-trace cap", w.turn, w.at/sec)
+		}
+	}
+}
+
+// TestAgentXPerLaneWarmup is aiperf's request-bounded cache-pressure warmup
+// (--warmup-requests-per-lane): after a lane's snapshot primers, it sends N extra one-token
+// warmup requests re-sending the primer turn, and profiling waits for all of them. The extras
+// are warmup (not counted as main/subagent requests) and the profiling turns are unchanged.
+func TestAgentXPerLaneWarmup(t *testing.T) {
+	c := agxCorpus(t, threeTurnTrace(t, "A")) // t* = 5 s: turn 0 is the lane's primer
+
+	// Baseline: synthesized primer only (one warmup request).
+	base := runAgentX(t, c, agxCfg(1, 0.5, 20), fixedService(sec))
+	if st := base.x.Stats(); st.WarmupRequests != 1 {
+		t.Fatalf("baseline warmup requests %d, want 1", st.WarmupRequests)
+	}
+
+	cfg := agxCfg(1, 0.5, 20)
+	cfg.WarmupRequestsPerLane = 3
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	// One primer (t = 0) then three extras (t = 1, 2, 3), each the primer turn, one token.
+	checkIssues(t, h, []agxWant{
+		{0, "A", 0, sim.PhaseWarmup},
+		{1 * sec, "A", 0, sim.PhaseWarmup},
+		{2 * sec, "A", 0, sim.PhaseWarmup},
+		{3 * sec, "A", 0, sim.PhaseWarmup},
+		{4 * sec, "A", 1, sim.PhaseProfile}, // profiling starts only after every warmup returns
+	})
+	for i := 0; i < 4; i++ {
+		if h.issued[i].out != 1 {
+			t.Errorf("warmup request %d max_tokens %d, want 1", i, h.issued[i].out)
+		}
+	}
+	st := h.x.Stats()
+	if st.WarmupRequests != 4 {
+		t.Errorf("warmup requests %d, want 4 (1 primer + 3 per-lane extras)", st.WarmupRequests)
+	}
+	// The extras are warmup, so the profiling main-request count matches the baseline's.
+	if st.MainRequests != base.x.Stats().MainRequests {
+		t.Errorf("main requests %d changed from baseline %d", st.MainRequests, base.x.Stats().MainRequests)
+	}
+	if ps, _ := h.x.Window(); ps != 4*sec {
+		t.Errorf("profiling started at %d, want 4 s (after the last warmup extra returned)", ps)
+	}
+}
+
+// agxHasIssue reports whether the harness issued a send matching w (stream, turn, time).
+func agxHasIssue(h *agxHarness, w agxWant) bool {
+	for _, is := range h.issued {
+		if is.at == w.at && is.tag.Stream == w.stream && is.tag.Turn == w.turn {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAgentXFlatChainOverlapSpawnAndBarrier(t *testing.T) {
 	c := agxCorpus(t, flatTrace(t, "F"))
 	tr := c.Traces[0]
