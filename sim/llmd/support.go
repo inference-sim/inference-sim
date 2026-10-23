@@ -15,9 +15,9 @@ import (
 // supported is BLIS's signal policy: the router plugin types whose every consumed signal the
 // simulated engines and workload produce. The router consults it (embed.Config.Allow) for every
 // type the fork can host, before that type's constructor runs; the fork refuses the types it
-// cannot host with its own reason. Each type here must also be in the fork's audited set, so a
-// plugin runs only when both agree: the simulation never runs a plugin it cannot run as llm-d
-// does.
+// cannot host with its own reason. Each type here is also one the fork can host
+// (TestSupportedTypesAreHostedByTheFork), so a plugin runs only when both agree: the simulation
+// never runs a plugin it cannot run as llm-d does.
 var supported = map[string]bool{
 	// profile handlers and pickers
 	"single-profile-handler": true,
@@ -138,8 +138,8 @@ func allow(typ string) (bool, string) {
 }
 
 // IsSupported reports whether BLIS's signal policy allows router plugins of type typ. Every type it
-// allows must also be in the fork's audited set (the fork's pkg/embed tests hold it there); a type
-// runs only when both agree.
+// allows is also one the fork can host (TestSupportedTypesAreHostedByTheFork holds it there), so a
+// supported type runs.
 func IsSupported(typ string) bool { return supported[typ] }
 
 // UnsupportedReason is why BLIS's signal policy refuses plugins of type typ, or "" for a supported

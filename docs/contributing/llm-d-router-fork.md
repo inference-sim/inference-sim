@@ -126,7 +126,7 @@ rebase would rewrite the hashes and orphan it.
 
 A plugin type runs in BLIS only when the fork has audited it for hosting **and** BLIS's signal
 policy allows it (`sim/llmd/support.go`, passed to the router as `embed.Config.Allow`;
-`llmd.IsSupported` reports the intersection). To add one: in the fork, read every clock read,
+`llmd.IsSupported`; `TestSupportedTypesAreHostedByTheFork` holds every allowed type within what the fork can host). To add one: in the fork, read every clock read,
 goroutine, blocking wait, random draw and map iteration it makes, convert the
 decision-relevant ones and add it to the audited set; in BLIS, check that every signal it
 consumes is produced by the simulated engines, allow it, and add a test in `sim/llmd`. Until
