@@ -185,6 +185,11 @@ type agxInstance struct {
 	lane  int
 	trace *AgentXTrace
 	salt  uint64
+	// originMs is the tree's sampled replay origin on its shared per-trajectory clock (aiperf
+	// _replay_origin_ms_by_root): the lane's snapshot t* for the original tree, or the fresh
+	// root's own first turn timestamp for a tree recycled during the run. The warmup-to-
+	// profiling handoff places each surviving turn at max(0, ts[next] - originMs).
+	originMs float64
 
 	open        bool // slot acquired (open_tree)
 	rootPending bool
@@ -290,7 +295,9 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 	x.stats.Lanes = len(x.lanes)
 	x.laneInst = make([]*agxInstance, len(x.lanes))
 	for i, l := range x.lanes {
-		x.laneInst[i] = x.newInstance(i, l.trace)
+		in := x.newInstance(i, l.trace)
+		in.originMs = l.tStarMs // the lane's sampled snapshot instant
+		x.laneInst[i] = in
 	}
 	return x, nil
 }
@@ -464,18 +471,12 @@ func (x *AgentXReplay) startAccel(now int64) {
 	}
 }
 
-// accelWorkPending reports whether the accelerated substage still has work on the wire or
-// held behind the barrier (a barrier-held turn does not count toward inFlight but will issue).
+// accelWorkPending reports whether the accelerated substage still has work on the wire. The
+// phase completes once wire in_flight reaches zero (aiperf drains requests then hands off);
+// paused barrier/DAG work is NOT drained here -- it becomes the profiling handoff payload, so
+// a held turn whose prerequisite was deferred at the quota cannot deadlock the substage.
 func (x *AgentXReplay) accelWorkPending() bool {
-	if x.inFlight > 0 || len(x.released) > 0 {
-		return true
-	}
-	for _, in := range x.instances {
-		if len(in.held) > 0 {
-			return true
-		}
-	}
-	return false
+	return x.inFlight > 0 || len(x.released) > 0
 }
 
 // dispatchAccel submits one accelerated-warmup turn, enforcing the per-lane quota: a lane that
@@ -634,10 +635,21 @@ func (x *AgentXReplay) seedSnapshot(in *agxInstance, l *agxLane) {
 }
 
 // dispatchHandoff resumes profiling from the positions the accelerated substage advanced each
-// stream to (aiperf's _quota_handoff_turns handoff): each deferred turn is sent as a profiling
-// turn at its recorded offset on the tree's shared replay clock. Iterates the ordered
-// instances/childStreams slices (INV-6).
+// stream to: both the turns deferred at a lane's quota (aiperf _quota_handoff_turns) and the
+// turns paused behind the replay barrier when the substage drained (aiperf's pending DAG/
+// barrier payload). Each resumes on its tree's shared replay clock -- offset
+// max(0, ts[next] - in.originMs) -- with one phase-wide minimum subtracted so the earliest
+// survivor starts at profiling t0 while cross-lane spacing is preserved
+// (_profiling_phase_t0_offset_ms). Iterates the ordered instances/childStreams slices (INV-6).
 func (x *AgentXReplay) dispatchHandoff(now int64) {
+	type pending struct {
+		in       *agxInstance
+		d        *agxDispatch
+		held     bool
+		offsetMs float64
+	}
+	var ps []pending
+	minOffset := math.Inf(1)
 	for _, in := range x.instances {
 		streams := append([]*agxStream{in.root}, in.childStreams...)
 		for _, s := range streams {
@@ -646,15 +658,34 @@ func (x *AgentXReplay) dispatchHandoff(now int64) {
 				continue
 			}
 			delete(in.handoffTurns, s)
-			d.accel = false
-			d.warmup = false
-			d.childPath = s.child
-			tn := &in.trace.convs[s.conv].turns[d.turn]
-			if delay := agxOffset(tn.tsMs, x.lanes[in.lane].tStarMs) / 1000.0; delay > 0 {
-				x.schedule(d, now+int64(math.Round(delay*1e6)), true)
-			} else {
-				x.submit(d)
-			}
+			off := agxOffset(in.trace.convs[s.conv].turns[d.turn].tsMs, in.originMs)
+			ps = append(ps, pending{in, d, false, off})
+			minOffset = math.Min(minOffset, off)
+		}
+		// Barrier-held turns carry over as paused work: they stay held until their recorded
+		// predecessors complete in profiling. Their anchor is their own dispatch offset too.
+		for _, d := range in.held {
+			off := agxOffset(in.trace.convs[d.stream.conv].turns[d.turn].tsMs, in.originMs)
+			ps = append(ps, pending{in, d, true, off})
+			minOffset = math.Min(minOffset, off)
+		}
+		in.held = nil
+	}
+	if math.IsInf(minOffset, 1) {
+		minOffset = 0
+	}
+	for _, p := range ps {
+		d := p.d
+		d.accel = false
+		d.warmup = false
+		d.childPath = d.stream.child
+		// submit re-checks the barrier, so a still-blocked held turn returns to in.held and a
+		// cleared one (or a deferred quota turn) issues; the anchored offset only delays when
+		// the turn's own timestamp sits past the earliest survivor's.
+		if delay := (p.offsetMs - minOffset) / 1000.0; delay > 0 {
+			x.schedule(d, now+int64(math.Round(delay*1e6)), true)
+		} else {
+			x.submit(d)
 		}
 	}
 }
@@ -871,6 +902,10 @@ func (x *AgentXReplay) dispatchRecycle(lane int) {
 	}
 	in := x.newInstance(lane, tr)
 	in.barrierOn = true
+	// A recycled tree's replay origin is its own root's first timestamp, not the lane's
+	// original t* (which belongs to a different trace): aiperf sets _replay_origin_ms_by_root
+	// to the recycled root's first turn. Turn 0 exists because nextRecycle skips empty roots.
+	in.originMs = tr.convs[0].turns[0].tsMs
 	x.laneInst[lane] = in
 	// A recycle during the accelerated substage is itself quota-gated: the fresh root's turn 0
 	// counts against (and is stopped by) the lane's warmup request quota, so a lane whose trees

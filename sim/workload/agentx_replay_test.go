@@ -278,12 +278,13 @@ func TestAgentXAcceleratedWarmupAdvancesTurns(t *testing.T) {
 	h := runAgentX(t, c, cfg, fixedService(sec))
 
 	// The two accelerated turns are the stream's real turns 0 and 1 (growing prompts), warmup
-	// phase, one token each -- not the same primer twice.
+	// phase, one token each -- not the same primer twice. The substage drains at 2 s; turn 2
+	// is the earliest survivor, so profiling anchors it to t0 (2 s), not its raw 2 s offset.
 	checkIssues(t, h, []agxWant{
 		{0, "R", 0, sim.PhaseWarmup},
 		{1 * sec, "R", 1, sim.PhaseWarmup},
-		{4 * sec, "R", 2, sim.PhaseProfile}, // profiling resumes from the ADVANCED turn 2
-		{5 * sec, "R", 3, sim.PhaseProfile},
+		{2 * sec, "R", 2, sim.PhaseProfile}, // profiling resumes from the ADVANCED turn 2, anchored to t0
+		{3 * sec, "R", 3, sim.PhaseProfile},
 	})
 	if h.issued[0].in >= h.issued[1].in {
 		t.Errorf("accelerated turns must advance (turn 1 prompt %d should exceed turn 0 prompt %d)", h.issued[1].in, h.issued[0].in)
@@ -306,6 +307,101 @@ func TestAgentXAcceleratedWarmupAdvancesTurns(t *testing.T) {
 	}
 	if st := h.x.Stats(); st.WarmupRequests != 2 {
 		t.Errorf("warmup requests %d, want 2 accelerated extras (no baseline primer at t*=0)", st.WarmupRequests)
+	}
+}
+
+// TestAgentXAcceleratedWarmupAnchorPreservesSpacing: at the warmup-to-profiling handoff the
+// earliest surviving request across all lanes starts at profiling t0, while cross-lane
+// spacing is preserved (aiperf _profiling_phase_t0_offset_ms subtracts one phase-wide
+// minimum). Two lanes, quota 1: both advance turn 0 then defer at turn 1. Lane A's turn 1 is
+// recorded at 5 s, lane B's at 8 s; the anchor subtracts 5 s, so A resumes at profiling t0 and
+// B three seconds later -- the recorded 3 s gap.
+func TestAgentXAcceleratedWarmupAnchorPreservesSpacing(t *testing.T) {
+	a := wekaLine(t, "A", wreq(0, 1, 100, 5, 1), wreq(5, 1, 110, 5, 1, 2), wreq(9, 1, 120, 5, 1, 2, 3))
+	b := wekaLine(t, "B", wreq(0, 1, 100, 5, 10), wreq(8, 1, 110, 5, 10, 11), wreq(12, 1, 120, 5, 10, 11, 12))
+	c := agxCorpus(t, a, b)
+	cfg := agxCfg(2, 0, 60)
+	cfg.WarmupRequestsPerLane = 1
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	// Both primers dispatch and return at 1 s; profiling begins there. A#1 (the earliest
+	// survivor) resumes at profiling t0 = 1 s; B#1 resumes 3 s later at 4 s.
+	checkIssues(t, h, []agxWant{
+		{0, "A", 0, sim.PhaseWarmup},
+		{0, "B", 0, sim.PhaseWarmup},
+		{1 * sec, "A", 1, sim.PhaseProfile},
+		{4 * sec, "B", 1, sim.PhaseProfile},
+	})
+}
+
+// TestAgentXAcceleratedWarmupRecycleOrigin: a tree that recycles during the accelerated
+// substage anchors its surviving turn on the RECYCLED root's own first timestamp, not the
+// original lane's t* (aiperf's per-root _replay_origin_ms_by_root). Lane 0's one-turn root S
+// drains and recycles into L (turns at 100 s and 130 s -> turn-1 offset 30 s from L's own
+// origin). Lane 1's M (turns at 0, 20, 40 s) survives at turn 2 (offset 40 s from origin 0).
+// The handoff anchor subtracts min(30, 40) = 30, so L#1 resumes at profiling t0 and M#2 ten
+// seconds later. With the wrong (original-lane) origin for L, L#1's offset would be 130 s and
+// the two would swap order -- the assertion below pins the correct per-instance origin.
+func TestAgentXAcceleratedWarmupRecycleOrigin(t *testing.T) {
+	short := wekaLine(t, "S", wreq(0, 1, 100, 5, 1))
+	mid := wekaLine(t, "M", wreq(0, 1, 100, 5, 20), wreq(20, 1, 110, 5, 20, 21), wreq(40, 1, 120, 5, 20, 21, 22))
+	long := wekaLine(t, "L", wreq(100, 1, 110, 5, 7), wreq(130, 1, 120, 5, 7, 8))
+	c := agxCorpus(t, short, mid, long) // pool order: S, M, then L recycled onto S's lane
+	cfg := agxCfg(2, 0, 900)
+	cfg.WarmupRequestsPerLane = 2
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	firstProfile := func(stream string, turn int) int64 {
+		for _, is := range h.issued {
+			if is.phase == sim.PhaseProfile && is.tag.Stream == stream && is.tag.Turn == turn {
+				return is.at
+			}
+		}
+		return -1
+	}
+	lHandoff, mHandoff := firstProfile("L", 1), firstProfile("M", 2)
+	if lHandoff < 0 || mHandoff < 0 {
+		t.Fatalf("handoff survivors missing: L#1=%d M#2=%d", lHandoff, mHandoff)
+	}
+	// L#1 (recycled origin 100, offset 30 = the phase minimum) resumes at profiling t0; M#2
+	// (origin 0, offset 40) resumes 10 s later. The 10 s gap confirms L used its own origin.
+	if mHandoff-lHandoff != 10*sec {
+		t.Errorf("handoff gap M#2 - L#1 = %d s, want 10 s (L anchored on its own recycled origin)", (mHandoff-lHandoff)/sec)
+	}
+}
+
+// TestAgentXAcceleratedWarmupBarrierHandoff: the accelerated substage completes on wire
+// drain (in_flight == 0), not on the barrier being empty. A replay barrier orders the root's
+// turn 1 after the flattened worker's turn 0; under a tight quota the substage can stop with
+// that cross-stream dependency unresolved. aiperf hands the paused barrier work to profiling
+// rather than draining it in warmup -- so profiling must still start and the held turn must
+// resolve there. Were accel to wait for the barrier to clear (the pre-fix behavior), a held
+// turn whose predecessor was deferred at the quota would wedge the substage forever.
+func TestAgentXAcceleratedWarmupBarrierHandoff(t *testing.T) {
+	c := agxCorpus(t, flatTrace(t, "F"))
+	cfg := agxCfg(1, 0, 60)
+	cfg.WarmupRequestsPerLane = 1
+	h := runAgentX(t, c, cfg, fixedService(sec))
+	// Profiling started (no deadlock) and the barrier-ordered pair resolves in the right
+	// order: the worker's turn 0 before the root's gated turn 1.
+	if ps, _ := h.x.Window(); ps == 0 {
+		t.Fatal("profiling never started: accelerated warmup wedged on barrier-held work")
+	}
+	var worker0, root1 int64 = -1, -1
+	for _, is := range h.issued {
+		if is.phase != sim.PhaseProfile {
+			continue
+		}
+		if is.tag.Stream == "F::aux:000" && is.tag.Turn == 0 && worker0 < 0 {
+			worker0 = is.at
+		}
+		if is.tag.Stream == "F" && is.tag.Turn == 1 && root1 < 0 {
+			root1 = is.at
+		}
+	}
+	if worker0 < 0 || root1 < 0 {
+		t.Fatalf("expected the handed-off barrier pair in profiling (worker0=%d root1=%d)", worker0, root1)
+	}
+	if !(worker0 < root1) {
+		t.Errorf("replay barrier violated at handoff: worker turn 0 at %d must precede root turn 1 at %d", worker0, root1)
 	}
 }
 
