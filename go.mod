@@ -125,7 +125,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-// The one committed replace: the fork keeps upstream's module path (docs/contributing/llm-d-router-fork.md).
+// The llm-d router fork keeps upstream's module path, so this replace is the one that stays after
+// merge (docs/contributing/llm-d-router-fork.md).
 // TEMPORARY (review only): inference-sim/llm-d-router#3; moves to github.com/inference-sim/llm-d-router v1.0.0-blis.1 before leaving draft.
 replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802
 

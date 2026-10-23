@@ -47,6 +47,8 @@ func TestRouterImportGuardDetects(t *testing.T) {
 		{"other identifier", "package p\nimport " + q(routerConstructor) + "\nvar _ = embed.Adapter", "uses embed.Adapter"},
 		{"renamed, other identifier", "package p\nimport r " + q(routerConstructor) + "\nvar _ = r.Options{}", "uses r.Options"},
 		{"dot import", "package p\nimport . " + q(routerConstructor), "dot-imports"},
+		// A blank import of the constructor package uses no identifier of it: allowed, as New alone is.
+		{"blank constructor import", "package p\nimport _ " + q(routerConstructor), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -66,9 +68,10 @@ func TestRouterImportGuardDetects(t *testing.T) {
 
 var q = strconv.Quote
 
-// routerImportProblems parses every .go file under root (tests included; nested modules, vendor,
-// testdata and hidden directories excluded) and reports each llm-d-router import other than the
-// constructor package, and each use of an identifier of that package other than New.
+// routerImportProblems parses every .go file under root (tests included, whatever their build tags;
+// nested modules, vendor, testdata and hidden directories excluded) and reports each llm-d-router
+// import other than the constructor package, each dot import of it, and each use of an identifier
+// of it other than New. A blank import of the constructor package uses none, so it is allowed.
 func routerImportProblems(t *testing.T, root string) []string {
 	t.Helper()
 	var problems []string

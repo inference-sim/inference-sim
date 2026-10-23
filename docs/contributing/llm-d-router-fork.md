@@ -8,14 +8,15 @@ branch `llm-d-r`, through a `replace` directive in `go.mod`:
 replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router vX.Y.Z-blis.N
 ```
 
-This is the one `replace` BLIS commits: the fork keeps upstream's module path so that upstream
-releases merge into it, so a `replace` is the only way to substitute it.
+This is the one `replace` that merges into BLIS: the fork keeps upstream's module path so that
+upstream releases merge into it, so a `replace` is the only way to substitute it.
 
-While a fork change is under review, a local `replace` (never committed) names the PR's head in
-its author's fork (`github.com/<author>/llm-d-router <pseudo-version>`), because a commit that
-is only on a pull request is not fetchable from `inference-sim/llm-d-router` directly. Once the
-fork PR merges with a merge commit and is tagged, the `replace` moves to
-`inference-sim/llm-d-router` at the tag.
+While a fork change is under review, the BLIS pull request that needs it names the fork PR's head
+in its author's fork (`github.com/<author>/llm-d-router <pseudo-version>`), because a commit that
+is only on a pull request is not fetchable from `inference-sim/llm-d-router` directly. Such a
+`replace`, and any review-only `replace` of a blis-* module it needs, is marked TEMPORARY and keeps
+the BLIS PR in draft. Once the fork PR merges with a merge commit and is tagged, the `replace`
+moves to `inference-sim/llm-d-router` at the tag, and the PR can leave draft.
 
 ## The contract
 
