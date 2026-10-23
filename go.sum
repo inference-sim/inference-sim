@@ -129,10 +129,6 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/inference-sim/blis-latency-kernel v0.3.0 h1:6dw7S4WfbUqZ/F3p8EI6/KLtYHZyKGS5rlCwxJFkY+U=
 github.com/inference-sim/blis-latency-kernel v0.3.0/go.mod h1:nZqyDI0T06W0sbQA5eHv5BTcjOy02DDsrlJYnYroKCw=
-github.com/inference-sim/blis-schemas v0.5.0 h1:Ho5GrpxMs24vDvklwtLXlUuqvmYEiLU8iWOeL81zT+8=
-github.com/inference-sim/blis-schemas v0.5.0/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
-github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=
-github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
@@ -155,6 +151,10 @@ github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFd
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
+github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd h1:YWB6KPtCFsz9nwpTEk1pYIzZUQhktlFU84aCoLXeUcM=
+github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802 h1:rLRC/YkB7C63v0x9sav60YpkoGwTD9YJwo07Wg7vwmk=
+github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802/go.mod h1:sPgmd8quCVEqOgnR4N1awqyHfZYLJ0pay8U7PhdhqZo=
 github.com/onsi/ginkgo/v2 v2.31.0 h1:GtuJos5DFUV9EerYJo8RhYxosYNGvOdDE5haKq6Grfs=
 github.com/onsi/ginkgo/v2 v2.31.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
