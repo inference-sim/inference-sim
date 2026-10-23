@@ -78,7 +78,9 @@ type Options struct {
 	// --endpoint-selector.
 	EPPFlags []string
 	// Manifests are Kubernetes YAML documents. The router reads InferencePool,
-	// InferenceObjective and InferenceModelRewrite objects; other kinds are ignored.
+	// InferenceObjective and InferenceModelRewrite objects. BLIS also reads
+	// explicit Node records for zone/region identity when topology is enabled;
+	// other kinds are ignored.
 	Manifests []byte
 	// Model is the served model name requests carry.
 	Model string
