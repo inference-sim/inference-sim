@@ -35,6 +35,7 @@ type InstanceSimulator struct {
 	warmUpRequestIDs []string          // IDs of requests served during warm-up (for TTFT factor)
 	nodeID           string            // primary node this instance is placed on (empty = unplaced). For a multi-node TP instance (#1529) this is only the lowest-index node; the full node set is PlacementManager.distinctNodesForGPUs(allocatedGPUIDs).
 	allocatedGPUIDs  []string          // GPU IDs allocated to this instance (spans >1 node for multi-node TP)
+	endpointTopology EndpointTopology  // captured at placement; never inferred from the primary nodeID
 	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 
 	// Phase 1C: hardware variant fields (set at placement time in cluster.go).

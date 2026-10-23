@@ -1618,6 +1618,10 @@ var runCmd = &cobra.Command{
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
 		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
+		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)
+		if topologyErr != nil {
+			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
+		}
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
@@ -1664,6 +1668,7 @@ var runCmd = &cobra.Command{
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:       bundleAnalyzerCfg,
 			NodePools:                      bundleNodePools,
+			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
 		}
 		// Session callback installation (Constraint 3 fix):

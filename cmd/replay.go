@@ -485,6 +485,10 @@ Example:
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		requireKernelCapacity(kernelPD)
 		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
+		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)
+		if topologyErr != nil {
+			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
+		}
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
@@ -508,22 +512,23 @@ Example:
 				LatencyModel:           lr.KernelModel,
 				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
 			},
-			NumInstances:         numInstances,
-			DPLockstepRanks:      dpPlan.LockstepRanks,
-			DPLoadBalancing:      dpLoadBalancing,
-			TraceLevel:           traceLevel,
-			CounterfactualK:      counterfactualK,
-			PrefillInstances:     prefillInstances,
-			DecodeInstances:      decodeInstances,
-			SharedInstances:      prefillDecodeInstances,
-			EncodeInstances:      encodeInstances,
-			PDTransferTime:       pdTransferTime,
-			PDTransferContention: pdTransferContention,
-			PDTransferDemand:     pdTransferDemand,
-			PDPrefillKVHold:      kernelPD.holdsPrefillKV(),
-			PrefillOverrides:     prefillOverrides,
-			DecodeOverrides:      decodeOverrides,
-			InstanceLifecycle:    bundleInstanceLifecycle,
+			NumInstances:             numInstances,
+			DPLockstepRanks:          dpPlan.LockstepRanks,
+			DPLoadBalancing:          dpLoadBalancing,
+			TraceLevel:               traceLevel,
+			CounterfactualK:          counterfactualK,
+			PrefillInstances:         prefillInstances,
+			DecodeInstances:          decodeInstances,
+			SharedInstances:          prefillDecodeInstances,
+			EncodeInstances:          encodeInstances,
+			PDTransferTime:           pdTransferTime,
+			PDTransferContention:     pdTransferContention,
+			PDTransferDemand:         pdTransferDemand,
+			PDPrefillKVHold:          kernelPD.holdsPrefillKV(),
+			PrefillOverrides:         prefillOverrides,
+			DecodeOverrides:          decodeOverrides,
+			InstanceLifecycle:        bundleInstanceLifecycle,
+			ScenarioEndpointTopology: cluster.StaticEndpointTopology(scenarioTopology),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
