@@ -205,6 +205,8 @@ jobs:
         env:
           BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
         run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Tier 3: vLLM's own EngineCore.step_with_batch_queue (async scheduling, the batch
       # queue, PP) on every tier-3 scenario and 1000 fuzz seeds, then blis-vllm's core/engine.
       - name: run every tier-3 scenario and the tier-3 fuzz corpus through vLLM's EngineCore
@@ -235,14 +237,12 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
-          set -o pipefail
-          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Each supported row's mutants must be caught by the tests above (docs/testing.md).
       - name: mutation sweep
         run: |
-          python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
           set -o pipefail
           python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
+          python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
