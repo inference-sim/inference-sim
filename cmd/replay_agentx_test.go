@@ -101,6 +101,7 @@ type agentXFile struct {
 		MaxContextLength  int    `json:"max_context_length"`
 		ProfileStartUs    int64  `json:"profile_start_us"`
 		ProfileCompleteUs int64  `json:"profile_complete_us"`
+		TraceIdleCapJumps int    `json:"trace_idle_cap_jumps"`
 		CorpusSHA256      string `json:"corpus_sha256"`
 	} `json:"agentic"`
 	Requests []struct {
@@ -223,6 +224,48 @@ func TestReplayAgentX_WorkloadSpecWithFlagOverrides(t *testing.T) {
 		if m.Agentic.Lanes != tc.lanes || m.Agentic.MaxContextLength <= 0 {
 			t.Errorf("%v: %d lanes (want %d), max_context_length %d", tc.args, m.Agentic.Lanes, tc.lanes, m.Agentic.MaxContextLength)
 		}
+	}
+}
+
+// TestReplayAgentX_ForkExtensions: a workload spec that states the per-trace idle cap and a
+// request-bounded cache-pressure warmup (the InferenceX fork run's knobs, #1971) flows
+// end-to-end — the warmup extras raise the warmup count, the per-trace cap fires at
+// concurrency >= 2, and omitting both reproduces the baseline summary.
+func TestReplayAgentX_ForkExtensions(t *testing.T) {
+	head := "workload:\n  replay:\n    scenario: inferencex-agentx-mvp\n    harness_version: 0.12.0\n" +
+		"    corpus:\n      loader: semianalysis_cc_traces_weka_062126_256k\n      format: weka-trace-v7\n      encoding: jsonl\n" +
+		"      source:\n        huggingface: semianalysisai/cc-traces-weka-062126-256k\n        revision: test\n" +
+		"      sha256: " + agentXSliceSHA(t) + "\n" +
+		"    concurrency: 4\n    benchmark_duration_s: 900\n    max_context_length: max_model_len\n"
+	write := func(extra string) string {
+		p := filepath.Join(t.TempDir(), "replay.yaml")
+		if err := os.WriteFile(p, []byte(head+extra), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	base := write("")
+	fork := write("    trace_idle_gap_cap_s: 300\n    warmup:\n      mode: cache_pressure\n      requests_per_lane: 5\n")
+
+	var mb, mf agentXFile
+	_, fb := runAgentXReplay(t, "--workload-spec", base)
+	_, ff := runAgentXReplay(t, "--workload-spec", fork)
+	if err := json.Unmarshal(fb, &mb); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(ff, &mf); err != nil {
+		t.Fatal(err)
+	}
+	// The per-lane extras add to the warmup count (5 per lane that had a primer).
+	if mf.Agentic.WarmupRequests <= mb.Agentic.WarmupRequests {
+		t.Errorf("fork warmup requests %d not above baseline %d", mf.Agentic.WarmupRequests, mb.Agentic.WarmupRequests)
+	}
+	// The per-trace cap fires at concurrency 4; the baseline (no cap) never does.
+	if mb.Agentic.TraceIdleCapJumps != 0 {
+		t.Errorf("baseline must not fire the per-trace cap: %d jumps", mb.Agentic.TraceIdleCapJumps)
+	}
+	if mf.Agentic.TraceIdleCapJumps == 0 {
+		t.Errorf("the per-trace cap should have fired at concurrency 4")
 	}
 }
 
