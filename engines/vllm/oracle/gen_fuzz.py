@@ -11,9 +11,10 @@ that finds a mismatch is shrunk and kept under oracle/scenarios as a permanent t
 Seeds from 5000 on (`SPEC_FROM`) add what the base generator leaves at defaults: a
 speculative decoder in about half of them (EAGLE3, P-EAGLE, draft_model, PARD, MTP single
 and multi-module, DSpark; per-request acceptance drawn per verify step), LoRA adapters with
-max_loras, and the scheduler knobs vLLM's test helper does not expose (watermark,
-max_num_active_seqs, max_num_scheduled_tokens, the adaptive long-prefill cap). Seeds below
-5000 give exactly the scenarios they always gave, so the existing corpus does not move.
+max_loras, the scheduler knobs vLLM's test helper does not expose (watermark,
+max_num_active_seqs, max_num_scheduled_tokens, the adaptive long-prefill cap), and KV
+events. Seeds below 5000 give exactly the scenarios they always gave, so the existing corpus
+does not move.
 
 Usage: python -I oracle/gen_fuzz.py <out dir> <first seed> <count>
 """
@@ -76,6 +77,8 @@ def extend(sc: dict, rng: random.Random) -> None:
         cfg["max_num_scheduled_tokens"] = rng.randint(max(1, cfg["max_num_seqs"]), cfg["max_num_batched_tokens"])
     if cfg["long_prefill_token_threshold"] and rng.random() < 0.5:
         cfg["long_prefill_token_threshold_adaptive"] = True
+    if cfg["enable_prefix_caching"] and rng.random() < 0.3:
+        cfg["kv_events"] = True
     # The pool must still hold the largest request with the drafter's lookahead and the
     # watermark, or vLLM would never admit it.
     look = cfg.get("speculative", {}).get("num_speculative_tokens", 0) + 1

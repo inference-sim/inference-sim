@@ -48,6 +48,10 @@ type Config struct {
 	Spec Spec
 	// MaxLoRAs is LoRAConfig.max_loras (vllm/config/lora.py:35@5df63a72); 0 = LoRA off.
 	MaxLoRAs int
+	// KVEvents is kv_events_config.enable_kv_cache_events (vllm/config/kv_events.py:14@5df63a72):
+	// the KV cache records BlockStored and BlockRemoved events, taken each step by
+	// TakeKVEvents.
+	KVEvents bool
 }
 
 // Status is RequestStatus (vllm/v1/request.py:370).
@@ -75,6 +79,8 @@ type Request struct {
 	Keys kv.BlockKeys
 	// LoRA is the adapter's lora_int_id, 0 for the base model.
 	LoRA int
+	// LoRAName is the adapter's lora_name, reported in KV events.
+	LoRAName string
 
 	Status         Status
 	Output         []int64
@@ -167,14 +173,22 @@ func New(cfg Config) (*Scheduler, error) {
 			cfg.MaxNumBatchedTokens, cfg.Spec.DraftSlots)
 	}
 	wm := int(cfg.Watermark * float64(cfg.NumBlocks))
-	return &Scheduler{
+	s := &Scheduler{
 		cfg: cfg,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
 			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
-	}, nil
+	}
+	if cfg.KVEvents {
+		s.KV.Pool.EnableEvents()
+	}
+	return s, nil
 }
+
+// TakeKVEvents returns the KV cache events of the last step, in the order vLLM queues them
+// (kv_cache_manager.take_events, scheduler.py:2371@5df63a72).
+func (s *Scheduler) TakeKVEvents() []kv.Event { return s.KV.Pool.TakeEvents() }
 
 // Add is add_request.
 func (s *Scheduler) Add(r *Request) error {
@@ -278,7 +292,7 @@ func (s *Scheduler) Schedule() Output {
 		ok := false
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
-				Hashes: r.hashes, NumTokens: r.NumTokens(), HasScheduled: true}) {
+				Hashes: r.hashes, NumTokens: r.NumTokens(), HasScheduled: true, Run: s.run(r)}) {
 				ok = true
 				break
 			}
@@ -392,7 +406,7 @@ func (s *Scheduler) Schedule() Output {
 			}
 			if !s.KV.Allocate(r.ID, kv.Alloc{New: numNew, Lookahead: s.cfg.Spec.Lookahead, NewComputed: hit,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), Waiting: true, HasScheduled: len(s.running) > 0,
-				FullSequenceMustFit: s.cfg.ReserveFullSequence}) {
+				FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
 				break
 			}
 			s.waiting.pop()
@@ -443,6 +457,14 @@ func (s *Scheduler) Schedule() Output {
 		r.IsPrefillChunk = r.NumComputed < r.NumTokens()
 	}
 	return out
+}
+
+// run is what a KV event reports about r's blocks; nothing is built with events off.
+func (s *Scheduler) run(r *Request) kv.StoredRun {
+	if !s.cfg.KVEvents {
+		return kv.StoredRun{}
+	}
+	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}
 }
 
 // preempt is _preempt_request (:1571-1614) for recompute preemption.

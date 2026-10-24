@@ -43,7 +43,7 @@ MUTANTS = [
     ("M13", "update order (scheduling order)", "core/sched/scheduler.go",
      "for _, id := range out.Order {", "for _, id := range sortedStrings(out.Order) {"),
     ("M14", "full-sequence admission gate", "core/sched/scheduler.go",
-     "FullSequenceMustFit: s.cfg.ReserveFullSequence}", "FullSequenceMustFit: false}"),
+     "FullSequenceMustFit: s.cfg.ReserveFullSequence,", "FullSequenceMustFit: false,"),
     ("M15", "prefix hit capped at num_tokens-1", "core/kv/manager.go",
      "maxBlocks := (numTokens - 1) / m.blockSize", "maxBlocks := numTokens / m.blockSize"),
     ("M16", "free queue: hashed blocks to the tail", "core/kv/pool.go",
@@ -51,7 +51,7 @@ MUTANTS = [
     ("M17", "free order tail first", "core/kv/manager.go",
      "rev[len(bs)-1-i] = b", "rev[i] = b"),
     ("M18", "prefix caching (cache full blocks)", "core/kv/manager.go",
-     "\t\tm.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)))\n", "\t\t_ = a.Hashes\n"),
+     "\t\tm.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)\n", "\t\t_ = a.Hashes\n"),
     ("M19", "kv usage (null block excluded)", "core/kv/pool.go",
      "total := len(p.blocks) - 1", "total := len(p.blocks)"),
     ("M20", "evictable prefix-hit blocks counted", "core/kv/manager.go",
@@ -68,7 +68,7 @@ MUTANTS = [
     ("M25", "lookahead slots in allocate_slots", "core/kv/manager.go",
      "needSlots := min(mainModel+a.Lookahead, m.maxModelLen)", "needSlots := min(mainModel, m.maxModelLen)"),
     ("M26", "drafts are never cached", "core/kv/manager.go",
-     "m.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)))", "m.cache(id, a.Hashes, m.cacheable(mainModel))"),
+     "m.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)", "m.cache(id, a.Hashes, m.cacheable(mainModel), a.Run)"),
     ("M27", "EAGLE block drop", "core/kv/manager.go",
      "if m.eagle && len(hit) > 0 {", "if false && len(hit) > 0 {"),
     ("M28", "multi-module MTP reprefillable tokens", "core/kv/manager.go",
@@ -91,6 +91,13 @@ MUTANTS = [
      "\t\t\tif stop {\n\t\t\t\tbreak\n\t\t\t}", ""),
     ("M37", "draft_model one draft slot", "core/sched/spec.go",
      "\tcase draftModel:\n\t\ts.DraftSlots = 1", "\tcase draftModel:\n\t\ts.DraftSlots = 0"),
+    # KV events (kv_events_config).
+    ("M38", "BlockStored parent hash", "core/kv/pool.go",
+     "\t\tif numCached > 0 {\n\t\t\tparent = hashes[numCached-1]\n\t\t}", ""),
+    ("M39", "BlockRemoved on eviction", "core/kv/pool.go",
+     "\tif p.events != nil {\n\t\t*p.events = append(*p.events, Event{Removed: true,", "\tif false {\n\t\t*p.events = append(*p.events, Event{Removed: true,"),
+    ("M40", "BlockStored adapter name", "core/sched/scheduler.go",
+     "return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}", "return kv.StoredRun{Tokens: r.allTokens()}"),
 ]
 
 

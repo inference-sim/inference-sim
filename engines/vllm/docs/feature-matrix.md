@@ -74,7 +74,7 @@ cannot fail.
 | `disable_hybrid_kv_cache_manager` | IX 6, AD33 29 | `vllm/config/scheduler.py:182@5df63a72` | vllm | T2 | block contents | planned |
 | `mamba_cache_mode`, `mamba_ssm_cache_dtype` | IX 6, IR | `vllm/config/cache.py:185,189@5df63a72`; `vllm/v1/core/sched/scheduler.py:377@5df63a72` (aligned split) | vllm + kernel | T2 | tokens per request (aligned split) | planned |
 | `swa_bounded_replay` | IX 2, BL | `vllm/config/cache.py:250@5df63a72` | vllm | T2 | prefix-hit tokens | planned |
-| KV events (`kv_events_config`) | IX 2, IR | `vllm/config/kv_events.py:11-14@5df63a72` | vllm → router | T2 | KV event stream | planned |
+| KV events (`kv_events_config`) | IX 2, IR | `vllm/config/kv_events.py:11-14@5df63a72` | vllm → router | T2 | KV event stream | supported (T2: `kv-events` + the 389 fuzz seeds with KV events on (of 5000-6999), 0 mismatches: every step's BlockStored (hashes as vLLM publishes them, the 64-bit integer form, parent hash, tokens, block size, adapter) and BlockRemoved by content, against vLLM's own event stream; mutants M38, M39, M40 caught). Publishing them to the embedded router is the engine adapter's (inference-sim keeps the transport) |
 
 ## Speculative decoding (acceptance is an input, #2021 B3)
 

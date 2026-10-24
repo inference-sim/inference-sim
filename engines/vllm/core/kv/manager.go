@@ -99,6 +99,9 @@ type Alloc struct {
 	// NumTokens is the request's num_tokens (prompt plus output, drafts excluded): caching
 	// stops there, so an unverified draft is never cached.
 	NumTokens int
+	// Run is what a BlockStored event reports (its tokens and adapter); used only with
+	// events on.
+	Run StoredRun
 	// Waiting is whether the request is WAITING or PREEMPTED, which with HasScheduled
 	// applies the watermark.
 	Waiting, HasScheduled bool
@@ -152,7 +155,7 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 		m.reqBlocks[id] = append(m.reqBlocks[id], m.Pool.New(need)...)
 	}
 	if m.caching {
-		m.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)))
+		m.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)
 	}
 	return true
 }
@@ -186,7 +189,7 @@ func (m *Manager) toAllocate(id string, numTokens int, newComputed []*Block) int
 
 // cache records the request's full blocks up to numTokens as prefix-cached
 // (cache_blocks, single_type_kv_cache_manager.py:468-516).
-func (m *Manager) cache(id string, hashes []BlockHash, numTokens int) {
+func (m *Manager) cache(id string, hashes []BlockHash, numTokens int, run StoredRun) {
 	numCached := m.numCached[id]
 	numFull := numTokens / m.blockSize
 	if numCached >= numFull {
@@ -196,7 +199,7 @@ func (m *Manager) cache(id string, hashes []BlockHash, numTokens int) {
 	if numCached >= numFull {
 		return
 	}
-	m.Pool.CacheFull(m.reqBlocks[id], hashes, numCached, numFull)
+	m.Pool.CacheFull(m.reqBlocks[id], hashes, numCached, numFull, run, m.blockSize)
 	m.numCached[id] = numFull
 }
 

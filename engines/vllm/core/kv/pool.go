@@ -31,6 +31,39 @@ type Pool struct {
 	cached  map[string][]*Block // hash -> blocks holding it, in insertion order
 	caching bool
 	null    *Block
+	// events, when non-nil, collects the KV cache events vLLM's BlockPool queues
+	// (kv_event_queue, block_pool.py:179-185) until TakeEvents.
+	events *[]Event
+}
+
+// Event is one KV cache event (vllm/distributed/kv_events.py:56-138@5df63a72), by content.
+type Event struct {
+	// Removed distinguishes BlockRemoved (true) from BlockStored.
+	Removed bool
+	// Hashes are the block hashes, without the group suffix.
+	Hashes []BlockHash
+	// Parent is BlockStored's parent_block_hash: the hash before the first stored block, nil
+	// for a run starting at the prompt's first block.
+	Parent BlockHash
+	// Tokens are BlockStored's token_ids: the stored blocks' tokens.
+	Tokens []int64
+	// BlockSize is BlockStored's block_size.
+	BlockSize int
+	// LoRA is BlockStored's lora_name, "" for the base model.
+	LoRA string
+}
+
+// EnableEvents makes the pool record KV cache events (enable_kv_cache_events).
+func (p *Pool) EnableEvents() { p.events = &[]Event{} }
+
+// TakeEvents returns the events since the last call (take_events, block_pool.py:890-901).
+func (p *Pool) TakeEvents() []Event {
+	if p.events == nil {
+		return nil
+	}
+	out := *p.events
+	*p.events = nil
+	return out
 }
 
 // NewPool builds a pool of numBlocks blocks. Block 0 becomes the null block, as vLLM pops
@@ -126,9 +159,19 @@ func (p *Pool) Free(ordered []*Block) {
 	p.free.appendN(last)
 }
 
+// StoredRun is what a BlockStored event reports about the request whose blocks are cached.
+type StoredRun struct {
+	// Tokens are the request's tokens (prompt then output), at least through numFull blocks.
+	Tokens []int64
+	// LoRA is the request's adapter name, "" for the base model.
+	LoRA string
+}
+
 // CacheFull records blocks[numCached:numFull] as cached under their hashes in KV cache
-// group 0 (cache_full_blocks, block_pool.py:226-345, without KV events).
-func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull int) {
+// group 0 (cache_full_blocks, block_pool.py:226-345), and with events on, queues one
+// BlockStored event for the run (:301-343).
+func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun, blockSize int) {
+	var stored []BlockHash
 	for i := numCached; i < numFull; i++ {
 		b := blocks[i]
 		if b.Null {
@@ -138,6 +181,16 @@ func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull
 			p.evict(b)
 		}
 		p.insert(WithGroup(hashes[i], 0), b)
+		stored = append(stored, hashes[i])
+	}
+	if p.events != nil {
+		var parent BlockHash
+		if numCached > 0 {
+			parent = hashes[numCached-1]
+		}
+		*p.events = append(*p.events, Event{Hashes: stored, Parent: parent,
+			Tokens:    append([]int64(nil), run.Tokens[numCached*blockSize:numFull*blockSize]...),
+			BlockSize: blockSize, LoRA: run.LoRA})
 	}
 }
 
@@ -157,10 +210,14 @@ func (p *Pool) insert(h []byte, b *Block) {
 	p.cached[string(h)] = append(p.cached[string(h)], b)
 }
 
-// evict removes b's hash from the cache map (_maybe_evict_cached_block, block_pool.py:729-750).
+// evict removes b's hash from the cache map (_maybe_evict_cached_block, block_pool.py:729-750),
+// queuing a BlockRemoved event with events on (_emit_block_removed_events, :611-624).
 func (p *Pool) evict(b *Block) {
 	if b.Hash == nil {
 		return
+	}
+	if p.events != nil {
+		*p.events = append(*p.events, Event{Removed: true, Hashes: []BlockHash{append(BlockHash(nil), b.Hash[:len(b.Hash)-4]...)}})
 	}
 	k := string(b.Hash)
 	bs := p.cached[k]

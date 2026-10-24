@@ -2,6 +2,7 @@ package sched
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -73,6 +75,9 @@ type step struct {
 	Blocks     map[string][][]any `json:"blocks"`
 	// SpecScheduled is the drafts each request verified this step, when any did.
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
+	// KVEvents are the step's KV cache events, by content, when the scenario turns them on:
+	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes].
+	KVEvents []any `json:"kv_events,omitempty"`
 }
 
 type trace struct {
@@ -106,7 +111,7 @@ func run(t *testing.T, sc scenario) trace {
 		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
-		Spec: spec, MaxLoRAs: c.MaxLoRAs,
+		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +159,7 @@ func run(t *testing.T, sc scenario) trace {
 				// vLLM's LoRA block key (kv_cache_utils.py:578-595@5df63a72), with the oracle's
 				// adapter path.
 				req.LoRA = indexOfString(adapters, r.LoRA) + 1
+				req.LoRAName = r.LoRA
 				req.Keys.Extra = []kv.ExtraKey{{"lora", r.LoRA, "/adapters/" + r.LoRA}}
 			}
 			if err := s.Add(req); err != nil {
@@ -235,6 +241,9 @@ func run(t *testing.T, sc scenario) trace {
 		if len(specScheduled) > 0 {
 			st.SpecScheduled = specScheduled
 		}
+		if c.KVEvents {
+			st.KVEvents = eventsJSON(s.TakeKVEvents())
+		}
 		for _, id := range st.Running {
 			for _, b := range s.KV.Blocks(id) {
 				var h any
@@ -247,6 +256,49 @@ func run(t *testing.T, sc scenario) trace {
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
+}
+
+// eventsJSON writes KV events as the oracle does: a block hash is the integer vLLM publishes
+// by default, the low 64 bits of the hash read big-endian (VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES,
+// vllm/envs.py:2033-2035 and kv_cache_utils.py:96-99@5df63a72), in decimal.
+func eventsJSON(evs []kv.Event) []any {
+	out := []any{}
+	h := func(b kv.BlockHash) any {
+		if b == nil {
+			return nil
+		}
+		return strconv.FormatUint(binary.BigEndian.Uint64(b[len(b)-8:]), 10)
+	}
+	hs := func(bs []kv.BlockHash) []any {
+		o := []any{}
+		for _, b := range bs {
+			o = append(o, h(b))
+		}
+		return o
+	}
+	for _, e := range evs {
+		if e.Removed {
+			out = append(out, []any{"removed", hs(e.Hashes)})
+			continue
+		}
+		toks := []any{}
+		for _, t := range e.Tokens {
+			toks = append(toks, float64(t))
+		}
+		var lora any
+		if e.LoRA != "" {
+			lora = e.LoRA
+		}
+		out = append(out, []any{"stored", hs(e.Hashes), h(e.Parent), toks, float64(e.BlockSize), lora})
+	}
+	return out
+}
+
+func nonNilAny(v []any) []any {
+	if v == nil {
+		return []any{}
+	}
+	return v
 }
 
 func indexOfString(xs []string, x string) int {
@@ -306,6 +358,7 @@ func earliestDivergence(want, got trace) string {
 			{"kv_usage", fmt.Sprintf("%.12f", w.KVUsage), fmt.Sprintf("%.12f", g.KVUsage)},
 			{"blocks", nonNilBlocks(w.Blocks), nonNilBlocks(g.Blocks)},
 			{"spec_scheduled", nonNil(w.SpecScheduled), nonNil(g.SpecScheduled)},
+			{"kv_events", nonNilAny(w.KVEvents), nonNilAny(g.KVEvents)},
 		} {
 			if !reflect.DeepEqual(f.w, f.g) {
 				return fmt.Sprintf("step %d, field %s: oracle %v, Go %v", i, f.name, f.w, f.g)
