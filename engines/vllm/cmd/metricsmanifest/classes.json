@@ -1,0 +1,620 @@
+{
+  "families": {
+    "vllm:<kvcr DURATION_METRIC>": {
+      "class": "unavailable",
+      "enabled_by": "TieringOffloadingSpec with a KVCR secondary tier",
+      "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs"
+    },
+    "vllm:<kvcr STATE_METRIC>": {
+      "class": "unavailable",
+      "enabled_by": "TieringOffloadingSpec with a KVCR secondary tier",
+      "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs"
+    },
+    "vllm:<kvcr TRANSFER_BLOCKS_METRIC>": {
+      "class": "unavailable",
+      "enabled_by": "TieringOffloadingSpec with a KVCR secondary tier",
+      "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs"
+    },
+    "vllm:<kvcr TRANSFER_BYTES_METRIC>": {
+      "class": "unavailable",
+      "enabled_by": "TieringOffloadingSpec with a KVCR secondary tier",
+      "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs"
+    },
+    "vllm:admission_rejections": {
+      "class": "unavailable",
+      "reason": "the API server's queue-limit rejections (max_num_queued_reqs, max_num_queued_tokens; vllm/v1/metrics/loggers.py:47@5df63a72): front-end admission, which the embedded llm-d router and inference-sim's admission model own, not the engine"
+    },
+    "vllm:cache_config_info": {
+      "class": "exact",
+      "reason": "an info gauge labelled by CacheConfig.metrics_info() (vllm/v1/metrics/loggers.py:1116-1135@5df63a72), a function of the configuration alone"
+    },
+    "vllm:corrupted_requests": {
+      "class": "unavailable",
+      "enabled_by": "VLLM_COMPUTE_NANS_IN_LOGITS",
+      "reason": "requests whose logits held NaNs: a property of real numerics on a GPU"
+    },
+    "vllm:diffusion_num_canvas_positions": {
+      "class": "unavailable",
+      "enabled_by": "a diffusion model (model_config.is_diffusion)",
+      "reason": "diffusion language models: no source serves one"
+    },
+    "vllm:diffusion_num_committed_tokens": {
+      "class": "unavailable",
+      "enabled_by": "a diffusion model (model_config.is_diffusion)",
+      "reason": "diffusion language models: no source serves one"
+    },
+    "vllm:diffusion_num_denoising_steps": {
+      "class": "unavailable",
+      "enabled_by": "a diffusion model (model_config.is_diffusion)",
+      "reason": "diffusion language models: no source serves one"
+    },
+    "vllm:e2e_request_latency_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:engine_sleep_state": {
+      "class": "unavailable",
+      "reason": "the engine's sleep mode (an operator RPC that offloads weights), which no simulated run invokes; it reads awake = 1 throughout"
+    },
+    "vllm:estimated_flops_per_gpu_total": {
+      "class": "derived",
+      "enabled_by": "observability_config.enable_mfu_metrics (vllm/v1/core/sched/scheduler.py:420@5df63a72)",
+      "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches"
+    },
+    "vllm:estimated_read_bytes_per_gpu_total": {
+      "class": "derived",
+      "enabled_by": "observability_config.enable_mfu_metrics (vllm/v1/core/sched/scheduler.py:420@5df63a72)",
+      "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches"
+    },
+    "vllm:estimated_write_bytes_per_gpu_total": {
+      "class": "derived",
+      "enabled_by": "observability_config.enable_mfu_metrics (vllm/v1/core/sched/scheduler.py:420@5df63a72)",
+      "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches"
+    },
+    "vllm:external_prefix_cache_hits": {
+      "class": "exact",
+      "enabled_by": "a KV connector (kv_transfer_config)",
+      "reason": "a KV connector's prefix-cache queries and hits at admission (vllm/v1/core/sched/scheduler.py:1284-1311@5df63a72), from blis-vllm's connector model; zero without a connector"
+    },
+    "vllm:external_prefix_cache_queries": {
+      "class": "exact",
+      "enabled_by": "a KV connector (kv_transfer_config)",
+      "reason": "a KV connector's prefix-cache queries and hits at admission (vllm/v1/core/sched/scheduler.py:1284-1311@5df63a72), from blis-vllm's connector model; zero without a connector"
+    },
+    "vllm:generation_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:hf3fs_load_duration_seconds": {
+      "class": "unavailable",
+      "enabled_by": "HF3FSKVConnector",
+      "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)"
+    },
+    "vllm:hf3fs_num_failed_load": {
+      "class": "unavailable",
+      "enabled_by": "HF3FSKVConnector",
+      "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)"
+    },
+    "vllm:hf3fs_num_failed_save": {
+      "class": "unavailable",
+      "enabled_by": "HF3FSKVConnector",
+      "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)"
+    },
+    "vllm:hf3fs_save_duration_seconds": {
+      "class": "unavailable",
+      "enabled_by": "HF3FSKVConnector",
+      "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)"
+    },
+    "vllm:hisparse_cache_hits": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_cache_misses": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_host_block_idle_before_evict_seconds": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_host_block_lifetime_seconds": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_host_block_reuse_gap_seconds": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_host_cache_usage_perc": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_host_to_device_bytes": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:hisparse_pending_page_transfers": {
+      "class": "unavailable",
+      "enabled_by": "attention_config.hisparse_config",
+      "reason": "HiSparse attention's host cache, which no source enables"
+    },
+    "vllm:inter_token_latency_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:iteration_tokens_total": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:kv_block_idle_before_evict_seconds": {
+      "class": "derived",
+      "enabled_by": "observability_config.kv_cache_metrics (vllm/v1/metrics/loggers.py:1036@5df63a72)",
+      "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step"
+    },
+    "vllm:kv_block_lifetime_seconds": {
+      "class": "derived",
+      "enabled_by": "observability_config.kv_cache_metrics (vllm/v1/metrics/loggers.py:1036@5df63a72)",
+      "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step"
+    },
+    "vllm:kv_block_reuse_gap_seconds": {
+      "class": "derived",
+      "enabled_by": "observability_config.kv_cache_metrics (vllm/v1/metrics/loggers.py:1036@5df63a72)",
+      "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step"
+    },
+    "vllm:kv_cache_usage_perc": {
+      "class": "exact",
+      "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
+    },
+    "vllm:kv_offload_allocation_failure": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector",
+      "reason": "offload-tier allocations that failed, a decision of the offload manager given the tier's fixed capacity"
+    },
+    "vllm:kv_offload_cpu_allocation_size": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, CPUOffloadingSpec",
+      "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)"
+    },
+    "vllm:kv_offload_cpu_cache_read_usage_perc": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, CPUOffloadingSpec",
+      "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)"
+    },
+    "vllm:kv_offload_cpu_cache_usage_perc": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, CPUOffloadingSpec",
+      "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)"
+    },
+    "vllm:kv_offload_cpu_cache_write_usage_perc": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, CPUOffloadingSpec",
+      "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)"
+    },
+    "vllm:kv_offload_load_bytes": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_load_size": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_load_time": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_lookup_async_delay_seconds": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "how long a scheduler-side offload lookup blocked or waited: a duration on virtual time, given the tier's lookup cost"
+    },
+    "vllm:kv_offload_lookup_sync_delay_seconds": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "how long a scheduler-side offload lookup blocked or waited: a duration on virtual time, given the tier's lookup cost"
+    },
+    "vllm:kv_offload_size": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_store_bytes": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_store_size": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_store_time": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_stores_skipped": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector with store_threshold >= 2 (vllm/v1/kv_offload/cpu/spec.py:81-89@5df63a72)",
+      "reason": "stores the CPU offload manager skipped below its reuse threshold, a decision of the manager"
+    },
+    "vllm:kv_offload_tiering_active_cascade_jobs": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_active_promotion_jobs": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_backpressure_blocks_dropped": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_backpressure_store_latency_ema": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_backpressure_stores_dropped": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_cascade_job_failures": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_chunk_hits": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_chunk_queries": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_lookup_async_delay_seconds": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_lookup_sync_delay_seconds": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_primary_read_usage_perc": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_primary_write_usage_perc": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_promotion_allocation_failures": {
+      "class": "exact",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
+    },
+    "vllm:kv_offload_tiering_promotion_job_failures": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_read_bytes": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_read_time": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_write_bytes": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_tiering_write_time": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies"
+    },
+    "vllm:kv_offload_total_bytes": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:kv_offload_total_time": {
+      "class": "derived",
+      "enabled_by": "OffloadingConnector",
+      "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices"
+    },
+    "vllm:lora_requests_info": {
+      "class": "derived",
+      "enabled_by": "lora_config",
+      "reason": "running and waiting LoRA adapters, refreshed with the wall-clock time of the update (set_to_current_time, vllm/v1/metrics/loggers.py:1236@5df63a72): the adapter sets follow the scheduler; the sample value is a timestamp the simulator supplies"
+    },
+    "vllm:mm_cache_hits": {
+      "class": "unavailable",
+      "reason": "the multimodal processor cache: no source serves multimodal requests (feature-matrix exclusion of multimodal encoder scheduling)"
+    },
+    "vllm:mm_cache_queries": {
+      "class": "unavailable",
+      "reason": "the multimodal processor cache: no source serves multimodal requests (feature-matrix exclusion of multimodal encoder scheduling)"
+    },
+    "vllm:mooncake_store_operation_bytes_total": {
+      "class": "derived",
+      "enabled_by": "MooncakeStoreConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:mooncake_store_operation_failed_keys_total": {
+      "class": "derived",
+      "enabled_by": "MooncakeStoreConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:mooncake_store_operation_keys_total": {
+      "class": "derived",
+      "enabled_by": "MooncakeStoreConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:mooncake_store_operation_time_seconds": {
+      "class": "derived",
+      "enabled_by": "MooncakeStoreConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:mooncake_store_operation_total": {
+      "class": "derived",
+      "enabled_by": "MooncakeStoreConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_bytes_transferred": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_num_descriptors": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_num_failed_notifications": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_num_failed_transfers": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_num_kv_expired_reqs": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_num_notifications_after_expiry": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_post_time_seconds": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:nixl_xfer_time_seconds": {
+      "class": "derived",
+      "enabled_by": "NixlConnector",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
+    },
+    "vllm:num_preemptions": {
+      "class": "exact",
+      "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
+    },
+    "vllm:num_requests_kv_fetch_by_stage": {
+      "class": "exact",
+      "enabled_by": "a KV consumer (kv_transfer_config.is_kv_consumer, vllm/v1/metrics/loggers.py:570@5df63a72)",
+      "reason": "waiting requests by async KV-load stage, a count of the scheduler's own request states"
+    },
+    "vllm:num_requests_running": {
+      "class": "exact",
+      "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
+    },
+    "vllm:num_requests_waiting": {
+      "class": "exact",
+      "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
+    },
+    "vllm:num_requests_waiting_by_reason": {
+      "class": "exact",
+      "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
+    },
+    "vllm:prefix_cache_hits": {
+      "class": "exact",
+      "reason": "the local prefix cache's queries and hits, counted where the scheduler admits a request (record_prefix_cache_stats, vllm/v1/core/kv_cache_manager.py:244-262@5df63a72), from blis-vllm's own prefix lookup"
+    },
+    "vllm:prefix_cache_queries": {
+      "class": "exact",
+      "reason": "the local prefix cache's queries and hits, counted where the scheduler admits a request (record_prefix_cache_stats, vllm/v1/core/kv_cache_manager.py:244-262@5df63a72), from blis-vllm's own prefix lookup"
+    },
+    "vllm:prompt_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:prompt_tokens_by_source": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:prompt_tokens_cached": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:prompt_tokens_cached_by_source": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_decode_time_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:request_generation_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_inference_time_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:request_max_num_generation_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_num_preemptions": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_params_max_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_params_n": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_prefill_kv_computed_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_prefill_time_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:request_prompt_tokens": {
+      "class": "exact",
+      "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
+    },
+    "vllm:request_queue_time_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:request_success": {
+      "class": "exact",
+      "reason": "finished requests by finish reason, from the scheduler's check_stop and finish_requests (vllm/v1/core/sched/utils.py:98-140@5df63a72)"
+    },
+    "vllm:request_time_per_output_token_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:rl_weight_update_operation_duration_seconds": {
+      "class": "unavailable",
+      "reason": "online RL weight-update endpoints of the API server: no simulated run updates weights"
+    },
+    "vllm:rl_weight_update_operations_in_flight": {
+      "class": "unavailable",
+      "reason": "online RL weight-update endpoints of the API server: no simulated run updates weights"
+    },
+    "vllm:simple_kv_offload_info": {
+      "class": "exact",
+      "enabled_by": "SimpleCPUOffloadConnector",
+      "reason": "an info gauge labelled by the connector's configuration (backend, page cache, lazy_offload, capacity in blocks)"
+    },
+    "vllm:simple_kv_offload_load_blocks_total": {
+      "class": "exact",
+      "enabled_by": "SimpleCPUOffloadConnector",
+      "reason": "SimpleCPUOffloadConnector's block-level outcomes and occupancy (vllm/v1/simple_kv_offload/metrics.py@5df63a72), decisions of the connector given the CPU tier's fixed capacity"
+    },
+    "vllm:simple_kv_offload_pending_store_blocks": {
+      "class": "exact",
+      "enabled_by": "SimpleCPUOffloadConnector",
+      "reason": "SimpleCPUOffloadConnector's block-level outcomes and occupancy (vllm/v1/simple_kv_offload/metrics.py@5df63a72), decisions of the connector given the CPU tier's fixed capacity"
+    },
+    "vllm:simple_kv_offload_save_outcomes_total": {
+      "class": "exact",
+      "enabled_by": "SimpleCPUOffloadConnector",
+      "reason": "SimpleCPUOffloadConnector's block-level outcomes and occupancy (vllm/v1/simple_kv_offload/metrics.py@5df63a72), decisions of the connector given the CPU tier's fixed capacity"
+    },
+    "vllm:simple_kv_offload_used_blocks": {
+      "class": "exact",
+      "enabled_by": "SimpleCPUOffloadConnector",
+      "reason": "SimpleCPUOffloadConnector's block-level outcomes and occupancy (vllm/v1/simple_kv_offload/metrics.py@5df63a72), decisions of the connector given the CPU tier's fixed capacity"
+    },
+    "vllm:sleep_mode_operation_duration_seconds": {
+      "class": "unavailable",
+      "reason": "the dev sleep-mode endpoints of the API server: no simulated run sleeps the engine"
+    },
+    "vllm:sleep_mode_operations_in_flight": {
+      "class": "unavailable",
+      "reason": "the dev sleep-mode endpoints of the API server: no simulated run sleeps the engine"
+    },
+    "vllm:spec_decode_num_accepted_tokens": {
+      "class": "derived",
+      "enabled_by": "speculative_config",
+      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input"
+    },
+    "vllm:spec_decode_num_accepted_tokens_per_pos": {
+      "class": "derived",
+      "enabled_by": "speculative_config",
+      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input"
+    },
+    "vllm:spec_decode_num_draft_tokens": {
+      "class": "derived",
+      "enabled_by": "speculative_config",
+      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input"
+    },
+    "vllm:spec_decode_num_drafts": {
+      "class": "derived",
+      "enabled_by": "speculative_config",
+      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input"
+    },
+    "vllm:time_to_first_token_seconds": {
+      "class": "derived",
+      "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    "vllm:tool_call_parser_invocations_total": {
+      "class": "unavailable",
+      "reason": "tool-call parser invocations in the API server: response parsing, which the feature matrix excludes (it has no scheduling, KV or timing effect)"
+    },
+    "vllm:watermark_requests": {
+      "class": "unavailable",
+      "enabled_by": "watermark_config",
+      "reason": "finished requests by output watermark status: text watermarking, which a token-level simulation does not model"
+    },
+    "vllm:websocket_connection_duration_seconds": {
+      "class": "unavailable",
+      "reason": "the realtime speech-to-text WebSocket endpoint: no source serves audio"
+    },
+    "vllm:websocket_connections_active": {
+      "class": "unavailable",
+      "reason": "the realtime speech-to-text WebSocket endpoint: no source serves audio"
+    },
+    "vllm:websocket_connections_total": {
+      "class": "unavailable",
+      "reason": "the realtime speech-to-text WebSocket endpoint: no source serves audio"
+    }
+  },
+  "not_families": {
+    "vllm/benchmarks/serve.py:vllm:diffusion": "the serve benchmark filters scraped lines by this prefix; it defines nothing",
+    "vllm/benchmarks/serve.py:vllm:spec_decode": "the serve benchmark filters scraped lines by this prefix; it defines nothing",
+    "vllm/entrypoints/serve/utils/orca_metrics.py:vllm:kv_cache_usage_perc": "maps the engine family of this name to an ORCA load-report field; the family is defined in vllm/v1/metrics/loggers.py",
+    "vllm/entrypoints/serve/utils/orca_metrics.py:vllm:num_requests_waiting": "maps the engine family of this name to an ORCA load-report field; the family is defined in vllm/v1/metrics/loggers.py",
+    "vllm/v1/metrics/reader.py:vllm:spec_decode_num_accepted_tokens_per_pos": "the metrics reader recognizes this family by name to group its samples; it is defined in vllm/v1/spec_decode/metrics.py"
+  },
+  "vllm": "0.32.0"
+}

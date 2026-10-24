@@ -52,11 +52,11 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
-| T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29/0.31 packs checked; 0.32 pack in progress |
+| T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`); `rules/v0_32` passes all 35 source checks at `5df63a72`, and mutants of its new data, rule and parser are caught |
 | T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap, preemption, prefix caching: 14 scenarios + 2000 fuzz seeds at zero mismatches, 20 of 22 mutants caught; speculative decoding, LoRA and hybrid KV in progress |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | EngineCore batch queue with a mocked executor | planned |
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | planned |
-| T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | planned |
+| T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | inventory done: `docs/metrics-manifest.json`, 130 families from the v0.32.0 source (45 exact, 52 derived, 33 unavailable), regenerated in CI; the 45 families vLLM's own logger registers on CPU agree in type and labels, and their 19 histograms' bucket bounds are recorded from the live objects (`docs/metrics-buckets.json`); values of the exact families: in progress |
 
 ## Kinds of test
 

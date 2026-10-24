@@ -51,10 +51,10 @@ cannot fail.
 | `watermark` (free-block reserve) | (defaults, 0.0) | `vllm/config/scheduler.py:196@5df63a72` | vllm | T2 | admission | planned |
 | `max_model_len` cap and `check_stop` | IX 33, IR, BL | `vllm/v1/core/sched/scheduler.py:2465@5df63a72` (`_handle_stopped_request`) | vllm | T2 | finished ids, reasons, output tokens | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M10, M11 caught) |
 | DP prefill throttling, `prefill_schedule_interval` | IX 8, AD33 46 | `vllm/config/scheduler.py:203@5df63a72`; `vllm/v1/engine/core.py:2318-2325@5df63a72` | vllm | T3 | tokens per request per rank | planned |
-| `stream_interval` | IX 22 | `vllm/config/scheduler.py:213@5df63a72`; acts in `vllm/v1/engine/output_processor.py:198,253-255@5df63a72` | sim | — | client-side token delivery | planned |
-| `max_num_queued_reqs` (HTTP 503) | — | `vllm/config/scheduler.py:92@5df63a72` | — | — | — | excluded: no source sets it; it is an API-server admission limit, not a scheduling decision |
-| `scheduler_cls` (custom scheduler) | IX 1 (`AsyncScheduler` named explicitly) | `vllm/config/scheduler.py:177@5df63a72` | vllm | T3 | as async scheduling | planned: the one value seen is vLLM's own `AsyncScheduler` |
-| SJF and reverse-priority queues | BL only | not in v0.32.0 (`vllm/config/scheduler.py:21@5df63a72` lists `fcfs`, `priority`) | — | — | — | excluded: invented by inference-sim, not vLLM (#2021 B9 "Drop"); removed in blis-vllm |
+| `stream_interval` | IX 22 | `vllm/config/scheduler.py:213@5df63a72`; acts in `vllm/v1/engine/output_processor.py:198,253-255@5df63a72` | sim | — | client-side token delivery | follow-up (https://github.com/inference-sim/inference-sim/issues/2035): an API-server delivery rule (vllm/v1/engine/output_processor.py:324-343@5df63a72), not an engine decision; inference-sim, which owns client-side delivery, applies it |
+| `max_num_queued_reqs` (HTTP 503) | — | `vllm/config/scheduler.py:92@5df63a72` | — | — | — | excluded: an API-server admission limit (vllm/config/scheduler.py:92@5df63a72), not a scheduling decision; no source sets it, so it cannot change a simulated result for our deployments |
+| `scheduler_cls` (custom scheduler) | IX 1 (`AsyncScheduler` named explicitly) | `vllm/config/scheduler.py:177@5df63a72` | vllm | T3 | as async scheduling | follow-up (https://github.com/inference-sim/blis-vllm/issues/3): the one value a source uses is vLLM's own AsyncScheduler, which is the async-scheduling path of tier 3; a custom class is excluded by #2021 B10 ("Custom scheduler: Not now") |
+| SJF and reverse-priority queues | BL only | not in v0.32.0 (`vllm/config/scheduler.py:21@5df63a72` lists `fcfs`, `priority`) | — | — | — | excluded: invented by inference-sim, not vLLM (#2021 B9 "Drop"); vLLM v0.32.0 accepts only fcfs and priority (vllm/config/scheduler.py:21@5df63a72; rules/v0_32 SchedulerPolicies, T1 MatchSource); blis-vllm has neither |
 
 ## KV cache and prefix caching
 
@@ -67,9 +67,9 @@ cannot fail.
 | `prefix_caching_hash_algo` | (defaults, sha256) | `vllm/config/cache.py:143@5df63a72` | vllm | T2 | block hashes | supported for `sha256` (the default, which every scenario and the oracle use); other values (`sha256_cbor`, `xxhash`, `xxhash_cbor`, `vllm/config/cache.py:64@5df63a72`) excluded: no source sets one, and a hash function changes block identity only, never which blocks hit |
 | `prefix_match_unit` | IX 9 | `vllm/config/cache.py:90@5df63a72`; `vllm/v1/core/kv_cache_utils.py:817-834@5df63a72` | vllm | T2 | prefix-hit tokens | planned |
 | `prefix_cache_retention_interval` | IX 1 (flag; 21 set an env var absent from v0.32.0) | `vllm/config/cache.py:159@5df63a72`; `vllm/v1/core/kv_cache_coordinator.py:185@5df63a72` | vllm | T2 | prefix-hit tokens | planned |
-| `kv_cache_memory_bytes` (fixed KV size) | IX 3, AD33 18 | `vllm/config/cache.py:257@5df63a72` | vllm + kernel | T1 | KV capacity | planned |
-| `gpu_memory_utilization` | IX 45, IR, BL | `vllm/config/cache.py` (field) | kernel | — | KV capacity (priced) | planned: capacity comes from the kernel (B5) |
-| `cache_dtype` | IX 46, IR, BL | `vllm/config/cache.py:122@5df63a72` | kernel | — | bytes per block | planned |
+| `kv_cache_memory_bytes` (fixed KV size) | IX 3, AD33 18 | `vllm/config/cache.py:257@5df63a72` | vllm + kernel | T1 | KV capacity | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/86): the KV budget comes from the kernel (#2021 B5), which does not read the field yet; blis-schemas#102 carries it |
+| `gpu_memory_utilization` | IX 45, IR, BL | `vllm/config/cache.py` (field) | kernel | — | KV capacity (priced) | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/83, https://github.com/inference-sim/blis-latency-kernel/issues/84): priced by the kernel, which sizes the KV budget from it at its vLLM 0.31.0 behaviour; not a blis-vllm oracle tier (#2021 B1: performance belongs to the kernel) |
+| `cache_dtype` | IX 46, IR, BL | `vllm/config/cache.py:122@5df63a72` | kernel | — | bytes per block | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/83, https://github.com/inference-sim/blis-latency-kernel/issues/84): the kernel prices bytes per block per dtype; the 0.32 rules pack validates the values (rules/v0_32 CacheDTypes, T1 MatchSource at 5df63a72) |
 | Hybrid KV cache manager (full + sliding window + mamba groups) | IX 14, IR, AD33 29 | `vllm/v1/core/kv_cache_coordinator.py:609@5df63a72`; `vllm/v1/core/single_type_kv_cache_manager.py:729,933,1415@5df63a72` | vllm | T2 | block contents per group | planned |
 | `disable_hybrid_kv_cache_manager` | IX 6, AD33 29 | `vllm/config/scheduler.py:182@5df63a72` | vllm | T2 | block contents | planned |
 | `mamba_cache_mode`, `mamba_ssm_cache_dtype` | IX 6, IR | `vllm/config/cache.py:185,189@5df63a72`; `vllm/v1/core/sched/scheduler.py:377@5df63a72` (aligned split) | vllm + kernel | T2 | tokens per request (aligned split) | planned |
@@ -100,8 +100,8 @@ cannot fail.
 | Data parallel lockstep, waves, dummy batches | IX 26, IR, BL | `vllm/v1/engine/core.py:2143,2168@5df63a72` | vllm | T3 | per-rank steps, waves | planned |
 | DP load balancing internal / hybrid / external | IX 2 (external), IR, BL | `vllm/config/parallel.py:168,175@5df63a72` | vllm (internal DPLB) + router | T3 | rank choice | planned |
 | Decode context parallel (DCP 8/16, `dcp_comm_backend: a2a`) | IX 10 | `vllm/config/parallel.py:385,397@5df63a72` | vllm + kernel | T2 | block contents (interleave) | planned |
-| Expert parallel, EPLB, DBO, all2all backend | IX 25 / 1 / 1 / 4, IR | `vllm/config/parallel.py:189,205,257@5df63a72` | kernel | — | priced | planned (pricing, not scheduling) |
-| `VLLM_USE_V2_MODEL_RUNNER` | IX 31 | `vllm/envs.py:311@5df63a72` | vllm | T3 | `max_concurrent_batches` with PP | planned |
+| Expert parallel, EPLB, DBO, all2all backend | IX 25 / 1 / 1 / 4, IR | `vllm/config/parallel.py:189,205,257@5df63a72` | kernel | — | priced | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/83, https://github.com/inference-sim/blis-latency-kernel/issues/84): priced by the kernel (#2021 B9 "Elsewhere"); the startup refusals and resolution are T1: rules/v0_32 checks the all2all backends, DBO thresholds, EPLB divisibility and the new passthrough binding against the v0.32.0 source |
+| `VLLM_USE_V2_MODEL_RUNNER` | IX 31 | `vllm/envs.py:311@5df63a72` | vllm | T3 | `max_concurrent_batches` with PP | follow-up (https://github.com/inference-sim/blis-vllm/issues/3): it changes max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72) and spaces PP decodes (vllm/v1/core/sched/async_scheduler.py:52-58@5df63a72), both EngineCore (T3); the V2 runner needs Triton, which the CPU oracle lacks, recorded in the issue |
 
 ## KV connectors and offload (state machines under virtual time)
 
@@ -131,9 +131,9 @@ cannot fail.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| Every computable `vllm:*` family (generated manifest) | IR (router reads them), BL (13 today) | `vllm/v1/metrics/loggers.py:528-1120@5df63a72`; `vllm/v1/spec_decode/metrics.py:217-258@5df63a72`; `vllm/v1/kv_offload/tiering/base.py:43-64@5df63a72` | vllm | T5 | names, labels, buckets, values, enablement | planned |
-| `kv_cache_metrics`, `cudagraph_metrics` | IX 3 / 3 | `vllm/config/observability.py:62,82@5df63a72` | vllm | T5 | enablement | planned |
-| Series needing hardware or processes (e.g. `corrupted_requests`, `engine_sleep_state`) | — | (manifest) | — | — | — | excluded: not computable without a GPU or a process; listed in the manifest as unavailable |
+| Every computable `vllm:*` family (generated manifest) | IR (router reads them), BL (13 today) | `vllm/v1/metrics/loggers.py:528-1120@5df63a72`; `vllm/v1/spec_decode/metrics.py:217-258@5df63a72`; `vllm/v1/kv_offload/tiering/base.py:43-64@5df63a72` | vllm | T5 | names, labels, buckets, values, enablement | supported (T5, family inventory): docs/metrics-manifest.json lists all 130 families v0.32.0 defines (45 exact, 52 derived, 33 unavailable), generated from the source by cmd/metricsmanifest and regenerated in CI (job metrics-manifest); the 45 families vLLM's own PrometheusStatLogger registers on CPU match it in type and labels (oracle/check_manifest.py). Emitting and diff-testing each exact family's values: see the next row |
+| `kv_cache_metrics`, `cudagraph_metrics` | IX 3 / 3 | `vllm/config/observability.py:62,82@5df63a72` | vllm | T5 | enablement | supported (T5, enablement): kv_cache_metrics registers the three kv_block_* histograms (vllm/v1/metrics/loggers.py:1036@5df63a72), recorded as their enabled_by in the manifest and registered in the live cross-check; cudagraph_metrics registers no vllm:* family (it gates logging only, vllm/v1/metrics/loggers.py:136@5df63a72) |
+| Series needing hardware or processes (e.g. `corrupted_requests`, `engine_sleep_state`) | — | (manifest) | — | — | — | excluded: the manifest's 33 unavailable families, each with its written reason (real numerics, sleep mode, watermarking, multimodal, diffusion, API-server endpoints, connectors no source uses); none changes a scheduling, KV or timing result for our deployments |
 
 ## Elsewhere (not blis-vllm behaviour)
 
