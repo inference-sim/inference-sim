@@ -650,5 +650,45 @@ func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEv
 	i.sim.SetKVEventSink(sink)
 }
 
+// SetRemoteKVAdmission installs the engine's admission of remote-KV pulls (sim.Simulator's).
+func (i *InstanceSimulator) SetRemoteKVAdmission(f func(now int64)) { i.sim.SetRemoteKVAdmission(f) }
+
+// SetRemoteKVWaiting records how many handoffs wait for this engine's KV.
+func (i *InstanceSimulator) SetRemoteKVWaiting(n int) { i.sim.SetRemoteKVWaiting(n) }
+
+// WaitingHolderBlocks is the first-step blocks the waiting requests that hold their KV need.
+func (i *InstanceSimulator) WaitingHolderBlocks() int64 { return i.sim.WaitingHolderBlocks() }
+
+// FirstDecodeStepBlocks is the blocks a remote-KV request's first decode step takes.
+func (i *InstanceSimulator) FirstDecodeStepBlocks(req *sim.Request) int64 {
+	return i.sim.FirstDecodeStepBlocks(req)
+}
+
+// HasWork reports whether the engine has running or waiting requests.
+func (i *InstanceSimulator) HasWork() bool { return i.sim.HasWork() }
+
+// BusyUntil is when the engine's last executed step ends.
+func (i *InstanceSimulator) BusyUntil() int64 { return i.sim.BusyUntil() }
+
+// SetCallbacks installs the engine's first-token and request-done callbacks.
+func (i *InstanceSimulator) SetCallbacks(onFirstToken func(*sim.Request, int64), onRequestDone func(*sim.Request, int64) []*sim.Request) {
+	i.sim.OnFirstToken = onFirstToken
+	i.sim.OnRequestDone = onRequestDone
+}
+
+// ForgetRequest drops a request's per-request record from the engine's metrics, for a request
+// drained away to another instance (the destination re-registers it).
+func (i *InstanceSimulator) ForgetRequest(id string) {
+	if i.sim != nil {
+		delete(i.sim.Metrics.Requests, id)
+	}
+}
+
+// engineCore is the instance's engine for the replica and report builders that still take the
+// concrete type (sim.NewLockstepGroup, sim.ShareRenderer, sim.BuildServerSeries); nil for an
+// instance with no engine. It is the one place sim/cluster names the concrete engine type
+// outside this file, and goes when those builders move with the engine (PLAN-E2 stage E2.3).
+func (i *InstanceSimulator) engineCore() *sim.Simulator { return i.sim }
+
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
 func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }

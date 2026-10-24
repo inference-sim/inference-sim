@@ -100,7 +100,7 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 					id, r, config.NumInstances, max(config.TP, 1))
 			}
 			rep.ranks = append(rep.ranks, inst)
-			sims = append(sims, inst.sim)
+			sims = append(sims, inst.engineCore())
 		}
 		rep.id = string(rep.ranks[0].ID())
 		g, err := sim.NewLockstepGroup(sims)
@@ -128,7 +128,7 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 		sims := make([]*sim.Simulator, len(rep.ranks))
 		for k, inst := range rep.ranks {
-			sims[k] = inst.sim
+			sims[k] = inst.engineCore()
 		}
 		if err := sim.ShareRenderer(sims, apiServers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)

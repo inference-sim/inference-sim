@@ -496,7 +496,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 // wireInstance connects an instance's request lifecycle to the gateway and to session
 // follow-ups. Follow-ups route through the cluster pipeline, never injected locally (BC-9).
 func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
-	inst.sim.OnFirstToken = func(req *sim.Request, at int64) {
+	onFirstToken := func(req *sim.Request, at int64) {
 		if parent := cs.parentOf(req); parent != nil {
 			// A disaggregated response streams from the decode instance.
 			if req.IsDecodeSubRequest && parent.OriginalRequest != nil {
@@ -506,7 +506,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		}
 		cs.gateway.OnFirstToken(req, at)
 	}
-	inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+	onRequestDone := func(req *sim.Request, tick int64) []*sim.Request {
 		if parent := cs.parentOf(req); parent != nil {
 			// Decode completions report in detectDecodeCompletions, at parent granularity; a
 			// prefill that does not complete ends its parent here.
@@ -524,6 +524,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		}
 		return nil // don't inject locally — route through cluster pipeline
 	}
+	inst.SetCallbacks(onFirstToken, onRequestDone)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)
@@ -2048,11 +2049,12 @@ func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
 	ids := make([]string, 0, len(c.instances))
 	sims := make([]*sim.Simulator, 0, len(c.instances))
 	for _, inst := range c.instances {
-		if inst.sim == nil {
+		core := inst.engineCore()
+		if core == nil {
 			continue
 		}
 		ids = append(ids, string(inst.ID()))
-		sims = append(sims, inst.sim)
+		sims = append(sims, core)
 	}
 	return sim.BuildServerSeries(ids, sims)
 }

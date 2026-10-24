@@ -269,9 +269,7 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 		// Remove from source Metrics.Requests so aggregateMetrics() does not log
 		// a false-alarm "duplicate request ID" warning. The destination re-registers
 		// the entry when the request is enqueued there.
-		if inst.sim != nil {
-			delete(inst.sim.Metrics.Requests, req.ID)
-		}
+		inst.ForgetRequest(req.ID)
 		req.Redirected = true
 		cs.pushArrival(req, cs.clock)
 	}
