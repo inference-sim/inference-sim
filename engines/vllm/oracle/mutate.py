@@ -69,7 +69,12 @@ KNOWN_GAPS = {"M9", "M21"}
 
 
 def main() -> int:
-    src, fuzz, scratch = sys.argv[1], sys.argv[2], sys.argv[3]
+    src, scratch = sys.argv[1], sys.argv[3]
+    # go test runs each package in its own directory, so the corpus path must be absolute.
+    fuzz = os.path.abspath(sys.argv[2])
+    if not any(f.endswith(".trace.json") for f in os.listdir(fuzz)):
+        print(f"no fuzz traces in {fuzz}")
+        return 1
     only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
     env = dict(os.environ, BLIS_VLLM_FUZZ_DIR=fuzz)
     unexpected = 0
@@ -78,7 +83,7 @@ def main() -> int:
             continue
         if os.path.exists(scratch):
             shutil.rmtree(scratch)
-        shutil.copytree(src, scratch, ignore=shutil.ignore_patterns(".git"))
+        shutil.copytree(src, scratch, ignore=shutil.ignore_patterns(".git", "vllm-source", "oracle-model", "out"))
         target = os.path.join(scratch, path)
         text = open(target).read()
         if text.count(old) != 1:
@@ -101,7 +106,8 @@ def main() -> int:
             print(f"CAUGHT   {mid:4} {row}")
         else:
             tail = (r.stdout + r.stderr).strip().splitlines()[-3:]
-            print(f"CAUGHT?  {mid:4} {row}: {' | '.join(tail)[:200]}")
+            print(f"BROKEN   {mid:4} {row}: failed without a divergence: {' | '.join(tail)[:200]}")
+            unexpected += 1
     shutil.rmtree(scratch, ignore_errors=True)
     return 1 if unexpected else 0
 
