@@ -155,16 +155,40 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 			wantDelta: -2,
 		},
 		{
-			name: "scale-down clamped to replicaCount when floor would exceed it",
+			name: "scale-down keeps the model's last replica when spare covers every replica",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 100, // floor(100/10)=10, clamped to replicaCount=3
+				SpareCapacity: 30, // zero demand: floor(30/10)=3, clamped to replicaCount-1=2
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 				},
 			}},
 			wantLen:   1,
+			wantDelta: -2,
+		},
+		{
+			name: "scale-down drains a whole variant when another variant keeps serving",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 100, // floor(100/10)=10, clamped to the H100 replicaCount=3
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
+					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 30, ReplicaCount: 3},
+				},
+			}},
+			wantLen:   1,
 			wantDelta: -3,
+		},
+		{
+			name: "scale-down of a single-replica model → no decision",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 10,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 10, ReplicaCount: 1},
+				},
+			}},
+			wantLen: 0, // removing the last replica is refused; Delta=0 would break INV-19
 		},
 		{
 			name: "scale-up falls back to Delta=1 when no active replicas",
@@ -310,6 +334,18 @@ func TestGreedyEngineOptimize(t *testing.T) {
 			wantLen:   0,
 		},
 		{
+			name: "scale down: single-replica model → no decision",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 10,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 10, ReplicaCount: 1},
+				},
+			}},
+			inventory: newTestGPUInventory(map[VariantSpec]int{}),
+			wantLen:   0,
+		},
+		{
 			name: "scale up: TPDegree=2 requires n*TPDegree free GPU slots",
 			results: []AnalyzerResult{{
 				ModelID:          "m1",
@@ -394,7 +430,7 @@ func TestScaleDownNFloorToZero(t *testing.T) {
 		Supply:       100,
 		ReplicaCount: 10,
 	}
-	n := scaleDownN(1, vc)
+	n := scaleDownN(1, vc, vc.ReplicaCount)
 	if n != 1 {
 		t.Errorf("scaleDownN: want 1 (clamped from floor=0), got %d", n)
 	}

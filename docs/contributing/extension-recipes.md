@@ -129,7 +129,7 @@ To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP sol
 
 2. **Reuse the shared helpers** when appropriate:
    - `scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int` — exact replica count via `ceil(requiredCapacity / prc)`; fallback to 1 when `prc == 0`.
-   - `scaleDownN(spareCapacity float64, vc VariantCapacity) int` — exact replica count via `floor(spareCapacity / prc)`, clamped to `[1, ReplicaCount]`; fallback to 1.
+   - `scaleDownN(spareCapacity float64, vc VariantCapacity, modelReplicas int) int` — exact replica count via `floor(spareCapacity / prc)`, clamped to `[1, ReplicaCount]` and to `modelReplicas-1` so the model keeps one replica; fallback to 1. Returns 0 when nothing may be removed; emit no decision then (INV-19).
    - `sortedByAscCost`, `sortedByDescCost` — deterministic variant sort (R2: copy-and-sort to avoid mutating caller data).
    - Pass only the selected variant to `scaleUpN` (`vcs[0:1]`, not the full slice) so `perReplicaCapacityForScaleUp` uses the chosen variant's own capacity — not a different active variant's.
 
