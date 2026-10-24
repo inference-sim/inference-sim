@@ -111,7 +111,20 @@ jobs:
           pip freeze > oracle-env.lock
       - name: the mocks replace no decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
+      # The scheduler helper's default model, as configuration only (no weights), at a pinned
+      # revision, so a change on the Hub cannot change a run.
+      - name: fetch the helper model's configuration at its pinned revision
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("facebook/opt-125m", revision="27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+                            local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
+          PY
       - name: run every tier-2 scenario
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
         run: |
           mkdir -p oracle/out
           for s in oracle/scenarios/*.json; do

@@ -28,8 +28,12 @@ def main() -> None:
     vllm_root, scenario_path = sys.argv[1], sys.argv[2]
     # vLLM's test helpers are imported from the pinned checkout itself, never copied.
     sys.path.insert(0, vllm_root)
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    # ModelConfig reads a model's config.json even though no weights are loaded. ORACLE_MODEL
+    # names a local snapshot of the helper's default model at a pinned revision (see
+    # oracle/README.md); its configuration does not reach any scheduling decision, which the
+    # scenario's fixed num_blocks and block_size govern.
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
 
     from tests.v1.core.utils import EOS_TOKEN_ID, create_scheduler  # noqa: E402
     from vllm.sampling_params import SamplingParams  # noqa: E402
@@ -47,6 +51,7 @@ def main() -> None:
     block_size = cfg["block_size"]
 
     scheduler = create_scheduler(
+        model=model,
         max_num_seqs=cfg["max_num_seqs"],
         max_num_batched_tokens=cfg["max_num_batched_tokens"],
         long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
@@ -187,6 +192,8 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "vllm_commit": git("rev-parse", "HEAD"),
         "scenario_sha256": digest,
         "mock_version": mocks["version"],
+        "model": os.environ.get("ORACLE_MODEL", "facebook/opt-125m"),
+        "model_revision": os.environ.get("ORACLE_MODEL_REVISION", "unpinned"),
         "mocks": [m["symbol"] for m in mocks["mocks"]],
         "python": sys.version.split()[0],
     }

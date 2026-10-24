@@ -6,8 +6,13 @@ vLLM v0.32.0's own classes, driven through a scenario on CPU, with only the GPU 
 ```sh
 # A vLLM checkout at the pinned tag (for its test helpers) and a Python with vLLM 0.32.0:
 python -I oracle/check_mocks.py oracle/mocks.json
-python -I oracle/run_scheduler.py <vllm-checkout> oracle/scenarios/<scenario>.json > trace.json
+ORACLE_MODEL=<local snapshot of facebook/opt-125m@27dcfa74, config files only> \
+ORACLE_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6 HF_HUB_OFFLINE=1 \
+  python -I oracle/run_scheduler.py <vllm-checkout> oracle/scenarios/<scenario>.json > trace.json
 ```
+
+The scheduler helper builds a `ModelConfig`, which reads a model's `config.json` but loads no
+weights; the scenario's fixed `num_blocks` and `block_size` govern every decision.
 
 ## Scenario
 
