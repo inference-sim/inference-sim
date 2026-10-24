@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	// TEMPORARY: the head of inference-sim/blis-schemas#102 (the engine contract and
 	// rules.EngineRules). Moves to a blis-schemas release tag before anything merges.
-	github.com/inference-sim/blis-schemas v0.6.1-0.20261024062559-1571a115227a
+	github.com/inference-sim/blis-schemas v0.6.1-0.20261024105647-9a71eeb47a9e
 	pgregory.net/rapid v1.2.0
 )
 
