@@ -171,13 +171,14 @@ func DefaultScenarios() string {
 	return filepath.Join(dir, "testdata", "aisimulate")
 }
 
-// DefaultRepos is the three artifact roots together, which is how Open takes them.
+// DefaultRepos is the three artifact roots together, with the engine rules, which is how
+// Open takes them.
 func DefaultRepos() Repos {
-	return Repos{
+	return withEngineRules(Repos{
 		Scenarios: DefaultScenarios(),
 		Catalog:   DefaultCatalog(),
 		Registry:  DefaultRegistry(),
-	}
+	})
 }
 
 // RequireRepos checks that every root in r is set and exists, and otherwise returns one

@@ -27,18 +27,21 @@ type ruleReport struct {
 }
 
 // reportRules lists the rules of the scenario's engine release that are not enforced, and
-// runs the whole pack report-only so the file states what those skipped rules find. A
-// release with no pack reports blis-schemas' own engine-version-known finding.
+// runs the release's whole rule set report-only, through the rules the kernel was built
+// with (in.Rules), so the file states what those skipped rules find. A kernel is never built
+// without rules (OpenInputs refuses a release it has none for), so in.Rules is nil only for
+// Inputs a caller assembled by hand, which then report nothing.
 func reportRules(in latencykernel.Inputs) ruleReport {
 	var r ruleReport
-	if pack, ok := in.Rules.(*rules.Pack); ok && pack != nil {
-		for _, name := range pack.Names() {
-			if !enforcedRules[name] {
-				r.skipped = append(r.skipped, name)
-			}
+	if in.Rules == nil {
+		return r
+	}
+	for _, name := range in.Rules.RuleNames() {
+		if !enforcedRules[name] {
+			r.skipped = append(r.skipped, name)
 		}
 	}
-	problems := rules.Apply(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model})
+	problems := in.Rules.Check(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model})
 	var all []sim.RuleFinding
 	for _, p := range problems.All() {
 		all = append(all, sim.RuleFinding{
