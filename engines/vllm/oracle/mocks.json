@@ -16,6 +16,21 @@
       "symbol": "sampled token stream",
       "kind": "gpu",
       "how": "the assigned output's last token is sampled as EOS_TOKEN_ID (tests/v1/core/utils.py:43), so the simulator's output-length input ends the request through vLLM's own check_stop; max_tokens carries only a client budget"
+    },
+    {
+      "symbol": "vllm.v1.core.sched.scheduler.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: time.time and time.monotonic read the virtual clock (the step index), so the scheduler's event timestamps are deterministic; no decision reads them in the scenarios run"
+    },
+    {
+      "symbol": "vllm.v1.metrics.stats.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: IterationStats' iteration_timestamp reads the virtual clock (the step index), so latency series are deterministic; they are derived families and not compared"
+    },
+    {
+      "symbol": "vllm.v1.engine.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: EngineCoreEvent timestamps (QUEUED, SCHEDULED, PREEMPTED) read the virtual clock (the step index), so the queue-time series is deterministic; a derived family, not compared"
     }
   ]
 }

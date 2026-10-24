@@ -187,6 +187,7 @@ jobs:
         run: |
           python -I oracle/gen_fuzz.py oracle/out/fuzz 1000 2000
           python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz
+          python -I oracle/run_metrics.py vllm-source oracle/out/fuzz
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -196,6 +197,14 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+      # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
+      # logger on the same scenarios and fuzz seeds.
+      - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
+        env:
+          BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Each supported row's mutants must be caught by the tests above (docs/testing.md).
       - name: mutation sweep
         run: |
