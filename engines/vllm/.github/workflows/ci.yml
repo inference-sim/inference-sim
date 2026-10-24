@@ -146,7 +146,14 @@ jobs:
       - name: blis-vllm against vLLM (differential + fuzz)
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
-        run: go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+      # Each supported row's mutants must be caught by the tests above (docs/testing.md).
+      - name: mutation sweep
+        run: |
+          set -o pipefail
+          python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

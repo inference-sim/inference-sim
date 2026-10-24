@@ -53,7 +53,7 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
 | T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29/0.31 packs checked; 0.32 pack in progress |
-| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, prefix caching: 14 scenarios + 2000 fuzz seeds at zero mismatches; speculative decoding, LoRA and hybrid KV pending |
+| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap, preemption, prefix caching: 14 scenarios + 2000 fuzz seeds at zero mismatches, 20 of 22 mutants caught; speculative decoding, LoRA and hybrid KV in progress |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | EngineCore batch queue with a mocked executor | planned |
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | planned |
 | T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | planned |
@@ -75,6 +75,16 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
   time in a fixed order; a larger budget never delays a lone request's first token.
 - **Fuzz:** seeded random request streams through both sides. A failing seed is shrunk to its
   smallest scenario and kept under `oracle/scenarios/` as a permanent test.
+- **Mutation:** a test that cannot fail proves nothing, so each supported feature has a
+  deliberate one-line bug (a mutant) that the differential and fuzz tests must catch. The
+  sweep at blis-vllm `0f35248` (22 mutants in `core/sched` and `core/kv`, each run against the
+  14 scenarios and 2000 fuzz seeds) catches 20. Two survive and are open coverage gaps, not
+  supported claims: the `max_model_len - num_computed - 1` input cap on running requests
+  (`vllm/v1/core/sched/scheduler.py:713-720@5df63a72`), which binds only when a request is
+  scheduled more than one token past its known ones, i.e. with speculative decoding; and
+  skipping (rather than stopping at) a running request that gets zero tokens (`:755-773`),
+  which the same cap is the only way to reach without async scheduling or encoder inputs.
+  Both are targeted by the speculative-decoding scenarios.
 
 ## Provenance
 

@@ -7,6 +7,11 @@ only with a written reason it cannot change a simulated result for our models, h
 settings, and **follow-up** only with an issue link. Until then it is **planned** (in this run,
 not yet proven) or **in progress**.
 
+A **supported** row names its proof: the oracle tier, the scenarios and fuzz seeds it passed at
+zero mismatches against vLLM v0.32.0, and the mutants (deliberate one-line bugs, `docs/testing.md`)
+the differential and fuzz tests caught for it, so a row cannot be marked supported by a test that
+cannot fail.
+
 ## How to read a row
 
 - **Sources.** `IX` = the InferenceX run index (`inferencex-e2e/configs/nvidia-master.yaml` and
@@ -32,19 +37,19 @@ not yet proven) or **in progress**.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| Continuous batching, `max_num_seqs` | IX 51, IR, BL | `vllm/config/scheduler.py:62@5df63a72` | vllm | T2 | tokens per request, running set | planned |
-| `max_num_batched_tokens` (token budget) | IX 51, IR, BL | `vllm/config/scheduler.py:48@5df63a72` | vllm | T2 | tokens per request | planned |
+| Continuous batching, `max_num_seqs` | IX 51, IR, BL | `vllm/config/scheduler.py:62@5df63a72` | vllm | T2 | tokens per request, running set | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M1 caught) |
+| `max_num_batched_tokens` (token budget) | IX 51, IR, BL | `vllm/config/scheduler.py:48@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M2 caught) |
 | `max_num_scheduled_tokens` | IX via defaults | `vllm/config/scheduler.py:55@5df63a72` | vllm | T2 | tokens per request | planned |
-| Chunked prefill (`enable_chunked_prefill`) | IX 4 (explicit), IR, BL | `vllm/config/scheduler.py:134@5df63a72` | vllm | T2 | tokens per request | planned |
-| `long_prefill_token_threshold` | IX 8, IR, BL | `vllm/config/scheduler.py:79@5df63a72` | vllm | T2 | tokens per request | planned |
+| Chunked prefill (`enable_chunked_prefill`) | IX 4 (explicit), IR, BL | `vllm/config/scheduler.py:134@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M3 caught) |
+| `long_prefill_token_threshold` | IX 8, IR, BL | `vllm/config/scheduler.py:79@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M4 caught) |
 | `long_prefill_token_threshold_adaptive` | IX via defaults | `vllm/config/scheduler.py:86@5df63a72` | vllm | T2 | tokens per request | planned |
-| Lone-request long-prefill exemption | BL | `vllm/v1/core/sched/scheduler.py:2608@5df63a72` (`get_request_counts`) | vllm | T2 | tokens per request | planned |
-| Preemption (recompute), FCFS victim | IR, BL | `vllm/v1/core/sched/scheduler.py:1571@5df63a72` | vllm | T2 | preempted ids, order | planned |
-| Scheduling policy `fcfs` / `priority` | IR (router priority bands), BL | `vllm/config/scheduler.py:21,159@5df63a72`; `vllm/v1/core/sched/request_queue.py:75,131@5df63a72` | vllm | T2 | admission order, preempted ids | planned |
-| Priority preemption victim | BL | `vllm/v1/core/sched/scheduler.py:796-808@5df63a72` | vllm | T2 | preempted ids | planned |
+| Lone-request long-prefill exemption | BL | `vllm/v1/core/sched/scheduler.py:2608@5df63a72` (`get_request_counts`) | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M5 caught) |
+| Preemption (recompute), FCFS victim | IR, BL | `vllm/v1/core/sched/scheduler.py:1571@5df63a72` | vllm | T2 | preempted ids, order | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M6, M12 caught) |
+| Scheduling policy `fcfs` / `priority` | IR (router priority bands), BL | `vllm/config/scheduler.py:21,159@5df63a72`; `vllm/v1/core/sched/request_queue.py:75,131@5df63a72` | vllm | T2 | admission order, preempted ids | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M8 caught) |
+| Priority preemption victim | BL | `vllm/v1/core/sched/scheduler.py:796-808@5df63a72` | vllm | T2 | preempted ids | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M7, M22 caught) |
 | `max_num_active_seqs` | (defaults) | `vllm/config/scheduler.py:69@5df63a72` | vllm | T2 | running set | planned |
 | `watermark` (free-block reserve) | (defaults, 0.0) | `vllm/config/scheduler.py:196@5df63a72` | vllm | T2 | admission | planned |
-| `max_model_len` cap and `check_stop` | IX 33, IR, BL | `vllm/v1/core/sched/scheduler.py:2465@5df63a72` (`_handle_stopped_request`) | vllm | T2 | finished ids, reasons, output tokens | planned |
+| `max_model_len` cap and `check_stop` | IX 33, IR, BL | `vllm/v1/core/sched/scheduler.py:2465@5df63a72` (`_handle_stopped_request`) | vllm | T2 | finished ids, reasons, output tokens | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M10, M11 caught) |
 | DP prefill throttling, `prefill_schedule_interval` | IX 8, AD33 46 | `vllm/config/scheduler.py:203@5df63a72`; `vllm/v1/engine/core.py:2318-2325@5df63a72` | vllm | T3 | tokens per request per rank | planned |
 | `stream_interval` | IX 22 | `vllm/config/scheduler.py:213@5df63a72`; acts in `vllm/v1/engine/output_processor.py:198,253-255@5df63a72` | sim | — | client-side token delivery | planned |
 | `max_num_queued_reqs` (HTTP 503) | — | `vllm/config/scheduler.py:92@5df63a72` | — | — | — | excluded: no source sets it; it is an API-server admission limit, not a scheduling decision |
@@ -55,11 +60,11 @@ not yet proven) or **in progress**.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| Block pool, free queue, null block | BL | `vllm/v1/core/block_pool.py:187@5df63a72`; `vllm/v1/core/kv_cache_utils.py:246@5df63a72` | vllm | T2 | free block count, block contents by hash and ref count | planned |
-| `block_size` | IX 31, IR, BL | `vllm/config/cache.py:74@5df63a72` | vllm | T2 | block contents | planned |
-| Prefix caching (`enable_prefix_caching`) | IX 30, IR, BL | `vllm/config/cache.py:141@5df63a72` | vllm | T2 | prefix-hit tokens, block contents | planned |
-| Block hash with LoRA and cache-salt keys | BL (hash lacks them) | `vllm/v1/core/kv_cache_utils.py:592-595,647,695@5df63a72` | vllm | T2 | prefix-hit tokens | planned (fixes inference-sim's LoRA-blind hash) |
-| `prefix_caching_hash_algo` | (defaults, sha256) | `vllm/config/cache.py:143@5df63a72` | vllm | T2 | block hashes | planned |
+| Block pool, free queue, null block | BL | `vllm/v1/core/block_pool.py:187@5df63a72`; `vllm/v1/core/kv_cache_utils.py:246@5df63a72` | vllm | T2 | free block count, block contents by hash and ref count | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M16, M17, M19, M20 caught) |
+| `block_size` | IX 31, IR, BL | `vllm/config/cache.py:74@5df63a72` | vllm | T2 | block contents | supported (T2: block sizes 1-16 across 14 scenarios + 2000 fuzz seeds, 0 mismatches) |
+| Prefix caching (`enable_prefix_caching`) | IX 30, IR, BL | `vllm/config/cache.py:141@5df63a72` | vllm | T2 | prefix-hit tokens, block contents | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M15, M18 caught) |
+| Block hash with LoRA and cache-salt keys | BL (hash lacks them) | `vllm/v1/core/kv_cache_utils.py:592-595,647,695@5df63a72` | vllm | T2 | prefix-hit tokens | supported (T2: byte-identical to hashes vLLM v0.32.0 computed, `core/kv/testdata/block_hashes.json`, 6 cases incl. LoRA and cache salt; fixes inference-sim's LoRA-blind hash) |
+| `prefix_caching_hash_algo` | (defaults, sha256) | `vllm/config/cache.py:143@5df63a72` | vllm | T2 | block hashes | supported for `sha256` (the default, which every scenario and the oracle use); other values (`sha256_cbor`, `xxhash`, `xxhash_cbor`, `vllm/config/cache.py:64@5df63a72`) excluded: no source sets one, and a hash function changes block identity only, never which blocks hit |
 | `prefix_match_unit` | IX 9 | `vllm/config/cache.py:90@5df63a72`; `vllm/v1/core/kv_cache_utils.py:817-834@5df63a72` | vllm | T2 | prefix-hit tokens | planned |
 | `prefix_cache_retention_interval` | IX 1 (flag; 21 set an env var absent from v0.32.0) | `vllm/config/cache.py:159@5df63a72`; `vllm/v1/core/kv_cache_coordinator.py:185@5df63a72` | vllm | T2 | prefix-hit tokens | planned |
 | `kv_cache_memory_bytes` (fixed KV size) | IX 3, AD33 18 | `vllm/config/cache.py:257@5df63a72` | vllm + kernel | T1 | KV capacity | planned |
