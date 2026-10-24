@@ -12,6 +12,7 @@
   }
  },
  "provenance": {
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
   "mock_version": "gpu-mock/1",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
@@ -20,6 +21,7 @@
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
   "python": "3.12.15",
   "scenario_sha256": "ba27e6f2435e62b0b70d23663ef1dd24e8f3e9fa957cbc7a0d3b6c006314e514",
   "tier": 2,

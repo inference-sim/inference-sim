@@ -22,6 +22,7 @@
   }
  },
  "provenance": {
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
   "mock_version": "gpu-mock/1",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
@@ -29,9 +30,10 @@
    "sampled token stream"
   ],
   "model": "facebook/opt-125m",
-  "model_revision": "unpinned",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
   "python": "3.12.15",
-  "scenario_sha256": "8da961835b1c3206f552c5b52cfe49fddf07f5477b7d3701f9c0339bdec414cc",
+  "scenario_sha256": "f944f4ead8a87b2acecf3bdae4967a710e0a53d4e905314b333264d76d42a882",
   "tier": 2,
   "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
   "vllm_version": "0.32.0"

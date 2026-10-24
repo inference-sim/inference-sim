@@ -20,6 +20,7 @@ Usage: python -I oracle/run_scheduler.py <vllm checkout> <scenario.json>
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 
@@ -30,6 +31,11 @@ def main() -> None:
         # Batch mode: every *.json scenario in the directory, each trace written beside it as
         # <name>.trace.json. One interpreter for many scenarios, which a fuzz corpus needs.
         out_dir = sys.argv[3] if len(sys.argv) > 3 else scenario_path
+        # Golden traces are never overwritten without review (docs/testing.md).
+        if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
+                os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
+            sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
+                     "a golden-reviewed: <reviewer> trailer to the commit")
         names = sorted(f for f in os.listdir(scenario_path)
                        if f.endswith(".json") and not f.endswith(".trace.json"))
         for name in names:
@@ -202,6 +208,13 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "mocks.json"), "rb") as f:
         mocks = json.load(f)
+    # ORACLE_LOCKFILE names the frozen package list of the Python environment that ran vLLM
+    # (CI writes it with pip freeze); its hash pins every package the run imported.
+    lockfile = os.environ.get("ORACLE_LOCKFILE")
+    lock_digest = "unrecorded"
+    if lockfile:
+        with open(lockfile, "rb") as f:
+            lock_digest = hashlib.sha256(f.read()).hexdigest()
     return {
         "tier": 2,
         "vllm_version": vllm.__version__,
@@ -213,6 +226,8 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "model_revision": os.environ.get("ORACLE_MODEL_REVISION", "unpinned"),
         "mocks": [m["symbol"] for m in mocks["mocks"]],
         "python": sys.version.split()[0],
+        "platform": platform.system().lower() + "-" + platform.machine(),
+        "lockfile_sha256": lock_digest,
     }
 
 

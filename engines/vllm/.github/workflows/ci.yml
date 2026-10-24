@@ -89,6 +89,19 @@ jobs:
           VLLM_SOURCE_REQUIRED: "1"
         run: go test -v -run MatchSource ./${{ matrix.pack }}/
 
+  # A golden trace is vLLM's own output; a commit that changes one must name its reviewer.
+  goldens-reviewed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit changing a golden trace has a golden-reviewed trailer
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+
   # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU.
   oracle-tier2:
     runs-on: ubuntu-latest
@@ -122,6 +135,7 @@ jobs:
           PY
       - name: run every tier-2 scenario
         env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
           HF_HUB_OFFLINE: "1"
@@ -134,6 +148,7 @@ jobs:
       # Scheduler and then through blis-vllm, which must match at zero mismatches.
       - name: generate the fuzz corpus and vLLM's traces for it
         env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
           HF_HUB_OFFLINE: "1"

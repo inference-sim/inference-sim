@@ -1,6 +1,7 @@
 package sched
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,12 @@ type step struct {
 }
 
 type trace struct {
+	Provenance struct {
+		VLLMVersion    string `json:"vllm_version"`
+		VLLMCommit     string `json:"vllm_commit"`
+		ScenarioSHA256 string `json:"scenario_sha256"`
+		MockVersion    string `json:"mock_version"`
+	} `json:"provenance"`
 	Steps    []step `json:"steps"`
 	Finished map[string]struct {
 		Reason       string `json:"reason"`
@@ -239,11 +246,46 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 			}
 			var want trace
 			readJSON(t, golden, &want)
+			checkProvenance(t, path, want)
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
 				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
 			}
 		})
 	}
+}
+
+// checkProvenance refuses a golden trace that was not produced from this exact scenario file
+// by the pinned vLLM release under the current GPU mock: a trace is only evidence for the
+// scenario it was run on.
+func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
+	t.Helper()
+	raw, err := os.ReadFile(scenarioPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(raw)
+	p := tr.Provenance
+	for _, c := range []struct{ field, got, want string }{
+		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
+		{"vllm_version", p.VLLMVersion, "0.32.0"},
+		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"mock_version", p.MockVersion, mockVersion(t)},
+	} {
+		if c.got != c.want {
+			t.Fatalf("golden trace for %s records %s %q, want %q: regenerate it with oracle/run_scheduler.py (docs/testing.md)",
+				filepath.Base(scenarioPath), c.field, c.got, c.want)
+		}
+	}
+}
+
+// mockVersion is oracle/mocks.json's version, the GPU mock both sides follow.
+func mockVersion(t *testing.T) string {
+	t.Helper()
+	var m struct {
+		Version string `json:"version"`
+	}
+	readJSON(t, "../../oracle/mocks.json", &m)
+	return m.Version
 }
 
 func readJSON(t *testing.T, path string, v any) {
@@ -279,6 +321,7 @@ func TestFuzzCorpusAgainstVLLM(t *testing.T) {
 		readJSON(t, filepath.Join(dir, name+".json"), &sc)
 		var want trace
 		readJSON(t, tp, &want)
+		checkProvenance(t, filepath.Join(dir, name+".json"), want)
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
 			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
@@ -299,6 +342,7 @@ func TestScenarioFromEnv(t *testing.T) {
 	readJSON(t, sp, &sc)
 	var want trace
 	readJSON(t, tp, &want)
+	checkProvenance(t, sp, want)
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
 		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
 	}
