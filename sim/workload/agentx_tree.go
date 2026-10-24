@@ -12,8 +12,10 @@ import (
 // them, per-turn timestamps and end-to-start delays, and the recorded cross-stream
 // replay barriers. It ports WekaTraceLoader._build_reconstruction_plans,
 // _reconstruct_serial and _install_replay_dependencies (dataset/loader/weka_trace.py)
-// and infer_cross_stream_predecessors (timing/replay_dependencies.py), with no per-trace
-// idle-gap warp and no per-turn delay cap: the scenario forbids both.
+// and infer_cross_stream_predecessors (timing/replay_dependencies.py). The recorded
+// timestamps and delays are kept as-is here; the per-trace idle-gap cap, when a run states
+// one, is applied dynamically at replay time by AgentXReplay's watchdog, not warped into the
+// tree. The per-turn delay cap the scenario forbids is never applied.
 
 // agxTurn is one replayed request of a conversation (aiperf's Turn).
 type agxTurn struct {
