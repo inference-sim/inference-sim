@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
 )
 
 // BenchmarkPollDeferred documents property P: the per-step re-poll cost is

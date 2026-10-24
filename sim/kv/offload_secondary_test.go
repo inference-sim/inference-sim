@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
 )
 
 // BC-C6: secondary-tier lookup order is a deterministic function of tier index,

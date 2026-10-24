@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // secondaryTier models one secondary offload tier (an "fs" tier): the chunks it HOLDS and the

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // TestPromptCanon_EqualExactlyWhereBlocksAreShared: canonical prompts agree on every whole block

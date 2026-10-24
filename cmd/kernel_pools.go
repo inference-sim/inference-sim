@@ -11,10 +11,10 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool, since each

@@ -5,9 +5,9 @@ import (
 
 	"pgregory.net/rapid"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // chunkCache is an offload cache over a bs-token GPU pool of gpuBlocks blocks with

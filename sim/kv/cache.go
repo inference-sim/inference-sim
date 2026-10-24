@@ -11,8 +11,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 

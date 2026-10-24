@@ -3,7 +3,7 @@ package kv
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
 )
 
 // cpuLookupResult is the readability state of a key in the CPU offload tier. It

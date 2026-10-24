@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
 )
 
 // cpuTestKey turns an int into a distinct BlockKey for tests.

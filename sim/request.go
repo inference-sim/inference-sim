@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
+	"github.com/inference-sim/blis-vllm/compat/tokenid"
 )
 
 // TokenID is the simulator's compact representation of a tokenizer ID.

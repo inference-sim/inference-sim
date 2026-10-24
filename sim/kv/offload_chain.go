@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // jitterMinFactor is the floor for a sampled latency-jitter multiplier (#1581
