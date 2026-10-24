@@ -61,6 +61,11 @@ def main() -> None:
     print(json.dumps(run_one(vllm_root, path), indent=1, sort_keys=True))
 
 
+def _ordered(ids):
+    """A set-like view of ids that iterates in sorted order, or None when empty."""
+    return dict.fromkeys(sorted(ids)).keys() if ids else None
+
+
 def run_one(vllm_root: str, scenario_path: str) -> dict:
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
@@ -213,7 +218,13 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 sending.add(rid)
         kv_out = None
         if recving or sending or failed or invalid:
-            kv_out = KVConnectorOutput(finished_recving=recving or None, finished_sending=sending or None,
+            # The worker reports these as sets, and the scheduler frees blocks in the order it
+            # iterates them (scheduler.py:3222-3235@5df63a72), which decides which freed blocks
+            # the next allocation reuses. A set of strings iterates in an order that depends on
+            # PYTHONHASHSEED, so the transport mock fixes the order: by request ID, the order
+            # the Go side reports them in. (Insertion-ordered dict keys behave as a set here:
+            # the scheduler only iterates and tests membership.)
+            kv_out = KVConnectorOutput(finished_recving=_ordered(recving), finished_sending=_ordered(sending),
                                        failed_recving=failed, invalid_block_ids=invalid)
         record["transport"] = {"recving": sorted(recving), "sending": sorted(sending),
                                "failed": sorted(failed), "invalid_blocks": len(invalid)}

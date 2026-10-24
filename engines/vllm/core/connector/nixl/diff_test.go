@@ -242,8 +242,12 @@ func run(t *testing.T, sc scenario) trace {
 				}
 			}
 		}
-		st.Transport.Recving = sortedStrings(o.FinishedRecving)
-		st.Transport.Sending = sortedStrings(o.FinishedSending)
+		// The worker's report order is undefined (vLLM receives sets); the transport mock fixes
+		// it by request ID on both sides, since the scheduler frees blocks in that order.
+		o.FinishedRecving = sortedStrings(o.FinishedRecving)
+		o.FinishedSending = sortedStrings(o.FinishedSending)
+		st.Transport.Recving = o.FinishedRecving
+		st.Transport.Sending = o.FinishedSending
 		st.Transport.Failed = sortedStrings(o.FailedRecving)
 		st.Transport.InvalidBlocks = uniqueInts(o.InvalidBlocks)
 		var aborts []string
