@@ -130,7 +130,25 @@ jobs:
           for s in oracle/scenarios/*.json; do
             python -I oracle/run_scheduler.py vllm-source "$s" > "oracle/out/$(basename "$s")"
           done
+      # The seeded fuzz corpus: 2000 random scenarios from fixed seeds, each run through vLLM's
+      # Scheduler and then through blis-vllm, which must match at zero mismatches.
+      - name: generate the fuzz corpus and vLLM's traces for it
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          python -I oracle/gen_fuzz.py oracle/out/fuzz 1000 2000
+          python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: blis-vllm against vLLM (differential + fuzz)
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
+        run: go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: oracle-tier2
           path: |

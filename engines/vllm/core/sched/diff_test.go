@@ -256,3 +256,50 @@ func readJSON(t *testing.T, path string, v any) {
 		t.Fatalf("%s: %v", path, err)
 	}
 }
+
+// TestFuzzCorpusAgainstVLLM is the seeded fuzz test (#2021 B8). BLIS_VLLM_FUZZ_DIR names a
+// directory of scenarios from oracle/gen_fuzz.py with the trace vLLM v0.32.0's Scheduler
+// produced for each (<name>.trace.json, oracle/run_scheduler.py in directory mode); CI
+// generates both from fixed seeds. Every scenario must match at zero mismatches; a failure
+// names the seed and the earliest divergence, and the seed is then shrunk and kept under
+// oracle/scenarios as a permanent test.
+func TestFuzzCorpusAgainstVLLM(t *testing.T) {
+	dir := os.Getenv("BLIS_VLLM_FUZZ_DIR")
+	if dir == "" {
+		t.Skip("BLIS_VLLM_FUZZ_DIR is unset: the fuzz corpus was NOT checked (CI's oracle job sets it)")
+	}
+	traces, err := filepath.Glob(filepath.Join(dir, "*.trace.json"))
+	if err != nil || len(traces) == 0 {
+		t.Fatalf("no traces in %s (%v)", dir, err)
+	}
+	mismatches := 0
+	for _, tp := range traces {
+		name := strings.TrimSuffix(filepath.Base(tp), ".trace.json")
+		var sc scenario
+		readJSON(t, filepath.Join(dir, name+".json"), &sc)
+		var want trace
+		readJSON(t, tp, &want)
+		if d := earliestDivergence(want, run(t, sc)); d != "" {
+			mismatches++
+			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+		}
+	}
+	t.Logf("fuzz corpus: %d scenarios, %d mismatches", len(traces), mismatches)
+}
+
+// TestScenarioFromEnv checks one scenario against one oracle trace, named by
+// BLIS_VLLM_SCENARIO and BLIS_VLLM_TRACE. It is the Go half of oracle/shrink.py, which
+// shrinks a failing fuzz seed to the smallest scenario that still diverges.
+func TestScenarioFromEnv(t *testing.T) {
+	sp, tp := os.Getenv("BLIS_VLLM_SCENARIO"), os.Getenv("BLIS_VLLM_TRACE")
+	if sp == "" || tp == "" {
+		t.Skip("BLIS_VLLM_SCENARIO and BLIS_VLLM_TRACE are unset")
+	}
+	var sc scenario
+	readJSON(t, sp, &sc)
+	var want trace
+	readJSON(t, tp, &want)
+	if d := earliestDivergence(want, run(t, sc)); d != "" {
+		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+	}
+}

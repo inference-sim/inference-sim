@@ -356,10 +356,15 @@ func (s *Scheduler) preempt(r *Request) {
 // Update is update_from_output (:2026-2425): each scheduled request that completed its
 // known tokens samples one token from sampled (nil means it sampled nothing); a request
 // stops on EOS, at max_tokens, or at max_model_len (check_stop, sched/utils.py:98-140).
+//
+// Requests are visited in num_scheduled_tokens' insertion order (:2075), which is out.Order:
+// the scheduled running requests in running order, then the admitted ones. The order is not
+// cosmetic: a request that stops frees its blocks there and then (_free_request), so it
+// decides which freed prefix blocks sit nearer the free queue's head and are evicted first.
 func (s *Scheduler) Update(out Output, sampled map[string]int64) []Finished {
 	var finished []Finished
 	var stopped []*Request
-	for _, id := range sortedKeys(out.Scheduled) {
+	for _, id := range out.Order {
 		r := s.requests[id]
 		if r == nil || r.Status > Preempted {
 			continue
@@ -417,15 +422,6 @@ func indexOf(rs []*Request, r *Request) int {
 		}
 	}
 	return -1
-}
-
-func sortedKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // queue is FCFSRequestQueue or PriorityRequestQueue (request_queue.py:75-207).

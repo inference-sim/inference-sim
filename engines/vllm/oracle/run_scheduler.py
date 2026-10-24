@@ -26,6 +26,22 @@ import sys
 
 def main() -> None:
     vllm_root, scenario_path = sys.argv[1], sys.argv[2]
+    if os.path.isdir(scenario_path):
+        # Batch mode: every *.json scenario in the directory, each trace written beside it as
+        # <name>.trace.json. One interpreter for many scenarios, which a fuzz corpus needs.
+        out_dir = sys.argv[3] if len(sys.argv) > 3 else scenario_path
+        names = sorted(f for f in os.listdir(scenario_path)
+                       if f.endswith(".json") and not f.endswith(".trace.json"))
+        for name in names:
+            path = os.path.join(scenario_path, name)
+            trace = run_one(vllm_root, path)
+            with open(os.path.join(out_dir, name[:-5] + ".trace.json"), "w") as f:
+                json.dump(trace, f, indent=1, sort_keys=True)
+        return
+    print(json.dumps(run_one(vllm_root, scenario_path), indent=1, sort_keys=True))
+
+
+def run_one(vllm_root: str, scenario_path: str) -> dict:
     # vLLM's test helpers are imported from the pinned checkout itself, never copied.
     sys.path.insert(0, vllm_root)
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
@@ -141,11 +157,11 @@ def main() -> None:
         steps.append(record)
         step += 1
 
-    print(json.dumps({
+    return {
         "provenance": provenance(vllm_root, scenario_path),
         "steps": steps,
         "finished": dict(sorted(finished.items())),
-    }, indent=1, sort_keys=True))
+    }
 
 
 def kv_state(scheduler) -> dict:
