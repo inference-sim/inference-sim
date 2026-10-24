@@ -57,7 +57,7 @@ inference-sim/
 │   ├── cache.go               # KVCacheState (single-tier GPU)
 │   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
-├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel v0.2.0) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
+├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel, the version go.mod pins) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
 │   ├── kernelmodel.go         # The LatencyModel adapter
 │   ├── capacity.go            # KV block budget from the kernel's memory methods, per data-parallel rank
 │   ├── settings.go            # Settings: everything one engine is sized from (block size, batch limits, max_model_len, KV budget), per data-parallel rank, answered by the scenario + kernel
