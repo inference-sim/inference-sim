@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
+	"github.com/inference-sim/blis-vllm/compat/tokenid"
 )
 
 // TokenID is the simulator's compact representation of a tokenizer ID.
-// Re-exported from sim/internal/tokenid as an alias at the package boundary,
+// Re-exported from blis-vllm's compat/tokenid as an alias at the package boundary,
 // so callers write sim.TokenID. The underlying type (tokenid.TokenID) is a
 // defined type (NOT a Go type alias of int32), so assignments from int still
 // require an explicit conversion — the compile-time mixed-arithmetic check
@@ -111,14 +111,6 @@ type Request struct {
 	// generation). Set from the owning client/cohort's Adapter during generation.
 	Adapter string
 
-	// adapterPinned tracks whether this request currently holds a pin on its
-	// adapter's resident slot (cold-load gate, #1466). Set once when the request
-	// enters the running batch and cleared once at a terminal state, so a
-	// preempted-then-re-admitted request pins exactly once (the pin persists
-	// through preemption, INV-L5) rather than double-counting. Zero value (false)
-	// is correct for base-model requests and adapter-blind runs.
-	adapterPinned bool
-
 	// Client timeout: absolute tick by which request must complete (0 = no timeout).
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64
@@ -158,6 +150,26 @@ type Request struct {
 	// aggregates of the --metrics-path file must exclude.
 	Phase Phase
 
+	// eng is the engine's private state for this request (engineState): what the engine
+	// tracks across steps that nothing outside the engine reads. It is allocated by the
+	// engine on first use, so no Request construction site sets it, and a value copy of a
+	// Request (a session follow-up's template) shares it, which is safe because a copy is
+	// never given back to an engine.
+	eng *engineState
+}
+
+// engineState is the engine-private state of one request: the fields batch formation and the
+// step bodies keep across steps. It lives behind Request.eng so that the request record the
+// host builds and reads (workload, router, reports) carries no engine internals.
+type engineState struct {
+	// adapterPinned tracks whether this request currently holds a pin on its
+	// adapter's resident slot (cold-load gate, #1466). Set once when the request
+	// enters the running batch and cleared once at a terminal state, so a
+	// preempted-then-re-admitted request pins exactly once (the pin persists
+	// through preemption, INV-L5) rather than double-counting. Zero value (false)
+	// is correct for base-model requests and adapter-blind runs.
+	adapterPinned bool
+
 	// specDecodeCarry accumulates the fractional part of the mean accepted-token
 	// count (1+α·K) across decode steps for speculative decoding / MTP (#1528).
 	// Unexported: owned and mutated only by Simulator.commitDecodeTokens; the zero
@@ -182,8 +194,16 @@ type Request struct {
 	scheduledTokens int64
 }
 
+// state returns the request's engine state, allocating it on first use.
+func (req *Request) state() *engineState {
+	if req.eng == nil {
+		req.eng = &engineState{}
+	}
+	return req.eng
+}
+
 // AdapterPinned reports whether the request holds a pin on its LoRA adapter's resident slot.
-func (req *Request) AdapterPinned() bool { return req.adapterPinned }
+func (req *Request) AdapterPinned() bool { return req.eng != nil && req.eng.adapterPinned }
 
 // This method returns a human-readable string representation of a Request.
 func (req Request) String() string {
@@ -204,7 +224,39 @@ func (req *Request) IsMultimodal() bool {
 // PrefillEnd is the ProgressIndex at which the request's prefill ends: its prompt, or, for a
 // request resumed after a preemption, its prompt and the output it had emitted (resumeEnd).
 // Tokens before it are scheduled as prefill; one at or past it decodes.
-func (req *Request) PrefillEnd() int64 { return max(req.InputLen(), req.resumeEnd) }
+func (req *Request) PrefillEnd() int64 { return max(req.InputLen(), req.resumeEndOf()) }
+
+// preemptionCount is the engine state's preemptions, 0 for a request never preempted.
+func (req *Request) preemptionCount() int {
+	if req.eng == nil {
+		return 0
+	}
+	return req.eng.preemptions
+}
+
+// scheduledTokensOf is the engine state's scheduledTokens, 0 before the request is scheduled.
+func (req *Request) scheduledTokensOf() int64 {
+	if req.eng == nil {
+		return 0
+	}
+	return req.eng.scheduledTokens
+}
+
+// specDecodeCarryOf is the engine state's speculative-decoding carry, 0 when it has none.
+func (req *Request) specDecodeCarryOf() float64 {
+	if req.eng == nil {
+		return 0
+	}
+	return req.eng.specDecodeCarry
+}
+
+// resumeEndOf is the engine state's resumeEnd, 0 for a request the engine never preempted.
+func (req *Request) resumeEndOf() int64 {
+	if req.eng == nil {
+		return 0
+	}
+	return req.eng.resumeEnd
+}
 
 // SequenceTokenSlice is the request's tokens [start, end) over its prompt followed by its
 // output. A resumed prefill (PrefillEnd) reaches into the output.

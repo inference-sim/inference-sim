@@ -48,16 +48,16 @@ inference-sim/
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
 │   └── internal/              # Shared internal packages
-│       ├── hash/              # Block-level hashing for prefix cache (the sole hash source)
-│       ├── kvkey/             # KV block keying (#1589): DeriveChunkKeys (chunk-stride keys, BC-K4) + Interner (BlockKey→KeyID, BC-K3); delegates all hashing to internal/hash (BC-K1)
 │       ├── testutil/          # Shared test infrastructure (golden dataset loading)
-│       ├── tokenid/           # TokenID (int32) type — defined-type compact token ID shared with sim/internal/hash
 │       └── util/              # General utility functions
+│                              # (the block hasher, KV block keying, TokenID and the KV-transfer station
+│                              #  moved to github.com/inference-sim/blis-vllm compat/prefix, compat/kvkey,
+│                              #  compat/tokenid and compat/kvtransfer by #2021)
 ├── sim/kv/                    # KV cache implementations (PKG-1)
 │   ├── cache.go               # KVCacheState (single-tier GPU)
 │   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
-├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel v0.2.0) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
+├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel, the version go.mod pins) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
 │   ├── kernelmodel.go         # The LatencyModel adapter
 │   ├── capacity.go            # KV block budget from the kernel's memory methods, per data-parallel rank
 │   ├── settings.go            # Settings: everything one engine is sized from (block size, batch limits, max_model_len, KV budget), per data-parallel rank, answered by the scenario + kernel

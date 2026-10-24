@@ -53,7 +53,7 @@ func TestServerSeries_PromptSplitIsFirstSchedulingOnly(t *testing.T) {
 	s := newServerSeries(10)
 	req := &Request{ID: "a", InputTokens: make([]TokenID, 100)}
 	s.recordAdmission(0, req, PrefixLookup{QueryTokens: 100, HitTokens: 48, CPUHitTokens: 16})
-	req.preemptions = 1
+	req.state().preemptions = 1
 	s.recordAdmission(12, req, PrefixLookup{}) // batch formation zeroes a re-admission's lookup
 	s.recordFirstToken(25, req)
 	e := s.output("e", 30, 3)

@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // jitterMinFactor is the floor for a sampled latency-jitter multiplier (#1581
@@ -563,7 +563,7 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, stateS
 // secondary-resident -- initiates one async promotion of the contiguous same-tier run and
 // stops (the run is not available to this request). A run shorter than one chunk past
 // startBlock is not loaded, as vLLM loads nothing then. It is the offload analogue of
-// TieredKVCache's reloadPrefixFromCPU, keyed through sim/internal/kvkey so the
+// TieredKVCache's reloadPrefixFromCPU, keyed through blis-vllm's compat/kvkey so the
 // CPU/secondary keyspace is a subset of the GPU block hashes (BC-K1).
 func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, prevHash string) bool {
 	tail, ok := o.tailOf(tokens, startBlock, prevHash)

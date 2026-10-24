@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/vocab"
+	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -61,7 +61,7 @@ func TestProvenanceRestatesTheKernelsEvidence(t *testing.T) {
 			"the origins %d", got, assumedRegistry)
 	}
 
-	pack := rules.Lookup("0.31.0")
+	pack := vllmrules.Lookup("0.31.0")
 	if pack == nil {
 		t.Fatal("no 0.31.0 rules pack registered")
 	}

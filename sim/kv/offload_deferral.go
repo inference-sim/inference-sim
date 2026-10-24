@@ -3,8 +3,8 @@ package kv
 import (
 	"sort"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
 )
 
 // H3 kv_deferral (#1591): step-boundary re-poll for secondary-tier (disk/object

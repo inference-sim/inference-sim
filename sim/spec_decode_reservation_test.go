@@ -266,8 +266,8 @@ func TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth(t *testing.T) {
 		t.Fatalf("expected r0 preempted, got %v", res.Preempted)
 	}
 	for _, r := range res.RunningBatch.Requests {
-		if r.scheduledTokens != k+1 {
-			t.Errorf("%s scheduled %d tokens, want the verify width %d", r.ID, r.scheduledTokens, k+1)
+		if r.scheduledTokensOf() != k+1 {
+			t.Errorf("%s scheduled %d tokens, want the verify width %d", r.ID, r.scheduledTokensOf(), k+1)
 		}
 	}
 }
@@ -308,8 +308,8 @@ func TestSpecDecode_ADecodeSubRequestsVerifyWidthStopsAtMaxModelLen(t *testing.T
 	NewBatchFormation("").FormBatch(BatchContext{RunningBatch: &Batch{}, WaitQ: wq, KVCache: kv,
 		MaxNumBatchedTokens: 100, MaxNumSeqs: 4, MaxModelLen: maxModelLen, ComputedTokens: map[string]int64{},
 		DecodeTokensPerStep: func(*Request) int64 { return 1 }, SpecVerifyWidth: k + 1})
-	if want := int64(maxModelLen - 1 - 17); r.scheduledTokens != want {
-		t.Errorf("scheduled %d tokens at progress 17 of a %d-token window, want %d", r.scheduledTokens, maxModelLen, want)
+	if want := int64(maxModelLen - 1 - 17); r.scheduledTokensOf() != want {
+		t.Errorf("scheduled %d tokens at progress 17 of a %d-token window, want %d", r.scheduledTokensOf(), maxModelLen, want)
 	}
 }
 

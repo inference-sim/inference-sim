@@ -6,8 +6,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -162,10 +162,10 @@ type decodeKVWaiter struct {
 func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *ParentRequest, req *sim.Request) {
 	id := string(inst.ID())
 	if _, armed := cs.decodeKVWaiters[id]; !armed {
-		inst.sim.SetRemoteKVAdmission(func(now int64) { cs.serveDecodeKVWaiters(inst, now) })
+		inst.SetRemoteKVAdmission(func(now int64) { cs.serveDecodeKVWaiters(inst, now) })
 	}
 	cs.decodeKVWaiters[id] = append(cs.decodeKVWaiters[id], decodeKVWaiter{parent: parent, req: req})
-	inst.sim.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
+	inst.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
 }
 
 // serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs, in arrival order,
@@ -186,12 +186,12 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 		}
 		// vLLM's reserved_blocks: what the instance's other admitted handoffs -- pulls in flight
 		// and landed ones not yet running -- still need before they can run.
-		reserved := cs.pullFirstStepBlocks[id] + inst.sim.WaitingHolderBlocks()
+		reserved := cs.pullFirstStepBlocks[id] + inst.WaitingHolderBlocks()
 		pulled, ok := inst.ReserveTransferredKVBehind(w.req, reserved)
 		if !ok {
 			break
 		}
-		cs.pullFirstStepBlocks[id] += inst.sim.FirstDecodeStepBlocks(w.req)
+		cs.pullFirstStepBlocks[id] += inst.FirstDecodeStepBlocks(w.req)
 		q = q[1:]
 		w.parent.DecodeSubReq = w.req
 		w.parent.PulledKVBlocks = (pulled + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
@@ -202,7 +202,7 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 	} else {
 		cs.decodeKVWaiters[id] = q
 	}
-	inst.sim.SetRemoteKVWaiting(len(q))
+	inst.SetRemoteKVWaiting(len(q))
 }
 
 // DecodeKVWaiting reports how many handoffs wait for decode KV right now.
@@ -405,7 +405,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decodeInstID {
-			cs.pullFirstStepBlocks[decodeInstID] -= inst.sim.FirstDecodeStepBlocks(decodeSubReq)
+			cs.pullFirstStepBlocks[decodeInstID] -= inst.FirstDecodeStepBlocks(decodeSubReq)
 		}
 	}
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
@@ -507,12 +507,12 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 // engine with work admits them in its next schedule instead (sim.SetRemoteKVAdmission),
 // after its running requests have taken their slots (INV-PD-9).
 func (cs *ClusterSimulator) admitDecodeKVIfIdle(inst *InstanceSimulator, now int64) {
-	if len(cs.decodeKVWaiters[string(inst.ID())]) == 0 || inst.sim.HasWork() {
+	if len(cs.decodeKVWaiters[string(inst.ID())]) == 0 || inst.HasWork() {
 		return
 	}
 	// A step that finished its last request is still executing until it ends; the engine's
 	// next schedule runs then.
-	if end := inst.sim.BusyUntil(); now < end {
+	if end := inst.BusyUntil(); now < end {
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &decodeAdmitEvent{time: end, inst: inst}, seqID: cs.nextSeqID()})
 		return
 	}

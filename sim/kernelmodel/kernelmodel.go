@@ -54,17 +54,16 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
 	"github.com/inference-sim/blis-schemas/spec/workload"
+	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -73,8 +72,22 @@ import (
 //
 // An alias rather than a second type: the kernel's Open takes one, so a distinct type here
 // would mean converting at every call and would let the two drift if the kernel ever adds a
-// root. A kernelmodel.Repos{...} literal still compiles unchanged.
+// root. A kernelmodel.Repos{...} literal still compiles unchanged; every entry point below
+// supplies the engine rules a literal leaves unset (withEngineRules).
 type Repos = latencykernel.Repos
+
+// withEngineRules returns r with the vLLM engine rules filled in where r states none: the
+// packs of github.com/inference-sim/blis-vllm/rules, which the kernel takes from its caller
+// rather than looking up itself (inference-sim#2021 B4). It is the one place this repository
+// chooses the rules a scenario's engine_version selects, so a run, a replay and every scoring
+// tool price a release against the same pack.
+func withEngineRules(r Repos) Repos {
+	if r.Rules == nil {
+		r.Rules = latencykernel.RulesFrom(vllmrules.Lookup)
+		r.RulesVersions = vllmrules.Versions
+	}
+	return r
+}
 
 // Model adapts a kernel to sim.LatencyModel.
 //
@@ -244,6 +257,7 @@ func Open(scenario string, r Repos) (*Model, error) {
 // from. One answer to "which files does this scenario imply", in the repository that owns
 // the question.
 func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
+	r = withEngineRules(r)
 	in, err := latencykernel.OpenInputs(scenario, r, poolIndex)
 	if err != nil {
 		return nil, err
@@ -688,8 +702,8 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 }
 
 // checkSpeculativeMethod refuses a pool whose engine.speculative.method the scenario's engine
-// release does not accept, read from that release's blis-schemas rules pack
-// (rules.Pack.SpeculativeMethods), so the accepted set moves with engine_version: dspark is
+// release does not accept, read from that release's rules (rules.EngineRules
+// SpeculativeMethodAccepted), so the accepted set moves with engine_version: dspark is
 // accepted at vLLM 0.31.0 because that release ships it.
 //
 // The kernel does not check it itself. It refuses a method the model graph's speculator
@@ -703,19 +717,13 @@ func checkSpeculativeMethod(in latencykernel.Inputs) error {
 	if sp == nil {
 		return nil
 	}
-	pack, ok := in.Rules.(*rules.Pack)
-	if !ok || pack == nil {
-		return fmt.Errorf("engine.speculative.method %q cannot be checked: the engine rules for "+
-			"version %q are not a blis-schemas rules pack", sp.Method, in.Scenario.EngineVersion)
+	if in.Rules == nil {
+		return fmt.Errorf("engine.speculative.method %q cannot be checked: no engine rules for "+
+			"version %q", sp.Method, in.Scenario.EngineVersion)
 	}
-	if !pack.SpeculativeMethods[sp.Method] {
-		accepted := make([]string, 0, len(pack.SpeculativeMethods))
-		for m := range pack.SpeculativeMethods {
-			accepted = append(accepted, m)
-		}
-		sort.Strings(accepted)
+	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
 		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
-			sp.Method, pack.Version, strings.Join(accepted, ", "))
+			sp.Method, in.Rules.EngineVersion(), strings.Join(in.Rules.SpeculativeMethodNames(), ", "))
 	}
 	return nil
 }

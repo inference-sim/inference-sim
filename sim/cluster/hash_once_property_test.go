@@ -7,8 +7,8 @@ import (
 
 	"pgregory.net/rapid"
 
+	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // INV-K11: each distinct prompt block is hashed at most once per engine, whatever the

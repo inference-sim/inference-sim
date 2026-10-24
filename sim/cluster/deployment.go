@@ -1,8 +1,8 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // DefaultCacheSignalDelay is the default propagation delay for prefix cache

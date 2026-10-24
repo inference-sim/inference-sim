@@ -7,8 +7,8 @@ import (
 
 	"pgregory.net/rapid"
 
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // INV-P2-2 (#1922): with contention on, concurrent P/D handoffs share the links they cross.

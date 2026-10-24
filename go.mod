@@ -6,8 +6,10 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-latency-kernel v0.3.0
-	github.com/inference-sim/blis-schemas v0.6.0
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261024105926-285a81e21ecb
+	github.com/inference-sim/blis-schemas v0.6.1-0.20261024105647-9a71eeb47a9e
+	github.com/inference-sim/blis-vllm v0.0.0-20261024105808-8db6c9d9e238
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261024105808-8db6c9d9e238
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2

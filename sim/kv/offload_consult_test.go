@@ -3,9 +3,9 @@ package kv
 import (
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kvkey"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/kvkey"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // blockKeysFor derives the block-stride keys for tokens (== the GPU block hashes,

@@ -1,17 +1,18 @@
 # Changes across the BLIS repositories
 
-The process for a change that spans blis-schemas, blis-catalog, blis-registry,
+The process for a change that spans blis-schemas, blis-catalog, blis-registry, blis-vllm,
 blis-latency-kernel and inference-sim is described once, in blis-schemas:
 [Changes across the repositories](https://github.com/inference-sim/blis-schemas/blob/main/docs/contributing/cross-repo-changes.md). This page lists only what is specific to inference-sim,
-which is the last repository in the dependency order: it is pushed and merged after the other four.
+which is the last repository in the dependency order: it is pushed and merged after the others
+(blis-schemas, then blis-vllm, then blis-latency-kernel, #2021).
 The per-PR workflow ([PR Workflow](pr-workflow.md)) and the standards
 ([rules](standards/rules.md), [invariants](standards/invariants.md)) apply unchanged; the canonical
 page adds the cross-repository steps around them.
 
 ## Repinning
 
-1. `go.mod`: the kernel and blis-schemas at their pushed heads' pseudo-versions (release tags
-   before merge). Never commit a `replace` for a blis-* module (the llm-d router's `replace` to
+1. `go.mod`: the kernel, blis-schemas and the two blis-vllm modules (`blis-vllm` and
+   `blis-vllm/rules`) at their pushed heads' pseudo-versions (release tags before merge). Never commit a `replace` for a blis-* module (the llm-d router's `replace` to
    the inference-sim fork is the one exception); run `go mod tidy`.
 2. `testdata/registry` and `testdata/catalog`: re-vendor from the registry and catalog heads,
    updating each `.upstream-commit` stamp.

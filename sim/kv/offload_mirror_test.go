@@ -3,8 +3,8 @@ package kv
 import (
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // BC-C7a + BC-C3(pin): MirrorToCPU stores each new full block and cascades it to
@@ -162,7 +162,7 @@ func TestOffload_PromptOnly_PartialTail_OffloadsExactlyOneChunk(t *testing.T) {
 	req := &sim.Request{ID: "r", InputTokens: []sim.TokenID{1, 2, 3}, OutputTokens: []sim.TokenID{9}}
 	oc.SetClock(1)
 	admitOffload(oc, req, 0, 3, nil) // prefill: block0 [1,2] full+hashed, block1 [3] partial
-	req.ProgressIndex = 3               // prefill complete; next AllocateKVBlocks is a decode step
+	req.ProgressIndex = 3            // prefill complete; next AllocateKVBlocks is a decode step
 	admitOffload(oc, req, 3, 4, nil) // decode: appends output[0]=9 -> block1 [3,9] full, hashed
 
 	// The tail block IS full and hashed (partial-fill path fired)...

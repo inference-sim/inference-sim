@@ -3,8 +3,8 @@ package kv
 import (
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 )
 
 // vLLM v0.31.0's fs tier semantics, each against the source it ports. Fixtures: 2-token GPU
