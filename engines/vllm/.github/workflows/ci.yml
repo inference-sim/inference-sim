@@ -70,6 +70,8 @@ jobs:
             tag: v0.29.0
           - pack: v0_31
             tag: v0.31.0
+          - pack: v0_32
+            tag: v0.32.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
