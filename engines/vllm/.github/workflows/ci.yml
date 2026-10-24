@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", "rules"]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - name: no replace directive
+        run: '! grep -n "^replace" go.mod'
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        run: go test -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", "rules"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+      # The module targets Go 1.27; golangci-lint refuses a module newer than the Go that built
+      # it, so it is built from source with the module's Go (as inference-sim's CI does).
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+          working-directory: ${{ matrix.module }}
+
+  # Each rules pack transcribes one vLLM release by hand; these tests re-derive its constants
+  # from that release's own source and fail on any difference in either direction. Each pack is
+  # checked against the tag it describes.
+  packs-against-vllm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pack: v0_29
+            tag: v0.29.0
+          - pack: v0_31
+            tag: v0.31.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rules/go.mod
+      - name: check out vLLM at the pack's release
+        uses: actions/checkout@v4
+        with:
+          repository: vllm-project/vllm
+          ref: ${{ matrix.tag }}
+          path: vllm-source
+          fetch-depth: 1
+      - name: verify pack constants
+        working-directory: rules
+        env:
+          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
+          VLLM_SOURCE_REQUIRED: "1"
+        run: go test -v -run MatchSource ./${{ matrix.pack }}/
