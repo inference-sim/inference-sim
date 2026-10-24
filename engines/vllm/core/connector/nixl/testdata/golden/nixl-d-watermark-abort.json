@@ -1,0 +1,771 @@
+{
+ "finished": {
+  "l0": {
+   "output_tokens": 8,
+   "reason": "stop",
+   "step": 7
+  },
+  "l1": {
+   "output_tokens": 2,
+   "reason": "stop",
+   "step": 9
+  }
+ },
+ "provenance": {
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "scenario_sha256": "3b50738467dcf58dba26dfe0e1cc4df9895e46a7ae27ed07223f73609e66b9e8",
+  "tier": 4,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 4,
+   "kv_fetch_stages": [
+    0,
+    0,
+    1
+   ],
+   "kv_holding_waiting": [
+    "d0"
+   ],
+   "kv_usage": 0.7777777777777778,
+   "num_requests": 2,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [
+    "d0"
+   ],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 40
+   },
+   "step": 0,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [
+     "d0"
+    ],
+    "sending": []
+   },
+   "waiting_for_remote_kv": [
+    "d0"
+   ]
+  },
+  {
+   "aborted": [
+    "d0"
+   ],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 7,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6111111111111112,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 1,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 7,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6111111111111112,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 2,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 7,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6111111111111112,
+   "num_requests": 2,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 3,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      "4267c8e4466c8c9ffacc39447a30c659f086a0e2f2e93eaaedb4cc322c8990a000000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 7,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6111111111111112,
+   "num_requests": 2,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 4,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      "4267c8e4466c8c9ffacc39447a30c659f086a0e2f2e93eaaedb4cc322c8990a000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 6,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6666666666666667,
+   "num_requests": 2,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 5,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l0": [
+     [
+      "ea52bdf261e39575777b9b0ed85a63ab6adabdd0d8138a85cfd145e12dd7875b00000000",
+      1
+     ],
+     [
+      "dc51d9010a374f8f5e4b12f783095e96728ea7d600935fd1605c1640147bbffb00000000",
+      1
+     ],
+     [
+      "055cf66416a03fc2e24fec18cd4d14b3a7a299e2b46827ceb9da6ecb591b254000000000",
+      1
+     ],
+     [
+      "34e31e5f5d110a5ddd3d8f831ffa4c10a88dd325b0544f087f185df3a845ce0900000000",
+      1
+     ],
+     [
+      "492bf9a767eb82ef9703c4677a4ee70224285bbba99495ed9694a96ce00b738100000000",
+      1
+     ],
+     [
+      "25cc5fe9185da081a239f319eb72d9874125905154c6a17a59f3031cb9b055df00000000",
+      1
+     ],
+     [
+      "3b43b300c758c6421865804845669c5a6bb01f9b4b11d35d5207e1bf5391017800000000",
+      1
+     ],
+     [
+      "45e7866fa7074c2b9a333cdde3ea9bff45a443301946c75193bed16c92ac867c00000000",
+      1
+     ],
+     [
+      "f247ccf4b243e0bf34c87586bd9a857836cad9f7d89cbe9a9045142c6503ade700000000",
+      1
+     ],
+     [
+      "90b66ee950b7861164467e8ba8ea663b80496b3ebea8170af7ed00f377998de900000000",
+      1
+     ],
+     [
+      "4267c8e4466c8c9ffacc39447a30c659f086a0e2f2e93eaaedb4cc322c8990a000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 6,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6666666666666667,
+   "num_requests": 2,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l0"
+   ],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 6,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "l0"
+   ],
+   "free_blocks": 18,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "l0": 1
+   },
+   "step": 7,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "l1": [
+     [
+      "8c781bf8de23d02215f7e2d776ba32e514f595a58910f6629ddd026c470db02a00000000",
+      1
+     ],
+     [
+      "9dd7d63c48a4ea48dd5ffc65130542dd75c15bdbc10e552100daa9f19510842600000000",
+      1
+     ],
+     [
+      "3e5e48f0fa1193b8c2514e7ebc728a94f02436697f58f1cc9212ad712ffc980c00000000",
+      1
+     ],
+     [
+      "585652ba69c33f877b68994fb262ec7b7de3456c5673e59faa304ebf6782bac200000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 14,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.2222222222222222,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "l1"
+   ],
+   "scheduled": {
+    "l1": 4
+   },
+   "step": 8,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "l1"
+   ],
+   "free_blocks": 18,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "l1": 1
+   },
+   "step": 9,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 18,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 10,
+   "transport": {
+    "failed": [],
+    "invalid_blocks": 0,
+    "recving": [],
+    "sending": []
+   },
+   "waiting_for_remote_kv": []
+  }
+ ]
+}

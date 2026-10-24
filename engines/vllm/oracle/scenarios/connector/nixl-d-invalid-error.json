@@ -1,0 +1,85 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    1712,
+    96,
+    4271,
+    297,
+    1295,
+    1958,
+    139,
+    451,
+    1207,
+    3009,
+    1964,
+    960,
+    2770,
+    3821,
+    2915,
+    2299,
+    3214,
+    2158,
+    2821,
+    1873
+   ],
+   "output": [
+    1691,
+    2910
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "invalid_blocks": [
+    1
+   ]
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    2962,
+    3844,
+    3937,
+    2335,
+    3416,
+    1857,
+    3660,
+    48,
+    3355,
+    2121,
+    1949,
+    1823,
+    83,
+    2430,
+    2475,
+    2745
+   ],
+   "output": [
+    1163,
+    4933
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  }
+ ],
+ "name": "nixl-d-invalid-error"
+}

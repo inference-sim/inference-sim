@@ -237,12 +237,34 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
+      # Tier 4: vLLM's real NIXL connector scheduler side (pull mode), with only the worker's
+      # transfer outcomes as the mock input, on every NIXL scenario and 1000 fuzz seeds.
+      - name: run every NIXL scenario and the connector fuzz corpus through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-connector oracle/out/fuzz-connector
+          python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+          python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector 1 1000
+          python -I oracle/run_connector.py vllm-source oracle/out/fuzz-connector
+      - name: every NIXL golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/nixl/testdata/golden oracle/out/scenarios-connector
+      - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
+        env:
+          BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-connector
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
       # Each supported row's mutants must be caught by the tests above (docs/testing.md).
       - name: mutation sweep
         run: |
           set -o pipefail
           python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
           python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
+          python3 -I oracle/mutate_t4.py . oracle/out/fuzz-connector "$RUNNER_TEMP/mutants-t4" | tee oracle/out/mutation-results-t4.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

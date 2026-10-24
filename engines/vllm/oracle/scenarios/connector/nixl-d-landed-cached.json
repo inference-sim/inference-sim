@@ -1,0 +1,81 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    1,
+    2,
+    3
+   ],
+   "output": [
+    513,
+    3525
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 5,
+   "prompt": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    9,
+    9
+   ],
+   "output": [
+    2585,
+    1081
+   ]
+  }
+ ],
+ "name": "nixl-d-landed-cached"
+}

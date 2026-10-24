@@ -79,9 +79,15 @@ const (
 	Waiting Status = iota
 	Running
 	Preempted
+	// WaitingForRemoteKVs is a request whose prompt KV a connector is loading
+	// asynchronously (vllm/v1/request.py:375@5df63a72).
+	WaitingForRemoteKVs
 	FinishedStopped
 	FinishedLength
 	FinishedAborted
+	// FinishedError is a request the engine failed, such as a KV load under
+	// kv_load_failure_policy "fail".
+	FinishedError
 )
 
 // Request is vLLM's Request (vllm/v1/request.py:61) for a token-only prompt.
@@ -106,7 +112,11 @@ type Request struct {
 	NumPreemptions int
 	IsPrefillChunk bool
 	// SpecTokens are spec_token_ids: the drafts proposed for the next step.
-	SpecTokens  []int64
+	SpecTokens []int64
+	// Transfer is the request's KV-transfer parameters, which a connector reads and updates
+	// (Request.kv_transfer_params); nil for a request no connector moves.
+	Transfer    *TransferParams
+	fetchStage  FetchStage
 	hashes      []kv.BlockHash
 	numInFlight int
 	seq         int // FIFO tie-break within a priority queue
@@ -179,7 +189,20 @@ type Scheduler struct {
 	requests map[string]*Request
 	running  []*Request
 	waiting  queue
-	seq      int
+	// holding is kv_holding_waiting: waiting requests that hold KV blocks, always drained
+	// before waiting (scheduler.py:223-227, 913-917).
+	holding queue
+	seq     int
+	// The KV connector and its state (scheduler.py:163-192, 247-248, 430-441); connector is
+	// nil without one.
+	connector   Connector
+	conf        ConnectorConfig
+	recvDone    map[string]bool // finished_recving_kv_req_ids
+	recvFailed  map[string]bool // failed_recving_kv_req_ids
+	fetchCounts [4]int          // _kv_fetch_counts, indexed by FetchStage
+	// inflight is _inflight_prefills: requests still prefilling, chunks and asynchronous
+	// loads, whose remaining blocks an asynchronous load must leave free.
+	inflight map[*Request]bool
 	// currentStep is schedule()'s current_step (scheduler.py:366, :592).
 	currentStep int
 	// finishedPending is finished_req_ids: requests finished since the last schedule(),
@@ -217,7 +240,9 @@ func New(cfg Config) (*Scheduler, error) {
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
+		holding:  queue{priority: cfg.Policy == Priority},
 		deferred: map[string]bool{},
+		recvDone: map[string]bool{}, recvFailed: map[string]bool{}, inflight: map[*Request]bool{},
 	}
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
@@ -238,20 +263,54 @@ func (s *Scheduler) Add(r *Request) error {
 	s.seq++
 	r.seq = s.seq
 	r.updateHashes(s.cfg.BlockSize)
-	s.requests[r.ID] = r
+	// A new request holds no blocks, so _enqueue_waiting_request queues it in waiting
+	// (scheduler.py:2457-2462, 2633).
 	s.waiting.add(r)
+	s.requests[r.ID] = r
+	if s.connector != nil {
+		s.connector.OnNewRequest(r)
+		// A P/D request counts from arrival: connector matching is skipped while all run
+		// slots are taken (scheduler.py:2640-2645).
+		if r.Transfer != nil && r.Transfer.DoRemotePrefill {
+			s.setFetchStage(r, FetchWaitingToStart)
+		}
+	}
 	return nil
 }
 
-// Counts is get_request_counts: (running, waiting).
-func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() }
+// SetConnector installs a KV connector (KVConnectorFactory.create_connector,
+// scheduler.py:170-182). Call before any request is added. A connector is modelled for one
+// full-attention KV cache group, synchronous scheduling and no drafter; the rest is refused
+// (docs/feature-matrix.md, "KV connectors and offload").
+func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
+	switch {
+	case s.KV.NumGroups() > 1:
+		return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled", s.KV.NumGroups())
+	case s.cfg.Async || s.cfg.MaxConcurrentBatches > 1:
+		// defer_block_free and requires_kv_delivery (scheduler.py:184-194) apply there.
+		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled")
+	case s.cfg.Spec.NumTokens > 0:
+		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled")
+	}
+	s.connector, s.conf = c, conf
+	return nil
+}
+
+// Counts is get_request_counts: (running, waiting) (scheduler.py:2608-2610).
+func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() + s.holding.len() }
 
 // HasUnfinished is has_unfinished_requests.
-func (s *Scheduler) HasUnfinished() bool { return len(s.running)+s.waiting.len() > 0 }
+func (s *Scheduler) HasUnfinished() bool { return len(s.running)+s.waiting.len()+s.holding.len() > 0 }
 
-// HasRequests is has_requests (interface.py:199-202): unfinished requests, or finished ones
-// the next schedule() still has to report.
-func (s *Scheduler) HasRequests() bool { return s.HasUnfinished() || s.finishedPending > 0 }
+// HasRequests is has_requests (scheduler.py:2823-2838): unfinished requests, finished ones
+// the next schedule() still has to report, or, with a connector, finished ones whose blocks
+// it still holds (has_finished_requests, :2813-2821).
+func (s *Scheduler) HasRequests() bool {
+	if s.HasUnfinished() || s.finishedPending > 0 {
+		return true
+	}
+	return s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()
+}
 
 // Deferred is how many waiting requests the last waiting pass skipped (deferred_waiting).
 func (s *Scheduler) Deferred() int { return len(s.deferred) }
@@ -434,74 +493,126 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 	}
 
-	// Waiting requests, only when nothing was preempted (:899-1395). A request skipped this
-	// step is set aside and put back at the front afterwards, in its order.
+	// Waiting requests, only when nothing was preempted (:899-1395). Requests holding KV blocks
+	// (kv_holding_waiting) are drained before the rest (:913-917). A request skipped this step
+	// is set aside and put back at the front of its queue afterwards, in its order (:1391-1395).
 	var admitted []*Request
 	if len(preempted) == 0 {
-		var skipped []*Request
+		var skipped, skippedHolding []*Request
+		skip := func(q *queue) {
+			r := q.pop()
+			s.deferred[r.ID] = true
+			if holdsKVBlocks(r) {
+				skippedHolding = append(skippedHolding, r)
+			} else {
+				skipped = append(skipped, r)
+			}
+		}
 		for tokenBudget > 0 {
-			if s.waiting.len() == 0 || inputBudget <= draftSlots {
+			q := &s.holding
+			if q.len() == 0 {
+				q = &s.waiting
+			}
+			if q.len() == 0 || inputBudget <= draftSlots {
 				break
 			}
 			if len(s.running) >= s.maxActive() {
 				break
 			}
-			r := s.waiting.peek()
+			r := q.peek()
+			if !s.handleBlockedWaiting(r) {
+				skip(q)
+				continue
+			}
 			if r.numStale > 0 {
 				// Deliverable stale output still in flight: resuming now could resample a
 				// position it later delivers (:934-938).
-				skipped = append(skipped, s.waiting.pop())
-				s.deferred[r.ID] = true
+				skip(q)
 				continue
 			}
 			// max_loras (:939-951): a request whose adapter would make one too many in this
 			// batch is skipped this step, and those behind it still run.
 			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) == s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {
-				skipped = append(skipped, s.waiting.pop())
-				s.deferred[r.ID] = true
+				skip(q)
 				continue
 			}
 			var hit [][]*kv.Block
 			numComputed := r.NumComputed
+			// newLocal is num_new_local_computed_tokens; external is the connector's tokens
+			// beyond it, and async whether they load between steps.
+			newLocal, external, async := 0, 0, false
 			lookedUp := false
 			if r.NumComputed == 0 {
 				lookedUp = true
-				hit, numComputed = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
+				hit, newLocal = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
+				if s.connector != nil {
+					// The connector sees the block-aligned local hit (:968-980). A hit here is
+					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
+					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.cfg.BlockSize)
+				}
+				numComputed = newLocal + external
+				if async {
+					s.setFetchStage(r, FetchWaitingToStart)
+				} else {
+					s.setFetchStage(r, fetchNone)
+				}
 			}
-			if deferPrefills && numComputed < r.NumTokens()-1 {
-				// DP prefill balancing defers this step's prefill (:1113-1116): the pass stops.
-				break
-			}
-			room := min(tokenBudget, inputBudget-draftSlots)
-			numNew := r.NumTokens() - numComputed
-			// First-decode padding (:1130-1152): a request whose first step is a single decode
-			// token runs as 1 + K, so the batch keeps the speculative decodes' shape.
-			pad := false
-			if k > 0 && numNew == 1 && !prefillScheduled && (len(scheduledRunning) > 0 || numComputed > 0) &&
-				numComputed+1+k+1 <= s.cfg.MaxModelLen {
-				if 1+k > room {
+			numNew, pad := 0, false
+			if !async {
+				if deferPrefills && numComputed < r.NumTokens()-1 {
+					// DP prefill balancing defers this step's prefill (:1113-1116): the pass
+					// stops.
 					break
 				}
-				numNew, pad = 1+k, true
+				room := min(tokenBudget, inputBudget-draftSlots)
+				numNew = r.NumTokens() - numComputed
+				// First-decode padding (:1130-1152): a request whose first step is a single
+				// decode token runs as 1 + K, so the batch keeps the speculative decodes' shape.
+				if k > 0 && numNew == 1 && !prefillScheduled && (len(scheduledRunning) > 0 || numComputed > 0) &&
+					numComputed+1+k+1 <= s.cfg.MaxModelLen {
+					if 1+k > room {
+						break
+					}
+					numNew, pad = 1+k, true
+				}
+				if 0 < threshold && threshold < numNew {
+					numNew = threshold
+				}
+				if !s.cfg.EnableChunkedPrefill && numNew > room {
+					break
+				}
+				numNew = min(numNew, room)
+				numNew = s.reservePrefillLookahead(r, numComputed, numNew)
+				if numNew <= 0 {
+					break
+				}
 			}
-			if 0 < threshold && threshold < numNew {
-				numNew = threshold
+			// An asynchronous load computes nothing this step, allocates no lookahead slots
+			// yet, and must leave the blocks the in-flight prefills still need (:1219-1251).
+			lookahead, reserved := s.cfg.Spec.Lookahead, 0
+			if async {
+				lookahead, reserved = 0, s.inflightReserved()
 			}
-			if !s.cfg.EnableChunkedPrefill && numNew > room {
+			if !s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: lookahead, NewComputed: hit,
+				NumNewComputed: newLocal, External: external, Reserved: reserved, DelayCache: async,
+				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, Waiting: true,
+				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
 				break
 			}
-			numNew = min(numNew, room)
-			numNew = s.reservePrefillLookahead(r, numComputed, numNew)
-			if numNew <= 0 {
-				break
+			if s.connector != nil {
+				s.connector.AfterAlloc(r, s.allocatedBlocks(r.ID), external)
 			}
-			if !s.KV.Allocate(r.ID, kv.Alloc{New: numNew, Lookahead: s.cfg.Spec.Lookahead, NewComputed: hit,
-				NumNewComputed: numComputed - r.NumComputed, Hashes: r.hashes, NumTokens: r.NumTokens(),
-				InFlight: r.numInFlight, Waiting: true, HasScheduled: len(s.running) > 0,
-				FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
-				break
+			if async {
+				// WAITING_FOR_REMOTE_KVS (:1320-1341): the blocks are allocated, the load runs
+				// between steps, and the request waits in kv_holding_waiting.
+				r.Status = WaitingForRemoteKVs
+				r.NumComputed = numComputed
+				s.inflight[r] = true
+				s.setFetchStage(r, FetchInProgress)
+				skip(q)
+				continue
 			}
-			s.waiting.pop()
+			q.pop()
 			delete(s.deferred, r.ID)
 			s.running = append(s.running, r)
 			admitted = append(admitted, r)
@@ -510,12 +621,13 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			}
 			out.Scheduled[r.ID] = numNew
 			if lookedUp {
-				out.PrefixHit[r.ID] = numComputed
+				out.PrefixHit[r.ID] = newLocal
 			}
 			tokenBudget -= numNew
 			inputBudget -= numNew + draftSlots
 			r.Status = Running
 			r.NumComputed = numComputed
+			s.setFetchStage(r, fetchNone)
 			if pad {
 				drafts := make([]int64, k)
 				for i := range drafts {
@@ -523,9 +635,16 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				}
 				out.SpecDecode[r.ID] = drafts
 			}
+			// Only requests still prefilling after this chunk stay in flight (:1376-1378).
+			if numComputed+numNew < r.NumTokens() {
+				s.inflight[r] = true
+			}
 		}
 		// prepend_requests (:1391-1395): extendleft on a deque reverses, which restores the
 		// skipped requests' order at the front; a priority queue re-sorts.
+		for i := len(skippedHolding) - 1; i >= 0; i-- {
+			s.holding.prepend(skippedHolding[i])
+		}
 		for i := len(skipped) - 1; i >= 0; i-- {
 			s.waiting.prepend(skipped[i])
 		}
@@ -562,9 +681,41 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				r.nextDecodeStep = s.currentStep + max(s.cfg.DecodeStagger, 1)
 			}
 		}
+		if !r.IsPrefillChunk {
+			delete(s.inflight, r)
+		}
 	}
 	return out
 }
+
+// inflightReserved is _inflight_prefill_reserved_blocks plus _spec_decode_step_blocks
+// (scheduler.py:3088-3092, 346-357, _request_remaining_blocks :3060-3076): the blocks the
+// in-flight prefills still need to hold their whole sequences, which an asynchronous load
+// must leave free.
+func (s *Scheduler) inflightReserved() int {
+	extra := 0
+	if k := s.cfg.Spec.NumTokens; k > 0 {
+		extra = 1 + k + s.cfg.Spec.Lookahead
+	}
+	n := s.KV.NumGroups() * cdiv(extra, s.cfg.BlockSize)
+	for r := range s.inflight {
+		n += s.KV.RemainingBlocks(r.ID, min(r.NumTokens(), s.cfg.MaxModelLen)+extra, r.NumComputed)
+	}
+	return n
+}
+
+// allocatedBlocks is the request's block table as update_state_after_alloc sees it.
+func (s *Scheduler) allocatedBlocks(id string) AllocatedBlocks {
+	bs := s.KV.Blocks(id)
+	out := AllocatedBlocks{IDs: make([]int, len(bs)), Hashed: make([]bool, len(bs))}
+	for i, b := range bs {
+		out.IDs[i] = b.ID
+		out.Hashed[i] = b.Hash != nil && !b.Null
+	}
+	return out
+}
+
+func cdiv(a, b int) int { return (a + b - 1) / b }
 
 // run is what a KV event reports about r's blocks; nothing is built with events off.
 func (s *Scheduler) run(r *Request) kv.StoredRun {
@@ -585,6 +736,7 @@ func (s *Scheduler) preempt(r *Request) {
 	r.numStale = r.numInFlight
 	r.Placeholders = 0
 	r.NumPreemptions++
+	delete(s.inflight, r)
 	s.waiting.prepend(r)
 }
 
@@ -600,8 +752,21 @@ func (s *Scheduler) preempt(r *Request) {
 // cosmetic: a request that stops frees its blocks there and then (_free_request), so it
 // decides which freed prefix blocks sit nearer the free queue's head and are evicted first.
 func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
+	return s.UpdateWith(out, sampled, TransferOutcome{})
+}
+
+// UpdateWith is Update with the worker side's report of the step's KV transfers
+// (ModelRunnerOutput.kv_connector_output). Failed loads are handled before the requests are
+// visited (scheduler.py:2058-2071), the requests a "fail" policy fails are finished as errors
+// after them (:2306-2324), and finished transfers are applied last (:2342-2343).
+func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o TransferOutcome) []Finished {
 	var finished []Finished
 	var stopped []*Request
+	var skip map[string]bool
+	var fail []string
+	if !o.empty() {
+		skip, fail = s.failedLoads(o, out.Scheduled)
+	}
 	for _, id := range out.Order {
 		r := s.requests[id]
 		stale := false
@@ -612,7 +777,11 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 				r.numStale -= out.Scheduled[id]
 			}
 		}
-		if r == nil || r.Status > Preempted {
+		if skip[id] {
+			// A failed or rescheduled KV load (:2087-2089).
+			continue
+		}
+		if r == nil || r.Status >= FinishedStopped {
 			continue
 		}
 		toks := sampled[id]
@@ -663,10 +832,9 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 		}
 		r.Status = status
 		r.SpecTokens = nil
-		s.KV.Free(r.ID)
-		s.finishedPending++
 		stopped = append(stopped, r)
 		finished = append(finished, Finished{ID: r.ID, Status: status, Output: len(r.Output)})
+		s.freeRequest(r, false)
 	}
 	if len(stopped) > 0 {
 		keep := s.running[:0]
@@ -680,9 +848,15 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 			// A request stopped by stale output while preempted leaves the waiting queue
 			// (:2296-2300).
 			s.waiting.remove(r)
+			s.holding.remove(r)
 			delete(s.deferred, r.ID)
-			delete(s.requests, r.ID)
 		}
+	}
+	for _, r := range s.finishRequests(fail, FinishedError) {
+		finished = append(finished, Finished{ID: r.ID, Status: FinishedError, Output: len(r.Output)})
+	}
+	if !o.empty() {
+		s.transfersFinished(o)
 	}
 	return finished
 }
@@ -692,7 +866,7 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 func (s *Scheduler) UpdateDrafts(drafts map[string][]int64) {
 	for id, d := range drafts {
 		r := s.requests[id]
-		if r == nil || r.Status > Preempted {
+		if r == nil || r.Status >= FinishedStopped {
 			continue
 		}
 		if r.IsPrefillChunk {

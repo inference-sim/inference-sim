@@ -367,6 +367,15 @@ type Alloc struct {
 	// default True; kv_cache_manager.py:514-541): admit a new request only if its whole
 	// sequence fits.
 	FullSequenceMustFit bool
+	// External is num_external_computed_tokens: tokens a KV connector supplies past the
+	// local hit, whose blocks are allocated here and filled by the connector's load.
+	External int
+	// Reserved is reserved_blocks: free blocks the call must leave for other in-flight
+	// sequences (an asynchronous load's admission, kv_cache_manager.py:577-584).
+	Reserved int
+	// DelayCache is delay_cache_blocks: the blocks are not cached yet, because an
+	// asynchronous load fills them in a later step (:601-604).
+	DelayCache bool
 }
 
 // AllocateSlots is allocate_slots (kv_cache_manager.py:353-611) for one full-attention
@@ -386,11 +395,11 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	for _, bs := range newComputed {
 		adopting += len(bs)
 	}
-	if a.New == 0 && adopting == 0 {
+	if a.New == 0 && adopting == 0 && a.External == 0 {
 		panic("kv: allocate_slots needs new tokens or computed tokens to adopt")
 	}
 	localComputed := a.Computed + a.NumNewComputed
-	totalComputed := min(localComputed, m.maxModelLen)
+	totalComputed := min(localComputed+a.External, m.maxModelLen)
 
 	watermark := 0
 	if a.HasScheduled && a.Waiting {
@@ -407,15 +416,16 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	// Out-of-window blocks are freed first, even if the allocation then fails, on the
 	// processed-token basis (:545-557).
 	m.removeSkipped(id, max(0, totalComputed-a.InFlight))
-	if m.toAllocate(id, needSlots, newComputed, localComputed, false)+watermark > m.Pool.NumFree() {
+	if m.toAllocate(id, needSlots, newComputed, localComputed+a.External, false)+watermark > m.Pool.NumFree()-a.Reserved {
 		return false
 	}
-	// Adopt the prefix hit in every group before allocating any new block (:577-590,
-	// kv_cache_coordinator.py:261-302); a running request has none to adopt.
-	if adopting > 0 && !m.isRunning(id) {
+	// Adopt the prefix hit in every group before allocating any new block, then allocate
+	// the blocks a connector's external tokens fill (:577-590, kv_cache_coordinator.py:
+	// 261-310); a running request has neither.
+	if (adopting > 0 || a.External > 0) && !m.isRunning(id) {
 		for i, g := range m.groups {
 			bs := newComputed[i]
-			skipped := g.skippedTokens(localComputed) / m.blockSize
+			skipped := g.skippedTokens(localComputed+a.External) / m.blockSize
 			if skipped > 0 {
 				bs = bs[min(skipped, len(bs)):]
 			}
@@ -429,18 +439,37 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 			g.reqBlocks[id] = append(blocks, bs...)
 			g.numCached[id] = len(g.reqBlocks[id])
 		}
+		if a.External > 0 {
+			// allocate_external_computed_blocks (single_type_kv_cache_manager.py:328-367).
+			total := localComputed + a.External
+			for _, g := range m.groups {
+				if skipped := g.skippedTokens(total); skipped > 0 && total-skipped <= 0 {
+					continue
+				}
+				if need := cdiv(total, m.blockSize) - len(g.reqBlocks[id]); need > 0 {
+					g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)
+				}
+			}
+		}
 	}
 	for _, g := range m.groups {
 		if need := cdiv(needSlots, m.blockSize) - len(g.reqBlocks[id]); need > 0 {
 			g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)
 		}
 	}
-	if m.caching {
+	if m.caching && !a.DelayCache {
 		for _, g := range m.groups {
 			m.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)
 		}
 	}
 	return true
+}
+
+// RemainingBlocks is the scheduler's _request_remaining_blocks (scheduler.py:3060-3076): the
+// blocks a request still needs to hold numTokens, given numComputed, as the full-sequence
+// admission gate counts them.
+func (m *Manager) RemainingBlocks(id string, numTokens, numComputed int) int {
+	return m.toAllocate(id, numTokens, make([][]*Block, len(m.groups)), numComputed, true)
 }
 
 func (m *Manager) isRunning(id string) bool {
@@ -556,6 +585,19 @@ func (m *Manager) CacheUpTo(id string, hashes []BlockHash, numTokens int, run St
 	}
 	for _, g := range m.groups {
 		m.cache(g, id, hashes, m.cacheable(numTokens), run)
+	}
+}
+
+// CacheBlocks is cache_blocks (kv_cache_manager.py:782-792; kv_cache_coordinator.py:353-376)
+// as a landed asynchronous load calls it (scheduler.py:3123-3160): it records the request's
+// full blocks up to numComputed as prefix-cached in every group, less what a drafter may
+// re-prefill.
+func (m *Manager) CacheBlocks(id string, hashes []BlockHash, numComputed int, run StoredRun) {
+	if !m.caching {
+		return
+	}
+	for _, g := range m.groups {
+		m.cache(g, id, hashes, m.cacheable(numComputed), run)
 	}
 }
 
