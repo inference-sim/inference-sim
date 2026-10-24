@@ -400,7 +400,7 @@ func TestAgentXAcceleratedWarmupBarrierHandoff(t *testing.T) {
 	if worker0 < 0 || root1 < 0 {
 		t.Fatalf("expected the handed-off barrier pair in profiling (worker0=%d root1=%d)", worker0, root1)
 	}
-	if !(worker0 < root1) {
+	if worker0 >= root1 {
 		t.Errorf("replay barrier violated at handoff: worker turn 0 at %d must precede root turn 1 at %d", worker0, root1)
 	}
 }
