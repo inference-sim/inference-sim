@@ -88,3 +88,38 @@ jobs:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
           VLLM_SOURCE_REQUIRED: "1"
         run: go test -v -run MatchSource ./${{ matrix.pack }}/
+
+  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU.
+  oracle-tier2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: check out vLLM v0.32.0 (for its test helpers)
+        uses: actions/checkout@v4
+        with:
+          repository: vllm-project/vllm
+          ref: v0.32.0
+          path: vllm-source
+          fetch-depth: 1
+      - name: install the oracle environment
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.txt
+          pip freeze > oracle-env.lock
+      - name: the mocks replace no decision code
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: run every tier-2 scenario
+        run: |
+          mkdir -p oracle/out
+          for s in oracle/scenarios/*.json; do
+            python -I oracle/run_scheduler.py vllm-source "$s" > "oracle/out/$(basename "$s")"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oracle-tier2
+          path: |
+            oracle/out/
+            oracle-env.lock

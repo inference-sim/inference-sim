@@ -1,0 +1,21 @@
+{
+  "version": "gpu-mock/1",
+  "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
+  "mocks": [
+    {
+      "symbol": "vllm.v1.outputs.ModelRunnerOutput",
+      "kind": "gpu",
+      "how": "constructed by the harness instead of by a model runner: each scheduled request that reaches the end of its known tokens samples its next assigned output token from the scenario"
+    },
+    {
+      "symbol": "tests.v1.core.utils.create_scheduler",
+      "kind": "environment",
+      "how": "vLLM's own CPU test helper builds the real Scheduler with a fixed KV capacity (num_blocks) and a 1-head, 1-dim float32 full-attention spec, so no tensors are allocated; it is called, not modified"
+    },
+    {
+      "symbol": "sampled token stream",
+      "kind": "gpu",
+      "how": "the assigned output's last token is sampled as EOS_TOKEN_ID (tests/v1/core/utils.py:43), so the simulator's output-length input ends the request through vLLM's own check_stop; max_tokens carries only a client budget"
+    }
+  ]
+}

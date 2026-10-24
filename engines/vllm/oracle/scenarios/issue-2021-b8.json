@@ -1,0 +1,9 @@
+{
+  "name": "issue-2021-b8",
+  "description": "The example from inference-sim#2021 B8: token budget 8; A has 10 prompt tokens and B 6; each makes 2 tokens.",
+  "config": {"max_num_seqs": 2, "max_num_batched_tokens": 8, "block_size": 4, "num_blocks": 8, "max_model_len": 64},
+  "requests": [
+    {"id": "A", "arrival_step": 0, "prompt": [1,2,3,4,5,6,7,8,9,10], "output": [101,102]},
+    {"id": "B", "arrival_step": 0, "prompt": [11,12,13,14,15,16], "output": [201,202]}
+  ]
+}

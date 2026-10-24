@@ -1,0 +1,7 @@
+# The oracle's Python environment for CI (Linux x86_64, CPU only). vLLM is installed from the
+# v0.32.0 release's CPU wheel, pinned by sha256; torch comes from the PyTorch CPU index
+# (vllm requirements/cpu.txt:9 pins torch==2.13.0+cpu for x86_64). The test helpers the oracle
+# calls (tests/v1/core/utils.py) are read from a checkout of the same tag.
+vllm @ https://github.com/vllm-project/vllm/releases/download/v0.32.0/vllm-0.32.0+cpu-cp38-abi3-manylinux_2_39_x86_64.whl#sha256=e87a047cc5ab47eb14565dfcd060393876b33e913479982a56fca6fca73ed97a
+torch==2.13.0+cpu
+pytest==9.1.0
