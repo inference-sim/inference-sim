@@ -254,6 +254,51 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
         kw.update(sched_extra)
         return real_scheduler_config(**kw)
 
+    real_kv_cache_config = helpers.KVCacheConfig
+    groups = cfg.get("kv_groups")
+
+    def kv_cache_config(num_blocks, kv_cache_tensors, kv_cache_groups):
+        # A hybrid model's KV cache groups, from vLLM's own spec classes, one 1-head, 1-dim
+        # float32 layer each, as the helper builds its single full-attention group; vLLM's
+        # KVCacheManager picks the coordinator and per-group managers from them.
+        if not groups:
+            return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                        kv_cache_groups=kv_cache_groups)
+        import torch  # noqa: E402
+        from vllm.v1.kv_cache_interface import (  # noqa: E402
+            FullAttentionSpec,
+            KVCacheGroupSpec,
+            SlidingWindowSpec,
+        )
+
+        layers = {}
+        for i, g in enumerate(groups):
+            common = {"block_size": cfg["block_size"], "num_kv_heads": 1, "head_size": 1, "dtype": torch.float32}
+            if g["kind"] == "full":
+                layers[f"layer{i}"] = FullAttentionSpec(**common)
+            elif g["kind"] == "sliding_window":
+                layers[f"layer{i}"] = SlidingWindowSpec(sliding_window=g["sliding_window"], **common)
+            else:
+                raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
+        if cfg.get("disable_hybrid_kv_cache_manager"):
+            # disable_hybrid_kv_cache_manager (vllm/config/scheduler.py:182@5df63a72): vLLM
+            # promotes every sliding-window layer to full attention before grouping
+            # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
+            # :1799-1822), so all layers form one uniform group (:2185-2189). Both calls are
+            # vLLM's own.
+            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+                _get_kv_cache_groups_uniform_spec,
+                is_kv_cache_spec_uniform,
+                unify_hybrid_kv_cache_specs,
+            )
+
+            unify_hybrid_kv_cache_specs(layers)
+            assert is_kv_cache_spec_uniform(layers)
+            specs = _get_kv_cache_groups_uniform_spec(layers)
+        else:
+            specs = [KVCacheGroupSpec([name], spec) for name, spec in layers.items()]
+        return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors, kv_cache_groups=specs)
+
     # DSpark runs only on vLLM's V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72), which
     # needs Triton on the host (:724). The scheduler is the same class either way; selecting the
     # V2 runner is the environment of a GPU host, not a decision (docs/testing.md).
@@ -265,6 +310,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
         vllm_config_module.HAS_TRITON = True
         os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
+    helpers.KVCacheConfig = kv_cache_config
     try:
         return create_scheduler(
             model=model,
@@ -280,6 +326,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
         )
     finally:
         helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config
+        helpers.KVCacheConfig = real_kv_cache_config
         vllm_config_module.HAS_TRITON = saved_triton
         if saved_env is None:
             os.environ.pop("VLLM_USE_V2_MODEL_RUNNER", None)
@@ -338,12 +385,18 @@ def kv_state(scheduler) -> dict:
     mgr = scheduler.kv_cache_manager
     pool = mgr.block_pool
     per_request = {}
+    managers = mgr.coordinator.single_type_managers
     for rid in sorted(r.request_id for r in scheduler.running):
-        blocks = mgr.coordinator.single_type_managers[0].req_to_blocks.get(rid, [])
-        per_request[rid] = [
-            [b.block_hash.hex() if b.block_hash is not None else None, b.ref_cnt]
-            for b in blocks
-        ]
+        rows = []
+        for gi, m in enumerate(managers):
+            blocks = m.req_to_blocks.get(rid, [])
+            row = [[b.block_hash.hex() if b.block_hash is not None else None, b.ref_cnt] for b in blocks]
+            if len(managers) == 1:
+                rows = row
+            else:
+                # One list per group; the null block (a sliding window's freed slot) as "null".
+                rows.append([["null", 0] if b.is_null else r for b, r in zip(blocks, row)])
+        per_request[rid] = rows
     num_running, num_waiting = scheduler.get_request_counts()
     return {
         "free_blocks": pool.get_num_free_blocks(),

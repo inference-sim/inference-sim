@@ -100,8 +100,11 @@ func (p *Pool) Usage() float64 {
 
 // Cached returns the first block caching hash in group 0, or nil (get_cached_block,
 // block_pool.py:198-224, for one group).
-func (p *Pool) Cached(h BlockHash) *Block {
-	if bs := p.cached[string(WithGroup(h, 0))]; len(bs) > 0 {
+func (p *Pool) Cached(h BlockHash) *Block { return p.CachedIn(h, 0) }
+
+// CachedIn returns the first block caching hash in KV cache group g, or nil.
+func (p *Pool) CachedIn(h BlockHash, g uint32) *Block {
+	if bs := p.cached[string(WithGroup(h, g))]; len(bs) > 0 {
 		return bs[0]
 	}
 	return nil
@@ -171,6 +174,12 @@ type StoredRun struct {
 // group 0 (cache_full_blocks, block_pool.py:226-345), and with events on, queues one
 // BlockStored event for the run (:301-343).
 func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun, blockSize int) {
+	p.CacheFullIn(0, blocks, hashes, numCached, numFull, run, blockSize)
+}
+
+// CacheFullIn is CacheFull in KV cache group g. A null block (a sliding window's freed slot)
+// is skipped, its hash neither cached nor reported (:275-278, :319-322).
+func (p *Pool) CacheFullIn(g uint32, blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun, blockSize int) {
 	var stored []BlockHash
 	for i := numCached; i < numFull; i++ {
 		b := blocks[i]
@@ -180,7 +189,7 @@ func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull
 		if b.Hash != nil {
 			p.evict(b)
 		}
-		p.insert(WithGroup(hashes[i], 0), b)
+		p.insert(WithGroup(hashes[i], g), b)
 		stored = append(stored, hashes[i])
 	}
 	if p.events != nil {

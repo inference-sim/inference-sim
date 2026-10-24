@@ -61,6 +61,11 @@
       "symbol": "KV event publisher",
       "kind": "transport",
       "how": "with kv_events on, the scheduler's null publisher object's publish method is wrapped to keep a copy of each step's KVEventBatch (scheduler.py:2371-2385) for the trace; the events themselves are vLLM's"
+    },
+    {
+      "symbol": "tests.v1.core.utils.KVCacheConfig",
+      "kind": "environment",
+      "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers"
     }
   ]
 }

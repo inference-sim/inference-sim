@@ -53,7 +53,7 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
 | T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`); `rules/v0_32` passes all 35 source checks at `5df63a72`, and mutants of its new data, rule and parser are caught |
-| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap (and its adaptive floor), preemption, prefix caching, speculative decoding (EAGLE3, P-EAGLE, draft_model, PARD, MTP single and multi-module, DSpark; acceptance supplied), max_loras, watermark, max_num_active_seqs, max_num_scheduled_tokens, KV events: 29 scenarios + 4000 fuzz seeds at zero mismatches, all 40 mutants caught; hybrid KV (sliding window, mamba), prefix_match_unit and the retention interval in progress |
+| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap (and its adaptive floor), preemption, prefix caching, speculative decoding (EAGLE3, P-EAGLE, draft_model, PARD, MTP single and multi-module, DSpark; acceptance supplied), max_loras, watermark, max_num_active_seqs, max_num_scheduled_tokens, KV events, hybrid KV (full attention + sliding windows) and disable_hybrid_kv_cache_manager: 35 scenarios + 4000 fuzz seeds at zero mismatches, all mutants caught (`oracle/mutate.py`); Mamba groups, prefix_match_unit, the retention interval, bounded replay (blis-vllm#7) and DCP (blis-vllm#8) are follow-ups |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | EngineCore batch queue with a mocked executor | planned |
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | planned |
 | T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | inventory done: `docs/metrics-manifest.json`, 130 families from the v0.32.0 source (45 exact, 52 derived, 33 unavailable), regenerated in CI; the 45 families vLLM's own logger registers on CPU agree in type and labels, and their 19 histograms' bucket bounds are recorded from the live objects (`docs/metrics-buckets.json`); values: the 23 scheduler-decided exact families match vLLM's own logger sample for sample after every step (14 scenarios, 9,906 samples; 1,000 fuzz seeds, 1.39M samples; 0 mismatches); the 22 connector/offload exact families wait on tier 4 |
@@ -77,9 +77,12 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
   smallest scenario and kept under `oracle/scenarios/` as a permanent test.
 - **Mutation:** a test that cannot fail proves nothing, so each supported feature has a
   deliberate one-line bug (a mutant) that the differential and fuzz tests must catch
-  (`oracle/mutate.py`, a CI step). The sweep runs 40 mutants in `core/sched` and `core/kv`, 15
-  of them in speculative decoding and 3 in KV events, against the 29 scenarios and 4000 fuzz
-  seeds; all 40 are caught, and none is listed as a known gap. Two that once survived, the
+  (`oracle/mutate.py`, a CI step). The sweep runs the mutants in `core/sched` and `core/kv`
+  (speculative decoding, KV events and hybrid KV among them) against the 35 scenarios and 4000
+  fuzz seeds; every one is caught, and none is listed as a known gap. Two candidate mutants are
+  left out as equivalent in a synchronous scheduler, each with its reason in `oracle/mutate.py`
+  (freeing window blocks on the processed-token basis, which needs tokens in flight, and
+  aligning the hybrid cacheable count, which cache_blocks floors anyway). Two that once survived, the
   `max_model_len - num_computed - 1` input cap on running requests
   (`vllm/v1/core/sched/scheduler.py:713-720@5df63a72`) and skipping rather than stopping at a
   running request scheduled zero tokens (`:755-773`), bind only when a request runs past its

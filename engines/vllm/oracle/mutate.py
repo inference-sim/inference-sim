@@ -45,17 +45,17 @@ MUTANTS = [
     ("M14", "full-sequence admission gate", "core/sched/scheduler.go",
      "FullSequenceMustFit: s.cfg.ReserveFullSequence,", "FullSequenceMustFit: false,"),
     ("M15", "prefix hit capped at num_tokens-1", "core/kv/manager.go",
-     "maxBlocks := (numTokens - 1) / m.blockSize", "maxBlocks := numTokens / m.blockSize"),
+     "\tmaxLen := numTokens - 1\n", "\tmaxLen := numTokens\n"),
     ("M16", "free queue: hashed blocks to the tail", "core/kv/pool.go",
      "p.free.prependN(first)\n\tp.free.appendN(last)", "p.free.appendN(first)\n\tp.free.appendN(last)"),
     ("M17", "free order tail first", "core/kv/manager.go",
      "rev[len(bs)-1-i] = b", "rev[i] = b"),
     ("M18", "prefix caching (cache full blocks)", "core/kv/manager.go",
-     "\t\tm.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)\n", "\t\t_ = a.Hashes\n"),
+     "\t\t\tm.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)\n", "\t\t\t_ = g\n"),
     ("M19", "kv usage (null block excluded)", "core/kv/pool.go",
      "total := len(p.blocks) - 1", "total := len(p.blocks)"),
     ("M20", "evictable prefix-hit blocks counted", "core/kv/manager.go",
-     "return newBlocks + evictable", "return newBlocks"),
+     "total += newBlocks + evictable", "total += newBlocks + 0*evictable"),
     ("M21", "running-request skip on zero tokens", "core/sched/scheduler.go",
      "\t\t\treqIndex++\n\t\t\tcontinue\n\t\t}\n\t\tok := false", "\t\t\tbreak\n\t\t}\n\t\tok := false"),
     ("M22", "priority victim budget restore", "core/sched/scheduler.go",
@@ -68,9 +68,9 @@ MUTANTS = [
     ("M25", "lookahead slots in allocate_slots", "core/kv/manager.go",
      "needSlots := min(mainModel+a.Lookahead, m.maxModelLen)", "needSlots := min(mainModel, m.maxModelLen)"),
     ("M26", "drafts are never cached", "core/kv/manager.go",
-     "m.cache(id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)", "m.cache(id, a.Hashes, m.cacheable(mainModel), a.Run)"),
+     "m.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)", "m.cache(g, id, a.Hashes, m.cacheable(mainModel), a.Run)"),
     ("M27", "EAGLE block drop", "core/kv/manager.go",
-     "if m.eagle && len(hit) > 0 {", "if false && len(hit) > 0 {"),
+     "hit := m.fullHit(hashes, maxLen, []int{0}, m.eagle)", "hit := m.fullHit(hashes, maxLen, []int{0}, false)"),
     ("M28", "multi-module MTP reprefillable tokens", "core/kv/manager.go",
      "return max(0, numTokens-m.reprefillable)", "return max(0, numTokens)"),
     ("M29", "prefill lookahead reservation", "core/sched/scheduler.go",
@@ -98,6 +98,25 @@ MUTANTS = [
      "\tif p.events != nil {\n\t\t*p.events = append(*p.events, Event{Removed: true,", "\tif false {\n\t\t*p.events = append(*p.events, Event{Removed: true,"),
     ("M40", "BlockStored adapter name", "core/sched/scheduler.go",
      "return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}", "return kv.StoredRun{Tokens: r.allTokens()}"),
+    # Hybrid KV cache (full attention with sliding windows).
+    ("M41", "sliding window skipped tokens", "core/kv/manager.go",
+     "\treturn max(0, computed-g.spec.Window+1)\n", "\treturn max(0, computed-g.spec.Window)\n"),
+    # Not M42: freeing out-of-window blocks on the processed-token basis
+    # (kv_cache_manager.py:545-557) is equivalent here, because num_in_flight_tokens is zero
+    # whenever a synchronous scheduler schedules; it binds under async scheduling (tier 3).
+    ("M43", "window hit needs the window's contiguous blocks", "core/kv/manager.go",
+     "need := cdiv(sg.spec.Window-1, m.blockSize) // _contiguous_blocks_for_hit, :943-955", "need := 1"),
+    ("M44", "window blocks freed into null slots", "core/kv/manager.go",
+     "\t\tif len(freed) > 0 {\n\t\t\tm.Pool.Free(freed)\n\t\t}\n\t}\n}", "\t\t_ = freed\n\t}\n}"),
+    ("M45", "sliding window admission cap", "core/kv/manager.go",
+     "required = min(required, cdiv(capTokens, m.blockSize)+1)", "required = min(required, cdiv(capTokens, m.blockSize))"),
+    # Not M46: rounding the hybrid cacheable count down to the block
+    # (kv_cache_coordinator.py:767-777) is equivalent here, because cache_blocks floors to
+    # full blocks anyway when every group has one block size and no partial hash hits.
+    ("M48", "disable_hybrid_kv_cache_manager promotes windows", "core/kv/manager.go",
+     "\tif disableHybrid && hasFull {", "\tif false && disableHybrid && hasFull {"),
+    ("M47", "hybrid lookup repeats until no group shortens the hit", "core/kv/manager.go",
+     "\t\tif simple {\n\t\t\tbreak\n\t\t}\n", "\t\tif simple || true {\n\t\t\tbreak\n\t\t}\n"),
 ]
 
 

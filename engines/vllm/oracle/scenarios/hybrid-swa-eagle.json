@@ -1,0 +1,182 @@
+{
+ "name": "hybrid-swa-eagle",
+ "description": "A hybrid model with EAGLE3 K=2: the sliding window's hit needs one block more and drops it (the EAGLE margin), and drafts' lookahead slots are allocated in both groups.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "num_blocks": 70,
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 10
+   }
+  ],
+  "speculative": {
+   "method": "eagle3",
+   "num_speculative_tokens": 2,
+   "draft": "llama-eagle"
+  }
+ },
+ "requests": [
+  {
+   "id": "x0",
+   "arrival_step": 0,
+   "prompt": [
+    15960,
+    32913,
+    36195,
+    10613,
+    16128,
+    15165,
+    36198,
+    16767,
+    26043,
+    35933,
+    30384,
+    35922,
+    34309,
+    22441,
+    38409,
+    23608,
+    25348,
+    18200,
+    26470,
+    499,
+    7465,
+    1858,
+    35320,
+    16922,
+    2136,
+    31311,
+    11642,
+    22759,
+    19641,
+    24066,
+    29429,
+    12668,
+    1932
+   ],
+   "output": [
+    28716,
+    11009,
+    30810,
+    840,
+    3972,
+    6963,
+    38806,
+    7055,
+    11460
+   ],
+   "accepted": [
+    2,
+    0,
+    1,
+    2,
+    2
+   ]
+  },
+  {
+   "id": "x1",
+   "arrival_step": 3,
+   "prompt": [
+    15960,
+    32913,
+    36195,
+    10613,
+    16128,
+    15165,
+    36198,
+    16767,
+    26043,
+    35933,
+    30384,
+    35922,
+    34309,
+    22441,
+    38409,
+    23608,
+    25348,
+    18200,
+    26470,
+    499,
+    7465,
+    1858,
+    35320,
+    16922,
+    35996,
+    30421,
+    1062,
+    28473,
+    27196
+   ],
+   "output": [
+    13165,
+    24237,
+    7342,
+    31774,
+    36030,
+    11706,
+    38629
+   ],
+   "accepted": [
+    1,
+    1,
+    2
+   ]
+  },
+  {
+   "id": "x2",
+   "arrival_step": 12,
+   "prompt": [
+    15960,
+    32913,
+    36195,
+    10613,
+    16128,
+    15165,
+    36198,
+    16767,
+    26043,
+    35933,
+    30384,
+    35922,
+    34309,
+    22441,
+    38409,
+    23608,
+    25348,
+    18200,
+    26470,
+    499,
+    7465,
+    1858,
+    35320,
+    16922,
+    23480,
+    29513
+   ],
+   "output": [
+    32459,
+    7708,
+    34006,
+    28832,
+    678,
+    28448
+   ],
+   "accepted": [
+    0,
+    2,
+    2
+   ]
+  }
+ ],
+ "max_steps": 400
+}

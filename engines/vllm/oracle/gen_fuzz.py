@@ -12,8 +12,8 @@ Seeds from 5000 on (`SPEC_FROM`) add what the base generator leaves at defaults:
 speculative decoder in about half of them (EAGLE3, P-EAGLE, draft_model, PARD, MTP single
 and multi-module, DSpark; per-request acceptance drawn per verify step), LoRA adapters with
 max_loras, the scheduler knobs vLLM's test helper does not expose (watermark,
-max_num_active_seqs, max_num_scheduled_tokens, the adaptive long-prefill cap), and KV
-events. Seeds below 5000 give exactly the scenarios they always gave, so the existing corpus
+max_num_active_seqs, max_num_scheduled_tokens, the adaptive long-prefill cap), KV events,
+and hybrid KV cache groups (full attention with sliding windows). Seeds below 5000 give exactly the scenarios they always gave, so the existing corpus
 does not move.
 
 Usage: python -I oracle/gen_fuzz.py <out dir> <first seed> <count>
@@ -79,6 +79,17 @@ def extend(sc: dict, rng: random.Random) -> None:
         cfg["long_prefill_token_threshold_adaptive"] = True
     if cfg["enable_prefix_caching"] and rng.random() < 0.3:
         cfg["kv_events"] = True
+    if rng.random() < 0.25:
+        # A hybrid model: full attention beside one or two sliding windows of 2 to 6 blocks.
+        windows = [cfg["block_size"] * rng.randint(2, 6) + rng.randint(0, cfg["block_size"] - 1)
+                   for _ in range(rng.randint(1, 2))]
+        cfg["kv_groups"] = [{"kind": "full"}] + [{"kind": "sliding_window", "sliding_window": w} for w in windows]
+        cfg["num_blocks"] = cfg["num_blocks"] * len(cfg["kv_groups"])
+        # vLLM refuses to promote windows of different sizes into one group
+        # (unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_interface.py:616), so only a
+        # one-window model gets disable_hybrid_kv_cache_manager.
+        if len(windows) == 1 and rng.random() < 0.4:
+            cfg["disable_hybrid_kv_cache_manager"] = True
     # The pool must still hold the largest request with the drafter's lookahead and the
     # watermark, or vLLM would never admit it.
     look = cfg.get("speculative", {}).get("num_speculative_tokens", 0) + 1

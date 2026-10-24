@@ -40,7 +40,12 @@ type scenario struct {
 		LongPrefillAdaptive   bool    `json:"long_prefill_token_threshold_adaptive"`
 		MaxLoRAs              int     `json:"max_loras"`
 		KVEvents              bool    `json:"kv_events"`
-		Speculative           *struct {
+		KVGroups              []struct {
+			Kind          string `json:"kind"`
+			SlidingWindow int    `json:"sliding_window"`
+		} `json:"kv_groups"`
+		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
+		Speculative                 *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
 			Draft            string `json:"draft"`
@@ -63,16 +68,16 @@ type scenario struct {
 
 // step is one step of a trace: the fields the oracle records, compared field by field.
 type step struct {
-	Step       int                `json:"step"`
-	Scheduled  map[string]int     `json:"scheduled"`
-	Preempted  []string           `json:"preempted"`
-	Finished   []string           `json:"finished"`
-	FreeBlocks int                `json:"free_blocks"`
-	Running    []string           `json:"running"`
-	NumRunning int                `json:"num_running"`
-	NumWaiting int                `json:"num_waiting"`
-	KVUsage    float64            `json:"kv_usage"`
-	Blocks     map[string][][]any `json:"blocks"`
+	Step       int              `json:"step"`
+	Scheduled  map[string]int   `json:"scheduled"`
+	Preempted  []string         `json:"preempted"`
+	Finished   []string         `json:"finished"`
+	FreeBlocks int              `json:"free_blocks"`
+	Running    []string         `json:"running"`
+	NumRunning int              `json:"num_running"`
+	NumWaiting int              `json:"num_waiting"`
+	KVUsage    float64          `json:"kv_usage"`
+	Blocks     map[string][]any `json:"blocks"`
 	// SpecScheduled is the drafts each request verified this step, when any did.
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	// KVEvents are the step's KV cache events, by content, when the scenario turns them on:
@@ -111,7 +116,7 @@ func run(t *testing.T, sc scenario) trace {
 		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
-		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
+		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents, KVGroups: kvGroups(t, c.KVGroups, c.DisableHybridKVCacheManager),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +241,7 @@ func run(t *testing.T, sc scenario) trace {
 		st := step{
 			Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Finished: done,
 			FreeBlocks: s.KV.Pool.NumFree(), Running: sortedStrings(s.Running()), NumRunning: nr, NumWaiting: nw,
-			KVUsage: s.KV.Pool.Usage(), Blocks: map[string][][]any{},
+			KVUsage: s.KV.Pool.Usage(), Blocks: map[string][]any{},
 		}
 		if len(specScheduled) > 0 {
 			st.SpecScheduled = specScheduled
@@ -245,13 +250,17 @@ func run(t *testing.T, sc scenario) trace {
 			st.KVEvents = eventsJSON(s.TakeKVEvents())
 		}
 		for _, id := range st.Running {
-			for _, b := range s.KV.Blocks(id) {
-				var h any
-				if b.Hash != nil {
-					h = hex.EncodeToString(b.Hash)
-				}
-				st.Blocks[id] = append(st.Blocks[id], []any{h, float64(b.RefCnt)})
+			if s.KV.NumGroups() == 1 {
+				st.Blocks[id] = blockRows(s.KV.Blocks(id), false)
+				continue
 			}
+			// A hybrid model's blocks, one list per group, a null slot written as the oracle
+			// writes it.
+			rows := []any{}
+			for g := 0; g < s.KV.NumGroups(); g++ {
+				rows = append(rows, blockRows(s.KV.GroupBlocks(g, id), true))
+			}
+			st.Blocks[id] = rows
 		}
 		tr.Steps = append(tr.Steps, st)
 	}
@@ -378,11 +387,49 @@ func nonNil(m map[string]int) map[string]int {
 	return m
 }
 
-func nonNilBlocks(m map[string][][]any) map[string][][]any {
+func nonNilBlocks(m map[string][]any) map[string][]any {
 	if m == nil {
-		return map[string][][]any{}
+		return map[string][]any{}
 	}
 	return m
+}
+
+// blockRows writes a block table as the oracle does: [hash or null, ref count] per block,
+// and, in a hybrid model, a null block as ["null", 0].
+func blockRows(bs []*kv.Block, hybrid bool) []any {
+	rows := []any{}
+	for _, b := range bs {
+		if hybrid && b.Null {
+			rows = append(rows, []any{"null", float64(0)})
+			continue
+		}
+		var h any
+		if b.Hash != nil {
+			h = hex.EncodeToString(b.Hash)
+		}
+		rows = append(rows, []any{h, float64(b.RefCnt)})
+	}
+	return rows
+}
+
+// kvGroups is the scenario's KV cache groups for the scheduler, through ResolveKVGroups.
+func kvGroups(t *testing.T, gs []struct {
+	Kind          string `json:"kind"`
+	SlidingWindow int    `json:"sliding_window"`
+}, disableHybrid bool) []kv.Group {
+	t.Helper()
+	var layers []kv.Group
+	for _, g := range gs {
+		switch g.Kind {
+		case "full":
+			layers = append(layers, kv.Group{Kind: kv.FullAttention})
+		case "sliding_window":
+			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow})
+		default:
+			t.Fatalf("unknown KV cache group kind %q", g.Kind)
+		}
+	}
+	return kv.ResolveGroups(layers, disableHybrid)
 }
 
 // TestDifferentialAgainstVLLM runs every scenario under oracle/scenarios through the Go

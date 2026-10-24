@@ -52,6 +52,12 @@ type Config struct {
 	// the KV cache records BlockStored and BlockRemoved events, taken each step by
 	// TakeKVEvents.
 	KVEvents bool
+	// KVGroups are a hybrid model's KV cache groups (full attention, sliding windows); none
+	// means one full-attention group.
+	KVGroups []kv.Group
+	// MaxConcurrentBatches is max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72);
+	// 0 means 1, this scheduler's synchronous case.
+	MaxConcurrentBatches int
 }
 
 // Status is RequestStatus (vllm/v1/request.py:370).
@@ -176,7 +182,8 @@ func New(cfg Config) (*Scheduler, error) {
 	s := &Scheduler{
 		cfg: cfg,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
-			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead}),
+			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
+				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
 	}
@@ -292,7 +299,7 @@ func (s *Scheduler) Schedule() Output {
 		ok := false
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
-				Hashes: r.hashes, NumTokens: r.NumTokens(), HasScheduled: true, Run: s.run(r)}) {
+				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r)}) {
 				ok = true
 				break
 			}
@@ -374,7 +381,7 @@ func (s *Scheduler) Schedule() Output {
 				skipped = append(skipped, s.waiting.pop())
 				continue
 			}
-			var hit []*kv.Block
+			var hit [][]*kv.Block
 			numComputed := r.NumComputed
 			lookedUp := false
 			if r.NumComputed == 0 {
@@ -405,7 +412,8 @@ func (s *Scheduler) Schedule() Output {
 				break
 			}
 			if !s.KV.Allocate(r.ID, kv.Alloc{New: numNew, Lookahead: s.cfg.Spec.Lookahead, NewComputed: hit,
-				Hashes: r.hashes, NumTokens: r.NumTokens(), Waiting: true, HasScheduled: len(s.running) > 0,
+				NumNewComputed: numComputed - r.NumComputed, Hashes: r.hashes, NumTokens: r.NumTokens(),
+				InFlight: r.numInFlight, Waiting: true, HasScheduled: len(s.running) > 0,
 				FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
 				break
 			}
