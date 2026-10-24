@@ -9,7 +9,6 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kv"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.
@@ -54,33 +53,9 @@ type InstanceSimulator struct {
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
-	// Create KV store (single-tier or tiered based on config)
-	// The KV slot reservation is the speculative config's (#1627), never set apart from it.
-	kvCfg := cfg.KVCacheConfig
-	kvCfg.Speculative = cfg.KV()
-	kvCfg.Speculative.MaxModelLen = cfg.MaxModelLen
-	// The engines of one node share each secondary offload tier (sim.OffloadTierSharing).
-	kvCfg.Offload = kvCfg.Offload.ForInstance(string(id))
-	kvStore := kv.NewKVStore(kvCfg, cfg.Seed)
-	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
-	// wrap the latency model with it so the per-step compute overhead applies
-	// (#1467, R23). BuildAdapterCost is pure and
-	// stateless; sim.NewSimulator (called below) builds its own instance for the
-	// cold-load gate from the same config — two behaviorally identical accessors,
-	// no shared state. A nil accessor leaves StepTime byte-identical to pre-feature (INV-6).
-	adapterCost, err := sim.BuildAdapterCost(cfg)
-	if err != nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): adapter cost model: %v", id, err))
-	}
-	// The latency model is built by the caller (blis-latency-kernel's adapter in production);
-	// the simulator only times steps with it. There is no model to fall back to, so an absent
-	// one is a construction error rather than a silent default (R1).
-	if cfg.LatencyModel == nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): SimConfig.LatencyModel is nil; "+
-			"the caller must supply the latency model", id))
-	}
-	latencyModel := sim.WithAdapterOverhead(cfg.LatencyModel, adapterCost)
-	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
+	// The engine (its KV store, adapter-cost wrapper and simulator) is built in one place,
+	// sim.NewEngine (#2021 E2.2).
+	s, err := sim.NewEngine(string(id), cfg)
 	if err != nil {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}

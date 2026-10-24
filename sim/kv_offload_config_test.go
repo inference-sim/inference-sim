@@ -221,7 +221,10 @@ func TestNewKVCacheConfig_WithInvalidOffload_Panics(t *testing.T) {
 func TestKVOffloadConfig_ReadOnly_BC_G4(t *testing.T) {
 	allow := map[string]bool{
 		"kv_offload_config.go": true, // type definitions
-		"config.go":            true, // WithKVOffload option (the sole write of .Offload)
+		"config.go":            true, // WithKVOffload option (the sole write of the run's .Offload)
+		// NewEngine's per-instance copy: the engine's own KVCacheConfig copy takes the
+		// instance's view of the shared tiers (ForInstance); the run's config is untouched.
+		"engine_build.go": true,
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
