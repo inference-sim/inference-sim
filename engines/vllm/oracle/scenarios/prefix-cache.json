@@ -1,0 +1,171 @@
+{
+ "name": "prefix-cache",
+ "description": "Prefix caching on: requests share a 16-token prefix; later arrivals hit it (capped below the last token); freed blocks stay cached until evicted.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 64,
+  "block_size": 4,
+  "num_blocks": 24,
+  "max_model_len": 256,
+  "enable_prefix_caching": true
+ },
+ "requests": [
+  {
+   "id": "r00",
+   "arrival_step": 0,
+   "prompt": [
+    500,
+    501,
+    502,
+    503,
+    504,
+    505,
+    506,
+    507,
+    508,
+    509,
+    510,
+    511,
+    512,
+    513,
+    514,
+    515,
+    0,
+    1,
+    2,
+    3
+   ],
+   "output": [
+    90000,
+    90001,
+    90002
+   ],
+   "priority": 0
+  },
+  {
+   "id": "r01",
+   "arrival_step": 4,
+   "prompt": [
+    500,
+    501,
+    502,
+    503,
+    504,
+    505,
+    506,
+    507,
+    508,
+    509,
+    510,
+    511,
+    512,
+    513,
+    514,
+    515,
+    1000,
+    1001,
+    1002,
+    1003
+   ],
+   "output": [
+    90010,
+    90011,
+    90012
+   ],
+   "priority": 0
+  },
+  {
+   "id": "r02",
+   "arrival_step": 5,
+   "prompt": [
+    500,
+    501,
+    502,
+    503,
+    504,
+    505,
+    506,
+    507,
+    508,
+    509,
+    510,
+    511,
+    512,
+    513,
+    514,
+    515
+   ],
+   "output": [
+    90020,
+    90021
+   ],
+   "priority": 0
+  },
+  {
+   "id": "r03",
+   "arrival_step": 9,
+   "prompt": [
+    500,
+    501,
+    502,
+    503,
+    504,
+    505,
+    506,
+    507,
+    508,
+    509,
+    510,
+    511,
+    512,
+    513,
+    514,
+    515,
+    3000,
+    3001,
+    3002,
+    3003,
+    3004,
+    3005,
+    3006,
+    3007
+   ],
+   "output": [
+    90030,
+    90031,
+    90032,
+    90033
+   ],
+   "priority": 0
+  },
+  {
+   "id": "r04",
+   "arrival_step": 9,
+   "prompt": [
+    4000,
+    4001,
+    4002,
+    4003,
+    4004,
+    4005,
+    4006,
+    4007,
+    4008,
+    4009,
+    4010,
+    4011,
+    4012,
+    4013,
+    4014,
+    4015,
+    4016,
+    4017
+   ],
+   "output": [
+    90040,
+    90041
+   ],
+   "priority": 0
+  }
+ ]
+}

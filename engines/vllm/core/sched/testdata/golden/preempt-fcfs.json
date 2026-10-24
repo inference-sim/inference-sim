@@ -1,0 +1,1591 @@
+{
+ "finished": {
+  "r00": {
+   "output_tokens": 14,
+   "reason": "stop",
+   "step": 13
+  },
+  "r01": {
+   "output_tokens": 14,
+   "reason": "stop",
+   "step": 15
+  },
+  "r02": {
+   "output_tokens": 14,
+   "reason": "stop",
+   "step": 24
+  },
+  "r03": {
+   "output_tokens": 14,
+   "reason": "stop",
+   "step": 29
+  }
+ },
+ "provenance": {
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "python": "3.12.15",
+  "scenario_sha256": "8ef7a2c8e63f1a46c42eaf3df6463593b9725038d50ed521bae9b261127dfd70",
+  "tier": 2,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 3,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01",
+    "r02"
+   ],
+   "scheduled": {
+    "r00": 9,
+    "r01": 9,
+    "r02": 9
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 3,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01",
+    "r02"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1,
+    "r02": 1
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 3,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01",
+    "r02"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1,
+    "r02": 1
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 3,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01",
+    "r02"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1,
+    "r02": 1
+   },
+   "step": 3
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.7272727272727273,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [
+    "r02"
+   ],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 4
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.7272727272727273,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 5
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.7272727272727273,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 6
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.7272727272727273,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 7
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "kv_usage": 0.9090909090909091,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 8
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "kv_usage": 0.9090909090909091,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 9
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "kv_usage": 0.9090909090909091,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 10
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "kv_usage": 0.9090909090909091,
+   "num_running": 2,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "r00",
+    "r01"
+   ],
+   "scheduled": {
+    "r00": 1,
+    "r01": 1
+   },
+   "step": 11
+  },
+  {
+   "blocks": {
+    "r00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 5,
+   "kv_usage": 0.5454545454545454,
+   "num_running": 1,
+   "num_waiting": 3,
+   "preempted": [
+    "r01"
+   ],
+   "running": [
+    "r00"
+   ],
+   "scheduled": {
+    "r00": 1
+   },
+   "step": 12
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "r00"
+   ],
+   "free_blocks": 11,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "r00": 1
+   },
+   "step": 13
+  },
+  {
+   "blocks": {
+    "r01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 2,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r01",
+    "r02"
+   ],
+   "scheduled": {
+    "r01": 21,
+    "r02": 11
+   },
+   "step": 14
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "r01"
+   ],
+   "free_blocks": 7,
+   "kv_usage": 0.36363636363636365,
+   "num_running": 1,
+   "num_waiting": 1,
+   "preempted": [],
+   "running": [
+    "r02"
+   ],
+   "scheduled": {
+    "r01": 1,
+    "r02": 2
+   },
+   "step": 15
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 4,
+   "kv_usage": 0.6363636363636364,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 9
+   },
+   "step": 16
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 4,
+   "kv_usage": 0.6363636363636364,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 17
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 4,
+   "kv_usage": 0.6363636363636364,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 18
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.7272727272727273,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 19
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 20
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 21
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "kv_usage": 0.8181818181818181,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 22
+  },
+  {
+   "blocks": {
+    "r02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "kv_usage": 0.9090909090909091,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r02",
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 23
+  },
+  {
+   "blocks": {
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "r02"
+   ],
+   "free_blocks": 6,
+   "kv_usage": 0.4545454545454546,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r03"
+   ],
+   "scheduled": {
+    "r02": 1,
+    "r03": 1
+   },
+   "step": 24
+  },
+  {
+   "blocks": {
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "kv_usage": 0.4545454545454546,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r03"
+   ],
+   "scheduled": {
+    "r03": 1
+   },
+   "step": 25
+  },
+  {
+   "blocks": {
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "kv_usage": 0.4545454545454546,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r03"
+   ],
+   "scheduled": {
+    "r03": 1
+   },
+   "step": 26
+  },
+  {
+   "blocks": {
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "kv_usage": 0.4545454545454546,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r03"
+   ],
+   "scheduled": {
+    "r03": 1
+   },
+   "step": 27
+  },
+  {
+   "blocks": {
+    "r03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 5,
+   "kv_usage": 0.5454545454545454,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "r03"
+   ],
+   "scheduled": {
+    "r03": 1
+   },
+   "step": 28
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "r03"
+   ],
+   "free_blocks": 11,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "r03": 1
+   },
+   "step": 29
+  }
+ ]
+}

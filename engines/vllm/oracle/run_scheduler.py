@@ -192,7 +192,8 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "vllm_commit": git("rev-parse", "HEAD"),
         "scenario_sha256": digest,
         "mock_version": mocks["version"],
-        "model": os.environ.get("ORACLE_MODEL", "facebook/opt-125m"),
+        # The model's identity, never the local path ORACLE_MODEL points at.
+        "model": "facebook/opt-125m",
         "model_revision": os.environ.get("ORACLE_MODEL_REVISION", "unpinned"),
         "mocks": [m["symbol"] for m in mocks["mocks"]],
         "python": sys.version.split()[0],
