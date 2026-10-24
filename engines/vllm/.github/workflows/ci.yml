@@ -140,10 +140,11 @@ jobs:
           ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
           HF_HUB_OFFLINE: "1"
         run: |
-          mkdir -p oracle/out
-          for s in oracle/scenarios/*.json; do
-            python -I oracle/run_scheduler.py vllm-source "$s" > "oracle/out/$(basename "$s")"
-          done
+          mkdir -p oracle/out/scenarios
+          python -I oracle/run_scheduler.py vllm-source oracle/scenarios oracle/out/scenarios
+      # The committed goldens must be what the pinned vLLM release produces here and now.
+      - name: every golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
       # The seeded fuzz corpus: 2000 random scenarios from fixed seeds, each run through vLLM's
       # Scheduler and then through blis-vllm, which must match at zero mismatches.
       - name: generate the fuzz corpus and vLLM's traces for it

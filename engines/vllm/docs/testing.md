@@ -90,7 +90,8 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 
 Every oracle run records the vLLM version and commit, the Python version and platform, the
 hash of the environment's frozen package list (`lockfile_sha256`; CI writes it with `pip
-freeze`, a local run passes it as `ORACLE_LOCKFILE`), the helper model's pinned revision, the
+freeze`, a local run passes it as `ORACLE_LOCKFILE`), the installed vLLM distribution (the
+release CPU wheel in CI), the helper model's pinned revision, the
 scenario's sha256, the mock version and the list of mocks. A Go build records blis-vllm's module
 version (`blisvllm.ProvenanceFor`). A result can be reproduced from these alone.
 
@@ -107,6 +108,9 @@ the person who checked it. A new golden for a new scenario, or a refresh of only
 unchanged. The differential test also refuses a golden whose recorded
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
 pins it runs against, so a trace can only count as evidence for the scenario it came from.
+CI re-runs the pinned vLLM release on every scenario and fails if any committed golden's
+decisions differ from that fresh trace (`oracle/compare_goldens.py`), so a golden made on a
+developer's machine counts only while the release itself still produces it.
 
 ## Target
 

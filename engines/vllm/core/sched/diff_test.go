@@ -267,7 +267,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", p.VLLMVersion, "0.32.0"},
+		// A build may carry a local version label ("0.32.0+cpu"); the release is what counts.
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
 		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
 		{"mock_version", p.MockVersion, mockVersion(t)},
 	} {

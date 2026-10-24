@@ -18,6 +18,7 @@ Usage: python -I oracle/run_scheduler.py <vllm checkout> <scenario.json>
 """
 
 import hashlib
+import importlib.metadata
 import json
 import os
 import platform
@@ -48,8 +49,12 @@ def main() -> None:
 
 
 def run_one(vllm_root: str, scenario_path: str) -> dict:
-    # vLLM's test helpers are imported from the pinned checkout itself, never copied.
-    sys.path.insert(0, vllm_root)
+    # vLLM's test helpers are imported from the pinned checkout itself, never copied; vLLM itself
+    # from the installed distribution (the release wheel in CI, the editable build of this same
+    # checkout locally). The checkout is appended, not prepended, so its vllm/ source tree (no
+    # compiled ops, no generated version) cannot shadow the installed package.
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
     # ModelConfig reads a model's config.json even though no weights are loaded. ORACLE_MODEL
     # names a local snapshot of the helper's default model at a pinned revision (see
@@ -57,7 +62,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # scenario's fixed num_blocks and block_size govern.
     model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
 
+    import tests.v1.core.utils as helpers  # noqa: E402
     from tests.v1.core.utils import EOS_TOKEN_ID, create_scheduler  # noqa: E402
+
+    if not os.path.abspath(helpers.__file__).startswith(os.path.abspath(vllm_root) + os.sep):
+        sys.exit("tests.v1.core.utils did not resolve into the vLLM checkout")
     from vllm.sampling_params import SamplingParams  # noqa: E402
     from vllm.utils.hashing import sha256  # noqa: E402
     from vllm.v1.core.kv_cache_utils import (  # noqa: E402
@@ -218,6 +227,8 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
     return {
         "tier": 2,
         "vllm_version": vllm.__version__,
+        # The installed distribution's version, e.g. "0.32.0+cpu" for the release CPU wheel.
+        "vllm_distribution": importlib.metadata.version("vllm"),
         "vllm_commit": git("rev-parse", "HEAD"),
         "scenario_sha256": digest,
         "mock_version": mocks["version"],
