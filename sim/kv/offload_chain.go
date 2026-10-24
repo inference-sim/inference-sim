@@ -563,7 +563,7 @@ func (o *OffloadCache) allocateThroughChain(req *sim.Request, startIndex, stateS
 // secondary-resident -- initiates one async promotion of the contiguous same-tier run and
 // stops (the run is not available to this request). A run shorter than one chunk past
 // startBlock is not loaded, as vLLM loads nothing then. It is the offload analogue of
-// TieredKVCache's reloadPrefixFromCPU, keyed through sim/internal/kvkey so the
+// TieredKVCache's reloadPrefixFromCPU, keyed through blis-vllm's compat/kvkey so the
 // CPU/secondary keyspace is a subset of the GPU block hashes (BC-K1).
 func (o *OffloadCache) consultAndReload(tokens []sim.TokenID, startBlock int64, prevHash string) bool {
 	tail, ok := o.tailOf(tokens, startBlock, prevHash)

@@ -11,7 +11,7 @@ import (
 )
 
 // TokenID is the simulator's compact representation of a tokenizer ID.
-// Re-exported from sim/internal/tokenid as an alias at the package boundary,
+// Re-exported from blis-vllm's compat/tokenid as an alias at the package boundary,
 // so callers write sim.TokenID. The underlying type (tokenid.TokenID) is a
 // defined type (NOT a Go type alias of int32), so assignments from int still
 // require an explicit conversion — the compile-time mixed-arithmetic check

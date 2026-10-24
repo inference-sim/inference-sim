@@ -56,7 +56,7 @@ func (c *promptCanon) canonical(prompt []sim.TokenID) []uint32 {
 	chain := ""
 	for start := 0; start < len(prompt); start += c.blockSize {
 		end := min(start+c.blockSize, len(prompt))
-		// The engines' prefix caches key a block the same way (sim/internal/hash), so a KV event's
+		// The engines' prefix caches key a block the same way (blis-vllm compat/prefix), so a KV event's
 		// block hash names the chain the router was shown (canonicalBlock).
 		chain = hash.HashBlock(chain, prompt[start:end])
 		id := c.chainID(chain)
