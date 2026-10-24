@@ -139,15 +139,15 @@ cannot fail.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| CUDA graph modes and capture sizes | IX 41, IR, BL | `vllm/config/compilation.py` | kernel | — | — | planned (pricing) |
-| `decoder_replay_cudagraph_capture_sizes` | IX 6, AD33 18 | `vllm/config/compilation.py:565@5df63a72` | schemas + kernel | — | — | planned (field); pricing needs data |
-| `custom_ops` | IX 3, AD33 123 | `vllm/config/compilation.py:480@5df63a72` | schemas + kernel | — | — | planned (field); pricing needs data |
-| `use_trtllm_attention`, `mla_prefill_backend`, attention backend | IX 5 / 11 / 23, AD33 84 / 78 | `vllm/config/attention.py:74,81@5df63a72` | schemas + kernel | — | — | planned (fields); pricing needs data |
-| `linear_backend` | IX 1, AD33 75 | `vllm/config/kernel.py:350@5df63a72` | schemas + kernel | — | — | planned (field); pricing needs data |
-| `moe_backend`, quantization, fp8/fp4/nvfp4 | IX 30, IR | (`vllm/config/kernel.py`, quantization) | kernel | — | — | planned (pricing) |
-| Kernel env vars (`VLLM_FLASHINFER_ALLREDUCE_BACKEND`, `VLLM_MARLIN_USE_ATOMIC_ADD`) | IX 11 / 3, AD33 | `vllm/envs.py:225,192@5df63a72` | schemas + kernel | — | — | planned (fields); pricing needs data |
-| Prefix scorer, P/D decider, flow control | IR | — | router | — | — | not engine behaviour (embedded llm-d router) |
-| Dynamo and vLLM routers | IX 17 / 11 | — | router | — | — | follow-up (inference-sim embeds only llm-d) |
+| CUDA graph modes and capture sizes | IX 41, IR, BL | `vllm/config/compilation.py` | kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/83, https://github.com/inference-sim/blis-latency-kernel/issues/84): priced by the kernel (#2021 B9 "Elsewhere"); the capture sizes a deployment resolves to are T1: rules/v0_32's cudagraph-capture-sizes rule and CUDAGraphCaptureSizes pass their v0.32.0 source check (vllm/config/vllm.py _set_cudagraph_sizes) |
+| `decoder_replay_cudagraph_capture_sizes` | IX 6, AD33 18 | `vllm/config/compilation.py:565@5df63a72` | schemas + kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): the field is in blis-schemas#102; pricing its graphs needs launch-cost coefficients (needs data) |
+| `custom_ops` | IX 3, AD33 123 | `vllm/config/compilation.py:480@5df63a72` | schemas + kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): the field is in blis-schemas#102; pricing needs per-chip rates (needs data) |
+| `use_trtllm_attention`, `mla_prefill_backend`, attention backend | IX 5 / 11 / 23, AD33 84 / 78 | `vllm/config/attention.py:74,81@5df63a72` | schemas + kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): the fields are in blis-schemas#102; pricing needs per-backend rates (needs data) |
+| `linear_backend` | IX 1, AD33 75 | `vllm/config/kernel.py:350@5df63a72` | schemas + kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): the field is in blis-schemas#102; pricing needs per-backend GEMM rates (needs data) |
+| `moe_backend`, quantization, fp8/fp4/nvfp4 | IX 30, IR | (`vllm/config/kernel.py`, quantization) | kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/62, https://github.com/inference-sim/blis-latency-kernel/issues/83): priced by the kernel; the accepted values are T1 (rules/v0_32 MoEBackends, Quantizations, CacheDTypes, checked against the v0.32.0 source) |
+| Kernel env vars (`VLLM_FLASHINFER_ALLREDUCE_BACKEND`, `VLLM_MARLIN_USE_ATOMIC_ADD`) | IX 11 / 3, AD33 | `vllm/envs.py:225,192@5df63a72` | schemas + kernel | — | — | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): carried as env in blis-schemas#102; pricing needs data |
+| Prefix scorer, P/D decider, flow control | IR | — | router | — | — | excluded from blis-vllm: routing and admission decisions of the embedded llm-d router (#2021 B9 "Elsewhere"), which inference-sim owns; blis-vllm supplies the vllm:* metrics and KV events the router reads |
+| Dynamo and vLLM routers | IX 17 / 11 | — | router | — | — | follow-up (https://github.com/inference-sim/inference-sim/issues/2028) |
 | Multimodal encoder scheduling, structured output | — | (`vllm/v1/core/encoder_cache_manager.py`) | — | — | — | excluded: no source serves multimodal or constrained-decoding requests; every source is a text agentic workload |
 | Tool-call / reasoning parsers, `language_model_only`, tokenizer mode | IX 43 / 40 / 25 | — | — | — | — | excluded: parse responses after decoding; no scheduling, KV or timing effect in a token-level simulation |
 
@@ -157,10 +157,10 @@ Each gets a follow-up issue labelled "upstream after 0.32.0" or "custom-image on
 
 | Item | Sources | Where seen | Label | Status |
 |---|---|---|---|---|
-| `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` (env) | IX 21 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:46@7afd3b85` | custom-image only | follow-up |
-| `VLLM_RPC_TIMEOUT` | IX 20 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:50@7afd3b85` | custom-image only | follow-up |
-| `--monokernel` | IX 1 | `SN/dsv41flash/vllm/mi355x-fp4-mtp/agentic.yaml:52@7afd3b85` | upstream after 0.32.0 | follow-up |
-| `attention_config.use_fp4_indexer_cache` | IX 7 | `MN/dsv4/vllm/gb200-fp4/agentx/agg-llm-d.yaml:129@7afd3b85` | custom-image only | follow-up |
-| `moe_backend: deep_gemm_amxf4_mega_moe` | IX 4 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:180@7afd3b85` | custom-image only | follow-up |
-| `additional_config.decode_backend: latency_specialized` | IX 2 | `SN/dsv41flash/vllm/b300-fp4-mtp/agentic.yaml:65@7afd3b85` | custom-image only | follow-up |
-| Other absent `VLLM_*` env vars and connector keys (11 more) | IX | survey list | custom-image only | follow-up (one issue) |
+| `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` (env) | IX 21 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:46@7afd3b85` | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026) |
+| `VLLM_RPC_TIMEOUT` | IX 20 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:50@7afd3b85` | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026) |
+| `--monokernel` | IX 1 | `SN/dsv41flash/vllm/mi355x-fp4-mtp/agentic.yaml:52@7afd3b85` | upstream after 0.32.0 | follow-up (https://github.com/inference-sim/inference-sim/issues/2025) |
+| `attention_config.use_fp4_indexer_cache` | IX 7 | `MN/dsv4/vllm/gb200-fp4/agentx/agg-llm-d.yaml:129@7afd3b85` | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026) |
+| `moe_backend: deep_gemm_amxf4_mega_moe` | IX 4 | `SN/dsv4/vllm/b200-fp4-mtp/agentic.yaml:180@7afd3b85` | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026) |
+| `additional_config.decode_backend: latency_specialized` | IX 2 | `SN/dsv41flash/vllm/b300-fp4-mtp/agentic.yaml:65@7afd3b85` | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026) |
+| Other absent `VLLM_*` env vars and connector keys (11 more) | IX | survey list | custom-image only | follow-up (https://github.com/inference-sim/inference-sim/issues/2026, one issue listing every item) |
