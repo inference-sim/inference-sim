@@ -176,7 +176,7 @@ jobs:
       # The committed goldens must be what the pinned vLLM release produces here and now.
       - name: every golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
-      # The seeded fuzz corpus: 2000 random scenarios from fixed seeds, each run through vLLM's
+      # The seeded fuzz corpus: 4000 random scenarios from fixed seeds, each run through vLLM's
       # Scheduler and then through blis-vllm, which must match at zero mismatches.
       - name: generate the fuzz corpus and vLLM's traces for it
         env:
@@ -186,6 +186,8 @@ jobs:
           HF_HUB_OFFLINE: "1"
         run: |
           python -I oracle/gen_fuzz.py oracle/out/fuzz 1000 2000
+          # Seeds 5000-6999 add speculative decoding, LoRA and the scheduler knobs.
+          python -I oracle/gen_fuzz.py oracle/out/fuzz 5000 2000
           python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz
           python -I oracle/run_metrics.py vllm-source oracle/out/fuzz
       - uses: actions/setup-go@v5

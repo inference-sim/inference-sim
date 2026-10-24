@@ -1,0 +1,158 @@
+{
+ "name": "lora-max-loras-skip",
+ "description": "max_loras 1 with the queue [A, B, A] (#2021 B9): vLLM skips B this step and still admits the second A behind it; the same prompt under two adapters shares no cached block.",
+ "config": {
+  "max_num_seqs": 8,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "max_loras": 1
+ },
+ "requests": [
+  {
+   "id": "q0",
+   "arrival_step": 0,
+   "prompt": [
+    10811,
+    27394,
+    27397,
+    18433,
+    31399,
+    14157,
+    31107,
+    33585,
+    12032,
+    33102,
+    34574,
+    15471,
+    209,
+    926,
+    24317,
+    38363,
+    28062
+   ],
+   "output": [
+    4540,
+    9498,
+    15221,
+    15250
+   ],
+   "lora": "A"
+  },
+  {
+   "id": "q1",
+   "arrival_step": 0,
+   "prompt": [
+    10811,
+    27394,
+    27397,
+    18433,
+    31399,
+    14157,
+    31107,
+    33585,
+    12032,
+    33102,
+    34574,
+    15471,
+    2775,
+    28630,
+    26659
+   ],
+   "output": [
+    28957,
+    2233,
+    21557,
+    35400,
+    32608,
+    7590
+   ],
+   "lora": "B"
+  },
+  {
+   "id": "q2",
+   "arrival_step": 0,
+   "prompt": [
+    10811,
+    27394,
+    27397,
+    18433,
+    31399,
+    14157,
+    31107,
+    33585,
+    12032,
+    33102,
+    34574,
+    15471,
+    24147,
+    1523,
+    10146,
+    5798,
+    8184,
+    1282,
+    29697
+   ],
+   "output": [
+    10558,
+    36177,
+    22474
+   ],
+   "lora": "A"
+  },
+  {
+   "id": "q3",
+   "arrival_step": 3,
+   "prompt": [
+    10811,
+    27394,
+    27397,
+    18433,
+    31399,
+    14157,
+    31107,
+    33585,
+    12032,
+    33102,
+    34574,
+    15471,
+    26303,
+    31766
+   ],
+   "output": [
+    9903,
+    12250,
+    2434,
+    30799,
+    15393
+   ],
+   "lora": "B"
+  },
+  {
+   "id": "q4",
+   "arrival_step": 4,
+   "prompt": [
+    4891,
+    12936,
+    13669,
+    38062,
+    4649,
+    8027,
+    36709,
+    31217,
+    36631
+   ],
+   "output": [
+    25429,
+    13178,
+    22363,
+    9579
+   ]
+  }
+ ],
+ "max_steps": 400
+}

@@ -1,0 +1,607 @@
+{
+ "finished": {
+  "d1": {
+   "output_tokens": 15,
+   "reason": "stop",
+   "step": 5
+  },
+  "d2": {
+   "output_tokens": 9,
+   "reason": "stop",
+   "step": 5
+  },
+  "d3": {
+   "output_tokens": 6,
+   "reason": "stop",
+   "step": 8
+  }
+ },
+ "provenance": {
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "scenario_sha256": "a327c27651b7403101f8fc465c398c6183cf4f4a96af7875b20f0be135984440",
+  "tier": 2,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "d1": [
+     [
+      "49060f5e286faa538059828c8e51b48035bc1ea2e643717a78c058b49dcdf79a00000000",
+      1
+     ],
+     [
+      "a9cfcbef1852eb97023b96210f283b6ce358ea97c2b0e40966a909dbd943c09900000000",
+      1
+     ],
+     [
+      "6844cfff1ea2d143f1ecab176df817855b045e32d792044f90470bcc55cd074300000000",
+      1
+     ],
+     [
+      "dfa0c58c7c18655c1823b5c68a80683ef57efa3ee4da914eba7a72701b21db3400000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "d2": [
+     [
+      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
+      1
+     ],
+     [
+      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 49,
+   "kv_usage": 0.1694915254237288,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d1",
+    "d2"
+   ],
+   "scheduled": {
+    "d1": 18,
+    "d2": 10
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "d1": [
+     [
+      "49060f5e286faa538059828c8e51b48035bc1ea2e643717a78c058b49dcdf79a00000000",
+      1
+     ],
+     [
+      "a9cfcbef1852eb97023b96210f283b6ce358ea97c2b0e40966a909dbd943c09900000000",
+      1
+     ],
+     [
+      "6844cfff1ea2d143f1ecab176df817855b045e32d792044f90470bcc55cd074300000000",
+      1
+     ],
+     [
+      "dfa0c58c7c18655c1823b5c68a80683ef57efa3ee4da914eba7a72701b21db3400000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "d2": [
+     [
+      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
+      1
+     ],
+     [
+      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 48,
+   "kv_usage": 0.18644067796610164,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d1",
+    "d2"
+   ],
+   "scheduled": {
+    "d1": 4,
+    "d2": 1
+   },
+   "spec_scheduled": {
+    "d1": 3
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "d1": [
+     [
+      "49060f5e286faa538059828c8e51b48035bc1ea2e643717a78c058b49dcdf79a00000000",
+      1
+     ],
+     [
+      "a9cfcbef1852eb97023b96210f283b6ce358ea97c2b0e40966a909dbd943c09900000000",
+      1
+     ],
+     [
+      "6844cfff1ea2d143f1ecab176df817855b045e32d792044f90470bcc55cd074300000000",
+      1
+     ],
+     [
+      "dfa0c58c7c18655c1823b5c68a80683ef57efa3ee4da914eba7a72701b21db3400000000",
+      1
+     ],
+     [
+      "6b858e60d8f16d9dd32c3a3999ac20a4b8a8ff84b142d3f40d079dbf889770fe00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "d2": [
+     [
+      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
+      1
+     ],
+     [
+      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
+      1
+     ],
+     [
+      "fbf92568210717306f062e528b386dae1ab6431aa2fab62fd5968b0481a4aba200000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 46,
+   "kv_usage": 0.22033898305084743,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d1",
+    "d2"
+   ],
+   "scheduled": {
+    "d1": 4,
+    "d2": 4
+   },
+   "spec_scheduled": {
+    "d1": 3,
+    "d2": 3
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "d1": [
+     [
+      "49060f5e286faa538059828c8e51b48035bc1ea2e643717a78c058b49dcdf79a00000000",
+      1
+     ],
+     [
+      "a9cfcbef1852eb97023b96210f283b6ce358ea97c2b0e40966a909dbd943c09900000000",
+      1
+     ],
+     [
+      "6844cfff1ea2d143f1ecab176df817855b045e32d792044f90470bcc55cd074300000000",
+      1
+     ],
+     [
+      "dfa0c58c7c18655c1823b5c68a80683ef57efa3ee4da914eba7a72701b21db3400000000",
+      1
+     ],
+     [
+      "6b858e60d8f16d9dd32c3a3999ac20a4b8a8ff84b142d3f40d079dbf889770fe00000000",
+      1
+     ],
+     [
+      "ad415126efcd705914f45429b86edb6c01f5c3644a8d67e11029820634e66b0e00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "d2": [
+     [
+      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
+      1
+     ],
+     [
+      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
+      1
+     ],
+     [
+      "fbf92568210717306f062e528b386dae1ab6431aa2fab62fd5968b0481a4aba200000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 45,
+   "kv_usage": 0.23728813559322037,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d1",
+    "d2"
+   ],
+   "scheduled": {
+    "d1": 4,
+    "d2": 4
+   },
+   "spec_scheduled": {
+    "d1": 3,
+    "d2": 3
+   },
+   "step": 3
+  },
+  {
+   "blocks": {
+    "d1": [
+     [
+      "49060f5e286faa538059828c8e51b48035bc1ea2e643717a78c058b49dcdf79a00000000",
+      1
+     ],
+     [
+      "a9cfcbef1852eb97023b96210f283b6ce358ea97c2b0e40966a909dbd943c09900000000",
+      1
+     ],
+     [
+      "6844cfff1ea2d143f1ecab176df817855b045e32d792044f90470bcc55cd074300000000",
+      1
+     ],
+     [
+      "dfa0c58c7c18655c1823b5c68a80683ef57efa3ee4da914eba7a72701b21db3400000000",
+      1
+     ],
+     [
+      "6b858e60d8f16d9dd32c3a3999ac20a4b8a8ff84b142d3f40d079dbf889770fe00000000",
+      1
+     ],
+     [
+      "ad415126efcd705914f45429b86edb6c01f5c3644a8d67e11029820634e66b0e00000000",
+      1
+     ],
+     [
+      "4eabafb301c7e4f28cf24ff83e4efc091d8bb4c4376b153c34e9abe1d6a168c200000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "d2": [
+     [
+      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
+      1
+     ],
+     [
+      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
+      1
+     ],
+     [
+      "fbf92568210717306f062e528b386dae1ab6431aa2fab62fd5968b0481a4aba200000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 44,
+   "kv_usage": 0.2542372881355932,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d1",
+    "d2"
+   ],
+   "scheduled": {
+    "d1": 4,
+    "d2": 4
+   },
+   "spec_scheduled": {
+    "d1": 3,
+    "d2": 3
+   },
+   "step": 4
+  },
+  {
+   "blocks": {
+    "d3": [
+     [
+      "1b3b7491b55deb460d8d2f20da759bf0c0a31aa4220f0d0efa2b81dc6876aecb00000000",
+      1
+     ],
+     [
+      "805b4b54145b938739ee6afae9bd4f5aab977dd719a66f9b99876c98540ca1ba00000000",
+      1
+     ],
+     [
+      "fff36c043cc8a57e81b21573d2d6eb4c9ee24395040399d7e786ef6d2dcb33cc00000000",
+      1
+     ],
+     [
+      "e868126176ee775c4f1e5a022d61b92aee881470b3db800f930497060812eb5d00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "d1",
+    "d2"
+   ],
+   "free_blocks": 53,
+   "kv_usage": 0.10169491525423724,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d3"
+   ],
+   "scheduled": {
+    "d1": 4,
+    "d2": 4,
+    "d3": 18
+   },
+   "spec_scheduled": {
+    "d1": 3,
+    "d2": 3
+   },
+   "step": 5
+  },
+  {
+   "blocks": {
+    "d3": [
+     [
+      "1b3b7491b55deb460d8d2f20da759bf0c0a31aa4220f0d0efa2b81dc6876aecb00000000",
+      1
+     ],
+     [
+      "805b4b54145b938739ee6afae9bd4f5aab977dd719a66f9b99876c98540ca1ba00000000",
+      1
+     ],
+     [
+      "fff36c043cc8a57e81b21573d2d6eb4c9ee24395040399d7e786ef6d2dcb33cc00000000",
+      1
+     ],
+     [
+      "e868126176ee775c4f1e5a022d61b92aee881470b3db800f930497060812eb5d00000000",
+      1
+     ],
+     [
+      "df2cfb360c8e164ce894e7d7a9065b5650c2f3a2289f8d7220da03e62fa8ff2f00000000",
+      1
+     ],
+     [
+      "80e1023e25edccfff8f9950481fb66f7aaa2620fb7f7723ae2beff0cbf40802000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 51,
+   "kv_usage": 0.13559322033898302,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d3"
+   ],
+   "scheduled": {
+    "d3": 8
+   },
+   "step": 6
+  },
+  {
+   "blocks": {
+    "d3": [
+     [
+      "1b3b7491b55deb460d8d2f20da759bf0c0a31aa4220f0d0efa2b81dc6876aecb00000000",
+      1
+     ],
+     [
+      "805b4b54145b938739ee6afae9bd4f5aab977dd719a66f9b99876c98540ca1ba00000000",
+      1
+     ],
+     [
+      "fff36c043cc8a57e81b21573d2d6eb4c9ee24395040399d7e786ef6d2dcb33cc00000000",
+      1
+     ],
+     [
+      "e868126176ee775c4f1e5a022d61b92aee881470b3db800f930497060812eb5d00000000",
+      1
+     ],
+     [
+      "df2cfb360c8e164ce894e7d7a9065b5650c2f3a2289f8d7220da03e62fa8ff2f00000000",
+      1
+     ],
+     [
+      "80e1023e25edccfff8f9950481fb66f7aaa2620fb7f7723ae2beff0cbf40802000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 50,
+   "kv_usage": 0.15254237288135597,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "d3"
+   ],
+   "scheduled": {
+    "d3": 4
+   },
+   "spec_scheduled": {
+    "d3": 3
+   },
+   "step": 7
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "d3"
+   ],
+   "free_blocks": 59,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "d3": 4
+   },
+   "spec_scheduled": {
+    "d3": 3
+   },
+   "step": 8
+  }
+ ]
+}

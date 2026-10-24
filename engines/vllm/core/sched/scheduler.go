@@ -5,8 +5,9 @@
 
 // Package sched is vLLM's v1 Scheduler: schedule() and update_from_output() for a
 // full-attention model, with chunked prefill, the long-prefill cap, FCFS and priority
-// policies, recompute preemption and prefix caching. Synchronous scheduling (one batch in
-// flight); speculative decoding, connectors and async scheduling are separate.
+// policies, recompute preemption, prefix caching, speculative decoding (acceptance supplied)
+// and the max_loras batch limit. Synchronous scheduling (one batch in flight); connectors
+// and async scheduling are separate.
 package sched
 
 import (
@@ -43,6 +44,10 @@ type Config struct {
 	// ReserveFullSequence is scheduler_reserve_full_isl (vllm/config/scheduler.py:190,
 	// default true): admit a new request only if its whole sequence fits.
 	ReserveFullSequence bool
+	// Spec is speculative decoding; its zero value is off. ResolveSpec derives it.
+	Spec Spec
+	// MaxLoRAs is LoRAConfig.max_loras (vllm/config/lora.py:35@5df63a72); 0 = LoRA off.
+	MaxLoRAs int
 }
 
 // Status is RequestStatus (vllm/v1/request.py:370).
@@ -68,19 +73,26 @@ type Request struct {
 	// EOS is the token that stops the request (sampling_params.eos_token_id).
 	EOS  int64
 	Keys kv.BlockKeys
+	// LoRA is the adapter's lora_int_id, 0 for the base model.
+	LoRA int
 
 	Status         Status
 	Output         []int64
 	NumComputed    int
 	NumPreemptions int
 	IsPrefillChunk bool
-	hashes         []kv.BlockHash
-	numInFlight    int
-	seq            int // FIFO tie-break within a priority queue
+	// SpecTokens are spec_token_ids: the drafts proposed for the next step.
+	SpecTokens  []int64
+	hashes      []kv.BlockHash
+	numInFlight int
+	seq         int // FIFO tie-break within a priority queue
 }
 
 // NumTokens is len(all_token_ids): prompt plus output.
 func (r *Request) NumTokens() int { return len(r.Prompt) + len(r.Output) }
+
+// numTokensWithSpec is num_tokens_with_spec (vllm/v1/request.py:298-300).
+func (r *Request) numTokensWithSpec() int { return r.NumTokens() + len(r.SpecTokens) }
 
 func (r *Request) allTokens() []int64 {
 	return append(append(make([]int64, 0, r.NumTokens()), r.Prompt...), r.Output...)
@@ -116,6 +128,9 @@ type Output struct {
 	NewIDs []string
 	// PrefixHit is the locally cached tokens of each newly admitted request.
 	PrefixHit map[string]int
+	// SpecDecode is scheduled_spec_decode_tokens: the drafts each request verifies this step
+	// (-1 for first-decode padding).
+	SpecDecode map[string][]int64
 }
 
 // Finished is one request update_from_output finished.
@@ -146,10 +161,16 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Policy != FCFS && cfg.Policy != Priority {
 		return nil, fmt.Errorf("sched: unknown policy %q; vLLM accepts fcfs and priority", cfg.Policy)
 	}
+	// vllm/config/vllm.py:2285-2290@5df63a72 refuses a budget no larger than the draft slots.
+	if cfg.MaxNumBatchedTokens <= cfg.Spec.DraftSlots {
+		return nil, fmt.Errorf("sched: max_num_batched_tokens %d leaves no room beside %d draft slots",
+			cfg.MaxNumBatchedTokens, cfg.Spec.DraftSlots)
+	}
 	wm := int(cfg.Watermark * float64(cfg.NumBlocks))
 	return &Scheduler{
-		cfg:      cfg,
-		KV:       kv.NewManager(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm),
+		cfg: cfg,
+		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
+			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
 	}, nil
@@ -201,11 +222,24 @@ func (s *Scheduler) maxActive() int {
 	return s.cfg.MaxNumSeqs
 }
 
+// reservePrefillLookahead is _reserve_prefill_lookahead (scheduler.py:570-589): never end a
+// prefill chunk within the drafter's prefill lookahead of the prefill end.
+func (s *Scheduler) reservePrefillLookahead(r *Request, computed, numNew int) int {
+	remaining := r.NumTokens() - computed - numNew
+	if la := s.cfg.Spec.PrefillLookahead; 0 < remaining && remaining < la {
+		numNew -= la - remaining
+	}
+	return max(numNew, 0)
+}
+
 // Schedule is schedule() (scheduler.py:591-1558) for this configuration.
 func (s *Scheduler) Schedule() Output {
-	out := Output{Scheduled: map[string]int{}, PrefixHit: map[string]int{}}
+	out := Output{Scheduled: map[string]int{}, PrefixHit: map[string]int{}, SpecDecode: map[string][]int64{}}
 	tokenBudget := s.maxScheduled()
 	inputBudget := s.cfg.MaxNumBatchedTokens
+	draftSlots := s.cfg.Spec.DraftSlots
+	k := s.cfg.Spec.NumTokens
+	prefillScheduled := false
 
 	// The long-prefill cap is waived when one request is all there is (:640-655).
 	nr, nw := s.Counts()
@@ -224,23 +258,27 @@ func (s *Scheduler) Schedule() Output {
 	reqIndex := 0
 	for reqIndex < len(s.running) && tokenBudget > 0 {
 		r := s.running[reqIndex]
-		if inputBudget <= 0 {
+		if inputBudget <= draftSlots {
 			break
 		}
-		numNew := r.NumTokens() - r.NumComputed
+		numNew := r.numTokensWithSpec() - r.NumComputed
 		if 0 < threshold && threshold < numNew {
 			numNew = threshold
 		}
-		numNew = min(numNew, tokenBudget, inputBudget)
-		// The input position must stay within max_model_len (:713-718).
+		numNew = min(numNew, tokenBudget, inputBudget-draftSlots)
+		// The input position must stay within max_model_len (:713-720): one slot is the
+		// token this step samples.
 		numNew = min(numNew, s.cfg.MaxModelLen-r.NumComputed-1)
+		numNew = s.reservePrefillLookahead(r, r.NumComputed, numNew)
 		if numNew <= 0 {
+			// Skipped, not a stop: a later request may still fit (:755-773).
 			reqIndex++
 			continue
 		}
 		ok := false
 		for {
-			if s.KV.AllocateSlots(r.ID, r.NumComputed, numNew, nil, r.hashes, r.NumTokens(), false, true, false) {
+			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
+				Hashes: r.hashes, NumTokens: r.NumTokens(), HasScheduled: true}) {
 				ok = true
 				break
 			}
@@ -256,8 +294,9 @@ func (s *Scheduler) Schedule() Output {
 					scheduledRunning = append(scheduledRunning[:j], scheduledRunning[j+1:]...)
 					restored := out.Scheduled[victim.ID]
 					delete(out.Scheduled, victim.ID)
+					delete(out.SpecDecode, victim.ID)
 					tokenBudget += restored
-					inputBudget += restored
+					inputBudget += restored + draftSlots
 				}
 			} else {
 				victim = s.running[len(s.running)-1]
@@ -273,20 +312,54 @@ func (s *Scheduler) Schedule() Output {
 			break
 		}
 		scheduledRunning = append(scheduledRunning, r)
+		prefillScheduled = prefillScheduled || r.IsPrefillChunk
 		out.Scheduled[r.ID] = numNew
 		tokenBudget -= numNew
-		inputBudget -= numNew
+		inputBudget -= numNew + draftSlots
 		reqIndex++
+		// Speculative decode (:860-876): the drafts this step verifies are those beyond the
+		// request's known tokens; the rest wait for update_draft_token_ids.
+		if len(r.SpecTokens) > 0 {
+			if n := numNew + r.NumComputed - r.NumTokens(); n > 0 {
+				drafts := r.SpecTokens
+				if len(drafts) > n {
+					drafts = drafts[:n]
+				}
+				out.SpecDecode[r.ID] = append([]int64(nil), drafts...)
+			}
+			r.SpecTokens = nil
+		}
 	}
 
-	// Waiting requests, only when nothing was preempted (:899-1386).
+	// The LoRAs the scheduled running requests hold (:888-897).
+	scheduledLoRAs := map[int]bool{}
+	if s.cfg.MaxLoRAs > 0 {
+		for _, r := range scheduledRunning {
+			if r.LoRA > 0 {
+				scheduledLoRAs[r.LoRA] = true
+			}
+		}
+	}
+
+	// Waiting requests, only when nothing was preempted (:899-1395). A request skipped this
+	// step is set aside and put back at the front afterwards, in its order.
 	var admitted []*Request
 	if len(preempted) == 0 {
-		for tokenBudget > 0 && s.waiting.len() > 0 && inputBudget > 0 {
+		var skipped []*Request
+		for tokenBudget > 0 {
+			if s.waiting.len() == 0 || inputBudget <= draftSlots {
+				break
+			}
 			if len(s.running) >= s.maxActive() {
 				break
 			}
 			r := s.waiting.peek()
+			// max_loras (:939-951): a request whose adapter would make one too many in this
+			// batch is skipped this step, and those behind it still run.
+			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) == s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {
+				skipped = append(skipped, s.waiting.pop())
+				continue
+			}
 			var hit []*kv.Block
 			numComputed := r.NumComputed
 			lookedUp := false
@@ -294,32 +367,60 @@ func (s *Scheduler) Schedule() Output {
 				lookedUp = true
 				hit, numComputed = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
 			}
+			room := min(tokenBudget, inputBudget-draftSlots)
 			numNew := r.NumTokens() - numComputed
+			// First-decode padding (:1130-1152): a request whose first step is a single decode
+			// token runs as 1 + K, so the batch keeps the speculative decodes' shape.
+			pad := false
+			if k > 0 && numNew == 1 && !prefillScheduled && (len(scheduledRunning) > 0 || numComputed > 0) &&
+				numComputed+1+k+1 <= s.cfg.MaxModelLen {
+				if 1+k > room {
+					break
+				}
+				numNew, pad = 1+k, true
+			}
 			if 0 < threshold && threshold < numNew {
 				numNew = threshold
 			}
-			room := min(tokenBudget, inputBudget)
 			if !s.cfg.EnableChunkedPrefill && numNew > room {
 				break
 			}
 			numNew = min(numNew, room)
+			numNew = s.reservePrefillLookahead(r, numComputed, numNew)
 			if numNew <= 0 {
 				break
 			}
-			if !s.KV.AllocateSlots(r.ID, 0, numNew, hit, r.hashes, r.NumTokens(), true, len(s.running) > 0, s.cfg.ReserveFullSequence) {
+			if !s.KV.Allocate(r.ID, kv.Alloc{New: numNew, Lookahead: s.cfg.Spec.Lookahead, NewComputed: hit,
+				Hashes: r.hashes, NumTokens: r.NumTokens(), Waiting: true, HasScheduled: len(s.running) > 0,
+				FullSequenceMustFit: s.cfg.ReserveFullSequence}) {
 				break
 			}
 			s.waiting.pop()
 			s.running = append(s.running, r)
 			admitted = append(admitted, r)
+			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 {
+				scheduledLoRAs[r.LoRA] = true
+			}
 			out.Scheduled[r.ID] = numNew
 			if lookedUp {
 				out.PrefixHit[r.ID] = numComputed
 			}
 			tokenBudget -= numNew
-			inputBudget -= numNew
+			inputBudget -= numNew + draftSlots
 			r.Status = Running
 			r.NumComputed = numComputed
+			if pad {
+				drafts := make([]int64, k)
+				for i := range drafts {
+					drafts[i] = -1
+				}
+				out.SpecDecode[r.ID] = drafts
+			}
+		}
+		// prepend_requests (:1391-1395): extendleft on a deque reverses, which restores the
+		// skipped requests' order at the front; a priority queue re-sorts.
+		for i := len(skipped) - 1; i >= 0; i-- {
+			s.waiting.prepend(skipped[i])
 		}
 	}
 
@@ -349,19 +450,23 @@ func (s *Scheduler) preempt(r *Request) {
 	s.KV.Free(r.ID)
 	r.Status = Preempted
 	r.NumComputed = 0
+	r.SpecTokens = nil
 	r.NumPreemptions++
 	s.waiting.prepend(r)
 }
 
 // Update is update_from_output (:2026-2425): each scheduled request that completed its
-// known tokens samples one token from sampled (nil means it sampled nothing); a request
-// stops on EOS, at max_tokens, or at max_model_len (check_stop, sched/utils.py:98-140).
+// known tokens samples the tokens in sampled (none means it sampled nothing): one, plus
+// the drafts the target accepted. Rejected drafts roll num_computed_tokens back (:2110-2130).
+// A request stops on EOS, at max_tokens, or at max_model_len (check_stop,
+// sched/utils.py:98-140), checked after each token, the rest discarded
+// (_update_request_with_output, :2493-2510).
 //
 // Requests are visited in num_scheduled_tokens' insertion order (:2075), which is out.Order:
 // the scheduled running requests in running order, then the admitted ones. The order is not
 // cosmetic: a request that stops frees its blocks there and then (_free_request), so it
 // decides which freed prefix blocks sit nearer the free queue's head and are evicted first.
-func (s *Scheduler) Update(out Output, sampled map[string]int64) []Finished {
+func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 	var finished []Finished
 	var stopped []*Request
 	for _, id := range out.Order {
@@ -370,22 +475,36 @@ func (s *Scheduler) Update(out Output, sampled map[string]int64) []Finished {
 			continue
 		}
 		r.numInFlight -= out.Scheduled[id]
-		tok, ok := sampled[id]
-		if !ok {
+		toks := sampled[id]
+		if drafts := out.SpecDecode[id]; len(drafts) > 0 && len(toks) > 0 {
+			accepted := max(len(toks)-1, 0)
+			if r.NumComputed > 0 {
+				r.NumComputed -= len(drafts) - accepted
+			}
+		}
+		if len(toks) == 0 {
 			continue
 		}
-		r.Output = append(r.Output, tok)
-		r.updateHashes(s.cfg.BlockSize)
 		var status Status
-		switch {
-		case tok == r.EOS:
-			status = FinishedStopped
-		case r.NumTokens() >= s.cfg.MaxModelLen || len(r.Output) >= r.MaxTokens:
-			status = FinishedLength
-		default:
+		stop := false
+		for _, tok := range toks {
+			r.Output = append(r.Output, tok)
+			r.updateHashes(s.cfg.BlockSize)
+			switch {
+			case tok == r.EOS:
+				status, stop = FinishedStopped, true
+			case r.NumTokens() >= s.cfg.MaxModelLen || len(r.Output) >= r.MaxTokens:
+				status, stop = FinishedLength, true
+			}
+			if stop {
+				break
+			}
+		}
+		if !stop {
 			continue
 		}
 		r.Status = status
+		r.SpecTokens = nil
 		s.KV.Free(r.ID)
 		stopped = append(stopped, r)
 		finished = append(finished, Finished{ID: r.ID, Status: status, Output: len(r.Output)})
@@ -403,6 +522,22 @@ func (s *Scheduler) Update(out Output, sampled map[string]int64) []Finished {
 		}
 	}
 	return finished
+}
+
+// UpdateDrafts is update_draft_token_ids (:2550-2569): the drafter's proposals after a step,
+// for each request it ran. A request still prefilling takes none.
+func (s *Scheduler) UpdateDrafts(drafts map[string][]int64) {
+	for id, d := range drafts {
+		r := s.requests[id]
+		if r == nil || r.Status > Preempted {
+			continue
+		}
+		if r.IsPrefillChunk {
+			r.SpecTokens = nil
+			continue
+		}
+		r.SpecTokens = append([]int64(nil), d...)
+	}
 }
 
 func maxRunning(rs []*Request) *Request {

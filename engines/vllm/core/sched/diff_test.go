@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-vllm/core/kv"
 )
 
 // eosToken is tests/v1/core/utils.py:43@5df63a72 (EOS_TOKEN_ID), which the oracle's GPU mock
@@ -29,6 +31,19 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
+		// The knobs vLLM's test helper fixes or omits, passed to its config classes.
+		Watermark             float64 `json:"watermark"`
+		MaxNumActiveSeqs      int     `json:"max_num_active_seqs"`
+		MaxNumScheduledTokens int     `json:"max_num_scheduled_tokens"`
+		LongPrefillAdaptive   bool    `json:"long_prefill_token_threshold_adaptive"`
+		MaxLoRAs              int     `json:"max_loras"`
+		KVEvents              bool    `json:"kv_events"`
+		Speculative           *struct {
+			Method           string `json:"method"`
+			NumTokens        int    `json:"num_speculative_tokens"`
+			Draft            string `json:"draft"`
+			ParallelDrafting bool   `json:"parallel_drafting"`
+		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -37,6 +52,9 @@ type scenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		// Accepted is the GPU mock's draft acceptance: drafts accepted at each verify step.
+		Accepted []int  `json:"accepted"`
+		LoRA     string `json:"lora"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -53,6 +71,8 @@ type step struct {
 	NumWaiting int                `json:"num_waiting"`
 	KVUsage    float64            `json:"kv_usage"`
 	Blocks     map[string][][]any `json:"blocks"`
+	// SpecScheduled is the drafts each request verified this step, when any did.
+	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 }
 
 type trace struct {
@@ -75,15 +95,30 @@ type trace struct {
 func run(t *testing.T, sc scenario) trace {
 	t.Helper()
 	c := sc.Config
+	var spec Spec
+	if c.Speculative != nil {
+		spec = ResolveSpec(SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.NumTokens,
+			ParallelDrafting: c.Speculative.ParallelDrafting, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)})
+	}
 	s, err := New(Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
-		ReserveFullSequence: true,
+		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
+		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
+		Spec: spec, MaxLoRAs: c.MaxLoRAs,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// LoRA ids numbered from 1 in name order, as the oracle numbers them.
+	var adapters []string
+	for _, r := range sc.Requests {
+		if r.LoRA != "" && indexOfString(adapters, r.LoRA) < 0 {
+			adapters = append(adapters, r.LoRA)
+		}
+	}
+	sort.Strings(adapters)
 	reqs := sc.Requests
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
@@ -92,6 +127,8 @@ func run(t *testing.T, sc scenario) trace {
 		return reqs[i].ID < reqs[j].ID
 	})
 	outputs := map[string][]int64{}
+	accepted := map[string][]int{}
+	verifies := map[string]int{}
 	sampled := map[string]int{}
 	next := 0
 	maxSteps := sc.MaxSteps
@@ -111,33 +148,75 @@ func run(t *testing.T, sc scenario) trace {
 			if mt == 0 {
 				mt = 1 << 20
 			}
-			if err := s.Add(&Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
-				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
+			req := &Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
+				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}
+			if r.LoRA != "" {
+				// vLLM's LoRA block key (kv_cache_utils.py:578-595@5df63a72), with the oracle's
+				// adapter path.
+				req.LoRA = indexOfString(adapters, r.LoRA) + 1
+				req.Keys.Extra = []kv.ExtraKey{{"lora", r.LoRA, "/adapters/" + r.LoRA}}
+			}
+			if err := s.Add(req); err != nil {
 				t.Fatal(err)
 			}
 			outputs[r.ID] = r.Output
+			accepted[r.ID] = r.Accepted
 			next++
 		}
 		if !s.HasUnfinished() && next == len(reqs) {
 			break
 		}
 		out := s.Schedule()
-		mock := map[string]int64{}
+		// The GPU mock (oracle/mocks.json): a step that completes a request's known tokens
+		// samples one token, plus, when it verifies drafts, the scenario's accepted count for
+		// that verify step (at most the real drafts; a -1 placeholder is always rejected).
+		mock := map[string][]int64{}
+		specScheduled := map[string]int{}
 		for id := range out.Scheduled {
 			r := s.Request(id)
 			if r.IsPrefillChunk {
 				continue
 			}
-			k, o := sampled[id], outputs[id]
-			if k == len(o)-1 {
-				mock[id] = eosToken
-			} else {
-				mock[id] = o[k]
+			n := 1
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				specScheduled[id] = len(drafts)
+				real := 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+				plan, v := accepted[id], verifies[id]
+				verifies[id] = v + 1
+				a := 0
+				if v < len(plan) {
+					a = plan[v]
+				}
+				n = 1 + min(a, real)
 			}
-			sampled[id] = k + 1
+			o := outputs[id]
+			for j := 0; j < n && sampled[id] < len(o); j++ {
+				k := sampled[id]
+				if k == len(o)-1 {
+					mock[id] = append(mock[id], eosToken)
+				} else {
+					mock[id] = append(mock[id], o[k])
+				}
+				sampled[id] = k + 1
+			}
 		}
 		var done []string
-		for _, f := range s.Update(out, mock) {
+		fins := s.Update(out, mock)
+		if s.cfg.Spec.NumTokens > 0 && len(out.Scheduled) > 0 {
+			// The drafter proposes K drafts for every request the step ran, as the oracle's
+			// mock does after update_from_output (EngineCore.post_step).
+			drafts := map[string][]int64{}
+			for id := range out.Scheduled {
+				drafts[id] = make([]int64, s.cfg.Spec.NumTokens)
+			}
+			s.UpdateDrafts(drafts)
+		}
+		for _, f := range fins {
 			done = append(done, f.ID)
 			reason := map[Status]string{FinishedStopped: "stop", FinishedLength: "length"}[f.Status]
 			tr.Finished[f.ID] = struct {
@@ -153,6 +232,9 @@ func run(t *testing.T, sc scenario) trace {
 			FreeBlocks: s.KV.Pool.NumFree(), Running: sortedStrings(s.Running()), NumRunning: nr, NumWaiting: nw,
 			KVUsage: s.KV.Pool.Usage(), Blocks: map[string][][]any{},
 		}
+		if len(specScheduled) > 0 {
+			st.SpecScheduled = specScheduled
+		}
 		for _, id := range st.Running {
 			for _, b := range s.KV.Blocks(id) {
 				var h any
@@ -165,6 +247,29 @@ func run(t *testing.T, sc scenario) trace {
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
+}
+
+func indexOfString(xs []string, x string) int {
+	for i, v := range xs {
+		if v == x {
+			return i
+		}
+	}
+	return -1
+}
+
+// draftNextnLayers reads an MTP drafter's num_nextn_predict_layers from its configuration-only
+// checkpoint under oracle/drafts, the file vLLM's SpeculativeConfig reads in the oracle.
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var c struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "oracle", "drafts", draft, "config.json"), &c)
+	return c.Layers
 }
 
 func sortedStrings(in []string) []string {
@@ -200,6 +305,7 @@ func earliestDivergence(want, got trace) string {
 			{"free_blocks", w.FreeBlocks, g.FreeBlocks},
 			{"kv_usage", fmt.Sprintf("%.12f", w.KVUsage), fmt.Sprintf("%.12f", g.KVUsage)},
 			{"blocks", nonNilBlocks(w.Blocks), nonNilBlocks(g.Blocks)},
+			{"spec_scheduled", nonNil(w.SpecScheduled), nonNil(g.SpecScheduled)},
 		} {
 			if !reflect.DeepEqual(f.w, f.g) {
 				return fmt.Sprintf("step %d, field %s: oracle %v, Go %v", i, f.name, f.w, f.g)

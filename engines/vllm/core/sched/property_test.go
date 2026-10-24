@@ -115,7 +115,7 @@ func drive(t *testing.T, sc genScenario) obs {
 			t.Fatalf("step %d: %d running over max_num_seqs %d", step, nr, sc.cfg.MaxNumSeqs)
 		}
 		o.preemptions += len(out.Preempted)
-		mock := map[string]int64{}
+		mock := map[string][]int64{}
 		for id := range out.Scheduled {
 			if s.Request(id).IsPrefillChunk {
 				continue
@@ -127,9 +127,9 @@ func drive(t *testing.T, sc genScenario) obs {
 				}
 			}
 			if k == byID[id].output-1 {
-				mock[id] = eosToken
+				mock[id] = []int64{eosToken}
 			} else {
-				mock[id] = 1
+				mock[id] = []int64{1}
 			}
 			sampled[id] = k + 1
 		}

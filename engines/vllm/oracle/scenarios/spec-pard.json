@@ -1,0 +1,163 @@
+{
+ "name": "spec-pard",
+ "description": "PARD (draft_model with parallel drafting, K draft slots) K=3, priority policy with preemption.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 22,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "speculative": {
+   "method": "draft_model",
+   "num_speculative_tokens": 3,
+   "draft": "llama-eagle",
+   "parallel_drafting": true
+  }
+ },
+ "requests": [
+  {
+   "id": "lo",
+   "arrival_step": 0,
+   "prompt": [
+    7002,
+    34545,
+    16184,
+    17768,
+    16763,
+    19073,
+    4760,
+    29475,
+    19857,
+    30581,
+    25997,
+    25809,
+    7760,
+    17270,
+    14632,
+    20687,
+    23465,
+    17066,
+    23637,
+    33835,
+    9811,
+    10555,
+    36133,
+    18045
+   ],
+   "output": [
+    10811,
+    696,
+    4584,
+    8063,
+    38983,
+    22090,
+    1822,
+    5454,
+    17961,
+    13397,
+    25027,
+    26456,
+    38227,
+    28748,
+    39816,
+    6187,
+    7310,
+    37931
+   ],
+   "accepted": [
+    3,
+    1,
+    2,
+    0,
+    3,
+    2,
+    1
+   ],
+   "priority": 3
+  },
+  {
+   "id": "mid",
+   "arrival_step": 2,
+   "prompt": [
+    38607,
+    23872,
+    11875,
+    6205,
+    31892,
+    33672,
+    12704,
+    17750,
+    29662,
+    14300,
+    31768,
+    18437,
+    32800,
+    16687,
+    6713,
+    7942
+   ],
+   "output": [
+    5868,
+    18261,
+    18394,
+    7752,
+    1835,
+    10599,
+    26993,
+    7463,
+    34457,
+    38401,
+    6094,
+    27866
+   ],
+   "accepted": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "priority": 1
+  },
+  {
+   "id": "hi",
+   "arrival_step": 4,
+   "prompt": [
+    31486,
+    11035,
+    35052,
+    25343,
+    29830,
+    20286,
+    31777,
+    30136,
+    28643,
+    27374,
+    39024,
+    6217
+   ],
+   "output": [
+    16803,
+    31099,
+    25827,
+    15484,
+    29442,
+    32051,
+    4355,
+    37297,
+    9392,
+    32051
+   ],
+   "accepted": [
+    0,
+    3,
+    3,
+    1
+   ],
+   "priority": 0
+  }
+ ],
+ "max_steps": 400
+}

@@ -195,16 +195,16 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			step.Admitted = append(step.Admitted, Admission{ID: id, PromptTokens: r.NumTokens(),
 				LocalHit: hit, Preempted: r.NumPreemptions > 0, CacheLookup: c.EnablePrefixCaching})
 		}
-		mock := map[string]int64{}
+		mock := map[string][]int64{}
 		for id := range out.Scheduled {
 			if s.Request(id).IsPrefillChunk {
 				continue
 			}
 			k, o := sampled[id], outputs[id]
 			if k == len(o)-1 {
-				mock[id] = eosToken
+				mock[id] = []int64{eosToken}
 			} else {
-				mock[id] = o[k]
+				mock[id] = []int64{o[k]}
 			}
 			if generated[id] == 0 {
 				step.FirstTokens = append(step.FirstTokens, id)

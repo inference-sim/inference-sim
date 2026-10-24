@@ -81,21 +81,19 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     cfg = sc["config"]
     block_size = cfg["block_size"]
 
-    scheduler = create_scheduler(
-        model=model,
-        max_num_seqs=cfg["max_num_seqs"],
-        max_num_batched_tokens=cfg["max_num_batched_tokens"],
-        long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
-        enable_prefix_caching=cfg.get("enable_prefix_caching", False),
-        num_blocks=cfg["num_blocks"],
-        block_size=block_size,
-        max_model_len=cfg.get("max_model_len"),
-        scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
-    )
+    scheduler = build_scheduler(helpers, create_scheduler, model, cfg)
+    spec = cfg.get("speculative")
+    # Draft tokens the mock proposes: K placeholder ids (any non-negative value works; only the
+    # count reaches a scheduling decision, and acceptance is the scenario's input).
+    num_spec = scheduler.num_spec_tokens
 
     init_none_hash(sha256)
     hasher = get_request_block_hasher(block_size, sha256)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
+    # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
+    lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
+    accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
+    verify_steps = {r["id"]: 0 for r in sc["requests"]}
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
     finished = {}
@@ -110,6 +108,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             # client budget, when the scenario states one, is max_tokens.
             params = SamplingParams(max_tokens=r.get("max_tokens", 1 << 20))
             params.update_from_generation_config({}, EOS_TOKEN_ID)
+            lora = None
+            if r.get("lora"):
+                from vllm.lora.request import LoRARequest  # noqa: E402
+
+                lora = LoRARequest(lora_name=r["lora"], lora_int_id=lora_ids[r["lora"]],
+                                   lora_path="/adapters/" + r["lora"])
             req = Request(
                 request_id=r["id"],
                 prompt_token_ids=list(r["prompt"]),
@@ -117,10 +121,13 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 pooling_params=None,
                 arrival_time=float(r["arrival_step"]),
                 priority=r.get("priority", 0),
+                lora_request=lora,
+                cache_salt=r.get("cache_salt"),
                 block_hasher=hasher,
             )
             scheduler.add_request(req)
 
+    kv_events = KVEventTap(scheduler) if cfg.get("kv_events") else None
     while step < max_steps:
         add_arrivals(step)
         if not scheduler.has_unfinished_requests() and not pending:
@@ -136,18 +143,37 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # (is_prefill_chunk, set in _update_after_schedule after schedule() advanced
         # num_computed_tokens), never decided here.
         req_ids, sampled = [], []
+        record["spec_scheduled"] = {}
         for rid in out.num_scheduled_tokens:
             req = scheduler.requests[rid]
             req_ids.append(rid)
             if not req.is_prefill_chunk:
-                k = sampled_so_far[rid]
+                drafts = out.scheduled_spec_decode_tokens.get(rid, [])
+                n = 1
+                if drafts:
+                    record["spec_scheduled"][rid] = len(drafts)
+                    plan = accepted_plan[rid]
+                    i = verify_steps[rid]
+                    verify_steps[rid] = i + 1
+                    # A placeholder draft (-1, first-decode padding) is always rejected
+                    # (vllm/v1/sample/rejection_sampler.py:762-763).
+                    real = len([d for d in drafts if d >= 0])
+                    n = 1 + min(plan[i] if i < len(plan) else 0, real)
+                toks = []
                 outp = by_id[rid]["output"]
-                # The last assigned token is sampled as EOS: that is how the assigned output
-                # length reaches the engine, which stops on it as it would on a real EOS.
-                sampled.append([EOS_TOKEN_ID if k == len(outp) - 1 else outp[k]])
-                sampled_so_far[rid] = k + 1
+                for _ in range(n):
+                    k = sampled_so_far[rid]
+                    if k >= len(outp):
+                        break
+                    # The last assigned token is sampled as EOS: that is how the assigned
+                    # output length reaches the engine, which stops on it as on a real EOS.
+                    toks.append(EOS_TOKEN_ID if k == len(outp) - 1 else outp[k])
+                    sampled_so_far[rid] = k + 1
+                sampled.append(toks)
             else:
                 sampled.append([])
+        if not record["spec_scheduled"]:
+            del record["spec_scheduled"]
         mro = ModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
@@ -157,6 +183,13 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             pooler_output=[],
         )
         engine_outputs = scheduler.update_from_output(out, mro)
+        if spec and out.total_num_scheduled_tokens > 0:
+            # The drafter proposes for every request the step ran (the input batch); the
+            # scheduler ignores proposals for prefill chunks (scheduler.py:2560-2564).
+            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+            ids = [rid for rid in out.num_scheduled_tokens if rid in scheduler.requests]
+            scheduler.update_draft_token_ids(DraftTokenIds(ids, [[0] * num_spec for _ in ids]))
         done = []
         for eco in engine_outputs.values():
             for o in eco.outputs:
@@ -169,6 +202,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                     }
         record["finished"] = sorted(done)
         record.update(kv_state(scheduler))
+        if kv_events is not None:
+            record["kv_events"] = kv_events.drain()
         steps.append(record)
         step += 1
 
@@ -177,6 +212,123 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         "steps": steps,
         "finished": dict(sorted(finished.items())),
     }
+
+
+def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
+    """vLLM's real Scheduler for the scenario's configuration.
+
+    vLLM's CPU test helper (tests/v1/core/utils.py:54 create_scheduler) builds the Scheduler;
+    the configuration objects it does not expose (a speculative config other than ngram, a
+    LoRA config, and the scheduler knobs it fixes or omits: watermark, max_num_active_seqs,
+    max_num_scheduled_tokens, long_prefill_token_threshold_adaptive, KV events) are built from
+    vLLM's own config classes and handed to the same constructors the helper calls. That is
+    environment set-up, listed in oracle/mocks.json; no scheduler, KV-cache or config logic is
+    replaced or edited, and every derived value (draft slots, lookahead, prefill lookahead,
+    EAGLE block drop, the scheduled-token budget) is computed by vLLM itself.
+    """
+    from vllm.config import KVEventsConfig, LoRAConfig, SpeculativeConfig  # noqa: E402
+
+    spec = cfg.get("speculative")
+    sched_extra = {k: cfg[k] for k in ("watermark", "max_num_active_seqs", "max_num_scheduled_tokens",
+                                       "long_prefill_token_threshold_adaptive") if k in cfg}
+    real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
+
+    def vllm_config(**kw):
+        if spec:
+            args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
+            if spec.get("draft"):
+                # A configuration-only draft checkpoint (oracle/drafts/<name>/config.json): it
+                # names the drafter's architecture, never weights.
+                args["model"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts", spec["draft"])
+            if spec.get("parallel_drafting"):
+                args["parallel_drafting"] = True
+            kw["speculative_config"] = SpeculativeConfig(
+                target_model_config=kw["model_config"], target_parallel_config=kw["parallel_config"], **args)
+        if cfg.get("max_loras"):
+            kw["lora_config"] = LoRAConfig(max_loras=cfg["max_loras"], max_cpu_loras=cfg.get("max_cpu_loras"))
+        if cfg.get("kv_events"):
+            kw["kv_events_config"] = KVEventsConfig(enable_kv_cache_events=True, publisher="null")
+        return real_vllm_config(**kw)
+
+    def scheduler_config(**kw):
+        kw.update(sched_extra)
+        return real_scheduler_config(**kw)
+
+    # DSpark runs only on vLLM's V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72), which
+    # needs Triton on the host (:724). The scheduler is the same class either way; selecting the
+    # V2 runner is the environment of a GPU host, not a decision (docs/testing.md).
+    import vllm.config.vllm as vllm_config_module  # noqa: E402
+
+    saved_triton, saved_env = vllm_config_module.HAS_TRITON, os.environ.get("VLLM_USE_V2_MODEL_RUNNER")
+    v2 = bool(spec) and spec["method"] == "dspark"
+    if v2:
+        vllm_config_module.HAS_TRITON = True
+        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+    helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
+    try:
+        return create_scheduler(
+            model=model,
+            max_num_seqs=cfg["max_num_seqs"],
+            max_num_batched_tokens=cfg["max_num_batched_tokens"],
+            long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
+            enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+            num_blocks=cfg["num_blocks"],
+            block_size=cfg["block_size"],
+            max_model_len=cfg.get("max_model_len"),
+            scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+            use_v2_model_runner=v2 or None,
+        )
+    finally:
+        helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config
+        vllm_config_module.HAS_TRITON = saved_triton
+        if saved_env is None:
+            os.environ.pop("VLLM_USE_V2_MODEL_RUNNER", None)
+        else:
+            os.environ["VLLM_USE_V2_MODEL_RUNNER"] = saved_env
+
+
+class KVEventTap:
+    """The KV events vLLM's scheduler publishes each step, by content.
+
+    The scheduler hands each step's events to its publisher (scheduler.py:2371-2385@5df63a72);
+    with the "null" publisher configured they are dropped there. The tap wraps that publisher
+    object's publish method to keep a copy (a transport, listed in oracle/mocks.json), so the
+    events are exactly what vLLM would put on the wire.
+    """
+
+    def __init__(self, scheduler):
+        self.batches = []
+        pub = scheduler.kv_event_publisher
+        original = pub.publish
+
+        def publish(batch):
+            self.batches.append(batch)
+            return original(batch)
+
+        pub.publish = publish
+
+    def drain(self) -> list:
+        """The events since the last drain, in publish order. A block hash is the integer
+        vLLM puts on the wire by default (the low 64 bits of the hash, big-endian:
+        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES, vllm/envs.py:2033-2035, applied in
+        kv_cache_utils.py:96-99), written as a decimal string so JSON keeps all 64 bits."""
+        def h(v):
+            return str(v) if isinstance(v, int) else v.hex()
+
+        out = []
+        for batch in self.batches:
+            for ev in batch.events:
+                name = type(ev).__name__
+                if name == "BlockStored":
+                    out.append(["stored", [h(x) for x in ev.block_hashes],
+                                h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
+                                list(ev.token_ids), ev.block_size, ev.lora_name])
+                elif name == "BlockRemoved":
+                    out.append(["removed", [h(x) for x in ev.block_hashes]])
+                else:
+                    out.append(["cleared"])
+        self.batches = []
+        return out
 
 
 def kv_state(scheduler) -> dict:

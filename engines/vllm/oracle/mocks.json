@@ -31,6 +31,36 @@
       "symbol": "vllm.v1.engine.time",
       "kind": "clock",
       "how": "oracle/run_metrics.py only: EngineCoreEvent timestamps (QUEUED, SCHEDULED, PREEMPTED) read the virtual clock (the step index), so the queue-time series is deterministic; a derived family, not compared"
+    },
+    {
+      "symbol": "vllm.v1.outputs.DraftTokenIds",
+      "kind": "gpu",
+      "how": "constructed by the harness instead of by a drafter: after each step that ran, every request in it is proposed num_speculative_tokens draft ids and handed to Scheduler.update_draft_token_ids, as EngineCore.post_step does (vllm/v1/engine/core.py:689-696); only the count reaches a decision"
+    },
+    {
+      "symbol": "spec-decode acceptance",
+      "kind": "gpu",
+      "how": "a verify step samples one token plus the scenario's accepted count for that request and step (at most the drafts it verified; a placeholder -1 draft is always rejected, rejection_sampler.py:762-763): acceptance is an input (#2021 B3), the rejection algorithm is outside parity"
+    },
+    {
+      "symbol": "tests.v1.core.utils.VllmConfig",
+      "kind": "environment",
+      "how": "the helper's VllmConfig is called with vLLM's own SpeculativeConfig, LoRAConfig and KVEventsConfig built from the scenario (oracle/run_scheduler.py build_scheduler); a speculative draft is a configuration-only checkpoint under oracle/drafts (architecture, no weights); vLLM derives every value the scheduler reads"
+    },
+    {
+      "symbol": "tests.v1.core.utils.SchedulerConfig",
+      "kind": "environment",
+      "how": "the helper's SchedulerConfig is called with the scenario's watermark, max_num_active_seqs, max_num_scheduled_tokens and long_prefill_token_threshold_adaptive, which the helper fixes (watermark=0.0) or does not expose"
+    },
+    {
+      "symbol": "vllm.config.vllm.HAS_TRITON",
+      "kind": "environment",
+      "how": "DSpark scenarios only: set True with VLLM_USE_V2_MODEL_RUNNER=1, as on a GPU host, so vLLM accepts the DSpark config (it runs only on the V2 model runner, vllm/config/vllm.py:2976-2979); the Scheduler class and its decisions are the same on either runner"
+    },
+    {
+      "symbol": "KV event publisher",
+      "kind": "transport",
+      "how": "with kv_events on, the scheduler's null publisher object's publish method is wrapped to keep a copy of each step's KVEventBatch (scheduler.py:2371-2385) for the trace; the events themselves are vLLM's"
     }
   ]
 }

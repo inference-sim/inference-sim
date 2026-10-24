@@ -39,16 +39,16 @@ cannot fail.
 |---|---|---|---|---|---|---|
 | Continuous batching, `max_num_seqs` | IX 51, IR, BL | `vllm/config/scheduler.py:62@5df63a72` | vllm | T2 | tokens per request, running set | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M1 caught) |
 | `max_num_batched_tokens` (token budget) | IX 51, IR, BL | `vllm/config/scheduler.py:48@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M2 caught) |
-| `max_num_scheduled_tokens` | IX via defaults | `vllm/config/scheduler.py:55@5df63a72` | vllm | T2 | tokens per request | planned |
+| `max_num_scheduled_tokens` | IX via defaults | `vllm/config/scheduler.py:55@5df63a72` | vllm | T2 | tokens per request | supported (T2: `knob-max-scheduled-tokens` + fuzz seeds 5000-6999, 0 mismatches; mutant M2 caught) |
 | Chunked prefill (`enable_chunked_prefill`) | IX 4 (explicit), IR, BL | `vllm/config/scheduler.py:134@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M3 caught) |
 | `long_prefill_token_threshold` | IX 8, IR, BL | `vllm/config/scheduler.py:79@5df63a72` | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M4 caught) |
-| `long_prefill_token_threshold_adaptive` | IX via defaults | `vllm/config/scheduler.py:86@5df63a72` | vllm | T2 | tokens per request | planned |
+| `long_prefill_token_threshold_adaptive` | IX via defaults | `vllm/config/scheduler.py:86@5df63a72` | vllm | T2 | tokens per request | supported (T2: `knob-long-prefill-adaptive` + fuzz seeds 5000-6999, 0 mismatches; mutant M4 caught) |
 | Lone-request long-prefill exemption | BL | `vllm/v1/core/sched/scheduler.py:2608@5df63a72` (`get_request_counts`) | vllm | T2 | tokens per request | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M5 caught) |
 | Preemption (recompute), FCFS victim | IR, BL | `vllm/v1/core/sched/scheduler.py:1571@5df63a72` | vllm | T2 | preempted ids, order | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M6, M12 caught) |
 | Scheduling policy `fcfs` / `priority` | IR (router priority bands), BL | `vllm/config/scheduler.py:21,159@5df63a72`; `vllm/v1/core/sched/request_queue.py:75,131@5df63a72` | vllm | T2 | admission order, preempted ids | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M8 caught) |
 | Priority preemption victim | BL | `vllm/v1/core/sched/scheduler.py:796-808@5df63a72` | vllm | T2 | preempted ids | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M7, M22 caught) |
-| `max_num_active_seqs` | (defaults) | `vllm/config/scheduler.py:69@5df63a72` | vllm | T2 | running set | planned |
-| `watermark` (free-block reserve) | (defaults, 0.0) | `vllm/config/scheduler.py:196@5df63a72` | vllm | T2 | admission | planned |
+| `max_num_active_seqs` | (defaults) | `vllm/config/scheduler.py:69@5df63a72` | vllm | T2 | running set | supported (T2: `knob-max-active-seqs` + fuzz seeds 5000-6999, 0 mismatches; mutant M1 caught) |
+| `watermark` (free-block reserve) | (defaults, 0.0) | `vllm/config/scheduler.py:196@5df63a72` | vllm | T2 | admission | supported (T2: `knob-watermark` + fuzz seeds 5000-6999, 0 mismatches; mutant M14 caught) |
 | `max_model_len` cap and `check_stop` | IX 33, IR, BL | `vllm/v1/core/sched/scheduler.py:2465@5df63a72` (`_handle_stopped_request`) | vllm | T2 | finished ids, reasons, output tokens | supported (T2: 14 scenarios + 2000 fuzz seeds, 0 mismatches; mutant M10, M11 caught) |
 | DP prefill throttling, `prefill_schedule_interval` | IX 8, AD33 46 | `vllm/config/scheduler.py:203@5df63a72`; `vllm/v1/engine/core.py:2318-2325@5df63a72` | vllm | T3 | tokens per request per rank | planned |
 | `stream_interval` | IX 22 | `vllm/config/scheduler.py:213@5df63a72`; acts in `vllm/v1/engine/output_processor.py:198,253-255@5df63a72` | sim | — | client-side token delivery | follow-up (https://github.com/inference-sim/inference-sim/issues/2035): an API-server delivery rule (vllm/v1/engine/output_processor.py:324-343@5df63a72), not an engine decision; inference-sim, which owns client-side delivery, applies it |
@@ -80,15 +80,15 @@ cannot fail.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| DSpark slots | IX 39, IR, BL | `vllm/config/speculative.py:69@5df63a72` | vllm | T2 | tokens per request (K+1 verify), draft slots | planned |
-| MTP slots | IX 4, IR, BL | `vllm/config/speculative.py:38@5df63a72` | vllm | T2 | tokens per request | planned |
-| EAGLE3 with an external draft model (`speculative_config.model`) | IX 9, AD33 332 | `vllm/config/speculative.py:71,396@5df63a72` | vllm + schemas (#97) + data | T2 | tokens per request | planned; drafter graph needs data (follow-up) |
-| `num_speculative_tokens` | IX 52, IR, BL | `vllm/config/speculative.py:150@5df63a72` | vllm | T2 | tokens per request | planned |
-| Draft slots (`max_num_new_slots_for_drafting`, parallel drafting) | BL | `vllm/v1/core/sched/scheduler.py:613@5df63a72`; `vllm/config/speculative.py:478@5df63a72` | vllm | T2 | input budget | planned |
+| DSpark slots | IX 39, IR, BL | `vllm/config/speculative.py:69@5df63a72` | vllm | T2 | tokens per request (K+1 verify), draft slots | supported (T2: `spec-dspark` + 8 spec scenarios (EAGLE3, P-EAGLE, draft_model, PARD, MTP 1 and multi-module, DSpark, max_model_len cap) + 2000 spec/LoRA fuzz seeds (5000-6999), 0 mismatches; mutants M23, M34 caught). vLLM runs DSpark only on its V2 model runner; the oracle selects it as a GPU host would (`oracle/mocks.json`) |
+| MTP slots | IX 4, IR, BL | `vllm/config/speculative.py:38@5df63a72` | vllm | T2 | tokens per request | supported (T2: `spec-mtp1`, `spec-mtp-multi` + 8 spec scenarios (EAGLE3, P-EAGLE, draft_model, PARD, MTP 1 and multi-module, DSpark, max_model_len cap) + 2000 spec/LoRA fuzz seeds (5000-6999), 0 mismatches; mutants M27, M28, M29 caught) |
+| EAGLE3 with an external draft model (`speculative_config.model`) | IX 9, AD33 332 | `vllm/config/speculative.py:71,396@5df63a72` | vllm + schemas (#97) + data | T2 | tokens per request | supported for scheduling (T2: `spec-eagle3`, `spec-peagle-budget`, `spec-model-len-cap` + fuzz seeds 5000-6999 with vLLM's real EAGLE3 config, 0 mismatches; mutants M25, M27, M35 caught); pricing the named drafter is follow-up: the schema field is https://github.com/inference-sim/blis-schemas/issues/97 (field added in blis-schemas#102), the MiniMax-M3 EAGLE3 drafter graph is https://github.com/inference-sim/blis-catalog/issues/41 (needs data) |
+| `num_speculative_tokens` | IX 52, IR, BL | `vllm/config/speculative.py:150@5df63a72` | vllm | T2 | tokens per request | supported (T2: 8 spec scenarios (EAGLE3, P-EAGLE, draft_model, PARD, MTP 1 and multi-module, DSpark, max_model_len cap) + 2000 spec/LoRA fuzz seeds (5000-6999), 0 mismatches; mutants M24, M31, M33 caught) |
+| Draft slots (`max_num_new_slots_for_drafting`, parallel drafting) | BL | `vllm/v1/core/sched/scheduler.py:613@5df63a72`; `vllm/config/speculative.py:478@5df63a72` | vllm | T2 | input budget | supported (T2: `spec-peagle-budget`, `spec-pard`, `spec-draft-model` + 8 spec scenarios (EAGLE3, P-EAGLE, draft_model, PARD, MTP 1 and multi-module, DSpark, max_model_len cap) + 2000 spec/LoRA fuzz seeds (5000-6999), 0 mismatches; mutants M23, M34, M37 caught) |
 | Probabilistic drafting, block rejection sampling | IX 39 / 30 | `vllm/config/speculative.py:529,532@5df63a72` | vllm (accept knobs) | — | — | excluded from parity: acceptance is supplied (B3); the knobs are accepted and recorded as "acceptance supplied" |
-| DSpark adaptive verification | IX 13, IR | `vllm/config/speculative.py:551@5df63a72`; acts in attention backends, `vllm/v1/attention/selector.py:143-151@5df63a72` | vllm (accept knob) + kernel | — | verify width priced | planned: the verifier's trimmed query length is a GPU-side decision; scheduling still budgets K+1 |
-| Drafter KV dtype (`speculative_config.kv_cache_dtype`) | IX 8, AD33 29 | `vllm/config/speculative.py:382@5df63a72` | schemas + kernel | — | bytes | planned |
-| Acceptance-dependent metrics | IR | `vllm/v1/spec_decode/metrics.py@5df63a72` | vllm | T5 | spec-decode counters given supplied acceptance | planned |
+| DSpark adaptive verification | IX 13, IR | `vllm/config/speculative.py:551@5df63a72`; acts in attention backends, `vllm/v1/attention/selector.py:143-151@5df63a72` | vllm (accept knob) + kernel | — | verify width priced | excluded from the scheduler tier: the flag never reaches vLLM's scheduler or KV code (no use under `vllm/v1/core@5df63a72`); it trims the verify query on the GPU (`vllm/v1/attention/selector.py:143-151@5df63a72`), so scheduling still budgets K+1 (as `spec-dspark` shows) and only step time changes, which is the kernel's: follow-up https://github.com/inference-sim/blis-latency-kernel/issues/83 |
+| Drafter KV dtype (`speculative_config.kv_cache_dtype`) | IX 8, AD33 29 | `vllm/config/speculative.py:382@5df63a72` | schemas + kernel | — | bytes | follow-up (https://github.com/inference-sim/blis-latency-kernel/issues/85): bytes per block are priced by the kernel and need data; no scheduling decision reads the dtype once the KV capacity is given |
+| Acceptance-dependent metrics | IR | `vllm/v1/spec_decode/metrics.py@5df63a72` | vllm | T5 | spec-decode counters given supplied acceptance | follow-up (T5): the `vllm:spec_decode_*` families are in the manifest (docs/metrics-manifest.json); with acceptance supplied, `core/sched` now produces the per-step draft and accepted counts they are built from (`spec_scheduled` in every spec trace); emitting and diff-testing them: https://github.com/inference-sim/blis-vllm/issues/6 |
 
 ## EngineCore: async scheduling, batch queue, PP, DP
 
@@ -124,8 +124,8 @@ cannot fail.
 
 | Feature | Sources | v0.32.0 citation | Owner | Tier | Compared | Status |
 |---|---|---|---|---|---|---|
-| `max_loras` per-batch skip | BL | `vllm/config/lora.py:35@5df63a72`; `vllm/v1/core/sched/scheduler.py:897-946@5df63a72` | vllm | T2 | tokens per request, skip order | planned (replaces inference-sim's blocking gate) |
-| `max_cpu_loras` (LRU of loaded adapters) | BL | `vllm/config/lora.py:42@5df63a72` | vllm | T2 | residency | planned |
+| `max_loras` per-batch skip | BL | `vllm/config/lora.py:35@5df63a72`; `vllm/v1/core/sched/scheduler.py:897-946@5df63a72` | vllm | T2 | tokens per request, skip order | supported (T2: `lora-max-loras-skip` (#2021 B9's [A, B, A] queue), `lora-max-loras-2-priority` + fuzz seeds 5000-6999 with LoRA in about 30%, 0 mismatches; the LoRA block key matches vLLM's byte for byte, core/kv TestBlockHashesAreVLLMs); replaces inference-sim's blocking gate |
+| `max_cpu_loras` (LRU of loaded adapters) | BL | `vllm/config/lora.py:42@5df63a72` | vllm | T2 | residency | follow-up (https://github.com/inference-sim/blis-vllm/issues/5): vLLM's scheduler never reads it; it sizes the worker's adapter cache (`vllm/lora/model_manager.py:333-336,1345-1409@5df63a72`), so it changes adapter-load cost, not batch composition |
 
 ## Metrics
 

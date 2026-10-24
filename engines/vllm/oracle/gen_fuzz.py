@@ -8,6 +8,13 @@ lengths, shared prefixes, priorities, client budgets). The same seed always give
 scenario, from Python's random.Random alone, so a failing seed reproduces anywhere. A seed
 that finds a mismatch is shrunk and kept under oracle/scenarios as a permanent test.
 
+Seeds from 5000 on (`SPEC_FROM`) add what the base generator leaves at defaults: a
+speculative decoder in about half of them (EAGLE3, P-EAGLE, draft_model, PARD, MTP single
+and multi-module, DSpark; per-request acceptance drawn per verify step), LoRA adapters with
+max_loras, and the scheduler knobs vLLM's test helper does not expose (watermark,
+max_num_active_seqs, max_num_scheduled_tokens, the adaptive long-prefill cap). Seeds below
+5000 give exactly the scenarios they always gave, so the existing corpus does not move.
+
 Usage: python -I oracle/gen_fuzz.py <out dir> <first seed> <count>
 """
 
@@ -17,7 +24,69 @@ import random
 import sys
 
 
+SPEC_FROM = 5000
+
+# Speculative methods, each with the draft configuration it is built from (oracle/drafts).
+SPEC_METHODS = [
+    {"method": "eagle3", "draft": "llama-eagle"},
+    {"method": "eagle3", "draft": "llama-eagle", "parallel_drafting": True},
+    {"method": "draft_model", "draft": "llama-eagle"},
+    {"method": "draft_model", "draft": "llama-eagle", "parallel_drafting": True},
+    {"method": "mtp", "draft": "mtp-1", "k": 1},
+    {"method": "mtp", "draft": "mtp-4"},
+    {"method": "dspark"},
+]
+
+
 def scenario(seed: int) -> dict:
+    sc = base_scenario(seed)
+    if seed >= SPEC_FROM:
+        extend(sc, random.Random(seed * 7919 + 1))
+    return sc
+
+
+def extend(sc: dict, rng: random.Random) -> None:
+    cfg, reqs = sc["config"], sc["requests"]
+    if rng.random() < 0.5:
+        m = dict(rng.choice(SPEC_METHODS))
+        k = m.pop("k", rng.randint(1, 4))
+        if m["method"] == "mtp" and m["draft"] == "mtp-4":
+            k = rng.randint(2, 4)
+        m["num_speculative_tokens"] = k
+        # vLLM refuses a budget no larger than the draft slots (vllm/config/vllm.py:2285-2290)
+        # and, for multi-module MTP with prefix caching, a block smaller than K
+        # (vllm/v1/core/kv_cache_coordinator.py:147-155).
+        cfg["max_num_batched_tokens"] = max(cfg["max_num_batched_tokens"], 2 * k + 2)
+        if m["method"] == "mtp" and m["draft"] == "mtp-4" and cfg["enable_prefix_caching"]:
+            cfg["block_size"] = max(cfg["block_size"], 4)
+        cfg["speculative"] = m
+        for r in reqs:
+            r["accepted"] = [rng.randint(0, k) if rng.random() < 0.8 else k for _ in range(len(r["output"]) + 2)]
+    if rng.random() < 0.3:
+        names = ["a1", "a2", "a3"][: rng.randint(1, 3)]
+        cfg["max_loras"] = rng.randint(1, len(names))
+        for r in reqs:
+            if rng.random() < 0.7:
+                r["lora"] = rng.choice(names)
+    if rng.random() < 0.25:
+        cfg["watermark"] = rng.choice([0.01, 0.05, 0.1])
+    if rng.random() < 0.25:
+        cfg["max_num_active_seqs"] = rng.randint(1, cfg["max_num_seqs"])
+    if rng.random() < 0.25:
+        cfg["max_num_scheduled_tokens"] = rng.randint(max(1, cfg["max_num_seqs"]), cfg["max_num_batched_tokens"])
+    if cfg["long_prefill_token_threshold"] and rng.random() < 0.5:
+        cfg["long_prefill_token_threshold_adaptive"] = True
+    # The pool must still hold the largest request with the drafter's lookahead and the
+    # watermark, or vLLM would never admit it.
+    look = cfg.get("speculative", {}).get("num_speculative_tokens", 0) + 1
+    biggest = max(len(r["prompt"]) + len(r["output"]) for r in reqs)
+    need = -(-(min(biggest, cfg["max_model_len"]) + look) // cfg["block_size"]) + 2
+    if cfg.get("watermark"):
+        need = int((need + 1) / (1 - cfg["watermark"])) + 2
+    cfg["num_blocks"] = max(cfg["num_blocks"], need)
+
+
+def base_scenario(seed: int) -> dict:
     rng = random.Random(seed)
     block = rng.choice([1, 2, 4, 8, 16])
     budget = rng.choice([8, 16, 32, 64, 128])

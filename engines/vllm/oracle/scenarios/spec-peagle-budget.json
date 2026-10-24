@@ -1,0 +1,142 @@
+{
+ "name": "spec-peagle-budget",
+ "description": "P-EAGLE K=4 (parallel drafting, 3 draft slots per scheduled request) under a 20-token budget, as vLLM's own test_draft_slots_budgeted_per_scheduled_request.",
+ "config": {
+  "max_num_seqs": 16,
+  "max_num_batched_tokens": 20,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "eagle3",
+   "num_speculative_tokens": 4,
+   "draft": "llama-eagle",
+   "parallel_drafting": true
+  }
+ },
+ "requests": [
+  {
+   "id": "r0",
+   "arrival_step": 0,
+   "prompt": [
+    31102,
+    17629,
+    34678,
+    22924,
+    9346,
+    25012,
+    712,
+    24560,
+    31624,
+    17961
+   ],
+   "output": [
+    30161,
+    39418,
+    14919,
+    36582,
+    110,
+    9523
+   ],
+   "accepted": [
+    2,
+    4,
+    0,
+    1,
+    3
+   ]
+  },
+  {
+   "id": "r1",
+   "arrival_step": 0,
+   "prompt": [
+    28840,
+    24095,
+    10635,
+    22262,
+    13780,
+    3856,
+    37763,
+    13084,
+    4890,
+    33655
+   ],
+   "output": [
+    22086,
+    26517,
+    5725,
+    1220,
+    3984,
+    33353
+   ],
+   "accepted": [
+    2,
+    4,
+    0,
+    1,
+    3
+   ]
+  },
+  {
+   "id": "r2",
+   "arrival_step": 0,
+   "prompt": [
+    14631,
+    5963,
+    27775,
+    29082,
+    7375,
+    27736,
+    8852,
+    35357,
+    20483,
+    36580
+   ],
+   "output": [
+    10717,
+    3366,
+    36383,
+    11221,
+    33243,
+    5479
+   ],
+   "accepted": [
+    2,
+    4,
+    0,
+    1,
+    3
+   ]
+  },
+  {
+   "id": "late",
+   "arrival_step": 3,
+   "prompt": [
+    26249,
+    39810,
+    27450,
+    39058,
+    30776
+   ],
+   "output": [
+    31246,
+    39931,
+    25204,
+    35465,
+    1999,
+    5418,
+    12575,
+    17142
+   ],
+   "accepted": [
+    4,
+    4,
+    1
+   ]
+  }
+ ],
+ "max_steps": 400
+}
