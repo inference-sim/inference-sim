@@ -1,0 +1,387 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 6,
+    "b": 5,
+    "c": 5
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "a",
+    "c"
+   ],
+   "scheduled": {
+    "a": 1,
+    "c": 2
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [],
+   "samples": [
+    "a",
+    "c"
+   ],
+   "scheduled": {
+    "a": 1,
+    "c": 1
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "a": {
+   "output_tokens": 3,
+   "reason": "length",
+   "step": 3
+  },
+  "b": {
+   "output_tokens": 1,
+   "reason": "length",
+   "step": 1
+  },
+  "c": {
+   "output_tokens": 4,
+   "reason": "stop",
+   "step": 5
+  }
+ },
+ "provenance": {
+  "engine": {
+   "async_scheduling": true,
+   "max_concurrent_batches": 2,
+   "pipeline_parallel_size": 1,
+   "scheduler_class": "AsyncScheduler",
+   "use_v2_model_runner": false
+  },
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "scenario_sha256": "9f0e6c06bb3f8f1d3b38b514f28a4d91bc9f29678230f78077223b1594df043d",
+  "tier": 3,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 6,
+    "b": 5,
+    "c": 5
+   },
+   "finished": [],
+   "free_blocks": 33,
+   "num_running": 3,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "b": 1,
+    "c": 0
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 7,
+    "c": 7
+   },
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 35,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "c"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 8,
+    "c": 8
+   },
+   "finished": [],
+   "free_blocks": 35,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "c"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 9
+   },
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 36,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 10
+   },
+   "finished": [],
+   "free_blocks": 36,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "c"
+   ],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 7
+  }
+ ]
+}

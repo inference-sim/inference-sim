@@ -1,0 +1,70 @@
+{
+ "name": "t3-async-v2-pp2",
+ "description": "async scheduling on the V2 runner with PP 2: a batch queue of 3, decodes spaced pp_size steps apart.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 10,
+  "block_size": 4,
+  "num_blocks": 64,
+  "max_model_len": 64,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "pipeline_parallel_size": 2,
+  "async_scheduling": true,
+  "use_v2_model_runner": true
+ },
+ "requests": [
+  {
+   "id": "0",
+   "arrival_step": 0,
+   "prompt": [
+    28114,
+    43898,
+    49832,
+    6498,
+    25796,
+    23133,
+    4125,
+    30665,
+    10864,
+    35042,
+    28671,
+    8541
+   ],
+   "output": [
+    14538,
+    43991,
+    15775,
+    23871,
+    44514
+   ],
+   "priority": 0
+  },
+  {
+   "id": "1",
+   "arrival_step": 0,
+   "prompt": [
+    3843,
+    49850,
+    49824,
+    12979,
+    5982,
+    36412,
+    24728,
+    10501,
+    26653,
+    47316,
+    24542,
+    36977
+   ],
+   "output": [
+    42535,
+    26275,
+    37494,
+    13047,
+    39833
+   ],
+   "priority": 0
+  }
+ ]
+}

@@ -1,0 +1,803 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {
+    "0": 10
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "0"
+   ],
+   "scheduled": {
+    "0": 2,
+    "1": 8
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [],
+   "samples": [
+    "1"
+   ],
+   "scheduled": {
+    "1": 4
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "0"
+   ],
+   "scheduled": {
+    "0": 1
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [],
+   "samples": [
+    "1"
+   ],
+   "scheduled": {
+    "1": 1
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "0"
+   ],
+   "scheduled": {
+    "0": 1
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [],
+   "samples": [
+    "1"
+   ],
+   "scheduled": {
+    "1": 1
+   }
+  },
+  {
+   "batch": 7,
+   "preempted": [],
+   "samples": [
+    "0"
+   ],
+   "scheduled": {
+    "0": 1
+   }
+  },
+  {
+   "batch": 8,
+   "preempted": [],
+   "samples": [
+    "1"
+   ],
+   "scheduled": {
+    "1": 1
+   }
+  },
+  {
+   "batch": 9,
+   "preempted": [],
+   "samples": [
+    "0"
+   ],
+   "scheduled": {
+    "0": 1
+   }
+  },
+  {
+   "batch": 10,
+   "preempted": [],
+   "samples": [
+    "1"
+   ],
+   "scheduled": {
+    "1": 1
+   }
+  },
+  {
+   "batch": 11,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 12,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "0": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 10
+  },
+  "1": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 11
+  }
+ },
+ "provenance": {
+  "engine": {
+   "async_scheduling": false,
+   "max_concurrent_batches": 2,
+   "pipeline_parallel_size": 2,
+   "scheduler_class": "Scheduler",
+   "use_v2_model_runner": false
+  },
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "scenario_sha256": "33c437c03a7bd6386137b4303d4148aaa9131f45d0ac8927168237404c123ba1",
+  "tier": 3,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 10
+   },
+   "finished": [],
+   "free_blocks": 60,
+   "num_running": 1,
+   "num_waiting": 1,
+   "placeholders": {
+    "0": 0
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "0"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 12,
+    "1": 8
+   },
+   "finished": [],
+   "free_blocks": 58,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 12,
+    "1": 12
+   },
+   "finished": [],
+   "free_blocks": 57,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 13,
+    "1": 12
+   },
+   "finished": [],
+   "free_blocks": 56,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 13,
+    "1": 13
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 14,
+    "1": 13
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 14,
+    "1": 14
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 15,
+    "1": 14
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 7,
+   "step": 7
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 15,
+    "1": 15
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 8,
+   "step": 8
+  },
+  {
+   "blocks": {
+    "0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "0": 16,
+    "1": 15
+   },
+   "finished": [],
+   "free_blocks": 55,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "0": 0,
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "0",
+    "1"
+   ],
+   "scheduled_batch": 9,
+   "step": 9
+  },
+  {
+   "blocks": {
+    "1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "1": 16
+   },
+   "finished": [
+    "0"
+   ],
+   "free_blocks": 59,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "1": 0
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "1"
+   ],
+   "scheduled_batch": 10,
+   "step": 10
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "1"
+   ],
+   "free_blocks": 63,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 11,
+   "step": 11
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 63,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 12,
+   "step": 12
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 63,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 13
+  }
+ ]
+}

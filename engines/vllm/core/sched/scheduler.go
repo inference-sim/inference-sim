@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 // Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
-// Also vllm/v1/core/sched/request_queue.py and vllm/v1/core/sched/utils.py (check_stop).
+// Also vllm/v1/core/sched/request_queue.py, vllm/v1/core/sched/utils.py (check_stop) and
+// vllm/v1/core/sched/async_scheduler.py (AsyncScheduler).
 
 // Package sched is vLLM's v1 Scheduler: schedule() and update_from_output() for a
 // full-attention model, with chunked prefill, the long-prefill cap, FCFS and priority
 // policies, recompute preemption, prefix caching, speculative decoding (acceptance supplied)
-// and the max_loras batch limit. Synchronous scheduling (one batch in flight); connectors
-// and async scheduling are separate.
+// and the max_loras batch limit, and the AsyncScheduler's output placeholders and
+// pipeline-parallel decode spacing (Config.Async). Connectors are separate; the batch queue
+// that keeps several batches in flight is core/engine's.
 package sched
 
 import (
@@ -58,6 +60,16 @@ type Config struct {
 	// MaxConcurrentBatches is max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72);
 	// 0 means 1, this scheduler's synchronous case.
 	MaxConcurrentBatches int
+	// Async selects vLLM's AsyncScheduler (vllm/v1/core/sched/async_scheduler.py:14), which
+	// scheduler_config.async_scheduling picks (vllm/config/scheduler.py:228-236): a request
+	// scheduled to the end of its known tokens counts the token it will sample as an output
+	// placeholder, so the next step can schedule it again before that token returns.
+	Async bool
+	// DecodeStagger is the AsyncScheduler's decode_stagger, pipeline_parallel_size
+	// (async_scheduler.py:19-23); with UseV2ModelRunner a request's next decode waits that
+	// many steps (next_decode_eligible_step, :52-58; scheduler.py:680-684).
+	DecodeStagger    int
+	UseV2ModelRunner bool
 }
 
 // Status is RequestStatus (vllm/v1/request.py:370).
@@ -98,6 +110,14 @@ type Request struct {
 	hashes      []kv.BlockHash
 	numInFlight int
 	seq         int // FIFO tie-break within a priority queue
+	// Placeholders is num_output_placeholders: tokens scheduled to be sampled whose output
+	// has not returned yet (async scheduling only).
+	Placeholders int
+	// numStale is num_stale_output_tokens: the in-flight tokens a preemption made stale,
+	// whose outputs still return but must not move the reset counters (scheduler.py:1596-1607).
+	numStale int
+	// nextDecodeStep is next_decode_eligible_step.
+	nextDecodeStep int
 }
 
 // NumTokens is len(all_token_ids): prompt plus output.
@@ -160,6 +180,17 @@ type Scheduler struct {
 	running  []*Request
 	waiting  queue
 	seq      int
+	// currentStep is schedule()'s current_step (scheduler.py:366, :592).
+	currentStep int
+	// finishedPending is finished_req_ids: requests finished since the last schedule(),
+	// which keep has_requests() true until schedule() hands them to the runner
+	// (interface.py:199-202; scheduler.py:1649-1652, 2813-2815).
+	finishedPending int
+	// deferred is deferred_waiting: requests skipped in a waiting pass (scheduler.py:230,
+	// 906, 1344).
+	deferred map[string]bool
+	// capacityBound is prefill_capacity_bound (scheduler.py:370, :1397-1401).
+	capacityBound bool
 }
 
 // New builds a scheduler.
@@ -186,6 +217,7 @@ func New(cfg Config) (*Scheduler, error) {
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
+		deferred: map[string]bool{},
 	}
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
@@ -216,6 +248,13 @@ func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len()
 
 // HasUnfinished is has_unfinished_requests.
 func (s *Scheduler) HasUnfinished() bool { return len(s.running)+s.waiting.len() > 0 }
+
+// HasRequests is has_requests (interface.py:199-202): unfinished requests, or finished ones
+// the next schedule() still has to report.
+func (s *Scheduler) HasRequests() bool { return s.HasUnfinished() || s.finishedPending > 0 }
+
+// Deferred is how many waiting requests the last waiting pass skipped (deferred_waiting).
+func (s *Scheduler) Deferred() int { return len(s.deferred) }
 
 // Running returns the running requests' IDs in running order.
 func (s *Scheduler) Running() []string {
@@ -254,7 +293,25 @@ func (s *Scheduler) reservePrefillLookahead(r *Request, computed, numNew int) in
 }
 
 // Schedule is schedule() (scheduler.py:591-1558) for this configuration.
-func (s *Scheduler) Schedule() Output {
+func (s *Scheduler) Schedule() Output { return s.ScheduleThrottled(false) }
+
+// ScheduleThrottled is schedule(throttle_prefills): on a throttled step of DP prefill
+// balancing, every prefill (a new admission or a running chunk) is deferred unless the last
+// release step was capacity-bound, while decodes still run (scheduler.py:634-638, 686-690,
+// 1113-1116).
+func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
+	s.currentStep++
+	// finished_req_ids are handed to the runner with this output (scheduler.py:1649-1652).
+	s.finishedPending = 0
+	deferPrefills := false
+	if throttle && !s.capacityBound {
+		for _, r := range s.running {
+			if !r.IsPrefillChunk {
+				deferPrefills = true
+				break
+			}
+		}
+	}
 	out := Output{Scheduled: map[string]int{}, PrefixHit: map[string]int{}, SpecDecode: map[string][]int64{}}
 	tokenBudget := s.maxScheduled()
 	inputBudget := s.cfg.MaxNumBatchedTokens
@@ -282,7 +339,22 @@ func (s *Scheduler) Schedule() Output {
 		if inputBudget <= draftSlots {
 			break
 		}
-		numNew := r.numTokensWithSpec() - r.NumComputed
+		if r.Placeholders > 0 && r.NumComputed+2-r.Placeholders >= len(r.Prompt)+r.MaxTokens {
+			// Async: the step in flight already reaches max_tokens (:664-677).
+			reqIndex++
+			continue
+		}
+		if s.currentStep < r.nextDecodeStep {
+			// V2 + PP + async: pp_size steps between a request's decodes (:680-684).
+			reqIndex++
+			continue
+		}
+		if deferPrefills && r.IsPrefillChunk {
+			// DP prefill balancing defers a running prefill chunk (:686-690).
+			reqIndex++
+			continue
+		}
+		numNew := r.numTokensWithSpec() + r.Placeholders - r.NumComputed
 		if 0 < threshold && threshold < numNew {
 			numNew = threshold
 		}
@@ -341,7 +413,7 @@ func (s *Scheduler) Schedule() Output {
 		// Speculative decode (:860-876): the drafts this step verifies are those beyond the
 		// request's known tokens; the rest wait for update_draft_token_ids.
 		if len(r.SpecTokens) > 0 {
-			if n := numNew + r.NumComputed - r.NumTokens(); n > 0 {
+			if n := numNew + r.NumComputed - r.NumTokens() - r.Placeholders; n > 0 {
 				drafts := r.SpecTokens
 				if len(drafts) > n {
 					drafts = drafts[:n]
@@ -375,10 +447,18 @@ func (s *Scheduler) Schedule() Output {
 				break
 			}
 			r := s.waiting.peek()
+			if r.numStale > 0 {
+				// Deliverable stale output still in flight: resuming now could resample a
+				// position it later delivers (:934-938).
+				skipped = append(skipped, s.waiting.pop())
+				s.deferred[r.ID] = true
+				continue
+			}
 			// max_loras (:939-951): a request whose adapter would make one too many in this
 			// batch is skipped this step, and those behind it still run.
 			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) == s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {
 				skipped = append(skipped, s.waiting.pop())
+				s.deferred[r.ID] = true
 				continue
 			}
 			var hit [][]*kv.Block
@@ -387,6 +467,10 @@ func (s *Scheduler) Schedule() Output {
 			if r.NumComputed == 0 {
 				lookedUp = true
 				hit, numComputed = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
+			}
+			if deferPrefills && numComputed < r.NumTokens()-1 {
+				// DP prefill balancing defers this step's prefill (:1113-1116): the pass stops.
+				break
 			}
 			room := min(tokenBudget, inputBudget-draftSlots)
 			numNew := r.NumTokens() - numComputed
@@ -418,6 +502,7 @@ func (s *Scheduler) Schedule() Output {
 				break
 			}
 			s.waiting.pop()
+			delete(s.deferred, r.ID)
 			s.running = append(s.running, r)
 			admitted = append(admitted, r)
 			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 {
@@ -444,6 +529,11 @@ func (s *Scheduler) Schedule() Output {
 		for i := len(skipped) - 1; i >= 0; i-- {
 			s.waiting.prepend(skipped[i])
 		}
+		if !deferPrefills {
+			// On a step that released prefills, whether it was capacity-bound (:1397-1401).
+			_, nw := s.Counts()
+			s.capacityBound = nw > len(s.deferred)
+		}
 	}
 
 	for _, r := range scheduledRunning {
@@ -462,7 +552,16 @@ func (s *Scheduler) Schedule() Output {
 		r := s.requests[id]
 		r.NumComputed += n
 		r.numInFlight += n
-		r.IsPrefillChunk = r.NumComputed < r.NumTokens()
+		r.IsPrefillChunk = r.NumComputed < r.NumTokens()+r.Placeholders
+		if s.cfg.Async && !r.IsPrefillChunk {
+			// AsyncScheduler._update_after_schedule (async_scheduler.py:25-58): the token this
+			// step samples, and the drafts it verifies, are placeholders until the output
+			// returns.
+			r.Placeholders += 1 + len(out.SpecDecode[id])
+			if s.cfg.UseV2ModelRunner {
+				r.nextDecodeStep = s.currentStep + max(s.cfg.DecodeStagger, 1)
+			}
+		}
 	}
 	return out
 }
@@ -475,12 +574,16 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}
 }
 
-// preempt is _preempt_request (:1571-1614) for recompute preemption.
+// preempt is _preempt_request (:1571-1614) for recompute preemption. Under async
+// scheduling the request's in-flight output becomes stale: it still returns, but must not
+// move the counters the preemption reset (:1596-1607).
 func (s *Scheduler) preempt(r *Request) {
 	s.KV.Free(r.ID)
 	r.Status = Preempted
 	r.NumComputed = 0
 	r.SpecTokens = nil
+	r.numStale = r.numInFlight
+	r.Placeholders = 0
 	r.NumPreemptions++
 	s.waiting.prepend(r)
 }
@@ -501,25 +604,39 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 	var stopped []*Request
 	for _, id := range out.Order {
 		r := s.requests[id]
+		stale := false
+		if r != nil {
+			r.numInFlight -= out.Scheduled[id]
+			if r.numStale > 0 {
+				stale = true
+				r.numStale -= out.Scheduled[id]
+			}
+		}
 		if r == nil || r.Status > Preempted {
 			continue
 		}
-		r.numInFlight -= out.Scheduled[id]
 		toks := sampled[id]
-		if drafts := out.SpecDecode[id]; len(drafts) > 0 && len(toks) > 0 {
-			accepted := max(len(toks)-1, 0)
+		if drafts := out.SpecDecode[id]; len(drafts) > 0 && len(toks) > 0 && !stale {
+			// A stale rejection count predates the preemption's rollback (:2118-2128).
+			rejected := len(drafts) - max(len(toks)-1, 0)
 			if r.NumComputed > 0 {
-				r.NumComputed -= len(drafts) - accepted
+				r.NumComputed -= rejected
+			}
+			if r.Placeholders > 0 {
+				r.Placeholders -= rejected
 			}
 		}
 		if len(toks) == 0 {
 			continue
 		}
+		running := r.Status == Running
 		var status Status
 		stop := false
+		emitted := 0
 		for _, tok := range toks {
 			r.Output = append(r.Output, tok)
 			r.updateHashes(s.cfg.BlockSize)
+			emitted++
 			switch {
 			case tok == r.EOS:
 				status, stop = FinishedStopped, true
@@ -530,12 +647,24 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 				break
 			}
 		}
+		if s.cfg.Async {
+			// AsyncScheduler._update_request_with_output (async_scheduler.py:60-78): the
+			// sampled tokens replace their placeholders, unless the output is stale, and a
+			// running request caches the blocks its now-known tokens fill.
+			if !stale {
+				r.Placeholders -= emitted
+			}
+			if running {
+				s.KV.CacheUpTo(r.ID, r.hashes, r.NumComputed-r.Placeholders, s.run(r))
+			}
+		}
 		if !stop {
 			continue
 		}
 		r.Status = status
 		r.SpecTokens = nil
 		s.KV.Free(r.ID)
+		s.finishedPending++
 		stopped = append(stopped, r)
 		finished = append(finished, Finished{ID: r.ID, Status: status, Output: len(r.Output)})
 	}
@@ -548,6 +677,10 @@ func (s *Scheduler) Update(out Output, sampled map[string][]int64) []Finished {
 		}
 		s.running = keep
 		for _, r := range stopped {
+			// A request stopped by stale output while preempted leaves the waiting queue
+			// (:2296-2300).
+			s.waiting.remove(r)
+			delete(s.deferred, r.ID)
 			delete(s.requests, r.ID)
 		}
 	}
@@ -614,6 +747,16 @@ func (q *queue) prepend(r *Request) {
 }
 
 func (q *queue) peek() *Request { return q.items[0] }
+
+// remove is remove_requests for one request; absent is a no-op.
+func (q *queue) remove(r *Request) {
+	for i, x := range q.items {
+		if x == r {
+			q.items = append(q.items[:i], q.items[i+1:]...)
+			return
+		}
+	}
+}
 
 func (q *queue) pop() *Request {
 	r := q.items[0]

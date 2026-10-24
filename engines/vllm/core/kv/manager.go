@@ -540,6 +540,25 @@ func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, t
 	return total
 }
 
+// CacheUpTo is cache_blocks (kv_cache_manager.py:782-792; kv_cache_coordinator.py:353-376):
+// it records the request's full blocks up to numTokens as prefix-cached in every group, less
+// what a drafter may re-prefill, for a request that holds blocks. The AsyncScheduler calls it
+// when a sampled token replaces its placeholder (async_scheduler.py:74-78).
+func (m *Manager) CacheUpTo(id string, hashes []BlockHash, numTokens int, run StoredRun) {
+	if !m.caching {
+		return
+	}
+	// A running request holds blocks in every group (Allocate gives each group at least
+	// one); one that holds none has nothing to cache. numCached is no test: it is unset
+	// until a request's first block is full.
+	if _, holds := m.groups[0].reqBlocks[id]; !holds {
+		return
+	}
+	for _, g := range m.groups {
+		m.cache(g, id, hashes, m.cacheable(numTokens), run)
+	}
+}
+
 // cache records the request's full blocks up to numTokens as prefix-cached in one group
 // (cache_blocks, single_type_kv_cache_manager.py:468-516).
 func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, run StoredRun) {

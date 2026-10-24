@@ -1,0 +1,104 @@
+{
+ "name": "t3-async-prefix-priority",
+ "description": "async scheduling with prefix caching and the priority policy.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "pipeline_parallel_size": 1,
+  "async_scheduling": true,
+  "use_v2_model_runner": false
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    15275,
+    23984,
+    26001,
+    29839,
+    7263,
+    32880,
+    26272,
+    2924,
+    33093,
+    22491,
+    25951,
+    34141,
+    16834,
+    38714,
+    4188,
+    4242
+   ],
+   "output": [
+    32031,
+    49190,
+    43097,
+    26620,
+    38259,
+    1759
+   ],
+   "priority": 2
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    37372,
+    19312,
+    41178,
+    27649,
+    48406,
+    37099,
+    36072,
+    7831,
+    3349,
+    8354,
+    46689,
+    37548,
+    14076,
+    35460,
+    24996,
+    30411
+   ],
+   "output": [
+    30491,
+    45566,
+    48675,
+    12651,
+    25179
+   ],
+   "priority": 0
+  },
+  {
+   "id": "p2",
+   "arrival_step": 2,
+   "prompt": [
+    41802,
+    16756,
+    2491,
+    275,
+    49915,
+    39398,
+    47021,
+    24845,
+    29468
+   ],
+   "output": [
+    17618,
+    6946,
+    36960,
+    12397,
+    20272,
+    9858,
+    19974
+   ],
+   "priority": 1
+  }
+ ]
+}

@@ -1,0 +1,3305 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [
+    "q0"
+   ],
+   "scheduled": {
+    "q0": 9,
+    "q1": 3
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "q1"
+   ],
+   "scheduled": {
+    "q1": 8,
+    "q2": 4
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [],
+   "samples": [
+    "q2"
+   ],
+   "scheduled": {
+    "q2": 9,
+    "q3": 3
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "q3"
+   ],
+   "scheduled": {
+    "q3": 12
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [],
+   "samples": [
+    "q0"
+   ],
+   "scheduled": {
+    "q0": 1
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "q1"
+   ],
+   "scheduled": {
+    "q1": 1
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [],
+   "samples": [
+    "q2"
+   ],
+   "scheduled": {
+    "q2": 1
+   }
+  },
+  {
+   "batch": 7,
+   "preempted": [],
+   "samples": [
+    "q3"
+   ],
+   "scheduled": {
+    "q3": 1
+   }
+  },
+  {
+   "batch": 8,
+   "preempted": [],
+   "samples": [
+    "q0"
+   ],
+   "scheduled": {
+    "q0": 1
+   }
+  },
+  {
+   "batch": 9,
+   "preempted": [],
+   "samples": [
+    "q1"
+   ],
+   "scheduled": {
+    "q1": 1
+   }
+  },
+  {
+   "batch": 10,
+   "preempted": [],
+   "samples": [
+    "q2"
+   ],
+   "scheduled": {
+    "q2": 1
+   }
+  },
+  {
+   "batch": 11,
+   "preempted": [],
+   "samples": [
+    "q3"
+   ],
+   "scheduled": {
+    "q3": 1
+   }
+  },
+  {
+   "batch": 12,
+   "preempted": [],
+   "samples": [
+    "q0"
+   ],
+   "scheduled": {
+    "q0": 1
+   }
+  },
+  {
+   "batch": 13,
+   "preempted": [],
+   "samples": [
+    "q1"
+   ],
+   "scheduled": {
+    "q1": 1
+   }
+  },
+  {
+   "batch": 14,
+   "preempted": [],
+   "samples": [
+    "q2"
+   ],
+   "scheduled": {
+    "q2": 1
+   }
+  },
+  {
+   "batch": 15,
+   "preempted": [],
+   "samples": [
+    "q3"
+   ],
+   "scheduled": {
+    "q3": 1
+   }
+  },
+  {
+   "batch": 16,
+   "preempted": [],
+   "samples": [
+    "q0"
+   ],
+   "scheduled": {
+    "q0": 1
+   }
+  },
+  {
+   "batch": 17,
+   "preempted": [],
+   "samples": [
+    "q1"
+   ],
+   "scheduled": {
+    "q1": 1
+   }
+  },
+  {
+   "batch": 18,
+   "preempted": [],
+   "samples": [
+    "q2"
+   ],
+   "scheduled": {
+    "q2": 1
+   }
+  },
+  {
+   "batch": 19,
+   "preempted": [],
+   "samples": [
+    "q3"
+   ],
+   "scheduled": {
+    "q3": 1
+   }
+  },
+  {
+   "batch": 20,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {
+    "q4": 12
+   }
+  },
+  {
+   "batch": 21,
+   "preempted": [],
+   "samples": [
+    "q4"
+   ],
+   "scheduled": {
+    "q4": 5
+   }
+  },
+  {
+   "batch": 22,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 23,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 24,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 25,
+   "preempted": [],
+   "samples": [
+    "q4"
+   ],
+   "scheduled": {
+    "q4": 1
+   }
+  },
+  {
+   "batch": 26,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 27,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 28,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 29,
+   "preempted": [],
+   "samples": [
+    "q4"
+   ],
+   "scheduled": {
+    "q4": 1
+   }
+  },
+  {
+   "batch": 30,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 31,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 32,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 33,
+   "preempted": [],
+   "samples": [
+    "q4"
+   ],
+   "scheduled": {
+    "q4": 1
+   }
+  },
+  {
+   "batch": 34,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 35,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 36,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 37,
+   "preempted": [],
+   "samples": [
+    "q4"
+   ],
+   "scheduled": {
+    "q4": 1
+   }
+  },
+  {
+   "batch": 38,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 39,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 40,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  },
+  {
+   "batch": 41,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "q0": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 19
+  },
+  "q1": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 20
+  },
+  "q2": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 21
+  },
+  "q3": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 22
+  },
+  "q4": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 40
+  }
+ },
+ "provenance": {
+  "engine": {
+   "async_scheduling": false,
+   "max_concurrent_batches": 4,
+   "pipeline_parallel_size": 4,
+   "scheduler_class": "Scheduler",
+   "use_v2_model_runner": false
+  },
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "scenario_sha256": "b7a6281c45e9708d00ad67113d3c425731d300a234d1c544b854c43891e6aedc",
+  "tier": 3,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 9,
+    "q1": 3
+   },
+   "finished": [],
+   "free_blocks": 35,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "q0",
+    "q1"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 9,
+    "q1": 11,
+    "q2": 4
+   },
+   "finished": [],
+   "free_blocks": 32,
+   "num_running": 3,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0
+   },
+   "processed": false,
+   "queue_len": 2,
+   "running": [
+    "q0",
+    "q1",
+    "q2"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 9,
+    "q1": 11,
+    "q2": 13,
+    "q3": 3
+   },
+   "finished": [],
+   "free_blocks": 28,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": false,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 9,
+    "q1": 11,
+    "q2": 13,
+    "q3": 15
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 10,
+    "q1": 11,
+    "q2": 13,
+    "q3": 15
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 10,
+    "q1": 12,
+    "q2": 13,
+    "q3": 15
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 10,
+    "q1": 12,
+    "q2": 14,
+    "q3": 15
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 10,
+    "q1": 12,
+    "q2": 14,
+    "q3": 16
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 7,
+   "step": 7
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 11,
+    "q1": 12,
+    "q2": 14,
+    "q3": 16
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 8,
+   "step": 8
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 11,
+    "q1": 13,
+    "q2": 14,
+    "q3": 16
+   },
+   "finished": [],
+   "free_blocks": 24,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 9,
+   "step": 9
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 11,
+    "q1": 13,
+    "q2": 15,
+    "q3": 16
+   },
+   "finished": [],
+   "free_blocks": 24,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 10,
+   "step": 10
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 11,
+    "q1": 13,
+    "q2": 15,
+    "q3": 17
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 11,
+   "step": 11
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 12,
+    "q1": 13,
+    "q2": 15,
+    "q3": 17
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 12,
+   "step": 12
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 12,
+    "q1": 14,
+    "q2": 15,
+    "q3": 17
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 13,
+   "step": 13
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 12,
+    "q1": 14,
+    "q2": 16,
+    "q3": 17
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 14,
+   "step": 14
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 12,
+    "q1": 14,
+    "q2": 16,
+    "q3": 18
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 15,
+   "step": 15
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 13,
+    "q1": 14,
+    "q2": 16,
+    "q3": 18
+   },
+   "finished": [],
+   "free_blocks": 22,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 16,
+   "step": 16
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 13,
+    "q1": 15,
+    "q2": 16,
+    "q3": 18
+   },
+   "finished": [],
+   "free_blocks": 22,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 17,
+   "step": 17
+  },
+  {
+   "blocks": {
+    "q0": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q0": 13,
+    "q1": 15,
+    "q2": 17,
+    "q3": 18
+   },
+   "finished": [],
+   "free_blocks": 21,
+   "num_running": 4,
+   "num_waiting": 1,
+   "placeholders": {
+    "q0": 0,
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q0",
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 18,
+   "step": 18
+  },
+  {
+   "blocks": {
+    "q1": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q1": 15,
+    "q2": 17,
+    "q3": 19
+   },
+   "finished": [
+    "q0"
+   ],
+   "free_blocks": 25,
+   "num_running": 3,
+   "num_waiting": 1,
+   "placeholders": {
+    "q1": 0,
+    "q2": 0,
+    "q3": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q1",
+    "q2",
+    "q3"
+   ],
+   "scheduled_batch": 19,
+   "step": 19
+  },
+  {
+   "blocks": {
+    "q2": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q2": 17,
+    "q3": 19,
+    "q4": 12
+   },
+   "finished": [
+    "q1"
+   ],
+   "free_blocks": 26,
+   "num_running": 3,
+   "num_waiting": 0,
+   "placeholders": {
+    "q2": 0,
+    "q3": 0,
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q2",
+    "q3",
+    "q4"
+   ],
+   "scheduled_batch": 20,
+   "step": 20
+  },
+  {
+   "blocks": {
+    "q3": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q3": 19,
+    "q4": 17
+   },
+   "finished": [
+    "q2"
+   ],
+   "free_blocks": 29,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "q3": 0,
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q3",
+    "q4"
+   ],
+   "scheduled_batch": 21,
+   "step": 21
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 17
+   },
+   "finished": [
+    "q3"
+   ],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 22,
+   "step": 22
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 17
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 23,
+   "step": 23
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 17
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 24,
+   "step": 24
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 18
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 25,
+   "step": 25
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 18
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 26,
+   "step": 26
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 18
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 27,
+   "step": 27
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 18
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 28,
+   "step": 28
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 19
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 29,
+   "step": 29
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 19
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 30,
+   "step": 30
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 19
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 31,
+   "step": 31
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 19
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 32,
+   "step": 32
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 20
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 33,
+   "step": 33
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 20
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 34,
+   "step": 34
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 20
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 35,
+   "step": 35
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 20
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 36,
+   "step": 36
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 21
+   },
+   "finished": [],
+   "free_blocks": 33,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 37,
+   "step": 37
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 21
+   },
+   "finished": [],
+   "free_blocks": 33,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 38,
+   "step": 38
+  },
+  {
+   "blocks": {
+    "q4": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "q4": 21
+   },
+   "finished": [],
+   "free_blocks": 33,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "q4": 0
+   },
+   "processed": true,
+   "queue_len": 3,
+   "running": [
+    "q4"
+   ],
+   "scheduled_batch": 39,
+   "step": 39
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "q4"
+   ],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 3,
+   "running": [],
+   "scheduled_batch": 40,
+   "step": 40
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 3,
+   "running": [],
+   "scheduled_batch": 41,
+   "step": 41
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 2,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 42
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 43
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 44
+  }
+ ]
+}

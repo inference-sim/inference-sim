@@ -66,6 +66,26 @@
       "symbol": "tests.v1.core.utils.KVCacheConfig",
       "kind": "environment",
       "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers"
+    },
+    {
+      "symbol": "vllm.v1.executor.abstract.Executor",
+      "kind": "gpu",
+      "how": "oracle/run_enginecore.py only: execute_model and sample_tokens return futures that resolve, when the batch queue pops them, to the shared GPU mock's ModelRunnerOutput; which requests sample is read from the scheduler's own is_prefill_chunk when the batch executes"
+    },
+    {
+      "symbol": "EngineCore construction",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: EngineCore.__init__ (vllm/v1/engine/core.py:118-259) loads a model and profiles a GPU, so the EngineCore is built with object.__new__ holding the real scheduler and the attributes __init__ would set (batch_queue_size = VllmConfig.max_concurrent_batches, the deque, no structured output, no spec decode); step_with_batch_queue and step run unmodified"
+    },
+    {
+      "symbol": "vllm.platforms.cpu async override",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: the CPU platform turns async scheduling off (vllm/platforms/cpu.py:329-331); the scenario's value is set back after it ran, with the scheduler class get_scheduler_cls() picks for it"
+    },
+    {
+      "symbol": "use_v2_model_runner (CPU wheel without Triton)",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: the V2 model runner needs Triton, which the CPU wheel lacks (inference-sim/blis-vllm#3), so the scenario's choice is passed to create_scheduler and to VllmConfig.max_concurrent_batches' own code, as vLLM's own CPU tests do (tests/v1/core/test_async_scheduler.py:499-517)"
     }
   ]
 }
