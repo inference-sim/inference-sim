@@ -1006,7 +1006,9 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 		StepOwner{CompletionUs: lat + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
-	req.specDecodeCarry = 0
+	if req.eng != nil {
+		req.eng.specDecodeCarry = 0
+	}
 }
 
 // Step simulates a single vllm step(): batch scheduling, model execution, mirroring, and completion.
@@ -1141,9 +1143,9 @@ func (sim *Simulator) recordAdapterResidency(req *Request) {
 		return
 	}
 	sim.residentAdapters.Touch(req.Adapter)
-	if !req.adapterPinned {
+	if !req.AdapterPinned() {
 		sim.residentAdapters.Pin(req.Adapter)
-		req.adapterPinned = true
+		req.state().adapterPinned = true
 	}
 }
 
@@ -1162,11 +1164,11 @@ func (sim *Simulator) ReleaseAdapterPin(req *Request) {
 // the adapter become evictable once no in-flight request references it. Idempotent
 // via the per-request adapterPinned flag; no-op when inert or base-model (INV-6).
 func (sim *Simulator) releaseAdapterPin(req *Request) {
-	if sim.residentAdapters == nil || req.Adapter == "" || !req.adapterPinned {
+	if sim.residentAdapters == nil || req.Adapter == "" || !req.AdapterPinned() {
 		return
 	}
 	sim.residentAdapters.Unpin(req.Adapter)
-	req.adapterPinned = false
+	req.state().adapterPinned = false
 }
 
 // maybeStartAdapterLoad begins a serialized cold-adapter load when the wait-queue
@@ -1246,7 +1248,7 @@ func (sim *Simulator) completeAdapterLoad(now int64, adapter string) {
 // wired into FormBatch when specEnabled; feature off ⇒ the caller uses the literal 1
 // (byte-identical).
 func (sim *Simulator) peekDecodeTokens(req *Request) int64 {
-	proposed := int64(req.specDecodeCarry + sim.specTokensPerStep) // floor of accumulated
+	proposed := int64(req.specDecodeCarryOf() + sim.specTokensPerStep) // floor of accumulated
 	if proposed < 1 {
 		proposed = 1 // guarantee the bonus token (INV-12)
 	}
@@ -1260,11 +1262,11 @@ func (sim *Simulator) peekDecodeTokens(req *Request) int64 {
 // with no drift and no RNG (INV-6). Called once per decode step in executeBatchStep,
 // only for requests that actually decoded this step (past prefill, NumNewTokens>0).
 func (sim *Simulator) commitDecodeTokens(req *Request) {
-	req.specDecodeCarry += sim.specTokensPerStep - float64(req.NumNewTokens)
-	if req.specDecodeCarry < 0 {
+	req.state().specDecodeCarry += sim.specTokensPerStep - float64(req.NumNewTokens)
+	if req.state().specDecodeCarry < 0 {
 		// Defensive: granted more than proposed (no current cap raises g). Clamp to 0
 		// so the carry can never fund a phantom future token.
-		req.specDecodeCarry = 0
+		req.state().specDecodeCarry = 0
 	}
 }
 
@@ -1323,7 +1325,7 @@ func (sim *Simulator) advanceBatch(now, currStepAdvance int64) {
 	for _, req := range sim.RunningBatch.Requests {
 		if end := req.PrefillEnd(); req.ProgressIndex < end {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
-			if req.resumeEnd > req.InputLen() && req.ProgressIndex == end {
+			if req.resumeEndOf() > req.InputLen() && req.ProgressIndex == end {
 				// A resumed prefill samples the request's next token (sched/scheduler.py:1084):
 				// its inter-token gap runs from the last token before the preemption.
 				emitted++

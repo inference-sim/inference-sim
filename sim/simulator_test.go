@@ -3406,7 +3406,7 @@ func TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill(t *testing.T) {
 		if wasRunning && reqB.State == StateQueued && emittedAtPreemption < 0 {
 			emittedAtPreemption = int64(len(reqB.ITL)) + 1
 		}
-		if reqB.preemptions > 0 && reqB.State == StateRunning && resumedTo < 0 && reqB.NumNewTokens > 0 {
+		if reqB.preemptionCount() > 0 && reqB.State == StateRunning && resumedTo < 0 && reqB.NumNewTokens > 0 {
 			resumedTo = s.reqNumComputedTokens["B"]
 			resumedBlocks = int64(len(s.KVCache.(RequestBlockReporter).RequestBlocks("B")))
 		}

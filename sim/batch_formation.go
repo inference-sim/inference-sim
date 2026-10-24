@@ -200,7 +200,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	// restoration when a request is preempted before being visited in this pass.
 	for _, req := range result.RunningBatch.Requests {
 		req.NumNewTokens = 0
-		req.scheduledTokens = 0
+		if req.eng != nil {
+			req.eng.scheduledTokens = 0
+		}
 	}
 
 	// Phase 1: Process continuing requests (chunked prefill + decode).
@@ -241,7 +243,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 
 			bud.debit(numNewTokens)
 			req.NumNewTokens = int(numNewTokens)
-			req.scheduledTokens = numNewTokens
+			req.state().scheduledTokens = numNewTokens
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
 		// Decode phase: allocate the accepted-token count for this step.
@@ -292,7 +294,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				}
 				bud.debit(scheduled)
 				req.NumNewTokens = int(decodeTokens)
-				req.scheduledTokens = scheduled
+				req.state().scheduledTokens = scheduled
 				ctx.ComputedTokens[req.ID] += decodeTokens
 			}
 		}
@@ -393,7 +395,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV. One
 		// preempted since holds no KV and resumes as a local prefill of its prompt and output,
 		// as vLLM's decode engine resumes it (sched/scheduler.py:1538-1580, 1084 at v0.31.0).
-		if next.IsDecodeSubRequest && next.preemptions == 0 {
+		if next.IsDecodeSubRequest && next.preemptionCount() == 0 {
 			decodeTokens := int64(1)
 			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
 			// g accepted tokens per step, same as a non-PD decode request. This whole
@@ -463,7 +465,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			bud.debit(scheduled)
 			next.State = StateRunning
 			next.NumNewTokens = int(decodeTokens)
-			next.scheduledTokens = scheduled
+			next.state().scheduledTokens = scheduled
 			ctx.ComputedTokens[next.ID] = next.ProgressIndex + decodeTokens
 			continue
 		}
@@ -579,7 +581,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		next.ScheduledStepIdx = ctx.StepCount
 
 		scheduled := ScheduledRequest{Request: next}
-		if next.preemptions == 0 && !ctx.PrefixCachingDisabled {
+		if next.preemptionCount() == 0 && !ctx.PrefixCachingDisabled {
 			scheduled.Lookup = PrefixLookup{
 				QueryTokens:  next.InputLen(),
 				HitTokens:    startIndex,
@@ -598,7 +600,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		bud.debit(numNewTokens)
 		next.State = StateRunning
 		next.NumNewTokens = int(numNewTokens)
-		next.scheduledTokens = numNewTokens
+		next.state().scheduledTokens = numNewTokens
 		ctx.ComputedTokens[next.ID] = endIndex
 		if holder != nil && endIndex < next.PrefillEnd() {
 			prefilling = append(prefilling, InflightPrefill{Req: next, Computed: endIndex})
@@ -688,9 +690,9 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// With FCFS (tail-only eviction), unreachable because evicted
 			// requests are always unvisited (beyond reqIndex).
 			if preemptedRequest.NumNewTokens > 0 {
-				bud.credit(preemptedRequest.scheduledTokens)
+				bud.credit(preemptedRequest.scheduledTokensOf())
 				preemptedRequest.NumNewTokens = 0
-				preemptedRequest.scheduledTokens = 0
+				preemptedRequest.state().scheduledTokens = 0
 			}
 
 			// INV-2 (request lifecycle): preemption is the only place a request moves
@@ -704,12 +706,12 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// first is the prefill's), so its resumed prefill covers p + 1 tokens; one preempted
 			// inside a resumed prefill keeps the resume it had.
 			if preemptedRequest.TTFTSet && preemptedRequest.ProgressIndex >= preemptedRequest.PrefillEnd() {
-				preemptedRequest.resumeEnd = preemptedRequest.ProgressIndex + 1
+				preemptedRequest.state().resumeEnd = preemptedRequest.ProgressIndex + 1
 			}
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
-			preemptedRequest.preemptions++
-			preemptedRequest.specDecodeCarry = 0 // spec tokens are dropped on preemption (scheduler.py:1561-1562)
+			preemptedRequest.state().preemptions++
+			preemptedRequest.state().specDecodeCarry = 0 // spec tokens are dropped on preemption (scheduler.py:1561-1562)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)

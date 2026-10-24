@@ -146,7 +146,7 @@ func (s *serverSeries) recordGauges(t int64, running, waiting int, usage float64
 func (s *serverSeries) recordAdmission(t int64, req *Request, l PrefixLookup) {
 	s.add(&s.queries, t, l.QueryTokens)
 	s.add(&s.hits, t, l.HitTokens)
-	if req.preemptions == 0 && !req.IsDecodeSubRequest {
+	if req.preemptionCount() == 0 && !req.IsDecodeSubRequest {
 		if _, seen := s.firstSched[req.ID]; !seen {
 			s.firstSched[req.ID] = PrefixLookup{QueryTokens: req.InputLen(), HitTokens: l.HitTokens,
 				CPUHitTokens: l.CPUHitTokens}
