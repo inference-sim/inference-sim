@@ -86,6 +86,16 @@
       "symbol": "use_v2_model_runner (CPU wheel without Triton)",
       "kind": "environment",
       "how": "oracle/run_enginecore.py only: the V2 model runner needs Triton, which the CPU wheel lacks (inference-sim/blis-vllm#3), so the scenario's choice is passed to create_scheduler and to VllmConfig.max_concurrent_batches' own code, as vLLM's own CPU tests do (tests/v1/core/test_async_scheduler.py:499-517)"
+    },
+    {
+      "symbol": "vllm.config.ParallelConfig.sync_dp_state",
+      "kind": "transport",
+      "how": "oracle/run_dp.py only: the DP process group's all-reduce is answered with the sum it would compute over the ranks' votes of this step (any rank has unfinished requests); DPEngineCoreProc._has_global_unfinished_reqs runs unmodified, as vLLM's own tests script it (tests/v1/engine/test_engine_core.py:641-657)"
+    },
+    {
+      "symbol": "DP coordinator stats transport",
+      "kind": "transport",
+      "how": "oracle/run_dp.py only: the coordinator's [waiting, running, kv_cache_usage] publication reaches the client every stats_interval steps and stats_lag steps late, from the ranks' own counts; DPLBAsyncMPClient.get_core_engine_for_request runs unmodified on a client holding exactly the state it reads (tests/v1/engine/test_engine_core_client.py:208-222)"
     }
   ]
 }

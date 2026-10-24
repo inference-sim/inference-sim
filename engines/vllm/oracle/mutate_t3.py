@@ -1,9 +1,11 @@
 # Original to blis-vllm.
-"""Mutation sweep for blis-vllm's tier 3 (core/engine and the async half of core/sched):
+"""Mutation sweep for blis-vllm's tier 3 (core/engine and the async and DP-throttle parts of
+core/sched):
 apply one mutant at a time to a scratch copy of the module, run the tier-3 diff and fuzz
 tests, and report whether each is caught.
 
 Usage: python3 oracle/mutate_t3.py <blis-vllm checkout> <tier-3 fuzz dir> <scratch dir> [M1,...]
+(the DP fuzz corpus, when present, is <tier-3 fuzz dir>-dp)
 Exits non-zero if a mutant survives or breaks the build without a divergence.
 """
 import os
@@ -38,6 +40,31 @@ MUTANTS = [
     ("T10", "async: stale resume deferred", "core/sched/scheduler.go",
      "\t\t\tif r.numStale > 0 {\n\t\t\t\t// Deliverable stale output",
      "\t\t\tif false {\n\t\t\t\t// Deliverable stale output"),
+    ("D1", "DP throttling: cadence", "core/engine/dp.go",
+     "return w.PrefillScheduleInterval > 1 && w.StepCounter%w.PrefillScheduleInterval != 0",
+     "return w.PrefillScheduleInterval > 1 && w.StepCounter%w.PrefillScheduleInterval == 1"),
+    ("D2", "DP throttling: capacity-bound release", "core/sched/scheduler.go",
+     "\tif throttle && !s.capacityBound {", "\tif throttle {"),
+    ("D3", "DP throttling: running prefill chunk deferred", "core/sched/scheduler.go",
+     "\t\tif deferPrefills && r.IsPrefillChunk {", "\t\tif false && r.IsPrefillChunk {"),
+    ("D4", "DP waves: first sync at step 1", "core/engine/dp.go",
+     "if w.StepCounter != 1 && w.StepCounter%max(w.SyncInterval, 1) != 0 {",
+     "if w.StepCounter%max(w.SyncInterval, 1) != 0 {"),
+    ("D5", "DP waves: counter reset at wave end", "core/engine/dp.go",
+     "\t\t\tw.Current++\n\t\t\tw.StepCounter = 0", "\t\t\tw.Current++"),
+    ("D6", "DP waves: dummy batch", "core/engine/dp.go",
+     "if !out[i].Step.Executed && (unfinished || w.Running) {", "if !out[i].Step.Executed && unfinished {"),
+    ("D7", "DP waves: a request starts every rank's wave", "core/engine/dp.go",
+     "\t\tfor _, w := range d.Waves {\n\t\t\tw.Running = true\n\t\t}",
+     "\t\td.Waves[rank].Running = true"),
+    ("D8", "DPLB: in-flight floor", "core/engine/dp.go",
+     "score := max(float64(lb.inflight[idx]), waiting+running)", "score := waiting + running"),
+    ("D9", "DPLB: KV-pressure penalty", "core/engine/dp.go",
+     "score += waiting * 6.0 * max(0.0, kv-0.5)", "score += waiting * 6.0 * max(0.0, kv-0.9)"),
+    ("D10", "DPLB: rotating scan start", "core/engine/dp.go",
+     "\tlb.startIndex = (lb.startIndex + 1) % n", "\t_ = n"),
+    ("D11", "DPLB: optimistic waiting increment", "core/engine/dp.go",
+     "\tlb.Counts[choice][0]++", "\t_ = choice"),
 ]
 
 
@@ -45,7 +72,10 @@ def main() -> int:
     src, scratch = sys.argv[1], sys.argv[3]
     fuzz = os.path.abspath(sys.argv[2])
     only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
+    # The DP corpus sits beside the batch-queue corpus: <fuzz>-dp, if it exists.
     env = dict(os.environ, BLIS_VLLM_T3_FUZZ_DIR=fuzz)
+    if os.path.isdir(fuzz + "-dp"):
+        env["BLIS_VLLM_DP_FUZZ_DIR"] = fuzz + "-dp"
     bad = 0
     for mid, row, path, old, new in MUTANTS:
         if only and mid not in only:
@@ -61,7 +91,8 @@ def main() -> int:
             continue
         open(target, "w").write(text.replace(old, new))
         r = subprocess.run(["go", "test", "-count=1", "-run",
-                            "TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestMaxConcurrentBatches",
+                            "TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestMaxConcurrentBatches|"
+                            "TestDPAgainstVLLM|TestDPFuzzCorpusAgainstVLLM",
                             "./core/engine/"], cwd=scratch, env=env, capture_output=True, text=True, timeout=900)
         if r.returncode == 0:
             print(f"SURVIVED {mid:4} {row}")

@@ -1,9 +1,10 @@
 # Original to blis-vllm.
 """Fail if a committed tier-3 golden trace is not what vLLM produces now.
 
-CI re-runs vLLM v0.32.0's EngineCore (oracle/run_enginecore.py) on every tier-3 scenario
-and compares each fresh trace with its golden: every batch, every step and the finished
-records, so a golden passes only while the pinned release still produces it.
+CI re-runs vLLM v0.32.0's EngineCore (oracle/run_enginecore.py) and its DP engine-core loop
+(oracle/run_dp.py) on every tier-3 scenario and compares each fresh trace with its golden:
+every batch or routing decision, every step and the finished records, so a golden passes only
+while the pinned release still produces it.
 
 Usage: python3 -I oracle/compare_goldens_t3.py <golden dir> <fresh dir>
 """
@@ -29,8 +30,8 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             print(f"{name}: the golden and vLLM's fresh trace ran on different scenario files")
             bad += 1
             continue
-        for key in ("batches", "steps", "finished"):
-            if golden[key] != fresh[key]:
+        for key in ("batches", "routed", "steps", "finished"):
+            if key in golden and golden.get(key) != fresh.get(key):
                 print(f"{name}: {key} differ from vLLM's fresh trace")
                 bad += 1
                 break
