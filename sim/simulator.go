@@ -150,6 +150,10 @@ type Simulator struct {
 	park *idlePark
 	// lastStepEmpty is whether the last executed step scheduled no tokens.
 	lastStepEmpty bool
+	// lastStepPreempted is whether the last step's schedule preempted a request. Such a step
+	// skipped its WAITING phase (vllm/v1/core/sched/scheduler.py:900@5df63a72), so the next
+	// poll may admit what this one could not; the engine must not park on it (canPark).
+	lastStepPreempted bool
 	// pollMissesAtStep is the KV store's PollMisses at the start of the last step.
 	pollMissesAtStep int64
 	// idlePolling disables parking (SetIdlePolling); eventsProcessed counts executed events.
@@ -1108,6 +1112,7 @@ func (sim *Simulator) scheduleBatch(now int64) {
 		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
 		sim.Metrics.PreemptionCount++
 	}
+	sim.lastStepPreempted = len(batchResult.Preempted) > 0
 
 	sim.admitRemoteKV(now, len(batchResult.Preempted) > 0)
 

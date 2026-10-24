@@ -18,10 +18,13 @@ import (
 // offload miss counter) is charged at the wake, so the run's metrics are unchanged.
 //
 // An engine parks only when nothing but an external event can change what it would schedule:
-// no in-flight offload work (QuiescentKVStore), no adapter load and no data-parallel lockstep
-// group. A P/D decode engine parks too: its remote-KV admission runs only with an empty wait
-// queue (admitRemoteKV), so a poll of a parked engine never reaches it; a pull that lands
-// enqueues its request, which wakes the engine.
+// no in-flight offload work (QuiescentKVStore), no adapter load, no data-parallel lockstep
+// group, and a last step that preempted nothing. A step that preempts skips its WAITING phase
+// (vllm/v1/core/sched/scheduler.py:900@5df63a72), so it can schedule nothing while the blocks
+// it freed let the next poll admit a waiting request: parking there would strand that request
+// with no event left to wake the engine. A P/D decode engine parks too: its remote-KV
+// admission runs only with an empty wait queue (admitRemoteKV), so a poll of a parked engine
+// never reaches it; a pull that lands enqueues its request, which wakes the engine.
 type idlePark struct {
 	at        int64 // the first skipped poll's time
 	quantum   int64 // one empty step
@@ -33,7 +36,7 @@ type idlePark struct {
 
 // canPark reports whether the engine, whose last step scheduled nothing, may park.
 func (sim *Simulator) canPark() bool {
-	if sim.idlePolling || !sim.lastStepEmpty || sim.lockstep != nil || sim.loadingAdapter != "" {
+	if sim.idlePolling || !sim.lastStepEmpty || sim.lastStepPreempted || sim.lockstep != nil || sim.loadingAdapter != "" {
 		return false
 	}
 	if sim.KVCache.PendingTransferLatency() != 0 {
