@@ -1,0 +1,3930 @@
+{
+ "finished": {
+  "g00": {
+   "output_tokens": 8,
+   "reason": "stop",
+   "step": 7
+  },
+  "g01": {
+   "output_tokens": 3,
+   "reason": "stop",
+   "step": 3
+  },
+  "g02": {
+   "output_tokens": 11,
+   "reason": "stop",
+   "step": 12
+  },
+  "g03": {
+   "output_tokens": 15,
+   "reason": "stop",
+   "step": 18
+  },
+  "g04": {
+   "output_tokens": 4,
+   "reason": "stop",
+   "step": 8
+  },
+  "g05": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 8
+  },
+  "g06": {
+   "output_tokens": 9,
+   "reason": "stop",
+   "step": 18
+  },
+  "g07": {
+   "output_tokens": 12,
+   "reason": "stop",
+   "step": 31
+  },
+  "g08": {
+   "output_tokens": 14,
+   "reason": "stop",
+   "step": 33
+  },
+  "g09": {
+   "output_tokens": 19,
+   "reason": "stop",
+   "step": 38
+  }
+ },
+ "provenance": {
+  "mock_version": "gpu-mock/1",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "unpinned",
+  "python": "3.12.15",
+  "scenario_sha256": "d03058af9cab6b172341a1986baf9a2292af7320545affcc255c55c5ab917c9b",
+  "tier": 2,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 30,
+   "kv_usage": 0.23076923076923073,
+   "num_running": 2,
+   "num_waiting": 8,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g01"
+   ],
+   "scheduled": {
+    "g00": 30,
+    "g01": 34
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 22,
+   "kv_usage": 0.4358974358974359,
+   "num_running": 3,
+   "num_waiting": 7,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g01",
+    "g02"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g01": 49,
+    "g02": 14
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g01": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 14,
+   "kv_usage": 0.641025641025641,
+   "num_running": 4,
+   "num_waiting": 6,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g01",
+    "g02",
+    "g03"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g01": 1,
+    "g02": 41,
+    "g03": 21
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g01"
+   ],
+   "free_blocks": 16,
+   "kv_usage": 0.5897435897435898,
+   "num_running": 3,
+   "num_waiting": 6,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g02",
+    "g03"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g01": 1,
+    "g02": 1,
+    "g03": 61
+   },
+   "step": 3
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g04": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 8,
+   "kv_usage": 0.7948717948717949,
+   "num_running": 4,
+   "num_waiting": 5,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g02",
+    "g03",
+    "g04"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g02": 1,
+    "g03": 38,
+    "g04": 24
+   },
+   "step": 4
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g04": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 0,
+   "kv_usage": 1.0,
+   "num_running": 4,
+   "num_waiting": 5,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g02",
+    "g03",
+    "g04"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g02": 1,
+    "g03": 1,
+    "g04": 53
+   },
+   "step": 5
+  },
+  {
+   "blocks": {
+    "g00": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g04": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 0,
+   "kv_usage": 1.0,
+   "num_running": 4,
+   "num_waiting": 5,
+   "preempted": [],
+   "running": [
+    "g00",
+    "g02",
+    "g03",
+    "g04"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g02": 1,
+    "g03": 1,
+    "g04": 1
+   },
+   "step": 6
+  },
+  {
+   "blocks": {
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g04": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g00"
+   ],
+   "free_blocks": 5,
+   "kv_usage": 0.8717948717948718,
+   "num_running": 3,
+   "num_waiting": 5,
+   "preempted": [],
+   "running": [
+    "g02",
+    "g03",
+    "g04"
+   ],
+   "scheduled": {
+    "g00": 1,
+    "g02": 1,
+    "g03": 1,
+    "g04": 1
+   },
+   "step": 7
+  },
+  {
+   "blocks": {
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g04",
+    "g05"
+   ],
+   "free_blocks": 15,
+   "kv_usage": 0.6153846153846154,
+   "num_running": 2,
+   "num_waiting": 4,
+   "preempted": [],
+   "running": [
+    "g02",
+    "g03"
+   ],
+   "scheduled": {
+    "g02": 1,
+    "g03": 1,
+    "g04": 1,
+    "g05": 37
+   },
+   "step": 8
+  },
+  {
+   "blocks": {
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 7,
+   "kv_usage": 0.8205128205128205,
+   "num_running": 3,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g02",
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g02": 1,
+    "g03": 1,
+    "g06": 62
+   },
+   "step": 9
+  },
+  {
+   "blocks": {
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 4,
+   "kv_usage": 0.8974358974358975,
+   "num_running": 3,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g02",
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g02": 1,
+    "g03": 1,
+    "g06": 23
+   },
+   "step": 10
+  },
+  {
+   "blocks": {
+    "g02": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 4,
+   "kv_usage": 0.8974358974358975,
+   "num_running": 3,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g02",
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g02": 1,
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 11
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g02"
+   ],
+   "free_blocks": 12,
+   "kv_usage": 0.6923076923076923,
+   "num_running": 2,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g02": 1,
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 12
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "kv_usage": 0.9230769230769231,
+   "num_running": 3,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "g03",
+    "g06",
+    "g07"
+   ],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1,
+    "g07": 62
+   },
+   "step": 13
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 10,
+   "kv_usage": 0.7435897435897436,
+   "num_running": 2,
+   "num_waiting": 3,
+   "preempted": [
+    "g07"
+   ],
+   "running": [
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 14
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 10,
+   "kv_usage": 0.7435897435897436,
+   "num_running": 2,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 15
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 10,
+   "kv_usage": 0.7435897435897436,
+   "num_running": 2,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 16
+  },
+  {
+   "blocks": {
+    "g03": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g06": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 10,
+   "kv_usage": 0.7435897435897436,
+   "num_running": 2,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [
+    "g03",
+    "g06"
+   ],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 17
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "g03",
+    "g06"
+   ],
+   "free_blocks": 39,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 3,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "g03": 1,
+    "g06": 1
+   },
+   "step": 18
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 31,
+   "kv_usage": 0.20512820512820518,
+   "num_running": 1,
+   "num_waiting": 2,
+   "preempted": [],
+   "running": [
+    "g07"
+   ],
+   "scheduled": {
+    "g07": 64
+   },
+   "step": 19
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 26,
+   "kv_usage": 0.33333333333333337,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 18,
+    "g08": 1,
+    "g09": 8
+   },
+   "step": 20
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 21
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 22
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 23
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 24
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 25
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 25,
+   "kv_usage": 0.3589743589743589,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 26
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 24,
+   "kv_usage": 0.3846153846153846,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 27
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 23,
+   "kv_usage": 0.41025641025641024,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 28
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 22,
+   "kv_usage": 0.4358974358974359,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 29
+  },
+  {
+   "blocks": {
+    "g07": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g08": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 22,
+   "kv_usage": 0.4358974358974359,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g07",
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 30
+  },
+  {
+   "blocks": {
+    "g08": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g07"
+   ],
+   "free_blocks": 34,
+   "kv_usage": 0.1282051282051282,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g07": 1,
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 31
+  },
+  {
+   "blocks": {
+    "g08": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 34,
+   "kv_usage": 0.1282051282051282,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g08",
+    "g09"
+   ],
+   "scheduled": {
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 32
+  },
+  {
+   "blocks": {
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "g08"
+   ],
+   "free_blocks": 36,
+   "kv_usage": 0.07692307692307687,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g09"
+   ],
+   "scheduled": {
+    "g08": 1,
+    "g09": 1
+   },
+   "step": 33
+  },
+  {
+   "blocks": {
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 36,
+   "kv_usage": 0.07692307692307687,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g09"
+   ],
+   "scheduled": {
+    "g09": 1
+   },
+   "step": 34
+  },
+  {
+   "blocks": {
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 36,
+   "kv_usage": 0.07692307692307687,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g09"
+   ],
+   "scheduled": {
+    "g09": 1
+   },
+   "step": 35
+  },
+  {
+   "blocks": {
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 36,
+   "kv_usage": 0.07692307692307687,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g09"
+   ],
+   "scheduled": {
+    "g09": 1
+   },
+   "step": 36
+  },
+  {
+   "blocks": {
+    "g09": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 35,
+   "kv_usage": 0.10256410256410253,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "g09"
+   ],
+   "scheduled": {
+    "g09": 1
+   },
+   "step": 37
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "g09"
+   ],
+   "free_blocks": 39,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "g09": 1
+   },
+   "step": 38
+  }
+ ]
+}

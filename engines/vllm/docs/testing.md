@@ -53,7 +53,7 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
 | T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29/0.31 packs checked; 0.32 pack in progress |
-| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | harness in place; Go side in progress |
+| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, prefix caching: 14 scenarios + 2000 fuzz seeds at zero mismatches; speculative decoding, LoRA and hybrid KV pending |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | EngineCore batch queue with a mocked executor | planned |
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | planned |
 | T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | planned |
@@ -65,11 +65,14 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
   differ, not only the last.
 - **Property:** no lost requests, KV block conservation (used + free = total), budgets never
   exceeded, at most `max_num_seqs` running.
-- **Metamorphic, with step duration fixed:** more KV blocks never add preemptions for FCFS with no
-  prefix caching and no speculative decoding; a larger token budget never moves a request's first
-  token to a *later step*. (The issue's end-to-end form, "a larger budget never delays the first
-  token", is false under real pricing: a larger first batch takes longer. These are the narrower
-  scheduler-only properties.)
+- **Metamorphic, with step duration fixed:** both of the issue's claims are false *for vLLM
+  itself*, not only under real pricing, and the counterexamples are kept as scenarios checked
+  against vLLM v0.32.0 (`oracle/scenarios/meta-*.json`): with FCFS, no prefix caching and every
+  request at step 0, 33 blocks preempt nothing and 40 blocks preempt once (the larger pool admits
+  a request early that later outgrows it); with priority scheduling, doubling the budget moves a
+  request's first token from step 7 to 9 (a faster prefill lets a later, more urgent request in
+  first). What holds, and is tested: more KV never adds preemptions when requests run one at a
+  time in a fixed order; a larger budget never delays a lone request's first token.
 - **Fuzz:** seeded random request streams through both sides. A failing seed is shrunk to its
   smallest scenario and kept under `oracle/scenarios/` as a permanent test.
 
