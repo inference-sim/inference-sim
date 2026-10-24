@@ -1,7 +1,8 @@
 # Original to blis-vllm.
-"""Mutation sweep for blis-vllm's tier 4 (the connector paths of core/sched and core/kv, and
-core/connector/nixl): apply one mutant at a time to a scratch copy of the module, run the
-NIXL scenarios and the connector fuzz corpus, and report whether each is caught.
+"""Mutation sweep for blis-vllm's tier 4 (the connector paths of core/sched and core/kv,
+core/connector/nixl, and the connector registry): apply one mutant at a time to a scratch copy
+of the module, run the suite that guards it (the NIXL scenarios and the connector fuzz corpus,
+or the registry's tests), and report whether each is caught.
 
 Usage: python3 oracle/mutate_t4.py <blis-vllm checkout> <connector fuzz dir> <scratch dir> [N1,...]
 Exits non-zero if a mutant outside EQUIVALENT survives, if an EQUIVALENT one is caught (so the
@@ -75,7 +76,31 @@ MUTANTS = [
     ("N24", "the engine runs while a connector holds blocks", "core/sched/scheduler.go",
      "\treturn s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()",
      "\treturn false"),
+    # The connector registry (#2021 B10): an entry is earned only by a diff test.
+    ("R1", "an entry's model is one a diff test checks", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-push\n"),
+    ("R2", "every diff-tested model has an entry", "registry/doc.go",
+     "\t\"nixl-pull\": \"core/connector/nixl\", // relative to the module root\n",
+     "\t\"nixl-pull\": \"core/connector/nixl\", // relative to the module root\n\t\"offloading\": \"core/connector/nixl\",\n"),
+    ("R3", "an entry's evidence names the release", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test @ vLLM v0.32.0:",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test:"),
+    ("R4", "NIXL is served for P/D transfer only", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer, offload]\n"),
+    ("R5", "Load refuses a registry the schema rejects", "registry/doc.go",
+     "if p := r.Validate(); !p.OK() {", "if p := r.Validate(); false && !p.OK() {"),
+    ("R6", "Load refuses fields the schema does not declare", "registry/doc.go",
+     "dec.KnownFields(true)", "dec.KnownFields(false)"),
 ]
+
+# The suite that guards each mutant, by its id's letter: the test pattern, the package, and
+# the output that shows the suite caught it (a divergence from vLLM, or a failed check).
+SUITES = {
+    "N": ("TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM", "./core/connector/nixl/", ("divergence", "panic")),
+    "R": ("TestTheRegistryValidates|TestEveryEntryIsEarnedByADiffTest|TestLoad", "./registry/", ("--- FAIL",)),
+}
 
 # Mutants no input can tell apart from the code, for vLLM's NIXL pull connector on one
 # full-attention KV cache group (docs/testing.md, "Tier 4"). Each reason is why, from vLLM's
@@ -127,8 +152,9 @@ def main() -> int:
             bad += 1
             continue
         open(target, "w").write(text.replace(old, new))
-        r = subprocess.run(["go", "test", "-count=1", "-run", "TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM",
-                            "./core/connector/nixl/"], cwd=scratch, env=env, capture_output=True, text=True, timeout=900)
+        run, pkg, markers = SUITES[mid[0]]
+        r = subprocess.run(["go", "test", "-count=1", "-run", run, pkg],
+                           cwd=scratch, env=env, capture_output=True, text=True, timeout=900)
         if r.returncode == 0:
             if mid in EQUIVALENT:
                 print(f"EQUIV    {mid:4} {row}: {EQUIVALENT[mid]}")
@@ -138,7 +164,7 @@ def main() -> int:
         elif mid in EQUIVALENT:
             print(f"NOW CAUGHT {mid} {row}: remove it from EQUIVALENT")
             bad += 1
-        elif "divergence" in r.stdout or "panic" in r.stdout:
+        elif any(m in r.stdout for m in markers):
             print(f"CAUGHT   {mid:4} {row}")
         else:
             tail = (r.stdout + r.stderr).strip().splitlines()[-3:]

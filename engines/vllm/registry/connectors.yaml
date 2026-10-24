@@ -1,0 +1,20 @@
+# The vLLM entries of the KV-connector registry (blis-schemas spec/connector), for vLLM
+# v0.32.0. An entry earns behaves_like only by a differential test against that release
+# (inference-sim/inference-sim#2021 B10); registry/connector_test.go checks every entry
+# against this module's diff tests. Connectors not listed are not served: their scheduler
+# side is not yet modelled (docs/feature-matrix.md, "KV connectors and offload").
+kind: ConnectorRegistry
+name: blis-vllm-v0.32.0
+connectors:
+  # NixlConnector resolves to the pull scheduler
+  # (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py@5df63a72).
+  NixlConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: nixl-pull
+    roles: [pd_transfer]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 21 scenarios + 1000 fuzz seeds at 0 mismatches"
+  NixlPullConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: nixl-pull
+    roles: [pd_transfer]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 21 scenarios + 1000 fuzz seeds at 0 mismatches"
