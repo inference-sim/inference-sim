@@ -22,9 +22,19 @@ import (
 //go:embed connectors.yaml
 var raw []byte
 
-// models maps each behaves_like name to the package whose differential test proves it.
-var models = map[string]string{
-	"nixl-pull": "core/connector/nixl", // relative to the module root
+// model is the evidence behind one behaves_like name: the package whose differential test
+// proves it, the committed scenarios that test runs (a glob, relative to the module root), the
+// connector names those scenarios run, and the oracle tier of their golden traces.
+type model struct {
+	pkg, scenarios string
+	connectors     []string
+	tier           int
+}
+
+// models maps each behaves_like name to its evidence.
+var models = map[string]model{
+	"nixl-pull": {pkg: "core/connector/nixl", scenarios: "oracle/scenarios/connector/nixl-*.json",
+		connectors: []string{"NixlConnector", "NixlPullConnector"}, tier: 4},
 }
 
 // Load returns the registry, validated against blis-schemas' connector-registry schema.

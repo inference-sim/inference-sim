@@ -110,6 +110,11 @@ jobs:
           fetch-depth: 1
       - name: the manifest is current for the pinned release
         run: go run ./cmd/metricsmanifest -vllm vllm-source -check
+      # The connector registry's entries are connectors the release registers.
+      - name: every registry entry is a connector vLLM v0.32.0 registers
+        env:
+          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
+        run: go test -v -run TestEveryEntryNamesAConnectorVLLMRegisters ./registry/
 
   # A golden trace is vLLM's own output; a commit that changes one must name its reviewer.
   goldens-reviewed:

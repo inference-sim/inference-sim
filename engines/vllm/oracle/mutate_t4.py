@@ -81,8 +81,8 @@ MUTANTS = [
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n",
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-push\n"),
     ("R2", "every diff-tested model has an entry", "registry/doc.go",
-     "\t\"nixl-pull\": \"core/connector/nixl\", // relative to the module root\n",
-     "\t\"nixl-pull\": \"core/connector/nixl\", // relative to the module root\n\t\"offloading\": \"core/connector/nixl\",\n"),
+     "\t\"nixl-pull\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n",
+     "\t\"offloading\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n\t\tconnectors: []string{\"NixlConnector\"}, tier: 4},\n\t\"nixl-pull\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n"),
     ("R3", "an entry's evidence names the release", "registry/connectors.yaml",
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test @ vLLM v0.32.0:",
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test:"),
@@ -93,13 +93,24 @@ MUTANTS = [
      "if p := r.Validate(); !p.OK() {", "if p := r.Validate(); false && !p.OK() {"),
     ("R6", "Load refuses fields the schema does not declare", "registry/doc.go",
      "dec.KnownFields(true)", "dec.KnownFields(false)"),
+    # An entry's evidence is the traces themselves (blis-vllm#20 review I16).
+    ("R7", "a scenario runs one of the model's connectors", "registry/connector_test.go",
+     "|| !contains(m.connectors, sc.Config.Connector.Name) {", "|| false {"),
+    ("R8", "a golden that records no steps is no evidence", "registry/connector_test.go",
+     "\t\tcase len(g.Steps) == 0:", "\t\tcase false:"),
+    ("R9", "a golden is vLLM v0.32.0's own trace", "registry/connector_test.go",
+     "\t\tcase g.Provenance.VLLMVersion != blisvllm.Upstream.Version || g.Provenance.VLLMCommit != blisvllm.Upstream.Commit:",
+     "\t\tcase false:"),
+    ("R10", "a golden was made from the committed scenario", "registry/connector_test.go",
+     "\t\tcase g.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]):", "\t\tcase false && sum[0] == 0:"),
 ]
 
 # The suite that guards each mutant, by its id's letter: the test pattern, the package, and
 # the output that shows the suite caught it (a divergence from vLLM, or a failed check).
 SUITES = {
     "N": ("TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM", "./core/connector/nixl/", ("divergence", "panic")),
-    "R": ("TestTheRegistryValidates|TestEveryEntryIsEarnedByADiffTest|TestLoad", "./registry/", ("--- FAIL",)),
+    "R": ("TestTheRegistryValidates|TestEveryEntryIsEarnedByADiffTest|TestEvidenceRefusesWhatIsNotATrace|TestLoad",
+          "./registry/", ("--- FAIL",)),
 }
 
 # Mutants no input can tell apart from the code, for vLLM's NIXL pull connector on one
