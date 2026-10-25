@@ -124,7 +124,10 @@ v0.32.0, which is `core/`'s job: its correctness claim is that it is unchanged. 
 property and metamorphic tests moved with it (verbatim, with their source commit in each
 header), and inference-sim's byte gate shows the simulator's output is identical before and
 after the move. `compat/kernelmodel`'s tests read the copies under `testdata/`. The tests that
-drive a whole simulator (event loop and engine together) stay in inference-sim.
+drive a whole simulator (event loop and engine together) stay in inference-sim. `compat/build`
+(the configuration code that moved out of inference-sim's `cmd/`) keeps the moved unit tests of
+its pure functions; its wrappers, which `cmd/` reached only through whole `blis run` and
+`blis replay` invocations, gained direct tests here, each mutation-checked.
 
 ## Target
 
