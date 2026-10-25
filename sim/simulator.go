@@ -172,8 +172,15 @@ type engineHost interface {
 	now() int64
 	// horizon is the simulation horizon.
 	horizon() int64
-	// schedule queues an event on this instance's event queue.
-	schedule(ev Event)
+	// scheduleTimeout queues the request's client-deadline timeout at t (PriorityTimeout).
+	scheduleTimeout(req *Request, t int64)
+	// scheduleScheduled and scheduleLeft queue the observational scheduled and request-left
+	// events at t (PriorityScheduled, PriorityRequestLeft).
+	scheduleScheduled(req *Request, t int64)
+	scheduleLeft(req *Request, t int64)
+	// scheduleAdapterLoaded queues the completion of an adapter's load at t
+	// (PriorityAdapterLoad).
+	scheduleAdapterLoaded(adapter string, t int64)
 	// requestDone hands a request that reached a terminal state, at tick, to the host's
 	// callback, and injects the follow-ups it returns. A no-op without a callback.
 	requestDone(req *Request, tick int64)
@@ -187,12 +194,23 @@ type engineHost interface {
 	stepArmed() bool
 }
 
-func (sim *Simulator) now() int64        { return sim.Clock }
-func (sim *Simulator) horizon() int64    { return sim.Horizon }
-func (sim *Simulator) schedule(ev Event) { sim.Schedule(ev) }
-func (sim *Simulator) wakeStep(t int64)  { sim.scheduleStepBy(t) }
-func (sim *Simulator) armStep(t int64)   { sim.scheduleStepAt(t) }
-func (sim *Simulator) stepArmed() bool   { return sim.stepEvent != nil }
+func (sim *Simulator) now() int64     { return sim.Clock }
+func (sim *Simulator) horizon() int64 { return sim.Horizon }
+func (sim *Simulator) scheduleTimeout(req *Request, t int64) {
+	sim.Schedule(&TimeoutEvent{time: t, Request: req})
+}
+func (sim *Simulator) scheduleScheduled(req *Request, t int64) {
+	sim.Schedule(&ScheduledEvent{time: t, Request: req})
+}
+func (sim *Simulator) scheduleLeft(req *Request, t int64) {
+	sim.Schedule(&RequestLeftEvent{time: t, Request: req})
+}
+func (sim *Simulator) scheduleAdapterLoaded(adapter string, t int64) {
+	sim.Schedule(&AdapterLoadCompletionEvent{time: t, Adapter: adapter})
+}
+func (sim *Simulator) wakeStep(t int64) { sim.scheduleStepBy(t) }
+func (sim *Simulator) armStep(t int64)  { sim.scheduleStepAt(t) }
+func (sim *Simulator) stepArmed() bool  { return sim.stepEvent != nil }
 func (sim *Simulator) firstToken(req *Request, at int64) {
 	if sim.OnFirstToken != nil {
 		sim.OnFirstToken(req, at)
@@ -862,7 +880,7 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 	// Schedule timeout event (after all guards + enqueue — BC-5)
 	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
 	if r.Deadline > 0 && r.Deadline <= sim.host.horizon() {
-		sim.host.schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+		sim.host.scheduleTimeout(r, r.Deadline)
 	}
 }
 
@@ -889,7 +907,7 @@ func (sim *engineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 
 	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
 	if r.Deadline > 0 && r.Deadline <= sim.host.horizon() {
-		sim.host.schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+		sim.host.scheduleTimeout(r, r.Deadline)
 	}
 
 	// Trigger StepEvent if idle (work-conserving: INV-8).
@@ -1200,10 +1218,7 @@ func (sim *engineCore) scheduleBatch(now int64) {
 
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
-		sim.host.schedule(&ScheduledEvent{
-			time:    now,
-			Request: s.Request,
-		})
+		sim.host.scheduleScheduled(s.Request, now)
 		sim.rec.scheduled(s.Request, now, s.Lookup)
 		if sim.serverSeries != nil {
 			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
@@ -1290,7 +1305,7 @@ func (sim *engineCore) maybeStartAdapterLoad(now int64) {
 	}
 	sim.loadingAdapter = head.Adapter
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
-	sim.host.schedule(&AdapterLoadCompletionEvent{time: now + loadTicks, Adapter: head.Adapter})
+	sim.host.scheduleAdapterLoaded(head.Adapter, now+loadTicks)
 }
 
 // completeAdapterLoad finishes a cold-adapter load: it makes the adapter resident
@@ -1514,10 +1529,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.host.schedule(&RequestLeftEvent{
-				time:    req.DepartureTime,
-				Request: req,
-			})
+			sim.host.scheduleLeft(req, req.DepartureTime)
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
@@ -1566,10 +1578,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.host.schedule(&RequestLeftEvent{
-				time:    req.DepartureTime,
-				Request: req,
-			})
+			sim.host.scheduleLeft(req, req.DepartureTime)
 			sim.recordRequestCompletion(req)
 
 			// Invoke completion callback for session management (length-capped)
