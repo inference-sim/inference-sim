@@ -148,13 +148,22 @@ func (p *Pool) Touch(bs []*Block) {
 // (evicted first), one with a hash to its tail (free_blocks, block_pool.py:774-805). Each
 // block must hold a reference: vLLM's free_blocks assumes it and checks nothing, and freeing
 // a free block (a double free in a caller) would leave a negative count and a block both free
-// and queued, so it panics here instead of corrupting the pool silently.
+// and queued, so it panics here, before any block changes, instead of corrupting the pool.
 func (p *Pool) Free(ordered []*Block) {
+	// Check every block before changing any, so a refused call leaves the pool as it was: a
+	// block listed more times than it holds references is refused as a whole.
+	held := make(map[*Block]int, len(ordered))
+	for _, b := range ordered {
+		if b.Null {
+			continue
+		}
+		held[b]++
+		if held[b] > b.RefCnt {
+			panic(fmt.Sprintf("kv: freeing block %d more times than its %d reference(s)", b.ID, b.RefCnt))
+		}
+	}
 	var first, last []*Block
 	for _, b := range ordered {
-		if b.RefCnt <= 0 && !b.Null {
-			panic(fmt.Sprintf("kv: freeing block %d, which holds no reference (ref count %d)", b.ID, b.RefCnt))
-		}
 		b.RefCnt--
 		if b.RefCnt == 0 && !b.Null {
 			if b.Hash == nil || !p.caching {
@@ -280,8 +289,11 @@ func (q *freeQueue) popLeft() *Block {
 	return b
 }
 
+// remove unlinks b. Its neighbours must link back to it and the queue must hold a block, so a
+// block that is not in this queue, or a queue whose links are corrupt, panics rather than
+// splicing the wrong nodes.
 func (q *freeQueue) remove(b *Block) {
-	if b.prev == nil || b.next == nil {
+	if b.prev == nil || b.next == nil || b.prev.next != b || b.next.prev != b || q.n <= 0 {
 		panic(fmt.Sprintf("kv: block %d is not in the free queue", b.ID))
 	}
 	b.prev.next, b.next.prev = b.next, b.prev
