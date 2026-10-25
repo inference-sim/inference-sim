@@ -236,7 +236,7 @@ func TestIdleWake_MixedQueueDoesNotSleep(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Only A is deferred; B is runnable.
 			s, _ := newIdleWakeSim(t, ready, []string{"A"}, tc.order...)
-			if wake, ok := s.idleDeferralWake(0); ok {
+			if wake, ok := s.IdleDeferralWake(0); ok {
 				t.Fatalf("a runnable request is waiting: must not sleep, got wake=(%d, %v)", wake, ok)
 			}
 		})
@@ -245,7 +245,7 @@ func TestIdleWake_MixedQueueDoesNotSleep(t *testing.T) {
 	// Contrast, so the cases above are not vacuous: once every waiting request is
 	// deferred, the same queue does report a wake.
 	s, _ := newIdleWakeSim(t, ready, []string{"A", "B"}, "A", "B")
-	if wake, ok := s.idleDeferralWake(0); !ok || wake != 1000 {
+	if wake, ok := s.IdleDeferralWake(0); !ok || wake != 1000 {
 		t.Fatalf("all-deferred queue must report its earliest wake: got (%d, %v), want (1000, true)", wake, ok)
 	}
 }

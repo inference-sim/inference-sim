@@ -25,7 +25,7 @@ func hasWork(r *engineCore) bool {
 
 // lockstepSchedule is a rank's schedule in a lockstep step at now: it returns the requests
 // the rank's forward pass runs.
-func (sim *engineCore) lockstepSchedule(now int64) []*Request {
+func (sim *engineCore) LockstepSchedule(now int64) []*Request {
 	sim.scheduleBatch(now)
 	return sim.scheduledRequests()
 }
@@ -33,7 +33,7 @@ func (sim *engineCore) lockstepSchedule(now int64) []*Request {
 // lockstepFinish applies a lockstep step of advance ticks that started at now to a rank that
 // ran: progress, mirroring, completions and the server series' step end, then keeps or
 // clears its running batch.
-func (sim *engineCore) lockstepFinish(now, advance int64) {
+func (sim *engineCore) LockstepFinish(now, advance int64) {
 	sim.advanceBatch(now, advance)
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, advance)
@@ -46,7 +46,7 @@ func (sim *engineCore) lockstepFinish(now, advance int64) {
 }
 
 // dpStepPricer is the engine's latency model as a DPStepPricer, nil when it is not one.
-func (sim *engineCore) dpStepPricer() DPStepPricer {
+func (sim *engineCore) DPStepPricerOf() DPStepPricer {
 	if p, ok := sim.latencyModel.(DPStepPricer); ok {
 		return p
 	}
@@ -54,11 +54,11 @@ func (sim *engineCore) dpStepPricer() DPStepPricer {
 }
 
 // stepTimeAtLeastOne prices batch on the engine's own latency model, at least one tick.
-func (sim *engineCore) stepTimeAtLeastOne(batch []*Request) int64 {
+func (sim *engineCore) StepTimeAtLeastOne(batch []*Request) int64 {
 	return max(1, sim.latencyModel.StepTime(batch))
 }
 
 // consumeTransferLatency returns and clears the KV store's pending transfer latency.
-func (sim *engineCore) consumeTransferLatency() int64 {
+func (sim *engineCore) ConsumeTransferLatency() int64 {
 	return sim.KVCache.ConsumePendingTransferLatency()
 }

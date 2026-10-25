@@ -51,7 +51,7 @@ func NewLockstepGroup(ranks []*Simulator) (*LockstepGroup, error) {
 			return nil, fmt.Errorf("NewLockstepGroup: rank %d already has a step armed", i)
 		}
 	}
-	g.pricer = ranks[0].dpStepPricer()
+	g.pricer = ranks[0].DPStepPricerOf()
 	for _, r := range ranks {
 		r.lockstep = g
 	}
@@ -108,7 +108,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		if r.Clock < now {
 			r.Clock = now
 		}
-		batches[i] = r.lockstepSchedule(now)
+		batches[i] = r.LockstepSchedule(now)
 	}
 	if !active[0] {
 		// A dummy step is not work: the leader's clock stays at its last real event, so
@@ -122,7 +122,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	for i, r := range g.ranks {
 		d := durations[i]
 		if active[i] {
-			d += r.consumeTransferLatency()
+			d += r.ConsumeTransferLatency()
 		}
 		advance = max(advance, d)
 	}
@@ -135,7 +135,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		if !active[i] {
 			continue
 		}
-		r.lockstepFinish(now, advance)
+		r.LockstepFinish(now, advance)
 	}
 
 	g.stepCounter++
@@ -185,7 +185,7 @@ func (g *LockstepGroup) price(batches [][]*Request) []int64 {
 	}
 	d := make([]int64, len(batches))
 	for i, r := range g.ranks {
-		d[i] = r.stepTimeAtLeastOne(batches[i])
+		d[i] = r.StepTimeAtLeastOne(batches[i])
 	}
 	return d
 }

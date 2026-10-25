@@ -39,7 +39,7 @@ func (sim *Simulator) canPark() bool {
 	if sim.idlePolling || sim.lockstep != nil {
 		return false
 	}
-	return sim.quiescent()
+	return sim.IsQuiescent()
 }
 
 // IdlePollEnv names the opt-in vLLM idle-loop period, in us. Set (vLLM's is 1000:
@@ -59,7 +59,7 @@ var idlePollUs = func() int64 {
 
 // parkIdle parks the engine; at is when polling would step next.
 func (sim *Simulator) parkIdle(at, quantum int64) {
-	waiting, used, missDelta := sim.parkedView()
+	waiting, used, missDelta := sim.ParkedView()
 	if idlePollUs >= 0 {
 		at, quantum = at-quantum+max(idlePollUs, 1), max(idlePollUs, 1)
 		sim.park = &idlePark{at: at, quantum: quantum, waiting: waiting,
@@ -92,9 +92,9 @@ func (sim *Simulator) chargePolls(k int64) {
 	if p.free {
 		end = p.at + (k-1)*p.quantum
 	}
-	sim.chargeSkippedPolls(k, skippedPolls{waiting: p.waiting, used: p.used, quantum: p.quantum, free: p.free, missDelta: p.missDelta})
+	sim.ChargeSkippedPolls(k, skippedPolls{waiting: p.waiting, used: p.used, quantum: p.quantum, free: p.free, missDelta: p.missDelta})
 	sim.busyUntil = end
-	sim.recordSkippedPollsEnd(end)
+	sim.RecordSkippedPollsEnd(end)
 }
 
 // WakeIfParked schedules a parked engine's next step for an event at t that may let it
@@ -102,7 +102,7 @@ func (sim *Simulator) chargePolls(k int64) {
 func (sim *Simulator) WakeIfParked(t int64) {
 	switch {
 	case sim.park == nil:
-	case !sim.hasWaiting():
+	case !sim.HasWaiting():
 		sim.dropPark(t)
 	case sim.stepEvent == nil:
 		sim.scheduleStepAt(t)

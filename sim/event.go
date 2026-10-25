@@ -42,7 +42,7 @@ func (e *ArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
 	sim.Schedule(&QueuedEvent{
-		time:    sim.queuedAt(e.Request, e.time),
+		time:    sim.QueuedAt(e.Request, e.time),
 		Request: e.Request,
 	})
 }
@@ -68,7 +68,7 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 
 	// If WaitQ has work, make sure a Step runs now: schedule one if none is pending,
 	// or pull an idle wake forward to this arrival (#1886).
-	if sim.hasWaiting() {
+	if sim.HasWaiting() {
 		sim.scheduleStepBy(e.time)
 	}
 }
@@ -152,7 +152,7 @@ func (e *AdapterLoadCompletionEvent) Priority() int    { return PriorityAdapterL
 // ensures a step forms so the gated request is admitted (INV-8).
 func (e *AdapterLoadCompletionEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< AdapterLoadCompletion: %s at %d ticks", e.Adapter, e.time)
-	sim.completeAdapterLoad(e.time, e.Adapter)
+	sim.CompleteAdapterLoad(e.time, e.Adapter)
 }
 
 // TimeoutEvent models client-side request cancellation at the deadline tick.
@@ -171,7 +171,7 @@ func (e *TimeoutEvent) Priority() int    { return PriorityTimeout }
 // (2) queued request — WaitQ.Remove, (3) pre-QueuedEvent race — request not in
 // any container yet (WaitQ.Remove returns false, safe no-op).
 func (e *TimeoutEvent) Execute(sim *Simulator) {
-	if !sim.timeout(e.Request) {
+	if !sim.CancelOnTimeout(e.Request) {
 		return
 	}
 
@@ -189,7 +189,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	// not have happened sooner anyway. Pinned by
 	// TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission: dropping the stale wake here
 	// instead of leaving it strands the sibling deferral.
-	if !sim.hasRunning() && sim.stepEvent == nil && sim.hasWaiting() {
+	if !sim.HasRunning() && sim.stepEvent == nil && sim.HasWaiting() {
 		sim.scheduleStepAt(e.time)
 	}
 

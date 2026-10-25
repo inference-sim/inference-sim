@@ -115,7 +115,7 @@ type engineCore struct {
 // newEngineCore builds the engine from its configuration and the KV store and latency model
 // it runs on; NewSimulator gives it its host and its recorder. It refuses what NewSimulator
 // always refused, with the same messages.
-func newEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*engineCore, error) {
+func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*engineCore, error) {
 	if kvStore == nil {
 		return nil, fmt.Errorf("NewSimulator: kvStore must not be nil")
 	}
@@ -326,7 +326,7 @@ func (sim *engineCore) ScheduleStepIfIdle(time int64) {
 // idleDeferralWake returns the next tick at which a deferred request can change
 // state, when every waiting request is deferred. Until then an empty step admits
 // nothing, so the scheduler can sleep instead of re-polling every tick.
-func (sim *engineCore) idleDeferralWake(now int64) (int64, bool) {
+func (sim *engineCore) IdleDeferralWake(now int64) (int64, bool) {
 	d, ok := sim.KVCache.(DeferrableKVStore)
 	if !ok {
 		return 0, false
@@ -625,22 +625,22 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 
 // nothingToStep reports whether a step would find nothing to run: no running batch and an
 // empty wait queue.
-func (sim *engineCore) nothingToStep() bool { return sim.RunningBatch == nil && sim.WaitQ.Len() == 0 }
+func (sim *engineCore) NothingToStep() bool { return sim.RunningBatch == nil && sim.WaitQ.Len() == 0 }
 
 // keepRunning sets the running batch to the requests a step left running.
-func (sim *engineCore) keepRunning(remaining []*Request) { sim.RunningBatch.Requests = remaining }
+func (sim *engineCore) KeepRunning(remaining []*Request) { sim.RunningBatch.Requests = remaining }
 
 // clearRunning drops the running batch after a step that finished every request in it.
-func (sim *engineCore) clearRunning() { sim.RunningBatch = nil }
+func (sim *engineCore) ClearRunning() { sim.RunningBatch = nil }
 
 // adapterLoading reports whether a LoRA adapter load is in flight (the cold-load gate holds
 // the wait queue's head until it completes, #1466).
-func (sim *engineCore) adapterLoading() bool { return sim.loadingAdapter != "" }
+func (sim *engineCore) AdapterLoading() bool { return sim.loadingAdapter != "" }
 
 // recordStillHeld records the requests the engine still holds at the end of the run, waiting
 // and running (BC-8, BC-9): in Finalize, because cluster mode drives events through
 // ProcessNextEvent and never calls Run.
-func (sim *engineCore) recordStillHeld() {
+func (sim *engineCore) RecordStillHeld() {
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
@@ -650,7 +650,7 @@ func (sim *engineCore) recordStillHeld() {
 
 // idleStep is a step that found nothing to run. The step after an abort that left nothing to
 // run publishes the engine's state after the abort (NoteAbort).
-func (sim *engineCore) idleStep(now int64) {
+func (sim *engineCore) IdleStep(now int64) {
 	if sim.abortPending {
 		sim.abortPending = false
 		sim.publishEngineMetrics(now)
@@ -659,7 +659,7 @@ func (sim *engineCore) idleStep(now int64) {
 }
 
 // executeStep schedules and executes one engine step at now and returns its duration.
-func (sim *engineCore) executeStep(now int64) int64 {
+func (sim *engineCore) ExecuteStep(now int64) int64 {
 	sim.abortPending = false
 	sim.scheduleBatch(now)
 	return sim.executeBatchStep(now)
@@ -670,7 +670,7 @@ func (sim *engineCore) executeStep(now int64) int64 {
 // blocks exist, and before completions, so completing requests' blocks are still in use),
 // processes completions, records the server series' step end, and returns the requests
 // still running.
-func (sim *engineCore) finishStep(now, advance int64) []*Request {
+func (sim *engineCore) FinishStep(now, advance int64) []*Request {
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, advance)
 	sim.recordServerStepEnd(now+advance, len(remaining))
@@ -678,7 +678,7 @@ func (sim *engineCore) finishStep(now, advance int64) []*Request {
 }
 
 // publishStep publishes the engine's metrics and KV events at the end of a step, at.
-func (sim *engineCore) publishStep(at int64) {
+func (sim *engineCore) PublishStep(at int64) {
 	sim.publishEngineMetrics(at)
 	sim.publishKVEvents(at)
 }
@@ -847,7 +847,7 @@ func (sim *engineCore) maybeStartAdapterLoad(now int64) {
 // transition), clears the in-flight marker so the next serialized load can begin,
 // and ensures a step forms so the gated request is admitted this tick (INV-8; the
 // completion is ordered ahead of a co-timed step by PriorityAdapterLoad).
-func (sim *engineCore) completeAdapterLoad(now int64, adapter string) {
+func (sim *engineCore) CompleteAdapterLoad(now int64, adapter string) {
 	if sim.residentAdapters == nil {
 		return
 	}

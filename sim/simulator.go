@@ -133,7 +133,7 @@ func (sim *Simulator) requestDone(req *Request, tick int64) {
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
 // All workload generation now happens externally — callers inject requests via InjectArrival.
 func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*Simulator, error) {
-	eng, err := newEngineCore(cfg, kvStore, latencyModel)
+	eng, err := NewEngineCore(cfg, kvStore, latencyModel)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (sim *Simulator) ProcessNextEvent() Event {
 	sim.curPriority = ev.Priority()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
-	if sim.park != nil && !sim.hasWaiting() {
+	if sim.park != nil && !sim.HasWaiting() {
 		sim.dropPark(sim.Clock)
 	}
 	sim.curPriority = -1
@@ -228,7 +228,7 @@ func (sim *Simulator) Finalize() {
 	// Record conservation fields (BC-8, BC-9) — must happen in Finalize
 	// because cluster mode drives events via ProcessNextEvent() directly
 	// and never calls sim.Run().
-	sim.recordStillHeld()
+	sim.RecordStillHeld()
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
@@ -388,14 +388,14 @@ func (sim *Simulator) idleStepTime(t int64) int64 { return max(t, sim.busyUntil)
 // sim.stepEvent here prevents future QueuedEvent INV-8 guards from seeing a stale
 // non-nil pointer and skipping their step-scheduling.
 func (sim *Simulator) Step(now int64) {
-	if sim.nothingToStep() {
+	if sim.NothingToStep() {
 		sim.stepEvent = nil
-		sim.idleStep(now)
+		sim.IdleStep(now)
 		return
 	}
 	advance, remaining := sim.runStep(now)
 	sim.scheduleNextStep(now, advance, remaining)
-	sim.publishStep(now + advance)
+	sim.PublishStep(now + advance)
 }
 
 // runStep runs one engine step at now -- schedule, execute, mirror to the CPU tier, process
@@ -403,9 +403,9 @@ func (sim *Simulator) Step(now int64) {
 // before completions are processed, as it always was, so a completion callback that injects
 // work sees the engine busy until the step ends (#1944).
 func (sim *Simulator) runStep(now int64) (advance int64, remaining []*Request) {
-	advance = sim.executeStep(now)
+	advance = sim.ExecuteStep(now)
 	sim.busyUntil = now + advance
-	return advance, sim.finishStep(now, advance)
+	return advance, sim.FinishStep(now, advance)
 }
 
 // scheduleNextStep handles Phase 4: schedules the next step event based on
@@ -413,12 +413,12 @@ func (sim *Simulator) runStep(now int64) (advance int64, remaining []*Request) {
 // (work-conserving property, INV-8).
 func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*Request) {
 	if len(remaining) > 0 {
-		sim.keepRunning(remaining)
+		sim.KeepRunning(remaining)
 		// estimate queue overhead from LR (sim.features)
 		//
 		sim.scheduleStepAt(now + currStepAdvance)
 	} else {
-		sim.clearRunning()
+		sim.ClearRunning()
 		sim.stepEvent = nil
 		// Work-conserving: if WaitQ has pending requests, immediately
 		// schedule a new step to form the next batch. Without this,
@@ -450,7 +450,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// before this optimization. Clamped, the step fires AT the horizon, admits
 		// nothing, and the next step at horizon+1 ends the run with the clock at the
 		// horizon, exactly as the crawl did. Inert at the default unlimited horizon.
-		if sim.hasWaiting() && !sim.adapterLoading() {
+		if sim.HasWaiting() && !sim.AdapterLoading() {
 			if sim.canPark() {
 				sim.parkIdle(now+currStepAdvance, currStepAdvance)
 				return
@@ -459,7 +459,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 			// never parks; it sleeps to the deferral's wake instead (#1886). A lockstep
 			// rank keeps stepping with its group.
 			next := now + currStepAdvance
-			if wake, ok := sim.idleDeferralWake(now); ok && wake > next && sim.lockstep == nil {
+			if wake, ok := sim.IdleDeferralWake(now); ok && wake > next && sim.lockstep == nil {
 				if wake > sim.Horizon {
 					wake = sim.Horizon
 				}
