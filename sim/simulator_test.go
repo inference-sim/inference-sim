@@ -2125,8 +2125,9 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatalf("failed to read simulator.go: %v", err)
 	}
 	content := string(data)
-	// Extract EnqueueRequest function body (between "func (sim *Simulator) EnqueueRequest" and the next "func ")
-	startIdx := strings.Index(content, "func (sim *Simulator) EnqueueRequest")
+	// Extract EnqueueRequest function body (between "func (sim *engineCore) EnqueueRequest" and
+	// the next "func "): it is the engine's, since the host/engine split (#2021 E2.3).
+	startIdx := strings.Index(content, "func (sim *engineCore) EnqueueRequest")
 	if startIdx < 0 {
 		t.Fatal("EnqueueRequest function not found in simulator.go")
 	}

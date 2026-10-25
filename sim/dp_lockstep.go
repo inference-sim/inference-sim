@@ -105,7 +105,7 @@ func (g *LockstepGroup) disarm() {
 
 // hasWork reports whether a rank has unfinished requests, as the scheduler's
 // has_unfinished_requests does: running or waiting.
-func hasWork(r *Simulator) bool {
+func hasWork(r *engineCore) bool {
 	return (r.RunningBatch != nil && len(r.RunningBatch.Requests) > 0) || r.WaitQ.Len() > 0
 }
 
@@ -121,7 +121,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	active := make([]bool, n)
 	batches := make([][]*Request, n)
 	for i, r := range g.ranks {
-		if !hasWork(r) {
+		if !hasWork(&r.engineCore) {
 			continue
 		}
 		active[i] = true
@@ -177,7 +177,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	}
 	running := g.stepCounter != 1 && g.stepCounter%DPSyncInterval != 0
 	for _, r := range g.ranks {
-		running = running || hasWork(r)
+		running = running || hasWork(&r.engineCore)
 	}
 	g.pending = nil
 	if running {

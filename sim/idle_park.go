@@ -36,7 +36,17 @@ type idlePark struct {
 
 // canPark reports whether the engine, whose last step scheduled nothing, may park.
 func (sim *Simulator) canPark() bool {
-	if sim.idlePolling || !sim.lastStepEmpty || sim.lastStepPreempted || sim.lockstep != nil || sim.loadingAdapter != "" {
+	if sim.idlePolling || sim.lockstep != nil {
+		return false
+	}
+	return sim.quiescent()
+}
+
+// quiescent reports whether the engine's next poll would schedule exactly what its last step
+// did, nothing: the last step scheduled nothing and preempted nothing, no adapter load is in
+// flight, and the KV store has no transfer pending or in flight (QuiescentKVStore).
+func (sim *engineCore) quiescent() bool {
+	if !sim.lastStepEmpty || sim.lastStepPreempted || sim.loadingAdapter != "" {
 		return false
 	}
 	if sim.KVCache.PendingTransferLatency() != 0 {

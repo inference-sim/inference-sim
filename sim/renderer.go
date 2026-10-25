@@ -119,4 +119,4 @@ func ShareRenderer(ranks []*Simulator, apiServers int) error {
 }
 
 // Renderer is the simulator's render stage, nil when its front end is inert.
-func (sim *Simulator) Renderer() *Renderer { return sim.renderer }
+func (sim *engineCore) Renderer() *Renderer { return sim.renderer }

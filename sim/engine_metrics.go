@@ -39,7 +39,7 @@ type engineMetricsLog struct {
 }
 
 // EngineMetricsAt returns the metrics a scrape at simulated time t observes.
-func (sim *Simulator) EngineMetricsAt(t int64) EngineMetrics {
+func (sim *engineCore) EngineMetricsAt(t int64) EngineMetrics {
 	log := &sim.engineMetrics
 	if log.hasNext && log.pending.PublishedAt <= t {
 		log.visible = log.pending
@@ -50,7 +50,7 @@ func (sim *Simulator) EngineMetricsAt(t int64) EngineMetrics {
 
 // publishEngineMetrics records the engine state at the end of a step that ends at time at.
 // It only reads simulation state.
-func (sim *Simulator) publishEngineMetrics(at int64) {
+func (sim *engineCore) publishEngineMetrics(at int64) {
 	m := EngineMetrics{
 		PublishedAt: at,
 		Waiting:     sim.WaitQ.Len() + sim.remoteKVWaiting,
@@ -92,7 +92,7 @@ func adapterSet(b *Batch) []string {
 
 // AdapterCapacity returns the per-instance resident LoRA adapter slots (vLLM max_loras), or 0
 // when the LoRA subsystem is inert.
-func (sim *Simulator) AdapterCapacity() int {
+func (sim *engineCore) AdapterCapacity() int {
 	if sim.residentAdapters == nil || sim.adapterCapacity <= 0 {
 		return 0
 	}
@@ -103,7 +103,7 @@ func (sim *Simulator) AdapterCapacity() int {
 // of every step that changed the set of cached block hashes, sink receives that step's events, in
 // order, with the time the step ends. With prefix caching disabled the engine caches no block for
 // reuse and, as vLLM, publishes nothing.
-func (sim *Simulator) SetKVEventSink(sink func(at int64, events []KVEvent)) {
+func (sim *engineCore) SetKVEventSink(sink func(at int64, events []KVEvent)) {
 	src, ok := sim.KVCache.(KVEventSource)
 	if !ok {
 		panic(fmt.Sprintf("SetKVEventSink: KV cache %T cannot publish KV events", sim.KVCache))
@@ -116,7 +116,7 @@ func (sim *Simulator) SetKVEventSink(sink func(at int64, events []KVEvent)) {
 }
 
 // publishKVEvents hands the events of the step that ends at time at to the sink.
-func (sim *Simulator) publishKVEvents(at int64) {
+func (sim *engineCore) publishKVEvents(at int64) {
 	if sim.kvEventSink == nil {
 		return
 	}
