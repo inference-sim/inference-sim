@@ -106,7 +106,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: [blis-latency-kernel](#blis-latency-kernel), adapted to the `sim.LatencyModel` interface by `sim/kernelmodel`. See [Core Engine: Latency Models](core-engine.md#latency-models) and [Latency Models Guide](../guide/latency-models.md).
+The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: [blis-latency-kernel](#blis-latency-kernel), adapted to the `sim.LatencyModel` interface by blis-vllm `compat/kernelmodel`. See [Core Engine: Latency Models](core-engine.md#latency-models) and [Latency Models Guide](../guide/latency-models.md).
 
 ### llm-d
 

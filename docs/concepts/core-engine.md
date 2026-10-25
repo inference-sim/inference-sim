@@ -241,7 +241,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 ## Latency Models
 
 Step time and host overheads come from **blis-latency-kernel**, through the
-`sim.LatencyModel` interface (adapter: `sim/kernelmodel`). The simulator decides when a step
+`sim.LatencyModel` interface (adapter: blis-vllm `compat/kernelmodel`). The simulator decides when a step
 runs and which requests it holds; the kernel prices that batch from the model graph, chip and
 coefficients the scenario names. See the [Latency Models guide](../guide/latency-models.md).
 

@@ -150,7 +150,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 
 ## Latency Model
 
-BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.3.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.3.0`, adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -221,7 +221,7 @@ priority:
     critical: 10
 ```
 
-The mapping lives in `sim/slo_priority.go` (`SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
+The mapping lives in blis-vllm `compat/engine/slo_priority.go` (`SLOPriorityMap`, aliased as `sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
 ## Scheduling and Priority
 

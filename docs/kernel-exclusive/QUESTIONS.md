@@ -18,7 +18,7 @@ Each records what was checked and what the answer implies.
 ## Answers, round 1 (before writing the adapter)
 
 **Q1. Does BLIS's scheduler produce a resident batch below the client concurrency?**
-Yes, and this is what makes the experiment meaningful. `sim/batch_formation.go:250` gates
+Yes, and this is what makes the experiment meaningful. `FormBatch` (blis-vllm `compat/engine/batch_formation.go`) gates
 admission on three things at once: `MaxNumSeqs`, a token budget, and KV capacity, with
 preemption when capacity runs out. So the resident batch is genuinely decoupled from the
 client level rather than tracking it. The kernel's 13.67% rests on assuming they are equal;
@@ -32,7 +32,7 @@ as "number of concurrent sessions". This matches the snapshot, whose `concurrenc
 client level, and means the harness does not have to emulate a closed loop by hand.
 
 **Q3. Does BLIS report the same quantity as the snapshot's TPOT?**
-Yes. `sim/engine.go`, `advanceBatch`:
+Yes. blis-vllm `compat/engine/engine.go`, `advanceBatch`:
 `req.ITL = append(req.ITL, currStepAdvance + NumNewTokens*OutputTokenProcessingTime())`.
 That is per-decode-step inter-token latency including host detokenization — the
 client-observed inter-token time, which is what TPOT means. Both kernel terms reach it:
@@ -54,7 +54,7 @@ report the vLLM subset separately from the whole, or it claims fidelity it does 
 This is a property of the corpus, not a fixable defect.
 
 **Q5. Can BLIS represent the 39 deployments' parallelism?**
-Yes. `sim/config.go` carries `EnableExpertParallel` (mirroring vLLM
+Yes. blis-vllm `compat/engine/config.go` carries `EnableExpertParallel` (mirroring vLLM
 `--enable-expert-parallel`), TP, DP, and an expert-parallel group DP width, with
 `EffectiveEPSize` as TP·DP. The scenario files state `tp_size`, `pp_size`,
 `attention_dp_size`, `moe_ep_size`, `moe_tp_size`; every one has a BLIS counterpart except
@@ -70,11 +70,11 @@ Still open, to be answered by investigation below: Q6 (double counting), Q8 (mem
 consistency), Q9 (catalog coverage), Q10 (comparison honesty).
 
 **Q6. Does BLIS add costs the kernel also charges?**
-No, for the deployments in this corpus. `sim/engine.go`, `executeBatchStep`, is the whole of it:
+No, for the deployments in this corpus. blis-vllm `compat/engine/engine.go`, `executeBatchStep`, is the whole of it:
 `StepTime`, then `+= KVCache.ConsumePendingTransferLatency()`, then `max(1, ...)`. The
 transfer term is zero for a single-tier cache, which all 39 scenarios are (no offload
 tier). The floor only binds below 1 tick. So the step advance is the kernel's number and
-nothing else. Per-token and per-request host costs are added at `simulator.go:1099` and in
+nothing else. Per-token and per-request host costs are added in `advanceBatch` and in
 `recordRequestCompletion` from the interface's own methods, which the adapter routes to the
 kernel -- charged once each, in the right place.
 
@@ -293,7 +293,7 @@ The dp fix remains a genuine bug fix for a different reason: those 3 points sat 
 where the cap binds absolutely rather than marginally.
 
 **Q4. Does `CachedTokens: 0` still hold?** Yes, but the justification was wrong and is
-corrected. BLIS implements prefix caching UNCONDITIONALLY (`sim/kv/cache.go`), not behind a
+corrected. BLIS implements prefix caching UNCONDITIONALLY (blis-vllm `compat/kv/cache.go`), not behind a
 flag, so the assumption cannot rest on caching being off. The real mechanism:
 `batch_formation` sets `numNewTokens = InputLen() - ProgressIndex`, and the cache-aware
 allocation path advances `ProgressIndex`, so a hit is excluded from `Scheduled` before the

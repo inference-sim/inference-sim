@@ -2,7 +2,7 @@
 
 BLIS takes its latency model from one source: **blis-latency-kernel**
 (Go module `github.com/inference-sim/blis-latency-kernel`, at the version `go.mod` pins). The adapter
-in `sim/kernelmodel` translates a BLIS batch into the kernel's request shapes and converts
+in blis-vllm `compat/kernelmodel` (moved from `sim/kernelmodel` by #2021) translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no `--latency-model` flag: the roofline and trained-physics backends, the
 alpha/beta coefficients, `hardware_config.json` calibration, and the
@@ -298,7 +298,7 @@ minimum-variance schedule when the source states none). A run that does not spec
 none.
 
 - **Method: the engine release's list.** `method` is checked against the rules pack of the
-  scenario's `engine_version` (blis-schemas `rules.Pack.SpeculativeMethods`), not a list in
+  scenario's `engine_version` (blis-vllm's packs, read through blis-schemas `rules.EngineRules`), not a list in
   BLIS, so vLLM 0.31.0 accepts `dspark` (DeepSeek-V4.1's DSpark), `dflash`, `eagle3`,
   `suffix` and the rest of that release's methods. A method the model graph's speculator
   does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
@@ -472,9 +472,9 @@ or without an engine log) changes the ALL row as well.
 ## The interface
 
 The simulator consumes latency through the `sim.LatencyModel` interface
-(`sim/latency_model.go`): `StepTime(batch)`, `QueueingTime(req)`,
+(blis-vllm `compat/engine/latency_model.go`, aliased in `sim/engine_aliases.go`): `StepTime(batch)`, `QueueingTime(req)`,
 `OutputTokenProcessingTime()` and `PostDecodeFixedOverhead()`, all in microseconds (ticks).
-`sim/kernelmodel` is its only production implementation. Improving or extending latency
+blis-vllm `compat/kernelmodel` is its only production implementation. Improving or extending latency
 pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
 coefficients), not here; see [Extension Recipes](../contributing/extension-recipes.md).
 

@@ -10,8 +10,9 @@ inference-sim/
 ├── cmd/
 │   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --workload-spec, --trace-level, --counterfactual-k, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --trace-output, --preemption-policy)
 │   ├── router.go              # The llm-d router's inputs: the scenario's router block and pool labels, plus --gateway-latency, --epp-scrape-jitter, --kv-event-delay on run and replay; records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
-│   ├── kernel_pools.go        # Builds each pool's deployment from the scenario: one blis-latency-kernel per pool, engine settings and KV budget from the scenario + kernel, P/D handoff priced by the kernel
-│   ├── kv_offload.go          # --kv-offload-config loading; each tier's device_class resolves against the catalog and the kernel prices the transfer
+│   ├── engine_build.go        # The one place cmd builds blis-vllm (#2021): hands the scenario and the engine flags, unread, to blis-vllm compat/build, which opens, checks and prices the pools, resolves the KV offload (scenario block + --kv-offload-config), the engine knobs, routing imbalance and speculative acceptance, and reads the catalog's storage-device table
+│   ├── kernel_pools.go        # Each P/D pool's engine settings as the cluster takes them (PoolOverrides), from that pool's own kernel
+│   ├── kv_offload.go          # --kv-offload-config flag and the KV-offload trace-header round trip for replay (the resolution itself is blis-vllm compat/build's, via engine_build.go)
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
 │   ├── network_topology.go    # crossNodeSpanForTrace: normalizes a cluster's widest instance node span for the TraceV2 header (#1530). A span of 0 (no node pools) or 1 (every instance on one node) records nothing, so a run without multi-node placement writes a byte-identical header; only a real multi-node fleet is recorded, and only that makes `blis replay` refuse the trace.
 │   ├── calibrate.go           # `blis calibrate` command (deprecated, #1901): compares real observed latencies (TraceV2 from blis observe) against sim predictions ([]SimResult JSON from blis replay --results-path); flags: --trace-header, --trace-data, --sim-results, --report (required), --warmup-requests (default: from header, sentinel -1), --network-rtt-us (default: from header, sentinel -1), --network-bandwidth-mbps; writes CalibrationReport JSON with MAPE/PearsonR/percentiles per metric
@@ -21,47 +22,37 @@ inference-sim/
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. catalogProvenanceEmitOptions is the single shared helper both `blis run` and `blis replay` pass to sim.EmitOutput (file-only, INV-6/INV-13)
-│   ├── catalog_devices.go     # Catalog device namespace reader (#1770): the KV-offload storage-device physics table at `<catalog>/devices/storage.yaml` (a sibling of `models/`), which `--kv-offload-config`'s per-tier `device_class` resolves against. Read LAZILY (only when a tier names a class) and strictly (R10); an absent/malformed/empty table is refused naming the path
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload`, `blis convert preset` and `blis observe --workload`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
 │   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 │   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
-├── sim/                       # Core single-instance simulator
-│   ├── config.go              # Module-scoped sub-config types (KVCacheConfig, BatchConfig, PolicyConfig, WorkloadConfig, ...) — composed into SimConfig via embedding (R16).
-│   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
-│   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor (validates MaxModelLen vs KV capacity), event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, EnqueueRequest (MaxModelLen + KV capacity guards), processCompletions (proactive MaxModelLen cap at maxModelLen-1 boundary), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
+├── sim/                       # The host of one instance; the engine it runs is blis-vllm's compatibility engine
+│   ├── doc.go                 # Package overview
+│   ├── engine_aliases.go      # Package sim's names for the engine (compat/engine), the P/D link arbiter (compat/kvtransfer), the prompt-chain hash (compat/prefix), the DP load balancer (compat/dplb) and NIXL's lease rules (compat/nixl): aliases and forwards, so callers still write sim.Request, sim.KVStore, sim.SimConfig
+│   ├── engine_build.go        # NewEngine: the one place an instance's engine is assembled (KV store from the registered constructor, latency model with the LoRA overhead, Simulator)
+│   ├── simulator.go           # Simulator: the host half of an instance -- clock, horizon, event queue (timestamp, priority, seqID), when to step and when to park; embeds the engine (EngineCore). NewSimulator(SimConfig, KVStore, LatencyModel). All workload generation external via InjectArrival().
+│   ├── idle_park.go           # Idle park: an engine whose step scheduled nothing waits for an event instead of polling
+│   ├── dp_lockstep.go         # LockstepGroup: the data-parallel ranks of one MoE replica step together
+│   ├── progress_hook.go       # ProgressHook: periodic read-only state snapshots during a run
+│   ├── recorder.go            # The *Metrics side of the engine's recorder seam
 │   ├── routing.go             # RoutingSnapshot: a lightweight view of one instance's live state (EffectiveLoad()), read by the model autoscaler; routing itself is the llm-d router's
-│   ├── engine_metrics.go      # EngineMetrics: the vLLM Prometheus series a model server publishes at the end of each step (waiting/running requests, KV usage, preemptions, LoRA sets), which the llm-d router scrapes
-│   ├── slo_priority.go        # SLOPriorityMap: SLO class → priority (higher=urgent; overridable via the bundle's priority.slo_priorities); InvertForVLLM() converts to vLLM convention (lower=urgent) at instance entry (EnqueueRequest)
-│   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
-│   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) built by the cluster for its own policies
 │   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft, Timeout) with (timestamp, priority, seqID) ordering
-│   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
-│   ├── kv_store.go            # KVStore interface (12 methods: +SetClock, +ConsumePendingTransferLatency, +MirrorToCPU), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
-│   ├── batch.go               # Batch struct
-│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (fcfs/priority preemption + chunked-prefill), NewBatchFormation(preemptionPolicy string) factory
-│   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
-│   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
+│   ├── vendored/              # Names this repository as the kernel adapter's vendoring root (testdata/catalog, testdata/registry)
 │   └── internal/              # Shared internal packages
-│       ├── testutil/          # Shared test infrastructure (golden dataset loading)
-│       └── util/              # General utility functions
-│                              # (the block hasher, KV block keying, TokenID and the KV-transfer station
-│                              #  moved to github.com/inference-sim/blis-vllm compat/prefix, compat/kvkey,
-│                              #  compat/tokenid and compat/kvtransfer by #2021)
-├── sim/kv/                    # KV cache implementations (PKG-1)
-│   ├── cache.go               # KVCacheState (single-tier GPU)
-│   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
-│   └── register.go            # NewKVStore factory + init()-based registration into sim/
-├── sim/kernelmodel/           # Adapter from blis-latency-kernel (github.com/inference-sim/blis-latency-kernel, the version go.mod pins) to sim.LatencyModel. Translation only: units (ns → µs ticks), the StepTime >= 1 floor, and BLIS batch → kernel request shapes; every latency number comes from the kernel
-│   ├── kernelmodel.go         # The LatencyModel adapter
-│   ├── capacity.go            # KV block budget from the kernel's memory methods, per data-parallel rank
-│   ├── settings.go            # Settings: everything one engine is sized from (block size, batch limits, max_model_len, KV budget), per data-parallel rank, answered by the scenario + kernel
-│   ├── roots.go               # The artifact roots (scenarios, catalog, registry) a kernel-path command or test reads
+│       └── testutil/          # Shared test infrastructure (golden dataset loading, the fake latency model)
+│                              # (moved to github.com/inference-sim/blis-vllm by #2021: the engine -- config
+│                              #  sub-configs, request, scheduler, queue, batch formation, KV store interface,
+│                              #  LatencyModel interface, engine metrics, SLO priority, RNG, renderer -- to
+│                              #  compat/engine; sim/kv to compat/kv; sim/lora to compat/lora; the block hasher,
+│                              #  KV block keying, TokenID, util and the KV-transfer station to compat/prefix,
+│                              #  compat/kvkey, compat/tokenid, compat/internal/util and compat/kvtransfer)
+├── sim/kernelmodel/           # (the blis-latency-kernel adapter moved to blis-vllm compat/kernelmodel by #2021; what stays here is its scoring harness)
+│   ├── internal/artifacts/    # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
 │   └── harness/               # Closed-loop runs against the AISimulate accuracy corpus (used by cmd/metricscore)
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
