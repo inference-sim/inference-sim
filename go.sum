@@ -157,6 +157,8 @@ github.com/inference-sim/blis-vllm v0.0.0-20261025125044-25f9c4d98972 h1:4zBYcYO
 github.com/inference-sim/blis-vllm v0.0.0-20261025125044-25f9c4d98972/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
 github.com/inference-sim/blis-vllm v0.0.0-20261025125821-313c455032dd h1:MyV3uQ/CRlXyJM9H6PCUD43zg63ggoQi35VuKKB02TQ=
 github.com/inference-sim/blis-vllm v0.0.0-20261025125821-313c455032dd/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
+github.com/inference-sim/blis-vllm v0.0.0-20261025150219-d3bbf2a0ccbc h1:gd3ux4EFWzAjTkQ5VxZV9615DPF4yYQ1vtbz9q+p/uQ=
+github.com/inference-sim/blis-vllm v0.0.0-20261025150219-d3bbf2a0ccbc/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584 h1:sS7cVqMmULUtGyTZPSMLWi6pLB9/9b6SAta1lf5C2DE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321 h1:fYhAovPiv5jtc470JoFn+ZI4yC6Baf3zbtl4puiKJOs=

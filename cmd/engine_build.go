@@ -320,3 +320,108 @@ func setRoutingOverrides(o routingOverrides) { kernelmodel.SetRoutingOverrides(o
 
 // currentRoutingOverridesOf is the routing layer the pools will open with.
 func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }
+
+// checkPolicyNames refuses a scheduler or preemption policy the engine does not run
+// (build.CheckPolicyNames), at the CLI boundary.
+func checkPolicyNames(scheduler, preemption string) {
+	if err := build.CheckPolicyNames(scheduler, preemption); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+}
+
+// resolveLoRAConfig assembles the run's LoRA configuration (build.ResolveLoRAConfig) from
+// defaults.yaml's cost coefficients, the optional --lora-config file and the scalar --lora-*
+// flags (each only when Changed, R18), and validates it. The single LoRAConfig construction site
+// (R4), called by both run and replay (INV-13); fatal on an invalid config (Principle V).
+func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
+	var defs *build.LoRADefaults
+	if d := loadRunDefaults(cmd.Flags().Changed("defaults-filepath")).LoRADefaults; d != nil {
+		defs = &build.LoRADefaults{
+			LoadBaseLatencyUs:     d.LoadBaseLatencyUs,
+			LoadBandwidthBytesUs:  d.LoadBandwidthBytesUs,
+			FootprintBytesPerRank: d.FootprintBytesPerRank,
+		}
+		if len(d.StepOverheadTiers) > 0 {
+			defs.StepOverheadTiers = make(map[int][2]float64, len(d.StepOverheadTiers))
+			for rank, t := range d.StepOverheadTiers {
+				defs.StepOverheadTiers[rank] = [2]float64{t.K6, t.K7}
+			}
+		}
+	}
+	changed := cmd.Flags().Changed
+	cfg, err := build.ResolveLoRAConfig(loraConfigPath, defs, build.LoRAFlags{
+		AdapterCapacity: loraAdapterCapacity, AdapterCapacitySet: changed("lora-adapter-capacity"),
+		LoadBaseLatencyUs: loraLoadBaseLatencyUs, LoadBaseLatencyUsSet: changed("lora-load-base-latency-us"),
+		LoadBandwidthBytesUs: loraLoadBandwidthBytesUs, LoadBandwidthBytesUsSet: changed("lora-load-bandwidth-bytes-us"),
+		FootprintBytesPerRank: loraFootprintBytesPerRank, FootprintBytesPerRankSet: changed("lora-footprint-bytes-per-rank"),
+	})
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return cfg
+}
+
+// batchConfigFromCLI is the run's batch configuration, the part of engineConfigFor's the
+// prefix-caching toggle reaches (build.BatchConfigOf).
+func batchConfigFromCLI() sim.BatchConfig {
+	return build.BatchConfigOf(engineSettings(sim.ModelConfig{}, 1, sim.KVOffloadConfig{}, 0, sim.LoRAConfig{},
+		sim.SpeculativeConfig{}))
+}
+
+// engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),
+// from the settings the scenario, the kernel and the command line resolved: the one place both
+// commands assemble it (INV-13). perRankDP is DP-as-placement's per-replica DP (#1531, #1556).
+// It resolves the speculative configuration, which records the acceptance for the results file.
+func engineConfigFor(cmd *cobra.Command, m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfig,
+	cpuTierTicks int64, lora sim.LoRAConfig) build.EngineConfig {
+	return build.EngineConfigOf(engineSettings(m, perRankDP, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
+}
+
+// engineSettings gathers the run's resolved engine settings, unread, for build.EngineConfigOf.
+func engineSettings(m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfig, cpuTierTicks int64,
+	lora sim.LoRAConfig, spec sim.SpeculativeConfig) build.EngineSettings {
+	return build.EngineSettings{
+		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
+		KVOffloadThreshold: kvOffloadThreshold, KVTransferBandwidth: kvTransferBandwidth,
+		KVTransferBaseLatency: kvTransferBaseLatency, KVOffload: offload, KVTransferTicksPerBlock: cpuTierTicks,
+		SequenceState: sequenceState, PrefixHit: prefixHit,
+		MaxNumSeqs: maxNumSeqs, MaxNumBatchedTokens: maxNumBatchedTokens,
+		LongPrefillTokenThreshold: longPrefillTokenThreshold, PrefixCachingDisabled: noEnablePrefixCaching,
+		Model: m, ModelName: model, GPU: gpu, TP: tensorParallelism, DP: perRankDP,
+		EnableExpertParallel: enableExpertParallel, MaxModelLen: maxModelLen,
+		Scheduler: scheduler, PreemptionPolicy: preemptionPolicy,
+		LoRA: lora, Speculative: spec,
+	}
+}
+
+// speculativeConfigOf is the engine's speculative-decoding configuration
+// (build.SpeculativeConfigOf), fatal on an invalid combination (CLI boundary, R6).
+func speculativeConfigOf(k int, acceptance float64, method string) sim.SpeculativeConfig {
+	c, err := build.SpeculativeConfigOf(k, acceptance, method)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return c
+}
+
+// adapterReservedBytesFor is the static LoRA HBM reservation, in bytes, the kernel's KV budget
+// sets aside for a resolved config (build.AdapterReservedBytes): 0 when the subsystem is inert
+// (INV-6), fatal on a malformed cost config (Principle V). Both run and replay set
+// loraReservedBytesForKV from it.
+func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
+	n, err := build.AdapterReservedBytes(cfg)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return n
+}
+
+// adapterRegistryOf is the declared adapters' registry (build.AdapterRegistryOf), nil when none
+// are declared, for checking the workload's adapter references; fatal on an invalid registry.
+func adapterRegistryOf(cfg sim.LoRAConfig) sim.AdapterRegistry {
+	r, err := build.AdapterRegistryOf(cfg)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return r
+}

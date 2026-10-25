@@ -486,23 +486,19 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
+		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
 				Seed:    seed,
-				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
-					sim.WithSequenceState(sequenceState), sim.WithPrefixHit(prefixHit)),
-				BatchConfig: batchConfigFromCLI(),
-				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
-				// per-replica DP — 1 when the plan is active (each replica is one rank),
-				// else the CLI dataParallelism unchanged. Identical to the run wiring
-				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, maxModelLen),
-				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
-				LoRAConfig:           loraCfg,
-				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
+				// The engine's configuration comes from the build site, as run's does (INV-13):
+				// dpPlan.PerRankDP from the same shared resolveDPPlacement (#1531 run / #1556 replay).
+				KVCacheConfig:        ec.KVCache,
+				BatchConfig:          ec.Batch,
+				ModelHardwareConfig:  ec.ModelHardware,
+				PolicyConfig:         ec.Policy,
+				LoRAConfig:           ec.LoRA,
+				SpeculativeConfig:    ec.Speculative,
 				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.

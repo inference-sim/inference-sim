@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"math"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -726,12 +724,7 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 		}
 	}
 
-	if !sim.IsValidScheduler(scheduler) {
-		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
-	}
-	if !sim.IsValidPreemptionPolicy(preemptionPolicy) {
-		logrus.Fatalf("Unknown preemption policy %q. Valid: %s", preemptionPolicy, strings.Join(sim.ValidPreemptionPolicyNames(), ", "))
-	}
+	checkPolicyNames(scheduler, preemptionPolicy)
 	if !trace.IsValidTraceLevel(traceLevel) {
 		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
 	}
@@ -760,14 +753,6 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 
 	logrus.Infof("Policy config: scheduler=%s, preemption=%s", scheduler, preemptionPolicy)
 	return loadedBundle
-}
-
-// batchConfigFromCLI is the single run/replay wiring seam for vLLM batch settings.
-// Keeping both commands on this helper makes the prefix-caching toggle structurally
-// symmetric for INV-13 rather than relying on two call sites to stay in sync.
-func batchConfigFromCLI() sim.BatchConfig {
-	return sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold,
-		sim.WithPrefixCachingDisabled(noEnablePrefixCaching))
 }
 
 // registerSimConfigFlags registers all simulation-engine configuration flags
@@ -861,96 +846,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. When the scenario states an offload block, that block is the configuration and this file may only restate it (a file resolving differently is refused). Absent, with no scenario block => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
-// loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
-// top-level lora: block matching contracts/config-schema.md. Strict-parsed (R10).
-type loraConfigFile struct {
-	LoRA sim.LoRAConfig `yaml:"lora"`
-}
-
-// loadLoRAConfigFile parses a --lora-config YAML file's lora: block into a
-// sim.LoRAConfig. Strict field checking (R10). CLI boundary => logrus.Fatalf on any
-// read/parse error so a typo never silently no-ops.
-func loadLoRAConfigFile(path string) sim.LoRAConfig {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		logrus.Fatalf("Failed to read --lora-config file %q: %v", path, err)
-	}
-	var f loraConfigFile
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&f); err != nil {
-		logrus.Fatalf("Failed to parse --lora-config file %q: %v", path, err)
-	}
-	return f.LoRA
-}
-
-// resolveLoRAConfig assembles the final sim.LoRAConfig from three composable sources,
-// in increasing precedence: defaults.yaml (cost-coefficient fallback), the optional
-// --lora-config file (adapter registry + any coefficients it sets), and the scalar
-// --lora-* flags (applied only when Changed, R18). It is the single LoRAConfig
-// construction site (R4), called by BOTH runCmd and replayCmd (INV-13 parity).
-//
-// The resolved config is validated at the CLI boundary; an invalid config aborts with
-// logrus.Fatalf (Principle V) — e.g. adapters declared with adapter_capacity 0.
-//
-// With no --lora-config and no --lora-* flags set, the returned config still carries
-// the defaults.yaml cost coefficients but declares no adapters, so HasAdapters() is
-// false and the subsystem is inert (INV-6 no-op default; coefficients are unused
-// until adapters exist).
-func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
-	var cfg sim.LoRAConfig
-	if loraConfigPath != "" {
-		cfg = loadLoRAConfigFile(loraConfigPath)
-	}
-
-	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
-	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
-	if defs := loadRunDefaults(cmd.Flags().Changed("defaults-filepath")).LoRADefaults; defs != nil {
-		if cfg.LoadBaseLatencyUs == nil {
-			v := defs.LoadBaseLatencyUs
-			cfg.LoadBaseLatencyUs = &v
-		}
-		if cfg.LoadBandwidthBytesUs == nil {
-			v := defs.LoadBandwidthBytesUs
-			cfg.LoadBandwidthBytesUs = &v
-		}
-		if cfg.FootprintBytesPerRank == nil {
-			v := defs.FootprintBytesPerRank
-			cfg.FootprintBytesPerRank = &v
-		}
-		if len(cfg.StepOverheadTiers) == 0 && len(defs.StepOverheadTiers) > 0 {
-			cfg.StepOverheadTiers = make(map[int]sim.StepOverheadTier, len(defs.StepOverheadTiers))
-			for rank, t := range defs.StepOverheadTiers {
-				k6, k7 := t.K6, t.K7
-				cfg.StepOverheadTiers[rank] = sim.StepOverheadTier{K6: &k6, K7: &k7}
-			}
-		}
-	}
-
-	// Scalar flag overrides (R18: only when explicitly set).
-	if cmd.Flags().Changed("lora-adapter-capacity") {
-		v := loraAdapterCapacity
-		cfg.AdapterCapacity = &v
-	}
-	if cmd.Flags().Changed("lora-load-base-latency-us") {
-		v := loraLoadBaseLatencyUs
-		cfg.LoadBaseLatencyUs = &v
-	}
-	if cmd.Flags().Changed("lora-load-bandwidth-bytes-us") {
-		v := loraLoadBandwidthBytesUs
-		cfg.LoadBandwidthBytesUs = &v
-	}
-	if cmd.Flags().Changed("lora-footprint-bytes-per-rank") {
-		v := loraFootprintBytesPerRank
-		cfg.FootprintBytesPerRank = &v
-	}
-
-	if err := cfg.Validate(); err != nil {
-		logrus.Fatalf("Invalid LoRA configuration: %v", err)
-	}
-	return cfg
-}
-
 // resolveSpeculativeConfig builds the speculative-decoding / MTP config (#1528): K and the
 // method from the scenario, and the acceptance resolved by blis-schemas' precedence (#1939,
 // resolveAcceptance), which it records for the results file (acceptanceRecord). Shared by run
@@ -968,10 +863,7 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 	} else if cmd.Flags().Changed(acceptanceRateFlag) {
 		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
 	}
-	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, alpha, speculativeMethod)
-	if err != nil {
-		logrus.Fatalf("%v", err)
-	}
+	c := speculativeConfigOf(numSpeculativeTokens, alpha, speculativeMethod)
 	if c.IsEnabled() {
 		acceptanceRecord = acceptanceRecordOf(ar.Res, c)
 		logAcceptance(acceptanceRecord, c.K)
@@ -982,52 +874,6 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 		}
 	}
 	return c
-}
-
-// adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
-// out of the KV budget for a resolved config, obtained through the sim/lora cost
-// model's pure AdapterReservedBytes() query (design boundary #4 — the memory path
-// never reaches into sim/lora internals). It routes through sim.BuildAdapterCost so
-// the activation condition matches NewSimulator's resident-set/cost wiring exactly
-// (R4): 0 when the subsystem is inert (no adapters, no capacity, or sim/lora not
-// linked), leaving KV capacity byte-identical to today (INV-6). A malformed cost
-// config aborts at the CLI boundary (Principle V), the same check NewSimulator makes.
-//
-// This deliberately builds an adapter-cost model that sim.NewSimulator (the
-// cold-load gate) and sim/cluster.NewInstanceSimulator (the latency-model overhead
-// wrapper, #1467) each also build from the same config via sim.BuildAdapterCost. The model
-// is a pure, stateless value object, so independent builds from one config are
-// behaviorally identical — the extra one-time O(adapters) construction at startup is
-// the established BuildAdapterCost pattern, not a caching bug.
-func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
-	ac, err := sim.BuildAdapterCost(sim.SimConfig{LoRAConfig: cfg})
-	if err != nil {
-		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v", err)
-	}
-	if ac == nil {
-		return 0
-	}
-	// Defense in depth: NewCostModel already rejects a non-finite reservation and
-	// caps it below maxReservedBytes (< math.MaxInt64), so this conversion is exact
-	// and non-negative for any model built through it. Guard the CLI boundary
-	// explicitly anyway — so a future construction path that bypasses that check can
-	// never silently truncate a huge/±Inf float64 to a garbage int64 (Go's
-	// out-of-range float→int conversion is implementation-defined). Principle V:
-	// fail at the CLI boundary, not deep in the KV-capacity library.
-	//
-	// int64(x) is well-defined and exact for every representable float64 strictly
-	// below 2^63. The trap is float64(math.MaxInt64): MaxInt64 (2^63-1) is not
-	// representable in float64 and rounds UP to 2^63, so it must NOT be used as the
-	// bound (int64(2^63) overflows). We reject at the comfortably-conservative,
-	// exactly-representable 2^62 (≈4.6e18) — far above any real reservation (the cost
-	// model caps at 1e18) — so the cast is provably safe without relying on the exact
-	// 2^63 edge.
-	const maxSafeReservedBytes = float64(int64(1) << 62)
-	reserved := ac.AdapterReservedBytes()
-	if math.IsNaN(reserved) || math.IsInf(reserved, 0) || reserved < 0 || reserved >= maxSafeReservedBytes {
-		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v bytes is outside the representable range", reserved)
-	}
-	return int64(reserved)
 }
 
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
@@ -1465,15 +1311,7 @@ var runCmd = &cobra.Command{
 		// reference against the declared registry (unknown id / base-model mismatch =>
 		// Fatalf, never a silent no-op). With no adapters and no workload adapter
 		// references this is inert (INV-6).
-		var loraRegistry sim.AdapterRegistry
-		if loraCfg.HasAdapters() {
-			r, regErr := sim.AdapterRegistryConstructor()(loraCfg.Adapters)
-			if regErr != nil {
-				logrus.Fatalf("Invalid LoRA adapter registry: %v", regErr)
-			}
-			loraRegistry = r
-		}
-		if err := workload.ValidateAdapterReferences(spec, loraRegistry); err != nil {
+		if err := workload.ValidateAdapterReferences(spec, adapterRegistryOf(loraCfg)); err != nil {
 			logrus.Fatalf("LoRA workload validation: %v", err)
 		}
 
@@ -1542,25 +1380,22 @@ var runCmd = &cobra.Command{
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
+		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,
 				Seed:    seed,
-				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
-					sim.WithSequenceState(sequenceState), sim.WithPrefixHit(prefixHit)),
-				BatchConfig: batchConfigFromCLI(),
-				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
-				// the plan is active (each replica is one rank), else the CLI dataParallelism
-				// unchanged. Passing it through the canonical constructor (R4) keeps the config
-				// authoritative from the start (no construct-then-override). Since #1556 replay
-				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
-				// paths agree for every config both support (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, maxModelLen),
-				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
-				LoRAConfig:           loraCfg,
-				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
+				// The engine's configuration comes from the build site (engineConfigFor), the same
+				// for run and replay (INV-13). DP-as-placement (#1531): dpPlan.PerRankDP is the
+				// per-replica DP -- 1 when the plan is active (each replica is one rank), else the
+				// CLI dataParallelism unchanged; since #1556 replay wires the SAME dpPlan.PerRankDP
+				// from the SAME resolveDPPlacement.
+				KVCacheConfig:        ec.KVCache,
+				BatchConfig:          ec.Batch,
+				ModelHardwareConfig:  ec.ModelHardware,
+				PolicyConfig:         ec.Policy,
+				LoRAConfig:           ec.LoRA,
+				SpeculativeConfig:    ec.Speculative,
 				Frontend:             frontendConfigFromCLI(),
 				SLOPriorityOverrides: sloPriorityOverrides,
 				// The kernel prices every step.
