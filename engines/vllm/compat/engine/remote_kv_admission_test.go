@@ -113,3 +113,31 @@ func TestAdmitRemoteKVLeavesTheFirstStepOfLandedPullsWaitingToRun(t *testing.T) 
 		t.Errorf("b admitted into the block a's waiting first step needs: %v", got)
 	}
 }
+
+// The engine, not its caller, decides the order its waiting pulls are admitted in. The
+// compatibility engine keeps the order the handoffs reached it under every scheduling policy
+// (blis-vllm#30 tracks vLLM's priority order): a later, more urgent request does not overtake.
+func TestAdmitRemoteKVKeepsTheArrivalOrderUnderEveryPolicy(t *testing.T) {
+	for _, policy := range []string{"fcfs", "priority-fcfs"} {
+		cfg := engine.SimConfig{
+			KVCacheConfig: engine.NewKVCacheConfig(64, 16, 0, 0, 0, 0),
+			BatchConfig:   engine.NewBatchConfig(16, 2048, 0),
+			PolicyConfig:  engine.NewPolicyConfig(policy, "fcfs"),
+		}
+		e, err := engine.NewEngineCore(cfg, engine.MustNewKVStoreFromConfig(cfg.KVCacheConfig), fixedLatency{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, urgent := decodeReq("first", 1, 2), decodeReq("urgent", 2, 2)
+		first.Priority, urgent.Priority = 5, 0 // lower is more urgent (vLLM convention)
+		first.ArrivalTime, urgent.ArrivalTime = 0, 10
+		got := e.AdmitRemoteKV([]*engine.Request{first, urgent})
+		if len(got) != 2 || got[0].Req != first || got[1].Req != urgent {
+			ids := []string{}
+			for _, a := range got {
+				ids = append(ids, a.Req.ID)
+			}
+			t.Errorf("%s: admitted %v, want the arrival order [first urgent]", policy, ids)
+		}
+	}
+}
