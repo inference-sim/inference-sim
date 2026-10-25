@@ -47,18 +47,18 @@ func (eq *EventQueue) Pop() any {
 }
 
 // Simulator is one instance: the host's event loop and clock (inference-sim's, #2021 B3) around
-// the engine that makes every scheduling, KV-cache and metric decision (engineCore). The host
+// the engine that makes every scheduling, KV-cache and metric decision (EngineCore). The host
 // fields stay with the simulator when the engine moves to blis-vllm (PLAN-E2 E2.3): the clock,
 // the horizon, the event queue and its seqIDs, the pending step, the idle park, the progress
-// hook and the callbacks. engineCore is embedded so its fields and methods read as the
+// hook and the callbacks. EngineCore is embedded so its fields and methods read as the
 // simulator's own while the split is made one method at a time.
 type Simulator struct {
-	engineCore
+	EngineCore
 
 	Clock   int64
 	Horizon int64
 	// Metrics is the instance's report record (inference-sim's, #2021 B2). The engine writes it
-	// only through its recorder (engineCore.rec).
+	// only through its recorder (EngineCore.Rec).
 	Metrics *Metrics
 	// eventQueue has all the simulator events, like arrival and step events
 	eventQueue EventQueue
@@ -138,15 +138,15 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		return nil, err
 	}
 	s := &Simulator{
-		engineCore: *eng,
+		EngineCore: *eng,
 		Clock:      0,
 		Horizon:    cfg.Horizon,
 		Metrics:    NewMetrics(),
 		eventQueue: make(EventQueue, 0),
 		stepEvent:  nil,
 	}
-	s.host = s
-	s.rec = s.Metrics
+	s.Host = s
+	s.Rec = s.Metrics
 	return s, nil
 }
 
@@ -311,7 +311,7 @@ func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
 func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
 	return InstanceSnapshot{
 		ID:                "instance-0",
-		Model:             sim.model,
+		Model:             sim.ModelName,
 		State:             InstanceStateActive,
 		QueueDepth:        sim.QueueDepth(),
 		BatchSize:         sim.BatchSize(),
@@ -481,9 +481,9 @@ func (sim *Simulator) BusyUntil() int64 { return sim.busyUntil }
 // ShareRendererOf makes the ranks of one endpoint share one render stage (ShareRenderer, over
 // the ranks' engines).
 func ShareRendererOf(ranks []*Simulator, apiServers int) error {
-	engines := make([]*engineCore, len(ranks))
+	engines := make([]*EngineCore, len(ranks))
 	for i, r := range ranks {
-		engines[i] = &r.engineCore
+		engines[i] = &r.EngineCore
 	}
 	return ShareRenderer(engines, apiServers)
 }
@@ -491,10 +491,10 @@ func ShareRendererOf(ranks []*Simulator, apiServers int) error {
 // BuildServerSeriesOf assembles the server time series of the instances (BuildServerSeries,
 // over their engines, each binned to its own clock).
 func BuildServerSeriesOf(ids []string, sims []*Simulator) *ServerSeriesOutput {
-	engines := make([]*engineCore, len(sims))
+	engines := make([]*EngineCore, len(sims))
 	clocks := make([]int64, len(sims))
 	for i, s := range sims {
-		engines[i], clocks[i] = &s.engineCore, s.Clock
+		engines[i], clocks[i] = &s.EngineCore, s.Clock
 	}
 	return BuildServerSeries(ids, engines, clocks)
 }

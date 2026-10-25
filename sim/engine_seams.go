@@ -65,7 +65,7 @@ type recorder interface {
 	// integral and the peak). With weight false it updates the peak only (a free poll).
 	kvUsage(used, duration int64, weight bool)
 	// completed records a finished request (see recordRequestCompletion for each value).
-	completed(c completion)
+	completed(c Completion)
 	// lengthCapped records a request force-completed at the context limit.
 	lengthCapped(req *Request)
 	// kvAllocationFailure counts a final-token KV allocation that failed.
@@ -78,13 +78,13 @@ type recorder interface {
 }
 
 // completion is one finished request's report values, computed by the engine.
-type completion struct {
-	req          *Request
-	ttft         int64 // FirstTokenTime
-	outputTokens int   // emitted output tokens (>= 0)
-	e2e          int64 // end-to-end latency in ticks
-	itl          float64
-	steps        int   // FinishedStepIdx - ScheduledStepIdx
-	clock        int64 // the clock at which the completion was processed
-	overhead     int64 // the post-decode overhead e2e includes
+type Completion struct {
+	Req          *Request
+	TTFT         int64 // FirstTokenTime
+	OutputTokens int   // emitted output tokens (>= 0)
+	E2E          int64 // end-to-end latency in ticks
+	ITL          float64
+	Steps        int   // FinishedStepIdx - ScheduledStepIdx
+	Clock        int64 // the clock at which the completion was processed
+	Overhead     int64 // the post-decode overhead e2e includes
 }

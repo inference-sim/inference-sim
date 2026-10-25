@@ -75,7 +75,7 @@ func TestLockstepGroup_WorkConservingAndWaveEnd(t *testing.T) {
 		driveGroup(ranks, func() {
 			busy := false
 			for _, r := range ranks {
-				busy = busy || hasWork(&r.engineCore)
+				busy = busy || HasWorkOf(&r.EngineCore)
 			}
 			if busy && g.pending == nil {
 				rt.Fatalf("INV-8: a rank has work but no group step is armed")

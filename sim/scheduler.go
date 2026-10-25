@@ -78,12 +78,12 @@ func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by the policy bundle's Validate(), the factory functions, and ValidatePolicyName().
 var (
-	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
+	ValidSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	ValidPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
 )
 
 // IsValidScheduler returns true if name is a recognized scheduler.
-func IsValidScheduler(name string) bool { return validSchedulers[name] }
+func IsValidScheduler(name string) bool { return ValidSchedulers[name] }
 
 // NewScheduler creates an InstanceScheduler by name.
 // Valid names are defined in validSchedulers.

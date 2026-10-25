@@ -92,7 +92,7 @@ func (sim *Simulator) chargePolls(k int64) {
 	if p.free {
 		end = p.at + (k-1)*p.quantum
 	}
-	sim.ChargeSkippedPolls(k, skippedPolls{waiting: p.waiting, used: p.used, quantum: p.quantum, free: p.free, missDelta: p.missDelta})
+	sim.ChargeSkippedPolls(k, SkippedPolls{Waiting: p.waiting, Used: p.used, Quantum: p.quantum, Free: p.free, MissDelta: p.missDelta})
 	sim.busyUntil = end
 	sim.RecordSkippedPollsEnd(end)
 }

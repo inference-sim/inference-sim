@@ -44,21 +44,21 @@ func (m *Metrics) kvUsage(used, duration int64, weight bool) {
 	}
 }
 
-func (m *Metrics) completed(c completion) {
-	req := c.req
+func (m *Metrics) completed(c Completion) {
+	req := c.Req
 	m.CompletedRequests++
-	m.TTFTSum += c.ttft
-	if c.outputTokens > 0 {
-		m.TotalOutputTokens += c.outputTokens
+	m.TTFTSum += c.TTFT
+	if c.OutputTokens > 0 {
+		m.TotalOutputTokens += c.OutputTokens
 	}
-	m.RequestE2Es[req.ID] = float64(c.e2e)
-	m.RequestITLs[req.ID] = c.itl
-	m.RequestStepCounters = append(m.RequestStepCounters, c.steps)
-	m.RequestCompletionTimes[req.ID] = float64(c.e2e + req.ArrivalTime)
-	m.recordCompletionOrder(req.ID, c.clock, c.outputTokens, c.overhead)
+	m.RequestE2Es[req.ID] = float64(c.E2E)
+	m.RequestITLs[req.ID] = c.ITL
+	m.RequestStepCounters = append(m.RequestStepCounters, c.Steps)
+	m.RequestCompletionTimes[req.ID] = float64(c.E2E + req.ArrivalTime)
+	m.recordCompletionOrder(req.ID, c.Clock, c.OutputTokens, c.Overhead)
 	m.AllITLs = append(m.AllITLs, req.ITL...)
 	m.StepOwners = append(m.StepOwners,
-		StepOwner{CompletionUs: c.e2e + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
+		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
 }
 
 func (m *Metrics) lengthCapped(req *Request) {

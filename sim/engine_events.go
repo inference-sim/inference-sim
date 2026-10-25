@@ -7,7 +7,7 @@ package sim
 // queuedAt is when a request arriving at t enters the wait queue: after its admission overhead
 // (render + tokenize), which runs on the endpoint's render stage when one is configured, so it
 // queues behind earlier requests (INV-R1).
-func (sim *engineCore) QueuedAt(req *Request, t int64) int64 {
+func (sim *EngineCore) QueuedAt(req *Request, t int64) int64 {
 	render := sim.latencyModel.QueueingTime(req)
 	if sim.renderer != nil {
 		return sim.renderer.Admit(t, render)
@@ -16,10 +16,10 @@ func (sim *engineCore) QueuedAt(req *Request, t int64) int64 {
 }
 
 // hasWaiting reports whether the wait queue holds a request.
-func (sim *engineCore) HasWaiting() bool { return sim.WaitQ.Len() > 0 }
+func (sim *EngineCore) HasWaiting() bool { return sim.WaitQ.Len() > 0 }
 
 // hasRunning reports whether the running batch holds a request.
-func (sim *engineCore) HasRunning() bool {
+func (sim *EngineCore) HasRunning() bool {
 	return sim.RunningBatch != nil && len(sim.RunningBatch.Requests) > 0
 }
 
@@ -28,7 +28,7 @@ func (sim *engineCore) HasRunning() bool {
 // request — new-slice removal from RunningBatch (R21), (2) queued request — WaitQ.Remove,
 // (3) pre-QueuedEvent race — request not in any container yet (WaitQ.Remove returns false,
 // safe no-op).
-func (sim *engineCore) CancelOnTimeout(req *Request) bool {
+func (sim *EngineCore) CancelOnTimeout(req *Request) bool {
 	// No-op guard: request already completed or timed out (BC-3)
 	if req.State == StateCompleted || req.State == StateTimedOut {
 		return false
@@ -40,7 +40,7 @@ func (sim *engineCore) CancelOnTimeout(req *Request) bool {
 	// names only queued -> running -> completed, so timed-out is a terminal state the
 	// statement does not yet enumerate; this is not the only site that sets it.
 	req.State = StateTimedOut
-	sim.rec.timedOut(req)
+	sim.Rec.timedOut(req)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,
@@ -88,7 +88,7 @@ func (sim *engineCore) CancelOnTimeout(req *Request) bool {
 // quiescent reports whether the engine's next poll would schedule exactly what its last step
 // did, nothing: the last step scheduled nothing and preempted nothing, no adapter load is in
 // flight, and the KV store has no transfer pending or in flight (QuiescentKVStore).
-func (sim *engineCore) IsQuiescent() bool {
+func (sim *EngineCore) IsQuiescent() bool {
 	if !sim.lastStepEmpty || sim.lastStepPreempted || sim.loadingAdapter != "" {
 		return false
 	}
@@ -101,7 +101,7 @@ func (sim *engineCore) IsQuiescent() bool {
 
 // parkedView is what every skipped poll of a parked engine would record: the waiting
 // requests, the KV blocks in use, and the offload miss counter's advance per poll.
-func (sim *engineCore) ParkedView() (waiting int, used, missDelta int64) {
+func (sim *EngineCore) ParkedView() (waiting int, used, missDelta int64) {
 	q := sim.KVCache.(QuiescentKVStore)
 	return sim.WaitQ.Len(), sim.KVCache.UsedBlocks(), q.PollMisses() - sim.pollMissesAtStep
 }
@@ -109,35 +109,35 @@ func (sim *engineCore) ParkedView() (waiting int, used, missDelta int64) {
 // chargeSkippedPolls records the telemetry of k empty polls of a parked engine (p) as polling
 // would have: the step count, the queue snapshots, the peak and the time-weighted KV usage (on
 // the StepTime grid only), and the offload miss counter.
-func (sim *engineCore) ChargeSkippedPolls(k int64, p skippedPolls) {
+func (sim *EngineCore) ChargeSkippedPolls(k int64, p SkippedPolls) {
 	sim.stepCount += int(k)
 	for i := int64(0); i < k; i++ {
-		sim.rec.queueSnapshot(p.waiting, 0)
+		sim.Rec.queueSnapshot(p.Waiting, 0)
 	}
 	// The peak once, then the time-weighted usage once per poll (on the StepTime grid only):
 	// the float sum is accumulated poll by poll, in the same order as before.
-	sim.rec.kvUsage(p.used, 0, false)
-	if !p.free {
+	sim.Rec.kvUsage(p.Used, 0, false)
+	if !p.Free {
 		for i := int64(0); i < k; i++ {
-			sim.rec.kvUsage(p.used, p.quantum, true)
+			sim.Rec.kvUsage(p.Used, p.Quantum, true)
 		}
 	}
-	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.missDelta)
+	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.MissDelta)
 }
 
 // skippedPolls is what each skipped poll of a parked engine records: the waiting requests and
 // KV blocks in use when it parked, one poll's length, whether polls cost GPU time (free: they
 // do not, IdlePollEnv), and the offload miss counter's advance per poll.
-type skippedPolls struct {
-	waiting   int
-	used      int64
-	quantum   int64
-	free      bool
-	missDelta int64
+type SkippedPolls struct {
+	Waiting   int
+	Used      int64
+	Quantum   int64
+	Free      bool
+	MissDelta int64
 }
 
 // recordSkippedPollsEnd closes the server series' gauges at the last skipped poll's end.
-func (sim *engineCore) RecordSkippedPollsEnd(end int64) {
+func (sim *EngineCore) RecordSkippedPollsEnd(end int64) {
 	if sim.serverSeries != nil {
 		sim.serverSeries.recordGeneration(end, 0)
 		sim.recordServerStepEnd(end, 0)

@@ -19,13 +19,13 @@ type DPStepPricer interface {
 
 // hasWork reports whether a rank has unfinished requests, as the scheduler's
 // has_unfinished_requests does: running or waiting.
-func hasWork(r *engineCore) bool {
+func HasWorkOf(r *EngineCore) bool {
 	return (r.RunningBatch != nil && len(r.RunningBatch.Requests) > 0) || r.WaitQ.Len() > 0
 }
 
 // lockstepSchedule is a rank's schedule in a lockstep step at now: it returns the requests
 // the rank's forward pass runs.
-func (sim *engineCore) LockstepSchedule(now int64) []*Request {
+func (sim *EngineCore) LockstepSchedule(now int64) []*Request {
 	sim.scheduleBatch(now)
 	return sim.scheduledRequests()
 }
@@ -33,7 +33,7 @@ func (sim *engineCore) LockstepSchedule(now int64) []*Request {
 // lockstepFinish applies a lockstep step of advance ticks that started at now to a rank that
 // ran: progress, mirroring, completions and the server series' step end, then keeps or
 // clears its running batch.
-func (sim *engineCore) LockstepFinish(now, advance int64) {
+func (sim *EngineCore) LockstepFinish(now, advance int64) {
 	sim.advanceBatch(now, advance)
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, advance)
@@ -46,7 +46,7 @@ func (sim *engineCore) LockstepFinish(now, advance int64) {
 }
 
 // dpStepPricer is the engine's latency model as a DPStepPricer, nil when it is not one.
-func (sim *engineCore) DPStepPricerOf() DPStepPricer {
+func (sim *EngineCore) DPStepPricerOf() DPStepPricer {
 	if p, ok := sim.latencyModel.(DPStepPricer); ok {
 		return p
 	}
@@ -54,11 +54,11 @@ func (sim *engineCore) DPStepPricerOf() DPStepPricer {
 }
 
 // stepTimeAtLeastOne prices batch on the engine's own latency model, at least one tick.
-func (sim *engineCore) StepTimeAtLeastOne(batch []*Request) int64 {
+func (sim *EngineCore) StepTimeAtLeastOne(batch []*Request) int64 {
 	return max(1, sim.latencyModel.StepTime(batch))
 }
 
 // consumeTransferLatency returns and clears the KV store's pending transfer latency.
-func (sim *engineCore) ConsumeTransferLatency() int64 {
+func (sim *EngineCore) ConsumeTransferLatency() int64 {
 	return sim.KVCache.ConsumePendingTransferLatency()
 }

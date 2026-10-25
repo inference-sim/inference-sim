@@ -2125,9 +2125,9 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		t.Fatalf("failed to read engine.go: %v", err)
 	}
 	content := string(data)
-	// Extract EnqueueRequest function body (between "func (sim *engineCore) EnqueueRequest" and
+	// Extract EnqueueRequest function body (between "func (sim *EngineCore) EnqueueRequest" and
 	// the next "func "): it is the engine's, since the host/engine split (#2021 E2.3).
-	startIdx := strings.Index(content, "func (sim *engineCore) EnqueueRequest")
+	startIdx := strings.Index(content, "func (sim *EngineCore) EnqueueRequest")
 	if startIdx < 0 {
 		t.Fatal("EnqueueRequest function not found in engine.go")
 	}

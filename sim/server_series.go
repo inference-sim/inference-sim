@@ -218,7 +218,7 @@ func (s *serverSeries) output(id string, end int64, bins int) ServerSeriesEngine
 }
 
 // ServerSeriesEnd is the last instant this engine recorded anything, in ticks (0 when off).
-func (sim *engineCore) ServerSeriesEnd() int64 {
+func (sim *EngineCore) ServerSeriesEnd() int64 {
 	if sim.serverSeries == nil {
 		return 0
 	}
@@ -227,7 +227,7 @@ func (sim *engineCore) ServerSeriesEnd() int64 {
 
 // ServerSeries returns this engine's binned series closed at end, padded to bins bins; ok is
 // false when the feature is off.
-func (sim *engineCore) ServerSeries(id string, end int64, bins int) (ServerSeriesEngine, bool) {
+func (sim *EngineCore) ServerSeries(id string, end int64, bins int) (ServerSeriesEngine, bool) {
 	if sim.serverSeries == nil {
 		return ServerSeriesEngine{}, false
 	}
@@ -235,7 +235,7 @@ func (sim *engineCore) ServerSeries(id string, end int64, bins int) (ServerSerie
 }
 
 // ServerSeriesIntervalUs is the bin width in ticks, 0 when the feature is off.
-func (sim *engineCore) ServerSeriesIntervalUs() int64 {
+func (sim *EngineCore) ServerSeriesIntervalUs() int64 {
 	if sim.serverSeries == nil {
 		return 0
 	}
@@ -244,7 +244,7 @@ func (sim *engineCore) ServerSeriesIntervalUs() int64 {
 
 // BuildServerSeries assembles the block from engines, binning every engine to the latest
 // engine's end so the arrays line up. Nil when no engine records a series.
-func BuildServerSeries(ids []string, sims []*engineCore, clocks []int64) *ServerSeriesOutput {
+func BuildServerSeries(ids []string, sims []*EngineCore, clocks []int64) *ServerSeriesOutput {
 	var interval, end int64
 	for i, s := range sims {
 		if s.serverSeries != nil {
@@ -271,7 +271,7 @@ func BuildServerSeries(ids []string, sims []*engineCore, clocks []int64) *Server
 // left the batch and freed their blocks: make_stats runs after update_from_output
 // (core/sched/scheduler.py:2340-2350, 2859-2900), so the running count excludes the requests
 // the step finished. running is the requests still in the batch.
-func (sim *engineCore) recordServerStepEnd(t int64, running int) {
+func (sim *EngineCore) recordServerStepEnd(t int64, running int) {
 	if sim.serverSeries == nil {
 		return
 	}

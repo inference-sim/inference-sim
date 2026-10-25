@@ -100,7 +100,7 @@ func (r *Renderer) WaitTicks() int64 { return r.waitTicks }
 // ShareRenderer gives the ranks of one endpoint a single render stage of apiServers servers:
 // the replica behind vLLM's internal DP balancer, whose API servers render every request
 // before the balancer picks a rank. A no-op when the ranks' front end is inert.
-func ShareRenderer(ranks []*engineCore, apiServers int) error {
+func ShareRenderer(ranks []*EngineCore, apiServers int) error {
 	if len(ranks) == 0 || ranks[0].renderer == nil {
 		return nil
 	}
@@ -119,4 +119,4 @@ func ShareRenderer(ranks []*engineCore, apiServers int) error {
 }
 
 // Renderer is the simulator's render stage, nil when its front end is inert.
-func (sim *engineCore) Renderer() *Renderer { return sim.renderer }
+func (sim *EngineCore) Renderer() *Renderer { return sim.renderer }

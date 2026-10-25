@@ -180,7 +180,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	//
 	// Deliberately NOT scheduleStepBy (#1886): this is the one idle-scheduling site that
 	// keeps the stepEvent == nil form. scheduleStepBy would pull a pending idle wake
-	// forward to e.time, re-creating the cascade the comment in engineCore.timeout describes.
+	// forward to e.time, re-creating the cascade the comment in EngineCore.CancelOnTimeout describes.
 	// Nothing is stranded by waiting: an idle wake exists only when every WaitQ entry is
 	// deferred, and a queued timeout frees no CPU-tier capacity a deferral could use —
 	// OffloadCache.ReleaseKVBlocks delegates to the GPU tier alone (kv/offload_chain.go)

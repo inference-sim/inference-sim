@@ -1,4 +1,4 @@
-// sim/engine.go: the engine half of an instance (engineCore): every scheduling, KV-cache and
+// sim/engine.go: the engine half of an instance (EngineCore): every scheduling, KV-cache and
 // metric decision, reaching its host only through engineHost and its report only through
 // recorder (#2021 B3, PLAN-E2 E2.3).
 package sim
@@ -23,13 +23,13 @@ const MaxTokenID = 128000 // Max token ID in request input/output
 // is not representable as uint and fails to compile.
 const _ = uint(math.MaxInt32 - MaxTokenID)
 
-// engineCore is the engine: the wait queue, the KV store, the running batch, batch formation,
+// EngineCore is the engine: the wait queue, the KV store, the running batch, batch formation,
 // the LoRA and speculative-decoding state, and the report counters the engine updates. It
 // holds no clock and no event queue (#2021 B3); what it needs from the host it gets from the
 // Simulator it is embedded in until the split is finished.
-type engineCore struct {
+type EngineCore struct {
 	// host is the simulator this engine runs in (engineHost), set at construction.
-	host engineHost
+	Host engineHost
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
 	KVCache KVStore
@@ -39,7 +39,7 @@ type engineCore struct {
 	// while adding requests to RunningBatch
 	RunningBatch *Batch
 	// rec is where the engine writes the report (recorder): the host's Metrics.
-	rec recorder
+	Rec recorder
 	// max number of requests RunningBatch can hold
 	maxNumSeqs int64
 	// max total number of new tokens across all requests in RunningBatch
@@ -62,7 +62,7 @@ type engineCore struct {
 	// map of request IDs to total num computed tokens (including cached tokens)
 	reqNumComputedTokens map[string]int64
 	batchFormation       BatchFormation
-	model                string
+	ModelName            string
 	gpu                  string
 	maxModelLen          int64 // max total sequence length (0 = unlimited)
 	// Speculative decoding / MTP (#1528). specEnabled gates ALL spec-decode behavior;
@@ -115,7 +115,7 @@ type engineCore struct {
 // newEngineCore builds the engine from its configuration and the KV store and latency model
 // it runs on; NewSimulator gives it its host and its recorder. It refuses what NewSimulator
 // always refused, with the same messages.
-func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*engineCore, error) {
+func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*EngineCore, error) {
 	if kvStore == nil {
 		return nil, fmt.Errorf("NewSimulator: kvStore must not be nil")
 	}
@@ -150,7 +150,7 @@ func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*
 	}
 	batchFormation := NewBatchFormation(cfg.PreemptionPolicy)
 
-	s := &engineCore{
+	s := &EngineCore{
 		WaitQ:                     &WaitQueue{},
 		KVCache:                   kvStore,
 		RunningBatch:              &Batch{},
@@ -161,7 +161,7 @@ func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*
 		stepCount:                 0,
 		reqNumComputedTokens:      make(map[string]int64),
 		batchFormation:            batchFormation,
-		model:                     cfg.Model,
+		ModelName:                 cfg.Model,
 		gpu:                       cfg.GPU,
 		maxModelLen:               cfg.MaxModelLen,
 		specEnabled:               cfg.IsEnabled(),
@@ -248,12 +248,12 @@ func NewEngineCore(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*
 
 // WorkloadRNG returns the RNG for workload generation.
 // This maintains backward compatibility with the original single-RNG implementation.
-func (sim *engineCore) WorkloadRNG() *rand.Rand {
+func (sim *EngineCore) WorkloadRNG() *rand.Rand {
 	return sim.rng.ForSubsystem(SubsystemWorkload)
 }
 
 // QueueDepth returns the number of requests in the wait queue.
-func (sim *engineCore) QueueDepth() int { return sim.WaitQ.Len() }
+func (sim *EngineCore) QueueDepth() int { return sim.WaitQ.Len() }
 
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
 // instance, in a deterministic order (INV-6). Returns nil when the LoRA subsystem
@@ -261,7 +261,7 @@ func (sim *engineCore) QueueDepth() int { return sim.WaitQ.Len() }
 // snapshot's ResidentAdapters stays nil and the lora-affinity scorer is neutral
 // (INV-6). Read by the cluster snapshot provider to populate
 // RoutingSnapshot.ResidentAdapters (#1469).
-func (sim *engineCore) ResidentAdapterIDs() []string {
+func (sim *EngineCore) ResidentAdapterIDs() []string {
 	if sim.residentAdapters == nil {
 		return nil
 	}
@@ -271,7 +271,7 @@ func (sim *engineCore) ResidentAdapterIDs() []string {
 // DrainWaitQueue removes and returns all requests currently in the wait queue.
 // Used by DrainRedirect policy to re-inject queued requests into the cluster router.
 // After this call, WaitQ.Len() == 0.
-func (sim *engineCore) DrainWaitQueue() []*Request {
+func (sim *EngineCore) DrainWaitQueue() []*Request {
 	items := sim.WaitQ.Items()
 	// Forget any deferral state for drained requests (H3, #1591): they leave this
 	// instance's WaitQ for re-injection elsewhere, so their offload deferral must not
@@ -288,14 +288,14 @@ func (sim *engineCore) DrainWaitQueue() []*Request {
 // eviction, drain-redirect), so the offload chain's deferred map does not leak. A
 // no-op unless the store supports deferral (the offload chain with secondary tiers)
 // and the request is tracked; idempotent.
-func (sim *engineCore) ClearDeferredKV(id string) {
+func (sim *EngineCore) ClearDeferredKV(id string) {
 	if d, ok := sim.KVCache.(DeferrableKVStore); ok {
 		d.ClearDeferred(id)
 	}
 }
 
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
-func (sim *engineCore) BatchSize() int {
+func (sim *EngineCore) BatchSize() int {
 	if sim.RunningBatch == nil {
 		return 0
 	}
@@ -307,26 +307,26 @@ func (sim *engineCore) BatchSize() int {
 // time now (or when the step still executing ends, #1944), so its published metrics and KV events
 // show the state after the abort even when nothing is left to run. A parked engine is woken
 // (the abort may have freed KV); a lockstep rank asks its group (scheduleStepAt).
-func (sim *engineCore) NoteAbort(now int64) {
+func (sim *EngineCore) NoteAbort(now int64) {
 	sim.abortPending = true
-	if !sim.host.stepArmed() {
-		sim.host.armStep(now)
+	if !sim.Host.stepArmed() {
+		sim.Host.armStep(now)
 	}
 }
 
 // ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
 // with pending work. Used by gateway eviction to maintain INV-8 after removing
 // the last request from RunningBatch.
-func (sim *engineCore) ScheduleStepIfIdle(time int64) {
+func (sim *EngineCore) ScheduleStepIfIdle(time int64) {
 	if sim.WaitQ.Len() > 0 {
-		sim.host.wakeStep(time)
+		sim.Host.wakeStep(time)
 	}
 }
 
 // idleDeferralWake returns the next tick at which a deferred request can change
 // state, when every waiting request is deferred. Until then an empty step admits
 // nothing, so the scheduler can sleep instead of re-polling every tick.
-func (sim *engineCore) IdleDeferralWake(now int64) (int64, bool) {
+func (sim *EngineCore) IdleDeferralWake(now int64) (int64, bool) {
 	d, ok := sim.KVCache.(DeferrableKVStore)
 	if !ok {
 		return 0, false
@@ -342,7 +342,7 @@ func (sim *engineCore) IdleDeferralWake(now int64) (int64, bool) {
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
 // overhead in microseconds. Used by the cluster layer to include overhead in
 // parent.CompletionTime when disaggregated decode sub-requests complete.
-func (sim *engineCore) PostDecodeFixedOverhead() int64 {
+func (sim *EngineCore) PostDecodeFixedOverhead() int64 {
 	return sim.latencyModel.PostDecodeFixedOverhead()
 }
 
@@ -366,7 +366,7 @@ func (sim *engineCore) PostDecodeFixedOverhead() int64 {
 // All guards mirror real vLLM behavior where oversized requests are rejected
 // before entering the engine. The control plane never peeks at len(OutputTokens) —
 // respecting the oracle knowledge boundary (INV-9, #567).
-func (sim *engineCore) EnqueueRequest(r *Request) {
+func (sim *EngineCore) EnqueueRequest(r *Request) {
 	// Guard -1: Already timed out (race: TimeoutEvent fired before QueuedEvent).
 	// Request was timed out during the queueing delay (alpha overhead) before the server
 	// processed the input. TotalInputTokens is NOT counted for this path.
@@ -384,9 +384,9 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
-		sim.rec.requestDropped(r, false)
+		sim.Rec.requestDropped(r, false)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
-		sim.host.requestDone(r, sim.host.now())
+		sim.Host.requestDone(r, sim.Host.now())
 		return
 	}
 
@@ -395,8 +395,8 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 		if r.InputLen() >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
-			sim.rec.requestDropped(r, true)
-			sim.host.requestDone(r, sim.host.now())
+			sim.Rec.requestDropped(r, true)
+			sim.Host.requestDone(r, sim.Host.now())
 			return
 		}
 		if r.MaxOutputLen > 0 {
@@ -404,8 +404,8 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
-				sim.rec.requestDropped(r, true)
-				sim.host.requestDone(r, sim.host.now())
+				sim.Rec.requestDropped(r, true)
+				sim.Host.requestDone(r, sim.Host.now())
 				return
 			}
 		}
@@ -416,20 +416,20 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
-		sim.rec.requestDropped(r, false)
-		sim.host.requestDone(r, sim.host.now())
+		sim.Rec.requestDropped(r, false)
+		sim.Host.requestDone(r, sim.Host.now())
 		return
 	}
 
 	// Input tokens counted BEFORE past-due check (request was received)
-	sim.rec.inputReceived(r.InputLen())
+	sim.Rec.inputReceived(r.InputLen())
 
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
-	if r.Deadline > 0 && r.Deadline <= sim.host.now() {
+	if r.Deadline > 0 && r.Deadline <= sim.Host.now() {
 		r.State = StateTimedOut
-		sim.rec.timedOut(r)
-		sim.host.requestDone(r, sim.host.now())
+		sim.Rec.timedOut(r)
+		sim.Host.requestDone(r, sim.Host.now())
 		return
 	}
 
@@ -447,8 +447,8 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 
 	// Schedule timeout event (after all guards + enqueue — BC-5)
 	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
-	if r.Deadline > 0 && r.Deadline <= sim.host.horizon() {
-		sim.host.scheduleTimeout(r, r.Deadline)
+	if r.Deadline > 0 && r.Deadline <= sim.Host.horizon() {
+		sim.Host.scheduleTimeout(r, r.Deadline)
 	}
 }
 
@@ -461,7 +461,7 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 // max(sim.Clock, clusterTime) to prevent the instance from processing the
 // decode sub-request at a stale internal time that precedes the request's arrival.
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
-func (sim *engineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
+func (sim *EngineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Pre-processor: decode sub-requests inherit SLOClass from parent (pd_events.go:215).
 	// Apply the same vLLM-convention priority as EnqueueRequest.
 	if sim.sloMap == nil {
@@ -474,28 +474,28 @@ func (sim *engineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
 
 	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
-	if r.Deadline > 0 && r.Deadline <= sim.host.horizon() {
-		sim.host.scheduleTimeout(r, r.Deadline)
+	if r.Deadline > 0 && r.Deadline <= sim.Host.horizon() {
+		sim.Host.scheduleTimeout(r, r.Deadline)
 	}
 
 	// Trigger StepEvent if idle (work-conserving: INV-8).
 	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
 	// at a stale instance time that precedes the cluster time when it was injected.
 	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
-		sim.host.wakeStep(max(sim.host.now(), clusterTime))
+		sim.Host.wakeStep(max(sim.Host.now(), clusterTime))
 	}
 }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
-func (sim *engineCore) recordQueueSnapshots() {
-	sim.rec.queueSnapshot(sim.WaitQ.Len(), len(sim.RunningBatch.Requests))
+func (sim *EngineCore) recordQueueSnapshots() {
+	sim.Rec.queueSnapshot(sim.WaitQ.Len(), len(sim.RunningBatch.Requests))
 }
 
 // recordKVUsageMetrics records peak and time-weighted KV block usage.
 // Called after execution, before completion processing.
-func (sim *engineCore) recordKVUsageMetrics(stepDuration int64) {
-	sim.rec.kvUsage(sim.KVCache.UsedBlocks(), stepDuration, true)
+func (sim *EngineCore) recordKVUsageMetrics(stepDuration int64) {
+	sim.Rec.kvUsage(sim.KVCache.UsedBlocks(), stepDuration, true)
 }
 
 // recordRequestCompletion records per-request metrics for a completed request.
@@ -507,7 +507,7 @@ func (sim *engineCore) recordKVUsageMetrics(stepDuration int64) {
 // E2E and RequestCompletionTimes beyond the RequestLeftEvent timestamp by the overhead
 // amount. This is architecturally intentional: real vLLM's post-processing (detokenization,
 // response serialization) is non-blocking but still contributes to client-perceived latency.
-func (sim *engineCore) recordRequestCompletion(req *Request) {
+func (sim *EngineCore) recordRequestCompletion(req *Request) {
 	// Release this request's adapter pin (cold-load gate, #1466): a completed
 	// request no longer uses its adapter, so the slot becomes evictable. Covers the
 	// normal and length-capped completion paths (both funnel through here); the
@@ -606,15 +606,15 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 			itl = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 		}
 	}
-	sim.rec.completed(completion{
-		req:          req,
-		ttft:         req.FirstTokenTime,
-		outputTokens: max(outputTokens, 0),
-		e2e:          lat,
-		itl:          itl,
-		steps:        req.FinishedStepIdx - req.ScheduledStepIdx,
-		clock:        sim.host.now(),
-		overhead:     postDecodeOverhead,
+	sim.Rec.completed(Completion{
+		Req:          req,
+		TTFT:         req.FirstTokenTime,
+		OutputTokens: max(outputTokens, 0),
+		E2E:          lat,
+		ITL:          itl,
+		Steps:        req.FinishedStepIdx - req.ScheduledStepIdx,
+		Clock:        sim.Host.now(),
+		Overhead:     postDecodeOverhead,
 	})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
@@ -625,32 +625,32 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 
 // nothingToStep reports whether a step would find nothing to run: no running batch and an
 // empty wait queue.
-func (sim *engineCore) NothingToStep() bool { return sim.RunningBatch == nil && sim.WaitQ.Len() == 0 }
+func (sim *EngineCore) NothingToStep() bool { return sim.RunningBatch == nil && sim.WaitQ.Len() == 0 }
 
 // keepRunning sets the running batch to the requests a step left running.
-func (sim *engineCore) KeepRunning(remaining []*Request) { sim.RunningBatch.Requests = remaining }
+func (sim *EngineCore) KeepRunning(remaining []*Request) { sim.RunningBatch.Requests = remaining }
 
 // clearRunning drops the running batch after a step that finished every request in it.
-func (sim *engineCore) ClearRunning() { sim.RunningBatch = nil }
+func (sim *EngineCore) ClearRunning() { sim.RunningBatch = nil }
 
 // adapterLoading reports whether a LoRA adapter load is in flight (the cold-load gate holds
 // the wait queue's head until it completes, #1466).
-func (sim *engineCore) AdapterLoading() bool { return sim.loadingAdapter != "" }
+func (sim *EngineCore) AdapterLoading() bool { return sim.loadingAdapter != "" }
 
 // recordStillHeld records the requests the engine still holds at the end of the run, waiting
 // and running (BC-8, BC-9): in Finalize, because cluster mode drives events through
 // ProcessNextEvent and never calls Run.
-func (sim *engineCore) RecordStillHeld() {
+func (sim *EngineCore) RecordStillHeld() {
 	running := 0
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
-	sim.rec.stillHeld(sim.WaitQ.Len(), running)
+	sim.Rec.stillHeld(sim.WaitQ.Len(), running)
 }
 
 // idleStep is a step that found nothing to run. The step after an abort that left nothing to
 // run publishes the engine's state after the abort (NoteAbort).
-func (sim *engineCore) IdleStep(now int64) {
+func (sim *EngineCore) IdleStep(now int64) {
 	if sim.abortPending {
 		sim.abortPending = false
 		sim.publishEngineMetrics(now)
@@ -659,7 +659,7 @@ func (sim *engineCore) IdleStep(now int64) {
 }
 
 // executeStep schedules and executes one engine step at now and returns its duration.
-func (sim *engineCore) ExecuteStep(now int64) int64 {
+func (sim *EngineCore) ExecuteStep(now int64) int64 {
 	sim.abortPending = false
 	sim.scheduleBatch(now)
 	return sim.executeBatchStep(now)
@@ -670,7 +670,7 @@ func (sim *engineCore) ExecuteStep(now int64) int64 {
 // blocks exist, and before completions, so completing requests' blocks are still in use),
 // processes completions, records the server series' step end, and returns the requests
 // still running.
-func (sim *engineCore) FinishStep(now, advance int64) []*Request {
+func (sim *EngineCore) FinishStep(now, advance int64) []*Request {
 	sim.KVCache.MirrorToCPU(sim.RunningBatch.Requests)
 	remaining := sim.processCompletions(now, advance)
 	sim.recordServerStepEnd(now+advance, len(remaining))
@@ -678,14 +678,14 @@ func (sim *engineCore) FinishStep(now, advance int64) []*Request {
 }
 
 // publishStep publishes the engine's metrics and KV events at the end of a step, at.
-func (sim *engineCore) PublishStep(at int64) {
+func (sim *EngineCore) PublishStep(at int64) {
 	sim.publishEngineMetrics(at)
 	sim.publishKVEvents(at)
 }
 
 // scheduleBatch handles Phase 1: priority assignment, queue reordering, batch formation,
 // and event scheduling for preemptions and newly scheduled requests.
-func (sim *engineCore) scheduleBatch(now int64) {
+func (sim *EngineCore) scheduleBatch(now int64) {
 	sim.stepCount += 1
 	if q, ok := sim.KVCache.(QuiescentKVStore); ok {
 		sim.pollMissesAtStep = q.PollMisses()
@@ -743,7 +743,7 @@ func (sim *engineCore) scheduleBatch(now int64) {
 	// Record preemption metrics and emit debug log for each preempted request
 	for _, p := range batchResult.Preempted {
 		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
-		sim.rec.preempted()
+		sim.Rec.preempted()
 	}
 	sim.lastStepPreempted = len(batchResult.Preempted) > 0
 
@@ -751,8 +751,8 @@ func (sim *engineCore) scheduleBatch(now int64) {
 
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
-		sim.host.scheduleScheduled(s.Request, now)
-		sim.rec.scheduled(s.Request, now, s.Lookup)
+		sim.Host.scheduleScheduled(s.Request, now)
+		sim.Rec.scheduled(s.Request, now, s.Lookup)
 		if sim.serverSeries != nil {
 			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
 		}
@@ -772,7 +772,7 @@ func (sim *engineCore) scheduleBatch(now int64) {
 // request (a preempted-then-re-admitted request keeps its existing pin) and
 // released at a terminal state by releaseAdapterPin. No-op when the LoRA subsystem
 // is inert or the request targets the base model, preserving byte-identity (INV-6).
-func (sim *engineCore) recordAdapterResidency(req *Request) {
+func (sim *EngineCore) recordAdapterResidency(req *Request) {
 	if sim.residentAdapters == nil || req.Adapter == "" {
 		return
 	}
@@ -789,7 +789,7 @@ func (sim *engineCore) recordAdapterResidency(req *Request) {
 // completion/timeout terminal paths and must still free its pinned adapter slot —
 // otherwise the pin leaks and eventually blocks all future cold loads (INV-L5,
 // #1466). Idempotent and a no-op for unpinned (e.g. queued) or base-model requests.
-func (sim *engineCore) ReleaseAdapterPin(req *Request) {
+func (sim *EngineCore) ReleaseAdapterPin(req *Request) {
 	sim.releaseAdapterPin(req)
 }
 
@@ -797,7 +797,7 @@ func (sim *engineCore) ReleaseAdapterPin(req *Request) {
 // terminal state (completed, length-capped, or timed-out while running), letting
 // the adapter become evictable once no in-flight request references it. Idempotent
 // via the per-request adapterPinned flag; no-op when inert or base-model (INV-6).
-func (sim *engineCore) releaseAdapterPin(req *Request) {
+func (sim *EngineCore) releaseAdapterPin(req *Request) {
 	if sim.residentAdapters == nil || req.Adapter == "" || !req.AdapterPinned() {
 		return
 	}
@@ -813,7 +813,7 @@ func (sim *engineCore) releaseAdapterPin(req *Request) {
 // an AdapterLoadCompletionEvent at now + LoadLatency; residency is committed at
 // completion, so the gate keeps holding the request until then. No-op when the
 // subsystem is inert (INV-6).
-func (sim *engineCore) maybeStartAdapterLoad(now int64) {
+func (sim *EngineCore) maybeStartAdapterLoad(now int64) {
 	if sim.residentAdapters == nil || sim.adapterCost == nil || sim.loadingAdapter != "" {
 		return
 	}
@@ -834,11 +834,11 @@ func (sim *engineCore) maybeStartAdapterLoad(now int64) {
 			// running requests, which make progress.)
 			return
 		}
-		sim.rec.adapterEvicted(evicted)
+		sim.Rec.adapterEvicted(evicted)
 	}
 	sim.loadingAdapter = head.Adapter
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
-	sim.host.scheduleAdapterLoaded(head.Adapter, now+loadTicks)
+	sim.Host.scheduleAdapterLoaded(head.Adapter, now+loadTicks)
 }
 
 // completeAdapterLoad finishes a cold-adapter load: it makes the adapter resident
@@ -847,7 +847,7 @@ func (sim *engineCore) maybeStartAdapterLoad(now int64) {
 // transition), clears the in-flight marker so the next serialized load can begin,
 // and ensures a step forms so the gated request is admitted this tick (INV-8; the
 // completion is ordered ahead of a co-timed step by PriorityAdapterLoad).
-func (sim *engineCore) CompleteAdapterLoad(now int64, adapter string) {
+func (sim *EngineCore) CompleteAdapterLoad(now int64, adapter string) {
 	if sim.residentAdapters == nil {
 		return
 	}
@@ -860,7 +860,7 @@ func (sim *engineCore) CompleteAdapterLoad(now int64, adapter string) {
 	// increment) already happened at load-start, so it is always "" here; any future
 	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
-		sim.rec.adapterLoaded(adapter) // charged once per cold transition (INV-L3)
+		sim.Rec.adapterLoaded(adapter) // charged once per cold transition (INV-L3)
 	} else {
 		logrus.Errorf("[tick %07d] adapter %q load completed but could not be made resident (set full and fully pinned) — resident-set accounting bug", now, adapter)
 	}
@@ -881,7 +881,7 @@ func (sim *engineCore) CompleteAdapterLoad(now int64, adapter string) {
 // never OutputTokens (INV-9) — the output-budget cap is applied by the caller. Only
 // wired into FormBatch when specEnabled; feature off ⇒ the caller uses the literal 1
 // (byte-identical).
-func (sim *engineCore) peekDecodeTokens(req *Request) int64 {
+func (sim *EngineCore) peekDecodeTokens(req *Request) int64 {
 	proposed := int64(req.specDecodeCarryOf() + sim.specTokensPerStep) // floor of accumulated
 	if proposed < 1 {
 		proposed = 1 // guarantee the bonus token (INV-12)
@@ -895,7 +895,7 @@ func (sim *engineCore) peekDecodeTokens(req *Request) int64 {
 // for later, so the long-run mean advance is exactly EffectiveTokensPerStep (=1+α·K)
 // with no drift and no RNG (INV-6). Called once per decode step in executeBatchStep,
 // only for requests that actually decoded this step (past prefill, NumNewTokens>0).
-func (sim *engineCore) commitDecodeTokens(req *Request) {
+func (sim *EngineCore) commitDecodeTokens(req *Request) {
 	req.state().specDecodeCarry += sim.specTokensPerStep - float64(req.NumNewTokens)
 	if req.state().specDecodeCarry < 0 {
 		// Defensive: granted more than proposed (no current cap raises g). Clamp to 0
@@ -906,7 +906,7 @@ func (sim *engineCore) commitDecodeTokens(req *Request) {
 
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
 // in the running batch. Returns the step time advance in ticks.
-func (sim *engineCore) executeBatchStep(now int64) int64 {
+func (sim *EngineCore) executeBatchStep(now int64) int64 {
 	// Match vLLM's scheduled_running_reqs: only requests that were allocated
 	// tokens by FormBatch participate in the forward pass latency computation.
 	// Requests with NumNewTokens=0 (past Phase 1 break point, token budget
@@ -932,7 +932,7 @@ func (sim *engineCore) executeBatchStep(now int64) int64 {
 
 // scheduledRequests is the running batch's members FormBatch allocated tokens to this
 // step: the requests the forward pass runs.
-func (sim *engineCore) scheduledRequests() []*Request {
+func (sim *EngineCore) scheduledRequests() []*Request {
 	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
 	for _, req := range sim.RunningBatch.Requests {
 		if req.NumNewTokens > 0 {
@@ -944,7 +944,7 @@ func (sim *engineCore) scheduledRequests() []*Request {
 
 // advanceBatch applies one step of currStepAdvance ticks to the running batch: progress,
 // ITL, TTFT and the KV usage observation.
-func (sim *engineCore) advanceBatch(now, currStepAdvance int64) {
+func (sim *EngineCore) advanceBatch(now, currStepAdvance int64) {
 	var emitted int64
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
@@ -998,12 +998,12 @@ func (sim *engineCore) advanceBatch(now, currStepAdvance int64) {
 		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
-			sim.rec.firstToken(req)
+			sim.Rec.firstToken(req)
 			emitted++ // the prefill-completing step samples the first token
 			if sim.serverSeries != nil {
 				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
 			}
-			sim.host.firstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			sim.Host.firstToken(req, req.ArrivalTime+req.FirstTokenTime)
 		}
 	}
 
@@ -1024,7 +1024,7 @@ func (sim *engineCore) advanceBatch(now, currStepAdvance int64) {
 // (TTFT) are recorded before completion metrics (E2E). If these were ever
 // consolidated into a single pass, both branches would fire for the same request
 // in the same step.
-func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request {
+func (sim *EngineCore) processCompletions(now, currStepAdvance int64) []*Request {
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
@@ -1052,7 +1052,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
-					sim.rec.kvAllocationFailure()
+					sim.Rec.kvAllocationFailure()
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
@@ -1062,13 +1062,13 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.host.scheduleLeft(req, req.DepartureTime)
+			sim.Host.scheduleLeft(req, req.DepartureTime)
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
 
 			// Invoke completion callback for session management
-			sim.host.requestDone(req, now+currStepAdvance)
+			sim.Host.requestDone(req, now+currStepAdvance)
 		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen-1 {
 			// BC-5: Proactive MaxModelLen cap — force-complete at boundary.
 			// After the proactive cap in FormBatch prevents scheduling tokens beyond
@@ -1100,7 +1100,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
 			req.LengthCapped = true
-			sim.rec.lengthCapped(req)
+			sim.Rec.lengthCapped(req)
 			// INV-2 (request lifecycle): the terminal running -> completed edge on
 			// the length-capped path. A force-completed request is still completed,
 			// not a distinct terminal state — the LengthCapped flag records why.
@@ -1111,11 +1111,11 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.host.scheduleLeft(req, req.DepartureTime)
+			sim.Host.scheduleLeft(req, req.DepartureTime)
 			sim.recordRequestCompletion(req)
 
 			// Invoke completion callback for session management (length-capped)
-			sim.host.requestDone(req, now+currStepAdvance)
+			sim.Host.requestDone(req, now+currStepAdvance)
 		} else {
 			remaining = append(remaining, req)
 		}
@@ -1133,7 +1133,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 // prefix cache until the pull lands (sim.RemoteKVReserver). On
 // success ProgressIndex is set past the prompt so the request decodes once the pull lands.
 // Returns ok=false, allocating nothing, when the blocks do not fit.
-func (sim *engineCore) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
+func (sim *EngineCore) ReserveRemoteKV(req *Request) (pulledTokens int64, ok bool) {
 	inputLen := req.InputLen()
 	if inputLen == 0 {
 		req.ProgressIndex = 0
@@ -1161,9 +1161,9 @@ func (sim *engineCore) ReserveRemoteKV(req *Request) (pulledTokens int64, ok boo
 
 // CacheRemoteKV registers a decode sub-request's pulled blocks in the prefix cache once its
 // pull has landed (sim.RemoteKVReserver). Until then no other request hits on them.
-func (sim *engineCore) CacheRemoteKV(req *Request) { sim.remoteKVReserver().CacheRemoteKV(req.ID) }
+func (sim *EngineCore) CacheRemoteKV(req *Request) { sim.remoteKVReserver().CacheRemoteKV(req.ID) }
 
-func (sim *engineCore) remoteKVReserver() RemoteKVReserver {
+func (sim *EngineCore) remoteKVReserver() RemoteKVReserver {
 	r, ok := sim.KVCache.(RemoteKVReserver)
 	if !ok {
 		panic(fmt.Sprintf("KV store %T cannot reserve KV for a remote pull (sim.RemoteKVReserver)", sim.KVCache))
@@ -1173,7 +1173,7 @@ func (sim *engineCore) remoteKVReserver() RemoteKVReserver {
 
 // releaseFinishedKV frees a finished request's KV blocks, unless the request's owner keeps
 // them past completion (Request.RetainKVOnFinish) and will release them itself.
-func (sim *engineCore) releaseFinishedKV(req *Request) {
+func (sim *EngineCore) releaseFinishedKV(req *Request) {
 	if req.RetainKVOnFinish {
 		return
 	}
@@ -1187,19 +1187,19 @@ func (sim *engineCore) releaseFinishedKV(req *Request) {
 // only while fewer than max_num_seqs run. The engine calls f at exactly that point of each
 // schedule; f allocates the pulls that fit, in arrival order, and the engine with no work at
 // all admits whenever one arrives (HasWork).
-func (sim *engineCore) SetRemoteKVAdmission(f func(now int64)) { sim.remoteKVAdmission = f }
+func (sim *EngineCore) SetRemoteKVAdmission(f func(now int64)) { sim.remoteKVAdmission = f }
 
 // SetRemoteKVWaiting records how many handoffs wait for this engine's KV before their pull can
 // start. vLLM holds them in the decode engine's waiting queue (sched/scheduler.py:1195-1229 at
 // v0.31.0), so they count in the engine's published vllm:num_requests_waiting, the series the
 // router reads; BLIS queues them beside the engine (cluster decodeKVWaiters), and adds them here.
-func (sim *engineCore) SetRemoteKVWaiting(n int) { sim.remoteKVWaiting = n }
+func (sim *EngineCore) SetRemoteKVWaiting(n int) { sim.remoteKVWaiting = n }
 
 // admitRemoteKV runs the remote-KV admission at the end of a schedule, when vLLM's WAITING
 // phase would reach it: no preemption this step (scheduler.py:873), the waiting queue drained
 // ahead of it (the queue is FCFS, holding-KV requests first, :885-889), and a running slot
 // free (max_num_active_reqs, :891-894).
-func (sim *engineCore) admitRemoteKV(now int64, preempted bool) {
+func (sim *EngineCore) admitRemoteKV(now int64, preempted bool) {
 	if sim.remoteKVAdmission == nil || preempted || sim.WaitQ.Len() > 0 {
 		return
 	}
@@ -1212,7 +1212,7 @@ func (sim *engineCore) admitRemoteKV(now int64, preempted bool) {
 // HasWork reports whether the engine has running or waiting requests, as vLLM's
 // has_unfinished_requests does. An engine without work schedules a newly arrived request at
 // once.
-func (sim *engineCore) HasWork() bool { return hasWork(sim) }
+func (sim *EngineCore) HasWork() bool { return HasWorkOf(sim) }
 
 // holdingKVFirst moves the waiting requests that already hold their KV -- P/D decode
 // sub-requests whose pull has landed (ProgressIndex set at reservation; a waiting request
@@ -1233,7 +1233,7 @@ func holdingKVFirst(reqs []*Request) {
 // FirstDecodeStepBlocks is the blocks a remote-KV request's first decode step takes beyond
 // the prompt it holds: one when the prompt fills its last block, else none. A speculating
 // engine's reservation already holds the step's slots (AllocateRemoteKV sizes them).
-func (sim *engineCore) FirstDecodeStepBlocks(req *Request) int64 {
+func (sim *EngineCore) FirstDecodeStepBlocks(req *Request) int64 {
 	if sim.specEnabled || req.InputLen()%sim.KVCache.BlockSize() != 0 {
 		return 0
 	}
@@ -1242,7 +1242,7 @@ func (sim *engineCore) FirstDecodeStepBlocks(req *Request) int64 {
 
 // WaitingHolderBlocks is FirstDecodeStepBlocks summed over the waiting requests that hold
 // their KV (pulls that landed and have not run): the blocks they need before they can start.
-func (sim *engineCore) WaitingHolderBlocks() int64 {
+func (sim *EngineCore) WaitingHolderBlocks() int64 {
 	var n int64
 	for _, r := range sim.WaitQ.Items() {
 		if r.IsDecodeSubRequest && r.ProgressIndex > 0 {
@@ -1257,7 +1257,7 @@ func (sim *engineCore) WaitingHolderBlocks() int64 {
 // leave reserved blocks free -- what the other admitted remote-KV requests still need to run --
 // plus the request's own first-step blocks, "to avoid deadlock and predictable preemptions".
 // A refused reservation leaves no allocation behind.
-func (sim *engineCore) ReserveRemoteKVBehind(req *Request, reserved int64) (pulledTokens int64, ok bool) {
+func (sim *EngineCore) ReserveRemoteKVBehind(req *Request, reserved int64) (pulledTokens int64, ok bool) {
 	free := func() int64 { return sim.KVCache.TotalCapacity() - sim.KVCache.UsedBlocks() }
 	if free() < reserved+sim.FirstDecodeStepBlocks(req) {
 		return 0, false

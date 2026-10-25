@@ -25,7 +25,7 @@ func (c *countingRecorder) inputReceived(n int64) {
 func (c *countingRecorder) timedOut(req *Request)   { c.count("timedOut"); c.Metrics.timedOut(req) }
 func (c *countingRecorder) preempted()              { c.count("preempted"); c.Metrics.preempted() }
 func (c *countingRecorder) firstToken(req *Request) { c.count("firstToken"); c.Metrics.firstToken(req) }
-func (c *countingRecorder) completed(cp completion) { c.count("completed"); c.Metrics.completed(cp) }
+func (c *countingRecorder) completed(cp Completion) { c.count("completed"); c.Metrics.completed(cp) }
 func (c *countingRecorder) lengthCapped(req *Request) {
 	c.count("lengthCapped")
 	c.Metrics.lengthCapped(req)
@@ -60,7 +60,7 @@ func TestEngineWritesTheReportOnlyThroughItsRecorder(t *testing.T) {
 		var c *countingRecorder
 		if wrap {
 			c = &countingRecorder{Metrics: s.Metrics, calls: map[string]int{}}
-			s.rec = c
+			s.Rec = c
 		}
 		for i := 0; i < 12; i++ {
 			s.InjectArrival(&Request{ID: string(rune('a' + i)), ArrivalTime: int64(i * 50),

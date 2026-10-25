@@ -89,7 +89,7 @@ func (g *LockstepGroup) disarm() {
 
 // step runs one lockstep step for the whole group. e must be the armed event; any other
 // (none is ever scheduled) is ignored. The host part (the leader's clock, the ranks' clocks
-// and busyUntil, arming the next step) stays here; each rank's engine work is engineCore's
+// and busyUntil, arming the next step) stays here; each rank's engine work is EngineCore's
 // (lockstepSchedule, lockstepFinish) and the step's pricing is the group's engines'.
 func (g *LockstepGroup) step(e *StepEvent) {
 	if e != g.pending {
@@ -101,7 +101,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	active := make([]bool, n)
 	batches := make([][]*Request, n)
 	for i, r := range g.ranks {
-		if !hasWork(&r.engineCore) {
+		if !HasWorkOf(&r.EngineCore) {
 			continue
 		}
 		active[i] = true
@@ -148,7 +148,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	}
 	running := g.stepCounter != 1 && g.stepCounter%DPSyncInterval != 0
 	for _, r := range g.ranks {
-		running = running || hasWork(&r.engineCore)
+		running = running || HasWorkOf(&r.EngineCore)
 	}
 	g.pending = nil
 	if running {
