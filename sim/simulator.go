@@ -119,6 +119,9 @@ type Simulator struct {
 
 	Clock   int64
 	Horizon int64
+	// Metrics is the instance's report record (inference-sim's, #2021 B2). The engine writes it
+	// only through its recorder (engineCore.rec).
+	Metrics *Metrics
 	// eventQueue has all the simulator events, like arrival and step events
 	eventQueue EventQueue
 	stepEvent  Event
@@ -218,7 +221,8 @@ type engineCore struct {
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
 	// while adding requests to RunningBatch
 	RunningBatch *Batch
-	Metrics      *Metrics
+	// rec is where the engine writes the report (recorder): the host's Metrics.
+	rec recorder
 	// max number of requests RunningBatch can hold
 	maxNumSeqs int64
 	// max total number of new tokens across all requests in RunningBatch
@@ -333,7 +337,6 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 			WaitQ:                     &WaitQueue{},
 			KVCache:                   kvStore,
 			RunningBatch:              &Batch{},
-			Metrics:                   NewMetrics(),
 			maxNumSeqs:                cfg.MaxNumSeqs,
 			maxNumBatchedTokens:       cfg.MaxNumBatchedTokens,
 			longPrefillTokenThreshold: cfg.LongPrefillTokenThreshold,
@@ -353,10 +356,12 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		},
 		Clock:      0,
 		Horizon:    cfg.Horizon,
+		Metrics:    NewMetrics(),
 		eventQueue: make(EventQueue, 0),
 		stepEvent:  nil,
 	}
 	s.host = s
+	s.rec = s.Metrics
 	if cfg.ServerSeriesIntervalUs > 0 {
 		s.serverSeries = newServerSeries(cfg.ServerSeriesIntervalUs)
 	}
@@ -596,7 +601,7 @@ func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	}
 }
 
-func (sim *engineCore) buildInstanceSnapshot() InstanceSnapshot {
+func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
 	return InstanceSnapshot{
 		ID:                "instance-0",
 		Model:             sim.model,
@@ -793,9 +798,7 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
-		sim.Metrics.DroppedUnservable++
-		sim.Metrics.RecordUnserved(r, false)
-		delete(sim.Metrics.Requests, r.ID)
+		sim.rec.requestDropped(r, false)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
 		sim.host.requestDone(r, sim.host.now())
 		return
@@ -806,9 +809,7 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 		if r.InputLen() >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
-			sim.Metrics.DroppedUnservable++
-			sim.Metrics.RecordUnserved(r, true)
-			delete(sim.Metrics.Requests, r.ID)
+			sim.rec.requestDropped(r, true)
 			sim.host.requestDone(r, sim.host.now())
 			return
 		}
@@ -817,9 +818,7 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
-				sim.Metrics.DroppedUnservable++
-				sim.Metrics.RecordUnserved(r, true)
-				delete(sim.Metrics.Requests, r.ID)
+				sim.rec.requestDropped(r, true)
 				sim.host.requestDone(r, sim.host.now())
 				return
 			}
@@ -831,22 +830,19 @@ func (sim *engineCore) EnqueueRequest(r *Request) {
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
-		sim.Metrics.DroppedUnservable++
-		sim.Metrics.RecordUnserved(r, false)
-		delete(sim.Metrics.Requests, r.ID)
+		sim.rec.requestDropped(r, false)
 		sim.host.requestDone(r, sim.host.now())
 		return
 	}
 
 	// Input tokens counted BEFORE past-due check (request was received)
-	sim.Metrics.TotalInputTokens += int(r.InputLen())
+	sim.rec.inputReceived(r.InputLen())
 
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
 	if r.Deadline > 0 && r.Deadline <= sim.host.now() {
 		r.State = StateTimedOut
-		sim.Metrics.TimedOutRequests++
-		sim.Metrics.RecordTimeout(r)
+		sim.rec.timedOut(r)
 		sim.host.requestDone(r, sim.host.now())
 		return
 	}
@@ -913,18 +909,13 @@ func (sim *Simulator) idleStepTime(t int64) int64 { return max(t, sim.busyUntil)
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
 func (sim *engineCore) recordQueueSnapshots() {
-	sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, sim.WaitQ.Len())
-	sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, len(sim.RunningBatch.Requests))
+	sim.rec.queueSnapshot(sim.WaitQ.Len(), len(sim.RunningBatch.Requests))
 }
 
 // recordKVUsageMetrics records peak and time-weighted KV block usage.
 // Called after execution, before completion processing.
 func (sim *engineCore) recordKVUsageMetrics(stepDuration int64) {
-	used := sim.KVCache.UsedBlocks()
-	if used > sim.Metrics.PeakKVBlocksUsed {
-		sim.Metrics.PeakKVBlocksUsed = used
-	}
-	sim.Metrics.KVBlocksUsed += float64(used) * float64(stepDuration)
+	sim.rec.kvUsage(sim.KVCache.UsedBlocks(), stepDuration, true)
 }
 
 // recordRequestCompletion records per-request metrics for a completed request.
@@ -948,8 +939,6 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 	// (StillQueued=0 at end), so source contributes 0 to InjectedRequests.
 	// The destination is the sole completion site. Skipping CompletedRequests++ here
 	// would cause the request to vanish from conservation accounting entirely.
-	sim.Metrics.CompletedRequests++
-	sim.Metrics.TTFTSum += req.FirstTokenTime
 
 	// Count output tokens at completion time (not inline per step) to avoid
 	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
@@ -981,9 +970,6 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 	if outputTokens > len(req.OutputTokens) {
 		outputTokens = len(req.OutputTokens)
 	}
-	if outputTokens > 0 {
-		sim.Metrics.TotalOutputTokens += outputTokens
-	}
 	req.GeneratedTokens = max(outputTokens, 0)
 
 	var itlSum int64
@@ -998,8 +984,8 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 		postDecodeOverhead = sim.latencyModel.PostDecodeFixedOverhead()
 	}
 	lat := req.FirstTokenTime + itlSum + postDecodeOverhead
-	sim.Metrics.RequestE2Es[req.ID] = float64(lat)
 	logrus.Debugf("Finished req: ID: %s at time: %d", req.ID, lat+req.ArrivalTime)
+	var itl float64 // the request's mean inter-token latency (0 without output tokens)
 	if len(req.OutputTokens) > 0 {
 		// Compute average ITL from itlSum directly (not from lat - FirstTokenTime)
 		// to avoid contaminating per-token ITL with the fixed post-decode overhead.
@@ -1029,7 +1015,7 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 			// ProgressIndex can land at MaxModelLen — one higher than a non-PD
 			// length-capped request, giving outputTokens one larger. The asymmetry is
 			// pre-existing and affects only the length-capped PD denominator, by one token.
-			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(outputTokens-1, 1))
+			itl = float64(reqTotalOutput) / float64(max(outputTokens-1, 1))
 		} else {
 			// TPOT calculation in vLLM excludes the first generated token.
 			// No spec-decode branch needed here: a normally-completed request generated
@@ -1037,17 +1023,19 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 			// correct per-token denominator regardless of how many decode STEPS it took
 			// (steps < tokens under spec-decode). Only the LengthCapped branch above
 			// must switch to a token-derived count, because there len(ITL)=steps≠tokens.
-			sim.Metrics.RequestITLs[req.ID] = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
+			itl = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 		}
-	} else {
-		sim.Metrics.RequestITLs[req.ID] = 0
 	}
-	sim.Metrics.RequestStepCounters = append(sim.Metrics.RequestStepCounters, req.FinishedStepIdx-req.ScheduledStepIdx)
-	sim.Metrics.RequestCompletionTimes[req.ID] = float64(lat + req.ArrivalTime)
-	sim.Metrics.recordCompletionOrder(req.ID, sim.host.now(), max(outputTokens, 0), postDecodeOverhead)
-	sim.Metrics.AllITLs = append(sim.Metrics.AllITLs, req.ITL...)
-	sim.Metrics.StepOwners = append(sim.Metrics.StepOwners,
-		StepOwner{CompletionUs: lat + req.ArrivalTime, Steps: len(req.ITL), Phase: req.Phase})
+	sim.rec.completed(completion{
+		req:          req,
+		ttft:         req.FirstTokenTime,
+		outputTokens: max(outputTokens, 0),
+		e2e:          lat,
+		itl:          itl,
+		steps:        req.FinishedStepIdx - req.ScheduledStepIdx,
+		clock:        sim.host.now(),
+		overhead:     postDecodeOverhead,
+	})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
 	// this Request struct is ever reused (#1528). No-op when the feature is off.
 	if req.eng != nil {
@@ -1092,10 +1080,11 @@ func (sim *engineCore) adapterLoading() bool { return sim.loadingAdapter != "" }
 // and running (BC-8, BC-9): in Finalize, because cluster mode drives events through
 // ProcessNextEvent and never calls Run.
 func (sim *engineCore) recordStillHeld() {
-	sim.Metrics.StillQueued = sim.WaitQ.Len()
+	running := 0
 	if sim.RunningBatch != nil {
-		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
+		running = len(sim.RunningBatch.Requests)
 	}
+	sim.rec.stillHeld(sim.WaitQ.Len(), running)
 }
 
 // idleStep is a step that found nothing to run. The step after an abort that left nothing to
@@ -1203,7 +1192,7 @@ func (sim *engineCore) scheduleBatch(now int64) {
 	// Record preemption metrics and emit debug log for each preempted request
 	for _, p := range batchResult.Preempted {
 		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
-		sim.Metrics.PreemptionCount++
+		sim.rec.preempted()
 	}
 	sim.lastStepPreempted = len(batchResult.Preempted) > 0
 
@@ -1215,8 +1204,7 @@ func (sim *engineCore) scheduleBatch(now int64) {
 			time:    now,
 			Request: s.Request,
 		})
-		sim.Metrics.RequestSchedulingDelays[s.Request.ID] = now - s.Request.ArrivalTime
-		sim.Metrics.recordPrefixLookup(s.Request, s.Lookup)
+		sim.rec.scheduled(s.Request, now, s.Lookup)
 		if sim.serverSeries != nil {
 			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
 		}
@@ -1298,7 +1286,7 @@ func (sim *engineCore) maybeStartAdapterLoad(now int64) {
 			// running requests, which make progress.)
 			return
 		}
-		sim.Metrics.AdapterEvictionCounts[evicted]++
+		sim.rec.adapterEvicted(evicted)
 	}
 	sim.loadingAdapter = head.Adapter
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
@@ -1324,7 +1312,7 @@ func (sim *engineCore) completeAdapterLoad(now int64, adapter string) {
 	// increment) already happened at load-start, so it is always "" here; any future
 	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
-		sim.Metrics.AdapterLoadCounts[adapter]++ // charged once per cold transition (INV-L3)
+		sim.rec.adapterLoaded(adapter) // charged once per cold transition (INV-L3)
 	} else {
 		logrus.Errorf("[tick %07d] adapter %q load completed but could not be made resident (set full and fully pinned) — resident-set accounting bug", now, adapter)
 	}
@@ -1462,7 +1450,7 @@ func (sim *engineCore) advanceBatch(now, currStepAdvance int64) {
 		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
-			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			sim.rec.firstToken(req)
 			emitted++ // the prefill-completing step samples the first token
 			if sim.serverSeries != nil {
 				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
@@ -1516,7 +1504,7 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
-					sim.Metrics.KVAllocationFailures++
+					sim.rec.kvAllocationFailure()
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
@@ -1566,14 +1554,8 @@ func (sim *engineCore) processCompletions(now, currStepAdvance int64) []*Request
 			// spurious KVAllocationFailures bump under a tight cache.
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
-			sim.Metrics.LengthCappedRequests++
 			req.LengthCapped = true
-			// Refresh Metrics.Requests: NewRequestMetrics was called at enqueue before
-			// LengthCapped was known. Update so per-request JSON reflects the flag.
-			if rm, ok := sim.Metrics.Requests[req.ID]; ok {
-				rm.LengthCapped = true
-				sim.Metrics.Requests[req.ID] = rm
-			}
+			sim.rec.lengthCapped(req)
 			// INV-2 (request lifecycle): the terminal running -> completed edge on
 			// the length-capped path. A force-completed request is still completed,
 			// not a distinct terminal state — the LengthCapped flag records why.

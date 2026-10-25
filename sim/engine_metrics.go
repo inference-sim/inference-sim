@@ -54,7 +54,7 @@ func (sim *engineCore) publishEngineMetrics(at int64) {
 	m := EngineMetrics{
 		PublishedAt: at,
 		Waiting:     sim.WaitQ.Len() + sim.remoteKVWaiting,
-		Preemptions: sim.Metrics.PreemptionCount,
+		Preemptions: sim.rec.preemptions(),
 	}
 	if total := sim.KVCache.TotalCapacity(); total > 0 {
 		m.KVUsage = float64(sim.KVCache.UsedBlocks()) / float64(total)

@@ -233,8 +233,7 @@ func (sim *engineCore) timeout(req *Request) bool {
 	// names only queued -> running -> completed, so timed-out is a terminal state the
 	// statement does not yet enumerate; this is not the only site that sets it.
 	req.State = StateTimedOut
-	sim.Metrics.TimedOutRequests++
-	sim.Metrics.RecordTimeout(req)
+	sim.rec.timedOut(req)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,

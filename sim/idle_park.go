@@ -124,15 +124,14 @@ func (sim *Simulator) chargePolls(k int64) {
 func (sim *engineCore) chargeSkippedPolls(k int64, p *idlePark, end int64) {
 	sim.stepCount += int(k)
 	for i := int64(0); i < k; i++ {
-		sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, p.waiting)
-		sim.Metrics.NumRunningBatchRequests = append(sim.Metrics.NumRunningBatchRequests, 0)
+		sim.rec.queueSnapshot(p.waiting, 0)
 	}
-	if p.used > sim.Metrics.PeakKVBlocksUsed {
-		sim.Metrics.PeakKVBlocksUsed = p.used
-	}
+	// The peak once, then the time-weighted usage once per poll (on the StepTime grid only):
+	// the float sum is accumulated poll by poll, in the same order as before.
+	sim.rec.kvUsage(p.used, 0, false)
 	if !p.free {
 		for i := int64(0); i < k; i++ {
-			sim.Metrics.KVBlocksUsed += float64(p.used) * float64(p.quantum)
+			sim.rec.kvUsage(p.used, p.quantum, true)
 		}
 	}
 	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.missDelta)
