@@ -77,16 +77,16 @@ func BlockHashes(tokens []int64, blockSize int, keys BlockKeys) []BlockHash {
 	out := make([]BlockHash, 0, n)
 	var parent BlockHash
 	for i := 0; i < n; i++ {
-		h := HashBlock(parent, tokens[i*blockSize:(i+1)*blockSize], keys.extraFor(i))
+		h := HashBlock(parent, tokens[i*blockSize:(i+1)*blockSize], keys.ExtraFor(i))
 		out = append(out, h)
 		parent = h
 	}
 	return out
 }
 
-// extraFor is generate_block_hash_extra_keys for block i: LoRA keys, then the cache salt
+// ExtraFor is generate_block_hash_extra_keys for block i: LoRA keys, then the cache salt
 // on the first block (kv_cache_utils.py:646-658).
-func (k BlockKeys) extraFor(i int) []ExtraKey {
+func (k BlockKeys) ExtraFor(i int) []ExtraKey {
 	if k.CacheSalt == "" || i != 0 {
 		return k.Extra
 	}

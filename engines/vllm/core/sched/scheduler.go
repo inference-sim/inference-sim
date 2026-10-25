@@ -140,22 +140,30 @@ func (r *Request) allTokens() []int64 {
 	return append(append(make([]int64, 0, r.NumTokens()), r.Prompt...), r.Output...)
 }
 
-// updateHashes appends the hashes of newly full blocks (update_block_hashes).
+// updateHashes appends the hashes of newly full blocks (update_block_hashes), with each
+// block's extra keys from kv.BlockKeys.ExtraFor, as kv.BlockHashes keys them. It reads only
+// the new blocks' tokens, so a decode step costs one block, not the whole context.
 func (r *Request) updateHashes(blockSize int) {
-	all := r.allTokens()
-	for (len(r.hashes)+1)*blockSize <= len(all) {
+	for (len(r.hashes)+1)*blockSize <= r.NumTokens() {
 		i := len(r.hashes)
 		var parent kv.BlockHash
 		if i > 0 {
 			parent = r.hashes[i-1]
 		}
-		var extra []kv.ExtraKey
-		extra = append(extra, r.Keys.Extra...)
-		if i == 0 && r.Keys.CacheSalt != "" {
-			extra = append(extra, kv.ExtraKey{"cache_salt", r.Keys.CacheSalt})
-		}
-		r.hashes = append(r.hashes, kv.HashBlock(parent, all[i*blockSize:(i+1)*blockSize], extra))
+		r.hashes = append(r.hashes, kv.HashBlock(parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
 	}
+}
+
+// tokenRange is all_token_ids[from:to] without copying the whole sequence: the prompt's
+// slice when the range lies in it, else a copy of just the range.
+func (r *Request) tokenRange(from, to int) []int64 {
+	if to <= len(r.Prompt) {
+		return r.Prompt[from:to]
+	}
+	if from >= len(r.Prompt) {
+		return r.Output[from-len(r.Prompt) : to-len(r.Prompt)]
+	}
+	return append(append(make([]int64, 0, to-from), r.Prompt[from:]...), r.Output[:to-len(r.Prompt)]...)
 }
 
 // Output is SchedulerOutput's decision fields.

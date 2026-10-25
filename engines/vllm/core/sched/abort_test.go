@@ -1,6 +1,10 @@
 package sched
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/inference-sim/blis-vllm/core/kv"
+)
 
 // loadingConnector supplies every prompt but its last block asynchronously, so a new request
 // waits in WAITING_FOR_REMOTE_KVS with its blocks allocated while the load is in flight.
@@ -55,5 +59,28 @@ func TestAbortNamingARequestTwiceFinishesItOnce(t *testing.T) {
 	}
 	if s.finishedPending != 1 {
 		t.Errorf("finishedPending = %d, want 1", s.finishedPending)
+	}
+}
+
+// A request's block hashes are its blocks' keys exactly as kv.BlockHashes computes them over
+// prompt and output together, LoRA key and first-block cache salt included, whether a block
+// lies in the prompt, in the output, or across the boundary.
+func TestRequestHashesAreTheBlockHashesOfItsTokens(t *testing.T) {
+	keys := kv.BlockKeys{Extra: []kv.ExtraKey{{"lora", "a1", "a1"}}, CacheSalt: "salt"}
+	prompt := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	r := &Request{Prompt: prompt, Keys: keys}
+	r.updateHashes(4)
+	for _, tok := range []int64{11, 12, 13, 14, 15, 16, 17} {
+		r.Output = append(r.Output, tok)
+		r.updateHashes(4)
+	}
+	want := kv.BlockHashes(append(append([]int64(nil), prompt...), r.Output...), 4, keys)
+	if len(r.hashes) != len(want) {
+		t.Fatalf("%d hashes, want %d", len(r.hashes), len(want))
+	}
+	for i := range want {
+		if string(r.hashes[i]) != string(want[i]) {
+			t.Errorf("block %d: hash differs from kv.BlockHashes", i)
+		}
 	}
 }
