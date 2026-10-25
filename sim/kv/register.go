@@ -13,10 +13,10 @@ import (
 )
 
 func init() {
-	sim.NewKVCacheStateFunc = func(totalBlocks, blockSizeTokens int64) sim.KVStore {
+	sim.SetNewKVCacheStateFunc(func(totalBlocks, blockSizeTokens int64) sim.KVStore {
 		return NewKVCacheState(totalBlocks, blockSizeTokens)
-	}
-	sim.NewKVStoreFromConfig = NewKVStore
+	})
+	sim.SetNewKVStoreFromConfig(NewKVStore)
 }
 
 // NewKVStore creates a KVStore from KVCacheConfig. seed is the run seed; it is

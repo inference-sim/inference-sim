@@ -1548,7 +1548,7 @@ var runCmd = &cobra.Command{
 		// references this is inert (INV-6).
 		var loraRegistry sim.AdapterRegistry
 		if loraCfg.HasAdapters() {
-			r, regErr := sim.NewAdapterRegistryFunc(loraCfg.Adapters)
+			r, regErr := sim.AdapterRegistryConstructor()(loraCfg.Adapters)
 			if regErr != nil {
 				logrus.Fatalf("Invalid LoRA adapter registry: %v", regErr)
 			}

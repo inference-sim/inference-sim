@@ -99,3 +99,6 @@ func (m adapterOverheadModel) StepTime(batch []*Request) int64 {
 	}
 	return max(1, int64(scaled))
 }
+
+// SetNewAdapterCostFunc registers sim/lora's cost-model constructor (its init does).
+func SetNewAdapterCostFunc(f func(cfg LoRAConfig) (AdapterCost, error)) { NewAdapterCostFunc = f }

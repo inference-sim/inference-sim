@@ -237,3 +237,16 @@ type KVEventSource interface {
 	// CPUBlockHashes returns the hashes of the blocks a CPU tier holds ready, sorted (nil without one).
 	CPUBlockHashes() []string
 }
+
+// SetNewKVCacheStateFunc and SetNewKVStoreFromConfig register sim/kv's constructors (its
+// init does). Through a setter rather than an assignment, so the registration reaches the
+// variable wherever it is declared.
+func SetNewKVCacheStateFunc(f func(totalBlocks, blockSizeTokens int64) KVStore) {
+	NewKVCacheStateFunc = f
+}
+
+func SetNewKVStoreFromConfig(f func(cfg KVCacheConfig, seed int64) KVStore) { NewKVStoreFromConfig = f }
+
+// KVStoreConstructor returns the registered KV-store constructor (NewKVStoreFromConfig), nil
+// when sim/kv is not linked.
+func KVStoreConstructor() func(cfg KVCacheConfig, seed int64) KVStore { return NewKVStoreFromConfig }

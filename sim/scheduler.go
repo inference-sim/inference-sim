@@ -82,6 +82,11 @@ var (
 	ValidPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
 )
 
+// SchedulerNameTable and PreemptionPolicyNameTable return the name tables (the caller must not
+// modify them).
+func SchedulerNameTable() map[string]bool        { return ValidSchedulers }
+func PreemptionPolicyNameTable() map[string]bool { return ValidPreemptionPolicies }
+
 // IsValidScheduler returns true if name is a recognized scheduler.
 func IsValidScheduler(name string) bool { return ValidSchedulers[name] }
 

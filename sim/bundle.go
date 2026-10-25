@@ -110,13 +110,13 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // against them.
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
-func ValidSchedulerNames() []string { return validNamesList(ValidSchedulers) }
+func ValidSchedulerNames() []string { return validNamesList(SchedulerNameTable()) }
 
 // IsValidPreemptionPolicy returns true if name is a recognized preemption policy.
-func IsValidPreemptionPolicy(name string) bool { return ValidPreemptionPolicies[name] }
+func IsValidPreemptionPolicy(name string) bool { return PreemptionPolicyNameTable()[name] }
 
 // ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
-func ValidPreemptionPolicyNames() []string { return validNamesList(ValidPreemptionPolicies) }
+func ValidPreemptionPolicyNames() []string { return validNamesList(PreemptionPolicyNameTable()) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {
@@ -137,11 +137,11 @@ func validNames(m map[string]bool) string {
 
 // Validate checks that all policy names and parameter ranges in the bundle are valid.
 func (b *PolicyBundle) Validate() error {
-	if !ValidSchedulers[b.Scheduler] {
-		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(ValidSchedulers))
+	if !IsValidScheduler(b.Scheduler) {
+		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(SchedulerNameTable()))
 	}
-	if !ValidPreemptionPolicies[b.Preemption.Policy] {
-		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(ValidPreemptionPolicies))
+	if !IsValidPreemptionPolicy(b.Preemption.Policy) {
+		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(PreemptionPolicyNameTable()))
 	}
 	// Validate autoscaler config.
 	if math.IsNaN(b.Autoscaler.IntervalUs) || math.IsInf(b.Autoscaler.IntervalUs, 0) {

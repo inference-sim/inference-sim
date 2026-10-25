@@ -26,3 +26,14 @@ type AdapterRegistry interface {
 // cycle between sim/ (interface owner) and sim/lora/ (implementation). Returns an
 // error for a malformed registry (duplicate/empty id, non-positive rank).
 var NewAdapterRegistryFunc func(adapters []AdapterSpec) (AdapterRegistry, error)
+
+// SetNewAdapterRegistryFunc registers sim/lora's registry constructor (its init does).
+func SetNewAdapterRegistryFunc(f func(adapters []AdapterSpec) (AdapterRegistry, error)) {
+	NewAdapterRegistryFunc = f
+}
+
+// AdapterRegistryConstructor returns the registered registry constructor
+// (NewAdapterRegistryFunc), nil when sim/lora is not linked.
+func AdapterRegistryConstructor() func(adapters []AdapterSpec) (AdapterRegistry, error) {
+	return NewAdapterRegistryFunc
+}

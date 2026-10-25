@@ -7,13 +7,13 @@ package lora
 import "github.com/inference-sim/inference-sim/sim"
 
 func init() {
-	sim.NewAdapterRegistryFunc = func(adapters []sim.AdapterSpec) (sim.AdapterRegistry, error) {
+	sim.SetNewAdapterRegistryFunc(func(adapters []sim.AdapterSpec) (sim.AdapterRegistry, error) {
 		return NewRegistry(adapters)
-	}
-	sim.NewResidentAdapterSetFunc = func(capacity int) sim.ResidentAdapterSet {
+	})
+	sim.SetNewResidentAdapterSetFunc(func(capacity int) sim.ResidentAdapterSet {
 		return newResidentSet(capacity)
-	}
-	sim.NewAdapterCostFunc = func(cfg sim.LoRAConfig) (sim.AdapterCost, error) {
+	})
+	sim.SetNewAdapterCostFunc(func(cfg sim.LoRAConfig) (sim.AdapterCost, error) {
 		return NewCostModel(cfg)
-	}
+	})
 }

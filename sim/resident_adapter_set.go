@@ -52,3 +52,8 @@ type ResidentAdapterSet interface {
 // slot capacity. Registered by sim/lora's init() (import sim/lora to wire it); nil
 // until then, in which case the Simulator leaves the LoRA subsystem inert (INV-6).
 var NewResidentAdapterSetFunc func(capacity int) ResidentAdapterSet
+
+// SetNewResidentAdapterSetFunc registers sim/lora's resident-set constructor (its init does).
+func SetNewResidentAdapterSetFunc(f func(capacity int) ResidentAdapterSet) {
+	NewResidentAdapterSetFunc = f
+}

@@ -21,10 +21,11 @@ func NewEngine(id string, cfg SimConfig) (*Simulator, error) {
 	kvCfg.Speculative.MaxModelLen = cfg.MaxModelLen
 	// The engines of one node share each secondary offload tier (OffloadTierSharing).
 	kvCfg.Offload = kvCfg.Offload.ForInstance(id)
-	if NewKVStoreFromConfig == nil {
+	newKVStore := KVStoreConstructor()
+	if newKVStore == nil {
 		return nil, fmt.Errorf("NewEngine(%s): NewKVStoreFromConfig not registered: import sim/kv", id)
 	}
-	kvStore := NewKVStoreFromConfig(kvCfg, cfg.Seed)
+	kvStore := newKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and
 	// wrap the latency model with it so the per-step compute overhead applies
 	// (#1467, R23). BuildAdapterCost is pure and
