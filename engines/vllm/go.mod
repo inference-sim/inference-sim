@@ -11,8 +11,9 @@ require (
 	// rules.EngineRules). Moves to a blis-schemas release tag before anything merges.
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025121631-630937e6f21f
 	// The rules packs, a separate module in this repository (rules/); compat/kernelmodel hands
-	// them to the kernel. Pinned at this repository's own commit bfd99640 (the v0.32 pack fixes of #20).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321
+	// them to the kernel. Pinned at this repository's own commit 169a5bf (the dcp-divides-tp
+	// source check), the commit inference-sim pins.
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1

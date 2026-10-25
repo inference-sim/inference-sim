@@ -65,13 +65,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Each tag's commit is pinned, so a moved tag fails the check below instead of
+        # silently changing what the pack is compared against.
         include:
           - pack: v0_29
             tag: v0.29.0
+            commit: 98dff2a81d747d1dba01a47f939f48c3526d4206
           - pack: v0_31
             tag: v0.31.0
+            commit: db9527a46873454610df6dbedf79a36d6bf1a7f6
           - pack: v0_32
             tag: v0.32.0
+            commit: 5df63a7203cdb9328d824a27b682e77c7b9928be
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -81,9 +86,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vllm-project/vllm
-          ref: ${{ matrix.tag }}
+          ref: ${{ matrix.commit }}
           path: vllm-source
           fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit of the pack's release
+        run: test "$(git -C vllm-source rev-parse HEAD)" = "${{ matrix.commit }}"
       - name: verify pack constants
         working-directory: rules
         env:
@@ -118,15 +125,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: check out vLLM v0.32.0
+      - name: check out vLLM v0.32.0 at its pinned commit
         uses: actions/checkout@v4
         with:
           repository: vllm-project/vllm
-          ref: v0.32.0
+          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
           path: vllm-source
           fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       - name: the manifest is current for the pinned release
-        run: go run ./cmd/metricsmanifest -vllm vllm-source -check
+        run: |
+          set -o pipefail
+          mkdir -p manifest-out
+          go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
       # The generator's -check catches a missed definition form or a dropped enablement (the
       # "every computable family" and "kv_cache_metrics" rows' own mutants, K1-K2).
       - name: the manifest generator's mutants are caught by its -check
@@ -136,6 +148,16 @@ jobs:
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
         run: go test -v -run TestEveryEntryNamesAConnectorVLLMRegisters ./registry/
+      # Provenance for the manifest result: the vLLM commit checked, the blis-vllm commit, Go.
+      - name: record the manifest's provenance
+        run: |
+          printf '{"tier": 5, "check": "metrics-manifest", "vllm_tag": "v0.32.0", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
+            "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" > manifest-out/provenance.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metrics-manifest
+          path: manifest-out/
 
   # A golden trace is vLLM's own output; a commit that changes one must name its reviewer.
   goldens-reviewed:
@@ -161,13 +183,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: check out vLLM v0.32.0 (for its test helpers)
+      - name: check out vLLM v0.32.0 (for its test helpers) at its pinned commit
         uses: actions/checkout@v4
         with:
           repository: vllm-project/vllm
-          ref: v0.32.0
+          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
           path: vllm-source
           fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
       # URL) and installed without resolving, so a transitive release cannot change a run; the
       # step fails if what got installed is not exactly the lock.
@@ -210,6 +234,25 @@ jobs:
       # The committed goldens must be what the pinned vLLM release produces here and now.
       - name: every golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
+      # Tier 5's goldens too: each metric series re-derived from vLLM's own Prometheus logger
+      # on the scenario it was made from.
+      - name: every metric golden is vLLM's own series
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/metrics-scenarios oracle/out/metrics
+          for g in core/metrics/testdata/golden/*.metrics.json; do
+            cp "oracle/scenarios/$(basename "$g" .metrics.json).json" oracle/out/metrics-scenarios/
+          done
+          python -I oracle/run_metrics.py vllm-source oracle/out/metrics-scenarios oracle/out/metrics
+          python3 -I oracle/compare_goldens_metrics.py core/metrics/testdata/golden oracle/out/metrics
+      # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
+      # the generator exits non-zero if any differs from the committed file.
+      - name: the block-hash fixture is vLLM's own hashes
+        run: python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       # The seeded fuzz corpus: 4000 random scenarios from fixed seeds, each run through vLLM's
       # Scheduler and then through blis-vllm, which must match at zero mismatches.
       - name: generate the fuzz corpus and vLLM's traces for it

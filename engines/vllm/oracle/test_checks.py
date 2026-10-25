@@ -61,6 +61,23 @@ class CheckGoldens(unittest.TestCase):
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qm", msg)
 
+    def test_the_block_hash_fixture_is_guarded(self):
+        os.makedirs(os.path.join(self.repo, "core/kv/testdata"), exist_ok=True)
+        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "cases": [{"hashes": ["aa"]}]})
+        self.commit("add the fixture")
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "cases": [{"hashes": ["bb"]}]})
+        self.commit("change a hash")
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("block_hashes.json decisions changed without a golden-reviewed: trailer", r.stdout)
+        # A provenance-only refresh of it needs no trailer.
+        git(self.repo, "reset", "-q", "--hard", base)
+        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 2}, "cases": [{"hashes": ["aa"]}]})
+        self.commit("refresh provenance")
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
     def test_every_directory_is_guarded(self):
         for d in self.DIRS:
             for field, value in [("steps", [{"a": 2}]), ("finished", {"x": 1}), ("batches", [[1]])]:

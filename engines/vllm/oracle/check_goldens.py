@@ -4,7 +4,8 @@
 A golden trace is vLLM's own output for a scenario, and what it records beside its
 `provenance` block is what blis-vllm is checked against. Every golden directory holds them:
 the scheduler's (core/sched), the EngineCore's and the DP loop's (core/engine), the NIXL
-connector's (core/connector/nixl) and the metric series' (core/metrics). A commit that changes
+connector's (core/connector/nixl) and the metric series' (core/metrics); and core/kv's block
+hashes (GOLDEN_FILES), which are vLLM's own hash_block_tokens output. A commit that changes
 the recorded content of an existing golden, or deletes one, must carry a
 `golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario, or
 refreshing only its `provenance` block, needs none, and this check verifies that such a commit
@@ -28,6 +29,12 @@ GOLDEN_DIRS = (
     "core/metrics/testdata/golden/",
 )
 
+# Golden files outside a golden directory: vLLM's own output, guarded as the directories are.
+# core/kv's block hashes are vLLM's hash_block_tokens over each case (oracle/gen_block_hashes.py).
+GOLDEN_FILES = (
+    "core/kv/testdata/block_hashes.json",
+)
+
 
 def git(*args: str) -> str:
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
@@ -41,7 +48,7 @@ def decisions(rev: str, path: str):
 
 
 def is_golden(path: str) -> bool:
-    return path.endswith(".json") and path.startswith(GOLDEN_DIRS)
+    return path in GOLDEN_FILES or (path.endswith(".json") and path.startswith(GOLDEN_DIRS))
 
 
 def unguarded(rev: str) -> list[str]:

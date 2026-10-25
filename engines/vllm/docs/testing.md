@@ -144,7 +144,11 @@ its traces from the `oracle-traces` workflow run on main (`oracle/refresh_proven
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
 pins it runs against, so a trace can only count as evidence for the scenario it came from.
 CI re-runs the pinned vLLM release on every scenario and fails if any committed golden's
-decisions differ from that fresh trace (`oracle/compare_goldens.py`), so a golden made on a
+decisions differ from that fresh trace (`oracle/compare_goldens.py` for the scheduler and NIXL
+goldens, `oracle/compare_goldens_t3.py` for the EngineCore and DP ones,
+`oracle/compare_goldens_metrics.py` for the metric series), and it recomputes every hash in
+`core/kv/testdata/block_hashes.json` with vLLM's own `hash_block_tokens`
+(`oracle/gen_block_hashes.py`, which fails on any difference), so a golden made on a
 developer's machine counts only while the release itself still produces it.
 
 ## The compatibility engine's tests

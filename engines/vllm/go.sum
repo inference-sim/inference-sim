@@ -10,6 +10,8 @@ github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584 h1:s
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321 h1:fYhAovPiv5jtc470JoFn+ZI4yC6Baf3zbtl4puiKJOs=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda h1:lwAGTKTW+vmNfRq6ps6WixbAgU8+e1kz5Vvlk8lItP8=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda/go.mod h1:2fsgOZx4jrx/ptNhXiGLTpYP+Otl5RatR01S3rR8iqU=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
