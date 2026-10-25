@@ -155,6 +155,72 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	}
 }
 
+// A 0.29/0.31 scenario that states an engine setting the compatibility engine does not model is
+// refused, naming the setting and the pool, rather than run with the setting silently dropped:
+// the setting came with the v0.32.0 engine (blis-schemas#102), which models it (core/vllm), and a
+// 0.32.0 scenario runs there once it is wired in (inference-sim#2027). The same scenario without
+// the setting adopts.
+func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testing.T) {
+	repos := vendoredRepos(t)
+	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "      gpu_memory_utilization: 0.9\n"
+	if !strings.Contains(string(raw), marker) {
+		t.Fatal("fixture has no engine block to edit")
+	}
+	adopt := func(t *testing.T, extra string) error {
+		t.Helper()
+		body := strings.Replace(string(raw), marker, marker+extra, 1)
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+		return err
+	}
+	if err := adopt(t, ""); err != nil {
+		t.Fatalf("the fixture itself must adopt: %v", err)
+	}
+	for _, c := range []struct{ yaml, name string }{
+		{"      max_num_scheduled_tokens: 4096\n", "max_num_scheduled_tokens"},
+		{"      max_num_active_seqs: 64\n", "max_num_active_seqs"},
+		{"      stream_interval: 4\n", "stream_interval"},
+		{"      prefill_schedule_interval: 2\n", "prefill_schedule_interval"},
+		{"      kv_cache_memory_bytes: 1000000000\n", "kv_cache_memory_bytes"},
+		{"      disable_hybrid_kv_cache_manager: true\n", "disable_hybrid_kv_cache_manager"},
+		{"      max_loras: 2\n", "max_loras"},
+		{"      watermark: 0.02\n", "watermark"},
+		{"      prefix_match_unit: 16\n", "prefix_match_unit"},
+		{"      long_prefill_token_threshold_adaptive: true\n", "long_prefill_token_threshold_adaptive"},
+	} {
+		err := adopt(t, c.yaml)
+		if err == nil {
+			t.Errorf("%s: adopted, want a refusal", c.name)
+			continue
+		}
+		for _, frag := range []string{"engine." + c.name, "colocated pool", "compatibility engine", "0.32.0", "inference-sim#2027"} {
+			if !strings.Contains(err.Error(), frag) {
+				t.Errorf("%s: refusal %q must name %q", c.name, err, frag)
+			}
+		}
+	}
+	// The drafter of a speculative block: speculative.draft_model.
+	body := strings.Replace(string(raw), "        num_spec_tokens: 3\n", "        num_spec_tokens: 3\n        draft_model: some-drafter\n", 1)
+	if !strings.Contains(body, "draft_model: some-drafter") {
+		t.Fatal("fixture has no speculative block to edit")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry}); err == nil ||
+		!strings.Contains(err.Error(), "engine.speculative.draft_model") {
+		t.Errorf("speculative.draft_model: %v, want a refusal naming it", err)
+	}
+}
+
 // statedVersion is how a refusal names the release a scenario states: an empty one is named as
 // none stated, not as the release "".
 func statedVersion(v string) string {

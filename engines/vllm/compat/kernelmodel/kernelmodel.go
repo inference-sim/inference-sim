@@ -677,6 +677,33 @@ type Shape struct {
 	// EngineVersion is the scenario's engine_version: the engine release its deployment was
 	// written for.
 	EngineVersion string
+	// Unmodelled are each pool's stated engine settings that the compatibility engine does not
+	// model, by their scenario field names (unmodelledSettings), parallel to Roles.
+	Unmodelled [][]string
+}
+
+// unmodelledSettings are the engine settings a deployment states that the compatibility engine
+// does not model: the ones blis-schemas added with the v0.32.0 engine, which models them
+// (blis-vllm core/vllm). It returns their scenario field names, in declaration order.
+func unmodelledSettings(e deployment.Engine) []string {
+	var out []string
+	add := func(stated bool, name string) {
+		if stated {
+			out = append(out, name)
+		}
+	}
+	add(e.LongPrefillTokenThresholdAdaptive != nil, "long_prefill_token_threshold_adaptive")
+	add(e.MaxNumScheduledTokens != 0, "max_num_scheduled_tokens")
+	add(e.MaxNumActiveSeqs != 0, "max_num_active_seqs")
+	add(e.Watermark != nil, "watermark")
+	add(e.PrefillScheduleInterval != 0, "prefill_schedule_interval")
+	add(e.StreamInterval != 0, "stream_interval")
+	add(e.DisableHybridKVCacheManager != nil, "disable_hybrid_kv_cache_manager")
+	add(e.KVCacheMemoryBytes != nil, "kv_cache_memory_bytes")
+	add(e.PrefixMatchUnit != 0, "prefix_match_unit")
+	add(e.MaxLoRAs != 0, "max_loras")
+	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative.draft_model")
+	return out
 }
 
 // ShapeOf reads a scenario's Shape.
@@ -702,6 +729,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		sh.Labels[i] = p.Labels
 		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, p.Engine.LongPrefillTokenThreshold)
 		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
+		sh.Unmodelled = append(sh.Unmodelled, unmodelledSettings(p.Engine))
 	}
 	return sh, nil
 }

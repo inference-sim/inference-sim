@@ -497,6 +497,26 @@ type OffloadPricing struct {
 	MaxNumBatchedTokens int64
 }
 
+// SizeOffloadBlocks records the per-rank KV bytes of one GPU block (blockSizeTokens tokens) on an
+// enabled offload config, and refuses one whose CPU tier cannot hold a single offload chunk
+// (cpu_bytes_to_use below blocks_per_chunk x the block's bytes, CheckFitsOneChunk). The bytes
+// are the kernel's own answer (SequenceVariableBytes: page-quantized, sharded by the layout and
+// the cache dtype), which sizes the offload tiers and their transfer jobs (#1590 H1) and
+// round-trips through a trace header (INV-13). A config that already carries its bytes (a
+// replayed trace header, onlyIfUnset) keeps them. A disabled config is left alone.
+func SizeOffloadBlocks(m *kernelmodel.Model, cfg *engine.KVOffloadConfig, blockSizeTokens int64, onlyIfUnset bool) error {
+	if !cfg.IsEnabled() || (onlyIfUnset && cfg.PerBlockBytes != 0) {
+		return nil
+	}
+	b := m.Kernel().SequenceVariableBytes(int(blockSizeTokens))
+	if b <= 0 {
+		return fmt.Errorf("kv_offload: the kernel prices a %d-token block at %d bytes; per_block_bytes must be > 0",
+			blockSizeTokens, b)
+	}
+	cfg.PerBlockBytes = b
+	return cfg.CheckFitsOneChunk()
+}
+
 // PriceColocatedOffload has the kernel price every KV-offload transfer of a colocated run,
 // from the run's one pool: see priceOffload. It returns the legacy per-block charge, 0 when no
 // kernel is open or with no legacy tier. A disaggregated run's pools are priced separately,

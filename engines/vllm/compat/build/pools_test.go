@@ -137,6 +137,44 @@ func TestRunTimeFailuresNeverPriceAFreeTransfer(t *testing.T) {
 	}
 }
 
+// An enabled offload config is sized by the kernel's own bytes for one GPU block, and refused
+// when its CPU tier cannot hold one chunk. A config already carrying its bytes (a replayed trace
+// header) keeps them when asked to, and a disabled config is left alone.
+func TestSizeOffloadBlocks_TheKernelSizesTheBlockAndOneChunkMustFit(t *testing.T) {
+	m, err := kernelmodel.Open("glm-5-h200-tp8-mtp3.yaml", vendoredRepos(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const blockTokens = 64
+	want := m.Kernel().SequenceVariableBytes(blockTokens)
+	if want <= 0 {
+		t.Fatalf("non-vacuity: the kernel prices a block at %d bytes", want)
+	}
+	cfg := engine.KVOffloadConfig{Enabled: true, CPUBytesToUse: want * 4 * 10, BlocksPerChunk: 4}
+	if err := SizeOffloadBlocks(m, &cfg, blockTokens, false); err != nil || cfg.PerBlockBytes != want {
+		t.Fatalf("sized %d bytes, %v; want the kernel's %d", cfg.PerBlockBytes, err, want)
+	}
+	// A header's own bytes stand when onlyIfUnset; without it they are re-derived.
+	cfg.PerBlockBytes = 7
+	if err := SizeOffloadBlocks(m, &cfg, blockTokens, true); err != nil || cfg.PerBlockBytes != 7 {
+		t.Errorf("onlyIfUnset: %d bytes, %v; want the stated 7 kept", cfg.PerBlockBytes, err)
+	}
+	if err := SizeOffloadBlocks(m, &cfg, blockTokens, false); err != nil || cfg.PerBlockBytes != want {
+		t.Errorf("re-derived: %d bytes, %v; want the kernel's %d", cfg.PerBlockBytes, err, want)
+	}
+	// A CPU tier smaller than one chunk is refused, naming the budget.
+	small := engine.KVOffloadConfig{Enabled: true, CPUBytesToUse: want*4 - 1, BlocksPerChunk: 4}
+	if err := SizeOffloadBlocks(m, &small, blockTokens, false); err == nil ||
+		!strings.Contains(err.Error(), "smaller than one offload chunk") {
+		t.Errorf("a sub-chunk CPU tier: %v, want the one-chunk refusal", err)
+	}
+	// A disabled config is not touched.
+	off := engine.KVOffloadConfig{}
+	if err := SizeOffloadBlocks(m, &off, blockTokens, false); err != nil || off.PerBlockBytes != 0 {
+		t.Errorf("a disabled config: %d bytes, %v; want it left alone", off.PerBlockBytes, err)
+	}
+}
+
 // Pools that page, cache, replicate or draft differently cannot hand KV off and are refused,
 // naming what differs.
 func TestOpenPools_RefusesPoolsThatCannotHandOff(t *testing.T) {

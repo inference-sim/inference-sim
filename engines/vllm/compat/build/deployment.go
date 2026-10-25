@@ -87,6 +87,23 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			"compatibility engine, which models the releases %s (the v0.32.0 engine is not wired in yet)",
 			in.Scenario, stated, strings.Join(CompatVersions(), " and "))
 	}
+	// The compatibility engine models the settings the 0.29/0.31 releases had, as inference-sim's
+	// engine did. A setting blis-schemas added with the v0.32.0 engine would be dropped without a
+	// word, so a pool stating one is refused, naming it: the v0.32.0 engine (core/vllm) models
+	// it, and a 0.32.0 scenario runs there once it is wired in (inference-sim#2027).
+	for i, names := range shape.Unmodelled {
+		if len(names) == 0 {
+			continue
+		}
+		stated := make([]string, len(names))
+		for j, n := range names {
+			stated[j] = "engine." + n
+		}
+		return Adopted{}, fmt.Errorf("scenario %q: the %s pool states %s, which blis-vllm's compatibility engine "+
+			"does not model (it models the %s releases); the v0.32.0 engine does, and a 0.32.0 scenario runs on it "+
+			"once it is wired in (inference-sim#2027). Drop the setting to run on the compatibility engine",
+			in.Scenario, shape.Roles[i], strings.Join(stated, ", "), strings.Join(CompatVersions(), " and "))
+	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
 		return Adopted{}, fmt.Errorf("scenario %q states %d colocated pools; a run simulates one colocated "+
