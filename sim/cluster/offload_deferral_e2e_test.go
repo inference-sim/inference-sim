@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kv"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kv"
 )
 
 // offloadE2ECfg builds a single-instance SimConfig with the KV-offload chain

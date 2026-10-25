@@ -3,8 +3,8 @@ package workload
 import (
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/lora"
 )
 
 // adapterTestSpec builds a minimal single-client spec with the given adapter id.

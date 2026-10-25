@@ -17,12 +17,13 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	_ "github.com/inference-sim/blis-vllm/compat/kv"   // registers sim.NewKVStoreFromConfig, which sim.NewEngine builds KV stores with
+	_ "github.com/inference-sim/blis-vllm/compat/lora" // registers sim.NewAdapterRegistryFunc via init()
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/kv"   // registers sim.NewKVStoreFromConfig, which sim.NewEngine builds KV stores with
-	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
 	"github.com/inference-sim/inference-sim/sim/trace"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 

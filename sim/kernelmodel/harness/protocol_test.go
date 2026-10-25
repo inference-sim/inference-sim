@@ -5,9 +5,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	kvcache "github.com/inference-sim/blis-vllm/compat/kv"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	kvcache "github.com/inference-sim/inference-sim/sim/kv"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 

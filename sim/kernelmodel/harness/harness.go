@@ -48,8 +48,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.

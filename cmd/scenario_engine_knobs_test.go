@@ -11,8 +11,9 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // The scenario is the source of engine.long_prefill_token_threshold (blis-schemas#75) and

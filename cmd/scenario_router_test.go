@@ -11,9 +11,10 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/llmd"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // routerVariant writes the scenario file src into a fresh scenario directory as variant.yaml with

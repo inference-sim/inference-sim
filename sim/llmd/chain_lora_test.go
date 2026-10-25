@@ -4,9 +4,9 @@ import (
 	"math/rand"
 	"testing"
 
+	_ "github.com/inference-sim/blis-vllm/compat/lora" // links the LoRA subsystem, as the CLI does
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	_ "github.com/inference-sim/inference-sim/sim/lora" // links the LoRA subsystem, as the CLI does
 )
 
 // TestINV5_FullChainThroughTheRouter asserts INV-5's chain on requests the real router held in

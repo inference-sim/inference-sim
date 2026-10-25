@@ -4,7 +4,7 @@
 // constructor registration variables forward to the engine package.
 package sim
 
-import "github.com/inference-sim/inference-sim/sim/engine"
+import "github.com/inference-sim/blis-vllm/compat/engine"
 
 type (
 	KernelPoolProvenance   = engine.KernelPoolProvenance

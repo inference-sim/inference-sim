@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -570,8 +571,9 @@ func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected string panic, got %T: %v", r, r)
 		}
-		expected := "NewKVCacheStateFunc not registered: import sim/kv to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")"
+		// The KV store moved to blis-vllm (compat/kv), and so did the message's import path.
+		expected := "NewKVCacheStateFunc not registered: import compat/kv to register it " +
+			"(add: import _ \"github.com/inference-sim/blis-vllm/compat/kv\")"
 		if msg != expected {
 			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
 		}
@@ -1937,12 +1939,31 @@ var simControlPlaneGlobs = []string{
 	"admission*.go",
 	"saturation*.go",
 	"router_state.go",
-	// The engine's control-plane files moved with it to sim/engine (#2021 E2.3d); the scan
-	// still covers them.
+	// The engine's control-plane files moved with it to blis-vllm (compat/engine, #2021 E2.3d);
+	// "engine/" stands for that package's directory in the module go.mod pins, so the scan
+	// still covers them (engineGlob).
 	"engine/scheduler*.go",
 	"engine/slo*.go",
 	// The engine metrics the router scrapes: what a real vLLM server publishes, never the oracle.
 	"engine/engine_metrics.go",
+}
+
+// compatEngineDir is the directory of blis-vllm's compat/engine in the module go.mod pins.
+func compatEngineDir(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", "github.com/inference-sim/blis-vllm/compat/engine").Output()
+	if err != nil {
+		t.Fatalf("go list compat/engine: %v", err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// engineGlob maps a glob under "engine/" to compat/engine's directory, and leaves others alone.
+func engineGlob(t *testing.T, pattern string) string {
+	if rest, ok := strings.CutPrefix(pattern, "engine/"); ok {
+		return filepath.Join(compatEngineDir(t), rest)
+	}
+	return pattern
 }
 
 // simControlPlaneExemptions names files the globs match that are legitimately
@@ -1956,13 +1977,17 @@ func resolveSimControlPlaneFiles(t *testing.T) []string {
 	t.Helper()
 	seen := map[string]bool{}
 	for _, pattern := range simControlPlaneGlobs {
-		matches, err := filepath.Glob(pattern)
+		matches, err := filepath.Glob(engineGlob(t, pattern))
 		if err != nil {
 			t.Fatalf("bad glob %q: %v", pattern, err)
 		}
 		for _, name := range matches {
 			if strings.HasSuffix(name, "_test.go") {
 				continue
+			}
+			// Name a compat/engine file as "engine/<file>", as the globs and the required list do.
+			if dir := compatEngineDir(t); strings.HasPrefix(name, dir+string(filepath.Separator)) {
+				name = "engine/" + filepath.Base(name)
 			}
 			if reason, exempt := simControlPlaneExemptions[name]; exempt {
 				t.Logf("INV-9: %s exempted — %s", name, reason)
@@ -2055,7 +2080,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 	}
 
 	for _, filename := range simControlPlaneFiles {
-		data, err := os.ReadFile(filename)
+		data, err := os.ReadFile(engineGlob(t, filename))
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", filename, err)
 		}
@@ -2122,7 +2147,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 
 	// Additionally verify EnqueueRequest specifically (it's in engine.go, which also contains
 	// execution-engine code that legitimately uses OutputTokens).
-	data, err := os.ReadFile("engine/engine.go")
+	data, err := os.ReadFile(engineGlob(t, "engine/engine.go"))
 	if err != nil {
 		t.Fatalf("failed to read engine/engine.go: %v", err)
 	}

@@ -25,7 +25,8 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // PassedSettings is what a run's command line carried. A nil field was not passed.

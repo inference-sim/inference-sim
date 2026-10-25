@@ -7,8 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/kernelmodel/internal/artifacts"
+	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // testRepos is the artifact roots the harness tests run against: the pinned kernel module's

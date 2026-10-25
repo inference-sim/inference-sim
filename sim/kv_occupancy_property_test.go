@@ -1,4 +1,4 @@
-package kv
+package sim_test
 
 import (
 	"fmt"
@@ -7,8 +7,10 @@ import (
 
 	"pgregory.net/rapid"
 
+	sim "github.com/inference-sim/blis-vllm/compat/engine"
+	"github.com/inference-sim/blis-vllm/compat/kv"
+
 	host "github.com/inference-sim/inference-sim/sim"
-	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
@@ -20,7 +22,7 @@ import (
 // run.
 type checkingStore struct {
 	sim.KVStore
-	gpu      *KVCacheState
+	gpu      *kv.KVCacheState
 	check    func(req *sim.Request, start, computed, end, before int64)
 	reload   sim.ReloadReportingKVStore
 	deferral sim.DeferrableKVStore
@@ -73,17 +75,12 @@ func (c *checkingStore) ClearDeferred(id string) {
 }
 
 // gpuOf is the GPU tier of a store NewKVStore built.
-func gpuOf(t *rapid.T, s sim.KVStore) *KVCacheState {
-	switch v := s.(type) {
-	case *KVCacheState:
-		return v
-	case *TieredKVCache:
-		return v.gpu
-	case *OffloadCache:
-		return v.gpu
+func gpuOf(t *rapid.T, s sim.KVStore) *kv.KVCacheState {
+	g := kv.GPUTierForTest(s)
+	if g == nil {
+		t.Fatalf("unexpected store %T", s)
 	}
-	t.Fatalf("unexpected store %T", s)
-	return nil
+	return g
 }
 
 // Every running request holds exactly the KV its step needs, under every store and every
@@ -156,13 +153,13 @@ func TestEveryRunningRequestHoldsKVForItsComputedTokens(t *testing.T) {
 			kvCfg = sim.NewKVCacheConfig(blocks, block, blocks, 0.9, 100, 10, sim.WithSequenceState(state))
 		case "chain":
 			kvCfg = sim.NewKVCacheConfig(blocks, block, 0, 0, 0, 0, sim.WithSequenceState(state),
-				sim.WithKVOffload(enabledOffloadCfg(blocks*4096, 4096, 0)))
+				sim.WithKVOffload(occupancyOffloadCfg(blocks*4096, 4096)))
 		}
 		kvCfg.Speculative = spec.KV()
 		kvCfg.Speculative.MaxModelLen = maxModelLen
 		lookahead := spec.LookaheadTokens()
 
-		base := NewKVStore(kvCfg, 1)
+		base := kv.NewKVStore(kvCfg, 1)
 		store := &checkingStore{KVStore: base, gpu: gpuOf(rt, base)}
 		store.reload, _ = base.(sim.ReloadReportingKVStore)
 		store.deferral, _ = base.(sim.DeferrableKVStore)
@@ -192,7 +189,7 @@ func TestEveryRunningRequestHoldsKVForItsComputedTokens(t *testing.T) {
 						got, state.Hold(start, end-start), state.Hold(computed, end-computed))
 				}
 			}
-			if err := gpu.verifyBlockConservation(); err != nil {
+			if err := gpu.VerifyBlockConservationForTest(); err != nil {
 				rt.Fatal(err)
 			}
 		}
@@ -217,7 +214,7 @@ func TestEveryRunningRequestHoldsKVForItsComputedTokens(t *testing.T) {
 					events, s.Clock, s.BatchSize(), s.QueueDepth(), gpu.UsedBlocks(), blocks)
 			}
 			s.ProcessNextEvent()
-			if err := gpu.verifyBlockConservation(); err != nil {
+			if err := gpu.VerifyBlockConservationForTest(); err != nil {
 				rt.Fatal(err)
 			}
 		}
@@ -232,4 +229,14 @@ func TestEveryRunningRequestHoldsKVForItsComputedTokens(t *testing.T) {
 			rt.Fatalf("%d blocks still held at the end", gpu.UsedBlocks())
 		}
 	})
+}
+
+// occupancyOffloadCfg is an enabled offload chain with no secondary tiers: a CPU tier of
+// cpuBytes in perBlockBytes blocks (compat/kv's enabledOffloadCfg with no tiers).
+func occupancyOffloadCfg(cpuBytes, perBlockBytes int64) sim.KVOffloadConfig {
+	return sim.KVOffloadConfig{
+		Enabled: true, CPUBytesToUse: cpuBytes, PerBlockBytes: perBlockBytes,
+		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16,
+		EvictionPolicy: "lru", OffloadPromptOnly: true,
+	}
 }
