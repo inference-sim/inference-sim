@@ -15,6 +15,10 @@ import sys
 
 def main(golden_dir: str, fresh_dir: str) -> int:
     names = sorted(f[:-5] for f in os.listdir(golden_dir) if f.endswith(".json"))
+    if not names:
+        # An empty golden directory compares nothing, which must not read as a pass.
+        print(f"{golden_dir}: no goldens to compare")
+        return 1
     bad = 0
     for name in names:
         fresh_path = os.path.join(fresh_dir, name + ".trace.json")

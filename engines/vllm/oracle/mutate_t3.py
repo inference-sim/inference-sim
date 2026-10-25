@@ -97,6 +97,9 @@ def main() -> int:
         if r.returncode == 0:
             print(f"SURVIVED {mid:4} {row}")
             bad += 1
+        elif "panic: test timed out" in r.stdout:
+            print(f"BROKEN   {mid} {row}: the tests timed out")
+            bad += 1
         elif "divergence" in r.stdout or "max_concurrent_batches" in r.stdout or "want" in r.stdout or "panic" in r.stdout:
             print(f"CAUGHT   {mid:4} {row}")
         else:

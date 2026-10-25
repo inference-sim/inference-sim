@@ -179,6 +179,9 @@ def main() -> int:
         if mid in KNOWN_GAPS:
             print(f"NOW CAUGHT {mid} {row}: remove it from KNOWN_GAPS")
             unexpected += 1
+        elif "panic: test timed out" in r.stdout:
+            print(f"BROKEN   {mid:4} {row}: the tests timed out")
+            unexpected += 1
         elif "earliest divergence" in r.stdout or "never finished" in r.stdout or "panic" in r.stdout:
             print(f"CAUGHT   {mid:4} {row}")
         else:

@@ -175,6 +175,9 @@ def main() -> int:
         elif mid in EQUIVALENT:
             print(f"NOW CAUGHT {mid} {row}: remove it from EQUIVALENT")
             bad += 1
+        elif "panic: test timed out" in r.stdout:
+            print(f"BROKEN   {mid:4} {row}: the tests timed out")
+            unexpected += 1
         elif any(m in r.stdout for m in markers):
             print(f"CAUGHT   {mid:4} {row}")
         else:
