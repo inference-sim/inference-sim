@@ -13,6 +13,7 @@ import (
 	_ "github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // The one place inference-sim builds blis-vllm (#2021 B2). The engine's configuration -- the
@@ -377,6 +378,31 @@ func engineConfigFor(cmd *cobra.Command, m sim.ModelConfig, perRankDP int, offlo
 	return build.EngineConfigOf(engineSettings(m, perRankDP, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
 }
 
+// simConfigFor is the instance configuration both commands hand the cluster: the engine's
+// configuration (ec, from engineConfigFor) and its front end, beside the simulator's own settings
+// (the horizon, the seed, the latency model, the SLO priority overrides and the server series).
+// The one place cmd assembles it (INV-13).
+func simConfigFor(ec build.EngineConfig, horizon, seed int64, latency sim.LatencyModel, sloOverrides map[string]int) sim.SimConfig {
+	return sim.SimConfig{
+		Horizon: horizon,
+		Seed:    seed,
+		// The engine's configuration comes from the build site (engineConfigFor), the same for
+		// run and replay (INV-13). DP-as-placement (#1531): the per-replica DP is in
+		// ec.ModelHardware, from the same resolveDPPlacement for both (#1556).
+		KVCacheConfig:        ec.KVCache,
+		BatchConfig:          ec.Batch,
+		ModelHardwareConfig:  ec.ModelHardware,
+		PolicyConfig:         ec.Policy,
+		LoRAConfig:           ec.LoRA,
+		SpeculativeConfig:    ec.Speculative,
+		Frontend:             frontendConfigFromCLI(),
+		SLOPriorityOverrides: sloOverrides,
+		// The kernel prices every step.
+		LatencyModel:           latency,
+		ServerSeriesIntervalUs: serverSeriesIntervalUs(),
+	}
+}
+
 // engineSettings gathers the run's resolved engine settings, unread, for build.EngineConfigOf.
 func engineSettings(m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfig, cpuTierTicks int64,
 	lora sim.LoRAConfig, spec sim.SpeculativeConfig) build.EngineSettings {
@@ -424,4 +450,87 @@ func adapterRegistryOf(cfg sim.LoRAConfig) sim.AdapterRegistry {
 		logrus.Fatalf("%v", err)
 	}
 	return r
+}
+
+// offloadRecord and offloadTierRecord are a trace header's record of the KV-offload config,
+// in the engine's terms (build.OffloadRecord).
+type (
+	offloadRecord     = build.OffloadRecord
+	offloadTierRecord = build.OffloadTierRecord
+)
+
+// kvOffloadOfRecord is the engine's offload config rebuilt from a trace's record of it
+// (build.KVOffloadOfRecord); nil is the inert config.
+func kvOffloadOfRecord(r *offloadRecord) sim.KVOffloadConfig { return build.KVOffloadOfRecord(r) }
+
+// reconcileReplayKVOffload is replay's KV-offload config: the trace header's, authoritative
+// (BC-G6), reconciled with the scenario's offload block and --kv-offload-config, which may
+// only restate it (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible
+// record. allowFlagAdd is for an observe trace or an agentic replay, which record no BLIS
+// deployment (replayRecordsDeployment).
+func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) sim.KVOffloadConfig {
+	// The scenario's offload block is a source on replay as on run: it and the flag resolve
+	// together (resolveKVOffloadConfig), and the result must match the header.
+	flagChanged := cmd.Flags().Changed("kv-offload-config") || scenarioOffload != nil
+	var flagCfg sim.KVOffloadConfig
+	if flagChanged {
+		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
+		flagCfg = resolveKVOffloadConfig(cmd)
+	}
+	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg, allowFlagAdd)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return cfg
+}
+
+// resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace
+// header's record (build.ReconcileReplayKVOffload).
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg sim.KVOffloadConfig, allowFlagAdd bool) (sim.KVOffloadConfig, error) {
+	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
+}
+
+// requireOffloadForTieredObservation refuses a replay whose trace's observed KV hit-rate came
+// from the tiered offload counters but which reproduces no offload config (BC-10, #1583;
+// build.RequireOffloadForTieredObservation).
+func requireOffloadForTieredObservation(obs *workload.TraceObservedKVMetrics, offloadEnabled bool) error {
+	if obs == nil {
+		return nil
+	}
+	return build.RequireOffloadForTieredObservation(obs.Source == workload.ObservedKVSourceTiered, obs.Source, offloadEnabled)
+}
+
+// requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks (#1590 H1;
+// build.RequireOneOffloadModel), fatal at the CLI boundary.
+func requireOneOffloadModel(offloadEnabled bool, onReplay bool) {
+	if err := build.RequireOneOffloadModel(offloadEnabled, kvCPUBlocks, onReplay); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+}
+
+// frontendConfigFromCLI is the engine's front-end config from --renderer-num-workers and
+// --api-server-count (build.FrontendConfigOf), the single run/replay seam (INV-13); fatal on
+// a negative count.
+func frontendConfigFromCLI() sim.FrontendConfig {
+	c, err := build.FrontendConfigOf(rendererNumWorkers, apiServerCount)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return c
+}
+
+// dpLockstepRanks is how many replicas of one logical instance form one vLLM DP group that
+// steps in lockstep (build.DPLockstepRanks): dp for an MoE model at dp > 1.
+func dpLockstepRanks(isMoE bool, dp int) int { return build.DPLockstepRanks(isMoE, dp) }
+
+// checkHybridDPNodeLocal refuses --dp-load-balancing hybrid for a colocated replica whose ranks
+// span nodes (build.CheckHybridDPNodeLocal). Only a colocated run with a kernel is checked: the
+// kernel places the ranks.
+func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
+	if !plan.Active || kernelOpened == nil ||
+		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0 {
+		return nil
+	}
+	return build.CheckHybridDPNodeLocal(dpLoadBalancing, plan.Replicas, numInstances,
+		func(rank int) int { return kernelOpened.PlacementOf(rank).Node })
 }

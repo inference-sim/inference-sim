@@ -317,11 +317,9 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	_ = nodePoolsActive
 	// Expert parallelism reserves no extra GPUs, so the plan is identical either way.
 	_ = epOn
-	// The dp replicas of one logical instance are one vLLM DP group: an MoE model at dp > 1
-	// runs as DPEngineCoreProc ranks that step in lockstep (vllm/v1/engine/core.py:1386-1395
-	// at v0.31.0), with or without expert parallelism (use_all2all is true at dp > 1,
-	// vllm/config/parallel.py:738-743), behind one API endpoint (#1909).
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dp}, nil
+	// The dp replicas of one logical instance are one vLLM DP group behind one API endpoint
+	// (#1909); how many step in lockstep is the engine's rule (dpLockstepRanks).
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dpLockstepRanks(isMoE, dp)}, nil
 }
 
 // dpPlacementDeployment carries the deployment quantities DP-as-real-placement
@@ -459,28 +457,6 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
 	}
 	return plan, nil
-}
-
-// checkHybridDPNodeLocal refuses --dp-load-balancing hybrid for a colocated replica whose
-// ranks span nodes. vLLM's hybrid balancer runs one front-end per node over that node's
-// ranks (DPLBAsyncMPClient over engine_ranks_managed, vllm/v1/engine/core_client.py:1500-1520;
-// api_server_count defaults to data_parallel_size_local, vllm/entrypoints/cli/serve.py:
-// 112-120), so a replica across nodes is several endpoints, which BLIS does not model. On one
-// node hybrid is the internal balancer.
-func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
-	if dpLoadBalancing != cluster.DPLoadBalancingHybrid || !plan.Active || kernelOpened == nil ||
-		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0 {
-		return nil
-	}
-	dp := plan.Replicas
-	for first := 0; first+dp <= numInstances; first += dp {
-		if a, b := kernelOpened.PlacementOf(first), kernelOpened.PlacementOf(first+dp-1); a.Node != b.Node {
-			return fmt.Errorf("--dp-load-balancing hybrid: the replica of ranks %d-%d spans nodes %d-%d, and a "+
-				"hybrid front-end balances only its own node's ranks (one endpoint per node), which BLIS does "+
-				"not model; use internal or external", first, first+dp-1, a.Node, b.Node)
-		}
-	}
-	return nil
 }
 
 // offloadPerBlockBytes is the per-rank KV bytes of one block of blockSize tokens, which sizes
@@ -956,9 +932,7 @@ var runCmd = &cobra.Command{
 		kvOffloadCfg := resolveKVOffloadConfig(cmd)
 		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
 		// single CPU tier) are distinct offload models; setting both is ambiguous.
-		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
-			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
-		}
+		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), false)
 
 		// Resolve the latency model (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -1382,26 +1356,7 @@ var runCmd = &cobra.Command{
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		config := cluster.DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon: simulationHorizon,
-				Seed:    seed,
-				// The engine's configuration comes from the build site (engineConfigFor), the same
-				// for run and replay (INV-13). DP-as-placement (#1531): dpPlan.PerRankDP is the
-				// per-replica DP -- 1 when the plan is active (each replica is one rank), else the
-				// CLI dataParallelism unchanged; since #1556 replay wires the SAME dpPlan.PerRankDP
-				// from the SAME resolveDPPlacement.
-				KVCacheConfig:        ec.KVCache,
-				BatchConfig:          ec.Batch,
-				ModelHardwareConfig:  ec.ModelHardware,
-				PolicyConfig:         ec.Policy,
-				LoRAConfig:           ec.LoRA,
-				SpeculativeConfig:    ec.Speculative,
-				Frontend:             frontendConfigFromCLI(),
-				SLOPriorityOverrides: sloPriorityOverrides,
-				// The kernel prices every step.
-				LatencyModel:           lr.KernelModel,
-				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
-			},
+			SimConfig:                      simConfigFor(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides),
 			NumInstances:                   numInstances,
 			DPLockstepRanks:                dpPlan.LockstepRanks,
 			DPLoadBalancing:                dpLoadBalancing,

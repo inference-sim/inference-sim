@@ -10,22 +10,22 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// TestValidateObservedKVReplayable enforces BC-10 (#1583): a tiered observed hit-rate
+// TestValidateObservedKVReplayable enforces BC-10 through the build site (requireOffloadForTieredObservation) (#1583): a tiered observed hit-rate
 // requires a reproducible offload config on replay; all other cases pass.
 func TestValidateObservedKVReplayable(t *testing.T) {
 	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered, HitRate: 0.5}
 	gpu := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceGPUCache, HitRate: 0.5}
 
-	if err := validateObservedKVReplayable(tiered, false); err == nil {
+	if err := requireOffloadForTieredObservation(tiered, false); err == nil {
 		t.Error("tiered observation with offload DISABLED must error (BC-10)")
 	}
-	if err := validateObservedKVReplayable(tiered, true); err != nil {
+	if err := requireOffloadForTieredObservation(tiered, true); err != nil {
 		t.Errorf("tiered observation with offload ENABLED must pass, got %v", err)
 	}
-	if err := validateObservedKVReplayable(gpu, false); err != nil {
+	if err := requireOffloadForTieredObservation(gpu, false); err != nil {
 		t.Errorf("gpu-fallback observation must pass regardless of offload, got %v", err)
 	}
-	if err := validateObservedKVReplayable(nil, false); err != nil {
+	if err := requireOffloadForTieredObservation(nil, false); err != nil {
 		t.Errorf("nil observation must pass, got %v", err)
 	}
 }
@@ -34,7 +34,7 @@ func TestValidateObservedKVReplayable(t *testing.T) {
 // actionable (names the missing config), not a bare failure.
 func TestValidateObservedKVReplayable_ErrorMentionsConfig(t *testing.T) {
 	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered}
-	err := validateObservedKVReplayable(tiered, false)
+	err := requireOffloadForTieredObservation(tiered, false)
 	if err == nil || !strings.Contains(err.Error(), "--kv-offload-config") {
 		t.Errorf("BC-10 error must point at --kv-offload-config, got %v", err)
 	}

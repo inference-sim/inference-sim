@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -158,4 +163,189 @@ import "other/sim"
 func f() any { return sim.NewBatchConfig }`); len(got) != 0 {
 		t.Errorf("another package named sim: %v, want none", got)
 	}
+}
+
+// Outside the build site, package cmd neither builds a value of the engine's configuration types
+// as a composite literal nor validates one: such a value comes from blis-vllm compat/build, which
+// cmd/engine_build.go calls. The check is type-checked, so it sees the types under any name: sim's
+// aliases (sim/engine_aliases.go), compat/engine's own, or a local alias. The engine's types are
+// the struct types compat/engine declares whose names end in Config or Tier.
+func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
+	findings, scanned := engineConfigValuesIn(t, ".", "github.com/inference-sim/inference-sim/cmd")
+	if scanned < 10 {
+		t.Fatalf("non-vacuity: only %d production files type-checked", scanned)
+	}
+	var outside []string
+	inSite := 0
+	for _, f := range findings {
+		if strings.HasPrefix(f, "engine_build.go:") {
+			inSite++
+			continue
+		}
+		outside = append(outside, f)
+	}
+	if len(outside) > 0 {
+		t.Errorf("engine configuration built or validated in cmd outside cmd/engine_build.go:\n  %s",
+			strings.Join(outside, "\n  "))
+	}
+	if inSite == 0 {
+		t.Error("non-vacuity: cmd/engine_build.go builds the instance configuration, so the check must see it there")
+	}
+}
+
+const compatEnginePath = "github.com/inference-sim/blis-vllm/compat/engine"
+
+// isEngineConfigType reports whether typ is a struct type compat/engine declares whose name ends
+// in Config or Tier (KVOffloadConfig, KVOffloadTier, FrontendConfig, SimConfig, ...).
+func isEngineConfigType(typ types.Type) bool {
+	n, ok := types.Unalias(typ).(*types.Named)
+	if !ok || n.Obj().Pkg() == nil || n.Obj().Pkg().Path() != compatEnginePath {
+		return false
+	}
+	if _, isStruct := n.Underlying().(*types.Struct); !isStruct {
+		return false
+	}
+	name := n.Obj().Name()
+	return strings.HasSuffix(name, "Config") || strings.HasSuffix(name, "Tier")
+}
+
+// engineConfigValuesIn type-checks the non-test Go files of dir as package path (dependencies from
+// the build's export data) and lists, as "file:line: what", each composite literal of an engine
+// configuration type and each Validate call on a value of one. An empty literal, a zero value
+// passed through, is not counted. It also returns how many files it checked.
+func engineConfigValuesIn(t *testing.T, dir, path string) ([]string, int) {
+	t.Helper()
+	return engineConfigValuesInWith(t, dir, path, dir)
+}
+
+// engineConfigValuesInWith is engineConfigValuesIn with the export data taken from the build of
+// depsDir (a package whose dependencies cover dir's imports).
+func engineConfigValuesInWith(t *testing.T, dir, path, depsDir string) ([]string, int) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var parsed []*ast.File
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		af, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed = append(parsed, af)
+	}
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
+	conf := types.Config{Importer: exportImporter(t, fset, depsDir)}
+	if _, err := conf.Check(path, fset, parsed, info); err != nil {
+		t.Fatalf("type-checking %s: %v", dir, err)
+	}
+	var out []string
+	for _, f := range parsed {
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.CompositeLit:
+				if tv, ok := info.Types[x]; ok && isEngineConfigType(tv.Type) && len(x.Elts) > 0 {
+					at := fset.Position(x.Pos())
+					out = append(out, fmt.Sprintf("%s:%d: a %s literal", filepath.Base(at.Filename), at.Line, types.Unalias(tv.Type).(*types.Named).Obj().Name()))
+				}
+			case *ast.SelectorExpr:
+				if x.Sel.Name != "Validate" {
+					return true
+				}
+				if sel, ok := info.Selections[x]; ok && sel.Kind() == types.MethodVal && isEngineConfigType(sel.Recv()) {
+					at := fset.Position(x.Pos())
+					out = append(out, fmt.Sprintf("%s:%d: %s.Validate", filepath.Base(at.Filename), at.Line, types.Unalias(sel.Recv()).(*types.Named).Obj().Name()))
+				}
+			}
+			return true
+		})
+	}
+	sort.Strings(out)
+	return out, len(parsed)
+}
+
+// exportImporter imports the packages dir's build depends on from the build's own export data
+// (go list -export), so the check type-checks against the pinned modules exactly.
+func exportImporter(t *testing.T, fset *token.FileSet, dir string) types.Importer {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-export", "-deps", "-json=ImportPath,Export", ".")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list -export: %v", err)
+	}
+	exports := map[string]string{}
+	dec := json.NewDecoder(strings.NewReader(string(out)))
+	for dec.More() {
+		var p struct{ ImportPath, Export string }
+		if err := dec.Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		exports[p.ImportPath] = p.Export
+	}
+	return importer.ForCompiler(fset, "gc", func(path string) (io.ReadCloser, error) {
+		f, ok := exports[path]
+		if !ok || f == "" {
+			return nil, fmt.Errorf("no export data for %s", path)
+		}
+		return os.Open(f)
+	})
+}
+
+// The value check sees each form: a literal through sim's alias, through compat/engine itself, a
+// nested tier literal, a pointer literal, and a Validate call through a local alias. A literal of
+// another package's type with the same name, an empty literal, and a non-Validate method are not
+// findings.
+func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"a literal through sim":           `func f() sim.FrontendConfig { return sim.FrontendConfig{RendererNumWorkers: 1} }`,
+		"a literal through compat/engine": `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{Enabled: true} }`,
+		"a nested tier literal":           `func f() []sim.KVOffloadTier { return []sim.KVOffloadTier{{Type: "fs"}} }`,
+		"a pointer literal":               `func f() *sim.FrontendConfig { return &sim.FrontendConfig{APIServerCount: 2} }`,
+		"a Validate through a local alias": `type fc = sim.FrontendConfig
+func f(c fc) error { return c.Validate() }`,
+	}
+	clean := map[string]string{
+		"another package's FrontendConfig": `type FrontendConfig struct{ N int }
+func f() FrontendConfig { return FrontendConfig{N: 1} }`,
+		"an empty literal": `func f() sim.KVOffloadConfig { return sim.KVOffloadConfig{} }`,
+		"another method":   `func f(c sim.FrontendConfig) bool { return c.Enabled() }`,
+	}
+	run := func(body string) []string {
+		pkgDir := filepath.Join(dir, fmt.Sprintf("p%d", len(body)))
+		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n)\n\nvar (\n\t_ = engine.ReplicaAPIServers\n\t_ = sim.ReplicaAPIServers\n)\n\n" + body + "\n"
+		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// The probe's imports are cmd's own dependencies, so cmd's export data serves it.
+		got, _ := engineConfigValuesInWith(t, pkgDir, "probe", ".")
+		return got
+	}
+	for _, name := range sortedKeysOf(cases) {
+		if got := run(cases[name]); len(got) != 1 {
+			t.Errorf("%s: %v, want one finding", name, got)
+		}
+	}
+	for _, name := range sortedKeysOf(clean) {
+		if got := run(clean[name]); len(got) != 0 {
+			t.Errorf("%s: %v, want none", name, got)
+		}
+	}
+}
+
+func sortedKeysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

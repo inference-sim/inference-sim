@@ -122,7 +122,9 @@ func TestReplayCmd_BuildsItsLatencyModelOnlyThroughResolveLatencyConfig(t *testi
 
 	assert.Contains(t, content, "resolveLatencyConfig(cmd)",
 		"replay.go must resolve its latency model through resolveLatencyConfig(cmd)")
-	assert.Regexp(t, `LatencyModel:\s+lr\.KernelModel`, content,
+	// The instance configuration is assembled at the build site (simConfigFor, cmd/engine_build.go),
+	// which replay hands the model resolveLatencyConfig returned.
+	assert.Regexp(t, `simConfigFor\([^)]*lr\.KernelModel`, content,
 		"replay.go must price its steps with the model resolveLatencyConfig returned")
 	for _, open := range []string{"kernelmodel.Open(", "kernelmodel.OpenPool(", "latencykernel.New("} {
 		assert.NotContainsf(t, content, open,

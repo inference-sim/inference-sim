@@ -151,6 +151,7 @@ var (
 	SetNewKVStoreFromConfig       = engine.SetNewKVStoreFromConfig
 	SetNewResidentAdapterSetFunc  = engine.SetNewResidentAdapterSetFunc
 	ShareRenderer                 = engine.ShareRenderer
+	ReplicaAPIServers             = engine.ReplicaAPIServers
 	SubsystemInstance             = engine.SubsystemInstance
 	WithAdapterOverhead           = engine.WithAdapterOverhead
 	WithKVOffload                 = engine.WithKVOffload

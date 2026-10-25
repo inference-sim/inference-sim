@@ -347,13 +347,11 @@ Example:
 		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
 		// are distinct offload models; refuse both with a clean CLI error rather than
 		// the library-level panic in NewKVStore.
-		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
-			logrus.Fatalf("--kv-cpu-blocks conflicts with the trace's kv_offload config (distinct KV-offload models); set only one")
-		}
+		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), true)
 		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
 		// into a comparable sim number if this replay reproduces a tiered offload
 		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
-		if err := validateObservedKVReplayable(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
+		if err := requireOffloadForTieredObservation(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
 			logrus.Fatalf("%v", err)
 		}
 
@@ -488,23 +486,7 @@ Example:
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		config := cluster.DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon: replayHorizon,
-				Seed:    seed,
-				// The engine's configuration comes from the build site, as run's does (INV-13):
-				// dpPlan.PerRankDP from the same shared resolveDPPlacement (#1531 run / #1556 replay).
-				KVCacheConfig:        ec.KVCache,
-				BatchConfig:          ec.Batch,
-				ModelHardwareConfig:  ec.ModelHardware,
-				PolicyConfig:         ec.Policy,
-				LoRAConfig:           ec.LoRA,
-				SpeculativeConfig:    ec.Speculative,
-				Frontend:             frontendConfigFromCLI(),
-				SLOPriorityOverrides: sloPriorityOverrides,
-				// The kernel prices every step.
-				LatencyModel:           lr.KernelModel,
-				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
-			},
+			SimConfig:                simConfigFor(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides),
 			NumInstances:             numInstances,
 			DPLockstepRanks:          dpPlan.LockstepRanks,
 			DPLoadBalancing:          dpLoadBalancing,
