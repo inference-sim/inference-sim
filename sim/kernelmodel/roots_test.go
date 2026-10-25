@@ -212,3 +212,27 @@ func temporaryNote(pre map[string]Upstream, dest string) string {
 	}
 	return " [TEMPORARY testdata/upstream-prerelease.lock: pre-release pins of PR heads; replace with release tags before merge]"
 }
+
+// The vendored defaults come from the repository the caller names (SetVendoredRoot), not from
+// wherever this adapter's source lives: once the adapter moves to blis-vllm, its source sits in
+// the Go module cache, which vendors no catalog. With no variable set, DefaultCatalog and
+// DefaultRegistry are testdata/catalog and testdata/registry under that root; with none set,
+// they are under this file's own repository.
+func TestTheVendoredDefaultsComeFromTheCallersRoot(t *testing.T) {
+	t.Setenv(catalogEnv, "")
+	t.Setenv(registryEnv, "")
+	own := DefaultCatalog()
+	root := t.TempDir()
+	SetVendoredRoot(root)
+	defer SetVendoredRoot("")
+	if got, want := DefaultCatalog(), filepath.Join(root, "testdata", "catalog"); got != want {
+		t.Errorf("DefaultCatalog() = %q under SetVendoredRoot(%q), want %q", got, root, want)
+	}
+	if got, want := DefaultRegistry(), filepath.Join(root, "testdata", "registry"); got != want {
+		t.Errorf("DefaultRegistry() = %q under SetVendoredRoot(%q), want %q", got, root, want)
+	}
+	SetVendoredRoot("")
+	if got := DefaultCatalog(); got != own {
+		t.Errorf("DefaultCatalog() = %q after SetVendoredRoot(\"\"), want this repository's %q", got, own)
+	}
+}

@@ -132,8 +132,22 @@ func vendored(env, name string) string {
 	return filepath.Join(repoRoot(), "testdata", name)
 }
 
-// repoRoot is this repository's root. self is <repo>/sim/kernelmodel/roots.go.
+// vendoredRoot is the repository that vendors the catalog and registry and runs `go list -m`
+// for the kernel module (SetVendoredRoot); empty means this file's own repository.
+var vendoredRoot string
+
+// SetVendoredRoot names the repository whose testdata/catalog, testdata/registry and
+// testdata/upstream-prerelease.lock are the defaults, and whose go.mod pins the kernel module.
+// A caller that builds this adapter from another module (the simulator, once the adapter
+// lives in blis-vllm) sets it to its own root, once, before opening a kernel.
+func SetVendoredRoot(dir string) { vendoredRoot = dir }
+
+// repoRoot is the vendoring repository: SetVendoredRoot's, else this file's own. self is
+// <repo>/sim/kernelmodel/roots.go.
 func repoRoot() string {
+	if vendoredRoot != "" {
+		return vendoredRoot
+	}
 	_, self, _, ok := runtime.Caller(0)
 	if !ok {
 		// Only reachable in a binary built without file information. The working directory
