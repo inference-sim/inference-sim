@@ -1,0 +1,74 @@
+name: oracle-traces
+
+# Re-runs vLLM v0.32.0, in CI's pinned environment, on every scenario that has a committed golden
+# trace, and uploads the fresh traces with their provenance. It is run by hand
+# (workflow_dispatch) when a golden's provenance must be refreshed from CI's own environment:
+# oracle/refresh_provenance.py then copies each fresh trace's provenance block into its golden,
+# after checking that every decision is identical, which check_goldens.py accepts without a
+# reviewer's trailer (docs/testing.md, "Golden traces").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  traces:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: check out vLLM v0.32.0 (for its test helpers)
+        uses: actions/checkout@v4
+        with:
+          repository: vllm-project/vllm
+          ref: v0.32.0
+          path: vllm-source
+          fetch-depth: 1
+      - name: install the oracle environment
+        run: |
+          python -m pip install pip==26.2.2
+          pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.lock
+          pip check
+          pip freeze > oracle-env.lock
+          python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
+      - name: the mocks replace no decision code
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: fetch the helper model's configuration at its pinned revision
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("facebook/opt-125m", revision="27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+                            local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
+          PY
+      - name: run every scenario that has a golden trace
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out/scenarios oracle/out/scenarios-metrics oracle/out/scenarios-t3 \
+                   oracle/out/scenarios-dp oracle/out/scenarios-connector
+          python -I oracle/run_scheduler.py vllm-source oracle/scenarios oracle/out/scenarios
+          for g in core/metrics/testdata/golden/*.metrics.json; do
+            n=$(basename "$g" .metrics.json)
+            python -I oracle/run_metrics.py vllm-source "oracle/scenarios/$n.json" > "oracle/out/scenarios-metrics/$n.metrics.json"
+          done
+          python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
+          python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+      - name: record the Go side's provenance
+        run: go run ./cmd/provenance > oracle/out/provenance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oracle-traces
+          path: |
+            oracle/out/
+            oracle-env.lock

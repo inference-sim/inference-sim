@@ -52,7 +52,7 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
-| T1 Configuration | the `engine:` block resolves and validates as vLLM's startup does | rules packs, `MatchSource` against the pinned source | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`); `rules/v0_32` passes all 35 source checks at `5df63a72`, and mutants of its new data, rule and parser are caught |
+| T1 Configuration | the rules packs' accepted values, defaults and refusals are the release's own, read from its source | rules packs, `MatchSource` against the pinned source (the source text, not vLLM's config classes; running `EngineArgs`/`VllmConfig` on the same blocks is https://github.com/inference-sim/blis-vllm/issues/27) | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`, results and provenance uploaded as `tier1-<pack>`); `rules/v0_32` passes all 35 source checks at `5df63a72`, and mutants of its new data, rule and parser are caught |
 | T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap (and its adaptive floor), preemption, prefix caching, speculative decoding (EAGLE3, P-EAGLE, draft_model, PARD, MTP single and multi-module, DSpark; acceptance supplied), max_loras, watermark, max_num_active_seqs, max_num_scheduled_tokens, KV events, hybrid KV (full attention + sliding windows, a sliding-window-only model, layers sharing one spec merged into one group, and the extra tokens a multi-module MTP drafter keeps below the window) and disable_hybrid_kv_cache_manager: 40 scenarios + 4000 fuzz seeds at zero mismatches, all mutants caught (`oracle/mutate.py`); Mamba groups, prefix_match_unit, the retention interval, bounded replay (blis-vllm#7) and DCP (blis-vllm#8) are follow-ups |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | `oracle/run_enginecore.py`: vLLM's own `step_with_batch_queue` on an EngineCore that holds the real (Async)Scheduler, only the executor mocked, the EngineCore built without its model and GPU setup (`oracle/mocks.json`) | batch queue, async scheduling and PP: 8 scenarios + 1000 fuzz seeds at zero mismatches, queue sizes 1-5, 10 of 10 mutants caught (`oracle/mutate_t3.py`). Limitation: the V2 model runner cannot start on the CPU wheel (no Triton, blis-vllm#3), so its effect on the scheduler and on the queue size reaches them through the scheduler's own `use_v2_model_runner` and `max_concurrent_batches`' own code, as vLLM's CPU tests do. Data parallel (`oracle/run_dp.py`): vLLM's own prefill throttle and wave sync (`DPEngineCoreProc._should_throttle_prefills`, `_has_global_unfinished_reqs`) and internal load balancer (`DPLBAsyncMPClient.get_core_engine_for_request`) across 2-4 ranks, the all-reduce and the coordinator's stats transport mocked: 5 scenarios + 1000 fuzz seeds at zero mismatches. The loop that steps them is the harness's transcription of `run_busy_loop` (dummy batches, the wave's end, a request starting the next wave), listed in `oracle/mocks.json` as such: those decisions are shown to match the transcription, not vLLM's loop itself (blis-vllm#3); with the batch queue, 21 of 21 tier-3 mutants caught |
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | NIXL pull mode and `kv_load_failure_policy`: 22 scenarios + 1300 fuzz seeds (300 of them into `max_model_len`) at zero mismatches, at each scenario's own `max_model_len`, 20 of 20 non-equivalent mutants caught (`core/connector/nixl`, `oracle/run_connector.py`); the connector registry (`registry/`): an entry is earned only by one of these diff tests, checked on its golden traces' content and provenance, mutants R1-R10 caught; the other connectors are follow-ups (see the feature matrix) |
@@ -98,12 +98,29 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
 
 ## Provenance
 
-Every oracle run records the vLLM version and commit, the Python version and platform, the
-hash of the environment's frozen package list (`lockfile_sha256`; CI writes it with `pip
-freeze`, a local run passes it as `ORACLE_LOCKFILE`), the installed vLLM distribution (the
-release CPU wheel in CI), the helper model's pinned revision, the
-scenario's sha256, the mock version and the list of mocks. A Go build records blis-vllm's module
-version (`blisvllm.ProvenanceFor`). A result can be reproduced from these alone.
+Every oracle trace records, in its `provenance` block:
+- the vLLM version and commit, and the installed vLLM distribution (the release CPU wheel in CI);
+- the Python version and the platform;
+- `lockfile_sha256`, the hash of the environment's frozen package list. CI installs
+  `oracle/requirements.lock` and records the hash of what `pip freeze` then lists; a local run
+  passes its own list as `ORACLE_LOCKFILE`;
+- the helper model and its pinned revision;
+- the scenario's sha256, and the seed for a generated (fuzz) scenario (`seed`; `null` for a
+  hand-written one);
+- the blis-vllm commit the run checks (`blis_vllm_commit`: CI's `GITHUB_SHA`, else the checkout's
+  `HEAD`, marked `+dirty` when it has uncommitted changes);
+- the mock version and the list of mocks.
+
+The Go side of a CI run is recorded once per run, in the artifact's `oracle/out/provenance.json`,
+by `go run ./cmd/provenance`. It holds blis-vllm's identity as the build records it
+(`blisvllm.ProvenanceFor`), the commit, the Go toolchain and the platform. The property and
+metamorphic tests' verbose results are in the same artifact (`property-results.txt`), and each
+tier-1 job uploads its source-check results with their provenance (`tier1-<pack>`). A result can
+be reproduced from these alone.
+
+The mock version is `gpu-mock/<n>+<digest>`, where the digest is taken over the mock list
+(`oracle/check_mocks.py`, `mocks_digest`). A list that changes without a new version fails CI, so
+a trace's recorded version names the exact mock list it ran under.
 
 ## Golden traces
 

@@ -430,6 +430,28 @@ def kv_state(scheduler) -> dict:
     }
 
 
+def blis_vllm_commit() -> str:
+    """The blis-vllm commit a run checks: CI's GITHUB_SHA, else this checkout's HEAD (with
+    "+dirty" when it has uncommitted changes), else "unknown"."""
+    if os.environ.get("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        head = subprocess.check_output(["git", "-C", here, "rev-parse", "HEAD"], text=True,
+                                       stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(["git", "-C", here, "status", "--porcelain"], text=True,
+                                        stderr=subprocess.DEVNULL).strip()
+        return head + ("+dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def scenario_seed(scenario_path: str):
+    """The seed a generated (fuzz) scenario was made from, or None for a hand-written one."""
+    with open(scenario_path) as f:
+        return json.load(f).get("seed")
+
+
 def provenance(vllm_root: str, scenario_path: str) -> dict:
     def git(*args):
         try:
@@ -466,6 +488,8 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "python": sys.version.split()[0],
         "platform": platform.system().lower() + "-" + platform.machine(),
         "lockfile_sha256": lock_digest,
+        "blis_vllm_commit": blis_vllm_commit(),
+        "seed": scenario_seed(scenario_path),
     }
 
 

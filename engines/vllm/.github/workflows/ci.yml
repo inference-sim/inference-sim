@@ -89,7 +89,21 @@ jobs:
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
           VLLM_SOURCE_REQUIRED: "1"
-        run: go test -v -run MatchSource ./${{ matrix.pack }}/
+        run: |
+          set -o pipefail
+          mkdir -p ../tier1-out
+          go test -v -run MatchSource ./${{ matrix.pack }}/ | tee ../tier1-out/match-source-${{ matrix.pack }}.txt
+      # Provenance for the tier-1 results: the commit checked, the vLLM tag and its commit, Go.
+      - name: record tier-1 provenance
+        run: |
+          printf '{"tier": 1, "pack": "%s", "vllm_tag": "%s", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
+            "${{ matrix.pack }}" "${{ matrix.tag }}" "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" \
+            > tier1-out/provenance-${{ matrix.pack }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tier1-${{ matrix.pack }}
+          path: tier1-out/
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
   # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
@@ -206,6 +220,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The Go side of the run's provenance: blis-vllm's ProvenanceFor, the commit, Go and the
+      # platform. Each trace carries the Python side (vLLM, lockfile, mocks, seed, commit).
+      - name: record the Go side's provenance
+        run: go run ./cmd/provenance > oracle/out/provenance.json
+      # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
+      # verbose results go into the artifact beside the provenance above.
+      - name: property and metamorphic tests
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
       - name: blis-vllm against vLLM (differential + fuzz)
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
