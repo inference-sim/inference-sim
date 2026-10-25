@@ -38,7 +38,7 @@ func TestNewEngine_BuildsFromTheConfigOrSaysWhyNot(t *testing.T) {
 	saved := KVStoreConstructor()
 	SetNewKVStoreFromConfig(nil)
 	defer SetNewKVStoreFromConfig(saved)
-	if _, err := NewEngine("inst-d", cfg); err == nil || !strings.Contains(err.Error(), "import sim/kv") {
-		t.Errorf("no registered KV constructor: err %v, want one saying to import sim/kv", err)
+	if _, err := NewEngine("inst-d", cfg); err == nil || !strings.Contains(err.Error(), "link blis-vllm's compat/kv") {
+		t.Errorf("no registered KV constructor: err %v, want one saying to link compat/kv", err)
 	}
 }

@@ -8,8 +8,9 @@ import "fmt"
 // engine is assembled, so the cluster holds the engine without naming its parts (#2021 E2.2).
 //
 // id names the instance; offload tiers shared across one node's engines are keyed by it
-// (OffloadTierSharing). The KV store comes from sim/kv's registered constructor
-// (NewKVStoreFromConfig), so a binary that builds engines links sim/kv.
+// (OffloadTierSharing). The KV store comes from the registered constructor
+// (NewKVStoreFromConfig), which blis-vllm's compat/kv registers when it is linked; a binary
+// that builds engines links it at its build site (inference-sim's cmd/engine_build.go).
 //
 // Errors: a nil cfg.LatencyModel (the caller builds it -- blis-latency-kernel's adapter in
 // production -- and there is none to fall back to, R1), a malformed LoRA cost
@@ -23,7 +24,7 @@ func NewEngine(id string, cfg SimConfig) (*Simulator, error) {
 	kvCfg.Offload = kvCfg.Offload.ForInstance(id)
 	newKVStore := KVStoreConstructor()
 	if newKVStore == nil {
-		return nil, fmt.Errorf("NewEngine(%s): NewKVStoreFromConfig not registered: import sim/kv", id)
+		return nil, fmt.Errorf("NewEngine(%s): NewKVStoreFromConfig not registered: link blis-vllm's compat/kv (import _ \"github.com/inference-sim/blis-vllm/compat/kv\")", id)
 	}
 	kvStore := newKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and

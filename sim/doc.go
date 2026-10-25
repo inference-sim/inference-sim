@@ -1,36 +1,28 @@
-// Package sim provides the core discrete-event simulation engine for BLIS.
+// Package sim is the host of BLIS's per-instance discrete-event simulation: the clock, the
+// event queue, when an engine steps and when it parks, the data-parallel lockstep group, the
+// progress hook, and the run's report (Metrics).
 //
 // # Reading Guide
 //
-// Start with these three files to understand the simulation kernel:
-//   - request.go: Request lifecycle (queued → running → completed) and state machine
-//   - event.go: Event types that drive the simulation (Arrival, Step, Scheduled, etc.)
-//   - simulator.go: The event loop, batch formation, and step execution
+//   - simulator.go: the Simulator (the host) and its event loop
+//   - event.go: the event types and their priorities
+//   - idle_park.go, dp_lockstep.go: parking an idle engine; stepping a DP replica in lockstep
+//   - metrics.go, recorder.go: the report the engine writes through its Recorder
 //
 // # Architecture
 //
-// The sim package defines interfaces and bridge types; implementations live in
-// sub-packages:
-//   - sim/kv/: KV cache implementations (single-tier GPU, tiered GPU+CPU)
-//   - sim/kernelmodel/: the blis-latency-kernel adapter (the production LatencyModel)
-//   - sim/cluster/: Multi-instance cluster orchestration
-//   - sim/workload/: Workload generation and trace replay
-//   - sim/trace/: Decision trace recording
+// The engine -- batch formation, schedulers, the request record, the KV store, LoRA and the
+// blis-latency-kernel adapter -- lives in blis-vllm's compatibility engine (compat/engine,
+// compat/kv, compat/lora, compat/kernelmodel; inference-sim#2021). The host reaches it through
+// one seam, engine_aliases.go, which gives the engine's types their sim names (sim.Request,
+// sim.KVStore, sim.LatencyModel, ...). The cluster, the workload and the trace stay here:
+//   - sim/cluster/: multi-instance cluster orchestration
+//   - sim/workload/: workload generation and trace replay
+//   - sim/trace/: decision trace recording
+//   - sim/llmd/: the embedded llm-d router
 //
-// Sub-packages register their implementations via init() functions that set
-// package-level factory variables (e.g. NewKVStoreFromConfig). The latency model is not
-// registered: the caller builds it and passes it in (SimConfig.LatencyModel).
-//
-// # Key Interfaces
-//
-// The extension points are single-method or small interfaces:
-//   - LatencyModel: step time, queueing time, output processing overhead
-//   - KVStore: block allocation, eviction, prefix caching, capacity queries
-//   - RoutingPolicy: select target instance given cluster snapshots
-//   - AdmissionPolicy: accept or reject incoming requests
-//   - InstanceScheduler: order requests within a single instance's wait queue
-//   - SLOPriorityMap: map SLO class → priority value; InvertForVLLM converts cluster-convention (higher=urgent) to instance-convention (lower=urgent) at EnqueueRequest
-//   - BatchFormation: form batches from waiting requests with KV constraints
-//
-// See docs/extension-recipes.md for step-by-step guides to extend each interface.
+// The engine's KV store and adapter registry register their constructors when blis-vllm's
+// compat/kv and compat/lora are linked (NewKVStoreFromConfig); inference-sim links them at its
+// one build site, cmd/engine_build.go. The latency model is not registered: the caller builds
+// it and passes it in (SimConfig.LatencyModel).
 package sim
