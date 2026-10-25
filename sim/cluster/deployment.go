@@ -105,9 +105,9 @@ type DeploymentConfig struct {
 	// expiry when the decode side vanishes (#1934, INV-PD-7). False frees them when the
 	// prefill finishes, the behaviour before #1934.
 	PDPrefillKVHold bool
-	// PDKVLeaseUs is NIXL's kv_lease_duration in microseconds: how long a prefill engine keeps
-	// a finished request's blocks for a decode side that neither pulls them nor renews the
-	// lease. 0 takes vLLM's default of 30 s (nixl/base_scheduler.py:81-85).
+	// PDKVLeaseUs is the handoff's kv_lease_duration in microseconds: how long a prefill
+	// engine keeps a finished request's blocks for a decode side that neither pulls them nor
+	// renews the lease. 0 takes the engine's default (sim.NIXLLease).
 	PDKVLeaseUs int64
 
 	// Per-pool hardware overrides

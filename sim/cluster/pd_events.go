@@ -247,7 +247,7 @@ func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, release prefi
 	case freeNow:
 		cs.releasePrefillHold(e.parentReq)
 	case holdUntilLease:
-		cs.expirePrefillLease(e.parentReq, e.parentReq.PrefillCompleteTime+cs.pdKVLeaseUs())
+		cs.expirePrefillLease(e.parentReq, sim.NIXLFirstExpiry(e.parentReq.PrefillCompleteTime, cs.pdKVLeaseUs()))
 	case holdUntilLeaseRenewed:
 		cs.expireLeaseOfVanishedDecode(e.parentReq, e.time)
 	}

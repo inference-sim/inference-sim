@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/dplb"
 	"github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
+	"github.com/inference-sim/blis-vllm/compat/nixl"
 	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 )
 
@@ -160,6 +161,11 @@ var (
 	KVCacheUsageForTest           = engine.KVCacheUsageForTest
 	NewKVCacheStateFuncForTest    = engine.NewKVCacheStateFuncForTest
 	ResidentAdapterSetConstructor = engine.ResidentAdapterSetConstructor
+	// The NIXL handoff's lease on a prefill engine's held KV: the stated or default lease, and
+	// when it expires with no decode side, or after the decode side vanished.
+	NIXLLease             = nixl.Lease
+	NIXLFirstExpiry       = nixl.FirstExpiry
+	NIXLExpiryAfterVanish = nixl.ExpiryAfterVanish
 	// NewDPBalancer is the balancer of a replica of n ranks.
 	NewDPBalancer = dplb.New
 	// The P/D link arbiter's constructor and the alone-on-its-links transfer time.
