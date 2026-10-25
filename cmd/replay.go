@@ -390,9 +390,6 @@ Example:
 		if maxNumBatchedTokens <= 0 {
 			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
 		}
-		if longPrefillTokenThreshold < 0 {
-			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
-		}
 		if cmd.Flags().Changed("horizon") && replayHorizon <= 0 {
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}

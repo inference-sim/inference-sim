@@ -67,7 +67,7 @@ var (
 	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
 	resolvedCatalogRoot       string                 // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
 	workloadType              string                 // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
-	longPrefillTokenThreshold int64                  // Max length of prefill beyond which chunked prefill is triggered
+	longPrefillTokenThreshold int64                  // the scenario's engine.long_prefill_token_threshold (colocated run)
 	rate                      float64                // Requests arrival per second
 	numRequests               int                    // Number of requests
 	concurrency               int                    // Number of concurrent virtual users (closed-loop)
@@ -781,10 +781,9 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", defaultDefaultsPath, "Path to default constants: the LoRA cost coefficients (the copy compiled into the binary is used when this is unset and no defaults.yaml is in the working directory)")
 	registerCatalogFlag(cmd)
 
-	// Engine scheduling knobs the deployment schema does not state. Every other engine
-	// setting -- block size, sequence and token caps, max_model_len, prefix caching, cache
-	// dtype, speculation -- is the scenario's, and the KV budget is the kernel's.
-	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	// Engine settings are the scenario's (#2021 B6): block size, sequence and token caps,
+	// max_model_len, long_prefill_token_threshold, prefix caching, cache dtype, speculation; the
+	// KV budget is the kernel's. The flags below override the scenario only where stated.
 	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false), over the scenario's engine.swa_bounded_replay. Unset, the pool states it or it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
 	registerFrontendFlags(cmd)
 	cmd.Flags().Float64Var(&serverSeriesIntervalS, "server-series-interval-s", 0, "Bin width in seconds of the per-engine vLLM /metrics time series (KV usage, running/waiting, prefix-cache and prompt-token-by-source counters, generation tokens) written as server_series to the --metrics-path file only; 0 disables it")
@@ -1358,9 +1357,6 @@ var runCmd = &cobra.Command{
 		}
 		if maxNumBatchedTokens <= 0 {
 			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
-		}
-		if longPrefillTokenThreshold < 0 {
-			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
 		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.

@@ -184,7 +184,7 @@ BLIS models vLLM's continuous batching algorithm through the `VLLMBatchFormation
 
 **Phase 1: Continuing Requests**
 Process requests already in the running batch:
-- Apply chunked prefill limits (`--long-prefill-token-threshold`)
+- Apply chunked prefill limits (the scenario's `engine.long_prefill_token_threshold`)
 - Allocate token budget for decode tokens
 - If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks
 
@@ -200,7 +200,7 @@ Dequeue requests from the wait queue:
 |------------|------|--------|
 | Max batch size | scenario `max_num_seqs` | Limits number of concurrent requests in the running batch |
 | Token budget | scenario `max_num_batched_tokens` | Limits total new tokens across all running requests per step |
-| Chunked prefill | `--long-prefill-token-threshold` | Splits long prefills across multiple steps |
+| Chunked prefill | scenario `engine.long_prefill_token_threshold` | Splits long prefills across multiple steps |
 
 ### Preemption Strategy
 

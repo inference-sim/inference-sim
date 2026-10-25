@@ -57,7 +57,7 @@ var catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
 // knobs, unread, for the engine to check against the scenario.
 func engineKnobFlags() build.EngineKnobFlags {
 	return build.EngineKnobFlags{
-		LongPrefillTokenThreshold: longPrefillTokenThreshold, LongPrefillFromFlag: longPrefillFromFlag,
+		// long_prefill_token_threshold has no flag (#2021 B6): every pool runs what it states.
 		DPLoadBalancing: dpLoadBalancing, DPLoadBalancingFromFlag: dpLoadBalancingFromFlag,
 	}
 }
