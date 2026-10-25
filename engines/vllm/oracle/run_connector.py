@@ -112,7 +112,14 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     vllm_config.scheduler_config.policy = cfg.get("scheduling_policy", "fcfs")
     vllm_config.scheduler_config.long_prefill_token_threshold = cfg.get("long_prefill_token_threshold", 0)
     vllm_config.scheduler_config.watermark = cfg.get("watermark", 0.0)
+    # The helper passes max_model_len to SchedulerConfig only and builds ModelConfig without it
+    # (utils.py:132-142), so the model's own 2048 would govern: the Scheduler reads
+    # model_config.max_model_len (scheduler.py:145). Set it there, as `vllm serve
+    # --max-model-len` does, and run the startup check the edits above bypassed.
+    vllm_config.model_config.max_model_len = cfg["max_model_len"]
+    vllm_config.scheduler_config.verify_max_model_len(cfg["max_model_len"])
     scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"])
+    assert scheduler.max_model_len == cfg["max_model_len"], "the Scheduler does not read the scenario's max_model_len"
 
     init_none_hash(sha256)
     hasher = get_request_block_hasher(block_size, sha256)

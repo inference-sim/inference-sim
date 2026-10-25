@@ -123,6 +123,9 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+      # Each guard must fail on the violation it exists to catch (oracle/test_checks.py).
+      - name: the oracle's guards catch what they guard
+        run: python3 -I oracle/test_checks.py
 
   # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU.
   oracle-tier2:
@@ -249,6 +252,8 @@ jobs:
           mkdir -p oracle/out/scenarios-connector oracle/out/fuzz-connector
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
           python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector 1 1000
+          # Seeds 10000+ run requests into max_model_len (the connector side's length caps).
+          python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector 10000 300
           python -I oracle/run_connector.py vllm-source oracle/out/fuzz-connector
       - name: every NIXL golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/nixl/testdata/golden oracle/out/scenarios-connector

@@ -23,8 +23,12 @@ FIRST_REQ / START_DP_WAVE path does (core_client.py:1590-1593; core.py:2281-2298
 
 Replaced, all listed in oracle/mocks.json: the GPU (the shared mock, as in run_scheduler.py),
 the DP process group's all-reduce (sync_dp_state), and the coordinator's stats transport. The
-decisions (the wave, the throttle cadence, the dummy batch, the load balancer's choice) run as
-released.
+throttle cadence, the wave sync and the load balancer's choice run as released. The loop that
+steps them is NOT vLLM's: run_busy_loop blocks on ZMQ queues and a process group, so this file
+transcribes its per-step decisions (the dummy batch, the wave's end and counter reset, and a
+request starting the next wave, a simplification of the coordinator's START_DP_WAVE round trip).
+oracle/mocks.json lists that transcription, and a trace's dummy, waves, running and step_counter
+fields are evidence only that blis-vllm matches it.
 
 Usage: python -I oracle/run_dp.py <vllm checkout> <scenario.json | dir> [out dir]
 """
