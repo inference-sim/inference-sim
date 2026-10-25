@@ -131,6 +131,9 @@ func CheckParallelism(scenario, model string, dp int, ep, moe bool) error {
 		return fmt.Errorf("scenario %q states dp %d; it must be >= 1", scenario, dp)
 	}
 	if dp > 1 && !moe {
+		// The message is the CLI's, moved verbatim so its stderr is unchanged; it ends in a
+		// sentence because it tells the operator what to state instead.
+		//nolint:staticcheck // ST1005: a moved message, kept byte-identical.
 		return fmt.Errorf("scenario %q states dp %d for a dense model; DP placement is modelled for MoE "+
 			"models only. Express N independent dense engines as --num-instances N with dp 1.",
 			scenario, dp)

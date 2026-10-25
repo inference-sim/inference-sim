@@ -121,4 +121,3 @@ func TestAdopt_RefusesTwoColocatedPools(t *testing.T) {
 		t.Errorf("two colocated pools: %v", err)
 	}
 }
-
