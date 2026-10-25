@@ -49,19 +49,19 @@ func HashBlock(parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
 	}
 	var p pickler
 	p.frame(func() {
-		p.bytes(parent)
-		p.intTuple(tokens)
-		if len(extra) == 0 {
-			p.none()
-		} else {
-			p.markTuple(func() {
-				for _, k := range extra {
-					p.stringTuple(k)
-				}
-			}, len(extra))
-		}
-		p.out = append(p.out, 0x87) // TUPLE3: (parent, tokens, extra)
-		p.memoize()
+		p.markTuple(func() { // (parent, tokens, extra)
+			p.bytes(parent)
+			p.intTuple(tokens)
+			if len(extra) == 0 {
+				p.none()
+			} else {
+				p.markTuple(func() {
+					for _, k := range extra {
+						p.stringTuple(k)
+					}
+				}, len(extra))
+			}
+		}, 3)
 	})
 	return sha256Pickle(p.out)
 }
@@ -99,66 +99,94 @@ func sha256Pickle(b []byte) BlockHash {
 }
 
 // pickler writes the subset of Python's pickle protocol 5 that block keys use, exactly as
-// CPython's C pickler (pickle.dumps(obj, protocol=5)) writes it: PROTO 5, one FRAME, then
-// the object, with MEMOIZE after each tuple, str and bytes, and STOP. vLLM hashes these
-// bytes (vllm/utils/hashing.py sha256), so a single differing opcode changes every hash.
-type pickler struct{ out []byte }
+// CPython's C pickler (pickle.dumps(obj, protocol=5)) writes it: PROTO 5, the object in
+// FRAMEs, with MEMOIZE after each tuple, str and bytes, and STOP. vLLM hashes these bytes
+// (vllm/utils/hashing.py sha256), so a single differing opcode changes every hash.
+//
+// out holds the committed frames; cur is the frame being written.
+type pickler struct{ out, cur []byte }
 
-// frame writes PROTO 5, then the body and STOP inside one FRAME, as CPython's framer does
-// for a pickle of at least 4 bytes (the frame length is the body plus STOP).
+// frameSizeTarget is CPython's FRAME_SIZE_TARGET (64 KiB): before it saves each object, the
+// pickler closes the current frame once it has reached this size (_Pickler_CommitFrame, and
+// _Framer.commit_frame in Lib/pickle.py), so a pickle of more than 64 KiB, a block of about
+// 22 thousand tokens, spans several frames.
+const frameSizeTarget = 64 * 1024
+
+// frame writes PROTO 5, then the body and STOP in frames, as CPython's framer does for a
+// pickle of at least 4 bytes. body calls save before each object it writes.
 func (p *pickler) frame(body func()) {
-	outer := p.out
-	p.out = nil
+	p.out = append(p.out, 0x80, 0x05) // PROTO 5
+	p.cur = p.cur[:0]
 	body()
-	payload := append(p.out, '.') // STOP
-	p.out = append(outer, 0x80, 0x05, 0x95)
-	var l [8]byte
-	binary.LittleEndian.PutUint64(l[:], uint64(len(payload)))
-	p.out = append(p.out, l[:]...)
-	p.out = append(p.out, payload...)
+	p.cur = append(p.cur, '.') // STOP
+	p.commit()
 }
 
-func (p *pickler) memoize() { p.out = append(p.out, 0x94) }
-func (p *pickler) none()    { p.out = append(p.out, 'N') }
+// save is the frame check CPython's save() makes before each object (_Pickler_OpcodeBoundary):
+// a frame that has reached the target is committed and a new one begun.
+func (p *pickler) save() {
+	if len(p.cur) >= frameSizeTarget {
+		p.commit()
+	}
+}
+
+// commit writes the current frame: FRAME and its length, then its bytes. A frame under 4
+// bytes is written without the opcode, as CPython's framer does (FRAME_SIZE_MIN).
+func (p *pickler) commit() {
+	if len(p.cur) >= 4 {
+		p.out = append(p.out, 0x95)
+		var l [8]byte
+		binary.LittleEndian.PutUint64(l[:], uint64(len(p.cur)))
+		p.out = append(p.out, l[:]...)
+	}
+	p.out = append(p.out, p.cur...)
+	p.cur = p.cur[:0]
+}
+
+func (p *pickler) memoize() { p.cur = append(p.cur, 0x94) }
+func (p *pickler) none()    { p.save(); p.cur = append(p.cur, 'N') }
 
 // bytes is SHORT_BINBYTES (C) below 256 bytes, else BINBYTES (B), then MEMOIZE.
 func (p *pickler) bytes(b []byte) {
+	p.save()
 	if len(b) < 256 {
-		p.out = append(p.out, 'C', byte(len(b)))
+		p.cur = append(p.cur, 'C', byte(len(b)))
 	} else {
 		var l [4]byte
 		binary.LittleEndian.PutUint32(l[:], uint32(len(b)))
-		p.out = append(append(p.out, 'B'), l[:]...)
+		p.cur = append(append(p.cur, 'B'), l[:]...)
 	}
-	p.out = append(p.out, b...)
+	p.cur = append(p.cur, b...)
 	p.memoize()
 }
 
 // str is SHORT_BINUNICODE (0x8c) below 256 UTF-8 bytes, else BINUNICODE (X), then MEMOIZE.
 func (p *pickler) str(s string) {
+	p.save()
 	if len(s) < 256 {
-		p.out = append(p.out, 0x8c, byte(len(s)))
+		p.cur = append(p.cur, 0x8c, byte(len(s)))
 	} else {
 		var l [4]byte
 		binary.LittleEndian.PutUint32(l[:], uint32(len(s)))
-		p.out = append(append(p.out, 'X'), l[:]...)
+		p.cur = append(append(p.cur, 'X'), l[:]...)
 	}
-	p.out = append(p.out, s...)
+	p.cur = append(p.cur, s...)
 	p.memoize()
 }
 
 // int is BININT1 (K) for 0..255, BININT2 (M) for 256..65535, BININT (J) for the rest of
 // int32, and LONG1 beyond, as CPython's save_long does.
 func (p *pickler) int(v int64) {
+	p.save()
 	switch {
 	case v >= 0 && v <= 0xff:
-		p.out = append(p.out, 'K', byte(v))
+		p.cur = append(p.cur, 'K', byte(v))
 	case v >= 0 && v <= 0xffff:
-		p.out = append(p.out, 'M', byte(v), byte(v>>8))
+		p.cur = append(p.cur, 'M', byte(v), byte(v>>8))
 	case v >= math.MinInt32 && v <= math.MaxInt32:
 		var b [4]byte
 		binary.LittleEndian.PutUint32(b[:], uint32(int32(v)))
-		p.out = append(append(p.out, 'J'), b[:]...)
+		p.cur = append(append(p.cur, 'J'), b[:]...)
 	default:
 		// LONG1: little-endian two's complement, minimal length.
 		var b []byte
@@ -170,8 +198,8 @@ func (p *pickler) int(v int64) {
 				break
 			}
 		}
-		p.out = append(p.out, 0x8a, byte(len(b)))
-		p.out = append(p.out, b...)
+		p.cur = append(p.cur, 0x8a, byte(len(b)))
+		p.cur = append(p.cur, b...)
 	}
 }
 
@@ -179,7 +207,8 @@ func (p *pickler) int(v int64) {
 // an empty tuple is EMPTY_TUPLE, which CPython does not memoize.
 func (p *pickler) intTuple(vs []int64) {
 	if len(vs) == 0 {
-		p.out = append(p.out, ')')
+		p.save()
+		p.cur = append(p.cur, ')')
 		return
 	}
 	p.markTuple(func() {
@@ -191,7 +220,8 @@ func (p *pickler) intTuple(vs []int64) {
 
 func (p *pickler) stringTuple(vs []string) {
 	if len(vs) == 0 {
-		p.out = append(p.out, ')')
+		p.save()
+		p.cur = append(p.cur, ')')
 		return
 	}
 	p.markTuple(func() {
@@ -201,21 +231,26 @@ func (p *pickler) stringTuple(vs []string) {
 	}, len(vs))
 }
 
-// markTuple writes n items and closes the tuple as CPython's save_tuple does.
+// markTuple writes n items and closes the tuple as CPython's save_tuple does: the frame
+// check comes before the tuple, then before each item. The check before the tuple decides
+// the bytes only for a MARK tuple (four or more items) that starts exactly at the frame
+// target. For a block key that is only the token tuple, 40 bytes into the pickle, so no hash
+// vLLM computes depends on it; it is kept so the framing stays CPython's.
 func (p *pickler) markTuple(items func(), n int) {
+	p.save()
 	if n > 3 {
-		p.out = append(p.out, '(') // MARK
+		p.cur = append(p.cur, '(') // MARK
 	}
 	items()
 	switch n {
 	case 1:
-		p.out = append(p.out, 0x85) // TUPLE1
+		p.cur = append(p.cur, 0x85) // TUPLE1
 	case 2:
-		p.out = append(p.out, 0x86) // TUPLE2
+		p.cur = append(p.cur, 0x86) // TUPLE2
 	case 3:
-		p.out = append(p.out, 0x87) // TUPLE3
+		p.cur = append(p.cur, 0x87) // TUPLE3
 	default:
-		p.out = append(p.out, 't') // TUPLE
+		p.cur = append(p.cur, 't') // TUPLE
 	}
 	p.memoize()
 }

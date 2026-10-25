@@ -17,8 +17,10 @@ type hashCase struct {
 }
 
 // testdata/block_hashes.json was written by vLLM v0.32.0's own hash_block_tokens with
-// sha256 and init_none_hash (vllm/v1/core/kv_cache_utils.py:695-725@5df63a72), so these
-// cases check the Go hasher against vLLM's bytes, not against itself.
+// sha256 and init_none_hash (vllm/v1/core/kv_cache_utils.py:695-725@5df63a72), through
+// oracle/gen_block_hashes.py, which records its provenance in the file, so these cases check
+// the Go hasher against vLLM's bytes, not against itself. The frame-boundary and large-block
+// cases pickle to more than 64 KiB, which CPython writes in several frames.
 func loadHashCases(t *testing.T) (string, []hashCase) {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/block_hashes.json")
