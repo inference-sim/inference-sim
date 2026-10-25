@@ -174,6 +174,43 @@ func TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry(t *testing.T) {
 	}
 }
 
+// A decode instance that stopped being routable before the handoff began never received the
+// request, so it sends neither an abort nor a heartbeat: the prefill side's blocks are held, and
+// freed exactly when the first lease from the prefill's completion runs out
+// (nixl/base_worker.py:3056-3082), neither at once nor later.
+//
+// Using the vanished-decode rule (sim.NIXLExpiryAfterVanish) at this drop instead would be an
+// equivalent mutant, not a missed one: the transfer-start event runs at the prefill's completion
+// (detectPrefillCompletions), so its expiry, max(end+lease, end+2/3 lease), is end+lease.
+func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T) {
+	const lease = 3_000_000
+	run := func(horizon int64) *ClusterSimulator {
+		cfg := holdConfig(true, 1000)
+		cfg.PDKVLeaseUs = lease
+		cfg.Horizon = horizon
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+		// The decode instance drains after routing (at arrival) and before the prefill ends.
+		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 1, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
+		mustRun(t, cs)
+		return cs
+	}
+	full := run(math.MaxInt64)
+	p := full.ParentRequests()[0]
+	if p.DecodeSubReq != nil || p.TransferStartTime == 0 || p.TransferStartTime != p.PrefillCompleteTime {
+		t.Fatalf("the request must be dropped at transfer start (decode=%v start=%d prefill end=%d)",
+			p.DecodeSubReq, p.TransferStartTime, p.PrefillCompleteTime)
+	}
+	first := p.PrefillCompleteTime + lease
+	if before := run(first - 1); usedBlocks(before.Instances()[0]) != 10 || before.PrefillKVHeld() != 1 {
+		t.Errorf("one tick before the first lease expiry %d the prefill instance uses %d blocks and holds %d, want the 10 held",
+			first, usedBlocks(before.Instances()[0]), before.PrefillKVHeld())
+	}
+	if at := run(first); usedBlocks(at.Instances()[0]) != 0 || at.PrefillKVHeld() != 0 {
+		t.Errorf("at the first lease expiry %d the prefill instance uses %d blocks and holds %d, want 0 and 0",
+			first, usedBlocks(at.Instances()[0]), at.PrefillKVHeld())
+	}
+}
+
 // Metamorphic: when the prefill pool's KV never runs short, holding blocks changes nothing a
 // client sees. The hold only removes capacity; it does not move a step or a prefix hit, since a
 // released block keeps its hash on the free list just as a held one keeps it in use.
