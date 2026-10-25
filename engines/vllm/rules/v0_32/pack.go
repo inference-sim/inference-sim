@@ -351,6 +351,30 @@ func ruleList(p *rules.Pack) []rules.Rule {
 			},
 		},
 		{
+			Name: "dcp-divides-tp",
+			Because: "decode-context parallelism reuses the tensor-parallel ranks when prefill-context parallelism is off, " +
+				"so the engine refuses a dcp that does not divide tp at startup; with prefill-context parallelism on, dcp " +
+				"must be off, span the pcp axis, or span the whole tp x pcp block (vllm/config/parallel.py:590-599@5df63a72)",
+			Check: func(in rules.Input, out *rules.Problems) {
+				forEachPool(in, func(at string, pool deployment.Pool) {
+					pl := pool.Parallel
+					tp, pcp, dcp := pl.TP, max(pl.PCP, 1), max(pl.DCP, 1)
+					if tp < 1 || pl.PCP < 0 || pl.DCP < 0 {
+						return // a malformed width is the field layer's to report
+					}
+					switch {
+					case pcp == 1 && tp%dcp != 0:
+						out.RuleErrorf("dcp-divides-tp",
+							"%s.parallel: tp %d must be divisible by dcp %d; engine %s refuses it at startup", at, tp, dcp, Version)
+					case pcp > 1 && dcp != 1 && dcp != pcp && dcp != tp*pcp:
+						out.RuleErrorf("dcp-divides-tp",
+							"%s.parallel: with pcp %d, dcp %d must be 1, %d or %d; engine %s refuses it at startup",
+							at, pcp, dcp, pcp, tp*pcp, Version)
+					}
+				})
+			},
+		},
+		{
 			Name:    "cp-kv-cache-interleave-fits-block",
 			Because: "with decode-context parallelism on and no NixlConnector configured, this release asserts at startup that block_size is at least, and divisible by, cp_kv_cache_interleave_size (vllm/config/vllm.py validate_block_size), so a layout breaking it does not start; unlike v0.29.0, any other connector leaves the assert in force. The block size it checks is the smallest prefix-cacheable KV cache group's, which can be a model's own window-cache page size rather than the stated one",
 			Check: func(in rules.Input, out *rules.Problems) {

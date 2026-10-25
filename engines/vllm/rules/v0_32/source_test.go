@@ -138,6 +138,24 @@ func TestDCPCommBackendsMatchSource(t *testing.T) {
 		literalMembers(t, src, "DCPCommBackend"))
 }
 
+// dcp-divides-tp is vLLM's own startup check: with prefill-context parallelism off,
+// tp % dcp must be 0; with it on, dcp must be one of 1, pcp, tp x pcp. A release that moved
+// or changed the condition fails here, so the rule cannot pass on a check vLLM no longer
+// makes.
+func TestDCPDividesTPMatchesSource(t *testing.T) {
+	root := vllmSource(t)
+	src := readSource(t, root, "vllm", "config", "parallel.py")
+	for _, want := range []string{
+		"if pcp == 1:",
+		"if tp % dcp != 0:",
+		"elif dcp not in (1, pcp, tp * pcp):",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("vllm/config/parallel.py no longer contains %q: dcp-divides-tp may no longer be the engine's check", want)
+		}
+	}
+}
+
 // The cache-dtype set is the one an earlier draft got most wrong, so it is checked
 // member by member rather than only by size.
 func TestCacheDTypesMatchSource(t *testing.T) {

@@ -80,6 +80,7 @@ func TestPackRuleSet(t *testing.T) {
 		"dbo-thresholds-at-least-microbatches",
 		"dbo-thresholds-stated-when-enabled",
 		"dcp-comm-backend-known",
+		"dcp-divides-tp",
 		"deepseek-v41-refuses-mtp",
 		"engram-config-valid",
 		"engram-excludes-dbo",
@@ -1248,5 +1249,36 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 				t.Errorf("moe_backend %q with all2all_backend %q: refused = %v, want %v\n%s", c.moe, c.a2a, got, c.refused, r.Error())
 			}
 		})
+	}
+}
+
+// Decode-context parallelism reuses the tensor-parallel ranks when prefill-context
+// parallelism is off, so the engine refuses a dcp that does not divide tp at startup; with
+// prefill-context parallelism on, dcp must be off, span the pcp axis, or span tp x pcp
+// (vllm/config/parallel.py:590-599@5df63a72).
+func TestDCPDividesTP(t *testing.T) {
+	pool := func(tp, pcp, dcp int) deployment.Pool {
+		return colocated(deployment.Parallelism{TP: tp, PP: 1, DP: 1, PCP: pcp, DCP: dcp}, deployment.Engine{})
+	}
+	for _, c := range []struct {
+		name         string
+		tp, pcp, dcp int
+		want         bool
+	}{
+		{"dcp divides tp", 8, 0, 4, false},
+		{"dcp equals tp", 8, 0, 8, false},
+		{"dcp off", 8, 0, 0, false},
+		{"dcp off on an odd tp", 3, 0, 0, false},
+		{"dcp one", 8, 1, 1, false},
+		{"dcp does not divide tp", 8, 0, 3, true},
+		{"dcp above tp", 4, 0, 8, true},
+		{"pcp on, dcp off", 4, 2, 1, false},
+		{"pcp on, dcp spans pcp", 4, 2, 2, false},
+		{"pcp on, dcp spans tp x pcp", 4, 2, 8, false},
+		{"pcp on, dcp between the axes", 4, 2, 4, true},
+	} {
+		if got := fired(run(t, dep(pool(c.tp, c.pcp, c.dcp)), graniteGraph()), "dcp-divides-tp"); got != c.want {
+			t.Errorf("%s (tp %d, pcp %d, dcp %d): fired %v, want %v", c.name, c.tp, c.pcp, c.dcp, got, c.want)
+		}
 	}
 }
