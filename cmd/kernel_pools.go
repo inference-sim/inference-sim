@@ -576,23 +576,6 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 	}
 }
 
-// refuseExplicitTierPhysics refuses a kv_offload tier that states its own bandwidth or
-// latency: the kernel prices the tier from its catalog device, and a second
-// source for the same physics would need precedence rules to reconcile.
-func refuseExplicitTierPhysics(block *kvOffloadBlock) {
-	if kernelOpened == nil || block == nil {
-		return
-	}
-	for i, t := range block.SecondaryTiers {
-		if t.ReadBandwidth != nil || t.WriteBandwidth != nil || t.BaseLatency != nil {
-			logrus.Fatalf("kv_offload secondary_tiers[%d] states read_bandwidth, "+
-				"write_bandwidth or base_latency, but the kernel prices a tier from its catalog "+
-				"device_class; name the device and drop the explicit physics",
-				i)
-		}
-	}
-}
-
 // applyKernelLoRAReservation re-sizes a kernel run's KV pool with the static LoRA adapter
 // reservation set aside, once the LoRA config is known (it is resolved after the deployment
 // is adopted). vLLM takes the reservation beside the weights before profiling the KV pool, so

@@ -133,6 +133,8 @@ github.com/inference-sim/blis-schemas v0.6.1-0.20261025010642-7b94c7c25d3f h1:NG
 github.com/inference-sim/blis-schemas v0.6.1-0.20261025010642-7b94c7c25d3f/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-vllm v0.0.0-20261025032649-f37406b37f97 h1:4zfjHo7WCaZOlSBZpua/vPTBj3uesSdjm6z/o4F17Ho=
 github.com/inference-sim/blis-vllm v0.0.0-20261025032649-f37406b37f97/go.mod h1:T2S6Q21eUyv2e3GbFZfAOjRF97BCGULNdp/7h5MZ9/U=
+github.com/inference-sim/blis-vllm v0.0.0-20261025063052-687dbc446e8e h1:ZcocQfRVqIcAV3DD/uIO0Y4ohFWSAvSNL5yFHohx+0g=
+github.com/inference-sim/blis-vllm v0.0.0-20261025063052-687dbc446e8e/go.mod h1:T2S6Q21eUyv2e3GbFZfAOjRF97BCGULNdp/7h5MZ9/U=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584 h1:sS7cVqMmULUtGyTZPSMLWi6pLB9/9b6SAta1lf5C2DE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=
