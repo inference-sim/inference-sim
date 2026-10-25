@@ -327,6 +327,15 @@ func (s *Scheduler) Running() []string {
 // Request returns a request by ID.
 func (s *Scheduler) Request(id string) *Request { return s.requests[id] }
 
+// MaxModelLen is the scheduler's max_model_len.
+func (s *Scheduler) MaxModelLen() int { return s.cfg.MaxModelLen }
+
+// BlockSize is the KV cache's block size, in tokens.
+func (s *Scheduler) BlockSize() int { return s.cfg.BlockSize }
+
+// PrefixCaching reports whether prefix-cache lookups run (enable_prefix_caching).
+func (s *Scheduler) PrefixCaching() bool { return s.cfg.EnablePrefixCaching }
+
 func (s *Scheduler) maxScheduled() int {
 	if s.cfg.MaxNumScheduledTokens > 0 {
 		return s.cfg.MaxNumScheduledTokens

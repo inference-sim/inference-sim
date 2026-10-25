@@ -148,6 +148,38 @@ func (c *Core) Step() StepResult {
 	return res
 }
 
+// Schedule is the first half of a step for a caller that runs the batch queue itself, as a
+// simulator does through blis-schemas' engine.Engine: it schedules one batch and queues it, and
+// the caller completes the batches in order with Complete. Step is both halves under EngineCore's
+// own loop; both keep the queue in the order vLLM's batch_queue does
+// (vllm/v1/engine/core.py:738-760@5df63a72).
+func (c *Core) Schedule() Batch {
+	b := c.schedule()
+	c.queue = append(c.queue, b)
+	return b
+}
+
+// Drop takes the most recent batch back off the queue without applying it: a batch that
+// scheduled no tokens is not in flight for a caller of Schedule, and vLLM's update_from_output
+// of an empty schedule changes no request, only the stats it reports.
+func (c *Core) Drop(b Batch) {
+	if n := len(c.queue); n > 0 && c.queue[n-1].ID == b.ID {
+		c.queue = c.queue[:n-1]
+		c.process(b)
+	}
+}
+
+// Complete is the second half: it applies the oldest queued batch, which must be b, with the
+// tokens GPU.Output returns for it, and returns the requests it finished. Batches complete in
+// the order they were scheduled.
+func (c *Core) Complete(b Batch) []sched.Finished {
+	if len(c.queue) == 0 || c.queue[0].ID != b.ID {
+		panic(fmt.Sprintf("engine: batch %d completed out of order", b.ID))
+	}
+	c.queue = c.queue[1:]
+	return c.process(b)
+}
+
 func total(b Batch) int {
 	n := 0
 	for _, t := range b.Out.Scheduled {

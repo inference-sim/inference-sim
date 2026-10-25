@@ -265,6 +265,7 @@ jobs:
           python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
           python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
           python3 -I oracle/mutate_t4.py . oracle/out/fuzz-connector "$RUNNER_TEMP/mutants-t4" | tee oracle/out/mutation-results-t4.txt
+          python3 -I oracle/mutate_e24.py . "$RUNNER_TEMP/mutants-e24" | tee oracle/out/mutation-results-e24.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
