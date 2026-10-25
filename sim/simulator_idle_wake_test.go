@@ -101,8 +101,8 @@ func TestIdleWake_AllDeferredSkipsToCompletion(t *testing.T) {
 	if got := kv.admitAt["A"]; got != ready {
 		t.Fatalf("A must be admitted exactly at its completion tick %d, got %d", ready, got)
 	}
-	if s.stepCount > 100 {
-		t.Fatalf("an idle wait must not cost a step per tick: %d steps for a %d-tick wait", s.stepCount, ready)
+	if s.StepCountForTest() > 100 {
+		t.Fatalf("an idle wait must not cost a step per tick: %d steps for a %d-tick wait", s.StepCountForTest(), ready)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestIdleWake_ArrivalPreemptsWake(t *testing.T) {
 	if got := kv.admitAt["A"]; got != ready {
 		t.Fatalf("A must still be admitted at its completion tick %d, got %d", ready, got)
 	}
-	if s.stepCount > 100 {
-		t.Fatalf("idle waits around B must not crawl: %d steps", s.stepCount)
+	if s.StepCountForTest() > 100 {
+		t.Fatalf("idle waits around B must not crawl: %d steps", s.StepCountForTest())
 	}
 }
 
@@ -171,8 +171,8 @@ func TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission(t *testing.T) {
 		t.Errorf("B must complete and A must not (INV-1): completed=%d", got)
 	}
 	// The stale wake is one empty poll, not a crawl back to the 1-tick cadence.
-	if ts.stepCount > 100 {
-		t.Errorf("a timeout during the wait must not restart per-tick stepping: %d steps", ts.stepCount)
+	if ts.StepCountForTest() > 100 {
+		t.Errorf("a timeout during the wait must not restart per-tick stepping: %d steps", ts.StepCountForTest())
 	}
 }
 
@@ -294,7 +294,7 @@ func TestIdleWake_Deterministic(t *testing.T) {
 	run := func() (int, int64, int64) {
 		kv := newTimedDeferKV(map[string]int64{"A": 750_000, "C": 1_200_000})
 		s := runIdleWake(t, kv, arriving("A", 0), arriving("B", 500), arriving("C", 600))
-		return s.stepCount, kv.admitAt["A"], kv.admitAt["C"]
+		return s.StepCountForTest(), kv.admitAt["A"], kv.admitAt["C"]
 	}
 	s1, a1, c1 := run()
 	s2, a2, c2 := run()

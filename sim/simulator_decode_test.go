@@ -222,9 +222,9 @@ func TestSpecDecode_CarryNoDrift(t *testing.T) {
 	var total int64
 	const steps = 100
 	for i := 0; i < steps; i++ {
-		g := s.peekDecodeTokens(req)
+		g := s.PeekDecodeTokensForTest(req)
 		req.NumNewTokens = int(g)
-		s.commitDecodeTokens(req)
+		s.CommitDecodeTokensForTest(req)
 		total += g
 	}
 	want := int64(2.5 * steps)
@@ -237,7 +237,7 @@ func TestSpecDecode_CarryNoDrift(t *testing.T) {
 	req2 := &Request{ID: "capped"}
 	sawRecovery := false
 	for i := 0; i < 10; i++ {
-		g := s.peekDecodeTokens(req2)
+		g := s.PeekDecodeTokensForTest(req2)
 		granted := g
 		if i < 5 {
 			granted = 1 // simulate a token-budget cap
@@ -246,7 +246,7 @@ func TestSpecDecode_CarryNoDrift(t *testing.T) {
 			granted = g
 		}
 		req2.NumNewTokens = int(granted)
-		s.commitDecodeTokens(req2)
+		s.CommitDecodeTokensForTest(req2)
 		if i >= 5 && g > 3 { // after the capped stretch, a peek recovers deferred tokens (>rate)
 			sawRecovery = true
 		}
@@ -278,7 +278,7 @@ func TestCompletionProgressIndex_BoundaryLaw(t *testing.T) {
 			InputTokens:  make([]TokenID, c.input),
 			OutputTokens: make([]TokenID, c.output),
 		}
-		if got := req.completionProgressIndex(); got != c.want {
+		if got := req.CompletionProgressIndexForTest(); got != c.want {
 			t.Errorf("%s: completionProgressIndex() = %d, want %d", c.name, got, c.want)
 		}
 	}
@@ -302,13 +302,13 @@ func TestSpecDecode_PDDecodeSubRequest_AtBoundary_GrantsOneToken(t *testing.T) {
 		IsDecodeSubRequest: true,
 		ProgressIndex:      16, // PD: prefill ran elsewhere, KV was transferred
 	}
-	if sub.completionProgressIndex() != sub.ProgressIndex {
+	if sub.CompletionProgressIndexForTest() != sub.ProgressIndex {
 		t.Fatalf("test setup: want the sub-request admitted AT its boundary, got PI=%d boundary=%d",
-			sub.ProgressIndex, sub.completionProgressIndex())
+			sub.ProgressIndex, sub.CompletionProgressIndexForTest())
 	}
 	s.WaitQ.Enqueue(sub)
 
-	result := s.batchFormation.FormBatch(BatchContext{
+	result := s.BatchFormationForTest().FormBatch(BatchContext{
 		RunningBatch:        &Batch{},
 		WaitQ:               s.WaitQ,
 		KVCache:             s.KVCache,
@@ -316,7 +316,7 @@ func TestSpecDecode_PDDecodeSubRequest_AtBoundary_GrantsOneToken(t *testing.T) {
 		MaxNumSeqs:          10,
 		Now:                 1000,
 		ComputedTokens:      make(map[string]int64),
-		DecodeTokensPerStep: s.peekDecodeTokens,
+		DecodeTokensPerStep: s.PeekDecodeTokensForTest,
 	})
 
 	if len(result.RunningBatch.Requests) != 1 {

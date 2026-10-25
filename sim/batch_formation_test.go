@@ -410,11 +410,10 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 		InputTokens:  []TokenID{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160},
 		OutputTokens: []TokenID{100},
 	}
-	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionFCFS}
+	bf := NewVLLMBatchFormationForTest(PreemptionFCFS)
 
 	// WHEN preemption evicts victim to make room for newcomer
-	budget := &stepBudget{tokens: 10000, input: 10000}
-	bf.preemptForTokens(newReq, 16, &result, ctx, budget, 0)
+	bf.PreemptForTokensForTest(newReq, 16, &result, ctx, 10000, 0)
 
 	// THEN ComputedTokens should NOT contain the preempted request's entry
 	if _, exists := computedTokens[victim.ID]; exists {
@@ -1179,8 +1178,8 @@ func TestSelectPriorityVictim_MaxPriorityEvicted(t *testing.T) {
 		{ID: "bg", Priority: 7.0, ArrivalTime: 200}, // background
 		{ID: "st", Priority: 1.0, ArrivalTime: 150}, // standard
 	}
-	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionPriority}
-	idx := bf.selectPriorityVictim(reqs)
+	bf := NewVLLMBatchFormationForTest(PreemptionPriority)
+	idx := bf.SelectPriorityVictimForTest(reqs)
 	if reqs[idx].ID != "bg" {
 		t.Errorf("BC-3: victim = %s, want bg (highest Priority value = least urgent)", reqs[idx].ID)
 	}
@@ -1193,8 +1192,8 @@ func TestSelectPriorityVictim_ArrivalTimeTiebreak(t *testing.T) {
 		{ID: "newer", Priority: 7.0, ArrivalTime: 200},
 		{ID: "older", Priority: 7.0, ArrivalTime: 100},
 	}
-	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionPriority}
-	idx := bf.selectPriorityVictim(reqs)
+	bf := NewVLLMBatchFormationForTest(PreemptionPriority)
+	idx := bf.SelectPriorityVictimForTest(reqs)
 	if reqs[idx].ID != "newer" {
 		t.Errorf("BC-4: victim = %s, want newer (max ArrivalTime tiebreak)", reqs[idx].ID)
 	}

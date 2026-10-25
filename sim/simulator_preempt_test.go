@@ -187,7 +187,7 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	s.RunningBatch = &Batch{Requests: []*Request{critReq, bgReq, batchReq}}
 	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
-	result := s.batchFormation.FormBatch(BatchContext{
+	result := s.BatchFormationForTest().FormBatch(BatchContext{
 		RunningBatch:        s.RunningBatch,
 		WaitQ:               s.WaitQ,
 		KVCache:             s.KVCache,

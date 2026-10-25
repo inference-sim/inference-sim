@@ -35,9 +35,9 @@ func TestNewEngine_BuildsFromTheConfigOrSaysWhyNot(t *testing.T) {
 		t.Errorf("a config NewSimulator refuses: err %v, want one naming inst-c", err)
 	}
 
-	saved := NewKVStoreFromConfig
-	NewKVStoreFromConfig = nil
-	defer func() { NewKVStoreFromConfig = saved }()
+	saved := KVStoreConstructor()
+	SetNewKVStoreFromConfig(nil)
+	defer SetNewKVStoreFromConfig(saved)
 	if _, err := NewEngine("inst-d", cfg); err == nil || !strings.Contains(err.Error(), "import sim/kv") {
 		t.Errorf("no registered KV constructor: err %v, want one saying to import sim/kv", err)
 	}

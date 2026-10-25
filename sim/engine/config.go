@@ -1,0 +1,639 @@
+package engine
+
+import (
+	"fmt"
+	"math"
+	"strings"
+)
+
+// KVCacheConfig groups KV cache parameters for KV store construction.
+type KVCacheConfig struct {
+	TotalKVBlocks         int64   // GPU tier capacity in blocks (must be > 0)
+	BlockSizeTokens       int64   // tokens per block (must be > 0)
+	KVCPUBlocks           int64   // CPU tier capacity (0 = single-tier, default)
+	KVOffloadThreshold    float64 // DEPRECATED: Ignored in vLLM v1 mirror model. Was: GPU utilization threshold for offload. (CLI default: 0.9, zero-value: 0)
+	KVTransferBandwidth   float64 // transfer rate in TOKENS per tick (TieredKVCache charges ceil(BlockSizeTokens/rate) per block); unused when KVTransferTicksPerBlock > 0
+	KVTransferBaseLatency int64   // fixed cost per reloaded block (ticks); unused when KVTransferTicksPerBlock > 0
+	// Offload captures vLLM's multi-tier KV-offload config surface (H5, #1587). Its
+	// zero value is inert (Enabled=false) and unread by sim/kv in this PR (INV-6);
+	// it is set only via the WithKVOffload option. Kept as a nested sub-config value
+	// rather than more positional constructor args (R16, R4).
+	Offload KVOffloadConfig
+	// KVTransferTicksPerBlock, when > 0, is the whole per-block CPU→GPU reload charge of the
+	// legacy CPU tier, replacing the KVTransferBandwidth/KVTransferBaseLatency formula. It is
+	// how a latency backend that prices tier transfers itself (blis-latency-kernel's
+	// TierTime) supplies the charge rather than a bandwidth to compose one from. Set via
+	// WithKVTransferTicksPerBlock.
+	KVTransferTicksPerBlock int64
+
+	// SequenceState is each resident sequence's bounded per-sequence state -- window rings,
+	// compressor and indexer state, bounded recurrent state -- in pool blocks, as the latency
+	// kernel prices it (#1941). Zero value: none. Set via WithSequenceState.
+	SequenceState KVSequenceState
+
+	// Speculative is the KV side of speculative decoding (#1627); its zero value is off.
+	// NewInstanceSimulator sets it from the SpeculativeConfig, so the two cannot disagree.
+	Speculative KVSpeculation
+
+	// PrefixHit is how the engine's KV cache groups cut a prefix-cache hit. Zero value: the
+	// hit is the full-attention prefix alone. Set via WithPrefixHit.
+	PrefixHit KVPrefixHit
+}
+
+// KVPrefixHit is how vLLM v0.31.0's KV cache coordinator reconciles a prefix-cache hit
+// across a model's KV cache groups (vllm/v1/core/kv_cache_coordinator.py
+// find_longest_cache_hit), beyond the full-attention prefix BLIS hashes. Every length is in
+// tokens and the full-attention block is the store's block, which must be the engine's
+// scheduler block (the LCM of the group block sizes) for the hit to land where vLLM's does.
+type KVPrefixHit struct {
+	// FullEagle drops the last block of every full-attention hit: the full-attention group is
+	// an EAGLE group (FullAttentionManager.find_longest_cache_hit,
+	// single_type_kv_cache_manager.py:834-836).
+	FullEagle bool `json:"full_eagle,omitempty"`
+	// Window is a prefix-cacheable sliding-window group (SlidingWindowManager), 0 when the
+	// model has none or its window caches do not take part in prefix caching. WindowBlock is
+	// its page in tokens.
+	Window      int64 `json:"window,omitempty"`
+	WindowBlock int64 `json:"window_block,omitempty"`
+	// WindowEagle: the window group is an EAGLE group, which peeks one window block past a
+	// boundary and drops it (single_type_kv_cache_manager.py:960-971, 1056-1067).
+	WindowEagle bool `json:"window_eagle,omitempty"`
+	// EagleBoundaries: some group is an EAGLE group, so the replay boundaries a request
+	// retains window tails at sit one scheduler block below its prompt
+	// (KVCacheCoordinator.get_replay_boundaries, kv_cache_coordinator.py:316-338).
+	EagleBoundaries bool `json:"eagle_boundaries,omitempty"`
+	// ReplayTokens is DeepSeek-V4.1's SWA bounded replay window (prefix_replay_tokens,
+	// kv_cache_interface.py:953-955): a hit no longer than it is dropped, and the last
+	// min(ReplayTokens, hit) tokens of a hit are computed again (sched/scheduler.py:1016-1026,
+	// 1059-1079, 3038-3050). 0: off.
+	ReplayTokens int64 `json:"replay_tokens,omitempty"`
+}
+
+// WithPrefixHit sets how the KV store reconciles a prefix-cache hit across KV cache groups.
+func WithPrefixHit(p KVPrefixHit) KVCacheOption {
+	return func(c *KVCacheConfig) { c.PrefixHit = p }
+}
+
+// KVSpeculation is how a speculating engine reserves KV slots (#1627), as vLLM v0.31.0's
+// KVCacheManager.allocate_slots does: a request holds slots for its computed tokens, every
+// token scheduled this step -- the whole verify width, accepted or not -- and
+// LookaheadTokens more that the drafter writes past them (num_tokens_need_slot,
+// vllm/v1/core/kv_cache_manager.py).
+type KVSpeculation struct {
+	// Enabled sizes each allocation by its end index plus LookaheadTokens rather than by the
+	// tokens stored, so the slots of rejected drafts stay held.
+	Enabled bool
+	// LookaheadTokens is vLLM's VllmConfig.num_lookahead_tokens (see
+	// SpeculativeConfig.LookaheadTokens).
+	LookaheadTokens int64
+	// NumSpecTokens is the drafter's num_speculative_tokens; it sizes the spec-decode step an
+	// async load reserves (Scheduler._spec_decode_step_blocks).
+	NumSpecTokens int64
+	// MaxModelLen caps the slots a request holds, as vLLM caps num_tokens_need_slot at
+	// max_model_len (kv_cache_manager.py:536-538 at v0.31.0); 0 is uncapped.
+	MaxModelLen int64
+}
+
+// KVCacheOption is a functional option applied inside NewKVCacheConfig. It lets the
+// constructor accept the nested KVOffloadConfig value without a 7th positional
+// parameter (which would break every existing call site) while keeping the single
+// struct-literal construction site intact (R4).
+type KVCacheOption func(*KVCacheConfig)
+
+// WithKVOffload sets the KVOffloadConfig sub-config. Absent (no option passed) ⇒ the
+// offload subsystem is inert and output is byte-identical to a build without the
+// feature (BC-G5).
+func WithKVOffload(o KVOffloadConfig) KVCacheOption {
+	return func(c *KVCacheConfig) { c.Offload = o }
+}
+
+// WithKVTransferTicksPerBlock sets the legacy CPU tier's whole per-block reload charge.
+func WithKVTransferTicksPerBlock(ticks int64) KVCacheOption {
+	return func(c *KVCacheConfig) { c.KVTransferTicksPerBlock = ticks }
+}
+
+// KVSequenceState is how many pool blocks a sequence's bounded state takes (#1941). vLLM
+// holds a window ring's blocks on demand -- allocate_slots allocates them for the tokens
+// scheduled and remove_skipped_blocks frees those the window has passed -- and applies its
+// max_admission_blocks_per_request cap only as an admission gate; both are in blocks of the
+// shared pool.
+type KVSequenceState struct {
+	// Hold is the blocks a sequence's state holds once computed tokens are computed and
+	// inFlight more are scheduled this step (the kernel's SequenceBoundedBytesAt). Nil: the
+	// model has no bounded per-sequence state.
+	Hold func(computed, inFlight int64) int64
+	// Gate is the state blocks admission requires of a request of tokens tokens: each
+	// window group at min(cdiv(tokens), its admission cap).
+	Gate func(tokens int64) int64
+}
+
+// WithSequenceState sets the bounded per-sequence state the KV store charges (#1941).
+func WithSequenceState(st KVSequenceState) KVCacheOption {
+	return func(c *KVCacheConfig) { c.SequenceState = st }
+}
+
+// NewKVCacheConfig creates a KVCacheConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Parameter order matches struct field order. Optional KVCacheOptions (e.g.
+// WithKVOffload) set nested sub-configs; existing call sites pass none and get the
+// inert zero-value Offload.
+func NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks int64,
+	kvOffloadThreshold, kvTransferBandwidth float64,
+	kvTransferBaseLatency int64, opts ...KVCacheOption) KVCacheConfig {
+	if totalKVBlocks <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: TotalKVBlocks must be > 0, got %d", totalKVBlocks))
+	}
+	if blockSizeTokens <= 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: BlockSizeTokens must be > 0, got %d", blockSizeTokens))
+	}
+	if kvCPUBlocks < 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: KVCPUBlocks must be >= 0, got %d", kvCPUBlocks))
+	}
+	cfg := KVCacheConfig{
+		TotalKVBlocks:         totalKVBlocks,
+		BlockSizeTokens:       blockSizeTokens,
+		KVCPUBlocks:           kvCPUBlocks,
+		KVOffloadThreshold:    kvOffloadThreshold,
+		KVTransferBandwidth:   kvTransferBandwidth,
+		KVTransferBaseLatency: kvTransferBaseLatency,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if (cfg.SequenceState.Hold == nil) != (cfg.SequenceState.Gate == nil) {
+		panic("NewKVCacheConfig: SequenceState needs both Hold and Gate, or neither")
+	}
+	if cfg.KVTransferTicksPerBlock < 0 {
+		panic(fmt.Sprintf("NewKVCacheConfig: KVTransferTicksPerBlock must be >= 0, got %d", cfg.KVTransferTicksPerBlock))
+	}
+	// A given per-block charge replaces the bandwidth/base-latency formula, so those two are
+	// validated only when they are what prices the legacy tier.
+	if kvCPUBlocks > 0 && cfg.KVTransferTicksPerBlock == 0 {
+		// Note: KVOffloadThreshold is NOT validated here — it is deprecated and
+		// ignored in the vLLM v1 mirror model. NewKVStore validates it for legacy
+		// reasons, but the constructor should not tighten a deprecated contract.
+		if kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0) {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBandwidth must be finite and > 0 when KVCPUBlocks > 0, got %v", kvTransferBandwidth))
+		}
+		if kvTransferBaseLatency < 0 {
+			panic(fmt.Sprintf("NewKVCacheConfig: KVTransferBaseLatency must be >= 0 when KVCPUBlocks > 0, got %d", kvTransferBaseLatency))
+		}
+	}
+	// Factory validation (R3): an enabled offload sub-config must be self-consistent.
+	// The CLI resolver validates and logrus.Fatalf's before reaching here, so this is
+	// defense-in-depth for other callers (tests, future code). Panic matches this
+	// constructor's existing panic-on-invalid contract.
+	if err := cfg.Offload.Validate(); err != nil {
+		panic(fmt.Sprintf("NewKVCacheConfig: invalid offload config: %v", err))
+	}
+	return cfg
+}
+
+// BatchConfig groups batch formation parameters.
+type BatchConfig struct {
+	MaxNumSeqs                int64 // max requests in RunningBatch (vLLM: --max-num-seqs)
+	MaxNumBatchedTokens       int64 // max total new tokens across all requests in RunningBatch (vLLM: --max-num-batched-tokens)
+	LongPrefillTokenThreshold int64 // threshold for long prefill chunking
+	// PrefixCachingDisabled suppresses cross-request prefix reuse (vLLM:
+	// --no-enable-prefix-caching). False preserves the existing/default behavior.
+	PrefixCachingDisabled bool
+}
+
+// BatchOption is a functional option applied by NewBatchConfig so new batch settings can
+// remain zero-value compatible without adding positional constructor arguments (R4).
+type BatchOption func(*BatchConfig)
+
+// WithPrefixCachingDisabled mirrors a deployment launched with
+// --no-enable-prefix-caching. Absent means prefix caching stays enabled.
+func WithPrefixCachingDisabled(disabled bool) BatchOption {
+	return func(c *BatchConfig) { c.PrefixCachingDisabled = disabled }
+}
+
+// NewBatchConfig creates a BatchConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Panics on invalid values: MaxNumSeqs and MaxNumBatchedTokens must be > 0,
+// LongPrefillTokenThreshold must be >= 0 (0 means disabled).
+func NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold int64,
+	opts ...BatchOption) BatchConfig {
+	if maxNumSeqs <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumSeqs must be > 0, got %d", maxNumSeqs))
+	}
+	if maxNumBatchedTokens <= 0 {
+		panic(fmt.Sprintf("NewBatchConfig: MaxNumBatchedTokens must be > 0, got %d", maxNumBatchedTokens))
+	}
+	if longPrefillTokenThreshold < 0 {
+		panic(fmt.Sprintf("NewBatchConfig: LongPrefillTokenThreshold must be >= 0, got %d", longPrefillTokenThreshold))
+	}
+	cfg := BatchConfig{
+		MaxNumSeqs:                maxNumSeqs,
+		MaxNumBatchedTokens:       maxNumBatchedTokens,
+		LongPrefillTokenThreshold: longPrefillTokenThreshold,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
+// MaxSpeculativeTokens bounds SpeculativeConfig.K so verify width (K+1) and the
+// mean tokens/step (1+α·K) stay well within int/int64 range and can never produce an
+// int overflow or an undefined int64(float64) conversion (#1528). 1024 is far above
+// any real spec-decode config (vLLM's num_speculative_tokens is single digits;
+// GLM-5.2 MTP is 5) while leaving a wide safety margin.
+const MaxSpeculativeTokens = 1024
+
+// SpeculativeConfig groups speculative-decoding / Multi-Token-Prediction (MTP)
+// parameters (#1528). It is a MODEL-LEVEL attribute (one speculative config per
+// served model), not per-request. Its zero value (K=0) is inert: the feature is off
+// and simulator output is byte-identical to a pre-feature build (INV-6).
+//
+// Model: a decode step verifies K draft tokens plus 1 always-generated bonus token
+// in a single target forward pass. Two decoupled quantities follow:
+//   - VerifyWidth() = K+1 positions processed per forward pass — drives the per-step
+//     COST (verifying drafts is not free).
+//   - EffectiveTokensPerStep() = 1 + α·K mean accepted tokens — drives sequence
+//     PROGRESS (throughput). Modeled as a deterministic mean (no per-step RNG), so
+//     determinism (INV-6) holds and metrics are expectations.
+type SpeculativeConfig struct {
+	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
+	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
+	// Method is the scenario's engine.speculative.method, "" when off. It is provenance here:
+	// cost and progress are driven by K and α. Which methods exist is a fact of the engine
+	// release, so the scenario's rules pack validates it where the scenario is opened
+	// (kernelmodel.OpenPool), not a list in this package.
+	Method string
+}
+
+// NewSpeculativeConfig is the canonical constructor (R4). Returns the config and a
+// validation error; CLI callers Fatalf on error, library callers propagate it. The
+// "α must be supplied explicitly when K>0" rule is a CLI concern (it needs
+// cmd.Flags().Changed) enforced at flag resolution, NOT here — a library caller
+// passing (K=5, α=0) legitimately means "0% acceptance".
+func NewSpeculativeConfig(k int, acceptance float64, method string) (SpeculativeConfig, error) {
+	c := SpeculativeConfig{K: k, Acceptance: acceptance, Method: method}
+	return c, c.Validate()
+}
+
+// Validate enforces the SpeculativeConfig constraints (R1, R3, R20).
+func (c SpeculativeConfig) Validate() error {
+	if c.K < 0 {
+		return fmt.Errorf("speculative: num_speculative_tokens must be >= 0, got %d", c.K)
+	}
+	if c.K > MaxSpeculativeTokens {
+		return fmt.Errorf("speculative: num_speculative_tokens must be <= %d, got %d", MaxSpeculativeTokens, c.K)
+	}
+	if math.IsNaN(c.Acceptance) || math.IsInf(c.Acceptance, 0) {
+		return fmt.Errorf("speculative: acceptance-rate must be finite, got %v", c.Acceptance)
+	}
+	if c.Acceptance < 0 || c.Acceptance > 1 {
+		return fmt.Errorf("speculative: acceptance-rate must be in [0,1], got %v", c.Acceptance)
+	}
+	if c.K == 0 {
+		// Feature off: reject dangling knobs rather than silently ignore them (R1).
+		if c.Acceptance != 0 {
+			return fmt.Errorf("speculative: acceptance-rate set (%v) but the engine drafts no tokens (num_speculative_tokens 0)", c.Acceptance)
+		}
+		if c.Method != "" {
+			return fmt.Errorf("speculative: method %q set but the engine drafts no tokens (num_speculative_tokens 0)", c.Method)
+		}
+		return nil
+	}
+	return nil
+}
+
+// LookaheadTokens is the KV slots a speculating engine reserves past the tokens it schedules
+// for a request, vLLM v0.31.0's VllmConfig.num_lookahead_tokens (vllm/config/vllm.py:630-654):
+// K + 1 for DFlash (one bonus query plus K mask queries), K for the methods that draft from the
+// target's hidden states or a draft model (eagle, eagle3, mtp and the model-specific *_mtp
+// names vLLM folds into it, dspark, draft_model), and 0 for the rest (ngram, ngram_gpu,
+// suffix, medusa, mlp_speculator, extract_hidden_states, custom_class). 0 when off.
+func (c SpeculativeConfig) LookaheadTokens() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch m := c.Method; {
+	case m == "dflash":
+		return int64(c.K) + 1
+	case m == "eagle", m == "eagle3", m == "dspark", m == "draft_model", strings.HasSuffix(m, "mtp"):
+		return int64(c.K)
+	default:
+		return 0
+	}
+}
+
+// DraftSlots is vLLM v0.31.0's SpeculativeConfig.max_num_new_slots_for_drafting
+// (vllm/config/speculative.py:1882-1919): the query slots a drafter adds to the forward pass
+// per scheduled request beyond the one already budgeted -- K for DFlash, K-1 for the other
+// parallel drafter DSpark (parallel_drafting is set for both, :1462-1463), 1 for a serial
+// draft model, 0 for the rest. The scheduler debits it from input_budget for every request
+// it schedules (scheduler.py:826, 1314). 0 when off.
+func (c SpeculativeConfig) DraftSlots() int64 {
+	if c.K == 0 {
+		return 0
+	}
+	switch c.Method {
+	case "dflash":
+		return int64(c.K)
+	case "dspark":
+		return int64(c.K) - 1
+	case "draft_model":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// KV is the KV-slot reservation the config implies (#1627).
+func (c SpeculativeConfig) KV() KVSpeculation {
+	return KVSpeculation{Enabled: c.IsEnabled(), LookaheadTokens: c.LookaheadTokens(), NumSpecTokens: int64(c.K)}
+}
+
+// IsEnabled reports whether speculative decoding is active (K>0).
+func (c SpeculativeConfig) IsEnabled() bool { return c.K > 0 }
+
+// EffectiveTokensPerStep is the mean accepted tokens per decode step: 1 + α·K.
+// Returns 1.0 when off (K=0), so the fractional carry advances exactly one token.
+func (c SpeculativeConfig) EffectiveTokensPerStep() float64 {
+	return 1.0 + c.Acceptance*float64(c.K)
+}
+
+// VerifyWidth is the number of token positions the target processes per decode
+// forward pass: K+1 (K drafts + 1 bonus). Returns 1 when off.
+func (c SpeculativeConfig) VerifyWidth() int {
+	return c.K + 1
+}
+
+// ModelHardwareConfig groups model identity and the deployment's parallelism.
+//
+// None of it prices a step: the latency backend (blis-latency-kernel, reached through
+// SimConfig.LatencyModel) reads the model graph, the chip and the parallel layout
+// from its own scenario. These fields are what the simulator itself needs -- the model and
+// GPU labels its routing and metrics report, the parallelism degrees its placement reserves,
+// whether the model is MoE (which gates data parallelism), and the context window admission
+// enforces.
+type ModelHardwareConfig struct {
+	ModelConfig ModelConfig // the model's routed-expert geometry
+	Model       string      // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
+	GPU         string      // GPU type (e.g., "H100")
+	TP          int         // tensor parallelism degree
+
+	// DP is the data-parallel degree (default 1). DP > 1 is only meaningful for
+	// MoE models — vLLM treats non-MoE DP as N independent engines, which BLIS
+	// already expresses via the router-replica mechanism.
+	DP int
+	// EnableExpertParallel mirrors vLLM --enable-expert-parallel.
+	EnableExpertParallel bool
+
+	MaxModelLen int64 // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+}
+
+// NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+// Parameter order matches struct field order.
+//
+// Validation (library boundary → panic): MaxModelLen must be >= 0; DP must be >= 1;
+// DP > 1 is rejected for dense models (NumLocalExperts <= 1) because dense data
+// parallelism is the router-replica mechanism, not an engine property. DP > 1 is
+// allowed for MoE models with either EnableExpertParallel setting.
+func NewModelHardwareConfig(modelConfig ModelConfig,
+	model, gpu string, tp, dp int, enableExpertParallel bool,
+	maxModelLen int64) ModelHardwareConfig {
+	if maxModelLen < 0 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
+	}
+	if dp < 1 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP must be >= 1, got %d", dp))
+	}
+	if dp > 1 && !modelConfig.IsMoE() {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP > 1 is only supported for MoE models "+
+			"(NumLocalExperts >= %d), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
+			"is expressed via router replicas, not the latency model.", MoEMinExperts, dp, modelConfig.NumLocalExperts))
+	}
+	return ModelHardwareConfig{
+		ModelConfig:          modelConfig,
+		Model:                model,
+		GPU:                  gpu,
+		TP:                   tp,
+		DP:                   dp,
+		EnableExpertParallel: enableExpertParallel,
+		MaxModelLen:          maxModelLen,
+	}
+}
+
+// EffectiveDP returns the data-parallel degree, clamped to a minimum of 1. The
+// canonical constructor already rejects DP < 1, so this clamp only guards a
+// zero-valued struct built directly (bypassing NewModelHardwareConfig, which R4
+// discourages) — there it treats an unset DP as a single rank.
+func (c ModelHardwareConfig) EffectiveDP() int {
+	if c.DP < 1 {
+		return 1
+	}
+	return c.DP
+}
+
+// PolicyConfig groups scheduling and preemption policy selection.
+type PolicyConfig struct {
+	Scheduler        string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PreemptionPolicy string // "fcfs" (default) or "priority"
+}
+
+// NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
+// This is the canonical constructor — all construction sites must use it (R4).
+func NewPolicyConfig(scheduler, preemptionPolicy string) PolicyConfig {
+	return PolicyConfig{
+		Scheduler:        scheduler,
+		PreemptionPolicy: preemptionPolicy,
+	}
+}
+
+// AdapterSpec declares one LoRA adapter in the pre-declared registry
+// (contracts/config-schema.md, data-model.md "Adapter"). Rank is the single source
+// of truth for both cold-load latency and HBM footprint. BaseModel is optional: when
+// set it names the base model the adapter attaches to and workload references are
+// checked against it; when empty, base-model matching is skipped (permissive).
+type AdapterSpec struct {
+	ID        string `yaml:"id"`
+	Rank      int    `yaml:"rank"`
+	BaseModel string `yaml:"base_model,omitempty"`
+}
+
+// StepOverheadTier holds the per-rank-tier compute-overhead coefficients (DT Eq.1:
+// K6·A + K7, fitted per rank). K7 is the per-tier normalization denominator (> 0);
+// K6 is the linear coefficient in active-batch adapter count (>= 0). Consumed by the
+// per-step compute-overhead factor in a later PR; validated here so the config is
+// well-formed at declaration time. Pointer fields (R9): a zero K6 is a meaningful
+// user value (no overhead for that tier), distinct from an omitted coefficient.
+type StepOverheadTier struct {
+	K6 *float64 `yaml:"k6"`
+	K7 *float64 `yaml:"k7"`
+}
+
+// LoRAConfig is the module-scoped sub-config for the LoRA control-plane subsystem
+// (R16; contracts/config-schema.md). It is the 7th SimConfig sub-config. Every field
+// is optional and the zero value is inert: with no adapters declared and no capacity
+// set, the subsystem is a no-op and output is byte-identical to a pre-feature build
+// (INV-6, SC-001).
+//
+// Pointer types are used where zero is a meaningful user value (R9): AdapterCapacity
+// of 0 means "adapters forbidden" (distinct from unset/inert), and the cost
+// coefficients distinguish an explicit 0 from an unset default supplied by
+// defaults.yaml.
+type LoRAConfig struct {
+	// AdapterCapacity is the per-instance resident adapter slot count. nil/absent =>
+	// subsystem inert (no-op default). A pointer to 0 with adapters declared is a
+	// configuration error (adapters forbidden). Consumed by the resident set (PR2).
+	AdapterCapacity *int `yaml:"adapter_capacity,omitempty"`
+
+	// Cold-load cost shape (deltas onto the calibrated base). Consumed by PR3.
+	LoadBaseLatencyUs    *float64 `yaml:"load_base_latency_us,omitempty"`    // >= 0
+	LoadBandwidthBytesUs *float64 `yaml:"load_bandwidth_bytes_us,omitempty"` // > 0 (R11 divisor guard)
+
+	// StepOverheadTiers maps adapter rank -> compute-overhead coefficients. Config-file
+	// only (a scalar flag cannot express a per-rank map). Consumed by PR4.
+	StepOverheadTiers map[int]StepOverheadTier `yaml:"step_overhead_tiers,omitempty"`
+
+	// FootprintBytesPerRank derives per-adapter HBM footprint (linear first-cut).
+	// Consumed by PR5.
+	FootprintBytesPerRank *float64 `yaml:"footprint_bytes_per_rank,omitempty"` // > 0
+
+	// Adapters is the pre-declared registry (id -> rank[, base model]). Empty => inert.
+	Adapters []AdapterSpec `yaml:"adapters,omitempty"`
+}
+
+// HasAdapters reports whether any adapter is declared. When false the subsystem is
+// inert regardless of the other fields (INV-6 no-op default).
+func (c LoRAConfig) HasAdapters() bool {
+	return len(c.Adapters) > 0
+}
+
+// Validate checks the LoRAConfig for internal consistency (R3 numeric guards, R11
+// divisor guard). It is a pure query — the library boundary returns an error and the
+// caller decides fatality (cmd/ -> logrus.Fatalf; sim/ factory -> panic). An empty
+// config is valid and inert (INV-6).
+//
+// Note: cross-validation of workload adapter references against this registry
+// (every referenced id must resolve, base model must match) lives in the workload
+// layer where the registry meets the client/cohort model — see
+// sim/workload.ValidateAdapterReferences.
+func (c LoRAConfig) Validate() error {
+	// Capacity: a pointer to a non-positive value is only an error when adapters are
+	// actually declared (adapters present but zero/negative slots is unservable).
+	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity <= 0 {
+		return fmt.Errorf("LoRAConfig: adapter_capacity must be > 0 when adapters are declared, got %d", *c.AdapterCapacity)
+	}
+
+	// Adapter registry entries: unique non-empty ids, positive rank (R3).
+	seen := make(map[string]struct{}, len(c.Adapters))
+	for i, a := range c.Adapters {
+		if a.ID == "" {
+			return fmt.Errorf("LoRAConfig: adapter[%d] has empty id", i)
+		}
+		if a.Rank <= 0 {
+			return fmt.Errorf("LoRAConfig: adapter %q rank must be > 0, got %d", a.ID, a.Rank)
+		}
+		if _, dup := seen[a.ID]; dup {
+			return fmt.Errorf("LoRAConfig: duplicate adapter id %q", a.ID)
+		}
+		seen[a.ID] = struct{}{}
+	}
+
+	// Cost coefficients (validated whenever set, even absent adapters, so a malformed
+	// coefficient is caught at declaration time). Non-finite values (NaN/±Inf) slip
+	// past the ordering guards below — NaN comparisons are always false and +Inf
+	// passes > 0 — and later poison the cost model's arithmetic, so reject them (R3/R20).
+	if c.LoadBaseLatencyUs != nil && (math.IsNaN(*c.LoadBaseLatencyUs) || math.IsInf(*c.LoadBaseLatencyUs, 0) || *c.LoadBaseLatencyUs < 0) {
+		return fmt.Errorf("LoRAConfig: load_base_latency_us must be finite and >= 0, got %v", *c.LoadBaseLatencyUs)
+	}
+	if c.LoadBandwidthBytesUs != nil && (math.IsNaN(*c.LoadBandwidthBytesUs) || math.IsInf(*c.LoadBandwidthBytesUs, 0) || *c.LoadBandwidthBytesUs <= 0) {
+		return fmt.Errorf("LoRAConfig: load_bandwidth_bytes_us must be finite and > 0 (divisor guard), got %v", *c.LoadBandwidthBytesUs)
+	}
+	if c.FootprintBytesPerRank != nil && (math.IsNaN(*c.FootprintBytesPerRank) || math.IsInf(*c.FootprintBytesPerRank, 0) || *c.FootprintBytesPerRank <= 0) {
+		return fmt.Errorf("LoRAConfig: footprint_bytes_per_rank must be finite and > 0, got %v", *c.FootprintBytesPerRank)
+	}
+
+	// Step-overhead tiers: rank key > 0, K6 >= 0, K7 > 0 (divisor).
+	for rank, tier := range c.StepOverheadTiers {
+		if rank <= 0 {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers rank key must be > 0, got %d", rank)
+		}
+		if tier.K6 != nil && (math.IsNaN(*tier.K6) || math.IsInf(*tier.K6, 0) || *tier.K6 < 0) {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k6 must be finite and >= 0, got %v", rank, *tier.K6)
+		}
+		if tier.K7 == nil || math.IsNaN(*tier.K7) || math.IsInf(*tier.K7, 0) || *tier.K7 <= 0 {
+			return fmt.Errorf("LoRAConfig: step_overhead_tiers[%d].k7 must be finite and > 0 (divisor guard)", rank)
+		}
+	}
+
+	// Cost coefficients are REQUIRED once the subsystem is active (adapters declared
+	// with a positive capacity): the cold-load gate consumes them via the cost model
+	// (#1466), and NewSimulator hard-fails without them. Require them here so the CLI
+	// catches the gap at its validation gate with a clear message rather than
+	// surfacing a confusing constructor error later. The CLI backfills these from
+	// defaults.yaml before validating (resolveLoRAConfig), so a config that reaches
+	// here still missing them declared adapters with no cost source at all. Checked
+	// last so a malformed-but-present coefficient reports its own specific error first.
+	if c.HasAdapters() && c.AdapterCapacity != nil && *c.AdapterCapacity > 0 {
+		if c.LoadBaseLatencyUs == nil || c.LoadBandwidthBytesUs == nil || c.FootprintBytesPerRank == nil {
+			return fmt.Errorf("LoRAConfig: load_base_latency_us, load_bandwidth_bytes_us, and footprint_bytes_per_rank must all be set when adapters are declared with a positive capacity")
+		}
+	}
+
+	return nil
+}
+
+// WorkloadConfig is retained as an empty struct for SimConfig embedding compatibility.
+// All workload generation now happens externally via workload.GenerateRequests().
+type WorkloadConfig struct{}
+
+// NewWorkloadConfig creates an empty WorkloadConfig.
+func NewWorkloadConfig() WorkloadConfig {
+	return WorkloadConfig{}
+}
+
+// SimConfig holds all configuration for creating a Simulator.
+// Sub-configs are embedded so fields are accessible via promotion
+// (e.g., cfg.TotalKVBlocks resolves to cfg.KVCacheConfig.TotalKVBlocks).
+type SimConfig struct {
+	// Simulation control (no sub-config — no factory uses only these)
+	Horizon int64
+	Seed    int64
+
+	// Module-scoped sub-configs (R16)
+	KVCacheConfig
+	BatchConfig
+	ModelHardwareConfig
+	PolicyConfig
+	WorkloadConfig
+	// LoRAConfig is the 7th module sub-config (LoRA control-plane subsystem). Its
+	// zero value is inert: unset => the subsystem is a no-op and output is
+	// byte-identical to a pre-feature build (INV-6). See sim/lora.
+	LoRAConfig
+	// SpeculativeConfig is the 8th module sub-config (speculative decoding / MTP,
+	// #1528). Its zero value (K=0) is inert: the feature is off and output is
+	// byte-identical to a pre-feature build (INV-6). Note: its Validate() is NOT
+	// promoted to SimConfig (LoRAConfig already promotes a Validate() at the same
+	// depth, making SimConfig.Validate ambiguous); call cfg.SpeculativeConfig.Validate()
+	// explicitly if ever needed.
+	SpeculativeConfig
+
+	// Frontend is the API-server render stage (INV-R1). Its zero value is inert: a request's
+	// admission overhead (LatencyModel.QueueingTime) is then an uncontended per-request delay.
+	Frontend FrontendConfig
+
+	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
+	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
+	// Shared with admission: same overrides flow from policy bundle slo_priorities.
+	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
+	SLOPriorityOverrides map[string]int
+
+	// LatencyModel prices every step the instance runs. The caller builds it -- in production
+	// the blis-latency-kernel adapter (sim/kernelmodel), whose inputs are a scenario, a catalog
+	// and a registry -- and the simulator only times steps with it. Required:
+	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
+	// tag.
+	LatencyModel LatencyModel
+
+	// ServerSeriesIntervalUs, when > 0, records the per-engine server time series binned at
+	// this width (server_series.go). Zero is off and output is byte-identical (INV-6).
+	ServerSeriesIntervalUs int64
+}

@@ -84,12 +84,12 @@ func TestExecuteBatchStep_FiltersIdleRequests_BC2(t *testing.T) {
 		ProgressIndex: 64, NumNewTokens: 0, State: StateRunning}
 
 	s.RunningBatch = &Batch{Requests: []*Request{active1, active2, idle}}
-	s.reqNumComputedTokens = map[string]int64{
+	s.SetReqNumComputedTokensForTest(map[string]int64{
 		"active1": 32, "active2": 16, "idle": 64,
-	}
+	})
 
 	// WHEN executeBatchStep runs
-	s.executeBatchStep(0)
+	s.ExecuteBatchStepForTest(0)
 
 	// THEN StepTime was called with only the 2 active requests (BC-2)
 	if len(spy.lastBatch) != 2 {
@@ -128,10 +128,10 @@ func TestExecuteBatchStep_IdleRequestsPersist_BC3(t *testing.T) {
 		ProgressIndex: 64, NumNewTokens: 0, State: StateRunning}
 
 	s.RunningBatch = &Batch{Requests: []*Request{active, idle}}
-	s.reqNumComputedTokens = map[string]int64{"active": 32, "idle": 64}
+	s.SetReqNumComputedTokensForTest(map[string]int64{"active": 32, "idle": 64})
 
 	// WHEN executeBatchStep runs
-	s.executeBatchStep(0)
+	s.ExecuteBatchStepForTest(0)
 
 	// THEN both requests are still in RunningBatch (idle was not dropped) (BC-3)
 	if len(s.RunningBatch.Requests) != 2 {
@@ -557,9 +557,9 @@ func TestNewSimulator_BatchConfigValidation(t *testing.T) {
 
 func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 	// Save and restore the registered function
-	saved := NewKVCacheStateFunc
-	defer func() { NewKVCacheStateFunc = saved }()
-	NewKVCacheStateFunc = nil
+	saved := NewKVCacheStateFuncForTest()
+	defer SetNewKVCacheStateFunc(saved)
+	SetNewKVCacheStateFunc(nil)
 
 	defer func() {
 		r := recover()
@@ -1726,7 +1726,7 @@ func TestProcessCompletions_RuntimeLengthCap(t *testing.T) {
 	sim.RunningBatch = &Batch{Requests: []*Request{req}}
 
 	// Simulate processCompletions
-	remaining := sim.processCompletions(1000, 5000)
+	remaining := sim.ProcessCompletionsForTest(1000, 5000)
 
 	// THEN the request is force-completed
 	if len(remaining) != 0 {
@@ -1935,12 +1935,14 @@ var oracleReadPatterns = []string{"OutputTokens", "completionProgressIndex"}
 var simControlPlaneGlobs = []string{
 	"routing*.go",
 	"admission*.go",
-	"scheduler*.go",
-	"slo*.go",
 	"saturation*.go",
 	"router_state.go",
+	// The engine's control-plane files moved with it to sim/engine (#2021 E2.3d); the scan
+	// still covers them.
+	"engine/scheduler*.go",
+	"engine/slo*.go",
 	// The engine metrics the router scrapes: what a real vLLM server publishes, never the oracle.
-	"engine_metrics.go",
+	"engine/engine_metrics.go",
 }
 
 // simControlPlaneExemptions names files the globs match that are legitimately
@@ -2044,8 +2046,8 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 	for _, required := range []string{
 		"router_state.go",
 		"routing.go",
-		"scheduler.go",
-		"slo_priority.go",
+		"engine/scheduler.go",
+		"engine/slo_priority.go",
 	} {
 		if !slices.Contains(simControlPlaneFiles, required) {
 			t.Errorf("INV-9 scan does not cover %s — the globs or the exemption list regressed", required)
@@ -2120,16 +2122,16 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 
 	// Additionally verify EnqueueRequest specifically (it's in engine.go, which also contains
 	// execution-engine code that legitimately uses OutputTokens).
-	data, err := os.ReadFile("engine.go")
+	data, err := os.ReadFile("engine/engine.go")
 	if err != nil {
-		t.Fatalf("failed to read engine.go: %v", err)
+		t.Fatalf("failed to read engine/engine.go: %v", err)
 	}
 	content := string(data)
 	// Extract EnqueueRequest function body (between "func (sim *EngineCore) EnqueueRequest" and
 	// the next "func "): it is the engine's, since the host/engine split (#2021 E2.3).
 	startIdx := strings.Index(content, "func (sim *EngineCore) EnqueueRequest")
 	if startIdx < 0 {
-		t.Fatal("EnqueueRequest function not found in engine.go")
+		t.Fatal("EnqueueRequest function not found in engine/engine.go")
 	}
 	endIdx := strings.Index(content[startIdx+1:], "\nfunc ")
 	if endIdx < 0 {
@@ -2641,7 +2643,7 @@ func TestProcessCompletions_LengthCapped_MetricsRefreshed(t *testing.T) {
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
 	sim.RunningBatch = &Batch{Requests: []*Request{req}}
 
-	sim.processCompletions(1000, 5000)
+	sim.ProcessCompletionsForTest(1000, 5000)
 
 	if !req.LengthCapped {
 		t.Error("req.LengthCapped = false, want true")
@@ -2683,7 +2685,7 @@ func TestRecordRequestCompletion_LengthCapped_ITL(t *testing.T) {
 	}
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
 
-	sim.recordRequestCompletion(req)
+	sim.RecordRequestCompletionForTest(req)
 
 	// denominator = emitted-1 = 4-1 = 3 → avgITL = 15000/3 = 5000. Neither the oracle
 	// len(OutputTokens)-1 = 199 (75.4) nor the pre-#1891 len(ITL)-1 = 2 (7500).
@@ -2720,7 +2722,7 @@ func TestRecordRequestCompletion_NormalRequest_ITL(t *testing.T) {
 	}
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
 
-	sim.recordRequestCompletion(req)
+	sim.RecordRequestCompletionForTest(req)
 
 	// denominator = max(len(OutputTokens)-1, 1) = 9
 	gotITL := sim.Metrics.RequestITLs[req.ID]
@@ -2840,7 +2842,7 @@ func TestRecordRequestCompletion_LengthCapped_ITLMatchesNormalPath(t *testing.T)
 	record := func(req *Request) float64 {
 		s := newSim()
 		s.Metrics.Requests[req.ID] = NewRequestMetrics(req, 0)
-		s.recordRequestCompletion(req)
+		s.RecordRequestCompletionForTest(req)
 		if s.Metrics.TotalOutputTokens != emitted {
 			t.Fatalf("%s: TotalOutputTokens = %d, want %d", req.ID, s.Metrics.TotalOutputTokens, emitted)
 		}
@@ -3407,8 +3409,8 @@ func TestSimulator_PreemptionKeepsOutputAndResumesInOnePrefill(t *testing.T) {
 		if wasRunning && reqB.State == StateQueued && emittedAtPreemption < 0 {
 			emittedAtPreemption = int64(len(reqB.ITL)) + 1
 		}
-		if reqB.preemptionCount() > 0 && reqB.State == StateRunning && resumedTo < 0 && reqB.NumNewTokens > 0 {
-			resumedTo = s.reqNumComputedTokens["B"]
+		if reqB.PreemptionCountForTest() > 0 && reqB.State == StateRunning && resumedTo < 0 && reqB.NumNewTokens > 0 {
+			resumedTo = s.ReqNumComputedTokensForTest()["B"]
 			resumedBlocks = int64(len(s.KVCache.(RequestBlockReporter).RequestBlocks("B")))
 		}
 		wasRunning = reqB.State == StateRunning

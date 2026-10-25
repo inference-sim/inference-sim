@@ -40,7 +40,7 @@ func TestResidentAdapterSet_CapacityBoundAcrossRun(t *testing.T) {
 	}
 
 	sim := mustNewSimulator(t, cfg)
-	if sim.residentAdapters == nil {
+	if sim.ResidentAdaptersForTest() == nil {
 		t.Fatal("residentAdapters is nil: LoRA subsystem not wired (is sim/lora blank-imported?)")
 	}
 
@@ -54,10 +54,10 @@ func TestResidentAdapterSet_CapacityBoundAcrossRun(t *testing.T) {
 	sim.Run()
 
 	// The capacity bound holds: with M > N distinct adapters, the set ends full.
-	if got := sim.residentAdapters.Len(); got > capacity {
+	if got := sim.ResidentAdaptersForTest().Len(); got > capacity {
 		t.Fatalf("resident set size %d exceeds capacity %d", got, capacity)
 	}
-	if got := sim.residentAdapters.Len(); got != capacity {
+	if got := sim.ResidentAdaptersForTest().Len(); got != capacity {
 		t.Fatalf("resident set size = %d, want %d (full after M>N distinct adapters)", got, capacity)
 	}
 
@@ -137,7 +137,7 @@ func TestResidentAdapterSet_MixedBaseAndAdapterTraffic(t *testing.T) {
 	if a0.EvictionCount != 0 {
 		t.Errorf("adapter_0 EvictionCount = %d, want 0 (capacity 4, single adapter)", a0.EvictionCount)
 	}
-	if got := sim.residentAdapters.Len(); got != 1 {
+	if got := sim.ResidentAdaptersForTest().Len(); got != 1 {
 		t.Errorf("resident set size = %d, want 1 (only adapter_0; base traffic adds nothing)", got)
 	}
 }
@@ -171,7 +171,7 @@ func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 		},
 	}
 	s := mustNewSimulator(t, cfg)
-	if s.residentAdapters == nil {
+	if s.ResidentAdaptersForTest() == nil {
 		t.Fatal("residentAdapters is nil: LoRA subsystem not wired")
 	}
 
@@ -199,7 +199,7 @@ func TestResidentAdapterSet_PreemptionDoesNotDoubleCountLoad(t *testing.T) {
 	// Positive confirmation the warm path was reachable: "a" stayed resident through
 	// the preemption, so the reschedule took Touch (not a skipped recordAdapterResidency,
 	// which would also leave LoadCount == 1 and mask a regression).
-	if !s.residentAdapters.IsResident("a") {
+	if !s.ResidentAdaptersForTest().IsResident("a") {
 		t.Error("adapter \"a\" not resident after run: warm Touch path on reschedule was not exercised")
 	}
 
@@ -222,7 +222,7 @@ func TestNewSimulator_AdaptersWithoutCapacity(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.LoRAConfig = LoRAConfig{Adapters: []AdapterSpec{{ID: "a", Rank: 8}}} // AdapterCapacity nil
 	sim := mustNewSimulator(t, cfg)
-	if sim.residentAdapters != nil {
+	if sim.ResidentAdaptersForTest() != nil {
 		t.Fatal("residentAdapters must be nil when adapter_capacity is unset")
 	}
 
@@ -330,7 +330,7 @@ func TestResidentAdapterSet_ActiveRun_Deterministic(t *testing.T) {
 func TestResidentAdapterSet_InertWhenNoLoRA(t *testing.T) {
 	cfg := newTestSimConfig() // no LoRAConfig
 	sim := mustNewSimulator(t, cfg)
-	if sim.residentAdapters != nil {
+	if sim.ResidentAdaptersForTest() != nil {
 		t.Fatal("residentAdapters must be nil when no adapters are configured")
 	}
 

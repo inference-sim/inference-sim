@@ -106,10 +106,10 @@ func TestNewRegistry_Rejections(t *testing.T) {
 // factory into the sim package (breaking the import cycle, mirroring
 // sim.NewKVCacheStateFunc). Production code reaches the registry through this seam.
 func TestNewAdapterRegistryFunc_Registered(t *testing.T) {
-	if sim.NewAdapterRegistryFunc == nil {
+	if sim.AdapterRegistryConstructor() == nil {
 		t.Fatalf("sim.NewAdapterRegistryFunc must be registered by sim/lora init()")
 	}
-	reg, err := sim.NewAdapterRegistryFunc([]sim.AdapterSpec{{ID: "a", Rank: 8}})
+	reg, err := sim.AdapterRegistryConstructor()([]sim.AdapterSpec{{ID: "a", Rank: 8}})
 	if err != nil {
 		t.Fatalf("factory error: %v", err)
 	}
@@ -123,10 +123,10 @@ func TestNewAdapterRegistryFunc_Registered(t *testing.T) {
 // refactor that breaks this seam would otherwise silently leave the Simulator's
 // resident set nil and zero every adapter metric with no test failure.
 func TestNewResidentAdapterSetFunc_Registered(t *testing.T) {
-	if sim.NewResidentAdapterSetFunc == nil {
+	if sim.ResidentAdapterSetConstructor() == nil {
 		t.Fatalf("sim.NewResidentAdapterSetFunc must be registered by sim/lora init()")
 	}
-	set := sim.NewResidentAdapterSetFunc(2)
+	set := sim.ResidentAdapterSetConstructor()(2)
 	if set == nil {
 		t.Fatalf("factory returned nil resident set")
 	}
