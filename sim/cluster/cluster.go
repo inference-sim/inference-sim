@@ -2056,5 +2056,5 @@ func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
 		ids = append(ids, string(inst.ID()))
 		sims = append(sims, core)
 	}
-	return sim.BuildServerSeries(ids, sims)
+	return sim.BuildServerSeriesOf(ids, sims)
 }

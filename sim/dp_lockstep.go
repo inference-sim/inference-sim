@@ -2,20 +2,6 @@ package sim
 
 import "fmt"
 
-// DPSyncInterval is how many steps a data-parallel wave runs between the ranks'
-// unfinished-request all-reduces: vLLM v0.31.0's dp_sync_interval default
-// (vllm/config/parallel.py:150), which blis-schemas has no field to state.
-const DPSyncInterval = 16
-
-// DPStepPricer prices one lockstep step of a data-parallel group (#1909).
-//
-// batches[i] is rank i's scheduled requests; an empty one is a rank with nothing ready,
-// which runs vLLM's dummy batch. The result is each rank's own step duration in ticks,
-// each >= 1. A pricer applies whatever padding the engine applies across the ranks.
-type DPStepPricer interface {
-	StepTimesAcrossDP(batches [][]*Request) []int64
-}
-
 // LockstepGroup steps the data-parallel ranks of one MoE replica together, as vLLM's
 // DPEngineCoreProc does (vllm/v1/engine/core.py:2251-2350 at v0.31.0).
 //
@@ -65,9 +51,7 @@ func NewLockstepGroup(ranks []*Simulator) (*LockstepGroup, error) {
 			return nil, fmt.Errorf("NewLockstepGroup: rank %d already has a step armed", i)
 		}
 	}
-	if p, ok := ranks[0].latencyModel.(DPStepPricer); ok {
-		g.pricer = p
-	}
+	g.pricer = ranks[0].dpStepPricer()
 	for _, r := range ranks {
 		r.lockstep = g
 	}
@@ -103,14 +87,10 @@ func (g *LockstepGroup) disarm() {
 	}
 }
 
-// hasWork reports whether a rank has unfinished requests, as the scheduler's
-// has_unfinished_requests does: running or waiting.
-func hasWork(r *engineCore) bool {
-	return (r.RunningBatch != nil && len(r.RunningBatch.Requests) > 0) || r.WaitQ.Len() > 0
-}
-
 // step runs one lockstep step for the whole group. e must be the armed event; any other
-// (none is ever scheduled) is ignored.
+// (none is ever scheduled) is ignored. The host part (the leader's clock, the ranks' clocks
+// and busyUntil, arming the next step) stays here; each rank's engine work is engineCore's
+// (lockstepSchedule, lockstepFinish) and the step's pricing is the group's engines'.
 func (g *LockstepGroup) step(e *StepEvent) {
 	if e != g.pending {
 		return
@@ -128,8 +108,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		if r.Clock < now {
 			r.Clock = now
 		}
-		r.scheduleBatch(now)
-		batches[i] = r.scheduledRequests()
+		batches[i] = r.lockstepSchedule(now)
 	}
 	if !active[0] {
 		// A dummy step is not work: the leader's clock stays at its last real event, so
@@ -143,7 +122,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 	for i, r := range g.ranks {
 		d := durations[i]
 		if active[i] {
-			d += r.KVCache.ConsumePendingTransferLatency()
+			d += r.consumeTransferLatency()
 		}
 		advance = max(advance, d)
 	}
@@ -156,15 +135,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		if !active[i] {
 			continue
 		}
-		r.advanceBatch(now, advance)
-		r.KVCache.MirrorToCPU(r.RunningBatch.Requests)
-		remaining := r.processCompletions(now, advance)
-		r.recordServerStepEnd(now+advance, len(remaining))
-		if len(remaining) > 0 {
-			r.RunningBatch.Requests = remaining
-		} else {
-			r.RunningBatch = nil
-		}
+		r.lockstepFinish(now, advance)
 	}
 
 	g.stepCounter++
@@ -214,7 +185,7 @@ func (g *LockstepGroup) price(batches [][]*Request) []int64 {
 	}
 	d := make([]int64, len(batches))
 	for i, r := range g.ranks {
-		d[i] = max(1, r.latencyModel.StepTime(batches[i]))
+		d[i] = r.stepTimeAtLeastOne(batches[i])
 	}
 	return d
 }

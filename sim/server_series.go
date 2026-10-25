@@ -244,12 +244,12 @@ func (sim *engineCore) ServerSeriesIntervalUs() int64 {
 
 // BuildServerSeries assembles the block from engines, binning every engine to the latest
 // engine's end so the arrays line up. Nil when no engine records a series.
-func BuildServerSeries(ids []string, sims []*Simulator) *ServerSeriesOutput {
+func BuildServerSeries(ids []string, sims []*engineCore, clocks []int64) *ServerSeriesOutput {
 	var interval, end int64
-	for _, s := range sims {
+	for i, s := range sims {
 		if s.serverSeries != nil {
 			interval = s.serverSeries.interval
-			end = max(end, s.serverSeries.end, s.Clock)
+			end = max(end, s.serverSeries.end, clocks[i])
 		}
 	}
 	if interval <= 0 {

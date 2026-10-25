@@ -130,7 +130,7 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		for k, inst := range rep.ranks {
 			sims[k] = inst.engineCore()
 		}
-		if err := sim.ShareRenderer(sims, apiServers); err != nil {
+		if err := sim.ShareRendererOf(sims, apiServers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)
 		}
 	}

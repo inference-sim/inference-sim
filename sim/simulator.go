@@ -148,38 +148,6 @@ type Simulator struct {
 	nextSnapshotClockUs        int64
 }
 
-// engineHost is what the engine needs from the simulator it runs in (#2021 B3: the clock,
-// the event queue and the callbacks stay with the host). The engine reaches the host only
-// through it, so the engine can move to blis-vllm with the host left behind (PLAN-E2 E2.3).
-// The calls are made at exactly the points the engine made them before, so events are
-// created in the same order with the same seqIDs (hazard 2).
-type engineHost interface {
-	// now is the simulation clock.
-	now() int64
-	// horizon is the simulation horizon.
-	horizon() int64
-	// scheduleTimeout queues the request's client-deadline timeout at t (PriorityTimeout).
-	scheduleTimeout(req *Request, t int64)
-	// scheduleScheduled and scheduleLeft queue the observational scheduled and request-left
-	// events at t (PriorityScheduled, PriorityRequestLeft).
-	scheduleScheduled(req *Request, t int64)
-	scheduleLeft(req *Request, t int64)
-	// scheduleAdapterLoaded queues the completion of an adapter's load at t
-	// (PriorityAdapterLoad).
-	scheduleAdapterLoaded(adapter string, t int64)
-	// requestDone hands a request that reached a terminal state, at tick, to the host's
-	// callback, and injects the follow-ups it returns. A no-op without a callback.
-	requestDone(req *Request, tick int64)
-	// firstToken reports a request's first token, received by the client at at.
-	firstToken(req *Request, at int64)
-	// wakeStep makes sure a step fires no later than t (scheduleStepBy).
-	wakeStep(t int64)
-	// armStep arms the next step at t (scheduleStepAt).
-	armStep(t int64)
-	// stepArmed reports whether a step is armed.
-	stepArmed() bool
-}
-
 func (sim *Simulator) now() int64     { return sim.Clock }
 func (sim *Simulator) horizon() int64 { return sim.Horizon }
 func (sim *Simulator) scheduleTimeout(req *Request, t int64) {
@@ -557,3 +525,24 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 
 // BusyUntil is when the engine's last executed step ends; its next schedule runs no earlier.
 func (sim *Simulator) BusyUntil() int64 { return sim.busyUntil }
+
+// ShareRendererOf makes the ranks of one endpoint share one render stage (ShareRenderer, over
+// the ranks' engines).
+func ShareRendererOf(ranks []*Simulator, apiServers int) error {
+	engines := make([]*engineCore, len(ranks))
+	for i, r := range ranks {
+		engines[i] = &r.engineCore
+	}
+	return ShareRenderer(engines, apiServers)
+}
+
+// BuildServerSeriesOf assembles the server time series of the instances (BuildServerSeries,
+// over their engines, each binned to its own clock).
+func BuildServerSeriesOf(ids []string, sims []*Simulator) *ServerSeriesOutput {
+	engines := make([]*engineCore, len(sims))
+	clocks := make([]int64, len(sims))
+	for i, s := range sims {
+		engines[i], clocks[i] = &s.engineCore, s.Clock
+	}
+	return BuildServerSeries(ids, engines, clocks)
+}

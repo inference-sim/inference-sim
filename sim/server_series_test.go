@@ -76,7 +76,7 @@ func TestServerSeries_PromptCountedAtFirstTokenNotAdmission(t *testing.T) {
 	req := &Request{ID: "r", ArrivalTime: 0, InputTokens: make([]TokenID, 64), OutputTokens: make([]TokenID, 3)}
 	s.InjectArrival(req)
 	s.Run()
-	out := BuildServerSeries([]string{"instance_0"}, []*Simulator{s})
+	out := BuildServerSeriesOf([]string{"instance_0"}, []*Simulator{s})
 	if out == nil || len(out.Engines) != 1 {
 		t.Fatalf("series = %+v", out)
 	}
@@ -112,7 +112,7 @@ func TestServerSeries_PerEngineAndOff(t *testing.T) {
 	a.serverSeries.recordGauges(0, 3, 1, 0)
 	b.serverSeries.recordGauges(0, 0, 0, 0)
 	a.serverSeries.recordGauges(10, 3, 1, 0)
-	out := BuildServerSeries([]string{"instance_0", "instance_1"}, []*Simulator{a, b})
+	out := BuildServerSeriesOf([]string{"instance_0", "instance_1"}, []*Simulator{a, b})
 	if len(out.Engines) != 2 || out.Engines[0].ID != "instance_0" || out.Engines[1].ID != "instance_1" {
 		t.Fatalf("engines = %+v", out.Engines)
 	}
@@ -121,7 +121,7 @@ func TestServerSeries_PerEngineAndOff(t *testing.T) {
 	}
 
 	off := mustNewSimulator(t, newTestSimConfig())
-	if BuildServerSeries([]string{"instance_0"}, []*Simulator{off}) != nil {
+	if BuildServerSeriesOf([]string{"instance_0"}, []*Simulator{off}) != nil {
 		t.Fatal("off must build no series")
 	}
 	data, _ := json.Marshal(MetricsOutput{})
