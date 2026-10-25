@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261025021202-515d766bbac2
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025010642-7b94c7c25d3f
-	github.com/inference-sim/blis-vllm v0.0.0-20261025072226-d3c4f26989b2
+	github.com/inference-sim/blis-vllm v0.0.0-20261025073322-0c6eb026cdea
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2

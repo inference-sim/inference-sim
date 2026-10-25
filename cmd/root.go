@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -577,33 +576,12 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	scenarioScheduler, scenarioPreemption, scenarioOverrides = "", "", nil
 	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
-	missing := []string{}
-	if kernelScenario == "" {
-		missing = append(missing, "--scenario")
-	}
-	if kernelScenarioDir == "" {
-		missing = append(missing, "--scenarios")
-	}
-	if kernelRegistry == "" {
-		missing = append(missing, "--registry")
-	}
-	if len(missing) > 0 {
-		logrus.Fatalf("blis run requires %s: the kernel prices a step from a "+
-			"committed scenario plus the catalog and registry it names",
-			strings.Join(missing, ", "))
-	}
-	// The scenario's roles and the CLI topology describe one deployment. A disaggregated
-	// scenario run without a P/D topology would serve every request on its first pool's
-	// engine, as though colocated; the opposite mismatch is refused when the pools open.
-	shape, err := kernelmodel.ShapeOf(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
+	in := adoptInputs(cmd)
+	a, err := adoptScenario(in)
 	if err != nil {
-		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+		logrus.Fatalf("%v", err)
 	}
-	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
-	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
-		logrus.Fatalf("scenario %q states %d colocated pools; a run simulates one colocated "+
-			"engine, so state one pool and scale it with --num-instances", kernelScenario, len(shape.Roles))
-	}
+	shape := a.Shape
 	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
 	// may only restate it (resolveKVOffloadConfig).
 	scenarioOffload = shape.Offload
@@ -611,34 +589,16 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	scenarioShape = shape
 	acceptanceRecord = nil
 	prefixCacheRecords = nil
-	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
+	scenarioDisaggregated = a.Disaggregated
 	// The router's inputs are the deployment's too: its router block and pool labels.
 	adoptScenarioRouter(shape)
-	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
-		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
-			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
-			kernelScenario)
-	}
-	catalogRoot, err := resolveCatalogRoot()
-	if err != nil {
+	if err := openFirstPool(in, &a); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	applyRoutingOverrides(cmd)
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
-		Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
-	})
-	if err != nil {
-		// Fatal rather than fallen back on: there is no other latency model to serve the run.
-		logrus.Fatalf("scenario %q: %v",
-			kernelScenario, err)
-	}
-	settings, err := m.Settings()
-	if err != nil {
-		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
-	}
+	m, settings := a.Model, a.Settings
 	kernelOpened = m
 	adoptSchedulingPolicy(cmd, m)
-	dep := m.Deployment()
+	dep := a.Deployment
 	model = strings.ToLower(dep.Model)
 	gpu = dep.Hardware
 	tensorParallelism = dep.TP
@@ -701,11 +661,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if m == nil {
 		// adoptKernelDeployment has not run (a caller that resolves the latency model
 		// alone): open the scenario's first pool exactly as adoption would.
-		m, err = kernelmodel.Open(kernelScenario, kernelmodel.Repos{
-			Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
-		})
+		m, err = openModel(catalogRoot)
 		if err != nil {
-			logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+			logrus.Fatalf("%v", err)
 		}
 	}
 	// The expert geometry the graph stated. Nothing else of ModelConfig is populated: no HF
@@ -715,22 +673,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	modelConfig.NumLocalExperts = kernelDeploymentExperts
 	modelConfig.NumExpertsPerTok = kernelDeploymentTopK
 
-	if dataParallelism < 1 {
-		logrus.Fatalf("scenario %q states dp %d; it must be >= 1", kernelScenario, dataParallelism)
-	}
-	if dataParallelism > 1 && !modelConfig.IsMoE() {
-		// Dense DP is the router-replica mechanism, not a latency divisor: vLLM's
-		// --data-parallel-size on a dense model runs N independent engines behind an
-		// internal load balancer, which BLIS expresses as N instances.
-		logrus.Fatalf("scenario %q states dp %d for a dense model; DP placement is modelled for MoE "+
-			"models only. Express N independent dense engines as --num-instances N with dp 1.",
-			kernelScenario, dataParallelism)
-	}
-	if enableExpertParallel && !modelConfig.IsMoE() {
-		// vLLM fatally rejects --enable-expert-parallel on dense models
-		// (config/model.py:_verify_with_expert_parallelism).
-		logrus.Fatalf("scenario %q enables expert parallelism for dense model %q, which vLLM refuses",
-			kernelScenario, model)
+	if err := checkParallelism(modelConfig.IsMoE()); err != nil {
+		logrus.Fatalf("%v", err)
 	}
 	return latencyResolution{
 		KernelModel: m,

@@ -271,3 +271,32 @@ func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *clu
 	prefill.KVOffload, prefill.KVTransferTicksPerBlock = &pre.Config, &pre.TicksPerBlock
 	decode.KVOffload, decode.KVTransferTicksPerBlock = &dec.Config, &dec.TicksPerBlock
 }
+
+// adoptInputs are the scenario and roots the command line names, handed over unread, with the
+// routing overrides applied just before the first pool opens (as before the move).
+func adoptInputs(cmd *cobra.Command) build.AdoptInputs {
+	return build.AdoptInputs{
+		Scenario: kernelScenario, ScenariosDir: kernelScenarioDir, Registry: kernelRegistry,
+		Catalog:    resolveCatalogRoot,
+		PDTopology: prefillInstances != 0 || decodeInstances != 0,
+		BeforeOpen: func(kernelmodel.Shape) error { applyRoutingOverrides(cmd); return nil },
+	}
+}
+
+// adoptScenario reads the scenario's deployment (build.Adopt).
+func adoptScenario(in build.AdoptInputs) (build.Adopted, error) { return build.Adopt(in) }
+
+// openFirstPool opens and sizes the scenario's first pool (build.OpenFirstPool).
+func openFirstPool(in build.AdoptInputs, a *build.Adopted) error { return build.OpenFirstPool(in, a) }
+
+// openModel opens the scenario's first pool for a caller that resolves the latency model
+// without adopting the deployment (build.OpenModel).
+func openModel(catalogRoot string) (*kernelmodel.Model, error) {
+	return build.OpenModel(kernelScenario, kernelScenarioDir, catalogRoot, kernelRegistry)
+}
+
+// checkParallelism refuses data and expert parallelism a dense model cannot run
+// (build.CheckParallelism).
+func checkParallelism(moe bool) error {
+	return build.CheckParallelism(kernelScenario, model, dataParallelism, enableExpertParallel, moe)
+}
