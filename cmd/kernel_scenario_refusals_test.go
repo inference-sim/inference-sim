@@ -248,3 +248,21 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 		})
 	}
 }
+
+// A scenario stating an engine release the compatibility engine does not model is refused
+// before anything runs, naming the release (#2021 B6: one build models one release, and a
+// version is a check, not a selector). A v0.32.0 deployment is never run as a 0.29 or 0.31
+// one.
+func TestRunCmd_RefusesAnEngineReleaseItDoesNotModel(t *testing.T) {
+	dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`)
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+		"--rate", "4", "--num-requests", "4", "--seed", "1")
+	if err == nil {
+		t.Fatal("a 0.32.0 scenario ran on the compatibility engine")
+	}
+	for _, frag := range []string{`engine_version \"0.32.0\"`, "0.29.0 and 0.31.0"} {
+		if !strings.Contains(stderr, frag) {
+			t.Errorf("refusal must name %s; stderr:\n%s", frag, lastLines(stderr, 3))
+		}
+	}
+}
