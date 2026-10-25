@@ -105,15 +105,9 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	return &bundle, nil
 }
 
-// Valid policy name registries. Unexported to prevent external mutation.
-// Used by Validate(), factory functions, and ValidatePolicyName().
-var (
-	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
-)
-
-// IsValidScheduler returns true if name is a recognized scheduler.
-func IsValidScheduler(name string) bool { return validSchedulers[name] }
+// The engine's scheduler and preemption policy names (validSchedulers,
+// validPreemptionPolicies) are declared with the engine (scheduler.go); the bundle validates
+// against them.
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
 func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }

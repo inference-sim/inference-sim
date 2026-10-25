@@ -432,6 +432,12 @@ type emitOptions struct {
 	series     *ServerSeriesOutput
 }
 
+// WithAgentic records an agentic replay's summary block in the --metrics-path file only
+// (stdout is unchanged, INV-6). Nil leaves the block absent.
+func WithAgentic(summary any) EmitOption {
+	return func(o *emitOptions) { o.agentic = summary }
+}
+
 // WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
 // file only, keyed by pool role. A nil map leaves the block absent; an empty one writes {}.
 func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {

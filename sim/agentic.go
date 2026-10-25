@@ -38,9 +38,3 @@ const (
 	AgenticContextOverflow = "context_overflow"
 	AgenticCancelled       = "cancelled"
 )
-
-// WithAgentic records an agentic replay's summary block in the --metrics-path file only
-// (stdout is unchanged, INV-6). Nil leaves the block absent.
-func WithAgentic(summary any) EmitOption {
-	return func(o *emitOptions) { o.agentic = summary }
-}

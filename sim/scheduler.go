@@ -75,8 +75,18 @@ func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
 	})
 }
 
+// Valid policy name registries. Unexported to prevent external mutation.
+// Used by the policy bundle's Validate(), the factory functions, and ValidatePolicyName().
+var (
+	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
+)
+
+// IsValidScheduler returns true if name is a recognized scheduler.
+func IsValidScheduler(name string) bool { return validSchedulers[name] }
+
 // NewScheduler creates an InstanceScheduler by name.
-// Valid names are defined in validSchedulers (bundle.go).
+// Valid names are defined in validSchedulers.
 // Empty string defaults to FCFSScheduler (for CLI flag default compatibility).
 // Panics on unrecognized names.
 func NewScheduler(name string) InstanceScheduler {
