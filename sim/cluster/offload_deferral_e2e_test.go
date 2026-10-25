@@ -422,7 +422,7 @@ func TestInstanceSimulator_Offload_CPUHitReducesTTFT(t *testing.T) {
 	}
 }
 
-// Note: the secondary-tier prefill-shrink is guarded discriminatingly at the sim/kv
+// Note: the secondary-tier prefill-shrink is guarded discriminatingly at the blis-vllm compat/kv
 // level by TestDeferral_ResolvedSecondaryBecomesReloadable (offload_deferral_test.go),
 // which drives the deferral to resolution and asserts the now-CPU-resident prefix is
 // reported by the pure ReloadablePrefixEnd query — the exact signal this fix adds, which

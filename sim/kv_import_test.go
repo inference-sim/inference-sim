@@ -1,6 +1,6 @@
 package sim_test
 
-// Blank import triggers sim/kv's init(), which registers NewKVCacheStateFunc.
-// This allows package sim's internal test files to create KV caches
-// without directly importing sim/kv (which would create an import cycle).
+// The blank import runs blis-vllm compat/kv's init(), which registers NewKVCacheStateFunc, so
+// package sim's tests can build KV caches through the engine's registered constructor, as the
+// binary does through its build site.
 import _ "github.com/inference-sim/blis-vllm/compat/kv"

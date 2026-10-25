@@ -55,7 +55,7 @@ func TestINV13_RunReplayParity_Offload(t *testing.T) {
 
 // INV-13 for the decode-KV offload path (offload_prompt_only=false, BC-6): longer outputs
 // form full decode blocks that the false policy mirrors to the tiers. Run and replay are
-// driven by the same in-process resolved config through the sim/kv kernel, so the
+// driven by the same in-process resolved config through the blis-vllm compat/kv kernel, so the
 // decode-offload path is deterministic across run/replay exactly as prompt-only is. (The
 // kv_offload trace-header round-trip itself — including OffloadPromptOnly — is covered
 // separately by TestKVOffload_EndToEnd_RunReplayRoundTrip.)
