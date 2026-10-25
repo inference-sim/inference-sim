@@ -3,8 +3,6 @@ package cmd
 import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // Expert-parallel routing imbalance (blis-schemas routing.Resolve): the command line is the

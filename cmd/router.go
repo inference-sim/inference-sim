@@ -15,7 +15,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/llmd"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 

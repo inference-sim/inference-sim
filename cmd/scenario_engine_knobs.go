@@ -5,7 +5,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // dpLoadBalancingFromFlag records that --dp-load-balancing was given, so the flag's value

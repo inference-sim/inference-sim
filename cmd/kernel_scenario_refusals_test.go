@@ -266,3 +266,21 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotModel(t *testing.T) {
 		}
 	}
 }
+
+// A MultiConnector P/D run states its assumption about the connector's children however opening
+// the pools ends: refused for counts that do not add up, the warning still reaches stderr, ahead
+// of the refusal, as it did before the pools moved to blis-vllm.
+func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios,
+		"--scenario", "deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml",
+		"--num-instances", "3", "--prefill-instances", "1", "--decode-instances", "1",
+		"--rate", "4", "--num-requests", "4", "--seed", "1")
+	if err == nil {
+		t.Fatal("counts that do not add up must be refused")
+	}
+	warn := strings.Index(stderr, "pd_transfer.connector MultiConnector is simulated as NixlConnector")
+	refusal := strings.Index(stderr, "the counts must add up")
+	if warn < 0 || refusal < 0 || warn > refusal {
+		t.Errorf("want the MultiConnector warning, then the refusal; stderr:\n%s", lastLines(stderr, 4))
+	}
+}

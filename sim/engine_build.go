@@ -24,7 +24,8 @@ func NewEngine(id string, cfg SimConfig) (*Simulator, error) {
 	kvCfg.Offload = kvCfg.Offload.ForInstance(id)
 	newKVStore := KVStoreConstructor()
 	if newKVStore == nil {
-		return nil, fmt.Errorf("NewEngine(%s): NewKVStoreFromConfig not registered: link blis-vllm's compat/kv (import _ \"github.com/inference-sim/blis-vllm/compat/kv\")", id)
+		return nil, fmt.Errorf("NewEngine(%s): NewKVStoreFromConfig not registered: link the engine's KV "+
+			"store at the binary's build site (inference-sim's cmd/engine_build.go)", id)
 	}
 	kvStore := newKVStore(kvCfg, cfg.Seed)
 	// Build the LoRA adapter-cost accessor (nil when the subsystem is inert) and

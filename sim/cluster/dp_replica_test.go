@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -99,6 +100,82 @@ func TestDPReplica_BalancerIsLoadAwareNotRoundRobin(t *testing.T) {
 // The balancer's own rule (staleness between publishes, the local bump, the KV-pressure
 // penalty, the in-flight floor) is tested with it, in blis-vllm compat/dplb; the tests here
 // check what the cluster does with its choice.
+
+// The cluster feeds the engine's balancer each rank's live state: its wait queue as waiting,
+// its running batch as running, its KV cache's used share as usage, and the cluster's in-flight
+// count on it. Each case leaves the ranks equal but for the inputs it names, so the pick shows
+// each input reached the balancer in its own place: a dropped or swapped input picks the other
+// rank. Scores are vLLM's, max(in_flight, waiting+running) + waiting x 6 x max(0, usage-0.5).
+func TestDPReplica_FeedsTheBalancerEachRanksLiveState(t *testing.T) {
+	replica := func(t *testing.T) (*ClusterSimulator, *dpReplica) {
+		cfg := newTestDeploymentConfig(2)
+		cfg.KVCacheConfig = sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0)
+		cfg.DPLockstepRanks = 2
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		return cs, cs.replicaOf["instance_0"]
+	}
+	waiting := func(inst *InstanceSimulator, n int) {
+		for i := 0; i < n; i++ {
+			inst.sim.WaitQ.Enqueue(dpReq(fmt.Sprintf("%s-w%d", inst.ID(), i), 0, 16, 1))
+		}
+	}
+	running := func(inst *InstanceSimulator, n int) {
+		b := &sim.Batch{}
+		for i := 0; i < n; i++ {
+			b.Requests = append(b.Requests, dpReq(fmt.Sprintf("%s-r%d", inst.ID(), i), 0, 16, 1))
+		}
+		inst.sim.RunningBatch = b
+	}
+	// kvUsed fills 90 of a rank's 100 blocks.
+	kvUsed := func(t *testing.T, inst *InstanceSimulator) {
+		t.Helper()
+		req := dpReq(string(inst.ID())+"-kv", 0, 90*16, 1)
+		if !inst.sim.KVCache.AllocateKVBlocks(req, 0, int64(req.InputLen()), nil) || inst.KVUtilization() < 0.85 {
+			t.Fatalf("%s: could not fill the KV cache (usage %v)", inst.ID(), inst.KVUtilization())
+		}
+	}
+	for _, c := range []struct {
+		name  string
+		setup func(t *testing.T, cs *ClusterSimulator, r0, r1 *InstanceSimulator)
+	}{
+		// 3 vs 0: rank 0's only load is the requests the front-end has in flight on it.
+		{"in flight", func(t *testing.T, cs *ClusterSimulator, r0, r1 *InstanceSimulator) {
+			cs.inFlightRequests[string(r0.ID())] = 3
+		}},
+		// Both full: rank 0 holds 2 waiting (2 + 2x6x0.4 = 6.8), rank 1 runs 3 (3).
+		{"waiting under KV pressure, against running", func(t *testing.T, cs *ClusterSimulator, r0, r1 *InstanceSimulator) {
+			kvUsed(t, r0)
+			kvUsed(t, r1)
+			waiting(r0, 2)
+			running(r1, 3)
+		}},
+		// 2 running vs 1 waiting: a dropped running count would score rank 0 at 0.
+		{"running", func(t *testing.T, cs *ClusterSimulator, r0, r1 *InstanceSimulator) {
+			running(r0, 2)
+			waiting(r1, 1)
+		}},
+		// One waiting on each: rank 0 is full (1 + 1x6x0.4 = 3.4), rank 1 is empty (1).
+		{"KV usage", func(t *testing.T, cs *ClusterSimulator, r0, r1 *InstanceSimulator) {
+			kvUsed(t, r0)
+			waiting(r0, 1)
+			waiting(r1, 1)
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cs, rep := replica(t)
+			c.setup(t, cs, rep.ranks[0], rep.ranks[1])
+			if got := cs.pickRank(rep, 1); got != rep.ranks[1] {
+				t.Errorf("picked %s; rank 0 carries the load, so want %s", got.ID(), rep.ranks[1].ID())
+			}
+		})
+	}
+	// Non-vacuity: with no load at all the ranks tie and the scan starts at rank 0, so each
+	// pick of rank 1 above is the named input's doing.
+	cs, rep := replica(t)
+	if got := cs.pickRank(rep, 1); got != rep.ranks[0] {
+		t.Errorf("idle ranks: picked %s, want the scan's first, %s", got.ID(), rep.ranks[0].ID())
+	}
+}
 
 // The ranks a replica's requests land on do not change the outcome: two identical requests
 // arriving together get identical TTFTs whichever rank serves each, and reordering

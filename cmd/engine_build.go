@@ -165,17 +165,18 @@ func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, tota
 
 // openKernelPools opens the prefill and decode pools of the run's scenario (build.OpenPools):
 // nil when no kernel is open or the run is not disaggregated, fatal when the pools cannot run.
+// Its startup warnings are logged first, a refused run's included.
 func openKernelPools(catalogRoot string) *kernelPools {
 	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry}
-	bp, err := build.OpenPools(kernelScenario, repos, kernelOpened != nil, runTopology())
+	bp, warnings, err := build.OpenPools(kernelScenario, repos, kernelOpened != nil, runTopology())
+	for _, w := range warnings {
+		logrus.Warnf("%s", w)
+	}
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	if bp == nil {
 		return nil
-	}
-	for _, w := range bp.Warnings {
-		logrus.Warnf("%s", w)
 	}
 	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
 	kernelPDOpened = p

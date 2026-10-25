@@ -125,6 +125,13 @@ A scenario that cannot be resolved -- absent file, unreadable coefficient set, u
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
 
+The scenario's `engine_version` must be a release the engine models. Today that is `0.29.0`
+or `0.31.0`: the simulator runs blis-vllm's compatibility engine, which reproduces how those
+releases ran before blis-vllm existed. A scenario stating any other release, `0.32.0`
+included, is refused before anything runs, naming the release, even though blis-vllm carries
+a 0.32.0 rules pack. The v0.32.0 engine is wired in when the scenarios are re-baselined
+(inference-sim#2027).
+
 ## Prefill/decode disaggregation
 
 A scenario with a `prefill` pool and a `decode` pool, run with `--prefill-instances` and

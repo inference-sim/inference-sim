@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	sim "github.com/inference-sim/inference-sim/sim"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // Catalog provenance (#1732, R1 task S5 of tracker #1727).

@@ -4,7 +4,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // The P/D pools are opened, checked and priced by the engine through the build site

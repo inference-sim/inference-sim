@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/inference-sim/sim"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // Speculative acceptance (#1939): how far a verification step advances a request is resolved
