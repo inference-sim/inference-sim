@@ -142,7 +142,7 @@ func TestDCPCommBackendsMatchSource(t *testing.T) {
 // tp % dcp must be 0; with it on, dcp must be one of 1, pcp, tp x pcp. A release that moved
 // or changed the condition fails here, so the rule cannot pass on a check vLLM no longer
 // makes.
-func TestDCPDividesTPMatchesSource(t *testing.T) {
+func TestDCPDividesTPMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "config", "parallel.py")
 	for _, want := range []string{
