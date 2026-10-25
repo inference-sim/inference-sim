@@ -99,6 +99,18 @@ func (r *Renderer) Rendered() int64 { return r.rendered }
 // WaitTicks is the summed time requests waited for a render thread.
 func (r *Renderer) WaitTicks() int64 { return r.waitTicks }
 
+// ReplicaAPIServers is how many API servers render a data-parallel replica's requests before
+// its balancer picks a rank: the stated --api-server-count, else vLLM's default for a replica
+// endpoint behind the internal or hybrid balancer, its data-parallel size
+// (vllm/entrypoints/cli/serve.py:107-129@5df63a72). Moved from inference-sim's cluster
+// (sim/cluster/dp_replica.go at 972b4abebc9d84130692e349b75da66c51781e16).
+func ReplicaAPIServers(stated, dp int) int {
+	if stated == 0 {
+		return dp
+	}
+	return stated
+}
+
 // ShareRenderer gives the ranks of one endpoint a single render stage of apiServers servers:
 // the replica behind vLLM's internal DP balancer, whose API servers render every request
 // before the balancer picks a rank. A no-op when the ranks' front end is inert.
