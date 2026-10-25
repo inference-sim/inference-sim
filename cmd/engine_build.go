@@ -6,6 +6,11 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
+	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
+	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
+	_ "github.com/inference-sim/blis-vllm/compat/kv"
+	_ "github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -300,3 +305,17 @@ func openModel(catalogRoot string) (*kernelmodel.Model, error) {
 func checkParallelism(moe bool) error {
 	return build.CheckParallelism(kernelScenario, model, dataParallelism, enableExpertParallel, moe)
 }
+
+// The engine's types that the rest of cmd names: the kernel for one pool, the scenario's
+// deployment shape, and the routing overrides handed to the pools.
+type (
+	engineModel      = kernelmodel.Model
+	scenarioShapeT   = kernelmodel.Shape
+	routingOverrides = kernelmodel.RoutingOverrides
+)
+
+// setRoutingOverrides hands the command line's routing layer to the pools about to open.
+func setRoutingOverrides(o routingOverrides) { kernelmodel.SetRoutingOverrides(o) }
+
+// currentRoutingOverridesOf is the routing layer the pools will open with.
+func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }

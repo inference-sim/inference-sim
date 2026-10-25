@@ -16,9 +16,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/blis-vllm/compat/kv"   // registers sim.NewKVStoreFromConfig, which sim.NewEngine builds KV stores with
-	_ "github.com/inference-sim/blis-vllm/compat/lora" // registers sim.NewAdapterRegistryFunc via init()
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -89,7 +86,7 @@ var (
 	kernelRegistry            string                 // CLI --registry: blis-registry clone root (required)
 	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
-	kernelOpened              *kernelmodel.Model     // the kernel adoptKernelDeployment opened; nil until it runs
+	kernelOpened              *engineModel           // the kernel adoptKernelDeployment opened; nil until it runs
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
 	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
@@ -508,7 +505,7 @@ func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
 // --policy-config bundle (applied later, when --scheduler is unset), then the scenario, then
 // the default. An explicit --scheduler that differs is a deliberate policy experiment and is
 // kept, with a warning that the simulated engine no longer matches the scenario.
-func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
+func adoptSchedulingPolicy(cmd *cobra.Command, m *engineModel) {
 	stated := enginePolicyOf(m)
 	scenarioScheduler, scenarioPreemption = stated.scheduler, stated.preemption
 	if cmd.Flags().Changed("scheduler") {
@@ -527,7 +524,7 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 
 // enginePolicyOf resolves a pool's engine.scheduling_policy (build.EnginePolicyOf); a policy
 // BLIS does not simulate is fatal.
-func enginePolicyOf(m *kernelmodel.Model) enginePolicy {
+func enginePolicyOf(m *engineModel) enginePolicy {
 	p, err := enginePolicyFor(m)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -2112,7 +2109,7 @@ func init() {
 
 // prefixHitOf is how the pool's KV cache groups cut a prefix hit. It records the resolution
 // for the results file and logs when the model's layout is not one BLIS maps.
-func prefixHitOf(what string, m *kernelmodel.Model) sim.KVPrefixHit {
+func prefixHitOf(what string, m *engineModel) sim.KVPrefixHit {
 	r := m.PrefixHit(swaBoundedReplay.v)
 	if r.Note != "" {
 		logrus.Warnf("prefix cache (%s): the hit is the full-attention prefix alone: %s", what, r.Note)

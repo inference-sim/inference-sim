@@ -3,7 +3,6 @@ package cmd
 import (
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -16,7 +15,7 @@ func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
 	return poolOverridesOf(p.prefill), poolOverridesOf(p.decode)
 }
 
-func poolOverridesOf(m *kernelmodel.Model) cluster.PoolOverrides {
+func poolOverridesOf(m *engineModel) cluster.PoolOverrides {
 	s, err := m.SettingsReserving(loraReservedBytesForKV)
 	if err != nil {
 		logrus.Fatalf("%s pool: %v", m.Role(), err)

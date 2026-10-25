@@ -12,7 +12,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	sim "github.com/inference-sim/inference-sim/sim"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -138,7 +137,7 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 // kernelProvenance is each opened pool's kernel evidence (#1942), keyed by pool role: the
 // colocated pool, or the prefill and decode pools of a disaggregated run; empty when no
 // kernel was opened.
-func kernelProvenance(colocated *kernelmodel.Model, pd *kernelPools) map[string]sim.KernelPoolProvenance {
+func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.KernelPoolProvenance {
 	out := map[string]sim.KernelPoolProvenance{}
 	if pd != nil {
 		out[string(pd.prefill.Role())] = pd.prefill.Provenance()

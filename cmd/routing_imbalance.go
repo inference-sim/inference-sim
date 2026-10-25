@@ -4,7 +4,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
@@ -33,9 +32,9 @@ func applyRoutingOverrides(cmd *cobra.Command) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	kernelmodel.SetRoutingOverrides(o)
+	setRoutingOverrides(o)
 }
 
-func currentRoutingOverrides() kernelmodel.RoutingOverrides {
-	return kernelmodel.CurrentRoutingOverrides()
+func currentRoutingOverrides() routingOverrides {
+	return currentRoutingOverridesOf()
 }

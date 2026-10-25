@@ -7,7 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -35,7 +34,7 @@ var (
 
 	// scenarioShape is the scenario's deployment shape and its acceptance and workload terms,
 	// read once by adoptKernelDeployment.
-	scenarioShape kernelmodel.Shape
+	scenarioShape scenarioShapeT
 
 	// workloadAcceptance is what the workload the run simulates states about acceptance -- a
 	// catalog preset's category, thinking mode and own value -- when it states anything; nil
