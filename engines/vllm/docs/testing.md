@@ -104,6 +104,9 @@ Every oracle trace records, in its `provenance` block:
 - `lockfile_sha256`, the hash of the environment's frozen package list. CI installs
   `oracle/requirements.lock` and records the hash of what `pip freeze` then lists; a local run
   passes its own list as `ORACLE_LOCKFILE`;
+- `requirements_lock_sha256`, the hash of the committed `oracle/requirements.lock`, which CI
+  installs and `oracle/check_lock.py` proves was installed exactly: the environment a CI trace
+  ran in is named by a file in the repository;
 - the helper model and its pinned revision;
 - the scenario's sha256, and the seed for a generated (fuzz) scenario (`seed`; `null` for a
   hand-written one);

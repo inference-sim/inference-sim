@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/1",
+  "version": "gpu-mock/2+025b232da37d",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {

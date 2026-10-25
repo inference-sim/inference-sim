@@ -446,6 +446,17 @@ def blis_vllm_commit() -> str:
         return "unknown"
 
 
+def committed_lock_sha256() -> str:
+    """The sha256 of the committed oracle/requirements.lock: the environment CI installs and
+    check_lock.py proves was installed exactly, so a trace names a lock in the repository."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "requirements.lock"), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return "unknown"
+
+
 def scenario_seed(scenario_path: str):
     """The seed a generated (fuzz) scenario was made from, or None for a hand-written one."""
     with open(scenario_path) as f:
@@ -488,6 +499,7 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "python": sys.version.split()[0],
         "platform": platform.system().lower() + "-" + platform.machine(),
         "lockfile_sha256": lock_digest,
+        "requirements_lock_sha256": committed_lock_sha256(),
         "blis_vllm_commit": blis_vllm_commit(),
         "seed": scenario_seed(scenario_path),
     }

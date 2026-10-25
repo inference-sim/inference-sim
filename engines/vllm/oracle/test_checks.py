@@ -160,6 +160,16 @@ class CheckMocks(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("which no runner makes", r.stdout)
 
+    def test_a_mock_list_change_without_a_new_version_fails(self):
+        with open(os.path.join(self.dir, "mocks.json")) as f:
+            spec = json.load(f)
+        spec["mocks"][0]["how"] += " (edited)"
+        with open(os.path.join(self.dir, "mocks.json"), "w") as f:
+            json.dump(spec, f)
+        r = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("does not name this mock list", r.stdout)
+
     def test_a_decision_symbol_fails(self):
         with open(os.path.join(self.dir, "mocks.json")) as f:
             spec = json.load(f)

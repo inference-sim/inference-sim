@@ -311,7 +311,7 @@ def _kv(scheduler) -> dict:
 def provenance(vllm_root: str, scenario_path: str, here: str, engine: dict) -> dict:
     if here not in sys.path:
         sys.path.insert(0, here)
-    from run_scheduler import blis_vllm_commit, scenario_seed  # noqa: E402
+    from run_scheduler import blis_vllm_commit, committed_lock_sha256, scenario_seed  # noqa: E402
 
     def git(*args):
         try:
@@ -344,6 +344,7 @@ def provenance(vllm_root: str, scenario_path: str, here: str, engine: dict) -> d
         "python": sys.version.split()[0],
         "platform": platform.system().lower() + "-" + platform.machine(),
         "lockfile_sha256": lock_digest,
+        "requirements_lock_sha256": committed_lock_sha256(),
         "blis_vllm_commit": blis_vllm_commit(),
         "seed": scenario_seed(scenario_path),
     }

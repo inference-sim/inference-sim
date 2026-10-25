@@ -15,9 +15,16 @@ scheduling, KV-cache or connector decision (#2021 B8). Two checks:
    makes fails too. A setting changed after a vLLM config was constructed is a site as well:
    the constructor's own checks do not see it.
 
+3. The version names the list. mocks.json's version is "gpu-mock/<n>+<digest>", where the
+   digest is the first 12 hex digits of the sha256 of the canonical JSON of its `mocks` list
+   (mocks_digest). A trace records the version, and the Go diff tests refuse a trace whose
+   version is not the current one, so a mock list that changes without its version changing
+   fails here, and one whose version changes makes every golden be refreshed.
+
 Usage: python3 -I oracle/check_mocks.py [oracle/mocks.json]
 """
 import ast
+import hashlib
 import json
 import os
 import sys
@@ -106,10 +113,21 @@ def runner_sites(oracle_dir: str) -> dict[str, int]:
     return out
 
 
+def mocks_digest(mocks: list) -> str:
+    """The first 12 hex digits of the sha256 of the mock list's canonical JSON."""
+    canonical = json.dumps(mocks, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:12]
+
+
 def main(path: str) -> int:
     with open(path) as f:
         spec = json.load(f)
     bad = []
+    version = spec.get("version", "")
+    digest = mocks_digest(spec["mocks"])
+    if not version.startswith("gpu-mock/") or not version.endswith("+" + digest):
+        bad.append(f"version {version!r} does not name this mock list: it must be gpu-mock/<n>+{digest} "
+                   "(bump <n> when the list changes; the digest is mocks_digest of the list)")
     listed: dict[str, str] = {}
     for m in spec["mocks"]:
         sym, kind = m["symbol"], m["kind"]
