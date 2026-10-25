@@ -40,7 +40,7 @@ func (sim *EngineCore) CancelOnTimeout(req *Request) bool {
 	// names only queued -> running -> completed, so timed-out is a terminal state the
 	// statement does not yet enumerate; this is not the only site that sets it.
 	req.State = StateTimedOut
-	sim.Rec.timedOut(req)
+	sim.Rec.RecordTimedOut(req)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,
@@ -112,14 +112,14 @@ func (sim *EngineCore) ParkedView() (waiting int, used, missDelta int64) {
 func (sim *EngineCore) ChargeSkippedPolls(k int64, p SkippedPolls) {
 	sim.stepCount += int(k)
 	for i := int64(0); i < k; i++ {
-		sim.Rec.queueSnapshot(p.Waiting, 0)
+		sim.Rec.RecordQueueSnapshot(p.Waiting, 0)
 	}
 	// The peak once, then the time-weighted usage once per poll (on the StepTime grid only):
 	// the float sum is accumulated poll by poll, in the same order as before.
-	sim.Rec.kvUsage(p.Used, 0, false)
+	sim.Rec.RecordKVUsage(p.Used, 0, false)
 	if !p.Free {
 		for i := int64(0); i < k; i++ {
-			sim.Rec.kvUsage(p.Used, p.Quantum, true)
+			sim.Rec.RecordKVUsage(p.Used, p.Quantum, true)
 		}
 	}
 	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.MissDelta)

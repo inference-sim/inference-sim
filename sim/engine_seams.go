@@ -3,78 +3,78 @@
 // report record). The Simulator and *Metrics implement them (#2021 B2, B3).
 package sim
 
-// engineHost is what the engine needs from the simulator it runs in (#2021 B3: the clock,
+// EngineHost is what the engine needs from the simulator it runs in (#2021 B3: the clock,
 // the event queue and the callbacks stay with the host). The engine reaches the host only
 // through it, so the engine can move to blis-vllm with the host left behind (PLAN-E2 E2.3).
 // The calls are made at exactly the points the engine made them before, so events are
 // created in the same order with the same seqIDs (hazard 2).
-type engineHost interface {
+type EngineHost interface {
 	// CurrentClock is the simulation clock.
 	CurrentClock() int64
 	// SimHorizon is the simulation horizon.
 	SimHorizon() int64
-	// scheduleTimeout queues the request's client-deadline timeout at t (PriorityTimeout).
-	scheduleTimeout(req *Request, t int64)
-	// scheduleScheduled and scheduleLeft queue the observational scheduled and request-left
+	// ScheduleTimeout queues the request's client-deadline timeout at t (PriorityTimeout).
+	ScheduleTimeout(req *Request, t int64)
+	// ScheduleScheduled and ScheduleLeft queue the observational scheduled and request-left
 	// events at t (PriorityScheduled, PriorityRequestLeft).
-	scheduleScheduled(req *Request, t int64)
-	scheduleLeft(req *Request, t int64)
-	// scheduleAdapterLoaded queues the completion of an adapter's load at t
+	ScheduleScheduled(req *Request, t int64)
+	ScheduleLeft(req *Request, t int64)
+	// ScheduleAdapterLoaded queues the completion of an adapter's load at t
 	// (PriorityAdapterLoad).
-	scheduleAdapterLoaded(adapter string, t int64)
-	// requestDone hands a request that reached a terminal state, at tick, to the host's
+	ScheduleAdapterLoaded(adapter string, t int64)
+	// RequestDone hands a request that reached a terminal state, at tick, to the host's
 	// callback, and injects the follow-ups it returns. A no-op without a callback.
-	requestDone(req *Request, tick int64)
-	// firstToken reports a request's first token, received by the client at at.
-	firstToken(req *Request, at int64)
-	// wakeStep makes sure a step fires no later than t (scheduleStepBy).
-	wakeStep(t int64)
-	// armStep arms the next step at t (scheduleStepAt).
-	armStep(t int64)
-	// stepArmed reports whether a step is armed.
-	stepArmed() bool
+	RequestDone(req *Request, tick int64)
+	// FirstTokenAt reports a request's first token, received by the client at at.
+	FirstTokenAt(req *Request, at int64)
+	// WakeStep makes sure a step fires no later than t (scheduleStepBy).
+	WakeStep(t int64)
+	// ArmStep arms the next step at t (scheduleStepAt).
+	ArmStep(t int64)
+	// StepArmed reports whether a step is armed.
+	StepArmed() bool
 }
 
-// recorder is how the engine writes the host's report record: every count, latency and series
+// Recorder is how the engine writes the host's report record: every count, latency and series
 // the engine produces goes through one of these calls, at exactly the point the engine used to
 // write the field (#2021 B2: inference-sim owns its reports; the engine updates them through
 // the seam, PLAN-E2 E2.3b). *Metrics implements it.
-type recorder interface {
-	// requestArrived registers a request the instance has received; arrivedAt is its arrival
+type Recorder interface {
+	// RecordArrival registers a request the instance has received; arrivedAt is its arrival
 	// in seconds.
-	requestArrived(req *Request, arrivedAt float64)
-	// requestDropped records a request dropped at enqueue: contextOverflow when it exceeds
+	RecordArrival(req *Request, arrivedAt float64)
+	// RecordDrop records a request dropped at enqueue: contextOverflow when it exceeds
 	// the context window.
-	requestDropped(req *Request, contextOverflow bool)
-	// inputReceived counts a received request's prompt tokens.
-	inputReceived(tokens int64)
-	// timedOut records a request its client deadline cancelled.
-	timedOut(req *Request)
-	// preempted counts one preemption.
-	preempted()
-	// preemptions is the cumulative preemption count.
-	preemptions() int64
-	// scheduled records a request's admission into the running batch at now: its scheduling
+	RecordDrop(req *Request, contextOverflow bool)
+	// RecordInputTokens counts a received request's prompt tokens.
+	RecordInputTokens(tokens int64)
+	// RecordTimedOut records a request its client deadline cancelled.
+	RecordTimedOut(req *Request)
+	// RecordPreemption counts one preemption.
+	RecordPreemption()
+	// PreemptionsSoFar is the cumulative preemption count.
+	PreemptionsSoFar() int64
+	// RecordScheduled records a request's admission into the running batch at now: its scheduling
 	// delay and its prefix-cache lookup.
-	scheduled(req *Request, now int64, lookup PrefixLookup)
-	// firstToken records a request's time to first token, in ticks.
-	firstToken(req *Request)
-	// queueSnapshot records the wait queue and running batch sizes after a schedule.
-	queueSnapshot(waiting, running int)
-	// kvUsage records a step's KV blocks in use over duration ticks (the time-weighted
+	RecordScheduled(req *Request, now int64, lookup PrefixLookup)
+	// FirstTokenAt records a request's time to first token, in ticks.
+	RecordFirstToken(req *Request)
+	// RecordQueueSnapshot records the wait queue and running batch sizes after a schedule.
+	RecordQueueSnapshot(waiting, running int)
+	// RecordKVUsage records a step's KV blocks in use over duration ticks (the time-weighted
 	// integral and the peak). With weight false it updates the peak only (a free poll).
-	kvUsage(used, duration int64, weight bool)
-	// completed records a finished request (see recordRequestCompletion for each value).
-	completed(c Completion)
-	// lengthCapped records a request force-completed at the context limit.
-	lengthCapped(req *Request)
-	// kvAllocationFailure counts a final-token KV allocation that failed.
-	kvAllocationFailure()
-	// adapterLoaded and adapterEvicted count LoRA residency transitions.
-	adapterLoaded(id string)
-	adapterEvicted(id string)
-	// stillHeld records the requests the engine still holds at the end of the run.
-	stillHeld(waiting, running int)
+	RecordKVUsage(used, duration int64, weight bool)
+	// RecordCompletion records a finished request (see recordRequestCompletion for each value).
+	RecordCompletion(c Completion)
+	// RecordLengthCapped records a request force-completed at the context limit.
+	RecordLengthCapped(req *Request)
+	// RecordKVAllocationFailure counts a final-token KV allocation that failed.
+	RecordKVAllocationFailure()
+	// RecordAdapterLoad and RecordAdapterEviction count LoRA residency transitions.
+	RecordAdapterLoad(id string)
+	RecordAdapterEviction(id string)
+	// RecordStillHeldAtEnd records the requests the engine still holds at the end of the run.
+	RecordStillHeldAtEnd(waiting, running int)
 }
 
 // completion is one finished request's report values, computed by the engine.

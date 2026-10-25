@@ -14,35 +14,47 @@ type countingRecorder struct {
 
 func (c *countingRecorder) count(name string) { c.calls[name]++ }
 
-func (c *countingRecorder) requestDropped(req *Request, overflow bool) {
+func (c *countingRecorder) RecordDrop(req *Request, overflow bool) {
 	c.count("requestDropped")
-	c.Metrics.requestDropped(req, overflow)
+	c.Metrics.RecordDrop(req, overflow)
 }
-func (c *countingRecorder) inputReceived(n int64) {
+func (c *countingRecorder) RecordInputTokens(n int64) {
 	c.count("inputReceived")
-	c.Metrics.inputReceived(n)
+	c.Metrics.RecordInputTokens(n)
 }
-func (c *countingRecorder) timedOut(req *Request)   { c.count("timedOut"); c.Metrics.timedOut(req) }
-func (c *countingRecorder) preempted()              { c.count("preempted"); c.Metrics.preempted() }
-func (c *countingRecorder) firstToken(req *Request) { c.count("firstToken"); c.Metrics.firstToken(req) }
-func (c *countingRecorder) completed(cp Completion) { c.count("completed"); c.Metrics.completed(cp) }
-func (c *countingRecorder) lengthCapped(req *Request) {
+func (c *countingRecorder) RecordTimedOut(req *Request) {
+	c.count("timedOut")
+	c.Metrics.RecordTimedOut(req)
+}
+func (c *countingRecorder) RecordPreemption() { c.count("preempted"); c.Metrics.RecordPreemption() }
+func (c *countingRecorder) RecordFirstToken(req *Request) {
+	c.count("firstToken")
+	c.Metrics.RecordFirstToken(req)
+}
+func (c *countingRecorder) RecordCompletion(cp Completion) {
+	c.count("completed")
+	c.Metrics.RecordCompletion(cp)
+}
+func (c *countingRecorder) RecordLengthCapped(req *Request) {
 	c.count("lengthCapped")
-	c.Metrics.lengthCapped(req)
+	c.Metrics.RecordLengthCapped(req)
 }
-func (c *countingRecorder) queueSnapshot(w, r int) {
+func (c *countingRecorder) RecordQueueSnapshot(w, r int) {
 	c.count("queueSnapshot")
-	c.Metrics.queueSnapshot(w, r)
+	c.Metrics.RecordQueueSnapshot(w, r)
 }
-func (c *countingRecorder) scheduled(req *Request, now int64, l PrefixLookup) {
+func (c *countingRecorder) RecordScheduled(req *Request, now int64, l PrefixLookup) {
 	c.count("scheduled")
-	c.Metrics.scheduled(req, now, l)
+	c.Metrics.RecordScheduled(req, now, l)
 }
-func (c *countingRecorder) kvUsage(used, d int64, w bool) {
+func (c *countingRecorder) RecordKVUsage(used, d int64, w bool) {
 	c.count("kvUsage")
-	c.Metrics.kvUsage(used, d, w)
+	c.Metrics.RecordKVUsage(used, d, w)
 }
-func (c *countingRecorder) stillHeld(w, r int) { c.count("stillHeld"); c.Metrics.stillHeld(w, r) }
+func (c *countingRecorder) RecordStillHeldAtEnd(w, r int) {
+	c.count("stillHeld")
+	c.Metrics.RecordStillHeldAtEnd(w, r)
+}
 
 // The engine writes the host's report record only through its recorder (#2021 B2, E2.3b): a
 // run whose recorder counts the calls ends with the same report as one writing straight into

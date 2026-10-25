@@ -1,6 +1,6 @@
 // sim/engine.go: the engine half of an instance (EngineCore): every scheduling, KV-cache and
-// metric decision, reaching its host only through engineHost and its report only through
-// recorder (#2021 B3, PLAN-E2 E2.3).
+// metric decision, reaching its host only through EngineHost and its report only through
+// Recorder (#2021 B3, PLAN-E2 E2.3).
 package sim
 
 import (
@@ -28,8 +28,8 @@ const _ = uint(math.MaxInt32 - MaxTokenID)
 // holds no clock and no event queue (#2021 B3); what it needs from the host it gets from the
 // Simulator it is embedded in until the split is finished.
 type EngineCore struct {
-	// host is the simulator this engine runs in (engineHost), set at construction.
-	Host engineHost
+	// Host is the simulator this engine runs in (EngineHost), set at construction.
+	Host EngineHost
 	// WaitQ aka request waiting queue before it is scheduled
 	WaitQ   *WaitQueue
 	KVCache KVStore
@@ -38,8 +38,8 @@ type EngineCore struct {
 	// Requests are ordered by First-Come-First-Served in WaitQ, and the same order is maintained
 	// while adding requests to RunningBatch
 	RunningBatch *Batch
-	// rec is where the engine writes the report (recorder): the host's Metrics.
-	Rec recorder
+	// Rec is where the engine writes the report (Recorder): the host's Metrics.
+	Rec Recorder
 	// max number of requests RunningBatch can hold
 	maxNumSeqs int64
 	// max total number of new tokens across all requests in RunningBatch
@@ -309,8 +309,8 @@ func (sim *EngineCore) BatchSize() int {
 // (the abort may have freed KV); a lockstep rank asks its group (scheduleStepAt).
 func (sim *EngineCore) NoteAbort(now int64) {
 	sim.abortPending = true
-	if !sim.Host.stepArmed() {
-		sim.Host.armStep(now)
+	if !sim.Host.StepArmed() {
+		sim.Host.ArmStep(now)
 	}
 }
 
@@ -319,7 +319,7 @@ func (sim *EngineCore) NoteAbort(now int64) {
 // the last request from RunningBatch.
 func (sim *EngineCore) ScheduleStepIfIdle(time int64) {
 	if sim.WaitQ.Len() > 0 {
-		sim.Host.wakeStep(time)
+		sim.Host.WakeStep(time)
 	}
 }
 
@@ -384,9 +384,9 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
-		sim.Rec.requestDropped(r, false)
+		sim.Rec.RecordDrop(r, false)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
-		sim.Host.requestDone(r, sim.Host.CurrentClock())
+		sim.Host.RequestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
@@ -395,8 +395,8 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 		if r.InputLen() >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
-			sim.Rec.requestDropped(r, true)
-			sim.Host.requestDone(r, sim.Host.CurrentClock())
+			sim.Rec.RecordDrop(r, true)
+			sim.Host.RequestDone(r, sim.Host.CurrentClock())
 			return
 		}
 		if r.MaxOutputLen > 0 {
@@ -404,8 +404,8 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
-				sim.Rec.requestDropped(r, true)
-				sim.Host.requestDone(r, sim.Host.CurrentClock())
+				sim.Rec.RecordDrop(r, true)
+				sim.Host.RequestDone(r, sim.Host.CurrentClock())
 				return
 			}
 		}
@@ -416,20 +416,20 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
-		sim.Rec.requestDropped(r, false)
-		sim.Host.requestDone(r, sim.Host.CurrentClock())
+		sim.Rec.RecordDrop(r, false)
+		sim.Host.RequestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
 	// Input tokens counted BEFORE past-due check (request was received)
-	sim.Rec.inputReceived(r.InputLen())
+	sim.Rec.RecordInputTokens(r.InputLen())
 
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
 	if r.Deadline > 0 && r.Deadline <= sim.Host.CurrentClock() {
 		r.State = StateTimedOut
-		sim.Rec.timedOut(r)
-		sim.Host.requestDone(r, sim.Host.CurrentClock())
+		sim.Rec.RecordTimedOut(r)
+		sim.Host.RequestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
@@ -448,7 +448,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 	// Schedule timeout event (after all guards + enqueue — BC-5)
 	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
 	if r.Deadline > 0 && r.Deadline <= sim.Host.SimHorizon() {
-		sim.Host.scheduleTimeout(r, r.Deadline)
+		sim.Host.ScheduleTimeout(r, r.Deadline)
 	}
 }
 
@@ -475,27 +475,27 @@ func (sim *EngineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 
 	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
 	if r.Deadline > 0 && r.Deadline <= sim.Host.SimHorizon() {
-		sim.Host.scheduleTimeout(r, r.Deadline)
+		sim.Host.ScheduleTimeout(r, r.Deadline)
 	}
 
 	// Trigger StepEvent if idle (work-conserving: INV-8).
 	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
 	// at a stale instance time that precedes the cluster time when it was injected.
 	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
-		sim.Host.wakeStep(max(sim.Host.CurrentClock(), clusterTime))
+		sim.Host.WakeStep(max(sim.Host.CurrentClock(), clusterTime))
 	}
 }
 
 // recordQueueSnapshots records the wait queue and running batch sizes at this step.
 // Called after batch formation, before execution.
 func (sim *EngineCore) recordQueueSnapshots() {
-	sim.Rec.queueSnapshot(sim.WaitQ.Len(), len(sim.RunningBatch.Requests))
+	sim.Rec.RecordQueueSnapshot(sim.WaitQ.Len(), len(sim.RunningBatch.Requests))
 }
 
 // recordKVUsageMetrics records peak and time-weighted KV block usage.
 // Called after execution, before completion processing.
 func (sim *EngineCore) recordKVUsageMetrics(stepDuration int64) {
-	sim.Rec.kvUsage(sim.KVCache.UsedBlocks(), stepDuration, true)
+	sim.Rec.RecordKVUsage(sim.KVCache.UsedBlocks(), stepDuration, true)
 }
 
 // recordRequestCompletion records per-request metrics for a completed request.
@@ -606,7 +606,7 @@ func (sim *EngineCore) recordRequestCompletion(req *Request) {
 			itl = float64(reqTotalOutput) / float64(max(len(req.OutputTokens)-1, 1))
 		}
 	}
-	sim.Rec.completed(Completion{
+	sim.Rec.RecordCompletion(Completion{
 		Req:          req,
 		TTFT:         req.FirstTokenTime,
 		OutputTokens: max(outputTokens, 0),
@@ -645,7 +645,7 @@ func (sim *EngineCore) RecordStillHeld() {
 	if sim.RunningBatch != nil {
 		running = len(sim.RunningBatch.Requests)
 	}
-	sim.Rec.stillHeld(sim.WaitQ.Len(), running)
+	sim.Rec.RecordStillHeldAtEnd(sim.WaitQ.Len(), running)
 }
 
 // idleStep is a step that found nothing to run. The step after an abort that left nothing to
@@ -743,7 +743,7 @@ func (sim *EngineCore) scheduleBatch(now int64) {
 	// Record preemption metrics and emit debug log for each preempted request
 	for _, p := range batchResult.Preempted {
 		logrus.Debugf("<< Preemption: %s at %d ticks", p.Request.ID, now)
-		sim.Rec.preempted()
+		sim.Rec.RecordPreemption()
 	}
 	sim.lastStepPreempted = len(batchResult.Preempted) > 0
 
@@ -751,8 +751,8 @@ func (sim *EngineCore) scheduleBatch(now int64) {
 
 	// Schedule events for newly scheduled requests and record scheduling metrics
 	for _, s := range batchResult.NewlyScheduled {
-		sim.Host.scheduleScheduled(s.Request, now)
-		sim.Rec.scheduled(s.Request, now, s.Lookup)
+		sim.Host.ScheduleScheduled(s.Request, now)
+		sim.Rec.RecordScheduled(s.Request, now, s.Lookup)
 		if sim.serverSeries != nil {
 			sim.serverSeries.recordAdmission(now, s.Request, s.Lookup)
 		}
@@ -834,11 +834,11 @@ func (sim *EngineCore) maybeStartAdapterLoad(now int64) {
 			// running requests, which make progress.)
 			return
 		}
-		sim.Rec.adapterEvicted(evicted)
+		sim.Rec.RecordAdapterEviction(evicted)
 	}
 	sim.loadingAdapter = head.Adapter
 	loadTicks := max(1, int64(math.Ceil(sim.adapterCost.LoadLatency(head.Adapter))))
-	sim.Host.scheduleAdapterLoaded(head.Adapter, now+loadTicks)
+	sim.Host.ScheduleAdapterLoaded(head.Adapter, now+loadTicks)
 }
 
 // completeAdapterLoad finishes a cold-adapter load: it makes the adapter resident
@@ -860,7 +860,7 @@ func (sim *EngineCore) CompleteAdapterLoad(now int64, adapter string) {
 	// increment) already happened at load-start, so it is always "" here; any future
 	// path that calls Store at capacity would need to account for that eviction.
 	if _, admitted := sim.residentAdapters.Store(adapter); admitted {
-		sim.Rec.adapterLoaded(adapter) // charged once per cold transition (INV-L3)
+		sim.Rec.RecordAdapterLoad(adapter) // charged once per cold transition (INV-L3)
 	} else {
 		logrus.Errorf("[tick %07d] adapter %q load completed but could not be made resident (set full and fully pinned) — resident-set accounting bug", now, adapter)
 	}
@@ -998,12 +998,12 @@ func (sim *EngineCore) advanceBatch(now, currStepAdvance int64) {
 		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
-			sim.Rec.firstToken(req)
+			sim.Rec.RecordFirstToken(req)
 			emitted++ // the prefill-completing step samples the first token
 			if sim.serverSeries != nil {
 				sim.serverSeries.recordFirstToken(now+currStepAdvance, req)
 			}
-			sim.Host.firstToken(req, req.ArrivalTime+req.FirstTokenTime)
+			sim.Host.FirstTokenAt(req, req.ArrivalTime+req.FirstTokenTime)
 		}
 	}
 
@@ -1052,7 +1052,7 @@ func (sim *EngineCore) processCompletions(now, currStepAdvance int64) []*Request
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)
-					sim.Rec.kvAllocationFailure()
+					sim.Rec.RecordKVAllocationFailure()
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
@@ -1062,13 +1062,13 @@ func (sim *EngineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.Host.scheduleLeft(req, req.DepartureTime)
+			sim.Host.ScheduleLeft(req, req.DepartureTime)
 
 			// Record completion metrics
 			sim.recordRequestCompletion(req)
 
 			// Invoke completion callback for session management
-			sim.Host.requestDone(req, now+currStepAdvance)
+			sim.Host.RequestDone(req, now+currStepAdvance)
 		} else if sim.maxModelLen > 0 && req.ProgressIndex >= sim.maxModelLen-1 {
 			// BC-5: Proactive MaxModelLen cap — force-complete at boundary.
 			// After the proactive cap in FormBatch prevents scheduling tokens beyond
@@ -1100,7 +1100,7 @@ func (sim *EngineCore) processCompletions(now, currStepAdvance int64) []*Request
 			logrus.Warnf("[tick %07d] force-completing request %s: ProgressIndex %d >= MaxModelLen-1 %d (length-capped)",
 				now, req.ID, req.ProgressIndex, sim.maxModelLen-1)
 			req.LengthCapped = true
-			sim.Rec.lengthCapped(req)
+			sim.Rec.RecordLengthCapped(req)
 			// INV-2 (request lifecycle): the terminal running -> completed edge on
 			// the length-capped path. A force-completed request is still completed,
 			// not a distinct terminal state — the LengthCapped flag records why.
@@ -1111,11 +1111,11 @@ func (sim *EngineCore) processCompletions(now, currStepAdvance int64) []*Request
 			sim.releaseFinishedKV(req)
 			req.FinishedStepIdx = sim.stepCount
 			req.DepartureTime = now + currStepAdvance
-			sim.Host.scheduleLeft(req, req.DepartureTime)
+			sim.Host.ScheduleLeft(req, req.DepartureTime)
 			sim.recordRequestCompletion(req)
 
 			// Invoke completion callback for session management (length-capped)
-			sim.Host.requestDone(req, now+currStepAdvance)
+			sim.Host.RequestDone(req, now+currStepAdvance)
 		} else {
 			remaining = append(remaining, req)
 		}

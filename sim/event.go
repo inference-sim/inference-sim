@@ -194,5 +194,5 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	}
 
 	// Invoke completion callback for session management
-	sim.requestDone(e.Request, e.time)
+	sim.RequestDone(e.Request, e.time)
 }

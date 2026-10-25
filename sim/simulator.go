@@ -100,27 +100,27 @@ type Simulator struct {
 	nextSnapshotClockUs        int64
 }
 
-func (sim *Simulator) scheduleTimeout(req *Request, t int64) {
+func (sim *Simulator) ScheduleTimeout(req *Request, t int64) {
 	sim.Schedule(&TimeoutEvent{time: t, Request: req})
 }
-func (sim *Simulator) scheduleScheduled(req *Request, t int64) {
+func (sim *Simulator) ScheduleScheduled(req *Request, t int64) {
 	sim.Schedule(&ScheduledEvent{time: t, Request: req})
 }
-func (sim *Simulator) scheduleLeft(req *Request, t int64) {
+func (sim *Simulator) ScheduleLeft(req *Request, t int64) {
 	sim.Schedule(&RequestLeftEvent{time: t, Request: req})
 }
-func (sim *Simulator) scheduleAdapterLoaded(adapter string, t int64) {
+func (sim *Simulator) ScheduleAdapterLoaded(adapter string, t int64) {
 	sim.Schedule(&AdapterLoadCompletionEvent{time: t, Adapter: adapter})
 }
-func (sim *Simulator) wakeStep(t int64) { sim.scheduleStepBy(t) }
-func (sim *Simulator) armStep(t int64)  { sim.scheduleStepAt(t) }
-func (sim *Simulator) stepArmed() bool  { return sim.stepEvent != nil }
-func (sim *Simulator) firstToken(req *Request, at int64) {
+func (sim *Simulator) WakeStep(t int64) { sim.scheduleStepBy(t) }
+func (sim *Simulator) ArmStep(t int64)  { sim.scheduleStepAt(t) }
+func (sim *Simulator) StepArmed() bool  { return sim.stepEvent != nil }
+func (sim *Simulator) FirstTokenAt(req *Request, at int64) {
 	if sim.OnFirstToken != nil {
 		sim.OnFirstToken(req, at)
 	}
 }
-func (sim *Simulator) requestDone(req *Request, tick int64) {
+func (sim *Simulator) RequestDone(req *Request, tick int64) {
 	if sim.OnRequestDone != nil {
 		for _, next := range sim.OnRequestDone(req, tick) {
 			sim.InjectArrival(next)
