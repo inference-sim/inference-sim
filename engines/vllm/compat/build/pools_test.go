@@ -14,6 +14,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 )
 
 func readScenario(t *testing.T, repos kernelmodel.Repos) string {
@@ -122,6 +123,17 @@ func TestRunTimeFailuresNeverPriceAFreeTransfer(t *testing.T) {
 	mustPanic("an unknown tier", func() { TierTicks(p.Prefill, "no-such-tier", true, 4096, 1, returning) })
 	if got := TierTicks(p.Prefill, KernelCPUTier, true, 4096, 1, noFatal(t)); got <= 0 {
 		t.Errorf("a known tier: %d ticks, want a positive price", got)
+	}
+	// The handoff demand's run-time failure: a demand the kernel could not give.
+	broken := func(int64, kernel.Placement, kernel.Placement) (kvtransfer.Flow, error) {
+		return kvtransfer.Flow{}, fmt.Errorf("a malformed demand")
+	}
+	mustPanic("a malformed handoff demand", func() { flowOrFail(broken, 64, kernel.Placement{}, kernel.Placement{}, returning) })
+	fine := func(int64, kernel.Placement, kernel.Placement) (kvtransfer.Flow, error) {
+		return kvtransfer.Flow{Bytes: 1}, nil
+	}
+	if f := flowOrFail(fine, 64, kernel.Placement{}, kernel.Placement{}, noFatal(t)); f.Bytes != 1 {
+		t.Errorf("a well-formed demand: flow %+v, want the demand's own", f)
 	}
 }
 

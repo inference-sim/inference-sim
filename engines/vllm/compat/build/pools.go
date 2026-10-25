@@ -305,13 +305,21 @@ func (p *Pools) transferDemand(scenario string, top Topology, blockSizeTokens in
 		}
 	}
 	return func(tokens int64, from, to string) kvtransfer.Flow {
-		f, err := demand(tokens, p.Prefill.PlacementOf(RankInPool(from, firstDecode)),
-			p.Decode.PlacementOf(RankInPool(to, firstDecode)))
-		if err != nil {
-			failRun(fatal, err)
-		}
-		return f
+		return flowOrFail(demand, tokens, p.Prefill.PlacementOf(RankInPool(from, firstDecode)),
+			p.Decode.PlacementOf(RankInPool(to, firstDecode)), fatal)
 	}, nil
+}
+
+// flowOrFail is a run-time handoff's flow: demand's, or, when the kernel's demand is malformed
+// (which the up-front checks did not see), a failure reported through fatal, never an empty flow
+// that would move the KV for free.
+func flowOrFail(demand func(int64, kernel.Placement, kernel.Placement) (kvtransfer.Flow, error),
+	tokens int64, from, to kernel.Placement, fatal Fatal) kvtransfer.Flow {
+	f, err := demand(tokens, from, to)
+	if err != nil {
+		failRun(fatal, err)
+	}
+	return f
 }
 
 // requireSameKVCacheFormat refuses a disaggregated scenario whose pools state different KV
