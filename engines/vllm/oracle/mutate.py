@@ -134,6 +134,9 @@ MUTANTS = [
     ("M54", "max_num_scheduled_tokens", "core/sched/scheduler.go",
      "\tif s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}",
      "\tif false && s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}"),
+    # blis-vllm#20 review S17.
+    ("M55", "layers sharing one spec form one KV cache group", "core/kv/manager.go",
+     "\tif uniform {\n\t\treturn []Group{layers[0]}\n\t}\n", "\tif uniform && false {\n\t\treturn []Group{layers[0]}\n\t}\n"),
 ]
 
 

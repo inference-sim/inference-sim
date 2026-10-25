@@ -308,7 +308,17 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
             assert is_kv_cache_spec_uniform(layers)
             specs = _get_kv_cache_groups_uniform_spec(layers)
         else:
-            specs = [KVCacheGroupSpec([name], spec) for name, spec in layers.items()]
+            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+                _get_kv_cache_groups_uniform_spec,
+                is_kv_cache_spec_uniform,
+            )
+
+            # Layers that share one spec form one group, as get_kv_cache_groups gives them
+            # (kv_cache_utils.py:2185-2189@5df63a72); otherwise each layer is its own group.
+            if is_kv_cache_spec_uniform(layers):
+                specs = _get_kv_cache_groups_uniform_spec(layers)
+            else:
+                specs = [KVCacheGroupSpec([name], spec) for name, spec in layers.items()]
         return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors, kv_cache_groups=specs)
 
     # DSpark runs only on vLLM's V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72), which

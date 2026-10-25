@@ -101,3 +101,26 @@ func TestMultiModuleMTPKeepsExtraTokensBelowTheWindow(t *testing.T) {
 		}
 	}
 }
+
+// A model whose layers share one spec is one KV cache group, as get_kv_cache_groups gives it
+// (vllm/v1/core/kv_cache_utils.py:2185-2189@5df63a72): vLLM's own call returns one
+// FullAttentionSpec group for two full-attention layers and one SlidingWindowSpec group for
+// two equal windows. Distinct specs stay one group each.
+func TestUniformLayersAreOneGroup(t *testing.T) {
+	full, sw8, sw12 := Group{Kind: FullAttention}, Group{Kind: SlidingWindow, Window: 8}, Group{Kind: SlidingWindow, Window: 12}
+	for _, c := range []struct {
+		layers []Group
+		want   []Group
+	}{
+		{[]Group{full, full}, []Group{full}},
+		{[]Group{sw8, sw8}, []Group{sw8}},
+		{[]Group{sw8}, []Group{sw8}},
+		{[]Group{full, sw8}, []Group{full, sw8}},
+		{[]Group{sw8, sw12}, []Group{sw8, sw12}},
+	} {
+		got := ResolveGroups(c.layers, false)
+		if fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("ResolveGroups(%v) = %v, want %v", c.layers, got, c.want)
+		}
+	}
+}

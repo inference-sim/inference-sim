@@ -27,22 +27,32 @@ type Group struct {
 
 // ResolveGroups is the grouping of a model's layer specs that the scheduler sees
 // (get_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:2159-2243@5df63a72), for layers that
-// are full attention or sliding windows of one block size: one group per distinct spec in
-// the order first seen, and with disableHybrid (disable_hybrid_kv_cache_manager,
-// vllm/config/scheduler.py:182) every sliding window promoted to full attention when full
-// attention is present (unify_hybrid_kv_cache_specs, :1799-1822), which leaves one group.
+// are full attention or sliding windows of one block size. A model whose layers all share
+// one spec is one group (_get_kv_cache_groups_uniform_spec, :2185-2189); with disableHybrid
+// (disable_hybrid_kv_cache_manager, vllm/config/scheduler.py:182) every sliding window is
+// first promoted to full attention when full attention is present
+// (unify_hybrid_kv_cache_specs, :1799-1822), which leaves one group. A hybrid model's layers
+// are taken as its groups, one each, in order: vLLM's split of a hybrid model into
+// equal-size groups (_get_kv_cache_groups_uniform_page_size, :1362-1502) gives that for one
+// layer per attention type, which is what the scenarios state.
 func ResolveGroups(layers []Group, disableHybrid bool) []Group {
 	if len(layers) == 0 {
 		return nil
 	}
-	hasFull := false
+	hasFull, uniform := false, true
 	for _, l := range layers {
 		if l.Kind == FullAttention {
 			hasFull = true
 		}
+		if l != layers[0] {
+			uniform = false
+		}
 	}
 	if disableHybrid && hasFull {
 		return []Group{{Kind: FullAttention}}
+	}
+	if uniform {
+		return []Group{layers[0]}
 	}
 	return layers
 }
