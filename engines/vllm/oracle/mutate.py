@@ -134,6 +134,16 @@ MUTANTS = [
     ("M54", "max_num_scheduled_tokens", "core/sched/scheduler.go",
      "\tif s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}",
      "\tif false && s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}"),
+    # A mutant of their own for three rows that had only shared ones (verification pass 1,
+    # gap 11): each touches only its row's knob.
+    ("M56", "max_num_active_seqs", "core/sched/scheduler.go",
+     "\tif s.cfg.MaxNumActiveSeqs > 0 {\n\t\treturn s.cfg.MaxNumActiveSeqs\n\t}",
+     "\tif false && s.cfg.MaxNumActiveSeqs > 0 {\n\t\treturn s.cfg.MaxNumActiveSeqs\n\t}"),
+    ("M57", "block_size", "core/kv/manager.go",
+     "\t\trequired := cdiv(numTokens, m.blockSize)\n", "\t\trequired := cdiv(numTokens, m.blockSize+1)\n"),
+    ("M58", "max_loras per-batch skip", "core/sched/scheduler.go",
+     "if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) == s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {",
+     "if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) > s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {"),
     # blis-vllm#20 review S17.
     ("M55", "layers sharing one spec form one KV cache group", "core/kv/manager.go",
      "\tif uniform {\n\t\treturn []Group{layers[0]}\n\t}\n", "\tif uniform && false {\n\t\treturn []Group{layers[0]}\n\t}\n"),
