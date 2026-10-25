@@ -135,7 +135,9 @@ push or pull request with a commit that changes the decisions an existing golden
 `steps` or `finished`), or deletes one, without a `golden-reviewed: <reviewer>` trailer naming
 the person who checked it. A new golden for a new scenario, or a refresh of only the
 `provenance` block, needs no trailer; the check verifies the decisions are byte-for-byte
-unchanged. The differential test also refuses a golden whose recorded
+unchanged. It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
+history, so a golden's provenance always names a commit anyone can check out: a refresh takes
+its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`). The differential test also refuses a golden whose recorded
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
 pins it runs against, so a trace can only count as evidence for the scenario it came from.
 CI re-runs the pinned vLLM release on every scenario and fails if any committed golden's

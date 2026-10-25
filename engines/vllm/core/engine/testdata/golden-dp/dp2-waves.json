@@ -32,7 +32,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "4bfada1b5462176d9e62461d29c06e14c00c7021",
+  "blis_vllm_commit": "61edc82d20d0748511c48e2d051abd93ce922d01",
   "engine": {
    "data_parallel_size": 2,
    "dp_sync_interval": 4,

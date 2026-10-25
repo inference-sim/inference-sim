@@ -97,6 +97,27 @@ class CheckGoldens(unittest.TestCase):
                 r = self.check()
                 self.assertEqual(r.returncode, 1, r.stdout)
 
+    def test_a_golden_naming_a_commit_outside_the_history_fails(self):
+        self.write("core/sched/testdata/golden/side.json", {"steps": []})
+        self.commit("a commit that will not be in the history")
+        lost = git(self.repo, "rev-parse", "HEAD")
+        for commit in (lost, lost + "+dirty", "unknown"):
+            with self.subTest(commit=commit):
+                git(self.repo, "reset", "-q", "--hard", self.base)
+                self.write("core/sched/testdata/golden/g.json",
+                           {"provenance": {"blis_vllm_commit": commit}, "steps": [{"a": 1}], "finished": {}})
+                self.commit("refresh provenance")
+                r = self.check()
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("not a commit in HEAD's history", r.stdout)
+
+    def test_a_golden_naming_a_commit_in_the_history_passes(self):
+        self.write("core/sched/testdata/golden/g.json",
+                   {"provenance": {"blis_vllm_commit": self.base}, "steps": [{"a": 1}], "finished": {}})
+        self.commit("refresh provenance")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout)
+
     def test_an_unlisted_golden_directory_fails(self):
         os.makedirs(os.path.join(self.repo, "core/newtier/testdata/golden"))
         self.write("core/newtier/testdata/golden/g.json", {"steps": []})

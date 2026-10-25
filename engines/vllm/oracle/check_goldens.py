@@ -9,11 +9,14 @@ the recorded content of an existing golden, or deletes one, must carry a
 `golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario, or
 refreshing only its `provenance` block, needs none, and this check verifies that such a commit
 changed nothing else. A golden directory this list does not name fails the check, so a new
-tier's goldens cannot go unguarded.
+tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
+head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its provenance
+must name a commit anyone can check out.
 
 Usage: python3 -I oracle/check_goldens.py <base> <head>
 """
 import json
+import re
 import subprocess
 import sys
 
@@ -52,10 +55,33 @@ def unguarded(rev: str) -> list[str]:
     return sorted(d for d in dirs if d not in GOLDEN_DIRS)
 
 
+def unreachable_commits(head: str) -> list[str]:
+    """Goldens at head whose provenance names a blis_vllm_commit that is not a full commit id
+    in head's history."""
+    out = []
+    reachable: dict[str, bool] = {}
+    for path in git("ls-tree", "-r", "--name-only", head).splitlines():
+        if not is_golden(path):
+            continue
+        commit = json.loads(git("show", f"{head}:{path}")).get("provenance", {}).get("blis_vllm_commit")
+        if commit is None:
+            continue
+        if commit not in reachable:
+            reachable[commit] = bool(re.fullmatch(r"[0-9a-f]{40}", commit)) and subprocess.run(
+                ["git", "merge-base", "--is-ancestor", commit, head], capture_output=True).returncode == 0
+        if not reachable[commit]:
+            out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history "
+                       "(refresh it from the oracle-traces workflow run on main)")
+    return out
+
+
 def main(base: str, head: str) -> int:
     bad = 0
     for d in unguarded(head):
         print(f"{d}: a golden directory oracle/check_goldens.py does not guard; add it to GOLDEN_DIRS")
+        bad = 1
+    for problem in unreachable_commits(head):
+        print(problem)
         bad = 1
     if not base or set(base) == {"0"}:
         # A first push: check every commit from the root.
