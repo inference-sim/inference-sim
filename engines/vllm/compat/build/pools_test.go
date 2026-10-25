@@ -3,6 +3,7 @@
 package build
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,30 +40,88 @@ func noFatal(t *testing.T) Fatal {
 // kernel opens none; counts that do not add up, and shared or encode instances, are refused.
 func TestOpenPools_OpensBothPoolsOrSaysWhyNot(t *testing.T) {
 	repos := pdVariant(t, "", "")
-	p, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
+	p, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
 	if err != nil || p == nil || p.Prefill.Role() != deployment.RolePrefill || p.Decode.Role() != deployment.RoleDecode {
 		t.Fatalf("3P1D: %+v, %v", p, err)
 	}
 	if p.Connector != "NixlConnector" || !p.HoldsPrefillKV() {
 		t.Errorf("connector %q, holds %v; want NixlConnector holding the prefill KV", p.Connector, p.HoldsPrefillKV())
 	}
-	if p, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4}); p != nil || err != nil {
+	if p, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4}); p != nil || err != nil {
 		t.Errorf("a colocated topology: %+v, %v; want no pools", p, err)
 	}
-	if p, err := OpenPools("variant.yaml", repos, false, Topology{NumInstances: 4, Prefill: 3, Decode: 1}); p != nil || err != nil {
+	if p, _, err := OpenPools("variant.yaml", repos, false, Topology{NumInstances: 4, Prefill: 3, Decode: 1}); p != nil || err != nil {
 		t.Errorf("no kernel open: %+v, %v; want no pools", p, err)
 	}
-	if _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 5, Prefill: 3, Decode: 1}); err == nil ||
+	if _, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 5, Prefill: 3, Decode: 1}); err == nil ||
 		!strings.Contains(err.Error(), "must add up") {
 		t.Errorf("counts that do not add up: %v", err)
 	}
-	if _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, SharedOrEncode: true}); err == nil ||
+	if _, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, SharedOrEncode: true}); err == nil ||
 		!strings.Contains(err.Error(), "--prefill-decode-instances and --encode-instances are not") {
 		t.Errorf("shared or encode instances: %v", err)
 	}
 	var none *Pools
 	if none.HoldsPrefillKV() {
 		t.Error("a colocated run's pools hold no prefill KV")
+	}
+}
+
+// The MultiConnector assumption is a warning the run states however opening the pools ends: a
+// refusal found after it (here, instance counts that do not add up) still returns it, so the
+// operator sees the assumption and the refusal together, as before the move from the CLI.
+func TestOpenPools_KeepsTheMultiConnectorWarningWhenRefused(t *testing.T) {
+	const multi = "deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml"
+	repos := vendoredRepos(t)
+	p, warnings, err := OpenPools(multi, repos, true, Topology{NumInstances: 2, Prefill: 1, Decode: 1})
+	if err != nil || p == nil || len(warnings) != 1 || !strings.Contains(warnings[0], "MultiConnector") {
+		t.Fatalf("an accepted MultiConnector run: %+v, %q, %v; want its one warning", p, warnings, err)
+	}
+	p, warnings, err = OpenPools(multi, repos, true, Topology{NumInstances: 3, Prefill: 1, Decode: 1})
+	if err == nil || !strings.Contains(err.Error(), "must add up") {
+		t.Fatalf("counts that do not add up: %v", err)
+	}
+	if p != nil {
+		t.Errorf("a refused run must return no pools to run, got %+v", p)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "MultiConnector") {
+		t.Errorf("a refused MultiConnector run: warnings %q; want the warning returned with the refusal", warnings)
+	}
+	// A plain NIXL scenario has nothing to warn about, accepted or refused.
+	for _, top := range []Topology{{NumInstances: 4, Prefill: 3, Decode: 1}, {NumInstances: 5, Prefill: 3, Decode: 1}} {
+		if _, warnings, _ := OpenPools("variant.yaml", pdVariant(t, "", ""), true, top); len(warnings) != 0 {
+			t.Errorf("NixlConnector %+v: warnings %q, want none", top, warnings)
+		}
+	}
+}
+
+// A pricing failure found while the run is going is reported through the caller's Fatal hook,
+// which never returns. One that does return would leave the call with no price to give, so it
+// panics rather than price a free transfer: zero ticks, or an empty flow.
+func TestRunTimeFailuresNeverPriceAFreeTransfer(t *testing.T) {
+	repos := pdVariant(t, "", "")
+	p, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reported := ""
+	returning := func(format string, args ...any) { reported = fmt.Sprintf(format, args...) }
+	mustPanic := func(what string, f func()) {
+		t.Helper()
+		reported = ""
+		defer func() {
+			if recover() == nil {
+				t.Errorf("%s: a Fatal hook that returns must not let the call return a price", what)
+			}
+			if reported == "" {
+				t.Errorf("%s: the failure was not reported through the Fatal hook", what)
+			}
+		}()
+		f()
+	}
+	mustPanic("an unknown tier", func() { TierTicks(p.Prefill, "no-such-tier", true, 4096, 1, returning) })
+	if got := TierTicks(p.Prefill, KernelCPUTier, true, 4096, 1, noFatal(t)); got <= 0 {
+		t.Errorf("a known tier: %d ticks, want a positive price", got)
 	}
 }
 
@@ -73,7 +132,7 @@ func TestOpenPools_RefusesPoolsThatCannotHandOff(t *testing.T) {
 		{"cache dtype", "", "      mamba_cache_dtype: float32\n", "mamba_cache_dtype"},
 	} {
 		repos := pdVariant(t, c.prefill, c.decode)
-		_, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
+		_, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.want)
 		}
@@ -94,7 +153,7 @@ func TestOpenPools_RefusesPoolsThatCannotHandOff(t *testing.T) {
 func TestHandoffPricing_IsThePlacedPairsPrice(t *testing.T) {
 	repos := pdVariant(t, "", "")
 	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
-	p, err := OpenPools("variant.yaml", repos, true, top)
+	p, _, err := OpenPools("variant.yaml", repos, true, top)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +201,7 @@ func TestRankInPool(t *testing.T) {
 func TestRequireCapacity(t *testing.T) {
 	repos := pdVariant(t, "", "")
 	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
-	p, err := OpenPools("variant.yaml", repos, true, top)
+	p, _, err := OpenPools("variant.yaml", repos, true, top)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +247,7 @@ func TestPriceColocatedOffload(t *testing.T) {
 func TestPoolsPriceOffload(t *testing.T) {
 	repos := pdVariant(t, "", "")
 	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
-	p, err := OpenPools("variant.yaml", repos, true, top)
+	p, _, err := OpenPools("variant.yaml", repos, true, top)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +290,7 @@ func TestSequenceFixedChargeAndWindow(t *testing.T) {
 func TestEndpointPlacements(t *testing.T) {
 	repos := pdVariant(t, "", "")
 	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
-	p, err := OpenPools("variant.yaml", repos, true, top)
+	p, _, err := OpenPools("variant.yaml", repos, true, top)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +348,7 @@ func TestTierTicks_RoundUpToAWholeTick(t *testing.T) {
 func TestPoolsPriceOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	repos := pdVariant(t, "", "")
 	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
-	p, err := OpenPools("variant.yaml", repos, true, top)
+	p, _, err := OpenPools("variant.yaml", repos, true, top)
 	if err != nil {
 		t.Fatal(err)
 	}

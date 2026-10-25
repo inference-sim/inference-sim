@@ -135,7 +135,7 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	for _, c := range []struct {
 		version string
 		ok      bool
-	}{{"0.29.0", true}, {"0.31.0", true}, {"0.32.0", false}, {"0.30.0", false}} {
+	}{{"0.29.0", true}, {"0.31.0", true}, {"0.32.0", false}, {"0.30.0", false}, {"", false}} {
 		body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+c.version+`"`, 1)
 		if !strings.Contains(body, `engine_version: "`+c.version+`"`) {
 			t.Fatalf("fixture has no engine_version to edit")
@@ -148,16 +148,25 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 		switch {
 		case c.ok && err != nil:
 			t.Errorf("engine_version %s: %v, want it adopted", c.version, err)
-		case !c.ok && (err == nil || !strings.Contains(err.Error(), `engine_version "`+c.version+`"`) ||
+		case !c.ok && (err == nil || !strings.Contains(err.Error(), statedVersion(c.version)) ||
 			!strings.Contains(err.Error(), "0.29.0 and 0.31.0")):
-			t.Errorf("engine_version %s: %v, want a refusal naming it and the modelled releases", c.version, err)
+			t.Errorf("engine_version %q: %v, want a refusal naming it and the modelled releases", c.version, err)
 		}
 	}
 }
 
+// statedVersion is how a refusal names the release a scenario states: an empty one is named as
+// none stated, not as the release "".
+func statedVersion(v string) string {
+	if v == "" {
+		return "states no engine_version"
+	}
+	return `states engine_version "` + v + `"`
+}
+
 // The compatibility engine's releases are the ones core/vllm's factory hands to it.
 func TestCompatVersionsAgreeWithTheFactory(t *testing.T) {
-	if strings.Join(CompatVersions, ",") != strings.Join(vllm.CompatVersions, ",") {
-		t.Errorf("compat/build models %v, core/vllm hands the compatibility engine %v", CompatVersions, vllm.CompatVersions)
+	if strings.Join(CompatVersions(), ",") != strings.Join(vllm.CompatVersions, ",") {
+		t.Errorf("compat/build models %v, core/vllm hands the compatibility engine %v", CompatVersions(), vllm.CompatVersions)
 	}
 }

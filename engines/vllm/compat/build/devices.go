@@ -90,8 +90,9 @@ type KVOffloadDevice struct {
 
 // CatalogStorageDevicesRelPath is the canonical location of the storage-device table
 // relative to the catalog clone root, used in diagnostics so an operator who has not
-// resolved a catalog yet still learns where the file belongs.
-var CatalogStorageDevicesRelPath = filepath.Join(CatalogDevicesSubdir, CatalogStorageDevicesFile)
+// resolved a catalog yet still learns where the file belongs. Slash-separated, as every
+// diagnostic that names it has always printed it.
+const CatalogStorageDevicesRelPath = CatalogDevicesSubdir + "/" + CatalogStorageDevicesFile
 
 // CatalogStorageDevicesPath returns <catalog>/devices/storage.yaml. Pure: the catalog
 // root is an argument, so the path law is table-testable without touching globals or

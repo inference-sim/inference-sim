@@ -4,6 +4,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 )
 
@@ -77,20 +78,20 @@ func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
 	})
 }
 
-// Valid policy name registries. Unexported to prevent external mutation.
-// Used by the policy bundle's Validate(), the factory functions, and ValidatePolicyName().
+// Valid policy name registries. Unexported to prevent external mutation (R8): callers read them
+// through IsValidScheduler and the NameTable copies.
 var (
-	ValidSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	ValidPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
+	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
 )
 
-// SchedulerNameTable and PreemptionPolicyNameTable return the name tables (the caller must not
-// modify them).
-func SchedulerNameTable() map[string]bool        { return ValidSchedulers }
-func PreemptionPolicyNameTable() map[string]bool { return ValidPreemptionPolicies }
+// SchedulerNameTable and PreemptionPolicyNameTable return copies of the name tables, so a caller
+// that edits one changes nothing here.
+func SchedulerNameTable() map[string]bool        { return maps.Clone(validSchedulers) }
+func PreemptionPolicyNameTable() map[string]bool { return maps.Clone(validPreemptionPolicies) }
 
 // IsValidScheduler returns true if name is a recognized scheduler.
-func IsValidScheduler(name string) bool { return ValidSchedulers[name] }
+func IsValidScheduler(name string) bool { return validSchedulers[name] }
 
 // NewScheduler creates an InstanceScheduler by name.
 // Valid names are defined in validSchedulers.

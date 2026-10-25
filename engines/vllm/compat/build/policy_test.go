@@ -93,9 +93,12 @@ func TestPoolEngineKnobs_FlagElsePoolElseDefault(t *testing.T) {
 	if th, mode, err := PoolEngineKnobs("variant.yaml", decode, EngineKnobFlags{}); err != nil || th != 0 || mode != "internal" {
 		t.Errorf("decode, no flag: %d %q %v; want vLLM's defaults", th, mode, err)
 	}
-	flags := EngineKnobFlags{LongPrefillTokenThreshold: 512, LongPrefillFromFlag: true, DPLoadBalancing: "external", DPLoadBalancingFromFlag: true}
-	if th, mode, err := PoolEngineKnobs("variant.yaml", decode, flags); err != nil || th != 512 || mode != "external" {
-		t.Errorf("decode, flags: %d %q %v; want the flags' values", th, mode, err)
+	flags := EngineKnobFlags{DPLoadBalancing: "external", DPLoadBalancingFromFlag: true}
+	if th, mode, err := PoolEngineKnobs("variant.yaml", decode, flags); err != nil || th != 0 || mode != "external" {
+		t.Errorf("decode, flag: %d %q %v; want its own threshold and the flag's mode", th, mode, err)
+	}
+	if th, _, err := PoolEngineKnobs("variant.yaml", prefill, flags); err != nil || th != 512 {
+		t.Errorf("prefill, flag: %d %v; a balancing flag must leave the pool's own threshold", th, err)
 	}
 }
 
@@ -111,20 +114,22 @@ func TestRunEngineKnobs_FlagsMayOnlyRestate(t *testing.T) {
 		return sh
 	}
 	sh := shapeOf(pdVariant(t, "", "      long_prefill_token_threshold: 256\n"))
-	if th, _, err := RunEngineKnobs("variant.yaml", sh, EngineKnobFlags{LongPrefillTokenThreshold: 256, LongPrefillFromFlag: true}); err != nil || th != 256 {
-		t.Errorf("an agreeing flag: %d, %v", th, err)
+	if th, mode, err := RunEngineKnobs("variant.yaml", sh, EngineKnobFlags{DPLoadBalancing: "internal"}); err != nil || th != 0 || mode != "internal" {
+		t.Errorf("a P/D run with no flag: %d %q %v; each pool resolves its own threshold, the run-wide mode stays the default", th, mode, err)
 	}
-	_, _, err := RunEngineKnobs("variant.yaml", sh, EngineKnobFlags{LongPrefillTokenThreshold: 512, LongPrefillFromFlag: true})
+	dsh := shapeOf(pdVariant(t, "", ""))
+	dsh.DPLoadBalancings[1] = deployment.DPLoadBalancing("external")
+	if _, mode, err := RunEngineKnobs("variant.yaml", dsh, EngineKnobFlags{DPLoadBalancing: "external", DPLoadBalancingFromFlag: true}); err != nil || mode != "external" {
+		t.Errorf("an agreeing flag: %q, %v", mode, err)
+	}
+	_, _, err := RunEngineKnobs("variant.yaml", dsh, EngineKnobFlags{DPLoadBalancing: "hybrid", DPLoadBalancingFromFlag: true})
 	if err == nil {
 		t.Fatal("a flag disagreeing with the decode pool must be refused")
 	}
-	for _, frag := range []string{"--long-prefill-token-threshold 512", "decode pool's engine.long_prefill_token_threshold 256", `"variant.yaml"`} {
+	for _, frag := range []string{"--dp-load-balancing hybrid", "decode pool's parallel.data_parallel_load_balancing external", `"variant.yaml"`} {
 		if !strings.Contains(err.Error(), frag) {
 			t.Errorf("refusal %q must name %q", err, frag)
 		}
-	}
-	if th, mode, err := RunEngineKnobs("variant.yaml", sh, EngineKnobFlags{DPLoadBalancing: "internal"}); err != nil || th != 0 || mode != "internal" {
-		t.Errorf("a P/D run with no flag: %d %q %v; the run-wide values stay the flags' defaults", th, mode, err)
 	}
 
 	csh, err := kernelmodel.ShapeOf("glm-5-h200-tp8-mtp3.yaml", vendoredRepos(t))
@@ -134,6 +139,9 @@ func TestRunEngineKnobs_FlagsMayOnlyRestate(t *testing.T) {
 	csh.LongPrefillTokenThresholds[0] = 1024
 	if th, _, err := RunEngineKnobs("glm-5-h200-tp8-mtp3.yaml", csh, EngineKnobFlags{}); err != nil || th != 1024 {
 		t.Errorf("a colocated pool's stated threshold: %d, %v; want it as the run-wide value", th, err)
+	}
+	if th, _, err := RunEngineKnobs("glm-5-h200-tp8-mtp3.yaml", csh, EngineKnobFlags{DPLoadBalancing: "internal", DPLoadBalancingFromFlag: true}); err != nil || th != 1024 {
+		t.Errorf("a colocated pool's stated threshold with a balancing flag: %d, %v; want it kept", th, err)
 	}
 }
 

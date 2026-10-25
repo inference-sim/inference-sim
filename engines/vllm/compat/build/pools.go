@@ -42,9 +42,6 @@ type Pools struct {
 	Prefill, Decode *kernelmodel.Model
 	// Connector is the scenario's pd_transfer.connector.
 	Connector string
-	// Warnings are the startup warnings opening the pools produced, in order, for the caller
-	// to log.
-	Warnings []string
 }
 
 // EndpointPlacements uses the same role-specific kernel placements that price KV handoffs.
@@ -88,7 +85,20 @@ func EndpointPlacements(model *kernelmodel.Model, pools *Pools, total, prefill, 
 // kernel is open (colocated, false) or the run is not disaggregated, and refuses a
 // disaggregated run whose scenario does not state both pools -- a P/D topology on the CLI over
 // a colocated scenario would simulate engines nobody described.
-func OpenPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top Topology) (*Pools, error) {
+//
+// warnings are the startup warnings opening the pools produced, in order, for the caller to
+// log. They come back with a refusal too: an assumption the run states (MultiConnector's child
+// order) is reported whichever later check refuses the run, as the CLI printed it before.
+func OpenPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top Topology) (pools *Pools, warnings []string, err error) {
+	pools, err = openPools(scenario, repos, kernelOpen, top, &warnings)
+	if err != nil {
+		return nil, warnings, err
+	}
+	return pools, warnings, nil
+}
+
+// openPools is OpenPools, appending each startup warning to warnings as it is found.
+func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top Topology, warnings *[]string) (*Pools, error) {
 	// Checked before the early return below: a shared-only or encode+shared topology states no
 	// dedicated prefill or decode instance, yet is still disaggregated, and would otherwise reach
 	// cluster construction with no handoff pricer.
@@ -125,7 +135,7 @@ func OpenPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 		// which connector loads a request's KV: the first, in config order, that reports
 		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
 		// NIXL listed first, which it cannot check.
-		p.Warnings = append(p.Warnings, fmt.Sprintf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
+		*warnings = append(*warnings, fmt.Sprintf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
 			"listed before OffloadingConnector (the first connector reporting tokens loads them); "+
 			"blis-schemas does not state the children or their order, so this assumption is not "+
 			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
@@ -226,6 +236,14 @@ func (p *Pools) HoldsPrefillKV() bool {
 // its fatal exit; it never returns.
 type Fatal func(format string, args ...any)
 
+// failRun reports err through fatal and does not return: a hook that does return would leave
+// the pricing call with no answer to give, and a zero-tick or empty transfer would be a free
+// one, so it panics instead.
+func failRun(fatal Fatal, err error) {
+	fatal("%v", err)
+	panic(fmt.Sprintf("build: the run's Fatal hook returned after reporting: %v", err))
+}
+
 // HandoffPricing returns the run's handoff price and, when contention is on, the demand behind
 // it. Both nil for a colocated run, where contention is refused. Instances are named
 // "instance_<n>" (Topology).
@@ -290,7 +308,7 @@ func (p *Pools) transferDemand(scenario string, top Topology, blockSizeTokens in
 		f, err := demand(tokens, p.Prefill.PlacementOf(RankInPool(from, firstDecode)),
 			p.Decode.PlacementOf(RankInPool(to, firstDecode)))
 		if err != nil {
-			fatal("%v", err)
+			failRun(fatal, err)
 		}
 		return f
 	}, nil
@@ -443,7 +461,7 @@ func tierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64, inSe
 func TierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64, inService int, fatal Fatal) int64 {
 	t, err := tierTicks(m, tier, toTier, bytes, inService)
 	if err != nil {
-		fatal("%v", err)
+		failRun(fatal, err)
 	}
 	return t
 }

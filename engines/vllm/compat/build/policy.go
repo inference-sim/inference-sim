@@ -6,7 +6,6 @@ package build
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/inference-sim/blis-schemas/spec/routing"
 
@@ -45,32 +44,22 @@ func EnginePolicyOf(scenario string, m *kernelmodel.Model) (EnginePolicy, error)
 }
 
 // EngineKnobFlags are the command line's restatements of the scenario's per-pool engine knobs:
-// --long-prefill-token-threshold and --dp-load-balancing, each with whether it was given.
+// --dp-load-balancing, with whether it was given. engine.long_prefill_token_threshold has no
+// flag (inference-sim#2021 B6): every pool runs what it states.
 type EngineKnobFlags struct {
-	LongPrefillTokenThreshold int64
-	LongPrefillFromFlag       bool
-	DPLoadBalancing           string
-	DPLoadBalancingFromFlag   bool
+	DPLoadBalancing         string
+	DPLoadBalancingFromFlag bool
 }
 
 // RunEngineKnobs makes the scenario the source of each pool's
 // engine.long_prefill_token_threshold (blis-schemas#75) and
 // parallel.data_parallel_load_balancing (#76), as #1910 made it the source of the offload
-// tiers. vLLM sets both per engine, so each pool runs its own value. The flags are run-wide
-// overrides: given, they apply to every pool and must agree with every value a pool states,
-// or the run is refused. A colocated run's one pool sets the run-wide value. It returns the
-// run-wide threshold and mode: the flags' (f) unless the colocated pool states its own.
+// tiers. vLLM sets both per engine, so each pool runs its own value. The balancing flag is a
+// run-wide override: given, it applies to every pool and must agree with every mode a pool
+// states, or the run is refused. A colocated run's one pool sets the run-wide value. It
+// returns the run-wide threshold (the colocated pool's, else none) and mode (the flag's unless
+// the colocated pool states its own).
 func RunEngineKnobs(scenario string, shape kernelmodel.Shape, f EngineKnobFlags) (threshold int64, mode string, err error) {
-	for i, v := range shape.LongPrefillTokenThresholds {
-		if v == 0 {
-			continue
-		}
-		if f.LongPrefillFromFlag && int64(v) != f.LongPrefillTokenThreshold {
-			return 0, "", refuseRestatement(scenario, "long-prefill-token-threshold",
-				strconv.FormatInt(f.LongPrefillTokenThreshold, 10),
-				poolField(shape, i, "engine.long_prefill_token_threshold"), strconv.Itoa(v))
-		}
-	}
 	for i, m := range shape.DPLoadBalancings {
 		if m == "" {
 			continue
@@ -80,7 +69,7 @@ func RunEngineKnobs(scenario string, shape kernelmodel.Shape, f EngineKnobFlags)
 				poolField(shape, i, "parallel.data_parallel_load_balancing"), string(m.Mode()))
 		}
 	}
-	threshold, mode = f.LongPrefillTokenThreshold, f.DPLoadBalancing
+	mode = f.DPLoadBalancing
 	if len(shape.Roles) != 1 {
 		return threshold, mode, nil
 	}
@@ -93,18 +82,15 @@ func RunEngineKnobs(scenario string, shape kernelmodel.Shape, f EngineKnobFlags)
 	return threshold, mode, nil
 }
 
-// PoolEngineKnobs is a P/D pool's own threshold and balancing mode: the flag's when given
-// (RunEngineKnobs checked it agrees), else what the pool states, else vLLM's defaults (no
-// threshold, internal).
+// PoolEngineKnobs is a P/D pool's own threshold and balancing mode: what the pool states, else
+// vLLM's defaults (no threshold, internal), with the balancing flag's mode when given
+// (RunEngineKnobs checked it agrees).
 func PoolEngineKnobs(scenario string, m *kernelmodel.Model, f EngineKnobFlags) (threshold int64, mode string, err error) {
 	eng, err := m.Engine()
 	if err != nil {
 		return 0, "", fmt.Errorf("scenario %q: reading the %s pool's engine: %w", scenario, m.Role(), err)
 	}
 	threshold = int64(eng.LongPrefillTokenThreshold)
-	if f.LongPrefillFromFlag {
-		threshold = f.LongPrefillTokenThreshold
-	}
 	mode = string(m.DPLoadBalancing().Mode())
 	if f.DPLoadBalancingFromFlag {
 		mode = f.DPLoadBalancing
