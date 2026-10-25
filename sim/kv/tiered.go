@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	hash "github.com/inference-sim/blis-vllm/compat/prefix"
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 

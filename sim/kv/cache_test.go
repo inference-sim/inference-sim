@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	hash "github.com/inference-sim/blis-vllm/compat/prefix"
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // assertBlockConservation verifies the KV block conservation invariant (INV-4)

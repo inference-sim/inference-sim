@@ -7,7 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-schemas/kernel"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // The artifact roots, which TestMain has already checked resolve.

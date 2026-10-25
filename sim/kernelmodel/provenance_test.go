@@ -8,7 +8,7 @@ import (
 	"github.com/inference-sim/blis-schemas/vocab"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // A pool's provenance restates the kernel's own records without losing or inventing one

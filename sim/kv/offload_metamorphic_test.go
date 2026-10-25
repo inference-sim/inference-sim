@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // BC-C5 metamorphic (end-to-end): slower cascade writes keep CPU blocks pinned

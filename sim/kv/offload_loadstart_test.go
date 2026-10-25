@@ -5,7 +5,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // loadCache is a CPU-tier store with a priced load: bs-token blocks, one block a chunk.

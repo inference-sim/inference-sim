@@ -10,7 +10,8 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/inference-sim/sim"
+	host "github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	_ "github.com/inference-sim/inference-sim/sim/kv"
 )
 
@@ -246,7 +247,7 @@ func TestRejectedDraftsDoNotAdvanceComputed(t *testing.T) {
 		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, "", "", 1, 1, false, 0),
 		SpeculativeConfig:   sim.SpeculativeConfig{K: k, Acceptance: acceptance, Method: "dspark"},
 	}
-	s, err := sim.NewSimulator(cfg, sim.MustNewKVStoreFromConfig(cfg.KVCacheConfig), rec)
+	s, err := host.NewSimulator(cfg, sim.MustNewKVStoreFromConfig(cfg.KVCacheConfig), rec)
 	if err != nil {
 		t.Fatal(err)
 	}

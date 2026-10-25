@@ -7,6 +7,9 @@ package sim
 import "github.com/inference-sim/inference-sim/sim/engine"
 
 type (
+	KernelPoolProvenance   = engine.KernelPoolProvenance
+	RoutingRecord          = engine.RoutingRecord
+	RuleFinding            = engine.RuleFinding
 	AdapterCost            = engine.AdapterCost
 	AdapterRegistry        = engine.AdapterRegistry
 	AdapterSpec            = engine.AdapterSpec
@@ -67,6 +70,8 @@ type (
 )
 
 const (
+	EvidenceFromKernel       = engine.EvidenceFromKernel
+	EvidenceFromProvenance   = engine.EvidenceFromProvenance
 	AgenticCancelled         = engine.AgenticCancelled
 	AgenticCompleted         = engine.AgenticCompleted
 	AgenticContextOverflow   = engine.AgenticContextOverflow

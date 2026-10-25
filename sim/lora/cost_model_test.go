@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // The adapter cost model derives the three Digital-Twin cost terms — cold-load
@@ -226,7 +226,7 @@ func TestNewCostModel_RejectsMalformedConfig(t *testing.T) {
 		}
 	}
 	tests := []struct {
-		name  string
+		name   string
 		mutate func(*sim.LoRAConfig)
 	}{
 		{"nil load base latency", func(c *sim.LoRAConfig) { c.LoadBaseLatencyUs = nil }},

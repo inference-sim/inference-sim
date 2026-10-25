@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	hash "github.com/inference-sim/blis-vllm/compat/prefix"
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

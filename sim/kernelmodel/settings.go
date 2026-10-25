@@ -6,7 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // Settings is everything a simulator sizes one engine from, every value answered by the

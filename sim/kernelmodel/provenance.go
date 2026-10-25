@@ -8,7 +8,7 @@ import (
 	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/vocab"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // enforcedRules are the release rules a run is refused on: deepseek-v41-refuses-mtp by the

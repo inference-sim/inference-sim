@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // An injected tier ServiceTime is asked for the direction of the job it prices: a store

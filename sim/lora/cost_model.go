@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // CostModel derives the three Digital-Twin adapter cost terms as pure,

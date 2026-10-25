@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // BC-C1 stage 2 + BC-C3: a promotion (secondary→CPU Read) completes on the

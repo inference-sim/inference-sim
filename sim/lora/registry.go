@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // Registry is the concrete pre-declared LoRA adapter registry: an immutable

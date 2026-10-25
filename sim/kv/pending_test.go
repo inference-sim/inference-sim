@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 func countEvents(kvc *KVCacheState) (stored, removed int) {

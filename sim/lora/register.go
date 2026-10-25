@@ -4,7 +4,7 @@
 // (cmd/) imports sim/lora directly; test code in package sim can use a blank import.
 package lora
 
-import "github.com/inference-sim/inference-sim/sim"
+import sim "github.com/inference-sim/inference-sim/sim/engine"
 
 func init() {
 	sim.SetNewAdapterRegistryFunc(func(adapters []sim.AdapterSpec) (sim.AdapterRegistry, error) {

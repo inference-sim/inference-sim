@@ -8,7 +8,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/inference-sim/inference-sim/sim/kv"
 )
 

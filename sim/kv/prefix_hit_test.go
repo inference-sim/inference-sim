@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // The DeepSeek-V4.1 layout at 1/8 scale: an 8-token full-attention block (the scheduler

@@ -3,7 +3,7 @@ package lora
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // TestRegistry_RankLookup verifies id -> rank resolution for declared adapters and a

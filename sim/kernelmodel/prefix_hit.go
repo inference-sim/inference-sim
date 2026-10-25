@@ -7,7 +7,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // eagleMethods are vLLM v0.31.0's use_eagle() methods, whose prefix hits drop the trailing

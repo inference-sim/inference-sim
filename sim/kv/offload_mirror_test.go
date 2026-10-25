@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // BC-C7a + BC-C3(pin): MirrorToCPU stores each new full block and cascades it to

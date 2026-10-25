@@ -3,7 +3,7 @@ package kernelmodel
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // dp_moe_pricing_test.go is committed, independently reproducible acceptance evidence for #1902

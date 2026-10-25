@@ -5,7 +5,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kvkey"
 	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // OffloadCache must satisfy both the base KVStore seam and the optional H3

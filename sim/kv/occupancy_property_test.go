@@ -7,7 +7,8 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/inference-sim/sim"
+	host "github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
@@ -202,7 +203,7 @@ func TestEveryRunningRequestHoldsKVForItsComputedTokens(t *testing.T) {
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, "", "", 1, 1, false, maxModelLen),
 			SpeculativeConfig:   spec,
 		}
-		s, err := sim.NewSimulator(cfg, store, fakelatency.New())
+		s, err := host.NewSimulator(cfg, store, fakelatency.New())
 		if err != nil {
 			rt.Fatal(err)
 		}

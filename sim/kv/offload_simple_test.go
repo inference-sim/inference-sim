@@ -3,7 +3,7 @@ package kv
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // vLLM v0.31.0's SimpleCPUOffloadConnector store side (simple_kv_offload/manager.py).

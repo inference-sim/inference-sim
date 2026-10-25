@@ -14,7 +14,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/routing"
 	"github.com/inference-sim/blis-schemas/spec/workload"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // Expert-parallel routing imbalance is resolved here, per pool, by blis-schemas'

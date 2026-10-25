@@ -6,7 +6,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // constantState is a bounded per-sequence state of n blocks whatever the sequence's length

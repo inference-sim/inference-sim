@@ -65,7 +65,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/workload"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // Repos is blis-latency-kernel's Repos.

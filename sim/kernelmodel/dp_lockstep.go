@@ -6,7 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-schemas/kernel"
 
-	"github.com/inference-sim/inference-sim/sim"
+	sim "github.com/inference-sim/inference-sim/sim/engine"
 )
 
 // graphResolver is the kernel's typed report of its CUDA-graph resolution
