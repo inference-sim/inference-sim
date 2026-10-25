@@ -100,8 +100,6 @@ type Simulator struct {
 	nextSnapshotClockUs        int64
 }
 
-func (sim *Simulator) now() int64     { return sim.Clock }
-func (sim *Simulator) horizon() int64 { return sim.Horizon }
 func (sim *Simulator) scheduleTimeout(req *Request, t int64) {
 	sim.Schedule(&TimeoutEvent{time: t, Request: req})
 }

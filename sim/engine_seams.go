@@ -9,10 +9,10 @@ package sim
 // The calls are made at exactly the points the engine made them before, so events are
 // created in the same order with the same seqIDs (hazard 2).
 type engineHost interface {
-	// now is the simulation clock.
-	now() int64
-	// horizon is the simulation horizon.
-	horizon() int64
+	// CurrentClock is the simulation clock.
+	CurrentClock() int64
+	// SimHorizon is the simulation horizon.
+	SimHorizon() int64
 	// scheduleTimeout queues the request's client-deadline timeout at t (PriorityTimeout).
 	scheduleTimeout(req *Request, t int64)
 	// scheduleScheduled and scheduleLeft queue the observational scheduled and request-left

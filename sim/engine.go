@@ -386,7 +386,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 			r.ID, r.MaxOutputLen)
 		sim.Rec.requestDropped(r, false)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
-		sim.Host.requestDone(r, sim.Host.now())
+		sim.Host.requestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
@@ -396,7 +396,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, r.InputLen(), sim.maxModelLen)
 			sim.Rec.requestDropped(r, true)
-			sim.Host.requestDone(r, sim.Host.now())
+			sim.Host.requestDone(r, sim.Host.CurrentClock())
 			return
 		}
 		if r.MaxOutputLen > 0 {
@@ -405,7 +405,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
 				sim.Rec.requestDropped(r, true)
-				sim.Host.requestDone(r, sim.Host.now())
+				sim.Host.requestDone(r, sim.Host.CurrentClock())
 				return
 			}
 		}
@@ -417,7 +417,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
 		sim.Rec.requestDropped(r, false)
-		sim.Host.requestDone(r, sim.Host.now())
+		sim.Host.requestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
@@ -426,10 +426,10 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
-	if r.Deadline > 0 && r.Deadline <= sim.Host.now() {
+	if r.Deadline > 0 && r.Deadline <= sim.Host.CurrentClock() {
 		r.State = StateTimedOut
 		sim.Rec.timedOut(r)
-		sim.Host.requestDone(r, sim.Host.now())
+		sim.Host.requestDone(r, sim.Host.CurrentClock())
 		return
 	}
 
@@ -447,7 +447,7 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 
 	// Schedule timeout event (after all guards + enqueue — BC-5)
 	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
-	if r.Deadline > 0 && r.Deadline <= sim.Host.horizon() {
+	if r.Deadline > 0 && r.Deadline <= sim.Host.SimHorizon() {
 		sim.Host.scheduleTimeout(r, r.Deadline)
 	}
 }
@@ -474,7 +474,7 @@ func (sim *EngineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
 
 	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
-	if r.Deadline > 0 && r.Deadline <= sim.Host.horizon() {
+	if r.Deadline > 0 && r.Deadline <= sim.Host.SimHorizon() {
 		sim.Host.scheduleTimeout(r, r.Deadline)
 	}
 
@@ -482,7 +482,7 @@ func (sim *EngineCore) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
 	// at a stale instance time that precedes the cluster time when it was injected.
 	if sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0 {
-		sim.Host.wakeStep(max(sim.Host.now(), clusterTime))
+		sim.Host.wakeStep(max(sim.Host.CurrentClock(), clusterTime))
 	}
 }
 
@@ -613,7 +613,7 @@ func (sim *EngineCore) recordRequestCompletion(req *Request) {
 		E2E:          lat,
 		ITL:          itl,
 		Steps:        req.FinishedStepIdx - req.ScheduledStepIdx,
-		Clock:        sim.Host.now(),
+		Clock:        sim.Host.CurrentClock(),
 		Overhead:     postDecodeOverhead,
 	})
 	// Terminal state: reset the spec-decode carry so no stale fraction survives if
