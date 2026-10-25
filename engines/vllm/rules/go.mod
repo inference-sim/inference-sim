@@ -1,6 +1,6 @@
 module github.com/inference-sim/blis-vllm/rules
 
-go 1.27.2
+go 1.24
 
 // TEMPORARY: the head of inference-sim/blis-schemas#102 (rules.EngineRules and the
 // exported Problems aliases these packs need). Moves to a blis-schemas release tag before
