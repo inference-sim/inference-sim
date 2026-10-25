@@ -139,13 +139,13 @@ func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessN
 func (i *InstanceSimulator) Finalize() {
 	i.sim.Finalize()
 	// Capture KV metrics at finalization for CollectRawMetrics
-	i.sim.Metrics.KVThrashingRate = i.sim.KVCache.KVThrashingRate()
+	rate, counts, counted := i.sim.KVThrashing()
+	i.sim.Metrics.KVThrashingRate = rate
 	// The thrash counts behind the rate, so the cluster aggregate weights each instance
 	// by its opportunities (#1904). The hit rate is the instance's prompt-token lookups
 	// (Metrics.recordPrefixLookup), the quantity vLLM's prefix-cache stats count, rather
 	// than the store's block tally, which also counts decode growth.
-	if c, ok := i.sim.KVCache.(sim.ThrashCounter); ok {
-		counts := c.ThrashCounts()
+	if counted {
 		i.sim.Metrics.KVThrashEvents = counts.Events
 		i.sim.Metrics.KVThrashOpportunities = counts.Opportunities
 	}
@@ -174,50 +174,50 @@ func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 // KVUtilization returns the fraction of KV cache blocks in use.
 // Returns 0 when TotalCapacity is 0 to avoid division by zero (R11 defensive guard).
 func (i *InstanceSimulator) KVUtilization() float64 {
-	total := i.sim.KVCache.TotalCapacity()
+	total := i.sim.KVCapacity()
 	if total <= 0 {
 		return 0
 	}
-	return float64(i.sim.KVCache.UsedBlocks()) / float64(total)
+	return float64(i.sim.KVUsed()) / float64(total)
 }
 
 // FreeKVBlocks returns the number of free KV cache blocks.
 func (i *InstanceSimulator) FreeKVBlocks() int64 {
-	return i.sim.KVCache.TotalCapacity() - i.sim.KVCache.UsedBlocks()
+	return i.sim.KVCapacity() - i.sim.KVUsed()
 }
 
 // CacheHitRate returns the cumulative cache hit rate.
 func (i *InstanceSimulator) CacheHitRate() float64 {
-	return i.sim.KVCache.CacheHitRate()
+	return i.sim.KVCacheHitRate()
 }
 
 // TotalKvCapacityTokens returns total KV cache capacity in tokens.
-// Returns 0 if i.sim or i.sim.KVCache is nil (construction defect), or if
+// Returns 0 if i.sim or its KV store is nil (construction defect), or if
 // TotalCapacity() * BlockSize() is zero (misconfigured KV store).
 // Loading instances have correct non-zero capacity from construction —
 // NewInstanceSimulator always initializes the KV store before any lifecycle transition.
 func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
-	if i.sim == nil || i.sim.KVCache == nil {
+	if i.sim == nil {
 		return 0
 	}
-	return i.sim.KVCache.TotalCapacity() * i.sim.KVCache.BlockSize()
+	return i.sim.KVCapacity() * i.sim.KVBlockSize()
 }
 
 // KvTokensInUse returns current KV cache occupancy in tokens.
 // Returns 0 when the KV cache is not yet initialized.
 func (i *InstanceSimulator) KvTokensInUse() int64 {
-	if i.sim == nil || i.sim.KVCache == nil {
+	if i.sim == nil {
 		return 0
 	}
-	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
+	return i.sim.KVUsed() * i.sim.KVBlockSize()
 }
 
 // TotalKVBlocks returns the total number of KV cache blocks for this instance.
 func (i *InstanceSimulator) TotalKVBlocks() int64 {
-	if i.sim == nil || i.sim.KVCache == nil {
+	if i.sim == nil {
 		return 0
 	}
-	return i.sim.KVCache.TotalCapacity()
+	return i.sim.KVCapacity()
 }
 
 // PreemptionCount returns the cumulative number of preemption events on this instance.
@@ -313,14 +313,7 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
 	if i.sim == nil {
 		return 0
 	}
-	return len(i.sim.KVCache.GetCachedBlocks(tokens))
-}
-
-// cacheSnapshotCapable is satisfied by KVStore implementations that can produce
-// a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
-// Used for stale cache signal simulation (issue #919).
-type cacheSnapshotCapable interface {
-	SnapshotCachedBlocksFn() func([]sim.TokenID) int
+	return i.sim.CachedBlockCount(tokens)
 }
 
 // SnapshotCacheQueryFn returns a function that queries a frozen copy of this
@@ -332,8 +325,8 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
 	if i.sim == nil {
 		return func([]sim.TokenID) int { return 0 }
 	}
-	if cs, ok := i.sim.KVCache.(cacheSnapshotCapable); ok {
-		return cs.SnapshotCachedBlocksFn()
+	if fn, ok := i.sim.SnapshotCacheQuery(); ok {
+		return fn
 	}
 	// Fallback: live query (for KVStore implementations without snapshot support).
 	// Callers (CachedSnapshotProvider) are responsible for warning about stale-cache
@@ -473,7 +466,7 @@ func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) { i.sim.CacheRemoteK
 // to a non-routable state mid-transfer). Safe to call when the request holds
 // no blocks.
 func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
-	i.sim.KVCache.ReleaseKVBlocks(req)
+	i.sim.ReleaseKV(req)
 }
 
 // ReleaseHeldKV frees the KV blocks a finished request kept past completion
@@ -485,7 +478,7 @@ func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
 		panic(fmt.Sprintf("ReleaseHeldKV %s: request %s is not a finished request that retains its KV",
 			i.id, req.ID))
 	}
-	i.sim.KVCache.ReleaseKVBlocks(req)
+	i.sim.ReleaseKV(req)
 }
 
 // WakeIfParked wakes a parked engine for KV freed at cluster time t (sim.Simulator.WakeIfParked).
@@ -493,18 +486,18 @@ func (i *InstanceSimulator) WakeIfParked(t int64) { i.sim.WakeIfParked(t) }
 
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
-	r, ok := i.sim.KVCache.(sim.RequestBlockReporter)
+	blocks, ok := i.sim.RequestBlocks(req)
 	if !ok {
-		panic(fmt.Sprintf("instance %s: KV store %T does not report a request's blocks", i.id, i.sim.KVCache))
+		panic(fmt.Sprintf("instance %s: KV store %s does not report a request's blocks", i.id, i.sim.KVStoreKind()))
 	}
-	return r.RequestBlocks(req.ID)
+	return blocks
 }
 
 // AbortReservedKV cancels a reservation whose transfer was evicted before it completed at time
 // now: its blocks are freed (their hashes were never registered, ReserveTransferredKV), and the
 // engine publishes its state after the abort.
 func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
-	i.sim.KVCache.ReleaseKVBlocks(req)
+	i.sim.ReleaseKV(req)
 	i.sim.NoteAbort(now) // also wakes a parked engine (scheduleStepAt)
 }
 
@@ -544,40 +537,7 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 	return true
 }
 
-func (i *InstanceSimulator) evictRequest(req *sim.Request) bool {
-	if i.sim.WaitQ.Remove(req) {
-		i.sim.ClearDeferredKV(req.ID) // H3 (#1591): a gateway-evicted queued request may be mid-deferral
-		i.sim.KVCache.ReleaseKVBlocks(req)
-		// Release the LoRA adapter pin (#1466): a queued request is not pinned, so
-		// this is a no-op here, but calling it keeps eviction symmetric with the
-		// running-batch branch below and robust if pinning semantics change.
-		i.sim.ReleaseAdapterPin(req)
-		req.State = sim.StateCompleted
-		return true
-	}
-	if i.sim.RunningBatch != nil {
-		for idx, r := range i.sim.RunningBatch.Requests {
-			if r.ID == req.ID {
-				i.sim.RunningBatch.Requests = append(
-					i.sim.RunningBatch.Requests[:idx],
-					i.sim.RunningBatch.Requests[idx+1:]...,
-				)
-				i.sim.KVCache.ReleaseKVBlocks(req)
-				// Release the LoRA adapter pin (#1466): a running request WAS pinned
-				// on batch entry, and this gateway eviction is a terminal path outside
-				// completion/timeout, so it must free the slot or the pin leaks and
-				// eventually stalls all cold loads on this instance (INV-L5).
-				i.sim.ReleaseAdapterPin(req)
-				req.State = sim.StateCompleted
-				if len(i.sim.RunningBatch.Requests) == 0 {
-					i.sim.RunningBatch = nil
-				}
-				return true
-			}
-		}
-	}
-	return false
-}
+func (i *InstanceSimulator) evictRequest(req *sim.Request) bool { return i.sim.Evict(req) }
 
 // ReserveTransferredKVBehind is ReserveTransferredKV leaving reserved blocks free for the
 // instance's other admitted handoffs (sim.Simulator.ReserveRemoteKVBehind, INV-PD-9).
@@ -586,7 +546,7 @@ func (i *InstanceSimulator) ReserveTransferredKVBehind(req *sim.Request, reserve
 }
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.
-func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVCache.UsedBlocks() }
+func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVUsed() }
 
 // EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
 func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
@@ -596,28 +556,19 @@ func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
 // CachedBlockHashes returns the hashes of the blocks the instance's prefix cache can serve,
 // sorted (nil for a KV cache that does not track them).
 func (i *InstanceSimulator) CachedBlockHashes() []string {
-	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
-		return src.CachedBlockHashes()
-	}
-	return nil
+	return i.sim.CachedBlockHashes()
 }
 
 // CPUBlockHashes returns the hashes of the blocks the instance's CPU KV tier holds, sorted (nil
 // without one).
 func (i *InstanceSimulator) CPUBlockHashes() []string {
-	if src, ok := i.sim.KVCache.(sim.KVEventSource); ok {
-		return src.CPUBlockHashes()
-	}
-	return nil
+	return i.sim.CPUBlockHashes()
 }
 
 // TierBlockHashes returns the hashes of the blocks the secondary KV-offload tiers publishing as
 // medium (e.g. "shared_storage" for a filesystem tier) hold, sorted (nil without one).
 func (i *InstanceSimulator) TierBlockHashes(name string) []string {
-	if src, ok := i.sim.KVCache.(interface{ TierBlockHashes(string) []string }); ok {
-		return src.TierBlockHashes(name)
-	}
-	return nil
+	return i.sim.TierBlockHashes(name)
 }
 
 // SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
