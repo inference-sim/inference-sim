@@ -72,7 +72,6 @@ func TestPackRuleSet(t *testing.T) {
 		"all2all-backend-known",
 		"allreduce-backend-known",
 		"cache-record-dtypes-known",
-		"cascade-attention-is-opt-in",
 		"connector-known",
 		"cp-kv-cache-interleave-fits-block",
 		"cudagraph-capture-sizes",
@@ -1234,6 +1233,11 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 		{"an EP megakernel at allgather_reducescatter", "flashinfer_moe_ep_mega_deep_gemm", "allgather_reducescatter", false},
 		{"an EP megakernel stating passthrough", "flashinfer_moe_ep_cutedsl", "passthrough", false},
 		{"an EP megakernel beside another backend", "flashinfer_moe_ep_cutedsl", "deepep_low_latency", true},
+		// ParallelConfig renames the removed pplx and naive to allgather_reducescatter
+		// (vllm/config/parallel.py:532-538@5df63a72) before the binding runs, from
+		// VllmConfig's post-init (vllm/config/vllm.py:1777), so both start.
+		{"an EP megakernel beside the removed pplx", "flashinfer_moe_ep_cutedsl", "pplx", false},
+		{"an EP megakernel beside the removed naive", "flashinfer_moe_ep_mega_deep_gemm", "naive", false},
 		{"passthrough beside another MoE backend", "deep_gemm_mega_moe", "passthrough", true},
 		{"passthrough with no MoE backend stated", "", "passthrough", true},
 		{"neither", "triton", "deepep_low_latency", false},

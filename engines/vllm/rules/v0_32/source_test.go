@@ -300,11 +300,18 @@ func TestNumericConstantsMatchSource(t *testing.T) {
 		}
 	}
 
+	// Cascade attention was removed in this release: disable_cascade_attn is kept only as a
+	// deprecated no-op, and the runner hard-sets it off. Both are read here, so the pack's
+	// CascadeAttnOptIn, false, cannot pass while the engine still runs cascade attention. The
+	// field's own default, "= True", is still in the source and says nothing either way.
 	modelCfg := readSource(t, root, "vllm", "config", "model.py")
-	optIn := strings.Contains(modelCfg, "disable_cascade_attn: bool = True")
-	if optIn != p.CascadeAttnOptIn {
-		t.Errorf("CascadeAttnOptIn: pack has %v, the engine's default says %v",
-			p.CascadeAttnOptIn, optIn)
+	runner := readSource(t, root, "vllm", "v1", "worker", "gpu_model_runner.py")
+	removed := strings.Contains(modelCfg, `"""Deprecated: cascade attention has been removed, so this has no effect.`) &&
+		strings.Contains(runner, "self.cascade_attn_enabled = False") &&
+		!strings.Contains(runner, "self.cascade_attn_enabled = not ")
+	if removed == p.CascadeAttnOptIn {
+		t.Errorf("CascadeAttnOptIn: pack has %v, but the engine has cascade attention removed = %v",
+			p.CascadeAttnOptIn, removed)
 	}
 }
 
@@ -811,6 +818,21 @@ func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 	if !strings.Contains(src, `if self.all2all_backend in ["pplx", "naive"]:`) ||
 		!strings.Contains(src, `self.all2all_backend = "allgather_reducescatter"`) {
 		t.Error("the engine no longer replaces pplx and naive with allgather_reducescatter")
+	}
+	// moe-ep-backend-binds-passthrough reads the renamed backend: the rename runs in
+	// ParallelConfig's own validator, when the config is built, and the binding later reads
+	// parallel_config.all2all_backend from VllmConfig's post-init.
+	const validatorHead = "@model_validator(mode=\"after\")\n    def _validate_parallel_config(self) -> Self:"
+	validator := strings.Index(src, validatorHead)
+	rename := strings.Index(src, `if self.all2all_backend in ["pplx", "naive"]:`)
+	if validator < 0 || rename < validator+len(validatorHead) ||
+		strings.Contains(src[validator+len(validatorHead):rename], "\n    def ") {
+		t.Error("pplx and naive are no longer renamed in ParallelConfig's validator, so the " +
+			"passthrough binding may see them unrenamed")
+	}
+	if !strings.Contains(readSource(t, root, "vllm", "config", "kernel.py"),
+		"a2a = parallel_config.all2all_backend\n    if moe_backend in FLASHINFER_MOE_EP_BACKENDS:") {
+		t.Error("the passthrough binding no longer reads parallel_config.all2all_backend")
 	}
 	want := map[string]string{"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter"}
 	if !reflect.DeepEqual(Pack().All2AllBackendRenames, want) {

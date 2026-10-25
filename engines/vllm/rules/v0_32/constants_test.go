@@ -116,8 +116,8 @@ func TestNumericConstants(t *testing.T) {
 	if p.TritonFetchPageBytes != 28*1024 {
 		t.Errorf("Triton page threshold = %d, want %d", p.TritonFetchPageBytes, 28*1024)
 	}
-	if !p.CascadeAttnOptIn {
-		t.Error("cascade attention is disabled by default in this release")
+	if p.CascadeAttnOptIn {
+		t.Error("cascade attention was removed in this release; the pack must not model it")
 	}
 	want := map[int]bool{2: true, 4: true, 6: true, 8: true, 16: true}
 	if len(p.CustomAllReduceWorldSizes) != len(want) {

@@ -36,6 +36,10 @@
 //     (vllm/v1/core/kv_cache_utils.py:1520-1551@5df63a72) that apply only to KV cache specs
 //     whose layout is not block-outermost and to HiSparseHotSpec; the full-attention, MLA
 //     and sliding-window specs these packs group keep v0.31.0's per-block bytes.
+//   - Cascade attention is removed: disable_cascade_attn is a deprecated no-op
+//     (vllm/config/model.py:312-314@5df63a72) and the runner hard-sets it off
+//     (vllm/v1/worker/gpu_model_runner.py:531-533@5df63a72), so this pack has no
+//     cascade-attention-is-opt-in rule and CascadeAttnOptIn is false.
 //
 // Everything else source_test.go checks is unchanged from v0.31.0 and passes against the
 // v0.32.0 tree as transcribed there.
@@ -217,7 +221,9 @@ func Pack() *rules.Pack {
 		TritonFetchPageBytes: 28 * 1024,
 		TritonFetchSMs:       12,
 
-		CascadeAttnOptIn: true,
+		// CascadeAttnOptIn stays false: v0.32.0 removed cascade attention. disable_cascade_attn is
+		// a deprecated no-op (vllm/config/model.py:312-314) and the runner hard-sets it off
+		// (vllm/v1/worker/gpu_model_runner.py:531-533).
 
 		// all2all_backend: All2AllBackend = "allgather_reducescatter" (vllm/config/parallel.py),
 		// and the two accepted names it replaces with that one ("has been removed. Falling
@@ -575,23 +581,6 @@ func ruleList(p *rules.Pack) []rules.Rule {
 			},
 		},
 		{
-			Name:    "cascade-attention-is-opt-in",
-			Because: "cascade attention is off unless requested, and a request for it alongside speculative decoding, with async scheduling left to the engine, is one the engine overrides once async scheduling resolves on",
-			Check: func(in rules.Input, out *rules.Problems) {
-				if !p.CascadeAttnOptIn {
-					return
-				}
-				forEachPool(in, func(at string, pool deployment.Pool) {
-					e := pool.Engine
-					if e.DisableCascadeAttn != nil && !*e.DisableCascadeAttn &&
-						e.Speculative != nil && e.AsyncScheduling == nil {
-						out.RuleWarnf("cascade-attention-is-opt-in",
-							"%s: cascade attention is requested alongside speculative decoding; with async scheduling resolved on, the engine disables cascade regardless", at)
-					}
-				})
-			},
-		},
-		{
 			Name:    "dbo-thresholds-stated-when-enabled",
 			Because: "which threshold applies turns on batch uniformity, and an unstated threshold silently takes a default that differs by 16x between the two",
 			Check: func(in rules.Input, out *rules.Problems) {
@@ -866,9 +855,12 @@ func ruleList(p *rules.Pack) []rules.Rule {
 				forEachEngine(in, func(at string, e deployment.Engine) {
 					moe := rules.NormalizeMoEBackend(e.MoEBackend)
 					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
+					// The binding reads the backend after ParallelConfig has renamed the removed
+					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:532-538),
+					// so those start beside an EP megakernel, as the default does.
+					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
 					switch {
-					case selfCommunicating && e.All2AllBackend != "" && e.All2AllBackend != "passthrough" &&
-						e.All2AllBackend != p.DefaultAll2AllBackend:
+					case selfCommunicating && a2a != "passthrough" && a2a != p.DefaultAll2AllBackend:
 						out.RuleErrorf("moe-ep-backend-binds-passthrough",
 							"%s.engine: moe_backend %q dispatches and combines itself; engine %s refuses it beside all2all_backend %q (leave all2all_backend unset)",
 							at, moe, p.Version, e.All2AllBackend)
