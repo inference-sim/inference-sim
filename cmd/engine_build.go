@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -45,3 +46,72 @@ const (
 // catalogStorageDevicesRelPath is the table's location relative to the catalog clone root,
 // for diagnostics that name it.
 var catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
+
+// engineKnobFlags gathers the command line's restatements of the scenario's per-pool engine
+// knobs, unread, for the engine to check against the scenario.
+func engineKnobFlags() build.EngineKnobFlags {
+	return build.EngineKnobFlags{
+		LongPrefillTokenThreshold: longPrefillTokenThreshold, LongPrefillFromFlag: longPrefillFromFlag,
+		DPLoadBalancing: dpLoadBalancing, DPLoadBalancingFromFlag: dpLoadBalancingFromFlag,
+	}
+}
+
+// runEngineKnobs is the run-wide long-prefill threshold and DP load-balancing mode
+// (build.RunEngineKnobs).
+func runEngineKnobs(shape kernelmodel.Shape, f build.EngineKnobFlags) (int64, string, error) {
+	return build.RunEngineKnobs(kernelScenario, shape, f)
+}
+
+// poolEngineKnobsOf is a P/D pool's own threshold and mode (build.PoolEngineKnobs).
+func poolEngineKnobsOf(m *kernelmodel.Model, f build.EngineKnobFlags) (int64, string, error) {
+	return build.PoolEngineKnobs(kernelScenario, m, f)
+}
+
+// enginePolicyFor is a pool's scheduling_policy in the engine's terms (build.EnginePolicyOf).
+func enginePolicyFor(m *kernelmodel.Model) (build.EnginePolicy, error) {
+	return build.EnginePolicyOf(kernelScenario, m)
+}
+
+// routingOverridesOf is the command line's routing layer (build.RoutingOverridesOf): the
+// --routing-token-imbalance and --routing-expert-imbalance values, each with whether it was
+// given.
+func routingOverridesOf(token float64, tokenSet bool, expert float64, expertSet bool) (kernelmodel.RoutingOverrides, error) {
+	return build.RoutingOverridesOf(build.RoutingFlags{
+		TokenImbalance: token, TokenSet: tokenSet, ExpertImbalance: expert, ExpertSet: expertSet,
+	})
+}
+
+// The acceptance flags' names, as the engine's refusals spell them.
+const (
+	acceptanceRateFlagName     = build.AcceptanceRateFlag
+	acceptanceLengthFlagName   = build.AcceptanceLengthFlag
+	acceptanceThinkingFlagName = build.AcceptanceThinkingFlag
+	acceptanceCategoryFlagName = build.AcceptanceCategoryFlag
+	acceptanceFallbackFlagName = build.AcceptanceFallbackFlag
+)
+
+// resolveAcceptance resolves the run's acceptance for a pool drafting k tokens with method
+// (build.ResolveAcceptance), from the scenario, the registry, the run's hardware, what the
+// workload states and the command line. CLI boundary: a refusal is fatal; a selector flag
+// given to a run that does not speculate is warned about and ignored.
+func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
+	fl := cmd.Flags()
+	a, speculating, err := build.ResolveAcceptance(build.AcceptanceInputs{
+		Scenario: kernelScenario, Shape: scenarioShape, Registry: kernelRegistry, Hardware: gpu,
+		Workload: workloadAcceptance,
+		Flags: build.AcceptanceFlags{
+			Rate: speculativeAcceptance, Length: speculativeAcceptanceLength,
+			RateSet: fl.Changed(build.AcceptanceRateFlag), LengthSet: fl.Changed(build.AcceptanceLengthFlag),
+			Thinking: speculativeThinking, Category: speculativeCategory, FallbackCategory: speculativeFallbackCategory,
+			ThinkingSet: fl.Changed(build.AcceptanceThinkingFlag), CategorySet: fl.Changed(build.AcceptanceCategoryFlag),
+			FallbackSet: fl.Changed(build.AcceptanceFallbackFlag),
+		},
+	}, k, method)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	for _, f := range a.Ignored {
+		logrus.Warnf("--%s is ignored: scenario %q does not speculate", f, kernelScenario)
+	}
+	return a, speculating
+}

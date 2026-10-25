@@ -526,36 +526,18 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 	}
 }
 
-// enginePolicy is a vLLM scheduling_policy in BLIS's terms: it decides both the waiting
-// queue's order and which running request is preempted under KV pressure (vLLM v0.31.0
-// v1/core/sched/scheduler.py: the preemption victim is chosen by priority when the policy is
-// PRIORITY, else the last-scheduled request).
-type enginePolicy struct{ scheduler, preemption string }
-
-// enginePolicyOf resolves a pool's engine.scheduling_policy: fcfs is FCFS queueing and
-// tail-of-batch preemption; priority is priority-fcfs queueing (lowest priority value first,
-// then arrival) and priority preemption. Each pool resolves on its own, and an unstated
-// policy is vLLM's default, fcfs (v0.31.0 vllm/config/scheduler.py:160) -- never another
-// pool's. Any other value is refused.
+// enginePolicyOf resolves a pool's engine.scheduling_policy (build.EnginePolicyOf); a policy
+// BLIS does not simulate is fatal.
 func enginePolicyOf(m *kernelmodel.Model) enginePolicy {
-	eng, err := m.Engine()
+	p, err := enginePolicyFor(m)
 	if err != nil {
-		logrus.Fatalf("scenario %q: reading the %s pool's engine: %v", kernelScenario, m.Role(), err)
+		logrus.Fatalf("%v", err)
 	}
-	policy := eng.SchedulingPolicy
-	if policy == "" {
-		policy = "fcfs"
-	}
-	p, ok := map[string]enginePolicy{
-		"fcfs":     {scheduler: "fcfs", preemption: "fcfs"},
-		"priority": {scheduler: "priority-fcfs", preemption: "priority"},
-	}[policy]
-	if !ok {
-		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
-			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
-	}
-	return p
+	return enginePolicy{scheduler: p.Scheduler, preemption: p.Preemption}
 }
+
+// enginePolicy is a pool's resolved queue order and preemption policy.
+type enginePolicy struct{ scheduler, preemption string }
 
 // recordPolicyOverride notes, when the policy a run simulates for setting differs from the one
 // its scenario states (scope names a pool, "" = the run), that source chose it: warned on
@@ -1040,9 +1022,9 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
 	alpha := 0.0
 	if speculating {
-		alpha = ar.res.AcceptanceRate()
-		if ar.cliRate != nil {
-			alpha = *ar.cliRate
+		alpha = ar.Res.AcceptanceRate()
+		if ar.CLIRate != nil {
+			alpha = *ar.CLIRate
 		}
 	} else if cmd.Flags().Changed(acceptanceRateFlag) {
 		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
@@ -1052,7 +1034,7 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 		logrus.Fatalf("%v", err)
 	}
 	if c.IsEnabled() {
-		acceptanceRecord = acceptanceRecordOf(ar.res, c)
+		acceptanceRecord = acceptanceRecordOf(ar.Res, c)
 		logAcceptance(acceptanceRecord, c.K)
 		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
 			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())

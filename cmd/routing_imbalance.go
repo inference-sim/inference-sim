@@ -4,8 +4,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-schemas/spec/routing"
-
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -27,27 +25,13 @@ func registerRoutingFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&routingExpertImbalance, "routing-expert-imbalance", 0, "Expert parallelism: the busiest rank's distinct experts touched over the uniform-routing count, positive. Only with --routing-token-imbalance; unset, 1.")
 }
 
-// applyRoutingOverrides hands the command line's routing layer to the pools about to open.
-// The workload layer is the scenario's own binding: the pools open before a catalog preset
-// or an agentic descriptor is read, so their category reaches routing through the
-// scenario's pin (routing.profiles plus fallback_category), not here. CLI boundary: an
-// invalid value is fatal.
+// applyRoutingOverrides hands the command line's routing layer to the pools about to open
+// (build.RoutingOverridesOf). CLI boundary: an invalid value is fatal.
 func applyRoutingOverrides(cmd *cobra.Command) {
-	o := kernelmodel.RoutingOverrides{}
-	tokSet := cmd.Flags().Changed("routing-token-imbalance")
-	if cmd.Flags().Changed("routing-expert-imbalance") && !tokSet {
-		logrus.Fatalf("--routing-expert-imbalance needs --routing-token-imbalance")
-	}
-	if tokSet {
-		v := &routing.Value{TokenImbalance: routingTokenImbalance, Source: "--routing-token-imbalance"}
-		if cmd.Flags().Changed("routing-expert-imbalance") {
-			e := routingExpertImbalance
-			v.ExpertImbalance = &e
-		}
-		if p := v.Validate(); !p.OK() {
-			logrus.Fatalf("--routing-token-imbalance: %s", p.Error())
-		}
-		o.CLI = v
+	o, err := routingOverridesOf(routingTokenImbalance, cmd.Flags().Changed("routing-token-imbalance"),
+		routingExpertImbalance, cmd.Flags().Changed("routing-expert-imbalance"))
+	if err != nil {
+		logrus.Fatalf("%v", err)
 	}
 	kernelmodel.SetRoutingOverrides(o)
 }
