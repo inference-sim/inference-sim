@@ -349,10 +349,17 @@ func (s *Scheduler) transfersFinished(o TransferOutcome) {
 }
 
 // finishRequests is finish_requests (scheduler.py:2649-2712) for the error path of a load
-// failure under kv_load_failure_policy "fail".
+// failure under kv_load_failure_policy "fail". The ids are a set (:2667-2668): a repeated id
+// finishes its request once. Counted twice, the second copy would see the first's finished
+// status and free blocks an in-flight load still writes.
 func (s *Scheduler) finishRequests(ids []string, status Status) []*Request {
 	var done []*Request
+	seen := make(map[string]bool, len(ids))
 	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		r := s.requests[id]
 		if r == nil || r.Status >= FinishedStopped {
 			continue
