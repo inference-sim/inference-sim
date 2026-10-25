@@ -167,34 +167,38 @@ func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *Paren
 	inst.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
 }
 
-// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs, in arrival order,
-// for as long as the head's blocks fit; the head that does not fit blocks those behind it, as
-// vLLM's waiting queue does. A waiter whose decode instance has become unroutable is dropped:
-// its decode engine had taken the request, so the prefill side frees when the lease, last
-// renewed now, runs out. Called when a handoff starts waiting and whenever the instance may
-// have freed KV.
+// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs. Which of them start
+// is the decode engine's rule (sim.EngineCore.AdmitRemoteKV: in arrival order while the head
+// fits, leaving free what its other admitted handoffs still need); the cluster keeps the queue
+// and starts the transfers the engine admits. A waiter whose decode instance has become
+// unroutable is dropped: its decode engine had taken the request, so the prefill side frees
+// when the lease, last renewed now, runs out. Called when a handoff starts waiting and
+// whenever the instance may have freed KV.
 func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now int64) {
 	id := string(inst.ID())
 	q := cs.decodeKVWaiters[id]
-	for len(q) > 0 {
-		w := q[0]
-		if !inst.IsRoutable() {
+	if !inst.IsRoutable() {
+		for _, w := range q {
 			(&KVTransferStartedEvent{time: now, parentReq: w.parent}).dropAtStart(cs, holdUntilLeaseRenewed)
-			q = q[1:]
-			continue
 		}
-		// vLLM's reserved_blocks: what the instance's other admitted handoffs -- pulls in flight
-		// and landed ones not yet running -- still need before they can run.
-		reserved := cs.pullFirstStepBlocks[id] + inst.WaitingHolderBlocks()
-		pulled, ok := inst.ReserveTransferredKVBehind(w.req, reserved)
-		if !ok {
-			break
+		q = nil
+	}
+	if len(q) > 0 {
+		reqs := make([]*sim.Request, len(q))
+		for i, w := range q {
+			reqs[i] = w.req
 		}
-		cs.pullFirstStepBlocks[id] += inst.FirstDecodeStepBlocks(w.req)
-		q = q[1:]
-		w.parent.DecodeSubReq = w.req
-		w.parent.PulledKVBlocks = (pulled + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
-		scheduleTransferCompletion(cs, w.parent, now)
+		admitted := inst.AdmitRemoteKV(reqs)
+		for i, a := range admitted {
+			w := q[i]
+			if a.Req != w.req {
+				panic(fmt.Sprintf("serveDecodeKVWaiters: the engine admitted %s out of the queue's order (want %s)", a.Req.ID, w.req.ID))
+			}
+			w.parent.DecodeSubReq = w.req
+			w.parent.PulledKVBlocks = (a.PulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
+			scheduleTransferCompletion(cs, w.parent, now)
+		}
+		q = q[len(admitted):]
 	}
 	if len(q) == 0 {
 		delete(cs.decodeKVWaiters, id)
@@ -404,7 +408,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decodeInstID {
-			cs.pullFirstStepBlocks[decodeInstID] -= inst.FirstDecodeStepBlocks(decodeSubReq)
+			inst.RemoteKVLanded(decodeSubReq)
 		}
 	}
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",

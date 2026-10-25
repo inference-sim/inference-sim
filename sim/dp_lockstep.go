@@ -8,10 +8,10 @@ import "fmt"
 // Every rank runs every step: a rank with requests ready runs them, one without runs a
 // dummy batch (core.py:2280-2287, execute_dummy_batch :1005-1006). The MoE dispatch is a
 // collective over the group, so no rank finishes a step before the slowest one: the step
-// lasts the longest rank's duration, and every rank's clock advances by it. The wave ends
-// when an unfinished-request all-reduce finds no rank with work; that all-reduce runs on
-// the wave's first step and every DPSyncInterval-th step after (core.py:2333-2350), so a
-// wave runs up to DPSyncInterval-1 dummy steps past its last request.
+// lasts the longest rank's duration, and every rank's clock advances by it. Whether the wave
+// runs another step is the engine's rule (sim.DPWave, blis-vllm compat/engine: vLLM's
+// unfinished-request all-reduce on the wave's first step and every DPSyncInterval-th after);
+// the group keeps the clocks, the step event and the event order.
 //
 // The group's next step is one StepEvent in the leader's (rank 0's) queue; every rank's
 // stepEvent points at it, so each rank's existing "a step is armed" guards see the group's
@@ -20,11 +20,13 @@ type LockstepGroup struct {
 	ranks   []*Simulator
 	pricer  DPStepPricer
 	pending *StepEvent
-	// stepCounter counts the wave's steps since its start, as vLLM's step_counter.
-	stepCounter int
-	// idleSteps counts the wave's steps since one last ran a request. lastWave and
-	// lastWaveIdle record both counts for the wave that ended last (for tests).
-	idleSteps              int
+	// wave is the engine's wave state: it counts the wave's steps and decides whether the wave
+	// runs another (sim.DPWave).
+	wave DPWave
+	// waveSteps counts the wave's steps for the record below; idleSteps counts those since one
+	// last ran a request. lastWave and lastWaveIdle record both counts for the wave that ended
+	// last (for tests).
+	waveSteps, idleSteps   int
 	lastWave, lastWaveIdle int
 }
 
@@ -80,8 +82,8 @@ func (g *LockstepGroup) arm(t int64) {
 
 func (g *LockstepGroup) disarm() {
 	g.pending = nil
-	g.lastWave, g.lastWaveIdle = g.stepCounter, g.idleSteps
-	g.stepCounter, g.idleSteps = 0, 0
+	g.lastWave, g.lastWaveIdle = g.waveSteps, g.idleSteps
+	g.waveSteps, g.idleSteps = 0, 0
 	for _, r := range g.ranks {
 		r.stepEvent = nil
 	}
@@ -138,7 +140,7 @@ func (g *LockstepGroup) step(e *StepEvent) {
 		r.LockstepFinish(now, advance)
 	}
 
-	g.stepCounter++
+	g.waveSteps++
 	g.idleSteps++
 	for _, a := range active {
 		if a {
@@ -146,10 +148,11 @@ func (g *LockstepGroup) step(e *StepEvent) {
 			break
 		}
 	}
-	running := g.stepCounter != 1 && g.stepCounter%DPSyncInterval != 0
+	anyWork := false
 	for _, r := range g.ranks {
-		running = running || HasWorkOf(&r.EngineCore)
+		anyWork = anyWork || HasWorkOf(&r.EngineCore)
 	}
+	running := g.wave.Step(anyWork)
 	g.pending = nil
 	if running {
 		g.arm(now + advance)

@@ -40,6 +40,8 @@ type (
 	BatchResult            = engine.BatchResult
 	Completion             = engine.Completion
 	DPStepPricer           = engine.DPStepPricer
+	DPWave                 = engine.DPWave
+	RemoteKVAdmission      = engine.RemoteKVAdmission
 	DeferrableKVStore      = engine.DeferrableKVStore
 	EngineCore             = engine.EngineCore
 	EngineMetrics          = engine.EngineMetrics

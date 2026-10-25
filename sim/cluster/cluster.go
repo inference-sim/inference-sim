@@ -91,14 +91,12 @@ type ClusterSimulator struct {
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
 	// heldKVPeakTokens is each instance's peak of distinct held tokens.
-	prefillHolds map[string][]int64
-	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
+	prefillHolds     map[string][]int64
+	heldBlockRefs    map[string]map[int64]int
+	heldKVPeakTokens map[string]int64
+	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS). Which
+	// of them start is the decode engine's rule (sim.EngineCore.AdmitRemoteKV).
 	decodeKVWaiters map[string][]decodeKVWaiter
-	// pullFirstStepBlocks are, per decode instance, the first-step blocks of its pulls in flight
-	// (sim.Simulator.FirstDecodeStepBlocks): part of the reservation new pulls leave free.
-	pullFirstStepBlocks map[string]int64
-	heldBlockRefs       map[string]map[int64]int
-	heldKVPeakTokens    map[string]int64
 
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
@@ -281,7 +279,6 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.pendingDecodeCompletions = make(map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
 		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
-		cs.pullFirstStepBlocks = make(map[string]int64)
 		if config.PDTransferContention {
 			cs.pdLinks = sim.NewLinkArbiter()
 			cs.pdLinkFlows = make(map[sim.FlowID]*ParentRequest)

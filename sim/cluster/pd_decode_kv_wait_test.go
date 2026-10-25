@@ -100,6 +100,13 @@ func TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters(t *testing.T) {
 	if w := ps["waiter"]; w.DecodeSubReq != nil || cs.droppedAtDecodeKV != 1 || w.PrefillCompleteTime >= 300_000 {
 		t.Fatalf("fixture: the waiter must finish prefill before the drain and be dropped while waiting (dropped %d)", cs.droppedAtDecodeKV)
 	}
+	// Dropped while it still waited, never admitted: no pull ran, so the drop is at the tick the
+	// drained engine next looked at its waiters, with no transfer between start and end. A
+	// drained engine that admitted it anyway would start a pull and drop it only on landing.
+	if w := ps["waiter"]; w.TransferStartTime != w.CompletionTime || w.TransferCompleteTime != 0 {
+		t.Errorf("the waiter was dropped at %d after a pull from %d to %d; a drained decode instance must drop its waiters without admitting them",
+			w.CompletionTime, w.TransferStartTime, w.TransferCompleteTime)
+	}
 	// The decode engine had the request, so the lease, renewed until the drop, holds the
 	// waiter's prefill KV past it: still held one tick after the drop.
 	if after := run(ps["waiter"].CompletionTime + 1); usedBlocks(after.Instances()[0]) != 31 {
@@ -132,5 +139,37 @@ func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 	if ps["small"].TransferStartTime < ps["big"].TransferStartTime {
 		t.Errorf("small's pull started at %d, ahead of the earlier waiter big's at %d (FCFS head-of-line)",
 			ps["small"].TransferStartTime, ps["big"].TransferStartTime)
+	}
+}
+
+// The cluster starts exactly the handoffs the decode engine admits, and moves the KV the engine
+// says each pull must move (sim.EngineCore.AdmitRemoteKV). While long's decode holds the decode
+// pool, a and b queue behind it; when long finishes, both fit at once, so the engine admits
+// both at that one schedule and both pulls start at the same tick, each priced for its whole
+// prompt. A cluster that started fewer than the engine admitted would leave b for a later
+// schedule; a dropped pulled count would price a shorter pull.
+func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
+	config := holdConfig(false, 1000)
+	config.PDTransferTime = func(tokens int64, _, _ InstanceID) int64 { return 1 + tokens }
+	blocks := int64(40)
+	config.DecodeOverrides.TotalKVBlocks = &blocks
+	long := holdTestRequest("long", 1, 0, 160, 400) // 10 blocks, grows to 35 while it decodes
+	a := holdTestRequest("a", 2, 100_000, 96, 4)    // 6 blocks: does not fit beside long's 35
+	b := holdTestRequest("b", 3, 100_000, 96, 4)
+	ps := parentsByID(runHold(t, config, long, a, b))
+	pa, pb := ps["a"], ps["b"]
+	if pa.TransferStartTime <= pa.PrefillCompleteTime || pb.TransferStartTime <= pb.PrefillCompleteTime {
+		t.Fatalf("fixture: a and b must both wait for decode KV (a %d after %d, b %d after %d)",
+			pa.TransferStartTime, pa.PrefillCompleteTime, pb.TransferStartTime, pb.PrefillCompleteTime)
+	}
+	if pa.TransferStartTime != pb.TransferStartTime {
+		t.Errorf("a's pull started at %d and b's at %d; both fit once long freed its blocks, so both start together",
+			pa.TransferStartTime, pb.TransferStartTime)
+	}
+	for _, p := range []*ParentRequest{pa, pb} {
+		if p.PulledKVBlocks != 6 || p.TransferAloneTicks != 1+6*16 {
+			t.Errorf("%s pulled %d blocks priced at %d ticks, want its whole 6-block prompt at %d",
+				p.ID, p.PulledKVBlocks, p.TransferAloneTicks, 1+6*16)
+		}
 	}
 }

@@ -539,11 +539,15 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 
 func (i *InstanceSimulator) evictRequest(req *sim.Request) bool { return i.sim.Evict(req) }
 
-// ReserveTransferredKVBehind is ReserveTransferredKV leaving reserved blocks free for the
-// instance's other admitted handoffs (sim.Simulator.ReserveRemoteKVBehind, INV-PD-9).
-func (i *InstanceSimulator) ReserveTransferredKVBehind(req *sim.Request, reserved int64) (int64, bool) {
-	return i.sim.ReserveRemoteKVBehind(req, reserved)
+// AdmitRemoteKV hands the instance's waiting handoffs, in arrival order, to its engine, which
+// admits those whose pull may start (sim.EngineCore.AdmitRemoteKV, INV-PD-9).
+func (i *InstanceSimulator) AdmitRemoteKV(waiting []*sim.Request) []sim.RemoteKVAdmission {
+	return i.sim.AdmitRemoteKV(waiting)
 }
+
+// RemoteKVLanded tells the engine a handoff's pull has landed, or was dropped, so its first-step
+// blocks no longer count against new pulls.
+func (i *InstanceSimulator) RemoteKVLanded(req *sim.Request) { i.sim.RemoteKVLanded(req) }
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.
 func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVUsed() }
@@ -581,14 +585,6 @@ func (i *InstanceSimulator) SetRemoteKVAdmission(f func(now int64)) { i.sim.SetR
 
 // SetRemoteKVWaiting records how many handoffs wait for this engine's KV.
 func (i *InstanceSimulator) SetRemoteKVWaiting(n int) { i.sim.SetRemoteKVWaiting(n) }
-
-// WaitingHolderBlocks is the first-step blocks the waiting requests that hold their KV need.
-func (i *InstanceSimulator) WaitingHolderBlocks() int64 { return i.sim.WaitingHolderBlocks() }
-
-// FirstDecodeStepBlocks is the blocks a remote-KV request's first decode step takes.
-func (i *InstanceSimulator) FirstDecodeStepBlocks(req *sim.Request) int64 {
-	return i.sim.FirstDecodeStepBlocks(req)
-}
 
 // HasWork reports whether the engine has running or waiting requests.
 func (i *InstanceSimulator) HasWork() bool { return i.sim.HasWork() }
