@@ -88,7 +88,13 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
   `max_model_len - num_computed - 1` input cap on running requests
   (`vllm/v1/core/sched/scheduler.py:713-720@5df63a72`) and skipping rather than stopping at a
   running request scheduled zero tokens (`:755-773`), bind only when a request runs past its
-  known tokens; `spec-model-len-cap` and the speculative fuzz seeds now catch both.
+  known tokens; `spec-model-len-cap` and the speculative fuzz seeds now catch both. Each
+  matrix row cites a mutant of its own feature: the scheduler knobs `watermark`,
+  `long_prefill_token_threshold_adaptive` and `max_num_scheduled_tokens` have M52-M54, which
+  touch only that knob. The tier-3, tier-4 and engine-interface sweeps are
+  `oracle/mutate_t3.py`, `mutate_t4.py` and `mutate_e24.py`; the metrics model's is
+  `oracle/mutate_metrics.py` (X1-X7, run against the 35 scenarios' metric goldens and the 4000
+  metric fuzz traces).
 
 ## Provenance
 

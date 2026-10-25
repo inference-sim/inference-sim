@@ -125,6 +125,15 @@ MUTANTS = [
     ("M51", "extra retained tokens widen the window admission cap", "core/kv/manager.go",
      "capTokens := min(g.spec.Window-1+g.extraRetained+m.maxInFlight, m.maxModelLen)",
      "capTokens := min(g.spec.Window-1+m.maxInFlight, m.maxModelLen)"),
+    # One mutant per scheduler knob row, each touching only that knob, so a row's proof is a
+    # mutant of its own feature (docs/feature-matrix.md, "How to read a row").
+    ("M52", "watermark", "core/sched/scheduler.go",
+     "wm := int(cfg.Watermark * float64(cfg.NumBlocks))", "wm := 0"),
+    ("M53", "long_prefill_token_threshold_adaptive", "core/sched/scheduler.go",
+     "if threshold > 0 && s.cfg.LongPrefillAdaptive {", "if false && s.cfg.LongPrefillAdaptive {"),
+    ("M54", "max_num_scheduled_tokens", "core/sched/scheduler.go",
+     "\tif s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}",
+     "\tif false && s.cfg.MaxNumScheduledTokens > 0 {\n\t\treturn s.cfg.MaxNumScheduledTokens\n\t}"),
 ]
 
 
