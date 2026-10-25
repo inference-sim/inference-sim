@@ -674,6 +674,9 @@ type Shape struct {
 	Model           string
 	Acceptance      *acceptance.Pin
 	WorkloadBinding *workload.Binding
+	// EngineVersion is the scenario's engine_version: the engine release its deployment was
+	// written for.
+	EngineVersion string
 }
 
 // ShapeOf reads a scenario's Shape.
@@ -684,7 +687,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		return Shape{}, err
 	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
-		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload,
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: sc.EngineVersion,
 		Router: dep.Router, Labels: make([]map[string]string, len(dep.Pools)), Dir: filepath.Dir(path)}
 	if dep.PDTransfer != nil {
 		sh.PDConnector = dep.PDTransfer.Connector

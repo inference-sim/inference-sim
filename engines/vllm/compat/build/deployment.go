@@ -12,6 +12,11 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
+// CompatVersions are the vLLM releases the compatibility engine models: the releases the
+// scenarios written before blis-vllm state (inference-sim#2021 D7; re-baselined to 0.32.0 and
+// removed by inference-sim#2027). The same list is core/vllm's CompatVersions.
+var CompatVersions = []string{"0.29.0", "0.31.0"}
+
 // AdoptInputs name a run's scenario and the roots it reads, as the command line gave them
 // (--scenario, --scenarios, --registry), and whether the command line states a P/D topology.
 type AdoptInputs struct {
@@ -67,6 +72,15 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	shape, err := kernelmodel.ShapeOf(in.Scenario, kernelmodel.Repos{Scenarios: in.ScenariosDir})
 	if err != nil {
 		return Adopted{}, fmt.Errorf("scenario %q: %v", in.Scenario, err)
+	}
+	// One build models one engine release (#2021 B6): the compatibility engine is inference-sim's
+	// engine as it ran for the releases its scenarios state, and refuses any other rather than
+	// run it as one of those (a v0.32.0 deployment runs on blis-vllm's core/vllm engine, which
+	// this simulator does not build yet).
+	if !slices.Contains(CompatVersions, shape.EngineVersion) {
+		return Adopted{}, fmt.Errorf("scenario %q states engine_version %q; this simulator runs blis-vllm's "+
+			"compatibility engine, which models the releases %s (the v0.32.0 engine is not wired in yet)",
+			in.Scenario, shape.EngineVersion, strings.Join(CompatVersions, " and "))
 	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
