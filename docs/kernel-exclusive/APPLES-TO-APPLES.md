@@ -131,7 +131,7 @@ two line up with the client's as follows:
   when its task acquires the semaphore.
 - `ttft_ms` runs to the emission of the first token.
 - `itl_ms` is the sum of the request's inter-token intervals divided by `output_len - 1`
-  (`sim/simulator.go`, `recordRequestCompletion`). That is the client's
+  (`sim/engine.go`, `recordRequestCompletion`). That is the client's
   `(latency - ttft) / (output_len - 1)`, because the client's `latency` stops at the last content
   chunk.
 - BLIS's `e2e_ms` also includes `PostDecodeFixedOverhead` after the last token, so TPOT is not

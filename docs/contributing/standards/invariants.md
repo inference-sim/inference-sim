@@ -684,7 +684,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 **Statement:** After a speculative decode step, a request's `ProgressIndex` (the kernel's `ReqShape.Computed` on the next step) advances by the tokens granted as accepted (`1 <= g <= 1 + K`, the mean `1 + α·K` through the fractional carry), never by the verify width. The kernel reads `Computed` for KV reads, ring sizes, sparse selections and drafting eligibility, so a verify-width advance would price every later step at a context the engine rolled back.
 
-**Enforced:** `sim/simulator.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
+**Enforced:** `sim/engine.go` decode-phase `ProgressIndex += NumNewTokens`, with `NumNewTokens` the granted advance from `FormBatch`; `batchOf` substitutes the verify width only in the kernel's `Scheduled`.
 
 **Verification:** `TestRejectedDraftsDoNotAdvanceComputed` (`sim/kernelmodel`; a real DSpark simulation at α = 0.502); `TestSpecDecode_OutputTokenConservation` (`sim`).
 
@@ -737,7 +737,7 @@ Counts are a snapshot over `sim/` and `cmd/`. Re-derive any row with:
 git grep -o 'INV-L4' -- 'sim/**' 'cmd/**' | wc -l
 ```
 
-**INV-L2's code anchor (#1721).** INV-L2 was documented in the plan and cited nowhere in code — a declared capacity bound with nothing pointing at it. #1721 anchors it at the enforcement point the plan's §7 identifies: `Simulator.maybeStartAdapterLoad` (`sim/simulator.go`) commits the LRU eviction victim and reserves the slot at load **start**, so the reserved slot counts toward capacity for the whole load window. That timing is what makes the bound hold — committing the victim at load *completion* would let a request arriving mid-load resurrect the soon-to-be-evicted adapter and exceed capacity. The structural guarantee is in `sim/lora/resident_set.go`: `Store` admits a new id only when a slot is free **or** an eviction succeeds, and returns `false` when the set is full and every entry is pinned. That conditional — not the commit timing — is what makes the bound hold. What load-start commitment buys is that the `Store` at load completion can never fail, plus exact eviction accounting and the plan's §12 no-deadlock argument. Note the ID is written at the load-start site, so `git grep INV-L2` lands there rather than here.
+**INV-L2's code anchor (#1721).** INV-L2 was documented in the plan and cited nowhere in code — a declared capacity bound with nothing pointing at it. #1721 anchors it at the enforcement point the plan's §7 identifies: `Simulator.maybeStartAdapterLoad` (`sim/engine.go`) commits the LRU eviction victim and reserves the slot at load **start**, so the reserved slot counts toward capacity for the whole load window. That timing is what makes the bound hold — committing the victim at load *completion* would let a request arriving mid-load resurrect the soon-to-be-evicted adapter and exceed capacity. The structural guarantee is in `sim/lora/resident_set.go`: `Store` admits a new id only when a slot is free **or** an eviction succeeds, and returns `false` when the set is full and every entry is pinned. That conditional — not the commit timing — is what makes the bound hold. What load-start commitment buys is that the `Store` at load completion can never fail, plus exact eviction accounting and the plan's §12 no-deadlock argument. Note the ID is written at the load-start site, so `git grep INV-L2` lands there rather than here.
 
 **INV-L6 has no code anchor.** It is declared in the plan, and the servability paths carry no `OutputTokens` reference, but no test or production site names the ID. That is the *inverse* of the gap the resolution rule addresses (a declared promise with no citation, rather than a citation with no statement), so this registry records it rather than fixing it. Unlike INV-L2, it has no runtime message that would leave a reader stranded.
 
@@ -891,7 +891,7 @@ vLLM v0.31.0 sources:
 **Limitation:** a BLIS preemption restarts a request's output, whereas vLLM keeps generated tokens. Under long outputs, some growth preemption therefore remains.
 
 **Enforced:**
-- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (`sim/simulator.go`);
+- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (`sim/engine.go`);
 - `KVCacheState.admissionGateRefuses` (`sim/kv`);
 - `serveDecodeKVWaiters`, `admitDecodeKVIfIdle`, `decodeAdmitEvent` (`sim/cluster/pd_events.go`).
 

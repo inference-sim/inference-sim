@@ -32,7 +32,7 @@ as "number of concurrent sessions". This matches the snapshot, whose `concurrenc
 client level, and means the harness does not have to emulate a closed loop by hand.
 
 **Q3. Does BLIS report the same quantity as the snapshot's TPOT?**
-Yes. `sim/simulator.go:1099`:
+Yes. `sim/engine.go`, `advanceBatch`:
 `req.ITL = append(req.ITL, currStepAdvance + NumNewTokens*OutputTokenProcessingTime())`.
 That is per-decode-step inter-token latency including host detokenization — the
 client-observed inter-token time, which is what TPOT means. Both kernel terms reach it:
@@ -70,7 +70,7 @@ Still open, to be answered by investigation below: Q6 (double counting), Q8 (mem
 consistency), Q9 (catalog coverage), Q10 (comparison honesty).
 
 **Q6. Does BLIS add costs the kernel also charges?**
-No, for the deployments in this corpus. `sim/simulator.go:1063-1071` is the whole of it:
+No, for the deployments in this corpus. `sim/engine.go`, `executeBatchStep`, is the whole of it:
 `StepTime`, then `+= KVCache.ConsumePendingTransferLatency()`, then `max(1, ...)`. The
 transfer term is zero for a single-tier cache, which all 39 scenarios are (no offload
 tier). The floor only binds below 1 tick. So the step advance is the kernel's number and

@@ -2118,18 +2118,18 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		}
 	}
 
-	// Additionally verify EnqueueRequest specifically (it's in simulator.go, which
-	// also contains execution-engine code that legitimately uses OutputTokens).
-	data, err := os.ReadFile("simulator.go")
+	// Additionally verify EnqueueRequest specifically (it's in engine.go, which also contains
+	// execution-engine code that legitimately uses OutputTokens).
+	data, err := os.ReadFile("engine.go")
 	if err != nil {
-		t.Fatalf("failed to read simulator.go: %v", err)
+		t.Fatalf("failed to read engine.go: %v", err)
 	}
 	content := string(data)
 	// Extract EnqueueRequest function body (between "func (sim *engineCore) EnqueueRequest" and
 	// the next "func "): it is the engine's, since the host/engine split (#2021 E2.3).
 	startIdx := strings.Index(content, "func (sim *engineCore) EnqueueRequest")
 	if startIdx < 0 {
-		t.Fatal("EnqueueRequest function not found in simulator.go")
+		t.Fatal("EnqueueRequest function not found in engine.go")
 	}
 	endIdx := strings.Index(content[startIdx+1:], "\nfunc ")
 	if endIdx < 0 {
