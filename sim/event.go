@@ -41,18 +41,21 @@ func (e *ArrivalEvent) Priority() int    { return PriorityArrival }
 // Execute schedules the next StepEvent, if no such event is scheduled
 func (e *ArrivalEvent) Execute(sim *Simulator) {
 	logrus.Debugf("<< Arrival: %s at %d ticks", e.Request.ID, e.time)
-
-	// The admission overhead (render + tokenize) runs on the endpoint's render stage when
-	// one is configured, so it queues behind earlier requests (INV-R1).
-	render := sim.latencyModel.QueueingTime(e.Request)
-	queuedAt := e.time + render
-	if sim.renderer != nil {
-		queuedAt = sim.renderer.Admit(e.time, render)
-	}
 	sim.Schedule(&QueuedEvent{
-		time:    queuedAt,
+		time:    sim.queuedAt(e.Request, e.time),
 		Request: e.Request,
 	})
+}
+
+// queuedAt is when a request arriving at t enters the wait queue: after its admission overhead
+// (render + tokenize), which runs on the endpoint's render stage when one is configured, so it
+// queues behind earlier requests (INV-R1).
+func (sim *engineCore) queuedAt(req *Request, t int64) int64 {
+	render := sim.latencyModel.QueueingTime(req)
+	if sim.renderer != nil {
+		return sim.renderer.Admit(t, render)
+	}
+	return t + render
 }
 
 // QueuedEvent represents the queue of a new inference request into the system.
@@ -76,10 +79,13 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 
 	// If WaitQ has work, make sure a Step runs now: schedule one if none is pending,
 	// or pull an idle wake forward to this arrival (#1886).
-	if sim.WaitQ.Len() > 0 {
+	if sim.hasWaiting() {
 		sim.scheduleStepBy(e.time)
 	}
 }
+
+// hasWaiting reports whether the wait queue holds a request.
+func (sim *engineCore) hasWaiting() bool { return sim.WaitQ.Len() > 0 }
 
 // ScheduledEvent represents the scheduling of a new inference request in the system.
 type ScheduledEvent struct {
@@ -179,31 +185,68 @@ func (e *TimeoutEvent) Priority() int    { return PriorityTimeout }
 // (2) queued request — WaitQ.Remove, (3) pre-QueuedEvent race — request not in
 // any container yet (WaitQ.Remove returns false, safe no-op).
 func (e *TimeoutEvent) Execute(sim *Simulator) {
-	// No-op guard: request already completed or timed out (BC-3)
-	if e.Request.State == StateCompleted || e.Request.State == StateTimedOut {
+	if !sim.timeout(e.Request) {
 		return
 	}
-	wasRunning := e.Request.State == StateRunning
+
+	// INV-8 work-conserving: if running batch is now empty but WaitQ has work,
+	// schedule a StepEvent (defense-in-depth, BC-18)
+	//
+	// Deliberately NOT scheduleStepBy (#1886): this is the one idle-scheduling site that
+	// keeps the stepEvent == nil form. scheduleStepBy would pull a pending idle wake
+	// forward to e.time, re-creating the cascade the comment in engineCore.timeout describes.
+	// Nothing is stranded by waiting: an idle wake exists only when every WaitQ entry is
+	// deferred, and a queued timeout frees no CPU-tier capacity a deferral could use —
+	// OffloadCache.ReleaseKVBlocks delegates to the GPU tier alone (kv/offload_chain.go)
+	// and ClearDeferred leaves in-flight CPU slots to complete (kv/offload_deferral.go).
+	// So the remaining deferrals are polled at the wake, at a tick where admission could
+	// not have happened sooner anyway. Pinned by
+	// TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission: dropping the stale wake here
+	// instead of leaving it strands the sibling deferral.
+	if !sim.hasRunning() && sim.stepEvent == nil && sim.hasWaiting() {
+		sim.scheduleStepAt(e.time)
+	}
+
+	// Invoke completion callback for session management
+	sim.requestDone(e.Request, e.time)
+}
+
+// hasRunning reports whether the running batch holds a request.
+func (sim *engineCore) hasRunning() bool {
+	return sim.RunningBatch != nil && len(sim.RunningBatch.Requests) > 0
+}
+
+// timeout cancels a request whose client deadline passed, and reports whether it did: false
+// when the request had already completed or timed out (BC-3). Three paths: (1) running
+// request — new-slice removal from RunningBatch (R21), (2) queued request — WaitQ.Remove,
+// (3) pre-QueuedEvent race — request not in any container yet (WaitQ.Remove returns false,
+// safe no-op).
+func (sim *engineCore) timeout(req *Request) bool {
+	// No-op guard: request already completed or timed out (BC-3)
+	if req.State == StateCompleted || req.State == StateTimedOut {
+		return false
+	}
+	wasRunning := req.State == StateRunning
 	// INV-2 (request lifecycle): a terminal transition to timed-out, reachable from
 	// either queued or running. The guard above makes it one-way — a request that
 	// already reached a terminal state is never re-transitioned. INV-2's statement
 	// names only queued -> running -> completed, so timed-out is a terminal state the
 	// statement does not yet enumerate; this is not the only site that sets it.
-	e.Request.State = StateTimedOut
+	req.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++
-	sim.Metrics.RecordTimeout(e.Request)
+	sim.Metrics.RecordTimeout(req)
 
 	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
 	// running: it no longer uses its adapter. A queued/gated request never pinned,
 	// so releaseAdapterPin is a no-op there (guarded by the per-request flag).
-	sim.releaseAdapterPin(e.Request)
+	sim.releaseAdapterPin(req)
 
 	// Release KV blocks (safe for zero-block queued requests per BC-15)
-	sim.KVCache.ReleaseKVBlocks(e.Request)
+	sim.KVCache.ReleaseKVBlocks(req)
 
 	// Clean up computed-token tracking for ALL timed-out requests (prevents memory leak).
 	// A preempted-then-queued request still has an entry from its prior running phase.
-	delete(sim.reqNumComputedTokens, e.Request.ID)
+	delete(sim.reqNumComputedTokens, req.ID)
 
 	if wasRunning {
 		// New-slice construction (R21): build excluding timed-out request.
@@ -212,15 +255,15 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 		// (c) R21 compliance requires avoiding in-place mutation of iterated slices.
 		remaining := make([]*Request, 0, len(sim.RunningBatch.Requests)-1)
 		for _, r := range sim.RunningBatch.Requests {
-			if r != e.Request {
+			if r != req {
 				remaining = append(remaining, r)
 			}
 		}
 		sim.RunningBatch.Requests = remaining
-		// If batch is now empty, clear RunningBatch. Do NOT nil sim.stepEvent:
+		// If batch is now empty, clear RunningBatch. Do NOT nil the host's pending step:
 		// leaving it pointing to the already-scheduled StepEvent prevents the
-		// INV-8 guard below from creating a duplicate StepEvent at the current
-		// tick. At the same tick, StepEvents fire before TimeoutEvents (priority
+		// INV-8 guard in TimeoutEvent.Execute from creating a duplicate StepEvent at the
+		// current tick. At the same tick, StepEvents fire before TimeoutEvents (priority
 		// 2 < 5), so a newly-created StepEvent would pull a queued request and
 		// then its same-deadline TimeoutEvent would immediately time it out —
 		// cascading once per queued seed and leaving N orphaned StepEvents.
@@ -230,33 +273,8 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 			sim.RunningBatch = nil
 		}
 	} else {
-		sim.WaitQ.Remove(e.Request)
-		sim.ClearDeferredKV(e.Request.ID) // H3 (#1591): a timed-out queued request may be mid-deferral
+		sim.WaitQ.Remove(req)
+		sim.ClearDeferredKV(req.ID) // H3 (#1591): a timed-out queued request may be mid-deferral
 	}
-
-	// INV-8 work-conserving: if running batch is now empty but WaitQ has work,
-	// schedule a StepEvent (defense-in-depth, BC-18)
-	//
-	// Deliberately NOT scheduleStepBy (#1886): this is the one idle-scheduling site that
-	// keeps the stepEvent == nil form. scheduleStepBy would pull a pending idle wake
-	// forward to e.time, re-creating the cascade the comment above describes. Nothing is
-	// stranded by waiting: an idle wake exists only when every WaitQ entry is deferred,
-	// and a queued timeout frees no CPU-tier capacity a deferral could use —
-	// OffloadCache.ReleaseKVBlocks delegates to the GPU tier alone (kv/offload_chain.go)
-	// and ClearDeferred leaves in-flight CPU slots to complete (kv/offload_deferral.go).
-	// So the remaining deferrals are polled at the wake, at a tick where admission could
-	// not have happened sooner anyway. Pinned by
-	// TestIdleWake_TimeoutDuringWaitDoesNotDelayAdmission: dropping the stale wake here
-	// instead of leaving it strands the sibling deferral.
-	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) &&
-		sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
-		sim.scheduleStepAt(e.time)
-	}
-
-	// Invoke completion callback for session management
-	if sim.OnRequestDone != nil {
-		for _, next := range sim.OnRequestDone(e.Request, e.time) {
-			sim.InjectArrival(next)
-		}
-	}
+	return true
 }

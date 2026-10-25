@@ -501,7 +501,7 @@ func (sim *Simulator) ProcessNextEvent() Event {
 	sim.curPriority = ev.Priority()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
-	if sim.park != nil && sim.WaitQ.Len() == 0 {
+	if sim.park != nil && !sim.hasWaiting() {
 		sim.dropPark(sim.Clock)
 	}
 	sim.curPriority = -1
@@ -516,10 +516,7 @@ func (sim *Simulator) Finalize() {
 	// Record conservation fields (BC-8, BC-9) — must happen in Finalize
 	// because cluster mode drives events via ProcessNextEvent() directly
 	// and never calls sim.Run().
-	sim.Metrics.StillQueued = sim.WaitQ.Len()
-	if sim.RunningBatch != nil {
-		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
-	}
+	sim.recordStillHeld()
 	sim.Metrics.SimEndedTime = min(sim.Clock, sim.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", sim.Clock)
 }
@@ -1067,7 +1064,7 @@ func (sim *engineCore) recordRequestCompletion(req *Request) {
 // sim.stepEvent here prevents future QueuedEvent INV-8 guards from seeing a stale
 // non-nil pointer and skipping their step-scheduling.
 func (sim *Simulator) Step(now int64) {
-	if sim.RunningBatch == nil && sim.WaitQ.Len() == 0 {
+	if sim.nothingToStep() {
 		sim.stepEvent = nil
 		sim.idleStep(now)
 		return
@@ -1075,6 +1072,30 @@ func (sim *Simulator) Step(now int64) {
 	advance, remaining := sim.runStep(now)
 	sim.scheduleNextStep(now, advance, remaining)
 	sim.publishStep(now + advance)
+}
+
+// nothingToStep reports whether a step would find nothing to run: no running batch and an
+// empty wait queue.
+func (sim *engineCore) nothingToStep() bool { return sim.RunningBatch == nil && sim.WaitQ.Len() == 0 }
+
+// keepRunning sets the running batch to the requests a step left running.
+func (sim *engineCore) keepRunning(remaining []*Request) { sim.RunningBatch.Requests = remaining }
+
+// clearRunning drops the running batch after a step that finished every request in it.
+func (sim *engineCore) clearRunning() { sim.RunningBatch = nil }
+
+// adapterLoading reports whether a LoRA adapter load is in flight (the cold-load gate holds
+// the wait queue's head until it completes, #1466).
+func (sim *engineCore) adapterLoading() bool { return sim.loadingAdapter != "" }
+
+// recordStillHeld records the requests the engine still holds at the end of the run, waiting
+// and running (BC-8, BC-9): in Finalize, because cluster mode drives events through
+// ProcessNextEvent and never calls Run.
+func (sim *engineCore) recordStillHeld() {
+	sim.Metrics.StillQueued = sim.WaitQ.Len()
+	if sim.RunningBatch != nil {
+		sim.Metrics.StillRunning = len(sim.RunningBatch.Requests)
+	}
 }
 
 // idleStep is a step that found nothing to run. The step after an abort that left nothing to
@@ -1640,12 +1661,12 @@ func (sim *engineCore) releaseFinishedKV(req *Request) {
 // (work-conserving property, INV-8).
 func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*Request) {
 	if len(remaining) > 0 {
-		sim.RunningBatch.Requests = remaining
+		sim.keepRunning(remaining)
 		// estimate queue overhead from LR (sim.features)
 		//
 		sim.scheduleStepAt(now + currStepAdvance)
 	} else {
-		sim.RunningBatch = nil
+		sim.clearRunning()
 		sim.stepEvent = nil
 		// Work-conserving: if WaitQ has pending requests, immediately
 		// schedule a new step to form the next batch. Without this,
@@ -1677,7 +1698,7 @@ func (sim *Simulator) scheduleNextStep(now, currStepAdvance int64, remaining []*
 		// before this optimization. Clamped, the step fires AT the horizon, admits
 		// nothing, and the next step at horizon+1 ends the run with the clock at the
 		// horizon, exactly as the crawl did. Inert at the default unlimited horizon.
-		if sim.WaitQ.Len() > 0 && sim.loadingAdapter == "" {
+		if sim.hasWaiting() && !sim.adapterLoading() {
 			if sim.canPark() {
 				sim.parkIdle(now+currStepAdvance, currStepAdvance)
 				return

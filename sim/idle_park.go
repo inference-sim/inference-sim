@@ -73,17 +73,24 @@ var idlePollUs = func() int64 {
 
 // parkIdle parks the engine; at is when polling would step next.
 func (sim *Simulator) parkIdle(at, quantum int64) {
-	q := sim.KVCache.(QuiescentKVStore)
+	waiting, used, missDelta := sim.parkedView()
 	if idlePollUs >= 0 {
 		at, quantum = at-quantum+max(idlePollUs, 1), max(idlePollUs, 1)
-		sim.park = &idlePark{at: at, quantum: quantum, waiting: sim.WaitQ.Len(),
-			used: sim.KVCache.UsedBlocks(), missDelta: q.PollMisses() - sim.pollMissesAtStep, free: true}
+		sim.park = &idlePark{at: at, quantum: quantum, waiting: waiting,
+			used: used, missDelta: missDelta, free: true}
 		sim.stepEvent = nil
 		return
 	}
-	sim.park = &idlePark{at: at, quantum: quantum, waiting: sim.WaitQ.Len(),
-		used: sim.KVCache.UsedBlocks(), missDelta: q.PollMisses() - sim.pollMissesAtStep}
+	sim.park = &idlePark{at: at, quantum: quantum, waiting: waiting,
+		used: used, missDelta: missDelta}
 	sim.stepEvent = nil
+}
+
+// parkedView is what every skipped poll of a parked engine would record: the waiting
+// requests, the KV blocks in use, and the offload miss counter's advance per poll.
+func (sim *engineCore) parkedView() (waiting int, used, missDelta int64) {
+	q := sim.KVCache.(QuiescentKVStore)
+	return sim.WaitQ.Len(), sim.KVCache.UsedBlocks(), q.PollMisses() - sim.pollMissesAtStep
 }
 
 // unpark ends the park for a step wanted at t, charges the skipped polls and returns the
@@ -102,6 +109,19 @@ func (sim *Simulator) chargePolls(k int64) {
 		return
 	}
 	p := sim.park
+	end := p.at + k*p.quantum
+	if p.free {
+		end = p.at + (k-1)*p.quantum
+	}
+	sim.chargeSkippedPolls(k, p, end)
+	sim.busyUntil = end
+	sim.recordSkippedPollsEnd(end)
+}
+
+// chargeSkippedPolls records the telemetry of k empty polls of a parked engine (p) as polling
+// would have: the step count, the queue snapshots, the peak and the time-weighted KV usage (on
+// the StepTime grid only), and the offload miss counter.
+func (sim *engineCore) chargeSkippedPolls(k int64, p *idlePark, end int64) {
 	sim.stepCount += int(k)
 	for i := int64(0); i < k; i++ {
 		sim.Metrics.NumWaitQRequests = append(sim.Metrics.NumWaitQRequests, p.waiting)
@@ -116,11 +136,10 @@ func (sim *Simulator) chargePolls(k int64) {
 		}
 	}
 	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.missDelta)
-	end := p.at + k*p.quantum
-	if p.free {
-		end = p.at + (k-1)*p.quantum
-	}
-	sim.busyUntil = end
+}
+
+// recordSkippedPollsEnd closes the server series' gauges at the last skipped poll's end.
+func (sim *engineCore) recordSkippedPollsEnd(end int64) {
 	if sim.serverSeries != nil {
 		sim.serverSeries.recordGeneration(end, 0)
 		sim.recordServerStepEnd(end, 0)
@@ -132,7 +151,7 @@ func (sim *Simulator) chargePolls(k int64) {
 func (sim *Simulator) WakeIfParked(t int64) {
 	switch {
 	case sim.park == nil:
-	case sim.WaitQ.Len() == 0:
+	case !sim.hasWaiting():
 		sim.dropPark(t)
 	case sim.stepEvent == nil:
 		sim.scheduleStepAt(t)
