@@ -39,7 +39,7 @@ func TestNewEngine_BuildsFromTheConfigOrSaysWhyNot(t *testing.T) {
 	SetNewKVStoreFromConfig(nil)
 	defer SetNewKVStoreFromConfig(saved)
 	if _, err := NewEngine("inst-d", cfg); err == nil || !strings.Contains(err.Error(), "NewKVStoreFromConfig not registered") ||
-		!strings.Contains(err.Error(), "cmd/engine_build.go") {
-		t.Errorf("no registered KV constructor: err %v, want one naming the missing constructor and the build site that links it", err)
+		!strings.Contains(err.Error(), "compat/kv") || !strings.Contains(err.Error(), "cmd/engine_build.go") {
+		t.Errorf("no registered KV constructor: err %v, want one naming the constructor, the package to link and blis's build site", err)
 	}
 }

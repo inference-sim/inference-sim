@@ -51,7 +51,7 @@ const (
 
 // catalogStorageDevicesRelPath is the table's location relative to the catalog clone root,
 // for diagnostics that name it.
-var catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
+const catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
 
 // engineKnobFlags gathers the command line's restatements of the scenario's per-pool engine
 // knobs, unread, for the engine to check against the scenario.

@@ -27,6 +27,11 @@ import (
 // that type, a field read or write on a pack, or an alias of the type. So is any call to the
 // global registry (rules.Lookup, rules.Apply, rules.Register, rules.Versions), which looks a pack
 // up instead of taking the caller's.
+//
+// The registry can also be reached one call away, through blis-schemas' own Validate: with no
+// Bundle.Rules it applies the packs blis-schemas registers for itself (schemas.go). So a call
+// to Validate in scope is a finding unless the Bundle it is handed states Rules; Validate's own
+// fallback is then dead for the engine (code review round 2, N1).
 func TestPinnedEngineReadsRulesOnlyThroughEngineRules(t *testing.T) {
 	findings := packFindings(t, engineRulesScope)
 	if len(findings) > 0 {
@@ -57,7 +62,12 @@ var allowedPackUses = map[string][]string{
 const (
 	schemasRulesPath = "github.com/inference-sim/blis-schemas/rules"
 	vllmRulesPath    = "github.com/inference-sim/blis-vllm/rules"
+	schemasRootPath  = "github.com/inference-sim/blis-schemas"
 )
+
+// validatorsReadingRules are blis-schemas' root functions that apply a release's rules: each
+// falls back to the module's own registered packs unless its Bundle states Rules.
+var validatorsReadingRules = map[string]bool{"Validate": true}
 
 // globalRegistry are the functions that look a pack up by version instead of taking the
 // caller's rules, in the schemas package and in blis-vllm's packs module.
@@ -179,6 +189,14 @@ func checkPackUse(t *testing.T, path string, fset *token.FileSet, imp types.Impo
 				if v, ok := obj.(*types.Var); ok && mentionsPack(v.Type()) {
 					report(x, "declares or uses a "+v.Type().String())
 				}
+			case *ast.CallExpr:
+				if fn := calledFunc(info, x.Fun); fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == schemasRootPath &&
+					validatorsReadingRules[fn.Name()] && !bundleStatesRules(x) {
+					report(x, "calls blis-schemas' "+fn.Name()+" with no Bundle.Rules, so it applies blis-schemas' own registered packs")
+				}
+				if tv, ok := info.Types[x]; ok && tv.IsValue() && mentionsPack(tv.Type) {
+					report(x, "has the concrete type "+tv.Type.String())
+				}
 			case ast.Expr:
 				if tv, ok := info.Types[x]; ok && tv.IsValue() && mentionsPack(tv.Type) {
 					report(x, "has the concrete type "+tv.Type.String())
@@ -189,6 +207,40 @@ func checkPackUse(t *testing.T, path string, fset *token.FileSet, imp types.Impo
 	}
 	sort.Strings(out)
 	return out
+}
+
+// calledFunc is the function a call's callee resolves to, or nil.
+func calledFunc(info *types.Info, fun ast.Expr) *types.Func {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		fn, _ := info.Uses[f].(*types.Func)
+		return fn
+	case *ast.SelectorExpr:
+		fn, _ := info.Uses[f.Sel].(*types.Func)
+		return fn
+	}
+	return nil
+}
+
+// bundleStatesRules reports whether a call's argument is a Bundle literal that sets Rules. A
+// bundle built elsewhere and passed by name is not credited: the check cannot see that it
+// states Rules, so it reports the call.
+func bundleStatesRules(call *ast.CallExpr) bool {
+	if len(call.Args) != 1 {
+		return false
+	}
+	lit, ok := call.Args[0].(*ast.CompositeLit)
+	if !ok {
+		return false
+	}
+	for _, el := range lit.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok {
+			if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Rules" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isPackType reports whether typ is blis-schemas' rules.Pack (behind any aliases).
@@ -232,22 +284,34 @@ func mentionsPack(typ types.Type) bool {
 func TestPackUseCheckCatchesEachForm(t *testing.T) {
 	const header = `package probe
 
-import "github.com/inference-sim/blis-schemas/rules"
+import (
+	blisschemas "github.com/inference-sim/blis-schemas"
+	"github.com/inference-sim/blis-schemas/rules"
+)
 
-var _ = rules.NormalizeMoEBackend
+var (
+	_ = rules.NormalizeMoEBackend
+	_ = blisschemas.Validate
+)
 `
-	clean := `func ok(r rules.EngineRules) string { return r.EngineVersion() }`
+	clean := `func ok(r rules.EngineRules) string { return r.EngineVersion() }
+
+func okValidate(r rules.EngineRules) bool {
+	return blisschemas.Validate(blisschemas.Bundle{Rules: func(string) rules.EngineRules { return r }}).OK()
+}`
 	forms := map[string]string{
-		"type assertion":   `func f(r rules.EngineRules) bool { _, ok := r.(*rules.Pack); return ok }`,
-		"type switch case": `func f(r rules.EngineRules) int { switch r.(type) { case *rules.Pack: return 1 }; return 0 }`,
-		"parameter":        `func f(p *rules.Pack) {}`,
-		"result":           `func f() *rules.Pack { return nil }`,
-		"struct field":     `type s struct{ p *rules.Pack }`,
-		"field write":      `func f(r rules.EngineRules) { if p, ok := r.(*rules.Pack); ok { p.Version = "x" } }`,
-		"alias":            `type myPack = rules.Pack`,
-		"conversion":       `func f(r any) any { return (*rules.Pack)(r.(*rules.Pack)) }`,
-		"global lookup":    `func f() bool { return rules.Lookup("0.31.0") != nil }`,
-		"global apply":     `func f(in rules.Input) bool { return rules.Apply(in).OK() }`,
+		"type assertion":                      `func f(r rules.EngineRules) bool { _, ok := r.(*rules.Pack); return ok }`,
+		"type switch case":                    `func f(r rules.EngineRules) int { switch r.(type) { case *rules.Pack: return 1 }; return 0 }`,
+		"parameter":                           `func f(p *rules.Pack) {}`,
+		"result":                              `func f() *rules.Pack { return nil }`,
+		"struct field":                        `type s struct{ p *rules.Pack }`,
+		"field write":                         `func f(r rules.EngineRules) { if p, ok := r.(*rules.Pack); ok { p.Version = "x" } }`,
+		"alias":                               `type myPack = rules.Pack`,
+		"conversion":                          `func f(r any) any { return (*rules.Pack)(r.(*rules.Pack)) }`,
+		"global lookup":                       `func f() bool { return rules.Lookup("0.31.0") != nil }`,
+		"global apply":                        `func f(in rules.Input) bool { return rules.Apply(in).OK() }`,
+		"validate without the caller's rules": `func f() bool { return blisschemas.Validate(blisschemas.Bundle{}).OK() }`,
+		"validate a bundle built elsewhere":   `func f(b blisschemas.Bundle) bool { return blisschemas.Validate(b).OK() }`,
 	}
 	fset := token.NewFileSet()
 	imp := importer.ForCompiler(fset, "source", nil)
@@ -283,7 +347,7 @@ var _ = rules.NormalizeMoEBackend
 // tests and offline tools, is linked by their test files and commands only.
 func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	allowed := map[string]bool{
-		"github.com/inference-sim/inference-sim/cmd": true, // cmd/engine_build.go, checked by b2check
+		"github.com/inference-sim/inference-sim/cmd": true, // cmd/engine_build.go, checked per file below
 		"github.com/inference-sim/inference-sim/sim": true, // sim/engine_aliases.go, the seam (#2027)
 	}
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}|{{join .Imports \",\"}}", "..").Output()
@@ -305,5 +369,39 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 	if linked < 3 {
 		t.Fatalf("go list -deps saw %d inference-sim packages; the check is vacuous", linked)
+	}
+
+	// Within the two packages allowed above, only their one file each: cmd's build site and
+	// sim's compatibility seam (removed at #2027).
+	sites := map[string]bool{"cmd/engine_build.go": true, "sim/engine_aliases.go": true}
+	seen := map[string]bool{}
+	for _, dir := range []string{".", "../sim"} {
+		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if strings.HasSuffix(f, "_test.go") {
+				continue
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), f, nil, parser.ImportsOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel := filepath.ToSlash(filepath.Join(map[string]string{".": "cmd", "../sim": "sim"}[dir], filepath.Base(f)))
+			for _, imp := range parsed.Imports {
+				if strings.HasPrefix(strings.Trim(imp.Path.Value, `"`), "github.com/inference-sim/blis-vllm") {
+					seen[rel] = true
+					if !sites[rel] {
+						t.Errorf("%s imports %s; only cmd/engine_build.go and sim/engine_aliases.go may", rel, imp.Path.Value)
+					}
+				}
+			}
+		}
+	}
+	for site := range sites {
+		if !seen[site] {
+			t.Errorf("non-vacuity: %s imports no blis-vllm package, so the per-file check sees nothing", site)
+		}
 	}
 }
