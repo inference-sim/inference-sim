@@ -7,7 +7,6 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	sim "github.com/inference-sim/inference-sim/sim"
 )
 
@@ -20,8 +19,8 @@ const testNICBytesPerSecond = 1e9
 
 // testDemand is a cross-node handoff: 1000 bytes per token over the sender's egress and the
 // receiver's ingress, with a 50 us floor.
-func testDemand(tokens int64, from, to InstanceID) kvtransfer.Flow {
-	return kvtransfer.Flow{Bytes: tokens * 1000, FloorNs: 50_000, Links: []kvtransfer.Link{
+func testDemand(tokens int64, from, to InstanceID) sim.Flow {
+	return sim.Flow{Bytes: tokens * 1000, FloorNs: 50_000, Links: []sim.Link{
 		{ID: "nic/egress/" + string(from), BytesPerSecond: testNICBytesPerSecond},
 		{ID: "nic/ingress/" + string(to), BytesPerSecond: testNICBytesPerSecond},
 	}}
@@ -29,7 +28,7 @@ func testDemand(tokens int64, from, to InstanceID) kvtransfer.Flow {
 
 // testDemandPrice is PDTransferTime consistent with testDemand, as the kernel's law requires.
 func testDemandPrice(tokens int64, from, to InstanceID) int64 {
-	return kvtransfer.AloneTicks(testDemand(tokens, from, to))
+	return sim.AloneTicks(testDemand(tokens, from, to))
 }
 
 func contentionConfig(numInstances, prefill, decode int, contention bool) DeploymentConfig {

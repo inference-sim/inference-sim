@@ -38,7 +38,7 @@ jobs:
             packages: "./sim/cluster"
             timeout: "15m"
           - name: "core packages"
-            packages: "./sim ./sim/kv ./sim/trace"
+            packages: "./sim ./sim/trace"
             timeout: "10m"
           # The blis-latency-kernel adapter and its scoring harness. Hermetic: scenarios come
           # from the kernel module go.mod pins, the catalog and registry are vendored under

@@ -6,7 +6,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
@@ -288,7 +287,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	parentReq.TransferAloneTicks = duration
 	if cs.pdLinks != nil {
 		flow := cs.config.PDTransferDemand(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID)
-		if alone := kvtransfer.AloneTicks(flow); alone != duration {
+		if alone := sim.AloneTicks(flow); alone != duration {
 			// blis-schemas kernel.PDTransferDemand: alone, a demand costs exactly PDTransferTime.
 			panic(fmt.Sprintf("KV handoff of %s: its demand costs %d ticks alone but its price is %d; "+
 				"the latency backend breaks the PDTransferTime == PDTransferDemand.AloneTime law",

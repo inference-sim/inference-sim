@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
@@ -85,8 +84,8 @@ type ClusterSimulator struct {
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
-	pdLinks       *kvtransfer.LinkArbiter
-	pdLinkFlows   map[kvtransfer.FlowID]*ParentRequest
+	pdLinks       *sim.LinkArbiter
+	pdLinkFlows   map[sim.FlowID]*ParentRequest
 	pdLinkWakeGen int64
 	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
@@ -284,8 +283,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
 		cs.pullFirstStepBlocks = make(map[string]int64)
 		if config.PDTransferContention {
-			cs.pdLinks = kvtransfer.NewLinkArbiter()
-			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
+			cs.pdLinks = sim.NewLinkArbiter()
+			cs.pdLinkFlows = make(map[sim.FlowID]*ParentRequest)
 		}
 		cs.heldBlockRefs = make(map[string]map[int64]int)
 		cs.heldKVPeakTokens = make(map[string]int64)

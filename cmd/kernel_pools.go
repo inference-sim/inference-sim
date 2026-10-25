@@ -12,7 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
@@ -202,7 +201,7 @@ func (p *kernelPools) holdsPrefillKV() bool {
 // it. Both nil for a colocated run, where contention is refused.
 func (p *kernelPools) handoffPricing(contention bool) (
 	func(int64, cluster.InstanceID, cluster.InstanceID) int64,
-	func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow,
+	func(int64, cluster.InstanceID, cluster.InstanceID) sim.Flow,
 ) {
 	if p == nil {
 		if contention {
@@ -223,24 +222,24 @@ func (p *kernelPools) handoffPricing(contention bool) (
 // blis-schemas law that alone a demand costs its PDTransferTime is checked for every rank pair
 // up front (a block's handoff), so a kernel breaking it is refused before the run rather than
 // arbitrated.
-func (p *kernelPools) transferDemand() func(int64, cluster.InstanceID, cluster.InstanceID) kvtransfer.Flow {
+func (p *kernelPools) transferDemand() func(int64, cluster.InstanceID, cluster.InstanceID) sim.Flow {
 	firstDecode := prefillInstances
-	demand := func(tokens int64, from, to kernel.Placement) kvtransfer.Flow {
+	demand := func(tokens int64, from, to kernel.Placement) sim.Flow {
 		d := p.prefill.Kernel().PDTransferDemand(int(tokens), from, to)
 		if err := d.Check(); err != nil {
 			logrus.Fatalf("scenario %q: the kernel's demand for a %d-token handoff from %+v to %+v is "+
 				"malformed: %v", kernelScenario, tokens, from, to, err)
 		}
-		f := kvtransfer.Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
+		f := sim.Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
 		for _, l := range d.Links {
-			f.Links = append(f.Links, kvtransfer.Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
+			f.Links = append(f.Links, sim.Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
 		}
 		return f
 	}
 	for i := 0; i < prefillInstances; i++ {
 		for j := 0; j < decodeInstances; j++ {
 			from, to := p.prefill.PlacementOf(i), p.decode.PlacementOf(j)
-			if a, b := kvtransfer.AloneTicks(demand(blockSizeTokens, from, to)),
+			if a, b := sim.AloneTicks(demand(blockSizeTokens, from, to)),
 				p.prefill.PDTransferTicks(blockSizeTokens, from, to); a != b {
 				logrus.Fatalf("scenario %q: the kernel's handoff demand from prefill rank %d to decode "+
 					"rank %d costs %d ticks alone but it prices the handoff at %d; blis-schemas requires "+
@@ -248,7 +247,7 @@ func (p *kernelPools) transferDemand() func(int64, cluster.InstanceID, cluster.I
 			}
 		}
 	}
-	return func(tokens int64, from, to cluster.InstanceID) kvtransfer.Flow {
+	return func(tokens int64, from, to cluster.InstanceID) sim.Flow {
 		return demand(tokens, p.prefill.PlacementOf(rankInPool(from, firstDecode)),
 			p.decode.PlacementOf(rankInPool(to, firstDecode)))
 	}

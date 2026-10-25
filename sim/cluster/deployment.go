@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -86,7 +85,7 @@ type DeploymentConfig struct {
 	PDTransferTime func(tokens int64, from, to InstanceID) int64
 
 	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
-	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a kvtransfer.LinkArbiter, which
+	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a sim.LinkArbiter, which
 	// divides every link max-min fairly among the handoffs on it and re-rates them as handoffs
 	// start, drain and finish. A handoff alone still completes at exactly PDTransferTime. False
 	// (the default) prices every handoff as if alone, byte-identical to the behaviour before.
@@ -95,7 +94,7 @@ type DeploymentConfig struct {
 	// the floor, and the links crossed with their full rates (blis-schemas
 	// kernel.PDTransferDemand). Required when PDTransferContention is set; the simulator invents
 	// no rate, floor or link of its own.
-	PDTransferDemand func(tokens int64, from, to InstanceID) kvtransfer.Flow
+	PDTransferDemand func(tokens int64, from, to InstanceID) sim.Flow
 
 	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
 	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -181,7 +180,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 		if s.sharedPrefix < 16 {
 			return false, false, false
 		}
-		first := hash.HashBlock("", reqs[0].InputTokens[:16])
+		first := sim.HashBlock("", reqs[0].InputTokens[:16])
 		for _, p := range cs.ParentRequests() {
 			if p.ID != r.ID || p.DecodeSubReq == nil || p.DecodeSubReq.State != sim.StateWaitingForRemoteKVs {
 				continue
@@ -236,7 +235,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			}
 			if p := pendingVictims[id]; p != nil && s.sharedPrefix >= 16 {
 				// Its reservation is released: look at its decode engine directly.
-				first := hash.HashBlock("", reqs[0].InputTokens[:16])
+				first := sim.HashBlock("", reqs[0].InputTokens[:16])
 				for _, inst := range cs.Instances() {
 					if inst.ID() != p.DecodeInstanceID {
 						continue

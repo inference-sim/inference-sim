@@ -1,12 +1,24 @@
-// sim/engine_aliases.go: package sim's names for the engine, which lives in sim/engine (#2021
-// E2.3d). Every name a caller of package sim used before the engine moved is kept here, so no
-// caller changes: types are aliases, constants are re-declared, and functions and the
-// constructor registration variables forward to the engine package.
+// sim/engine_aliases.go: package sim's names for the engine, which lives in blis-vllm
+// (compat/engine and the two leaf packages the host uses: compat/kvtransfer, the P/D link
+// arbiter, and compat/prefix, the prompt-chain hash; #2021 E2.3d). It is the host's one
+// compatibility seam onto the engine, and it leaves with the 0.29/0.31 compatibility engine
+// at the re-baseline (#2027). Every name a caller of package sim used before the engine moved
+// is kept here, so no caller changes: types are aliases, constants are re-declared, and
+// functions and the constructor registration variables forward to the engine package.
 package sim
 
-import "github.com/inference-sim/blis-vllm/compat/engine"
+import (
+	"github.com/inference-sim/blis-vllm/compat/engine"
+	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
+	hash "github.com/inference-sim/blis-vllm/compat/prefix"
+)
 
 type (
+	// The P/D link arbiter (host-side network contention, INV-P2-2) and its flows.
+	LinkArbiter            = kvtransfer.LinkArbiter
+	Link                   = kvtransfer.Link
+	Flow                   = kvtransfer.Flow
+	FlowID                 = kvtransfer.FlowID
 	KernelPoolProvenance   = engine.KernelPoolProvenance
 	RoutingRecord          = engine.RoutingRecord
 	RuleFinding            = engine.RuleFinding
@@ -140,4 +152,10 @@ var (
 	KVCacheUsageForTest           = engine.KVCacheUsageForTest
 	NewKVCacheStateFuncForTest    = engine.NewKVCacheStateFuncForTest
 	ResidentAdapterSetConstructor = engine.ResidentAdapterSetConstructor
+	// The P/D link arbiter's constructor and the alone-on-its-links transfer time.
+	NewLinkArbiter = kvtransfer.NewLinkArbiter
+	AloneTicks     = kvtransfer.AloneTicks
+	// HashBlock chains a prompt block onto its prefix's hash: the router's prompt-chain hash,
+	// the same one the engine's prefix cache keys blocks with (BC-3).
+	HashBlock = hash.HashBlock
 )

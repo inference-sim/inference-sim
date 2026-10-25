@@ -5,7 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -81,14 +80,14 @@ func TestPromptCanon_PinnedChainsSurviveChurn(t *testing.T) {
 	c := newPromptCanon(7, 2, 2)
 	p := []sim.TokenID{1, 2}
 	before := c.canonical(p)
-	c.pin(hash.HashBlock("", p)) // the engine stored the block
+	c.pin(sim.HashBlock("", p)) // the engine stored the block
 	for i := 0; i < 10; i++ {
 		_ = c.canonical([]sim.TokenID{sim.TokenID(100 + 2*i), sim.TokenID(101 + 2*i)})
 	}
 	if got := c.canonical(p); !slices.Equal(got, before) {
 		t.Fatalf("a cached block's canonical tokens changed under churn: %v -> %v", before, got)
 	}
-	c.unpin(hash.HashBlock("", p)) // the engine evicted it
+	c.unpin(sim.HashBlock("", p)) // the engine evicted it
 	for i := 0; i < 10; i++ {
 		_ = c.canonical([]sim.TokenID{sim.TokenID(300 + 2*i), sim.TokenID(301 + 2*i)})
 	}
