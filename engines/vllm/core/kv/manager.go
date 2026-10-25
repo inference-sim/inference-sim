@@ -62,7 +62,9 @@ type Manager struct {
 	eagle bool
 	// reprefillable is num_reprefillable_tokens, max(0, num_prefill_lookahead - 1): the trailing
 	// computed tokens a multi-module MTP drafter may re-prefill, never cached
-	// (kv_cache_coordinator.py:117, 346-352).
+	// (kv_cache_coordinator.py:117, 346-352). The same count is every sliding window's
+	// extra_retained_tokens (get_kv_cache_configs, kv_cache_utils.py:2582-2589): tokens kept
+	// below the window so the drafter's re-prefill can still read them.
 	reprefillable int
 	groups        []*group
 	// maxInFlight is max_in_flight_tokens, which bounds a sliding window's admission
@@ -76,6 +78,9 @@ type group struct {
 	spec      Group
 	reqBlocks map[string][]*Block
 	numCached map[string]int // full blocks of the request already cached
+	// extraRetained is a sliding window's extra_retained_tokens
+	// (vllm/v1/kv_cache_interface.py:852-857@5df63a72), 0 for full attention.
+	extraRetained int
 }
 
 // Options are the parts of the KV manager's configuration a drafter or a hybrid model
@@ -111,7 +116,11 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		reprefillable: max(0, o.PrefillLookahead-1), maxInFlight: o.MaxInFlightTokens,
 	}
 	for i, g := range specs {
-		m.groups = append(m.groups, &group{id: uint32(i), spec: g, reqBlocks: map[string][]*Block{}, numCached: map[string]int{}})
+		gr := &group{id: uint32(i), spec: g, reqBlocks: map[string][]*Block{}, numCached: map[string]int{}}
+		if g.Kind == SlidingWindow {
+			gr.extraRetained = m.reprefillable
+		}
+		m.groups = append(m.groups, gr)
 	}
 	return m
 }
@@ -131,14 +140,19 @@ func (m *Manager) GroupBlocks(g int, id string) []*Block { return m.groups[g].re
 // ComputedBlocks is get_computed_blocks (kv_cache_manager.py:265-319): the longest prefix
 // every group can serve from cached blocks, capped so the last token is always recomputed
 // (max_cache_hit_length = num_tokens - 1), each group's blocks for it, and the tokens they
-// cover. With one group it is the full-attention scan (UnitaryKVCacheCoordinator); with
-// several it is HybridKVCacheCoordinator's fixed point (kv_cache_coordinator.py:796-931).
+// cover. With one group it is that group's own lookup (UnitaryKVCacheCoordinator,
+// kv_cache_coordinator.py:574-591): the full-attention scan, or for a model whose every layer
+// is one sliding window, the window's; with several it is HybridKVCacheCoordinator's fixed
+// point (kv_cache_coordinator.py:796-931).
 func (m *Manager) ComputedBlocks(hashes []BlockHash, numTokens int) ([][]*Block, int) {
 	if !m.caching {
 		return make([][]*Block, len(m.groups)), 0
 	}
 	maxLen := numTokens - 1
 	if len(m.groups) == 1 {
+		if g := m.groups[0]; g.spec.Kind == SlidingWindow {
+			return m.windowHit(hashes, maxLen, specGroup{spec: g.spec, ids: []int{0}}, m.eagle)
+		}
 		hit := m.fullHit(hashes, maxLen, []int{0}, m.eagle)
 		return hit, len(hit[0]) * m.blockSize
 	}
@@ -498,12 +512,13 @@ func (m *Manager) cacheable(numTokens int) int {
 }
 
 // skippedTokens is get_num_skipped_tokens (single_type_kv_cache_manager.py:712-723 and
-// :1135-1171): the tokens below a sliding window, none for full attention.
+// :1135-1171): the tokens below a sliding window less the extra ones it retains, none for
+// full attention.
 func (g *group) skippedTokens(computed int) int {
 	if g.spec.Kind != SlidingWindow {
 		return 0
 	}
-	return max(0, computed-g.spec.Window+1)
+	return max(0, computed-g.spec.Window+1-g.extraRetained)
 }
 
 // removeSkipped is remove_skipped_blocks (single_type_kv_cache_manager.py:672-710): each
@@ -546,7 +561,7 @@ func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, t
 		required := cdiv(numTokens, m.blockSize)
 		if admission && g.spec.Kind == SlidingWindow {
 			// max_admission_blocks_per_request (kv_cache_interface.py:859-885).
-			capTokens := min(g.spec.Window-1+m.maxInFlight, m.maxModelLen)
+			capTokens := min(g.spec.Window-1+g.extraRetained+m.maxInFlight, m.maxModelLen)
 			required = min(required, cdiv(capTokens, m.blockSize)+1)
 		}
 		have := len(g.reqBlocks[id])

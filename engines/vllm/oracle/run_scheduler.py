@@ -17,6 +17,7 @@ hits, and the waiting/running counts.
 Usage: python -I oracle/run_scheduler.py <vllm checkout> <scenario.json>
 """
 
+import dataclasses
 import hashlib
 import importlib.metadata
 import json
@@ -233,6 +234,8 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
                                        "long_prefill_token_threshold_adaptive") if k in cfg}
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
 
+    built = {}
+
     def vllm_config(**kw):
         if spec:
             args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
@@ -248,7 +251,8 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
             kw["lora_config"] = LoRAConfig(max_loras=cfg["max_loras"], max_cpu_loras=cfg.get("max_cpu_loras"))
         if cfg.get("kv_events"):
             kw["kv_events_config"] = KVEventsConfig(enable_kv_cache_events=True, publisher="null")
-        return real_vllm_config(**kw)
+        built["config"] = real_vllm_config(**kw)
+        return built["config"]
 
     def scheduler_config(**kw):
         kw.update(sched_extra)
@@ -280,6 +284,14 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
                 layers[f"layer{i}"] = SlidingWindowSpec(sliding_window=g["sliding_window"], **common)
             else:
                 raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
+        # A launch tags every sliding-window spec with extra_retained_tokens, the tokens a
+        # multi-module MTP drafter may re-prefill (get_kv_cache_configs,
+        # vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72), before it groups them; the count is
+        # vLLM's own num_prefill_lookahead_tokens on the config the helper just built.
+        extra_retained = max(0, built["config"].num_prefill_lookahead_tokens - 1)
+        for name, layer in layers.items():
+            if isinstance(layer, SlidingWindowSpec):
+                layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
         if cfg.get("disable_hybrid_kv_cache_manager"):
             # disable_hybrid_kv_cache_manager (vllm/config/scheduler.py:182@5df63a72): vLLM
             # promotes every sliding-window layer to full attention before grouping

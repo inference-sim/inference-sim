@@ -65,7 +65,7 @@
     {
       "symbol": "tests.v1.core.utils.KVCacheConfig",
       "kind": "environment",
-      "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers"
+      "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), each sliding-window layer tagged with extra_retained_tokens = num_prefill_lookahead_tokens - 1 read from the built VllmConfig, as get_kv_cache_configs tags it at launch (vllm/v1/core/kv_cache_utils.py:2582-2589); and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers"
     },
     {
       "symbol": "vllm.v1.executor.abstract.Executor",

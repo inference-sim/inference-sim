@@ -100,7 +100,7 @@ MUTANTS = [
      "return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}", "return kv.StoredRun{Tokens: r.allTokens()}"),
     # Hybrid KV cache (full attention with sliding windows).
     ("M41", "sliding window skipped tokens", "core/kv/manager.go",
-     "\treturn max(0, computed-g.spec.Window+1)\n", "\treturn max(0, computed-g.spec.Window)\n"),
+     "\treturn max(0, computed-g.spec.Window+1-g.extraRetained)\n", "\treturn max(0, computed-g.spec.Window-g.extraRetained)\n"),
     # Not M42: freeing out-of-window blocks on the processed-token basis
     # (kv_cache_manager.py:545-557) is equivalent here, because num_in_flight_tokens is zero
     # whenever a synchronous scheduler schedules; it binds under async scheduling (tier 3).
@@ -117,6 +117,14 @@ MUTANTS = [
      "\tif disableHybrid && hasFull {", "\tif false && disableHybrid && hasFull {"),
     ("M47", "hybrid lookup repeats until no group shortens the hit", "core/kv/manager.go",
      "\t\tif simple {\n\t\t\tbreak\n\t\t}\n", "\t\tif simple || true {\n\t\t\tbreak\n\t\t}\n"),
+    # blis-vllm#20 review I10, I11.
+    ("M49", "one sliding-window group looks up through the window", "core/kv/manager.go",
+     "\t\tif g := m.groups[0]; g.spec.Kind == SlidingWindow {", "\t\tif g := m.groups[0]; g.spec.Kind == SlidingWindow && false {"),
+    ("M50", "multi-module MTP keeps extra tokens below the window", "core/kv/manager.go",
+     "\t\t\tgr.extraRetained = m.reprefillable\n", "\t\t\tgr.extraRetained = 0\n"),
+    ("M51", "extra retained tokens widen the window admission cap", "core/kv/manager.go",
+     "capTokens := min(g.spec.Window-1+g.extraRetained+m.maxInFlight, m.maxModelLen)",
+     "capTokens := min(g.spec.Window-1+m.maxInFlight, m.maxModelLen)"),
 ]
 
 
