@@ -47,17 +47,6 @@ func (e *ArrivalEvent) Execute(sim *Simulator) {
 	})
 }
 
-// queuedAt is when a request arriving at t enters the wait queue: after its admission overhead
-// (render + tokenize), which runs on the endpoint's render stage when one is configured, so it
-// queues behind earlier requests (INV-R1).
-func (sim *engineCore) queuedAt(req *Request, t int64) int64 {
-	render := sim.latencyModel.QueueingTime(req)
-	if sim.renderer != nil {
-		return sim.renderer.Admit(t, render)
-	}
-	return t + render
-}
-
 // QueuedEvent represents the queue of a new inference request into the system.
 type QueuedEvent struct {
 	time    int64    // Simulation time of queued (in ticks)
@@ -83,9 +72,6 @@ func (e *QueuedEvent) Execute(sim *Simulator) {
 		sim.scheduleStepBy(e.time)
 	}
 }
-
-// hasWaiting reports whether the wait queue holds a request.
-func (sim *engineCore) hasWaiting() bool { return sim.WaitQ.Len() > 0 }
 
 // ScheduledEvent represents the scheduling of a new inference request in the system.
 type ScheduledEvent struct {
@@ -209,71 +195,4 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 
 	// Invoke completion callback for session management
 	sim.requestDone(e.Request, e.time)
-}
-
-// hasRunning reports whether the running batch holds a request.
-func (sim *engineCore) hasRunning() bool {
-	return sim.RunningBatch != nil && len(sim.RunningBatch.Requests) > 0
-}
-
-// timeout cancels a request whose client deadline passed, and reports whether it did: false
-// when the request had already completed or timed out (BC-3). Three paths: (1) running
-// request — new-slice removal from RunningBatch (R21), (2) queued request — WaitQ.Remove,
-// (3) pre-QueuedEvent race — request not in any container yet (WaitQ.Remove returns false,
-// safe no-op).
-func (sim *engineCore) timeout(req *Request) bool {
-	// No-op guard: request already completed or timed out (BC-3)
-	if req.State == StateCompleted || req.State == StateTimedOut {
-		return false
-	}
-	wasRunning := req.State == StateRunning
-	// INV-2 (request lifecycle): a terminal transition to timed-out, reachable from
-	// either queued or running. The guard above makes it one-way — a request that
-	// already reached a terminal state is never re-transitioned. INV-2's statement
-	// names only queued -> running -> completed, so timed-out is a terminal state the
-	// statement does not yet enumerate; this is not the only site that sets it.
-	req.State = StateTimedOut
-	sim.rec.timedOut(req)
-
-	// Release the adapter pin (cold-load gate, #1466) for a request cancelled while
-	// running: it no longer uses its adapter. A queued/gated request never pinned,
-	// so releaseAdapterPin is a no-op there (guarded by the per-request flag).
-	sim.releaseAdapterPin(req)
-
-	// Release KV blocks (safe for zero-block queued requests per BC-15)
-	sim.KVCache.ReleaseKVBlocks(req)
-
-	// Clean up computed-token tracking for ALL timed-out requests (prevents memory leak).
-	// A preempted-then-queued request still has an entry from its prior running phase.
-	delete(sim.reqNumComputedTokens, req.ID)
-
-	if wasRunning {
-		// New-slice construction (R21): build excluding timed-out request.
-		// Allocates O(batch_size) per running-request timeout. Acceptable because:
-		// (a) running-request timeouts are infrequent, (b) batch size is typically O(100s),
-		// (c) R21 compliance requires avoiding in-place mutation of iterated slices.
-		remaining := make([]*Request, 0, len(sim.RunningBatch.Requests)-1)
-		for _, r := range sim.RunningBatch.Requests {
-			if r != req {
-				remaining = append(remaining, r)
-			}
-		}
-		sim.RunningBatch.Requests = remaining
-		// If batch is now empty, clear RunningBatch. Do NOT nil the host's pending step:
-		// leaving it pointing to the already-scheduled StepEvent prevents the
-		// INV-8 guard in TimeoutEvent.Execute from creating a duplicate StepEvent at the
-		// current tick. At the same tick, StepEvents fire before TimeoutEvents (priority
-		// 2 < 5), so a newly-created StepEvent would pull a queued request and
-		// then its same-deadline TimeoutEvent would immediately time it out —
-		// cascading once per queued seed and leaving N orphaned StepEvents.
-		// The already-scheduled StepEvent fires at the correct future time and
-		// the Step() orphan guard handles the empty-batch case.
-		if len(remaining) == 0 {
-			sim.RunningBatch = nil
-		}
-	} else {
-		sim.WaitQ.Remove(req)
-		sim.ClearDeferredKV(req.ID) // H3 (#1591): a timed-out queued request may be mid-deferral
-	}
-	return true
 }

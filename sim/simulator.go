@@ -46,54 +46,6 @@ func (eq *EventQueue) Pop() any {
 	return item
 }
 
-// SimConfig holds all configuration for creating a Simulator.
-// Sub-configs are embedded so fields are accessible via promotion
-// (e.g., cfg.TotalKVBlocks resolves to cfg.KVCacheConfig.TotalKVBlocks).
-type SimConfig struct {
-	// Simulation control (no sub-config — no factory uses only these)
-	Horizon int64
-	Seed    int64
-
-	// Module-scoped sub-configs (R16)
-	KVCacheConfig
-	BatchConfig
-	ModelHardwareConfig
-	PolicyConfig
-	WorkloadConfig
-	// LoRAConfig is the 7th module sub-config (LoRA control-plane subsystem). Its
-	// zero value is inert: unset => the subsystem is a no-op and output is
-	// byte-identical to a pre-feature build (INV-6). See sim/lora.
-	LoRAConfig
-	// SpeculativeConfig is the 8th module sub-config (speculative decoding / MTP,
-	// #1528). Its zero value (K=0) is inert: the feature is off and output is
-	// byte-identical to a pre-feature build (INV-6). Note: its Validate() is NOT
-	// promoted to SimConfig (LoRAConfig already promotes a Validate() at the same
-	// depth, making SimConfig.Validate ambiguous); call cfg.SpeculativeConfig.Validate()
-	// explicitly if ever needed.
-	SpeculativeConfig
-
-	// Frontend is the API-server render stage (INV-R1). Its zero value is inert: a request's
-	// admission overhead (LatencyModel.QueueingTime) is then an uncontended per-request delay.
-	Frontend FrontendConfig
-
-	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
-	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
-	// Shared with admission: same overrides flow from policy bundle slo_priorities.
-	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
-	SLOPriorityOverrides map[string]int
-
-	// LatencyModel prices every step the instance runs. The caller builds it -- in production
-	// the blis-latency-kernel adapter (sim/kernelmodel), whose inputs are a scenario, a catalog
-	// and a registry -- and the simulator only times steps with it. Required:
-	// cluster.NewInstanceSimulator refuses a config without one. Set programmatically; no YAML
-	// tag.
-	LatencyModel LatencyModel
-
-	// ServerSeriesIntervalUs, when > 0, records the per-engine server time series binned at
-	// this width (server_series.go). Zero is off and output is byte-identical (INV-6).
-	ServerSeriesIntervalUs int64
-}
-
 // Simulator is one instance: the host's event loop and clock (inference-sim's, #2021 B3) around
 // the engine that makes every scheduling, KV-cache and metric decision (engineCore). The host
 // fields stay with the simulator when the engine moves to blis-vllm (PLAN-E2 E2.3): the clock,

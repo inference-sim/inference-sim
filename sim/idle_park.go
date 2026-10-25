@@ -42,20 +42,6 @@ func (sim *Simulator) canPark() bool {
 	return sim.quiescent()
 }
 
-// quiescent reports whether the engine's next poll would schedule exactly what its last step
-// did, nothing: the last step scheduled nothing and preempted nothing, no adapter load is in
-// flight, and the KV store has no transfer pending or in flight (QuiescentKVStore).
-func (sim *engineCore) quiescent() bool {
-	if !sim.lastStepEmpty || sim.lastStepPreempted || sim.loadingAdapter != "" {
-		return false
-	}
-	if sim.KVCache.PendingTransferLatency() != 0 {
-		return false
-	}
-	q, ok := sim.KVCache.(QuiescentKVStore)
-	return ok && q.Quiescent()
-}
-
 // IdlePollEnv names the opt-in vLLM idle-loop period, in us. Set (vLLM's is 1000:
 // v1/engine/core.py:1538-1542 sleeps 1 ms when a step executed nothing), a parked engine wakes
 // at the end of the poll period an event falls in, t + (x - 1 - (t-at) mod x) from the park,
@@ -86,13 +72,6 @@ func (sim *Simulator) parkIdle(at, quantum int64) {
 	sim.stepEvent = nil
 }
 
-// parkedView is what every skipped poll of a parked engine would record: the waiting
-// requests, the KV blocks in use, and the offload miss counter's advance per poll.
-func (sim *engineCore) parkedView() (waiting int, used, missDelta int64) {
-	q := sim.KVCache.(QuiescentKVStore)
-	return sim.WaitQ.Len(), sim.KVCache.UsedBlocks(), q.PollMisses() - sim.pollMissesAtStep
-}
-
 // unpark ends the park for a step wanted at t, charges the skipped polls and returns the
 // first poll time at or after t.
 func (sim *Simulator) unpark(t int64) int64 {
@@ -113,36 +92,9 @@ func (sim *Simulator) chargePolls(k int64) {
 	if p.free {
 		end = p.at + (k-1)*p.quantum
 	}
-	sim.chargeSkippedPolls(k, p, end)
+	sim.chargeSkippedPolls(k, skippedPolls{waiting: p.waiting, used: p.used, quantum: p.quantum, free: p.free, missDelta: p.missDelta})
 	sim.busyUntil = end
 	sim.recordSkippedPollsEnd(end)
-}
-
-// chargeSkippedPolls records the telemetry of k empty polls of a parked engine (p) as polling
-// would have: the step count, the queue snapshots, the peak and the time-weighted KV usage (on
-// the StepTime grid only), and the offload miss counter.
-func (sim *engineCore) chargeSkippedPolls(k int64, p *idlePark, end int64) {
-	sim.stepCount += int(k)
-	for i := int64(0); i < k; i++ {
-		sim.rec.queueSnapshot(p.waiting, 0)
-	}
-	// The peak once, then the time-weighted usage once per poll (on the StepTime grid only):
-	// the float sum is accumulated poll by poll, in the same order as before.
-	sim.rec.kvUsage(p.used, 0, false)
-	if !p.free {
-		for i := int64(0); i < k; i++ {
-			sim.rec.kvUsage(p.used, p.quantum, true)
-		}
-	}
-	sim.KVCache.(QuiescentKVStore).AddPollMisses(k * p.missDelta)
-}
-
-// recordSkippedPollsEnd closes the server series' gauges at the last skipped poll's end.
-func (sim *engineCore) recordSkippedPollsEnd(end int64) {
-	if sim.serverSeries != nil {
-		sim.serverSeries.recordGeneration(end, 0)
-		sim.recordServerStepEnd(end, 0)
-	}
 }
 
 // WakeIfParked schedules a parked engine's next step for an event at t that may let it
