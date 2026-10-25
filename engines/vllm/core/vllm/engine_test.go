@@ -188,6 +188,8 @@ func TestFactoryRefuses(t *testing.T) {
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
 		{"DP prefill throttling", Version, "prefill_schedule_interval: 4\n", "data-parallel"},
 		{"active seqs above max_num_seqs", Version, "max_num_active_seqs: 9\n", "max_num_active_seqs"},
+		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
+		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
 	} {
 		s := spec(t, c.extra)
 		s.UpstreamVersion = c.version

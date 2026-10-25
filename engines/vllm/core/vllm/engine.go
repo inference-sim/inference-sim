@@ -20,8 +20,8 @@
 //     (oracle/mocks.json).
 //   - Finish is finish_requests(ids, FINISHED_ABORTED) (scheduler.py:2649-2712@5df63a72).
 //
-// What this engine does not model is refused when the engine is built (Factory), never
-// ignored: see config.go.
+// A scheduling setting this engine does not model is refused when the engine is built
+// (Factory), never ignored; settings that change only cost are the Pricer's: see config.go.
 package vllm
 
 import (

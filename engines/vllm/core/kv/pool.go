@@ -145,10 +145,16 @@ func (p *Pool) Touch(bs []*Block) {
 
 // Free drops one reference from each block, in the order given, which is eviction
 // priority: a block that becomes free without a cached hash goes to the free queue's head
-// (evicted first), one with a hash to its tail (free_blocks, block_pool.py:774-805).
+// (evicted first), one with a hash to its tail (free_blocks, block_pool.py:774-805). Each
+// block must hold a reference: vLLM's free_blocks assumes it and checks nothing, and freeing
+// a free block (a double free in a caller) would leave a negative count and a block both free
+// and queued, so it panics here instead of corrupting the pool silently.
 func (p *Pool) Free(ordered []*Block) {
 	var first, last []*Block
 	for _, b := range ordered {
+		if b.RefCnt <= 0 && !b.Null {
+			panic(fmt.Sprintf("kv: freeing block %d, which holds no reference (ref count %d)", b.ID, b.RefCnt))
+		}
 		b.RefCnt--
 		if b.RefCnt == 0 && !b.Null {
 			if b.Hash == nil || !p.caching {

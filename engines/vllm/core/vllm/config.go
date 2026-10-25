@@ -78,8 +78,11 @@ type settings struct {
 }
 
 // resolve turns an engine block into the scheduler configuration vLLM v0.32.0 would run, or
-// refuses it. A setting this engine does not model is refused rather than ignored: a run that
-// drops one would still produce numbers, and nothing would say they describe another engine.
+// refuses it. A setting that changes scheduling and that this engine does not model is refused
+// rather than ignored (refuseUnmodelled): a run that drops one would still produce numbers, and
+// nothing would say they describe another engine. Settings that change only step time or
+// memory (backends, graph modes, quantization, memory utilization, cache dtypes) are the
+// caller's Pricer's and pass through unread.
 func resolve(c Config) (settings, error) {
 	var s settings
 	e := c.Engine
@@ -286,6 +289,21 @@ func refuseUnmodelled(e deployment.Engine) error {
 		return fmt.Errorf("vllm: prefill_schedule_interval throttles across data-parallel ranks; one engine is one rank")
 	case e.MaxCPULoRAs != 0:
 		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
+	case e.MambaCacheMode != "":
+		// mamba_cache_mode "align" splits prefill chunks on block boundaries for a model with
+		// Mamba layers (vllm/v1/core/sched/scheduler.py:375-379@5df63a72). This factory builds
+		// the full-attention KV cache only (sched.Config.KVGroups unset), so a recurrent
+		// model's groups, and with them this setting, are not modelled.
+		return fmt.Errorf("vllm: mamba_cache_mode is not modelled: this factory builds full-attention KV " +
+			"groups only (https://github.com/inference-sim/blis-vllm/issues/7, " +
+			"https://github.com/inference-sim/blis-vllm/issues/17)")
+	case e.SWABoundedReplay != nil:
+		// swa_bounded_replay keeps DeepSeek-V4.1's sliding-window KV out of prefix caching
+		// (vllm/config/cache.py:250@5df63a72; vllm/models/deepseek_v41/attention.py:529-547@5df63a72),
+		// a sliding-window group this factory does not build.
+		return fmt.Errorf("vllm: swa_bounded_replay is not modelled: this factory builds full-attention KV " +
+			"groups only (https://github.com/inference-sim/blis-vllm/issues/7, " +
+			"https://github.com/inference-sim/blis-vllm/issues/17)")
 	}
 	return nil
 }
