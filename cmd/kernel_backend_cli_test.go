@@ -13,11 +13,13 @@ import (
 
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"pgregory.net/rapid"
 )
@@ -1021,5 +1023,71 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	}
 	if &pre.KVOffload.Tiers[0] == &dec.KVOffload.Tiers[0] {
 		t.Error("the pools share one tier slice, so one pool's pricer overwrites the other's")
+	}
+}
+
+// The first pool's adoption (adoptFirstPoolEngine) takes the rest of its engine from the kernel
+// too: the bounded per-sequence state the KV store charges, the prefix-hit layout under the
+// run's --swa-bounded-replay, and the startup note that reports the sequence charge.
+// DeepSeek-V4.1-Flash holds a bounded sequence state and its bounded replay changes the layout,
+// so neither check is vacuous.
+func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	orig := captureCmdLevelVars()
+	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, catalogPath, kernelOpened,
+		sequenceState, prefixHit, swaBoundedReplay.v, prefixCacheRecords}
+	t.Cleanup(func() {
+		orig.restore()
+		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		catalogPath = saved[3].(string)
+		kernelOpened, _ = saved[4].(*kernelmodel.Model)
+		sequenceState, prefixHit = saved[5].(sim.KVSequenceState), saved[6].(sim.KVPrefixHit)
+		swaBoundedReplay.v, _ = saved[7].(*bool)
+		prefixCacheRecords, _ = saved[8].(map[string]sim.PrefixCacheRecord)
+	})
+	m, err := kernelmodel.Open(dsparkScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := m.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.SequenceState.Hold == nil {
+		t.Fatal("non-vacuity: the DeepSeek-V4.1 fixture holds no bounded sequence state")
+	}
+	off := false
+	for _, override := range []*bool{nil, &off} {
+		var logBuf bytes.Buffer
+		logrus.SetOutput(&logBuf)
+		origLevel := logrus.GetLevel()
+		logrus.SetLevel(logrus.InfoLevel)
+		cmd := &cobra.Command{}
+		registerSimConfigFlags(cmd)
+		flags := []string{"--scenario", dsparkScenario, "--scenarios", pdScenarios, "--registry", registry, "--catalog", catalog}
+		if override != nil {
+			flags = append(flags, "--swa-bounded-replay", strconv.FormatBool(*override))
+		}
+		if err := cmd.ParseFlags(flags); err != nil {
+			t.Fatal(err)
+		}
+		adoptKernelDeployment(cmd)
+		logrus.SetOutput(os.Stderr)
+		logrus.SetLevel(origLevel)
+
+		if sequenceState.Hold == nil || sequenceState.Gate == nil {
+			t.Errorf("override %v: the run holds no sequence state; the kernel states one", override)
+		} else if got, want := sequenceState.Hold(4096, 0), st.SequenceState.Hold(4096, 0); got != want {
+			t.Errorf("override %v: the run's sequence state holds %d blocks at 4096 tokens, the kernel's %d", override, got, want)
+		}
+		if want := m.PrefixHit(override).Hit; prefixHit != want {
+			t.Errorf("override %v: the run cuts prefix hits as %+v, the model as %+v", override, prefixHit, want)
+		}
+		if note := build.SequenceFixedCharge("first pool", st); !strings.Contains(logBuf.String(), note) {
+			t.Errorf("override %v: the startup log lacks the sequence charge note %q", override, note)
+		}
+	}
+	if m.PrefixHit(nil).Hit == m.PrefixHit(&off).Hit {
+		t.Fatal("non-vacuity: the bounded replay must change DeepSeek-V4.1's layout")
 	}
 }

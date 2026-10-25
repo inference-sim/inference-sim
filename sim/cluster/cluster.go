@@ -94,8 +94,9 @@ type ClusterSimulator struct {
 	prefillHolds     map[string][]int64
 	heldBlockRefs    map[string]map[int64]int
 	heldKVPeakTokens map[string]int64
-	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS). Which
-	// of them start is the decode engine's rule (sim.EngineCore.AdmitRemoteKV).
+	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV, in the order
+	// they arrived. Which of them start, and in what order, is the decode engine's rule
+	// (sim.EngineCore.AdmitRemoteKV).
 	decodeKVWaiters map[string][]decodeKVWaiter
 
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)

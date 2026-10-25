@@ -539,8 +539,9 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 
 func (i *InstanceSimulator) evictRequest(req *sim.Request) bool { return i.sim.Evict(req) }
 
-// AdmitRemoteKV hands the instance's waiting handoffs, in arrival order, to its engine, which
-// admits those whose pull may start (sim.EngineCore.AdmitRemoteKV, INV-PD-9).
+// AdmitRemoteKV hands the instance's waiting handoffs, in the order they arrived, to its engine,
+// which admits, in its own order, those whose pull may start (sim.EngineCore.AdmitRemoteKV,
+// INV-PD-9).
 func (i *InstanceSimulator) AdmitRemoteKV(waiting []*sim.Request) []sim.RemoteKVAdmission {
 	return i.sim.AdmitRemoteKV(waiting)
 }

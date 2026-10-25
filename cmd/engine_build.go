@@ -215,18 +215,84 @@ func (p *kernelPools) transferTime() func(int64, cluster.InstanceID, cluster.Ins
 	return price
 }
 
-// logSequenceFixedCharge reports the per-sequence term of an engine's KV capacity (#1941).
-func logSequenceFixedCharge(what string, s kernelmodel.Settings) {
-	if note := build.SequenceFixedCharge(what, s); note != "" {
+// defaultDPLoadBalancing is vLLM's default DP load-balancing mode, the --dp-load-balancing
+// flag's default (sim.DPLoadBalancingInternal, from blis-vllm compat/dplb).
+const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
+
+// requireDPLoadBalancingMode refuses a --dp-load-balancing value that names no vLLM mode
+// (sim.ValidDPLoadBalancing).
+func requireDPLoadBalancingMode(mode string) {
+	if !sim.ValidDPLoadBalancing(mode) {
+		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", sim.DPLoadBalancingInternal,
+			sim.DPLoadBalancingHybrid, sim.DPLoadBalancingExternal, mode)
+	}
+}
+
+// adoptFirstPoolEngine takes the run's engine from the first pool's kernel
+// (build.FirstPoolSettingsOf): the caps, pages and pool the kernel priced, so the simulated
+// scheduler admits against them. Per data-parallel RANK: a dp>1 MoE deployment runs one replica
+// per rank (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
+func adoptFirstPoolEngine(m *engineModel, settings kernelmodel.Settings) {
+	fp, err := build.FirstPoolSettingsOf(kernelScenario, settings)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	totalKVBlocks = fp.TotalKVBlocks
+	sequenceState = fp.SequenceState
+	prefixHit = prefixHitOf("first pool", m)
+	blockSizeTokens = fp.BlockSize
+	maxNumSeqs = fp.MaxNumSeqs
+	maxNumBatchedTokens = fp.MaxNumBatchedTokens
+	maxModelLen = fp.MaxModelLen
+	noEnablePrefixCaching = fp.PrefixCachingDisabled
+	numSpeculativeTokens = fp.SpeculativeTokens
+	speculativeMethod = fp.SpeculativeMethod
+	logrus.Infof("deployment from scenario %s -- model %s, hardware %s, "+
+		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
+		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d (%s), prefix caching %t, "+
+		"speculative tokens %d",
+		kernelScenario, model, gpu,
+		tensorParallelism, dataParallelism, enableExpertParallel,
+		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, fp.MaxModelLenFrom,
+		!noEnablePrefixCaching, numSpeculativeTokens)
+	for _, note := range fp.Notes {
 		logrus.Infof("%s", note)
 	}
 }
 
-// requireWindowFits refuses an engine with no window at all (build.RequireWindowFits).
-func requireWindowFits(what string, s kernelmodel.Settings) {
-	if err := build.RequireWindowFits(kernelScenario, what, s); err != nil {
+// applyKernelLoRAReservation re-sizes a kernel run's KV pool with the static LoRA adapter
+// reservation set aside, once the LoRA config is known (it is resolved after the deployment
+// is adopted). vLLM takes the reservation beside the weights before profiling the KV pool, so
+// the kernel's budget shrinks by it (build.KVBlocksReserving). No-op when no kernel is open or
+// with no reservation.
+func applyKernelLoRAReservation() {
+	if kernelOpened == nil || loraReservedBytesForKV <= 0 {
+		return
+	}
+	blocks, err := build.KVBlocksReserving(kernelScenario, kernelOpened, loraReservedBytesForKV)
+	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	totalKVBlocks = blocks
+}
+
+// prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), with the
+// run's --swa-bounded-replay override. It records the resolution for the results file and logs
+// when the model's layout is not one BLIS maps.
+func prefixHitOf(what string, m *engineModel) sim.KVPrefixHit {
+	r, warning := build.PrefixHitOf(what, m, swaBoundedReplay.v)
+	if warning != "" {
+		logrus.Warnf("%s", warning)
+	}
+	if prefixCacheRecords == nil {
+		prefixCacheRecords = map[string]sim.PrefixCacheRecord{}
+	}
+	prefixCacheRecords[string(m.Role())] = sim.PrefixCacheRecord{
+		ModelRunner: r.Runner, ModelRunnerForcedBy: r.RunnerForcedBy,
+		SWABoundedReplay: r.BoundedReplay, SWABoundedReplayFrom: r.BoundedReplayFrom,
+		Layout: r.Hit, Note: r.Note,
+	}
+	return r.Hit
 }
 
 // overrides is each P/D role's engine, from its own pool's kernel and scenario pool.

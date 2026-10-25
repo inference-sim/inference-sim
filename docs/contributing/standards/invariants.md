@@ -871,7 +871,7 @@ The schedule point requires all of the following:
 - the wait queue ahead is empty;
 - fewer than `max_num_seqs` requests run.
 
-Admission is FCFS and stops at the first handoff that does not fit. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
+Admission follows the decode engine's own order and stops at the first handoff that does not fit. The compatibility engine's order is arrival (FCFS) under every scheduling policy; vLLM v0.32.0 orders a priority pool's waiters by priority (`request_queue.py:202-205`), which is https://github.com/inference-sim/blis-vllm/issues/30. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
 
 Consequences:
 - A handoff holding transferred KV is never preempted and keeps its whole prompt until its pull lands.
@@ -891,7 +891,7 @@ vLLM v0.31.0 sources:
 **Limitation:** a BLIS preemption restarts a request's output, whereas vLLM keeps generated tokens. Under long outputs, some growth preemption therefore remains.
 
 **Enforced:**
-- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (blis-vllm `compat/engine/engine.go`);
+- `sim.Simulator.SetRemoteKVAdmission` / `admitRemoteKV`, `ReserveRemoteKVBehind`, `holdingKVFirst` (blis-vllm `compat/engine/engine.go`), and the admission order, `AdmitRemoteKV` / `remoteKVOrder` (`compat/engine/remote_kv_admission.go`);
 - `KVCacheState.admissionGateRefuses` (blis-vllm `compat/kv`);
 - `serveDecodeKVWaiters`, `admitDecodeKVIfIdle`, `decodeAdmitEvent` (`sim/cluster/pd_events.go`).
 

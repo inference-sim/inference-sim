@@ -166,10 +166,11 @@ func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *Paren
 	inst.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
 }
 
-// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs. Which of them start
-// is the decode engine's rule (sim.EngineCore.AdmitRemoteKV: in arrival order while the head
-// fits, leaving free what its other admitted handoffs still need); the cluster keeps the queue
-// and starts the transfers the engine admits. A waiter whose decode instance has become
+// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs. Which of them start,
+// and in what order, is the decode engine's rule (sim.EngineCore.AdmitRemoteKV: its admission
+// order, while the head fits, leaving free what its other admitted handoffs still need); the
+// cluster holds the handoffs in the order they arrived and starts the transfers the engine
+// admits, whichever they are. A waiter whose decode instance has become
 // unroutable is dropped: its decode engine had taken the request, so the prefill side frees
 // when the lease, last renewed now, runs out. Called when a handoff starts waiting and
 // whenever the instance may have freed KV.
@@ -187,17 +188,28 @@ func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now in
 		for i, w := range q {
 			reqs[i] = w.req
 		}
-		admitted := inst.AdmitRemoteKV(reqs)
-		for i, a := range admitted {
-			w := q[i]
-			if a.Req != w.req {
-				panic(fmt.Sprintf("serveDecodeKVWaiters: the engine admitted %s out of the queue's order (want %s)", a.Req.ID, w.req.ID))
+		byReq := make(map[*sim.Request]decodeKVWaiter, len(q))
+		for _, w := range q {
+			byReq[w.req] = w
+		}
+		started := make(map[*sim.Request]bool)
+		for _, a := range inst.AdmitRemoteKV(reqs) {
+			w, ok := byReq[a.Req]
+			if !ok || started[a.Req] {
+				panic(fmt.Sprintf("serveDecodeKVWaiters: the engine admitted %s, which is not a waiting handoff of %s", a.Req.ID, id))
 			}
+			started[a.Req] = true
 			w.parent.DecodeSubReq = w.req
 			w.parent.PulledKVBlocks = (a.PulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
 			scheduleTransferCompletion(cs, w.parent, now)
 		}
-		q = q[len(admitted):]
+		rest := q[:0:0]
+		for _, w := range q {
+			if !started[w.req] {
+				rest = append(rest, w)
+			}
+		}
+		q = rest
 	}
 	if len(q) == 0 {
 		delete(cs.decodeKVWaiters, id)

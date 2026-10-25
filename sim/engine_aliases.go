@@ -98,6 +98,10 @@ type (
 const (
 	// DPStatsIntervalUs is how often a replica's ranks publish their counts to its balancer.
 	DPStatsIntervalUs = dplb.StatsIntervalUs
+	// The DP load-balancing modes, as vLLM's serve flags choose them (internal, hybrid, external).
+	DPLoadBalancingInternal = dplb.Internal
+	DPLoadBalancingHybrid   = dplb.Hybrid
+	DPLoadBalancingExternal = dplb.External
 	// How a NIXL handoff ended without a pull, and the prefill release each applies.
 	NIXLDecodeNeverReceived    = nixl.DecodeNeverReceived
 	NIXLDecodeRejected         = nixl.DecodeRejected
@@ -190,6 +194,10 @@ var (
 	NIXLOnPullComplete = nixl.OnPullComplete
 	// NewDPBalancer is the balancer of a replica of n ranks.
 	NewDPBalancer = dplb.New
+	// ValidDPLoadBalancing reports whether a mode names a DP load-balancing mode ("" is internal),
+	// and DPEachRankIsAnEndpoint whether, under a mode, every rank serves its own endpoint.
+	ValidDPLoadBalancing   = dplb.ValidMode
+	DPEachRankIsAnEndpoint = dplb.EachRankIsAnEndpoint
 	// The P/D link arbiter's constructor and the alone-on-its-links transfer time.
 	NewLinkArbiter = kvtransfer.NewLinkArbiter
 	AloneTicks     = kvtransfer.AloneTicks

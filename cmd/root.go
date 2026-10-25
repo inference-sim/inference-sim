@@ -583,28 +583,8 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	kernelDeploymentExperts = dep.Experts
 	kernelDeploymentTopK = dep.ExpertsPerTok
 	// The engine the kernel priced, so the simulated scheduler admits against the same caps,
-	// pages and pool. Per data-parallel RANK: a dp>1 MoE deployment runs one replica per rank
-	// (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
-	totalKVBlocks = settings.KVBlocks
-	sequenceState = settings.SequenceState
-	prefixHit = prefixHitOf("first pool", m)
-	blockSizeTokens = int64(settings.BlockSize)
-	maxNumSeqs = int64(settings.MaxNumSeqs)
-	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
-	maxModelLen = int64(settings.MaxModelLen)
-	requireWindowFits("first pool", settings)
-	noEnablePrefixCaching = settings.PrefixCachingDisabled
-	numSpeculativeTokens = settings.SpeculativeTokens
-	speculativeMethod = settings.SpeculativeMethod
-	logrus.Infof("deployment from scenario %s -- model %s, hardware %s, "+
-		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
-		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d (%s), prefix caching %t, "+
-		"speculative tokens %d",
-		kernelScenario, model, gpu,
-		tensorParallelism, dataParallelism, enableExpertParallel,
-		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, settings.MaxModelLenFrom,
-		!noEnablePrefixCaching, numSpeculativeTokens)
-	logSequenceFixedCharge("first pool", settings)
+	// pages and pool (the build site, adoptFirstPoolEngine).
+	adoptFirstPoolEngine(m, settings)
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel
@@ -722,10 +702,7 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
 		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
 	}
-	if !cluster.IsValidDPLoadBalancing(dpLoadBalancing) {
-		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", cluster.DPLoadBalancingInternal,
-			cluster.DPLoadBalancingHybrid, cluster.DPLoadBalancingExternal, dpLoadBalancing)
-	}
+	requireDPLoadBalancingMode(dpLoadBalancing)
 
 	logrus.Infof("Policy config: scheduler=%s, preemption=%s", scheduler, preemptionPolicy)
 	return loadedBundle
@@ -778,7 +755,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Tiered KV cache (PR12)
 	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of the kernel's per-rank GPU KV blocks")
 	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", cluster.DPLoadBalancingInternal,
+	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", defaultDPLoadBalancing,
 		"How a dp>1 MoE replica's requests reach its ranks, as vLLM's serve flags choose: "+
 			"internal (default; one endpoint per replica, vLLM's DP balancer picks the rank), "+
 			"hybrid (--data-parallel-hybrid-lb; the same for a replica on one node), or "+
@@ -1890,24 +1867,6 @@ func init() {
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
-}
-
-// prefixHitOf is how the pool's KV cache groups cut a prefix hit. It records the resolution
-// for the results file and logs when the model's layout is not one BLIS maps.
-func prefixHitOf(what string, m *engineModel) sim.KVPrefixHit {
-	r := m.PrefixHit(swaBoundedReplay.v)
-	if r.Note != "" {
-		logrus.Warnf("prefix cache (%s): the hit is the full-attention prefix alone: %s", what, r.Note)
-	}
-	if prefixCacheRecords == nil {
-		prefixCacheRecords = map[string]sim.PrefixCacheRecord{}
-	}
-	prefixCacheRecords[string(m.Role())] = sim.PrefixCacheRecord{
-		ModelRunner: r.Runner, ModelRunnerForcedBy: r.RunnerForcedBy,
-		SWABoundedReplay: r.BoundedReplay, SWABoundedReplayFrom: r.BoundedReplayFrom,
-		Layout: r.Hit, Note: r.Note,
-	}
-	return r.Hit
 }
 
 // prefixCacheRecords are each opened pool's prefix-hit resolution, keyed by role, for the

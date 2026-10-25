@@ -10,21 +10,18 @@ import (
 // (sim.DPStatsIntervalUs, the engine's).
 const DPStatsIntervalUs = sim.DPStatsIntervalUs
 
-// The DP load-balancing modes (DeploymentConfig.DPLoadBalancing).
+// The DP load-balancing modes (DeploymentConfig.DPLoadBalancing) and their rules are the
+// engine's (sim.DPLoadBalancing*, sim.ValidDPLoadBalancing, sim.DPEachRankIsAnEndpoint, from
+// blis-vllm compat/dplb): they are vLLM's serve flags. The cluster builds the endpoints and routes.
 const (
-	DPLoadBalancingInternal = "internal"
-	DPLoadBalancingHybrid   = "hybrid"
-	DPLoadBalancingExternal = "external"
+	DPLoadBalancingInternal = sim.DPLoadBalancingInternal
+	DPLoadBalancingHybrid   = sim.DPLoadBalancingHybrid
+	DPLoadBalancingExternal = sim.DPLoadBalancingExternal
 )
 
-// IsValidDPLoadBalancing reports whether mode names a DP load-balancing mode ("" is internal).
-func IsValidDPLoadBalancing(mode string) bool {
-	switch mode {
-	case "", DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal:
-		return true
-	}
-	return false
-}
+// IsValidDPLoadBalancing reports whether mode names a DP load-balancing mode ("" is internal):
+// the engine's rule (sim.ValidDPLoadBalancing).
+func IsValidDPLoadBalancing(mode string) bool { return sim.ValidDPLoadBalancing(mode) }
 
 // dpReplica is one data-parallel MoE replica (#1909): dp engine ranks that step in
 // lockstep and sit behind one API endpoint, the pod the router sees.
@@ -149,7 +146,7 @@ func (cs *ClusterSimulator) eventMembers(inst *InstanceSimulator) []*InstanceSim
 // is its own endpoint: under external DP load balancing every rank is, and a P/D pool's
 // ranks stay individually routable (a documented limitation).
 func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica {
-	if cs.replicaOf == nil || cs.poolsConfigured() || cs.config.DPLoadBalancing == DPLoadBalancingExternal {
+	if cs.replicaOf == nil || cs.poolsConfigured() || sim.DPEachRankIsAnEndpoint(cs.config.DPLoadBalancing) {
 		return nil
 	}
 	return cs.replicaOf[string(inst.ID())]
