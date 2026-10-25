@@ -319,7 +319,8 @@ func refuseUnmodelled(e deployment.Engine) error {
 	case e.PrefillScheduleInterval > 1:
 		// _should_throttle_prefills acts across data-parallel ranks (vllm/v1/engine/core.py:2318-2325@5df63a72);
 		// one engine here is one rank.
-		return fmt.Errorf("vllm: prefill_schedule_interval throttles across data-parallel ranks; one engine is one rank")
+		return fmt.Errorf("vllm: prefill_schedule_interval throttles across data-parallel ranks; one engine is one rank " +
+			"(data parallelism through engine.Engine: https://github.com/inference-sim/blis-vllm/issues/28)")
 	case e.MaxCPULoRAs != 0:
 		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
 	case e.MambaCacheMode != "":
