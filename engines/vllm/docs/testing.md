@@ -116,6 +116,16 @@ CI re-runs the pinned vLLM release on every scenario and fails if any committed 
 decisions differ from that fresh trace (`oracle/compare_goldens.py`), so a golden made on a
 developer's machine counts only while the release itself still produces it.
 
+## The compatibility engine's tests
+
+`compat/` is inference-sim's engine as it ran before the extraction (#2021 B12 keeps the
+existing 0.29.0 and 0.31.0 scenarios byte-identical, D7). It is not diff-tested against vLLM
+v0.32.0, which is `core/`'s job: its correctness claim is that it is unchanged. Its own unit,
+property and metamorphic tests moved with it (verbatim, with their source commit in each
+header), and inference-sim's byte gate shows the simulator's output is identical before and
+after the move. `compat/kernelmodel`'s tests read the copies under `testdata/`. The tests that
+drive a whole simulator (event loop and engine together) stay in inference-sim.
+
 ## Target
 
 Zero mismatches. A known mismatch is listed with its earliest divergence in the repository's

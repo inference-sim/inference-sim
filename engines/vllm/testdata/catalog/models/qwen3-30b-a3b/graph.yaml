@@ -1,0 +1,75 @@
+kind: ModelGraph
+name: qwen3-30b-a3b
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 2850ddb3bf7aecad20b611e2d44f3077fc8193f4827c93beddd4c02ad63c2297
+  deriver_version: 1
+global:
+  hidden_size: 2048
+  vocab_size: 151936
+  tie_word_embeddings: false
+  weight_dtype: bf16
+layer_kinds:
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 5120
+    k: 2048
+  - op: Attention
+    kind: gqa
+    n_q: 32
+    n_kv: 4
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 4096
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 768
+    k: 2048
+    experts: 128
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - attn_moe
+  repeat: 48
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 151936
+  k: 2048

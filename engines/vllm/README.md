@@ -25,6 +25,9 @@ that interface. The design is
 |---|---|
 | `provenance.go` | the module's identity: the vLLM release it models and its own revision |
 | `rules/` | rules packs per vLLM release (separate module) |
+| `core/` | the vLLM v0.32.0 engine, diff-tested against vLLM's own classes (`core/vllm`: behind blis-schemas `engine.Engine`, built by the `vllm` Factory) |
+| `compat/` | the compatibility engine: inference-sim's engine as it ran before the extraction (`compat/engine`, `compat/kv`, `compat/lora`, `compat/kernelmodel`, moved verbatim, each file stating its source commit), which keeps the existing 0.29.0/0.31.0 scenarios byte-identical until they are re-baselined to 0.32.0 (inference-sim#2027), plus the leaf packages it uses |
+| `testdata/` | inputs of `compat/kernelmodel`'s tests: copies of inference-sim's vendored catalog, registry and scenarios (`testdata/README.md`) |
 | `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
 

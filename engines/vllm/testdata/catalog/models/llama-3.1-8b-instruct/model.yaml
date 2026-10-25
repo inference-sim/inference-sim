@@ -1,0 +1,6 @@
+name: llama-3.1-8b-instruct
+source:
+  provider: huggingface
+  repo: meta-llama/Llama-3.1-8B-Instruct
+  revision: 0e9e39f249a16976918f6564b8830bc894c89659
+  retrieved: 2026-09-16
