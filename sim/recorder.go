@@ -20,7 +20,7 @@ func (m *Metrics) RecordTimedOut(req *Request) {
 	m.RecordTimeout(req)
 }
 
-func (m *Metrics) RecordPreemption()         { m.PreemptionCount++ }
+func (m *Metrics) RecordPreemption()       { m.PreemptionCount++ }
 func (m *Metrics) PreemptionsSoFar() int64 { return m.PreemptionCount }
 
 func (m *Metrics) RecordScheduled(req *Request, now int64, lookup PrefixLookup) {
@@ -28,7 +28,9 @@ func (m *Metrics) RecordScheduled(req *Request, now int64, lookup PrefixLookup) 
 	m.recordPrefixLookup(req, lookup)
 }
 
-func (m *Metrics) RecordFirstToken(req *Request) { m.RequestTTFTs[req.ID] = float64(req.FirstTokenTime) }
+func (m *Metrics) RecordFirstToken(req *Request) {
+	m.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+}
 
 func (m *Metrics) RecordQueueSnapshot(waiting, running int) {
 	m.NumWaitQRequests = append(m.NumWaitQRequests, waiting)
@@ -71,8 +73,8 @@ func (m *Metrics) RecordLengthCapped(req *Request) {
 	}
 }
 
-func (m *Metrics) RecordKVAllocationFailure()     { m.KVAllocationFailures++ }
-func (m *Metrics) RecordAdapterLoad(id string)  { m.AdapterLoadCounts[id]++ }
+func (m *Metrics) RecordKVAllocationFailure()      { m.KVAllocationFailures++ }
+func (m *Metrics) RecordAdapterLoad(id string)     { m.AdapterLoadCounts[id]++ }
 func (m *Metrics) RecordAdapterEviction(id string) { m.AdapterEvictionCounts[id]++ }
 
 func (m *Metrics) RecordStillHeldAtEnd(waiting, running int) {
