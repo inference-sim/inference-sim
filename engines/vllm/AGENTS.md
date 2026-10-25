@@ -30,12 +30,14 @@ In short:
   // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
   // Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
   ```
-  `TestPortedFilesCarryAttribution` enforces it.
+  `TestEveryFileStatesItsProvenance` (`architecture_test.go`) enforces it.
 - **No clock, no goroutines.** Nothing reads `time.Now`, sleeps or starts a goroutine;
   `TestNoClockNoGoroutines` enforces it.
 - **The oracle decides.** Behaviour is checked against vLLM's own classes in CI (`oracle/`).
   The oracle may patch only the GPU, the clock, transports and external services, never a
   decision; every patch is listed in `oracle/mocks.json`, and CI fails on a patch of decision
   code. Never overwrite a golden trace without human review (`docs/testing.md`).
-- Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers:
-  `make oracle` (needs the pinned Python environment, `oracle/requirements.lock`).
+- Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
+  `oracle-tier2` CI job, step by step, from a Python with `oracle/requirements.lock` installed
+  (`pip install --no-deps -r oracle/requirements.lock`, Linux x86_64; `oracle/README.md` gives
+  each runner's command and the environment variables the Go fuzz tests read).

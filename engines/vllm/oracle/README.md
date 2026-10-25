@@ -14,6 +14,44 @@ ORACLE_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6 HF_HUB_OFFLINE=1 
 The scheduler helper builds a `ModelConfig`, which reads a model's `config.json` but loads no
 weights; the scenario's fixed `num_blocks` and `block_size` govern every decision.
 
+## Environment
+
+`oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU):
+`pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r
+oracle/requirements.lock`, then `python -I oracle/check_lock.py oracle/requirements.lock <(pip
+freeze)` confirms it. The runners also read:
+
+| Variable | What |
+|---|---|
+| `ORACLE_MODEL` | a local snapshot of `facebook/opt-125m@27dcfa74` (config files only) |
+| `ORACLE_MODEL_REVISION` | its revision, recorded in provenance |
+| `ORACLE_LOCKFILE` | the `pip freeze` of the environment, whose sha256 provenance records |
+| `HF_HUB_OFFLINE=1` | no Hub access while a scenario runs |
+| `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1` | lets a runner write into a `testdata/golden*` directory (then add a `golden-reviewed:` trailer) |
+
+## Runners and tests, by tier
+
+Each runner takes `<vllm checkout> <scenario.json | dir> [out dir]` (a directory writes
+`<name>.trace.json` beside each scenario, or into the out dir). The Go side reads committed
+goldens; its fuzz tests read a corpus directory named by an environment variable and skip, saying
+so, when it is unset.
+
+| Tier | Runner | Scenarios | Fuzz generator | Go test (corpus variable) |
+|---|---|---|---|---|
+| T2 scheduler and KV | `run_scheduler.py` | `scenarios/` | `gen_fuzz.py <dir> <first> <count>` | `./core/sched` (`BLIS_VLLM_FUZZ_DIR`) |
+| T3 EngineCore | `run_enginecore.py` | `scenarios-t3/` | `gen_fuzz_t3.py` | `./core/engine` (`BLIS_VLLM_T3_FUZZ_DIR`) |
+| T3 data parallel | `run_dp.py` | `scenarios-dp/` | `gen_fuzz_dp.py` | `./core/engine` (`BLIS_VLLM_DP_FUZZ_DIR`) |
+| T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
+| T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
+
+The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in `mocks.json`),
+`check_goldens.py <base> <head>` (a golden's decisions change only with a `golden-reviewed:`
+trailer), `compare_goldens.py` / `compare_goldens_t3.py` (each golden is what the pinned release
+produces now), `check_manifest.py` (tier 5's manifest against vLLM's live registry) and
+`test_checks.py` (each guard fails on what it guards). The mutation sweeps: `mutate.py` (T2),
+`mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_e24.py` (the engine interface) and
+`mutate_metrics.py` (T5).
+
 ## Scenario
 
 ```json

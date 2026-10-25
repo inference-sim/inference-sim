@@ -147,11 +147,16 @@ jobs:
           ref: v0.32.0
           path: vllm-source
           fetch-depth: 1
+      # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
+      # URL) and installed without resolving, so a transitive release cannot change a run; the
+      # step fails if what got installed is not exactly the lock.
       - name: install the oracle environment
         run: |
-          python -m pip install --upgrade pip
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.txt
+          python -m pip install pip==26.2.2
+          pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.lock
+          pip check
           pip freeze > oracle-env.lock
+          python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
       - name: the mocks replace no decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
       # The scheduler helper's default model, as configuration only (no weights), at a pinned
