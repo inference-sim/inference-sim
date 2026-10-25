@@ -96,50 +96,9 @@ func TestDPReplica_BalancerIsLoadAwareNotRoundRobin(t *testing.T) {
 	}
 }
 
-// pickRank reads the coordinator's counts as published at the start of a 100 ms period,
-// bumping the chosen rank's waiting count between publishes; the next period's first
-// assignment re-samples the ranks. Waiting requests on a rank with KV usage above one half
-// are penalised, and the front-end's exact in-flight count floors a rank's load.
-func TestDPReplica_PickRankStalenessAndScore(t *testing.T) {
-	cfg := newTestDeploymentConfig(2)
-	cfg.DPLockstepRanks = 2
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
-	rep := cs.replicaOf["instance_0"]
-	pick := func(now int64) string { return string(cs.pickRank(rep, now).ID()) }
-
-	// A stale publish says rank 0 is queued; the live ranks are idle.
-	rep.epoch, rep.counts = 0, []dpRankCounts{{waiting: 3, kvUsage: 0.9}, {}}
-	if got := []string{pick(10_000), pick(20_000)}; got[0] != "instance_1" || got[1] != "instance_1" {
-		t.Errorf("within the published period the stale queue must steer both picks to rank 1, got %v", got)
-	}
-	// The next period re-samples (both idle) and the rotated scan starts at rank 0.
-	if got := pick(DPStatsIntervalUs + 1); got != "instance_0" {
-		t.Errorf("after the next publish the idle ranks tie and the scan starts at rank 0, got %s", got)
-	}
-
-	// The local bump: rank 0 starts lighter, takes the first request, and is then counted as
-	// waiting it, so the second goes to rank 1 though no publish has happened.
-	rep.epoch, rep.start = 3, 0
-	rep.counts = []dpRankCounts{{}, {waiting: 1}}
-	if got := []string{pick(3*DPStatsIntervalUs + 1), pick(3*DPStatsIntervalUs + 2)}; got[0] != "instance_0" || got[1] != "instance_1" {
-		t.Errorf("between publishes the chosen rank's waiting count must be bumped: got %v", got)
-	}
-
-	// KV pressure: 2 waiting at 95% usage (2 + 2*6*0.45 = 7.4) loses to 3 waiting at 0%.
-	rep.epoch, rep.start = 5, 0
-	rep.counts = []dpRankCounts{{waiting: 2, kvUsage: 0.95}, {waiting: 3}}
-	if got := pick(5*DPStatsIntervalUs + 1); got != "instance_1" {
-		t.Errorf("the KV-pressure penalty must steer away from rank 0, got %s", got)
-	}
-
-	// In-flight floor: published counts are empty, but rank 0 holds five unfinished requests.
-	rep.epoch, rep.start = 6, 0
-	rep.counts = []dpRankCounts{{}, {}}
-	cs.inFlightRequests["instance_0"] = 5
-	if got := pick(6*DPStatsIntervalUs + 1); got != "instance_1" {
-		t.Errorf("the in-flight floor must steer away from rank 0, got %s", got)
-	}
-}
+// The balancer's own rule (staleness between publishes, the local bump, the KV-pressure
+// penalty, the in-flight floor) is tested with it, in blis-vllm compat/dplb; the tests here
+// check what the cluster does with its choice.
 
 // The ranks a replica's requests land on do not change the outcome: two identical requests
 // arriving together get identical TTFTs whichever rank serves each, and reordering

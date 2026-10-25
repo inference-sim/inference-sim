@@ -8,12 +8,18 @@
 package sim
 
 import (
+	"github.com/inference-sim/blis-vllm/compat/dplb"
 	"github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
 	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 )
 
 type (
+	// A data-parallel replica's load balancer, the rule that picks the rank a request reaching
+	// the replica's endpoint runs on, and what it reads from each rank.
+	DPBalancer   = dplb.Balancer
+	DPRank       = dplb.Rank
+	DPRankCounts = dplb.Counts
 	// The P/D link arbiter (host-side network contention, INV-P2-2) and its flows.
 	LinkArbiter            = kvtransfer.LinkArbiter
 	Link                   = kvtransfer.Link
@@ -82,6 +88,8 @@ type (
 )
 
 const (
+	// DPStatsIntervalUs is how often a replica's ranks publish their counts to its balancer.
+	DPStatsIntervalUs        = dplb.StatsIntervalUs
 	EvidenceFromKernel       = engine.EvidenceFromKernel
 	EvidenceFromProvenance   = engine.EvidenceFromProvenance
 	AgenticCancelled         = engine.AgenticCancelled
@@ -152,6 +160,8 @@ var (
 	KVCacheUsageForTest           = engine.KVCacheUsageForTest
 	NewKVCacheStateFuncForTest    = engine.NewKVCacheStateFuncForTest
 	ResidentAdapterSetConstructor = engine.ResidentAdapterSetConstructor
+	// NewDPBalancer is the balancer of a replica of n ranks.
+	NewDPBalancer = dplb.New
 	// The P/D link arbiter's constructor and the alone-on-its-links transfer time.
 	NewLinkArbiter = kvtransfer.NewLinkArbiter
 	AloneTicks     = kvtransfer.AloneTicks
