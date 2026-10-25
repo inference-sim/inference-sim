@@ -20,6 +20,8 @@ type Block struct {
 	Null bool
 
 	prev, next *Block
+	// in is the free queue that holds the block, nil when it is in none.
+	in *freeQueue
 }
 
 // Pool is vLLM's BlockPool (block_pool.py:136-901) for one KV cache group with prefix
@@ -277,6 +279,7 @@ func (q *freeQueue) init(bs []*Block) {
 func (q *freeQueue) pushBack(b *Block) {
 	last := q.tail.prev
 	last.next, b.prev, b.next, q.tail.prev = b, last, &q.tail, b
+	b.in = q
 	q.n++
 }
 
@@ -289,15 +292,15 @@ func (q *freeQueue) popLeft() *Block {
 	return b
 }
 
-// remove unlinks b. Its neighbours must link back to it and the queue must hold a block, so a
-// block that is not in this queue, or a queue whose links are corrupt, panics rather than
-// splicing the wrong nodes.
+// remove unlinks b. It must be held by this queue, and its neighbours must link back to it,
+// so a block in another queue or in none, or a queue whose links are corrupt, panics rather
+// than splicing the wrong nodes or miscounting.
 func (q *freeQueue) remove(b *Block) {
-	if b.prev == nil || b.next == nil || b.prev.next != b || b.next.prev != b || q.n <= 0 {
+	if b.in != q || b.prev == nil || b.next == nil || b.prev.next != b || b.next.prev != b || q.n <= 0 {
 		panic(fmt.Sprintf("kv: block %d is not in the free queue", b.ID))
 	}
 	b.prev.next, b.next.prev = b.next, b.prev
-	b.prev, b.next = nil, nil
+	b.prev, b.next, b.in = nil, nil, nil
 	q.n--
 }
 
@@ -306,6 +309,7 @@ func (q *freeQueue) prependN(bs []*Block) {
 	for i := len(bs) - 1; i >= 0; i-- {
 		b, first := bs[i], q.head.next
 		q.head.next, b.prev, b.next, first.prev = b, &q.head, first, b
+		b.in = q
 		q.n++
 	}
 }

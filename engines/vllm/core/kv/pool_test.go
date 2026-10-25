@@ -71,3 +71,23 @@ func TestFreeQueueRemove_RefusesABlockItDoesNotHold(t *testing.T) {
 	}()
 	p.free.remove(stray)
 }
+
+// A block consistently linked into another pool's free queue is not this queue's: remove
+// refuses it rather than splicing the other queue and miscounting this one.
+func TestFreeQueueRemove_RefusesABlockOfAnotherQueue(t *testing.T) {
+	p, other := NewPool(4, true), NewPool(4, true)
+	theirs := other.free.head.next // free and correctly linked, but in the other pool's queue
+	before, otherBefore := p.NumFree(), other.NumFree()
+	func() {
+		defer func() {
+			if r := recover(); r == nil || !strings.Contains(r.(string), "not in the free queue") {
+				t.Fatalf("removing another queue's block: recovered %v, want a panic", r)
+			}
+		}()
+		p.free.remove(theirs)
+	}()
+	if p.NumFree() != before || other.NumFree() != otherBefore {
+		t.Errorf("a refused remove changed the counts: %d and %d, want %d and %d",
+			p.NumFree(), other.NumFree(), before, otherBefore)
+	}
+}
