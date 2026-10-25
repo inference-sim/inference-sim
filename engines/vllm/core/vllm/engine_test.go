@@ -84,10 +84,9 @@ func TestConformance(t *testing.T) {
 		preempts bool
 	}{
 		{"sync", "", enginetest.Options{}, false},
-		{"preemption under tight KV", "num_gpu_blocks: 9\n", enginetest.Options{}, true},
-		{"priority preemption", "num_gpu_blocks: 9\nscheduling_policy: priority\n", enginetest.Options{}, true},
-		{"async scheduling", "async_scheduling: true\n", enginetest.Options{}, false},
-		{"pp2 v2 async", "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", enginetest.Options{}, false},
+		// Nine blocks hold one 128-token sequence beside the null block, the least vLLM starts with.
+		{"preemption under tight KV", "num_gpu_blocks: 9\nmax_model_len: 128\n", enginetest.Options{}, true},
+		{"priority preemption", "num_gpu_blocks: 9\nmax_model_len: 128\nscheduling_policy: priority\n", enginetest.Options{}, true},
 		{"eagle3 drafts accepted", "speculative: {method: eagle3, num_spec_tokens: 3}\n",
 			enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }}, false},
 		{"long prefill cap", "long_prefill_token_threshold: 8\n", enginetest.Options{}, false},
@@ -124,12 +123,31 @@ func TestConformance(t *testing.T) {
 	}
 }
 
-// The protocol errors a simulator relies on: completing an unknown batch, completing out of
-// order (with two batches in flight under async scheduling), finishing an unknown request (a
-// no-op) and an unknown transfer.
+// The protocol errors a simulator relies on: completing an unknown batch, finishing an unknown
+// request (a no-op) and an unknown transfer. The factory builds one batch in flight (see
+// TestFactoryRefuses), so completing out of order is checked on an engine built with two slots
+// directly, the queue the batch-queue work will open (https://github.com/inference-sim/blis-vllm/issues/21).
 func TestProtocolErrors(t *testing.T) {
-	if err := enginetest.CheckProtocolErrors(build(t, "async_scheduling: true\nmax_num_batched_tokens: 32\n"),
+	if err := enginetest.CheckProtocolErrors(build(t, "max_num_batched_tokens: 32\n"),
 		req("a", 40, 3), req("b", 40, 3)); err != nil {
+		t.Fatal(err)
+	}
+	twoSlots := func() (engine.Engine, error) {
+		cfg, err := decodeConfig(block(t, "max_num_batched_tokens: 32\n"))
+		if err != nil {
+			return nil, err
+		}
+		st, err := resolve(cfg)
+		if err != nil {
+			return nil, err
+		}
+		st.queueSize = 2
+		return newEngine(st, FixedPricer(100))
+	}
+	if e, err := twoSlots(); err != nil || e.InFlightLimit() != 2 {
+		t.Fatalf("two-slot engine: %v, %v", e, err)
+	}
+	if err := enginetest.CheckProtocolErrors(twoSlots, req("a", 40, 3), req("b", 40, 3)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -144,26 +162,17 @@ func TestBuildsThroughTheRegistry(t *testing.T) {
 		arrivals(req("a", 40, 6), req("b", 70, 3)), enginetest.Options{})
 }
 
-// Batch IDs are stable and increasing, and InFlightLimit is vLLM's max_concurrent_batches:
-// 1 synchronously, 2 with async scheduling, pp_size+1 with the V2 runner
-// (vllm/config/vllm.py:577-588@5df63a72).
+// InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72), which
+// is 1 for every engine the factory builds: a synchronous one on one pipeline stage. Larger
+// queues are refused (TestFactoryRefuses) until the adapter reproduces vLLM's batch queue
+// (https://github.com/inference-sim/blis-vllm/issues/21).
 func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
-	for _, c := range []struct {
-		extra string
-		want  int
-	}{
-		{"", 1},
-		{"async_scheduling: true\n", 2},
-		{"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", 3},
-		{"use_v2_model_runner: true\npipeline_parallel_size: 4\n", 4},
-	} {
-		e, err := build(t, c.extra)()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := e.InFlightLimit(); got != c.want {
-			t.Errorf("%q: InFlightLimit %d, want %d", c.extra, got, c.want)
-		}
+	e, err := build(t, "")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.InFlightLimit(); got != 1 {
+		t.Errorf("InFlightLimit %d, want 1", got)
 	}
 }
 
@@ -188,6 +197,18 @@ func TestFactoryRefuses(t *testing.T) {
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
 		{"DP prefill throttling", Version, "prefill_schedule_interval: 4\n", "data-parallel"},
 		{"active seqs above max_num_seqs", Version, "max_num_active_seqs: 9\n", "max_num_active_seqs"},
+		// What vLLM v0.32.0 refuses at startup (review I1, S10, S11).
+		{"a KV pool below one max_model_len sequence", Version, "num_gpu_blocks: 32\n", "cannot hold one max_model_len"},
+		{"a budget below max_num_seqs", Version, "max_num_seqs: 8\nmax_num_batched_tokens: 7\n", "below max_num_seqs"},
+		{"a negative max_num_scheduled_tokens", Version, "max_num_scheduled_tokens: -1\n", "max_num_scheduled_tokens -1 is negative"},
+		{"a negative long-prefill threshold", Version, "long_prefill_token_threshold: -1\n", "long_prefill_token_threshold -1 is negative"},
+		{"a negative max_num_active_seqs", Version, "max_num_active_seqs: -1\n", "max_num_active_seqs -1 is negative"},
+		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
+		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
+		// The batch queue, until the adapter reproduces it (review C1, issue 21).
+		{"async scheduling", Version, "async_scheduling: true\n", "max_concurrent_batches 2"},
+		{"PP on the V1 runner", Version, "pipeline_parallel_size: 2\n", "max_concurrent_batches 2"},
+		{"PP2 async on the V2 runner", Version, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", "max_concurrent_batches 3"},
 		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
 		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
 	} {
@@ -199,7 +220,11 @@ func TestFactoryRefuses(t *testing.T) {
 		}
 	}
 	// Settings vLLM resolves from facts the deployment cannot state must be stated.
-	for _, missing := range []string{"block_size", "max_model_len", "use_v2_model_runner"} {
+	// max_num_seqs and max_num_batched_tokens: vllm serve sizes them from the GPU, and
+	// SchedulerConfig's own values are test defaults (review I7). An unstated async_scheduling
+	// resolves on, which opens the batch queue the adapter refuses.
+	for _, missing := range []string{"block_size", "max_model_len", "use_v2_model_runner", "max_num_seqs",
+		"max_num_batched_tokens", "async_scheduling"} {
 		var kept []string
 		for _, l := range strings.Split(strings.TrimSpace(base), "\n") {
 			if !strings.HasPrefix(l, missing+":") {
@@ -217,6 +242,23 @@ func TestFactoryRefuses(t *testing.T) {
 	}
 	if _, err := (Factory{}).New(spec(t, "")); err == nil || !strings.Contains(err.Error(), "Pricer") {
 		t.Errorf("no pricer: err %v", err)
+	}
+}
+
+// The smallest KV pool vLLM starts with, one max_model_len sequence beside the null block, is
+// built, and a request that fills the window on it is admitted and finishes: the startup check
+// refuses exactly the pools vLLM refuses, so no built engine leaves a request waiting for ever
+// behind the idle poll (review I1, S12).
+func TestTheSmallestPoolVLLMStartsServesAFullWindow(t *testing.T) {
+	// max_model_len 128 in 16-token blocks needs 8 blocks, plus the null block.
+	tr := enginetest.TestEngine(t, build(t, "num_gpu_blocks: 9\nmax_model_len: 128\n"),
+		arrivals(req("full", 100, 28)), enginetest.Options{})
+	if f := tr.Finished["full"]; f.Reason != engine.FinishStop || f.OutputTokens != 28 {
+		t.Errorf("full-window request finished %+v, want stop after 28 tokens", f)
+	}
+	if _, err := build(t, "num_gpu_blocks: 8\nmax_model_len: 128\n")(); err == nil ||
+		!strings.Contains(err.Error(), "cannot hold one max_model_len") {
+		t.Errorf("one block fewer: err %v, want the startup refusal", err)
 	}
 }
 
@@ -373,14 +415,14 @@ func TestMetricsFamilies(t *testing.T) {
 func ExampleFactory() {
 	var n yaml.Node
 	_ = yaml.Unmarshal([]byte("block_size: 16\nmax_num_seqs: 8\nmax_num_batched_tokens: 256\nmax_model_len: 4096\n"+
-		"num_gpu_blocks: 1024\nuse_v2_model_runner: true\n"), &n)
+		"num_gpu_blocks: 1024\nuse_v2_model_runner: true\nasync_scheduling: false\n"), &n)
 	e, err := Factory{Pricer: func(engine.Spec) (Pricer, error) { return FixedPricer(1000), nil }}.New(
 		engine.Spec{Kind: Kind, UpstreamVersion: Version, Config: *n.Content[0]})
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(e.InFlightLimit())
-	// Output: 2
+	// Output: 1
 }
 
 // Acceptance is the outcome's (#2021 B3): a decode that verifies K drafts emits one sampled

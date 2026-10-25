@@ -42,15 +42,6 @@ type Config struct {
 	UseV2ModelRunner     *bool `yaml:"use_v2_model_runner,omitempty"`
 }
 
-// The defaults vLLM v0.32.0 starts with for the scheduler settings a deployment may leave
-// unstated: SchedulerConfig's own (vllm/config/scheduler.py:41-43@5df63a72), before the
-// usage-context overrides an OpenAI server applies, which depend on the GPU and are the
-// deployment's to state.
-const (
-	defaultMaxNumSeqs          = 128
-	defaultMaxNumBatchedTokens = 2048
-)
-
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
 // is for every blis-schemas loader, so a misspelt setting can never be silently dropped.
 func decodeConfig(node yaml.Node) (Config, error) {
@@ -113,13 +104,44 @@ func resolve(c Config) (settings, error) {
 		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's " +
 			"or the memory's, which the caller resolves")
 	}
-	seqs := e.MaxNumSeqs
-	if seqs == 0 {
-		seqs = defaultMaxNumSeqs
+	// vLLM refuses to start when the KV cache cannot hold one max_model_len sequence: a
+	// full-attention group needs cdiv(max_model_len, block_size) blocks
+	// (FullAttentionSpec.max_memory_usage_bytes, vllm/v1/kv_cache_interface.py:602-607@5df63a72),
+	// checked against the blocks left beside the null block
+	// (vllm/v1/core/kv_cache_utils.py:2627-2647, 1003-1040@5df63a72). A request the cache could
+	// never hold would otherwise wait for ever.
+	if need := (maxLen + blockSize - 1) / blockSize; need > c.NumGPUBlocks-1 {
+		return s, fmt.Errorf("vllm: num_gpu_blocks %d cannot hold one max_model_len %d sequence (%d blocks of %d "+
+			"beside the null block), which vLLM refuses at startup (vllm/v1/core/kv_cache_utils.py:2638-2647@5df63a72)",
+			c.NumGPUBlocks, maxLen, need, blockSize)
 	}
-	budget := e.MaxNumBatchedTokens
-	if budget == 0 {
-		budget = defaultMaxNumBatchedTokens
+	seqs, budget := e.MaxNumSeqs, e.MaxNumBatchedTokens
+	if seqs == 0 || budget == 0 {
+		// SchedulerConfig's own defaults, 128 and 2048, are "mainly for convenience when testing"
+		// (vllm/config/scheduler.py:47-66@5df63a72); vllm serve resolves unstated values from the
+		// usage context and the GPU's memory (vllm/engine/arg_utils.py:2894-2990, 3097-3186@5df63a72),
+		// which the caller knows, so they must be stated rather than guessed.
+		return s, fmt.Errorf("vllm: max_num_seqs and max_num_batched_tokens must be stated (got %d and %d); vllm "+
+			"serve resolves unstated ones from the usage context and the GPU (vllm/engine/arg_utils.py:3097-3186@5df63a72)",
+			seqs, budget)
+	}
+	// The scheduler fields' own bounds (vllm/config/scheduler.py:48,55,62,69,79@5df63a72; ge=1, or
+	// ge=0 for the long-prefill threshold), and max_loras's (vllm/config/lora.py:35@5df63a72). Zero
+	// means unset where the field is optional.
+	for _, f := range []struct {
+		name  string
+		value int
+	}{{"max_num_seqs", seqs}, {"max_num_batched_tokens", budget}, {"max_num_scheduled_tokens", e.MaxNumScheduledTokens},
+		{"max_num_active_seqs", e.MaxNumActiveSeqs}, {"long_prefill_token_threshold", e.LongPrefillTokenThreshold},
+		{"max_loras", e.MaxLoRAs}} {
+		if f.value < 0 {
+			return s, fmt.Errorf("vllm: %s %d is negative, which vLLM refuses (vllm/config/scheduler.py:48-79@5df63a72, "+
+				"vllm/config/lora.py:35@5df63a72)", f.name, f.value)
+		}
+	}
+	if budget < seqs {
+		return s, fmt.Errorf("vllm: max_num_batched_tokens %d is below max_num_seqs %d, which vLLM refuses "+
+			"(vllm/config/scheduler.py:328-332@5df63a72)", budget, seqs)
 	}
 	policy := sched.FCFS
 	switch e.SchedulingPolicy {
@@ -134,7 +156,7 @@ func resolve(c Config) (settings, error) {
 	if e.Watermark != nil {
 		watermark = *e.Watermark
 	}
-	if watermark < 0 || watermark >= 1 {
+	if !(watermark >= 0 && watermark < 1) { // also refuses NaN, which fails every comparison
 		return s, fmt.Errorf("vllm: watermark %v is outside [0, 1) (vllm/config/scheduler.py:196@5df63a72)", watermark)
 	}
 	if e.MaxNumActiveSeqs > seqs {
@@ -179,6 +201,17 @@ func resolve(c Config) (settings, error) {
 		// diff-tested together with speculative decoding (docs/feature-matrix.md).
 		return s, fmt.Errorf("vllm: async scheduling with speculative decoding is not modelled; " +
 			"state async_scheduling: false to run the drafter synchronously")
+	}
+	if queue > 1 {
+		// vLLM's batch queue decides batch membership from its own loop: an empty schedule
+		// occupies a slot, a full queue blocks on the oldest batch, and new requests are read only
+		// between steps (vllm/v1/engine/core.py:724-768, 1573-1601@5df63a72). Through engine.Engine
+		// the simulator decides when Schedule runs, so the adapter would co-schedule requests vLLM
+		// holds back. Async scheduling is vLLM's default, so an unstated one is refused too.
+		return s, fmt.Errorf("vllm: max_concurrent_batches %d (async_scheduling %t, pipeline_parallel_size %d) is not "+
+			"modelled through engine.Engine: vLLM's batch queue (vllm/v1/engine/core.py:724-768@5df63a72) is not "+
+			"reproduced yet; state async_scheduling: false and pipeline_parallel_size 1 "+
+			"(https://github.com/inference-sim/blis-vllm/issues/21)", queue, async, pp)
 	}
 
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching

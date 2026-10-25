@@ -45,6 +45,20 @@ MUTANTS = [    ("A1 wake after an empty schedule that left work", "core/vllm/eng
     "\tif base, ok := strings.CutSuffix(name, \"_total\"); ok && !isHistogram(name) {", "\tif base, ok := strings.CutSuffix(name, \"_totalX\"); ok && !isHistogram(name) {"),
     ("A16 LoRA off refuses adapters", "core/vllm/engine.go",
     "\t\tif e.maxLoRAs == 0 {", "\t\tif false {"),
+    ("A17 KV holds one max_model_len sequence", "core/vllm/config.go",
+    "need > c.NumGPUBlocks-1 {", "need > c.NumGPUBlocks+100000 {"),
+    ("A18 the smallest pool vLLM starts is built", "core/vllm/config.go",
+    "need > c.NumGPUBlocks-1 {", "need > c.NumGPUBlocks-2 {"),
+    ("A19 budget at least max_num_seqs", "core/vllm/config.go",
+    "\tif budget < seqs {", "\tif false {"),
+    ("A20 negative scheduler fields refused", "core/vllm/config.go",
+    "\t\tif f.value < 0 {", "\t\tif f.value < -1 {"),
+    ("A21 NaN watermark refused", "core/vllm/config.go",
+    "if !(watermark >= 0 && watermark < 1) {", "if watermark < 0 || watermark >= 1 {"),
+    ("A22 unstated batch limits refused", "core/vllm/config.go",
+    "\tif seqs == 0 || budget == 0 {", "\tif false {"),
+    ("A23 batch queue refused until reproduced", "core/vllm/config.go",
+    "\tif queue > 1 {", "\tif queue > 99 {"),
 ]
 
 

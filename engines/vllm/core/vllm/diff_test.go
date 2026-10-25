@@ -70,10 +70,11 @@ type oracleTrace struct {
 // unlimited max_tokens is not used (an engine.Request's unset budget is vLLM's default,
 // max_model_len minus the prompt, which the oracle's 1<<20 equals only when the output ends
 // first: true for every scenario listed, since each request's assigned output ends with EOS
-// before the window).
+// before the window). issue-2021-b8 and preempt-fcfs are not listed: their KV pools cannot hold
+// one max_model_len sequence, which vLLM refuses at startup and the factory refuses too, while
+// the tier-2 oracle builds the scheduler directly and skips that check; core/sched diff-tests them.
 var adapterGoldens = []string{
-	"issue-2021-b8", "knob-max-active-seqs", "length-caps", "meta-more-kv-large",
-	"meta-more-kv-small", "model-len-boundary", "preempt-fcfs",
+	"knob-max-active-seqs", "length-caps", "meta-more-kv-large", "meta-more-kv-small", "model-len-boundary",
 }
 
 func TestAdapterAgainstVLLM(t *testing.T) {
