@@ -21,6 +21,11 @@ type (
 	DPBalancer   = dplb.Balancer
 	DPRank       = dplb.Rank
 	DPRankCounts = dplb.Counts
+	// The NIXL handoff's rules: how a handoff that ended without a pull releases the prefill's
+	// held KV, and what a completed pull does (blis-vllm compat/nixl).
+	NIXLRelease      = nixl.Release
+	NIXLOutcome      = nixl.Outcome
+	NIXLPullComplete = nixl.PullComplete
 	// The P/D link arbiter (host-side network contention, INV-P2-2) and its flows.
 	LinkArbiter            = kvtransfer.LinkArbiter
 	Link                   = kvtransfer.Link
@@ -92,31 +97,38 @@ type (
 
 const (
 	// DPStatsIntervalUs is how often a replica's ranks publish their counts to its balancer.
-	DPStatsIntervalUs        = dplb.StatsIntervalUs
-	EvidenceFromKernel       = engine.EvidenceFromKernel
-	EvidenceFromProvenance   = engine.EvidenceFromProvenance
-	AgenticCancelled         = engine.AgenticCancelled
-	AgenticCompleted         = engine.AgenticCompleted
-	AgenticContextOverflow   = engine.AgenticContextOverflow
-	AgenticError             = engine.AgenticError
-	DPSyncInterval           = engine.DPSyncInterval
-	MaxSpeculativeTokens     = engine.MaxSpeculativeTokens
-	MaxTokenID               = engine.MaxTokenID
-	PhaseGrace               = engine.PhaseGrace
-	PhaseProfile             = engine.PhaseProfile
-	PhaseUnset               = engine.PhaseUnset
-	PhaseWarmup              = engine.PhaseWarmup
-	PreemptionFCFS           = engine.PreemptionFCFS
-	PreemptionPriority       = engine.PreemptionPriority
-	StateCompleted           = engine.StateCompleted
-	StateQueued              = engine.StateQueued
-	StateRunning             = engine.StateRunning
-	StateTimedOut            = engine.StateTimedOut
-	StateWaitingForRemoteKVs = engine.StateWaitingForRemoteKVs
-	SubsystemKVOffload       = engine.SubsystemKVOffload
-	SubsystemRouter          = engine.SubsystemRouter
-	SubsystemWorkload        = engine.SubsystemWorkload
-	SubsystemWorkloadGen     = engine.SubsystemWorkloadGen
+	DPStatsIntervalUs = dplb.StatsIntervalUs
+	// How a NIXL handoff ended without a pull, and the prefill release each applies.
+	NIXLDecodeNeverReceived    = nixl.DecodeNeverReceived
+	NIXLDecodeRejected         = nixl.DecodeRejected
+	NIXLDecodeVanished         = nixl.DecodeVanished
+	NIXLFreeNow                = nixl.FreeNow
+	NIXLHoldUntilFirstExpiry   = nixl.HoldUntilFirstExpiry
+	NIXLHoldUntilRenewedExpiry = nixl.HoldUntilRenewedExpiry
+	EvidenceFromKernel         = engine.EvidenceFromKernel
+	EvidenceFromProvenance     = engine.EvidenceFromProvenance
+	AgenticCancelled           = engine.AgenticCancelled
+	AgenticCompleted           = engine.AgenticCompleted
+	AgenticContextOverflow     = engine.AgenticContextOverflow
+	AgenticError               = engine.AgenticError
+	DPSyncInterval             = engine.DPSyncInterval
+	MaxSpeculativeTokens       = engine.MaxSpeculativeTokens
+	MaxTokenID                 = engine.MaxTokenID
+	PhaseGrace                 = engine.PhaseGrace
+	PhaseProfile               = engine.PhaseProfile
+	PhaseUnset                 = engine.PhaseUnset
+	PhaseWarmup                = engine.PhaseWarmup
+	PreemptionFCFS             = engine.PreemptionFCFS
+	PreemptionPriority         = engine.PreemptionPriority
+	StateCompleted             = engine.StateCompleted
+	StateQueued                = engine.StateQueued
+	StateRunning               = engine.StateRunning
+	StateTimedOut              = engine.StateTimedOut
+	StateWaitingForRemoteKVs   = engine.StateWaitingForRemoteKVs
+	SubsystemKVOffload         = engine.SubsystemKVOffload
+	SubsystemRouter            = engine.SubsystemRouter
+	SubsystemWorkload          = engine.SubsystemWorkload
+	SubsystemWorkloadGen       = engine.SubsystemWorkloadGen
 )
 
 var (
@@ -169,6 +181,13 @@ var (
 	NIXLLease             = nixl.Lease
 	NIXLFirstExpiry       = nixl.FirstExpiry
 	NIXLExpiryAfterVanish = nixl.ExpiryAfterVanish
+	// The NIXL handoff's decisions the cluster asks: whether the decode pool can ever take a
+	// prompt, which release applies to how a handoff ended and when it frees, and what a
+	// completed pull does.
+	NIXLDecodeAccepts  = nixl.DecodeAccepts
+	NIXLReleaseOnDrop  = nixl.ReleaseOnDrop
+	NIXLReleaseAt      = nixl.ReleaseAt
+	NIXLOnPullComplete = nixl.OnPullComplete
 	// NewDPBalancer is the balancer of a replica of n ranks.
 	NewDPBalancer = dplb.New
 	// The P/D link arbiter's constructor and the alone-on-its-links transfer time.

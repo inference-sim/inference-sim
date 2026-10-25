@@ -11,8 +11,9 @@ import (
 //
 // A prefill engine under a NIXL handoff keeps a finished request's KV blocks allocated until
 // the decode side pulls them, aborts the request, or vanishes and the lease runs out. When a
-// lease expires is the engine's rule (sim.NIXLLease, sim.NIXLFirstExpiry,
-// sim.NIXLExpiryAfterVanish, from blis-vllm compat/nixl). The cluster keeps the holds, the
+// lease expires, and which release a handoff's outcome takes, are the connector's rules
+// (sim.NIXLLease, sim.NIXLReleaseOnDrop, sim.NIXLReleaseAt, from blis-vllm compat/nixl). The
+// cluster keeps the holds, the
 // block reference counts and the lease event. It maps the handoff outcomes onto those rules: a
 // completed transfer frees at its completion; a drop at transfer start (the decode side never
 // took the request) frees at once; a decode instance that became unroutable mid-transfer is a
@@ -76,11 +77,16 @@ func (c *ClusterSimulator) HeldPrefillKVTokens(id string) int64 {
 	return int64(len(c.heldBlockRefs[id])) * c.config.BlockSizeTokens
 }
 
-// expireLeaseOfVanishedDecode schedules the release of parent's held KV for when the lease
-// runs out after a decode engine that had the request vanished at now
-// (sim.NIXLExpiryAfterVanish).
-func (c *ClusterSimulator) expireLeaseOfVanishedDecode(parent *ParentRequest, now int64) {
-	c.expirePrefillLease(parent, sim.NIXLExpiryAfterVanish(parent.PrefillCompleteTime, now, c.pdKVLeaseUs()))
+// releasePrefillOnDrop frees parent's held prefill KV as the connector's rule says for a handoff
+// that ended without a pull (outcome, at now): at once, or at the lease expiry the rule names
+// (sim.NIXLReleaseOnDrop, sim.NIXLReleaseAt). The cluster keeps the hold and its event.
+func (c *ClusterSimulator) releasePrefillOnDrop(parent *ParentRequest, outcome sim.NIXLOutcome, now int64) {
+	release := sim.NIXLReleaseOnDrop(outcome)
+	if release == sim.NIXLFreeNow {
+		c.releasePrefillHold(parent)
+		return
+	}
+	c.expirePrefillLease(parent, sim.NIXLReleaseAt(release, parent.PrefillCompleteTime, now, c.pdKVLeaseUs()))
 }
 
 // expirePrefillLease schedules the release of parent's held prefill KV at expiry.

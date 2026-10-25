@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/cluster"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
@@ -162,9 +161,7 @@ func TestPDPoolsResolveTheirOwnDPLoadBalancing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var o cluster.PoolOverrides
-			poolEngineKnobs(m, &o)
-			got[role] = o.DPLoadBalancing
+			got[role] = poolOverridesOf(m).DPLoadBalancing
 		}
 		if got[deployment.RolePrefill] != tc.wantPrefill || got[deployment.RoleDecode] != tc.wantDec {
 			t.Errorf("flag %v %q: pools resolved %v, want prefill %s decode %s", tc.fromFlag, tc.flag, got,

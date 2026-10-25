@@ -161,12 +161,16 @@ github.com/inference-sim/blis-vllm v0.0.0-20261025150219-d3bbf2a0ccbc h1:gd3ux4E
 github.com/inference-sim/blis-vllm v0.0.0-20261025150219-d3bbf2a0ccbc/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
 github.com/inference-sim/blis-vllm v0.0.0-20261025172308-07c97a18827a h1:c1B+63+KynC8WSXvfl4/hQ4YgEMRDj2Bjtw3j+5LM7E=
 github.com/inference-sim/blis-vllm v0.0.0-20261025172308-07c97a18827a/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
+github.com/inference-sim/blis-vllm v0.0.0-20261025190707-ed87194a68bc h1:1pimEVFyvHtlSldgrFhIoSfhWyzs0V2AKUIWTNKwwCg=
+github.com/inference-sim/blis-vllm v0.0.0-20261025190707-ed87194a68bc/go.mod h1:OIxKYPas6M5Vo2ZTSY5s1C003n5teO+8OLIG383zuoE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584 h1:sS7cVqMmULUtGyTZPSMLWi6pLB9/9b6SAta1lf5C2DE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321 h1:fYhAovPiv5jtc470JoFn+ZI4yC6Baf3zbtl4puiKJOs=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025165315-43d6991a0501 h1:GtJ6c44tcZ4967x/BQsoM5ZMM8GmPpLwNcy5Rdreb4E=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025165315-43d6991a0501/go.mod h1:2fsgOZx4jrx/ptNhXiGLTpYP+Otl5RatR01S3rR8iqU=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda h1:lwAGTKTW+vmNfRq6ps6WixbAgU8+e1kz5Vvlk8lItP8=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda/go.mod h1:2fsgOZx4jrx/ptNhXiGLTpYP+Otl5RatR01S3rR8iqU=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=

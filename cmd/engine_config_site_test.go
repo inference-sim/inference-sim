@@ -193,12 +193,20 @@ func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 	}
 }
 
-const compatEnginePath = "github.com/inference-sim/blis-vllm/compat/engine"
+const (
+	compatEnginePath = "github.com/inference-sim/blis-vllm/compat/engine"
+	clusterPath      = "github.com/inference-sim/inference-sim/sim/cluster"
+)
 
 // isEngineConfigType reports whether typ is a struct type compat/engine declares whose name ends
-// in Config or Tier (KVOffloadConfig, KVOffloadTier, FrontendConfig, SimConfig, ...).
+// in Config or Tier (KVOffloadConfig, KVOffloadTier, FrontendConfig, SimConfig, ...), or the
+// cluster's per-pool engine settings (cluster.PoolOverrides), which the build site fills from
+// blis-vllm's resolution of each pool (build.PoolSettingsOf).
 func isEngineConfigType(typ types.Type) bool {
 	n, ok := types.Unalias(typ).(*types.Named)
+	if ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == clusterPath && n.Obj().Name() == "PoolOverrides" {
+		return true
+	}
 	if !ok || n.Obj().Pkg() == nil || n.Obj().Pkg().Path() != compatEnginePath {
 		return false
 	}
@@ -309,6 +317,7 @@ func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
 		"a pointer literal":               `func f() *sim.FrontendConfig { return &sim.FrontendConfig{APIServerCount: 2} }`,
 		"a Validate through a local alias": `type fc = sim.FrontendConfig
 func f(c fc) error { return c.Validate() }`,
+		"a pool overrides literal": `func f() cluster.PoolOverrides { return cluster.PoolOverrides{GPU: "h100"} }`,
 	}
 	clean := map[string]string{
 		"another package's FrontendConfig": `type FrontendConfig struct{ N int }
@@ -321,7 +330,7 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n)\n\nvar (\n\t_ = engine.ReplicaAPIServers\n\t_ = sim.ReplicaAPIServers\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = engine.ReplicaAPIServers\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.ResolvePoolConfig\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}

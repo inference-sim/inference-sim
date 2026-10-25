@@ -69,11 +69,6 @@ func runEngineKnobs(shape kernelmodel.Shape, f build.EngineKnobFlags) (int64, st
 	return build.RunEngineKnobs(kernelScenario, shape, f)
 }
 
-// poolEngineKnobsOf is a P/D pool's own threshold and mode (build.PoolEngineKnobs).
-func poolEngineKnobsOf(m *kernelmodel.Model, f build.EngineKnobFlags) (int64, string, error) {
-	return build.PoolEngineKnobs(kernelScenario, m, f)
-}
-
 // enginePolicyFor is a pool's scheduling_policy in the engine's terms (build.EnginePolicyOf).
 func enginePolicyFor(m *kernelmodel.Model) (build.EnginePolicy, error) {
 	return build.EnginePolicyOf(kernelScenario, m)
@@ -232,6 +227,43 @@ func requireWindowFits(what string, s kernelmodel.Settings) {
 	if err := build.RequireWindowFits(kernelScenario, what, s); err != nil {
 		logrus.Fatalf("%v", err)
 	}
+}
+
+// overrides is each P/D role's engine, from its own pool's kernel and scenario pool.
+func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
+	return poolOverridesOf(p.prefill), poolOverridesOf(p.decode)
+}
+
+// poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings blis-vllm
+// resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
+// The pool runs its own engine's scheduling policy unless a flag or policy bundle chose one for
+// the run, which then applies to every pool and is recorded where it departs.
+func poolOverridesOf(m *engineModel) cluster.PoolOverrides {
+	hit := prefixHitOf(string(m.Role())+" pool", m)
+	ps, err := build.PoolSettingsOf(kernelScenario, m, loraReservedBytesForKV, hit, engineKnobFlags())
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	for _, note := range ps.Notes {
+		logrus.Infof("%s", note)
+	}
+	o := cluster.PoolOverrides{
+		TP: &ps.TP, GPU: ps.GPU, LatencyModel: m, TotalKVBlocks: &ps.TotalKVBlocks, MaxModelLen: &ps.MaxModelLen,
+		MaxNumSeqs: &ps.MaxNumSeqs, MaxNumBatchedTokens: &ps.MaxNumBatchedTokens,
+		PrefixCachingDisabled: &ps.PrefixCachingDisabled, SequenceState: &ps.SequenceState, PrefixHit: &ps.PrefixHit,
+		LongPrefillTokenThreshold: &ps.LongPrefillTokenThreshold, DPLoadBalancing: ps.DPLoadBalancing,
+	}
+	if schedulerSource != "" {
+		recordPolicyOverride("scheduler", string(m.Role()), ps.Policy.Scheduler, scheduler, schedulerSource)
+	} else {
+		o.Scheduler = ps.Policy.Scheduler
+	}
+	if preemptionSource != "" {
+		recordPolicyOverride("preemption_policy", string(m.Role()), ps.Policy.Preemption, preemptionPolicy, preemptionSource)
+	} else {
+		o.PreemptionPolicy = ps.Policy.Preemption
+	}
+	return o
 }
 
 // rankInPool is an instance's rank within its pool (build.RankInPool).

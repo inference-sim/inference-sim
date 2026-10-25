@@ -14,7 +14,7 @@ require (
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025121631-630937e6f21f
 	// TEMPORARY: inference-sim/blis-vllm main (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261025172308-07c97a18827a
+	github.com/inference-sim/blis-vllm v0.0.0-20261025190707-ed87194a68bc
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -75,7 +75,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	// TEMPORARY: inference-sim/blis-vllm main's rules module; moves to a release tag with blis-vllm (#2038).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261025165315-43d6991a0501 // indirect
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

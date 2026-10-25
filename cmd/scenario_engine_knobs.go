@@ -3,8 +3,6 @@ package cmd
 import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
-	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
 // dpLoadBalancingFromFlag records that --dp-load-balancing was given, so the flag's value
@@ -22,13 +20,4 @@ func adoptScenarioEngineKnobs(cmd *cobra.Command, shape scenarioShapeT) {
 		logrus.Fatalf("%v", err)
 	}
 	longPrefillTokenThreshold, dpLoadBalancing = threshold, mode
-}
-
-// poolEngineKnobs sets a P/D pool's own threshold and balancing mode (build.PoolEngineKnobs).
-func poolEngineKnobs(m *engineModel, o *cluster.PoolOverrides) {
-	threshold, mode, err := poolEngineKnobsOf(m, engineKnobFlags())
-	if err != nil {
-		logrus.Fatalf("%v", err)
-	}
-	o.LongPrefillTokenThreshold, o.DPLoadBalancing = &threshold, mode
 }
