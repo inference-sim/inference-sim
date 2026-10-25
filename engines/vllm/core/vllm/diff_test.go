@@ -52,6 +52,7 @@ type oracleTrace struct {
 		VLLMVersion    string `json:"vllm_version"`
 		VLLMCommit     string `json:"vllm_commit"`
 		ScenarioSHA256 string `json:"scenario_sha256"`
+		MockVersion    string `json:"mock_version"`
 	} `json:"provenance"`
 	Steps []struct {
 		Scheduled map[string]int `json:"scheduled"`
@@ -78,6 +79,17 @@ var adapterGoldens = []string{
 }
 
 func TestAdapterAgainstVLLM(t *testing.T) {
+	var mocks struct {
+		Version string `json:"version"`
+	}
+	rawMocks, err := os.ReadFile(filepath.Join("..", "..", "oracle", "mocks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(rawMocks, &mocks); err != nil || mocks.Version == "" {
+		t.Fatalf("oracle/mocks.json states no version: %v", err)
+	}
+	mockVersion := mocks.Version
 	for _, name := range adapterGoldens {
 		t.Run(name, func(t *testing.T) {
 			scPath := filepath.Join("..", "..", "oracle", "scenarios", name+".json")
@@ -100,8 +112,10 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 			sum := sha256.Sum256(raw)
 			if want.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]) ||
 				want.Provenance.VLLMCommit != "5df63a7203cdb9328d824a27b682e77c7b9928be" ||
-				strings.SplitN(want.Provenance.VLLMVersion, "+", 2)[0] != Version {
-				t.Fatalf("golden provenance %+v does not match this scenario and vLLM %s", want.Provenance, Version)
+				strings.SplitN(want.Provenance.VLLMVersion, "+", 2)[0] != Version ||
+				want.Provenance.MockVersion != mockVersion {
+				t.Fatalf("golden provenance %+v does not match this scenario, vLLM %s and mock %s",
+					want.Provenance, Version, mockVersion)
 			}
 			if d := adapterDivergence(t, sc, want); d != "" {
 				t.Errorf("earliest divergence from vLLM v0.32.0: %s", d)
