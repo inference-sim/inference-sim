@@ -106,6 +106,13 @@ type EngineCore struct {
 	// remoteKVWaiting is how many handoffs wait for this engine's KV before their pull starts
 	// (SetRemoteKVWaiting): requests in vLLM's waiting queue that BLIS holds outside WaitQ.
 	remoteKVWaiting int
+	// inflightPullBlocks is the first-step blocks of the remote-KV pulls this engine admitted
+	// whose KV has not landed yet: vLLM's _inflight_prefill_reserved_blocks
+	// (sched/scheduler.py:3088-3091@5df63a72), one term of what a new pull must leave free
+	// (AdmitRemoteKV). inflightPulls holds each pull's share, so a landed pull gives back what
+	// it took.
+	inflightPullBlocks int64
+	inflightPulls      map[string]int64
 
 	// engineMetrics is the state this engine publishes on its metrics endpoint.
 	engineMetrics engineMetricsLog
