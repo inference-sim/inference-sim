@@ -293,7 +293,7 @@ func (c KVOffloadConfig) Validate() error {
 // validate checks one resolved tier. index is used only for error messages.
 func (t KVOffloadTier) validate(index int) error {
 	if t.Type != kvOffloadTierFS {
-		return fmt.Errorf("kv_offload: secondary_tiers[%d].type must be %q (only the filesystem tier is representable in BLIS; obj/p2p/example are not yet supported), got %q", index, kvOffloadTierFS, t.Type)
+		return fmt.Errorf("kv_offload: secondary_tiers[%d].type must be %q (only the filesystem tier is representable in BLIS; obj (https://github.com/inference-sim/blis-vllm/issues/14), p2p (https://github.com/inference-sim/blis-vllm/issues/13) and example are not yet supported), got %q", index, kvOffloadTierFS, t.Type)
 	}
 	if t.RootDir == "" {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].root_dir is required for an %q tier", index, kvOffloadTierFS)

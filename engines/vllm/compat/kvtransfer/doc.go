@@ -53,9 +53,6 @@
 //
 // # Layering
 //
-// This is a leaf module: it depends only on the standard library. Nothing in the
-// simulator calls it yet — H1 (kv_tier_chain, #1590) is the consumer. Until then
-// the station has no effect on any simulation, so blis run/replay/observe output
-// is byte-identical to a pre-feature build (INV-6) and run/replay parity (INV-13)
-// is unaffected.
+// This is a leaf module: it depends only on the standard library. The offload tier
+// chain (compat/kv offload_chain.go, offload_secondary.go) is its consumer.
 package kvtransfer

@@ -89,8 +89,9 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	}
 	// The compatibility engine models the settings the 0.29/0.31 releases had, as inference-sim's
 	// engine did. A setting blis-schemas added with the v0.32.0 engine would be dropped without a
-	// word, so a pool stating one is refused, naming it; a 0.32.0 scenario runs on the v0.32.0
-	// engine (core/vllm) once it is wired in (inference-sim#2027).
+	// word, so a pool stating one is refused, naming it. Wiring in the v0.32.0 engine (core/vllm)
+	// is inference-sim#2027; some of these settings that engine refuses too, each until its own
+	// issue (docs/feature-matrix.md).
 	for i, names := range shape.Unmodelled {
 		if len(names) == 0 {
 			continue
@@ -100,8 +101,9 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			stated[j] = "engine." + n
 		}
 		return Adopted{}, fmt.Errorf("scenario %q: the %s pool states %s, which blis-vllm's compatibility engine "+
-			"does not model (it models the %s releases): blis-schemas added the setting with the v0.32.0 engine, which a "+
-			"0.32.0 scenario runs on once it is wired in (inference-sim#2027). Drop the setting to run on the compatibility engine",
+			"does not model (it models the %s releases): blis-schemas added the setting with the v0.32.0 engine, which this "+
+			"simulator does not build yet (inference-sim#2027; docs/feature-matrix.md in blis-vllm gives each setting's status "+
+			"there). Drop the setting to run on the compatibility engine",
 			in.Scenario, shape.Roles[i], strings.Join(stated, ", "), strings.Join(CompatVersions(), " and "))
 	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.

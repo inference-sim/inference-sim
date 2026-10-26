@@ -225,7 +225,7 @@ func resolveKVOffloadTier(index int, tb KVOffloadTierBlock, devices map[string]K
 	}
 	tier.Type = *tb.Type
 	if tier.Type != "fs" {
-		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].type=%q is not supported in BLIS yet (only \"fs\" is representable; obj/p2p/example tiers have no faithful config mapping — see #1587/#1585)", index, tier.Type)
+		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].type=%q is not supported in BLIS yet (only \"fs\" is representable; obj/p2p/example tiers have no faithful config mapping — obj: https://github.com/inference-sim/blis-vllm/issues/14, p2p: https://github.com/inference-sim/blis-vllm/issues/13)", index, tier.Type)
 	}
 
 	// root_dir: required for fs.
@@ -536,7 +536,7 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 		}
 		if objectStoreDevices[t.Device] {
 			return nil, fmt.Errorf("offload.tiers[%d] (%q) is an object store, which vLLM reaches through "+
-				"its obj secondary tier; BLIS simulates the fs tier only", i, t.Device)
+				"its obj secondary tier; BLIS simulates the fs tier only (https://github.com/inference-sim/blis-vllm/issues/14)", i, t.Device)
 		}
 		if o.Spec != "TieringOffloadingSpec" {
 			return nil, fmt.Errorf("offload.tiers[%d] (%q) is a secondary tier, which only the "+
@@ -620,7 +620,7 @@ func simpleOffloadBlock(o *deployment.Offload) (*KVOffloadBlock, error) {
 	}
 	if len(o.Tiers) != 1 || o.Tiers[0].Device != OffloadCPUTier {
 		return nil, fmt.Errorf("offload: the SimpleCPUOffloadConnector has one %s tier (its disk backend "+
-			"replaces the CPU tier and is not simulated)", OffloadCPUTier)
+			"replaces the CPU tier and is not simulated: https://github.com/inference-sim/blis-vllm/issues/16)", OffloadCPUTier)
 	}
 	if o.PrefetchDepth != 0 {
 		return nil, fmt.Errorf("offload.prefetch_depth %d is not simulated", o.PrefetchDepth)
