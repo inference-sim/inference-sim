@@ -139,10 +139,6 @@ jobs:
           set -o pipefail
           mkdir -p manifest-out
           go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
-      # The generator's -check catches a missed definition form or a dropped enablement (the
-      # "every computable family" and "kv_cache_metrics" rows' own mutants, K1-K2).
-      - name: the manifest generator's mutants are caught by its -check
-        run: python3 -I oracle/mutate_hash_manifest.py . "$RUNNER_TEMP/mutants-manifest" manifest vllm-source
       # The connector registry's entries are connectors the release registers.
       - name: every registry entry is a connector vLLM v0.32.0 registers
         env:
@@ -175,14 +171,19 @@ jobs:
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py
 
-  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU.
+  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU. The fuzz corpora
+  # and vLLM's traces for them come from the cache (.github/actions/oracle-fuzz); every committed
+  # golden is re-derived from vLLM here on every run. The mutation sweeps are mutation.yml's.
   oracle-tier2:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - id: python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: oracle/requirements.lock
       - name: check out vLLM v0.32.0 (for its test helpers) at its pinned commit
         uses: actions/checkout@v4
         with:
@@ -255,20 +256,14 @@ jobs:
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
         run: python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
-      # The seeded fuzz corpus: 4000 random scenarios from fixed seeds, each run through vLLM's
-      # Scheduler and then through blis-vllm, which must match at zero mismatches.
-      - name: generate the fuzz corpus and vLLM's traces for it
-        env:
-          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
-          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
-          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
-          HF_HUB_OFFLINE: "1"
-        run: |
-          python -I oracle/gen_fuzz.py oracle/out/fuzz 1000 2000
-          # Seeds 5000-6999 add speculative decoding, LoRA and the scheduler knobs.
-          python -I oracle/gen_fuzz.py oracle/out/fuzz 5000 2000
-          python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz
-          python -I oracle/run_metrics.py vllm-source oracle/out/fuzz
+      # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector:
+      # 1300), each from fixed seeds and run through vLLM, then through blis-vllm below, which must
+      # match at zero mismatches. Cached, keyed on the generators, seeds, runners, mock, lock and
+      # vLLM pin; regenerated when any of them changes.
+      - name: the fuzz corpora and vLLM's traces for them
+        uses: ./.github/actions/oracle-fuzz
+        with:
+          python-version: ${{ steps.python.outputs.python-version }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -298,7 +293,7 @@ jobs:
           go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Tier 3: vLLM's own EngineCore.step_with_batch_queue (async scheduling, the batch
       # queue, PP) on every tier-3 scenario and 1000 fuzz seeds, then blis-vllm's core/engine.
-      - name: run every tier-3 scenario and the tier-3 fuzz corpus through vLLM's EngineCore
+      - name: run every tier-3 scenario through vLLM's EngineCore
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
@@ -307,14 +302,9 @@ jobs:
         run: |
           mkdir -p oracle/out/scenarios-t3
           python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
-          python -I oracle/gen_fuzz_t3.py oracle/out/fuzz-t3 1000 1000
-          python -I oracle/run_enginecore.py vllm-source oracle/out/fuzz-t3
           # Data parallel: vLLM's DP engine-core loop and internal load balancer.
           mkdir -p oracle/out/scenarios-dp
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
-          python -I oracle/gen_fuzz_dp.py oracle/out/fuzz-t3-dp 1000 500
-          python -I oracle/gen_fuzz_dp.py oracle/out/fuzz-t3-dp 2000 500
-          python -I oracle/run_dp.py vllm-source oracle/out/fuzz-t3-dp
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3
@@ -328,19 +318,15 @@ jobs:
           go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
       # Tier 4: vLLM's real NIXL connector scheduler side (pull mode), with only the worker's
       # transfer outcomes as the mock input, on every NIXL scenario and 1000 fuzz seeds.
-      - name: run every NIXL scenario and the connector fuzz corpus through vLLM's Scheduler
+      - name: run every NIXL scenario through vLLM's Scheduler
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
           HF_HUB_OFFLINE: "1"
         run: |
-          mkdir -p oracle/out/scenarios-connector oracle/out/fuzz-connector
+          mkdir -p oracle/out/scenarios-connector
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
-          python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector 1 1000
-          # Seeds 10000+ run requests into max_model_len (the connector side's length caps).
-          python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector 10000 300
-          python -I oracle/run_connector.py vllm-source oracle/out/fuzz-connector
       - name: every NIXL golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/nixl/testdata/golden oracle/out/scenarios-connector
       - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
@@ -349,17 +335,6 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
-      # Each supported row's mutants must be caught by the tests above (docs/testing.md).
-      - name: mutation sweep
-        run: |
-          set -o pipefail
-          python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
-          python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
-          python3 -I oracle/mutate_t4.py . oracle/out/fuzz-connector "$RUNNER_TEMP/mutants-t4" | tee oracle/out/mutation-results-t4.txt
-          python3 -I oracle/mutate_e24.py . "$RUNNER_TEMP/mutants-e24" | tee oracle/out/mutation-results-e24.txt
-          python3 -I oracle/mutate_metrics.py . oracle/out/fuzz "$RUNNER_TEMP/mutants-metrics" | tee oracle/out/mutation-results-metrics.txt
-          python3 -I oracle/mutate_rules.py . "$RUNNER_TEMP/mutants-rules" vllm-source | tee oracle/out/mutation-results-rules.txt
-          python3 -I oracle/mutate_hash_manifest.py . "$RUNNER_TEMP/mutants-hash" hash | tee oracle/out/mutation-results-hash.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

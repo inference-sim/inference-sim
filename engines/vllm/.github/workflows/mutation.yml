@@ -1,0 +1,74 @@
+name: mutation
+
+# The mutation sweeps: each supported row's one-line mutants must be caught by the tests ci.yml
+# runs (docs/testing.md). They take longer than the core checks, so they run on demand, never on
+# a push or a pull request. Each sweep reads the fuzz corpora the oracle-tier2 job reads, from
+# the same cache (.github/actions/oracle-fuzz), or regenerates them on a miss.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: oracle/requirements.lock
+      - name: check out vLLM v0.32.0 at its pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: vllm-project/vllm
+          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
+          path: vllm-source
+          fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
+      - name: install the oracle environment
+        run: |
+          python -m pip install pip==26.2.2
+          pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.lock
+          pip check
+          pip freeze > oracle-env.lock
+          python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
+      - name: fetch the helper model's configuration at its pinned revision
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("facebook/opt-125m", revision="27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+                            local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
+          PY
+      - name: the fuzz corpora and vLLM's traces for them
+        uses: ./.github/actions/oracle-fuzz
+        with:
+          python-version: ${{ steps.python.outputs.python-version }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: mutation sweeps
+        run: |
+          set -o pipefail
+          python3 -I oracle/mutate.py . oracle/out/fuzz "$RUNNER_TEMP/mutants" | tee oracle/out/mutation-results.txt
+          python3 -I oracle/mutate_t3.py . oracle/out/fuzz-t3 "$RUNNER_TEMP/mutants-t3" | tee oracle/out/mutation-results-t3.txt
+          python3 -I oracle/mutate_t4.py . oracle/out/fuzz-connector "$RUNNER_TEMP/mutants-t4" | tee oracle/out/mutation-results-t4.txt
+          python3 -I oracle/mutate_e24.py . "$RUNNER_TEMP/mutants-e24" | tee oracle/out/mutation-results-e24.txt
+          python3 -I oracle/mutate_metrics.py . oracle/out/fuzz "$RUNNER_TEMP/mutants-metrics" | tee oracle/out/mutation-results-metrics.txt
+          python3 -I oracle/mutate_rules.py . "$RUNNER_TEMP/mutants-rules" vllm-source | tee oracle/out/mutation-results-rules.txt
+          python3 -I oracle/mutate_hash_manifest.py . "$RUNNER_TEMP/mutants-hash" hash | tee oracle/out/mutation-results-hash.txt
+          # The manifest generator's -check catches a missed definition form or a dropped
+          # enablement (K1-K2).
+          python3 -I oracle/mutate_hash_manifest.py . "$RUNNER_TEMP/mutants-manifest" manifest vllm-source | tee oracle/out/mutation-results-manifest.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation
+          path: |
+            oracle/out/mutation-results*.txt
+            oracle/out/fuzz-cache.json
+            oracle-env.lock
