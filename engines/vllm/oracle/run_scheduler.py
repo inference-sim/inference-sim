@@ -33,27 +33,53 @@ def layer_specs(cfg: dict) -> dict:
     "sliding_window" its SlidingWindowSpec (vllm/model_executor/layers/attention/attention.py:
     606-677@5df63a72); "indexer" is a key-only MLAAttentionSpec with the INDEXER role, as
     MiniMax-M3's lightning indexer builds it (vllm/models/minimax_m3/common/indexer.py:145-154).
-    Heads and head size are each run's own, so page sizes are the model's own ratios."""
+    Heads and head size are each run's own, so page sizes are the model's own ratios.
+
+    DeepSeek V4's caches are the spec classes its modules build, with each run's own block size,
+    tokens per state, state bytes and alignment: "mla" is the compressed MLAAttentionSpec of its
+    attention and indexer key caches (vllm/models/deepseek_v4/attention.py:856-925,
+    vllm/models/deepseek_v41/attention.py:1138-1240), "sliding_window_mla" SlidingWindowMLASpec
+    (vllm/v1/attention/backends/mla/sparse_swa.py:116-140, vllm/models/deepseek_v4/compressor.py:
+    179-193) and "circular_buffer" CircularBufferSpec (vllm/models/deepseek_v41/compressor.py:
+    159-167). Their uint8 caches are uint8 here; a float32 cache states "elem_bytes": 4."""
     import torch  # noqa: E402
     from vllm.v1.kv_cache_interface import (  # noqa: E402
+        CircularBufferSpec,
         FullAttentionSpec,
         MLAAttentionSpec,
+        SlidingWindowMLASpec,
         SlidingWindowSpec,
         SparseCacheRole,
     )
 
+    dtypes = {1: torch.uint8, 2: torch.bfloat16, 4: torch.float32}
     out = {}
     for r, run in enumerate(cfg["kv_layers"]):
         for i in range(run["count"]):
             common = {"block_size": cfg["block_size"], "num_kv_heads": run.get("num_kv_heads", 1),
                       "head_size": run.get("head_size", 1), "dtype": torch.float32}
             kind = run["spec"]
+            deepseek = {"block_size": run.get("block_size", cfg["block_size"]), "num_kv_heads": 1,
+                        "head_size": run["head_size"] if "head_size" in run else 1,
+                        "dtype": dtypes[run.get("elem_bytes", 1)]}
+            if run.get("alignment"):
+                deepseek["alignment"] = run["alignment"]
+            if run.get("state_bytes"):
+                deepseek["state_content_bytes"] = run["state_bytes"]
             if kind == "full":
                 spec = FullAttentionSpec(**common)
             elif kind == "sliding_window":
                 spec = SlidingWindowSpec(sliding_window=run["sliding_window"], **common)
             elif kind == "indexer":
                 spec = MLAAttentionSpec(cache_role=SparseCacheRole.INDEXER, **common)
+            elif kind == "mla":
+                spec = MLAAttentionSpec(tokens_per_state=run.get("tokens_per_state", 1), **deepseek)
+            elif kind == "sliding_window_mla":
+                spec = SlidingWindowMLASpec(sliding_window=run["sliding_window"],
+                                            bounded_replay=bool(run.get("bounded_replay")), **deepseek)
+            elif kind == "circular_buffer":
+                deepseek.pop("alignment", None)
+                spec = CircularBufferSpec(head_size_v=0, **deepseek)
             else:
                 raise ValueError(f"unknown KV layer spec {kind!r}")
             out[f"run{r}.layer{i}"] = spec
@@ -90,8 +116,16 @@ def layer_groups(cfg: dict, vllm_config) -> list:
     # The engine core resolves the KV cache layout from the backends' supported layouts before
     # it groups (vllm/v1/engine/core.py:292-301@5df63a72), and resolve_kv_cache_layout records it
     # on the cache config (vllm/v1/attention/backends/utils.py:348). These layers' backends state
-    # no preference, so the workers report vLLM's default preference.
-    resolve_kv_cache_layout(vllm_config, [[m.name for m in _DEFAULT_LAYOUT_PREFERENCE]], layers.values())
+    # no preference, so the workers report vLLM's default preference; DeepSeek V4's indexer
+    # backend states block-outermost layouts (DeepseekV4IndexerBackend.supported_kv_cache_layouts,
+    # vllm/v1/attention/backends/mla/indexer.py:347-351), which its workers report.
+    supported = [m.name for m in _DEFAULT_LAYOUT_PREFERENCE]
+    if any(run["spec"] in ("mla", "sliding_window_mla", "circular_buffer") for run in cfg["kv_layers"]):
+        from vllm.v1.attention.backends.mla.indexer import DeepseekV4IndexerBackend  # noqa: E402
+        from vllm.v1.attention.backends.utils import get_supported_kv_cache_layouts  # noqa: E402
+
+        supported = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
+    resolve_kv_cache_layout(vllm_config, [supported], layers.values())
     groups = get_kv_cache_groups(vllm_config, layers)
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
     # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
@@ -162,7 +196,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     num_spec = scheduler.num_spec_tokens
 
     init_none_hash(sha256)
-    hasher = get_request_block_hasher(block_size, sha256)
+    # Request block hashes are computed at the scheduler's hash_block_size, as the engine core
+    # builds the hasher (vllm/v1/engine/core.py:233-240@5df63a72): the block size, or for groups
+    # of several block sizes the one vLLM resolved for them.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
     lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
@@ -415,6 +452,26 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
         os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
     helpers.KVCacheConfig = kv_cache_config
+    real_scheduler_cls = (extra or {}).get("scheduler_cls")
+    if cfg.get("kv_layers") and any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer")
+                                    for r in cfg["kv_layers"]):
+        # Groups of several block sizes: the engine core hands the Scheduler the block sizes
+        # vLLM's own resolve_kv_cache_block_sizes resolves from the groups, the scheduler block
+        # size (their LCM) as block_size and hash_block_size beside it (vllm/v1/engine/core.py:
+        # 170-182, 361-374@5df63a72), where the helper passes its one block_size. The class is
+        # the one the helper would build; only those two arguments are the engine core's.
+        from vllm.v1.core.kv_cache_utils import resolve_kv_cache_block_sizes  # noqa: E402
+        from vllm.v1.core.sched.async_scheduler import AsyncScheduler  # noqa: E402
+        from vllm.v1.core.sched.scheduler import Scheduler  # noqa: E402
+
+        base = real_scheduler_cls or (AsyncScheduler if (extra or {}).get("async_scheduling") else Scheduler)
+
+        def engine_core_scheduler(*, vllm_config, kv_cache_config, block_size, **kw):
+            sched_bs, hash_bs = resolve_kv_cache_block_sizes(kv_cache_config, vllm_config)
+            return base(vllm_config=vllm_config, kv_cache_config=kv_cache_config, block_size=sched_bs,
+                        hash_block_size=hash_bs, **kw)
+
+        extra = {**(extra or {}), "scheduler_cls": engine_core_scheduler}
     try:
         return create_scheduler(
             model=model,
