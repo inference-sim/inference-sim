@@ -65,7 +65,7 @@ func TestReExportClosedLoopRecords_Accumulate_DeltasAndResets(t *testing.T) {
 			t.Errorf("record %d: SessionID = %q, want s1", i, rec.SessionID)
 		}
 		if rec.Model != "" {
-			t.Errorf("record %d: Model = %q, want empty (routing safety)", i, rec.Model)
+			t.Errorf("record %d: Model = %q, want empty (no phantom per-model metrics)", i, rec.Model)
 		}
 	}
 

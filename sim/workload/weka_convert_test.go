@@ -26,7 +26,7 @@ const wekaThreeTurnWithSubagent = `{
 }`
 
 // T1 — reader core: delta reconstruction, RoundIndex over main turns only,
-// sub-agent group excluded, Model routing-safety.
+// sub-agent group excluded, Model left empty.
 func TestConvertWekaSession_DeltaReconstructionAndSubagentSkip(t *testing.T) {
 	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1, DropSubagents: true})
 	if err != nil {

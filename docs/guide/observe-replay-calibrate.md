@@ -486,7 +486,7 @@ since Weka gaps are genuine away-from-keyboard times). The column is **non-lossy
 (#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as `&0`,
 distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
 recorded zeros rather than degrading to arrival-gap think. The recorded `claude-*`
-model names are dropped during conversion (same routing-safety reason as OTel).
+model names are dropped during conversion (same reason as OTel: no phantom per-model metrics).
 
 !!! note "Context compaction is represented (#1609)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the

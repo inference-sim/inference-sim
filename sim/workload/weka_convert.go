@@ -168,7 +168,7 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 
 	// Build the source-agnostic normalized session; the shared encoder
 	// (EncodeSessionToTraceRecords) computes per-round input deltas and leaves
-	// TraceRecord.Model empty (routing safety). ThinkUs carries the recomputed
+	// TraceRecord.Model empty (no phantom per-model metrics). ThinkUs carries the recomputed
 	// pure client think (#1478), preferred over arrival-gap think at replay.
 	rounds := make([]NormalizedRound, 0, len(turns))
 	for i, tn := range turns {
