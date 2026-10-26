@@ -26,6 +26,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -80,6 +81,12 @@ func open(s engine.Spec) (pool, error) {
 	}, s.Pool)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
+	}
+	if missing := m.V032Pieces(); len(missing) > 0 {
+		// Refused rather than run without the piece: a run that dropped a sliding-window group,
+		// a drafter's lookahead or a rank's wave would still produce numbers.
+		return pool{}, fmt.Errorf("vllmengine: %s needs %s, which blis-vllm's v0.32.0 engine does not build yet",
+			filepath.Base(path), strings.Join(missing, ", "))
 	}
 	st, err := m.Settings()
 	if err != nil {

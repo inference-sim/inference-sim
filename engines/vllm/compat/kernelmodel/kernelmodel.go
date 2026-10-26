@@ -114,6 +114,8 @@ type Model struct {
 	outputTokenTicks int64
 	completionTicks  int64
 
+	// graph is the model graph the kernel was built from, for V032Pieces.
+	graph *model.Graph
 	// rules is the release-rule report taken from the Inputs at open: the rules no one
 	// enforces on this pool and what they find (#1942). See Provenance.
 	rules ruleReport
@@ -291,6 +293,7 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	}
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
+	m.graph = in.Model
 	return m, nil
 }
 
@@ -431,6 +434,56 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 	// max(1) upholds BLIS's postcondition without depending on a registry value staying
 	// non-zero. See the package comment.
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
+}
+
+// V032Pieces names the parts of the pool's deployment that blis-vllm's v0.32.0 engine
+// (core/vllm) does not build yet, from the kernel's model graph and resolved layout:
+//
+//   - "hybrid KV groups": a KV cache group beside full attention, from a sliding-window
+//     attention node or a window, indexer or recurrent-state cache, which vLLM manages as its
+//     own group (HybridKVCacheCoordinator, vllm/v1/core/kv_cache_coordinator.py:609@5df63a72);
+//   - "MTP drafter": a speculative method of the multi-token-prediction family, whose prefill
+//     lookahead depends on the checkpoint's draft layers (vllm/config/vllm.py:655-665@5df63a72);
+//   - "data parallelism (dp N)": more than one data-parallel rank, whose waves, lockstep and
+//     balancer run across engines (vllm/v1/engine/core.py:2143-2414@5df63a72).
+//
+// It returns none for a pool the v0.32.0 engine builds as it stands.
+func (m *Model) V032Pieces() []string {
+	var out []string
+	hybrid := false
+	g := m.graph
+	if g != nil {
+		check := func(n model.Node) {
+			if n.Op == model.OpAttention && n.AttentionKind == model.AttentionSWA {
+				hybrid = true
+			}
+			if n.Op == model.OpRecurrentUpdate {
+				hybrid = true
+			}
+			for _, c := range n.Caches {
+				if c.Kind == model.CacheWindow || c.Kind == model.CacheIndex || c.Kind == model.CacheState {
+					hybrid = true
+				}
+			}
+		}
+		g.EachNode(func(_ string, n model.Node) { check(n) })
+	}
+	if hybrid {
+		out = append(out, "hybrid KV groups")
+	}
+	if sp := m.k.Deployment().Engine.Speculative; sp != nil && sp.NumSpecTokens > 0 && isMTPFamily(sp.Method) {
+		out = append(out, "MTP drafter")
+	}
+	if dp := m.DataParallelWidth(); dp > 1 {
+		out = append(out, fmt.Sprintf("data parallelism (dp %d)", dp))
+	}
+	return out
+}
+
+// isMTPFamily reports whether a speculative method is vLLM's multi-token-prediction family:
+// "mtp" and the per-model MTP names vLLM maps onto it (vllm/config/speculative.py:38@5df63a72).
+func isMTPFamily(method string) bool {
+	return method == "mtp" || strings.HasSuffix(method, "_mtp")
 }
 
 // ReqShape is one request's share of a batch in the kernel's terms (blis-schemas

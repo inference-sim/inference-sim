@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -123,4 +124,35 @@ func req(id string, prompt, output int) engine.Request {
 		r.Output[i] = int32(9000 + i)
 	}
 	return r
+}
+
+// A 0.32.0 deployment that needs a piece this engine does not build yet is refused, naming the
+// piece, rather than run without it: hybrid KV groups (a sliding-window, indexer or recurrent
+// cache beside full attention), an MTP drafter, or data parallelism across ranks.
+func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
+	Register()
+	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
+	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
+	for _, c := range []struct {
+		scenario string
+		want     []string
+	}{
+		{"d036-032.yaml", []string{"hybrid KV groups"}},                            // gpt-oss-120b: sliding window
+		{"d001-032.yaml", []string{"hybrid KV groups", "MTP drafter"}},             // deepseek-v4-pro with mtp
+		{"d116-032.yaml", []string{"hybrid KV groups", "data parallelism (dp 4)"}}, // minimax-m3 dp 4
+		{"d079-032.yaml", []string{"data parallelism (dp 2)"}},                     // minimax-m2.5 dp 2
+	} {
+		abs, _ := filepath.Abs(filepath.Join("testdata", c.scenario))
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+			Roots: map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}})
+		if err == nil {
+			t.Errorf("%s: built, want a refusal naming %v", c.scenario, c.want)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: %v, want it to name %q", c.scenario, err, w)
+			}
+		}
+	}
 }
