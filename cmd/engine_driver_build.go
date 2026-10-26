@@ -26,6 +26,17 @@ var coreEngineVersions = map[string]bool{"0.32.0": true}
 // path builds.
 func runsThroughContract(version string) bool { return coreEngineVersions[version] }
 
+// dpPlacementFor is the run's DP placement plan. A contract-built release places no rank
+// replicas: the engine behind the contract is the whole data-parallel group, one endpoint
+// whose ranks step in lockstep inside it, so the instance count stays the scenario's and each
+// instance keeps the scenario's dp.
+func dpPlacementFor(version string, plan dpPlacementPlan) dpPlacementPlan {
+	if !runsThroughContract(version) {
+		return plan
+	}
+	return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dataParallelism}
+}
+
 // engineDriverFactory returns the cluster's engine constructor for a contract-built release,
 // nil for one the compatibility engine runs. Each instance's engine is built from the
 // scenario's first pool and driven by a sim.EngineDriver; the host overheads (queueing,
@@ -36,16 +47,13 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 		return nil
 	}
 	// The contract path builds one engine per instance from the scenario's single colocated
-	// pool. A disaggregated topology or a data-parallel replica needs the cluster to drive P/D
-	// handoffs or lockstep waves through the contract, which it does not yet: refuse it, naming
-	// the piece, rather than run it on the compatibility engine.
+	// pool. A disaggregated topology needs the cluster to drive P/D handoffs through the
+	// contract, which it does not yet: refuse it, naming the piece, rather than run it on the
+	// compatibility engine. A data-parallel replica is one instance whose engine is the whole DP
+	// group, its ranks, waves and balancer the engine's (dpPlacementFor).
 	if prefillInstances != 0 || decodeInstances != 0 || prefillDecodeInstances != 0 {
 		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not "+
 			"drive a P/D topology yet (P/D disaggregation)", kernelScenario, version)
-	}
-	if dataParallelism > 1 {
-		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not "+
-			"drive a data-parallel replica yet (data parallelism, dp %d)", kernelScenario, version, dataParallelism)
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)

@@ -452,7 +452,7 @@ Example:
 		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
 		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
 		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}

@@ -378,3 +378,42 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 		t.Errorf("the refusal must name the missing piece; stderr:\n%s", lastLines(stderr, 4))
 	}
 }
+
+// dp032Variant writes the vendored dp 2 MoE scenario (dpScenario: minimax-m2.5 on B200, TP2 x
+// DP2 with expert parallelism) at engine_version 0.32.0, with extra engine lines, into a fresh
+// scenario directory as v032-dp2.yaml.
+func dp032Variant(t *testing.T, extra string) string {
+	t.Helper()
+	scenarios, _, _ := kernelRepos(t)
+	body := readFile(t, filepath.Join(scenarios, dpScenario))
+	const anchor = "      gpu_memory_utilization: 0.92\n"
+	if !strings.Contains(body, `engine_version: "0.29.0"`) || !strings.Contains(body, anchor) {
+		t.Fatalf("fixture %s has no engine_version 0.29.0 or %q to edit", dpScenario, anchor)
+	}
+	body = strings.Replace(body, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
+	body = strings.Replace(body, anchor, anchor+extra, 1)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "v032-dp2.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A 0.32.0 data-parallel deployment reaches the engine as one instance: the host places no rank
+// replicas (the engine is the whole DP group, its balancer, waves and lockstep its own), and the
+// build site no longer refuses dp > 1. With async scheduling off, which vLLM's DP group then
+// runs with a queue of one batch per rank, the deployment runs to completion.
+func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
+	dir := dp032Variant(t, "      async_scheduling: false\n")
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032-dp2.yaml",
+		"--rate", "4", "--num-requests", "8", "--seed", "1")
+	if err != nil {
+		t.Fatalf("the 0.32.0 dp 2 deployment did not run: %v; stderr:\n%s", err, lastLines(stderr, 6))
+	}
+	if strings.Contains(stderr, "DP-as-placement") {
+		t.Errorf("a 0.32.0 DP group must not be expanded into rank replicas; stderr:\n%s", lastLines(stderr, 6))
+	}
+	if !strings.Contains(stdout, `"completed_requests": 8`) {
+		t.Errorf("want all 8 requests completed; stdout:\n%s", lastLines(stdout, 30))
+	}
+}

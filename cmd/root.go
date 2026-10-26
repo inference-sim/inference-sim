@@ -1255,7 +1255,7 @@ var runCmd = &cobra.Command{
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
