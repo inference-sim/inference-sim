@@ -429,6 +429,104 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 	}
 }
 
+// engineSettingGlobals are the run's engine settings the build site adopts from blis-vllm's
+// resolution of the first pool (adoptFirstPoolEngine, applyKernelLoRAReservation): the caps,
+// pages and window the kernel priced. blis-vllm checks each when it resolves it (vLLM's own
+// bounds, e.g. max_num_seqs >= 1, vllm/config/scheduler.py:48@5df63a72; compat/kernelmodel
+// Model.Engine), so cmd neither checks nor compares them.
+var engineSettingGlobals = map[string]bool{
+	"totalKVBlocks": true, "blockSizeTokens": true, "maxNumSeqs": true, "maxNumBatchedTokens": true,
+	"maxModelLen": true, "numSpeculativeTokens": true, "speculativeMethod": true,
+	"noEnablePrefixCaching": true, "sequenceState": true, "prefixHit": true,
+}
+
+// engineSettingComparisonsIn lists, for the non-test Go files of dir, each comparison (<, <=, >,
+// >=, ==, !=) with an engineSettingGlobals name as an operand, as "file:line: name op". It also
+// returns how many files it scanned.
+func engineSettingComparisonsIn(t *testing.T, dir string) ([]string, int) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	scanned := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		scanned++
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			b, ok := n.(*ast.BinaryExpr)
+			if !ok {
+				return true
+			}
+			switch b.Op {
+			case token.LSS, token.LEQ, token.GTR, token.GEQ, token.EQL, token.NEQ:
+			default:
+				return true
+			}
+			for _, side := range []ast.Expr{b.X, b.Y} {
+				if id, ok := side.(*ast.Ident); ok && engineSettingGlobals[id.Name] {
+					at := fset.Position(b.Pos())
+					out = append(out, fmt.Sprintf("%s:%d: %s %s", filepath.Base(at.Filename), at.Line, id.Name, b.Op))
+				}
+			}
+			return true
+		})
+	}
+	sort.Strings(out)
+	return out, scanned
+}
+
+// cmd keeps no copy of the engine's checks of the settings the build site adopts: a bound such as
+// max_num_seqs > 0 is vLLM's (ge=1), and blis-vllm applies it when it resolves the pool, before
+// the build site assigns the value. A comparison on one of those globals in cmd is such a copy,
+// in any file (the build site only assigns them).
+func TestCmdChecksNoEngineSettingTheBuildSiteAdopts(t *testing.T) {
+	findings, scanned := engineSettingComparisonsIn(t, ".")
+	if scanned < 10 {
+		t.Fatalf("non-vacuity: only %d production files scanned", scanned)
+	}
+	if len(findings) > 0 {
+		t.Errorf("cmd compares engine settings blis-vllm resolves and checks (move the check into blis-vllm "+
+			"compat/build, or drop it if the engine already refuses the value):\n  %s", strings.Join(findings, "\n  "))
+	}
+}
+
+// The comparison check sees each operator and either side, and passes a file that only assigns
+// or reads the settings.
+func TestEngineSettingComparisonCheckCatchesEachForm(t *testing.T) {
+	cases := map[string]string{
+		"a lower bound":     `func f() bool { return maxNumSeqs <= 0 }`,
+		"on the right side": `func f() bool { return 0 >= maxNumBatchedTokens }`,
+		"an equality":       `func f() bool { return totalKVBlocks == 0 }`,
+		"an upper bound":    `func f(n int64) bool { return n > maxModelLen }`,
+	}
+	run := func(body string) []string {
+		dir := t.TempDir()
+		src := "package probe\n\nvar maxNumSeqs, maxNumBatchedTokens, totalKVBlocks, maxModelLen int64\n\n" + body + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "probe.go"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := engineSettingComparisonsIn(t, dir)
+		return got
+	}
+	for _, name := range sortedKeysOf(cases) {
+		if got := run(cases[name]); len(got) != 1 {
+			t.Errorf("%s: %v, want one finding", name, got)
+		}
+	}
+	if got := run(`func f() int64 { maxNumSeqs = 4; return maxNumSeqs + maxModelLen }`); len(got) != 0 {
+		t.Errorf("assignments and reads: %v, want none", got)
+	}
+}
+
 func sortedKeysOf(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

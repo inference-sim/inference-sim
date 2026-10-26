@@ -1127,15 +1127,6 @@ var runCmd = &cobra.Command{
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
 		}
-		if totalKVBlocks <= 0 {
-			logrus.Fatalf("scenario %q: the kernel sized %d KV blocks per rank; it must be > 0", kernelScenario, totalKVBlocks)
-		}
-		if maxNumSeqs <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_seqs must be > 0, got %d", kernelScenario, maxNumSeqs)
-		}
-		if maxNumBatchedTokens <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
-		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {

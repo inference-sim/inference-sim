@@ -89,6 +89,14 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 			run(plain, "--policy-config", writeNodePoolBundle(t, "H100", "141"))},
 		{"a node pool stating other GPU memory", "states gpu_memory_gib 80",
 			run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "80"))},
+		// vLLM's own floor on the batch caps (ge=1, vllm/config/scheduler.py:48,62@5df63a72) is the
+		// engine's to apply: blis-vllm's kernel model refuses a deployment that states none
+		// (compat/kernelmodel Model.Engine), when the build site sizes the pool, and cmd keeps no
+		// copy of the check.
+		{"max_num_seqs 0", "deployment states no max_num_seqs",
+			run(writeColocatedVariant(t, "      max_num_seqs: 256\n", "      max_num_seqs: 0\n"))},
+		{"max_num_batched_tokens 0", "deployment states no max_num_batched_tokens",
+			run(writeColocatedVariant(t, "      max_num_batched_tokens: 8192\n", "      max_num_batched_tokens: 0\n"))},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, tt.args...)

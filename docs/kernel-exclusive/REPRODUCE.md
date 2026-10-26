@@ -17,8 +17,10 @@ tagged release and reaches you without a separate checkout:
 | blis-registry | `v0.2.0` | vendored coefficient sets at `testdata/registry` |
 
 The catalog and registry releases are the ones blis-latency-kernel `v0.3.0` pins in its own
-`testdata/upstream.lock`; `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (blis-vllm
-`compat/kernelmodel`, since #2021) fails if blis-vllm's vendored copies drift from that lock. To score against live upstream checkouts instead, clone the
+`testdata/upstream.lock`; `TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases`
+(`sim/vendored`) fails if this repository's vendored copies drift from that lock, as
+`TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (blis-vllm `compat/kernelmodel`, since
+#2021) does for blis-vllm's. To score against live upstream checkouts instead, clone the
 tags and point the variables at them:
 
 ```

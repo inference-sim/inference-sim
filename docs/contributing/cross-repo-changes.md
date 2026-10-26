@@ -18,9 +18,9 @@ page adds the cross-repository steps around them.
    updating each `.upstream-commit` stamp.
 3. `testdata/upstream-prerelease.lock`: the same two heads (TEMPORARY). Empty it once the
    kernel's `testdata/upstream.lock` names their releases;
-   `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (blis-vllm `compat/kernelmodel`,
-   moved from `sim/kernelmodel` by #2021) holds blis-vllm's own vendored copies to it; this
-   repository's copies have no such test since the move.
+   `TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/vendored`) holds this
+   repository's vendored copies to it, as `TestTheVendoredCatalogAndRegistryAreTheLockedReleases`
+   (blis-vllm `compat/kernelmodel`, moved from `sim/kernelmodel` by #2021) holds blis-vllm's own.
 4. Documentation that pins a catalog release (`docs/getting-started/installation.md`) moves with
    it; `TestDocExamplesPinTheCatalogVersion` checks it.
 5. `go test ./...` and `golangci-lint run ./...`.
