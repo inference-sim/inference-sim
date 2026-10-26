@@ -412,11 +412,19 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 	for _, c := range []struct {
 		backend string
 		want    bool
+		// severity is the finding's, when it fires: a warning for a name a plugin could register,
+		// an error for one no plugin can, since MLAPrefillBackendEnum.register refuses a name that
+		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72).
+		severity rules.Severity
 	}{
-		{"", false}, {"TRTLLM_RAGGED", false}, {"FLASHINFER", false}, {"ROCM_AITER_FA", false},
-		{"flash_attn", false}, // upper-cased before the lookup
-		{"CUSTOM", false},     // a member: a backend registered out of tree takes it
-		{"TRTLLM", true}, {"FLASH_MLA", true}, {"auto", true},
+		{"", false, ""}, {"TRTLLM_RAGGED", false, ""}, {"FLASHINFER", false, ""}, {"ROCM_AITER_FA", false, ""},
+		{"flash_attn", false, ""}, // upper-cased before the lookup
+		{"CUSTOM", false, ""},     // a member: a backend registered out of tree takes it
+		{"TRTLLM", true, rules.SeverityWarning}, {"FLASH_MLA", true, rules.SeverityWarning},
+		{"auto", true, rules.SeverityWarning}, {"my_plugin_prefill", true, rules.SeverityWarning},
+		// Not identifiers once upper-cased, so no plugin can register them: always refused.
+		{"flash-attn", true, rules.SeverityError}, {"1BAD", true, rules.SeverityError},
+		{"FLASH ATTN", true, rules.SeverityError}, {"trtllm.ragged", true, rules.SeverityError},
 	} {
 		p := run(t, dep(colocated(deployment.Parallelism{TP: 1, PP: 1, DP: 1},
 			deployment.Engine{MLAPrefillBackend: c.backend})), nil)
@@ -424,13 +432,27 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 			t.Errorf("mla_prefill_backend %q: rule fired=%v, want %v\n%s", c.backend, got, c.want, p.Error())
 		}
 		for _, it := range p.All() {
-			if it.Rule == "mla-prefill-backend-known" && it.Severity != rules.SeverityWarning {
-				t.Errorf("mla_prefill_backend %q: the finding is %s, not a warning, though a plugin may "+
-					"register the name", c.backend, it.Severity)
+			if it.Rule == "mla-prefill-backend-known" && it.Severity != c.severity {
+				t.Errorf("mla_prefill_backend %q: the finding is %s, want %s", c.backend, it.Severity, c.severity)
 			}
 		}
 		if c.want && !strings.Contains(p.Error(), "FLASHINFER, FLASH_ATTN") {
 			t.Errorf("message should name the accepted set: %s", p.Error())
+		}
+	}
+}
+
+// TestPythonIdentifier pins pythonIdentifier against str.isidentifier for the ASCII names a
+// deployment can state: a letter or underscore, then letters, digits or underscores.
+func TestPythonIdentifier(t *testing.T) {
+	for name, want := range map[string]bool{
+		"": false, "A": true, "_": true, "_A1": true, "FLASH_ATTN": true, "TRTLLM2": true,
+		"1BAD": false, "FLASH-ATTN": false, "FLASH ATTN": false, "TRTLLM.RAGGED": false, "A$": false,
+		// Non-ASCII: Python admits Unicode letters, so the check does not refuse such a name.
+		"ÉCLAIR": true, "FLASH_É": true,
+	} {
+		if got := pythonIdentifier(name); got != want {
+			t.Errorf("pythonIdentifier(%q) = %v, want %v", name, got, want)
 		}
 	}
 }

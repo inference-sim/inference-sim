@@ -92,6 +92,29 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 var mlaPrefillBackends = []string{"FLASH_ATTN", "FLASHINFER", "TRTLLM_RAGGED", "TOKENSPEED_MLA",
 	"ROCM_AITER_FA", "CPU", "ZEN_CPU", "CUSTOM"}
 
+// pythonIdentifier reports whether name could be a Python identifier, which
+// MLAPrefillBackendEnum.register requires of a backend a plugin adds
+// (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72). It is str.isidentifier for
+// ASCII: a letter or an underscore, then letters, digits or underscores. A name with any non-ASCII
+// character is taken to be one, since Python admits Unicode letters this check does not classify;
+// that errs toward the warning, never refusing a name vLLM could serve.
+func pythonIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r > 0x7f:
+			return true
+		case r == '_', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // Pack returns the rules pack for this version. It is a function rather than a
 // package-level variable so a caller can hold two versions at once — useful when
 // comparing what a scenario would mean across releases.
@@ -364,12 +387,21 @@ func ruleList(p *rules.Pack) []rules.Rule {
 			Name: "mla-prefill-backend-known",
 			Because: "attention_config parses mla_prefill_backend by looking the upper-cased name up in " +
 				"MLAPrefillBackendEnum and refuses one it lacks at startup (vllm/config/attention.py:195-201@5df63a72); " +
-				"it is a warning because a plugin, which vllm serve loads before it parses the flag, can add a name " +
-				"this set cannot enumerate",
+				"a name a plugin could register, which vllm serve does before it parses the flag, is a warning, and " +
+				"one no plugin can register, because MLAPrefillBackendEnum.register refuses a name that is not a " +
+				"Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72), is an error",
 			Check: func(in rules.Input, out *rules.Problems) {
 				known := set(mlaPrefillBackends...)
 				forEachEngine(in, func(at string, e deployment.Engine) {
-					if e.MLAPrefillBackend != "" && !known[strings.ToUpper(e.MLAPrefillBackend)] {
+					name := strings.ToUpper(e.MLAPrefillBackend)
+					switch {
+					case e.MLAPrefillBackend == "" || known[name]:
+					case !pythonIdentifier(name):
+						out.RuleErrorf("mla-prefill-backend-known",
+							"%s.engine.mla_prefill_backend %q is not a backend of engine %s (%s), and no plugin can "+
+								"register it: a backend name must be a Python identifier, so vLLM refuses it at startup",
+							at, e.MLAPrefillBackend, Version, strings.Join(sortedKeys(known), ", "))
+					default:
 						out.RuleWarnf("mla-prefill-backend-known",
 							"%s.engine.mla_prefill_backend %q is not an in-tree backend of engine %s (%s); if a plugin "+
 								"registers it this is expected, otherwise vLLM refuses it at startup: check the spelling",

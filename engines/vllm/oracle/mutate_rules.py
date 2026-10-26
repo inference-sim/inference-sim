@@ -6,7 +6,7 @@ and report whether each is caught.
 Each mutant breaks one clause of a rule a supported row of docs/feature-matrix.md names, or one
 piece of the data, rule or parser that v0.32.0 added over v0.31.0 (the 0.32.0 pack's commit), so
 those mutants exist and run in CI rather than only on a contributor's machine. The mutant IDs are
-C1-C25; D1-D11 are oracle/mutate_t3.py's.
+C1-C28; D1-D11 are oracle/mutate_t3.py's.
 
 Usage: python3 oracle/mutate_rules.py <blis-vllm checkout> <scratch dir> <vLLM v0.32.0 source> [C1,...]
 Exits non-zero if the unmutated module fails, or a mutant survives or breaks the build without a
@@ -90,12 +90,11 @@ MUTANTS = [
     # mla-prefill-backend-known (vllm/config/attention.py:195-201@5df63a72; the members are
     # MLAPrefillBackendEnum's, vllm/v1/attention/backends/mla/prefill/registry.py:37-65).
     ("C20", "mla-prefill-backend-known: the rule fires", PACK,
-     "if e.MLAPrefillBackend != \"\" && !known[strings.ToUpper(e.MLAPrefillBackend)] {", "if false {",
-     MLA),
+     "case e.MLAPrefillBackend == \"\" || known[name]:", "case true:", MLA),
     ("C21", "mla-prefill-backend-known: the name is upper-cased before the lookup", PACK,
-     "!known[strings.ToUpper(e.MLAPrefillBackend)]", "!known[e.MLAPrefillBackend]", MLA),
+     "name := strings.ToUpper(e.MLAPrefillBackend)", "name := e.MLAPrefillBackend", MLA),
     ("C22", "mla-prefill-backend-known: an unstated backend is the engine's own choice", PACK,
-     "if e.MLAPrefillBackend != \"\" && !known", "if !known", MLA),
+     "case e.MLAPrefillBackend == \"\" || known[name]:", "case known[name]:", MLA),
     ("C23", "mla-prefill-backend-known: an unknown name warns, since a plugin may register it", PACK,
      "out.RuleWarnf(\"mla-prefill-backend-known\",", "out.RuleErrorf(\"mla-prefill-backend-known\",", MLA),
     ("C24", "MLAPrefillBackendEnum: every member is accepted", PACK,
@@ -104,6 +103,15 @@ MUTANTS = [
     ("C25", "MLAPrefillBackendEnum: no name it lacks is accepted", PACK,
      "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\"}", "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\", \"TRTLLM\"}",
      "TestMLAPrefillBackendsMatchSource"),
+    # A plugin can register only a Python identifier (registry.py:85-86@5df63a72), so a name that
+    # is not one is refused, not warned.
+    ("C26", "mla-prefill-backend-known: a name no plugin can register is an error", PACK,
+     "case !pythonIdentifier(name):", "case false:", MLA),
+    ("C27", "pythonIdentifier: a leading digit is not an identifier", PACK,
+     "case r >= '0' && r <= '9' && i > 0:", "case r >= '0' && r <= '9' && i >= 0:", "TestPythonIdentifier|" + MLA),
+    ("C28", "pythonIdentifier: punctuation is not an identifier", PACK,
+     "case r == '_', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':",
+     "case r == '_', r == '-', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':", "TestPythonIdentifier|" + MLA),
 ]
 
 TESTS = "|".join(sorted({t for m in MUTANTS for t in m[5].split("|")}))

@@ -239,6 +239,12 @@ func TestMLAPrefillBackendsMatchSource(t *testing.T) {
 	if !strings.Contains(src, `backend = MLAPrefillBackendEnum.register(backend, class_path or "")`) {
 		t.Error("registry.py no longer registers a new MLA prefill backend by name; the rule's severity rests on it")
 	}
+	// A plugin can register only a Python identifier, so a name that is not one is always refused:
+	// the rule makes that an error (pythonIdentifier).
+	if !strings.Contains(src, "if not name.isidentifier() or hasattr(cls, name):") {
+		t.Error("MLAPrefillBackendEnum.register no longer refuses a name that is not a Python identifier; " +
+			"the rule's error for such a name rests on it")
+	}
 	args := readSource(t, root, "vllm", "engine", "arg_utils.py")
 	a := strings.Index(args, "class AsyncEngineArgs(EngineArgs):")
 	if a < 0 {
