@@ -117,25 +117,6 @@ func TestNewOffloadCache_Validation(t *testing.T) {
 	}
 }
 
-// I1 (routing): OffloadCache must satisfy the SnapshotCachedBlocksFn capability the
-// cluster router type-asserts, so routing keeps frozen-snapshot semantics rather
-// than falling back to a live query.
-func TestOffload_SnapshotCachedBlocksFn(t *testing.T) {
-	var _ interface {
-		SnapshotCachedBlocksFn() func([]sim.TokenID) int
-	} = (*OffloadCache)(nil)
-
-	gpu := NewKVCacheState(64, 16)
-	oc := NewOffloadCache(gpu, enabledOffloadCfg(1<<20, 4096, 1))
-	fn := oc.SnapshotCachedBlocksFn()
-	if fn == nil {
-		t.Fatalf("SnapshotCachedBlocksFn must return a non-nil closure")
-	}
-	if n := fn([]sim.TokenID{1, 2, 3, 4}); n != 0 {
-		t.Fatalf("empty cache snapshot must count 0 cached blocks, got %d", n)
-	}
-}
-
 // #1699/#1706: the offload store reports, via a PURE pre-allocation query
 // (ReloadReportingKVStore.ReloadablePrefixEnd), the token boundary to which a same-step
 // CPU->GPU reload WOULD extend a new request's GPU-cached prefix — the analogue of vLLM's

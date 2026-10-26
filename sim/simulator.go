@@ -554,10 +554,9 @@ func (sim *Simulator) QueueDepth() int { return sim.WaitQ.Len() }
 
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
 // instance, in a deterministic order (INV-6). Returns nil when the LoRA subsystem
-// is inert (no adapters/capacity configured, or sim/lora not imported), so the
-// snapshot's ResidentAdapters stays nil and the lora-affinity scorer is neutral
-// (INV-6). Read by the cluster snapshot provider to populate
-// RoutingSnapshot.ResidentAdapters (#1469).
+// is inert (no adapters/capacity configured, or sim/lora not imported). No
+// production caller since BLIS's snapshot provider was removed (#2000); the router
+// sees resident adapters through the engine's published metrics instead.
 func (sim *Simulator) ResidentAdapterIDs() []string {
 	if sim.residentAdapters == nil {
 		return nil

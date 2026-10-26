@@ -49,7 +49,7 @@ func TestConvertWeka_EndToEndAndAccumulateReconstruction(t *testing.T) {
 			t.Errorf("record %d RequestID = %d, want %d (assigned in stream order)", i, r.RequestID, i)
 		}
 		if r.Model != "" {
-			t.Errorf("record %d Model = %q, want empty (routing safety)", i, r.Model)
+			t.Errorf("record %d Model = %q, want empty (no phantom per-model metrics)", i, r.Model)
 		}
 	}
 	// think_time_us column round-trips: recorded 7s / 10s on rounds 1, 2 (non-nil, #1608).

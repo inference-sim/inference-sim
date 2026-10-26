@@ -40,8 +40,7 @@ type otelStatus struct {
 
 type otelAttributes struct {
 	// The recorded model name (gen_ai.request.model) is intentionally NOT parsed:
-	// it must not reach TraceRecord.Model (routing-significant — see
-	// EncodeSessionToTraceRecords), and encoding/json simply ignores the key.
+	// it must not reach TraceRecord.Model (see EncodeSessionToTraceRecords), and encoding/json simply ignores the key.
 	InputTokens  *int `json:"gen_ai.usage.input_tokens"`
 	OutputTokens *int `json:"gen_ai.usage.output_tokens"`
 	// Presence of this key (even empty) marks an LLM chat span when name doesn't.
@@ -161,9 +160,9 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 
 	// Build the source-agnostic normalized session; the shared encoder
 	// (EncodeSessionToTraceRecords) computes per-round input deltas and leaves
-	// TraceRecord.Model empty (routing safety — a recorded cross-model name would
-	// drop every request at routing under a differing run model; see the encoder's
-	// doc comment and #1477). ThinkUs is left nil (not recorded, #1608): OTel has no
+	// TraceRecord.Model empty (a recorded cross-model name would report every
+	// request in the per-model metrics under a model the run never simulated; see
+	// the encoder's doc comment and #1477). ThinkUs is left nil (not recorded, #1608): OTel has no
 	// reliable response-complete time (end_time is often a placeholder), so per-round
 	// think is derived from arrival gaps at replay rather than recorded here.
 	t0 := spans[0].startUs

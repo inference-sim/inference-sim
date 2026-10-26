@@ -1444,7 +1444,6 @@ var runCmd = &cobra.Command{
 		}
 
 		// Resolve policy configuration (single code path shared with replayCmd).
-		// Per-pool scorer configs (PD disaggregation) remain inline below.
 		bundle := resolvePolicies(cmd)
 
 		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.

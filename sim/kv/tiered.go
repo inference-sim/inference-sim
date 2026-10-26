@@ -457,12 +457,6 @@ func (t *TieredKVCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return t.gpu.GetCachedBlocks(tokens)
 }
 
-// SnapshotCachedBlocksFn returns a snapshot query function for the GPU tier.
-// See KVCacheState.SnapshotCachedBlocksFn for details.
-func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
-	return t.gpu.SnapshotCachedBlocksFn()
-}
-
 func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	t.gpu.ReleaseKVBlocks(req)
 	// No offload — freed blocks stay on GPU free list with hashes intact (BC-3).

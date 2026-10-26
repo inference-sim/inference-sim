@@ -26,7 +26,7 @@ const wekaThreeTurnWithSubagent = `{
 }`
 
 // T1 — reader core: delta reconstruction, RoundIndex over main turns only,
-// sub-agent group excluded, Model routing-safety.
+// sub-agent group excluded, Model left empty.
 func TestConvertWekaSession_DeltaReconstructionAndSubagentSkip(t *testing.T) {
 	recs, err := ConvertWekaSession([]byte(wekaThreeTurnWithSubagent), WekaConvertOptions{ContextGrowth: "accumulate", MinRounds: 1, DropSubagents: true})
 	if err != nil {
@@ -73,11 +73,11 @@ func TestConvertWekaSession_DeltaReconstructionAndSubagentSkip(t *testing.T) {
 		t.Errorf("session id = %q, want sess-1", recs[0].SessionID)
 	}
 	// Model MUST be empty even though every turn records "claude-sonnet-4":
-	// TraceRecord.Model is routing-significant, so a recorded name differing from
-	// --model would drop every request at routing.
+	// TraceRecord.Model becomes Request.Model at replay, which keys the per-model
+	// metrics, so a recorded name would be reported as a phantom model.
 	for i, r := range recs {
 		if r.Model != "" {
-			t.Errorf("round %d Model = %q, want empty (recorded model must not reach the routing-significant field)", i, r.Model)
+			t.Errorf("round %d Model = %q, want empty (recorded model must not reach TraceRecord.Model)", i, r.Model)
 		}
 	}
 }

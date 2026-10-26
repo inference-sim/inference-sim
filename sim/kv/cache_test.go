@@ -794,30 +794,6 @@ func TestVerifyBlockConservation_DetectsOrphanedBlocks(t *testing.T) {
 	assert.Contains(t, err.Error(), "drift")
 }
 
-func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
-	// GIVEN a KVCacheState with some cached blocks
-	kvc := NewKVCacheState(100, 4)
-	tokens := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8} // 2 blocks
-	req := &sim.Request{ID: "r1", InputTokens: tokens}
-	ok := kvc.AllocateKVBlocks(req, 0, 8, nil)
-	require.True(t, ok)
-
-	// WHEN we take a snapshot
-	snapshotFn := kvc.SnapshotCachedBlocksFn()
-
-	// AND then allocate more blocks (tokens 9-16 = 2 more blocks)
-	tokens2 := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	req2 := &sim.Request{ID: "r2", InputTokens: tokens2}
-	ok = kvc.AllocateKVBlocks(req2, 8, 16, kvc.GetCachedBlocks(tokens2))
-	require.True(t, ok)
-
-	// THEN the snapshot sees only the original 2 blocks
-	assert.Equal(t, 2, snapshotFn(tokens2), "snapshot should see 2 blocks (frozen at snapshot time)")
-
-	// AND the live query sees all 4 blocks
-	assert.Equal(t, 4, len(kvc.GetCachedBlocks(tokens2)), "live query should see 4 blocks")
-}
-
 func TestAllocateKVBlocks_DecodeNoExistingBlocks_FailsWhenCacheFull(t *testing.T) {
 	// GIVEN a request in decode with no RequestMap entry (simulates a preempted request
 	// whose blocks were released but ProgressIndex was not reset). This exercises the

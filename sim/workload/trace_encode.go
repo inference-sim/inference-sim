@@ -34,10 +34,11 @@ type NormalizedRound struct {
 // buffer). The marker is absent for monotone sessions and for spec-built `blis run`
 // blueprints, so a trace without it replays byte-identically to before (INV-6).
 //
-// TraceRecord.Model is left empty deliberately: it is routing-significant at
-// replay (buildRouterState filters instances by it), so writing a recorded
-// cross-model name would drop every request at routing. Empty makes requests
-// inherit the run's model (#1477). ThinkUs, when a reader sets it (non-nil), is written to
+// TraceRecord.Model is left empty deliberately: at replay it becomes
+// Request.Model, which keys the per-model metrics block (ComputePerModelMetrics),
+// so a recorded cross-model name would report every request under a model the
+// run never simulated. Empty leaves them out of that block; every request is
+// simulated under the scenario's model either way (#1477). ThinkUs, when a reader sets it (non-nil), is written to
 // the think_time_us column (#1478) and preferred over arrival-gap think at replay;
 // the OTel reader leaves it nil (no reliable response-complete time → arrival-gap
 // fallback), Weka sets it — including a recorded &0 for an overlapping turn, which
