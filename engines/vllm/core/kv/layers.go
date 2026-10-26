@@ -11,6 +11,7 @@ package kv
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // LayerSpec is the KV cache spec class one attention layer builds.
@@ -85,6 +86,24 @@ type Layer struct {
 // layers whose pages differ are refused, as vLLM unifies their pages another way
 // (unify_kv_cache_spec_page_size, :2213-2221), which is not modelled.
 func GroupsOfLayers(layers []Layer, disableHybrid bool) ([]Group, error) {
+	return GroupLayers(layers, GroupOptions{DisableHybrid: disableHybrid})
+}
+
+// GroupOptions are what get_kv_cache_groups reads besides the layers.
+type GroupOptions struct {
+	// DisableHybrid is disable_hybrid_kv_cache_manager.
+	DisableHybrid bool
+	// TrailingDrafter is _uses_trailing_mtp_layers with EAGLE block drop on
+	// (kv_cache_utils.py:2017-2033@5df63a72): an MTP drafter, or any EAGLE-family drafter of
+	// DeepSeek V4/V4.1, whose KV layers register after the target's. The group holding the
+	// model's last layer is then the drafter's (_annotate_eagle_groups, :2051-2109), and only
+	// it drops the EAGLE block.
+	TrailingDrafter bool
+}
+
+// GroupLayers is GroupsOfLayers with the drafter's position.
+func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
+	disableHybrid := o.DisableHybrid
 	if len(layers) == 0 {
 		return nil, errors.New("kv: a model with no KV cache layers")
 	}
@@ -105,7 +124,16 @@ func GroupsOfLayers(layers []Layer, disableHybrid bool) ([]Group, error) {
 			return nil, errors.New("kv: disable_hybrid_kv_cache_manager with DeepSeek V4's sliding-window MLA and " +
 				"circular-buffer caches is not modelled")
 		}
-		if g := packedGroups(layers); g != nil {
+		if g, members := packedGroups(layers); g != nil {
+			if o.TrailingDrafter {
+				// _groups_partition_layers_exactly holds: every layer is in one group.
+				for i, m := range members {
+					if slices.Contains(m, len(layers)-1) {
+						g[i].Eagle = true
+						break
+					}
+				}
+			}
 			return g, nil
 		}
 		return nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")

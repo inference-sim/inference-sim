@@ -4,7 +4,10 @@
 // Also vllm/v1/core/single_type_kv_cache_manager.py (SingleTypeKVCacheManager,
 // FullAttentionManager, SlidingWindowManager) and vllm/v1/core/kv_cache_coordinator.py
 // (UnitaryKVCacheCoordinator, HybridKVCacheCoordinator) for full-attention and
-// sliding-window KV cache groups over one block pool.
+// sliding-window KV cache groups over one block pool, and CircularBufferManager
+// (single_type_kv_cache_manager.py:1173-1260) and groups of their own block sizes
+// (resolve_kv_cache_block_sizes, vllm/v1/core/kv_cache_utils.py:804-904; BlockHashListWithBlockSize,
+// :2690-2763) for DeepSeek V4's packed groups.
 
 package kv
 
@@ -36,6 +39,11 @@ type Group struct {
 	// BoundedReplay is a sliding-window MLA group kept out of prefix caching
 	// (SlidingWindowMLASpec.prefix_cacheable, vllm/v1/kv_cache_interface.py:1003-1009@5df63a72).
 	BoundedReplay bool
+	// Eagle is KVCacheGroupSpec.is_eagle_group: the group holds a drafter's layers
+	// (_annotate_eagle_groups, vllm/v1/core/kv_cache_utils.py:2051-2109@5df63a72). With EAGLE block
+	// drop on, only such groups drop the block; when none is, every group does
+	// (kv_cache_coordinator.py:127-133).
+	Eagle bool
 }
 
 // ResolveGroups is the grouping of a model's layer specs that the scheduler sees
@@ -74,11 +82,17 @@ func ResolveGroups(layers []Group, disableHybrid bool) []Group {
 // group over one Pool, prefix-cache lookup, slot allocation and freeing. One full-attention
 // group is vLLM's UnitaryKVCacheCoordinator; more groups are its HybridKVCacheCoordinator.
 type Manager struct {
-	Pool        *Pool
-	blockSize   int
-	maxModelLen int
-	caching     bool
-	watermark   int // blocks kept free when admitting a waiting request
+	Pool *Pool
+	// blockSize is the scheduler block size: the engine's block size for one group, the LCM of
+	// the groups' block sizes for several (resolve_kv_cache_block_sizes, kv_cache_utils.py:
+	// 804-861@5df63a72). Hits and the hybrid coordinator's caching are aligned to it.
+	blockSize int
+	// hashBlockSize is the block size request block hashes are computed at: the GCD of the
+	// prefix-cacheable groups' block sizes (:863-890); the scheduler block size for one group.
+	hashBlockSize int
+	maxModelLen   int
+	caching       bool
+	watermark     int // blocks kept free when admitting a waiting request
 	// eagle is use_eagle_block_drop: an EAGLE-family drafter's groups drop the last matched
 	// block of a prefix hit (single_type_kv_cache_manager.py:819-820) and cache one block past
 	// the aligned boundary (kv_cache_coordinator.py:779-794).
@@ -97,13 +111,19 @@ type Manager struct {
 
 // group is one SingleTypeKVCacheManager.
 type group struct {
-	id        uint32
-	spec      Group
+	id   uint32
+	spec Group
+	// blockSize is the group's own block size (SingleTypeKVCacheManager.block_size,
+	// single_type_kv_cache_manager.py:108@5df63a72).
+	blockSize int
 	reqBlocks map[string][]*Block
 	numCached map[string]int // full blocks of the request already cached
 	// extraRetained is a sliding window's extra_retained_tokens
 	// (vllm/v1/kv_cache_interface.py:852-857@5df63a72), 0 for full attention.
 	extraRetained int
+	// eagle is the manager's use_eagle: the group drops the EAGLE block
+	// (kv_cache_coordinator.py:127-133, 572, 760-765@5df63a72).
+	eagle bool
 }
 
 // Options are the parts of the KV manager's configuration a drafter or a hybrid model
@@ -139,17 +159,93 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		reprefillable: max(0, o.PrefillLookahead-1), maxInFlight: o.MaxInFlightTokens,
 	}
 	for i, g := range specs {
-		gr := &group{id: uint32(i), spec: g, reqBlocks: map[string][]*Block{}, numCached: map[string]int{}}
-		if g.Kind == SlidingWindow {
+		bs := g.BlockSize
+		if bs == 0 {
+			bs = blockSize
+		}
+		gr := &group{id: uint32(i), spec: g, blockSize: bs, reqBlocks: map[string][]*Block{}, numCached: map[string]int{}}
+		if g.Kind == SlidingWindow || g.Kind == SlidingWindowMLA {
 			gr.extraRetained = m.reprefillable
 		}
 		m.groups = append(m.groups, gr)
 	}
+	m.blockSize, m.hashBlockSize = blockSizes(specs, blockSize, enableCaching)
+	// eagle_group_ids: the groups flagged as the drafter's, or every group when none is
+	// (kv_cache_coordinator.py:127-133@5df63a72).
+	flagged := false
+	for _, g := range specs {
+		flagged = flagged || g.Eagle
+	}
+	for _, g := range m.groups {
+		g.eagle = m.eagle && (g.spec.Eagle || !flagged)
+	}
 	return m
 }
 
-// BlockSize is tokens per block.
+// blockSizes is resolve_kv_cache_block_sizes (vllm/v1/core/kv_cache_utils.py:804-904@5df63a72)
+// without DCP or a connector: one group runs at the engine's block size; several at the LCM of
+// their block sizes, with hashes at the GCD of the prefix-cacheable ones' when prefix caching
+// is on, at the LCM when it is off (:856-861).
+func blockSizes(groups []Group, engine int, caching bool) (scheduler, hash int) {
+	if len(groups) <= 1 {
+		return engine, engine
+	}
+	scheduler, hash = 1, 0
+	for _, g := range groups {
+		bs := g.BlockSize
+		if bs == 0 {
+			bs = engine
+		}
+		scheduler = scheduler / gcd(scheduler, bs) * bs
+		if g.cacheable() {
+			hash = gcd(hash, bs)
+		}
+	}
+	if !caching || hash == 0 {
+		return scheduler, scheduler
+	}
+	return scheduler, hash
+}
+
+func gcd(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// cacheable is the group spec's prefix_cacheable: a ring never is (CircularBufferSpec,
+// vllm/v1/kv_cache_interface.py:939-941), nor a bounded-replay window (:1003-1005@5df63a72).
+func (g Group) cacheable() bool {
+	return g.Kind != CircularBuffer && !g.BoundedReplay
+}
+
+// sameSpec is whether two groups have one spec, the drafter flag aside.
+func (g Group) sameSpec(o Group) bool {
+	g.Eagle, o.Eagle = false, false
+	return g == o
+}
+
+// window reports whether a group is a sliding window, of either spec, managed by the
+// SlidingWindowManager (single_type_kv_cache_manager.py:2655-2667@5df63a72).
+func (g Group) window() bool { return g.Kind == SlidingWindow || g.Kind == SlidingWindowMLA }
+
+// BlockSize is the scheduler block size, in tokens: the engine's block size for one group.
 func (m *Manager) BlockSize() int { return m.blockSize }
+
+// HashBlockSize is the block size request block hashes are computed at.
+func (m *Manager) HashBlockSize() int { return m.hashBlockSize }
+
+// SpecDecodeStepBlocks is _spec_decode_step_blocks (vllm/v1/core/sched/scheduler.py:346-357
+// @5df63a72): the blocks one spec-decode step's tokens take in every group, at each group's
+// block size.
+func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
+	n := 0
+	for _, g := range m.groups {
+		n += cdiv(tokens, g.blockSize)
+	}
+	return n
+}
 
 // NumGroups is the number of KV cache groups.
 func (m *Manager) NumGroups() int { return len(m.groups) }
@@ -173,20 +269,37 @@ func (m *Manager) ComputedBlocks(hashes []BlockHash, numTokens int) ([][]*Block,
 	}
 	maxLen := numTokens - 1
 	if len(m.groups) == 1 {
-		if g := m.groups[0]; g.spec.Kind == SlidingWindow {
-			return m.windowHit(hashes, maxLen, specGroup{spec: g.spec, ids: []int{0}}, m.eagle)
+		if g := m.groups[0]; g.spec.window() {
+			return m.windowHit(hashes, maxLen, specGroup{spec: g.spec, ids: []int{0}}, g.eagle)
 		}
-		hit := m.fullHit(hashes, maxLen, []int{0}, m.eagle)
+		hit := m.fullHit(hashes, maxLen, []int{0}, m.groups[0].eagle)
 		return hit, len(hit[0]) * m.blockSize
 	}
 	return m.hybridHit(hashes, maxLen)
 }
 
+// groupHashes is the request's block hashes at a group's block size: the hash at the last
+// hash_block_size boundary of each of the group's blocks, which chains over its whole prefix
+// (BlockHashListWithBlockSize, kv_cache_utils.py:2690-2763; resolve_block_hashes,
+// :2766-2796@5df63a72).
+func (m *Manager) groupHashes(hashes []BlockHash, blockSize int) []BlockHash {
+	scale := blockSize / m.hashBlockSize
+	if scale <= 1 {
+		return hashes
+	}
+	out := make([]BlockHash, len(hashes)/scale)
+	for i := range out {
+		out[i] = hashes[(i+1)*scale-1]
+	}
+	return out
+}
+
 // specGroup is the coordinator's SpecGroup (kv_cache_coordinator.py:594-607): groups with
 // one spec, looked up together.
 type specGroup struct {
-	spec Group
-	ids  []int
+	spec  Group
+	ids   []int
+	eagle bool
 }
 
 // specGroups is verify_and_split_kv_cache_groups (kv_cache_coordinator.py:713-765): groups
@@ -194,16 +307,24 @@ type specGroup struct {
 func (m *Manager) specGroups() []specGroup {
 	var out []specGroup
 	for i, g := range m.groups {
+		// A group that opts out of prefix caching (a ring) takes no part in the lookup
+		// (:719-725@5df63a72); its slot of the hit stays empty.
+		if !g.spec.cacheable() {
+			continue
+		}
 		found := false
 		for j := range out {
-			if out[j].spec == g.spec {
+			// Specs compare without the drafter flag, which is the group's, not its spec's
+			// (SpecGroup's spec, :726-736); the merged group drops if any member does.
+			if out[j].spec.sameSpec(g.spec) {
 				out[j].ids = append(out[j].ids, i)
+				out[j].eagle = out[j].eagle || g.eagle
 				found = true
 				break
 			}
 		}
 		if !found {
-			out = append(out, specGroup{spec: g.spec, ids: []int{i}})
+			out = append(out, specGroup{spec: g.spec, ids: []int{i}, eagle: g.eagle})
 		}
 	}
 	// A stable sort with full attention first (:745-749).
@@ -240,17 +361,17 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 				curr = min(curr, lengths[first])
 				continue
 			}
-			drop := m.eagle && !eagleVerified[idx]
+			drop := sg.eagle && !eagleVerified[idx]
 			maxScan := curr
 			if drop {
-				// eagle_proof_margin: one block (kv_cache_utils.py:792-801).
-				maxScan = min(curr+m.blockSize, len(hashes)*m.blockSize)
+				// eagle_proof_margin: one of the group's blocks (kv_cache_utils.py:792-801).
+				maxScan = min(curr+m.groups[first].blockSize, len(hashes)*m.hashBlockSize)
 			}
 			var hit [][]*Block
 			var got int
 			if sg.spec.Kind == FullAttention {
 				hit = m.fullHit(hashes, maxScan, sg.ids, drop)
-				got = len(hit[0]) * m.blockSize
+				got = len(hit[0]) * m.groups[first].blockSize
 			} else {
 				hit, got = m.windowHit(hashes, maxScan, sg, drop)
 			}
@@ -278,8 +399,8 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 			continue
 		}
 		for _, gi := range sg.ids {
-			if len(blocks[gi]) > cdiv(hitLength, m.blockSize) {
-				blocks[gi] = blocks[gi][:cdiv(hitLength, m.blockSize)]
+			if n := cdiv(hitLength, m.groups[gi].blockSize); len(blocks[gi]) > n {
+				blocks[gi] = blocks[gi][:n]
 			}
 		}
 	}
@@ -291,7 +412,9 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 // its hash (get_cached_block, block_pool.py:198-224); then, with drop, the EAGLE drop.
 func (m *Manager) fullHit(hashes []BlockHash, maxLen int, gis []int, drop bool) [][]*Block {
 	out := make([][]*Block, len(gis))
-	for i := 0; i < len(hashes) && i < maxLen/m.blockSize; i++ {
+	bs := m.groups[gis[0]].blockSize
+	hashes = m.groupHashes(hashes, bs)
+	for i := 0; i < len(hashes) && i < maxLen/bs; i++ {
 		row := make([]*Block, 0, len(gis))
 		for _, gi := range gis {
 			b := m.Pool.CachedIn(hashes[i], m.groups[gi].id)
@@ -313,6 +436,12 @@ func (m *Manager) fullHit(hashes []BlockHash, maxLen int, gis []int, drop bool) 
 			out[j] = out[j][:len(out[j])-1]
 		}
 	}
+	// The hit is rounded down to the alignment, the scheduler block size (:821-826).
+	if n := len(out[0]) * bs / m.blockSize * m.blockSize / bs; n < len(out[0]) {
+		for j := range out {
+			out[j] = out[j][:n]
+		}
+	}
 	return out
 }
 
@@ -321,11 +450,15 @@ func (m *Manager) fullHit(hashes []BlockHash, maxLen int, gis []int, drop bool) 
 // scanning right to left for the window's contiguous cached blocks, with null blocks below
 // the window; with drop, one block more is needed and then dropped.
 func (m *Manager) windowHit(hashes []BlockHash, maxLen int, sg specGroup, drop bool) ([][]*Block, int) {
-	need := cdiv(sg.spec.Window-1, m.blockSize) // _contiguous_blocks_for_hit, :943-955
+	bs := m.groups[sg.ids[0]].blockSize
+	hashes = m.groupHashes(hashes, bs)
+	// aligned is whether i blocks end on the alignment, the scheduler block size (:1006-1012).
+	aligned := func(i int) bool { return i*bs%m.blockSize == 0 }
+	need := cdiv(sg.spec.Window-1, bs) // _contiguous_blocks_for_hit, :943-955
 	if drop {
 		need++
 	}
-	maxBlocks := min(maxLen/m.blockSize, len(hashes))
+	maxBlocks := min(maxLen/bs, len(hashes))
 	computed := make([][]*Block, len(sg.ids))
 	for j := range computed {
 		computed[j] = make([]*Block, maxBlocks)
@@ -348,6 +481,16 @@ func (m *Manager) windowHit(hashes []BlockHash, maxLen int, sg specGroup, drop b
 			contiguous = 0
 			continue
 		}
+		// A run starts only where the hit, after the EAGLE drop, ends on the alignment.
+		if contiguous == 0 && bs != m.blockSize {
+			end := i + 1
+			if drop {
+				end = i
+			}
+			if !aligned(end) {
+				continue
+			}
+		}
 		for j := range sg.ids {
 			computed[j][i] = row[j]
 		}
@@ -360,17 +503,26 @@ func (m *Manager) windowHit(hashes []BlockHash, maxLen int, sg specGroup, drop b
 			break
 		}
 	}
+	trimToAlignment := func() {
+		for bs != m.blockSize && !aligned(len(computed[0])) {
+			for j := range computed {
+				computed[j] = computed[j][:len(computed[j])-1]
+			}
+		}
+	}
 	if !found {
 		for j := range computed {
 			computed[j] = computed[j][:contiguous]
 		}
+		trimToAlignment()
 	}
 	if drop && len(computed[0]) > 0 {
 		for j := range computed {
 			computed[j] = computed[j][:len(computed[j])-1]
 		}
+		trimToAlignment()
 	}
-	return computed, len(computed[0]) * m.blockSize
+	return computed, len(computed[0]) * bs
 }
 
 // Alloc is one allocate_slots call (kv_cache_manager.py:353-617).
@@ -461,8 +613,13 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	// 261-310); a running request has neither.
 	if (adopting > 0 || a.External > 0) && !m.isRunning(id) {
 		for i, g := range m.groups {
+			if g.spec.Kind == CircularBuffer {
+				// add_local_computed_blocks is a no-op for a ring (:1240-1247); it claims its
+				// block with the new blocks below.
+				continue
+			}
 			bs := newComputed[i]
-			skipped := g.skippedTokens(localComputed+a.External) / m.blockSize
+			skipped := g.skippedTokens(localComputed+a.External) / g.blockSize
 			if skipped > 0 {
 				bs = bs[min(skipped, len(bs)):]
 			}
@@ -480,26 +637,49 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 			// allocate_external_computed_blocks (single_type_kv_cache_manager.py:328-367).
 			total := localComputed + a.External
 			for _, g := range m.groups {
+				if g.spec.Kind == CircularBuffer {
+					// The ring's one block (allocate_external_computed_blocks, :1209-1216).
+					m.claimRing(g, id)
+					continue
+				}
 				if skipped := g.skippedTokens(total); skipped > 0 && total-skipped <= 0 {
 					continue
 				}
-				if need := cdiv(total, m.blockSize) - len(g.reqBlocks[id]); need > 0 {
+				if need := cdiv(total, g.blockSize) - len(g.reqBlocks[id]); need > 0 {
 					g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)
 				}
 			}
 		}
 	}
 	for _, g := range m.groups {
-		if need := cdiv(needSlots, m.blockSize) - len(g.reqBlocks[id]); need > 0 {
+		if g.spec.Kind == CircularBuffer {
+			m.claimRing(g, id)
+			continue
+		}
+		if need := cdiv(needSlots, g.blockSize) - len(g.reqBlocks[id]); need > 0 {
 			g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)
 		}
 	}
 	if m.caching && !a.DelayCache {
 		for _, g := range m.groups {
-			m.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)
+			m.cache(g, id, a.Hashes, m.cacheable(g, min(mainModel, a.NumTokens)), a.Run)
 		}
 	}
 	return true
+}
+
+// claimRing is CircularBufferManager._claim_ring_block (single_type_kv_cache_manager.py:
+// 1178-1188@5df63a72): a request's ring is one block for its whole life, taken once.
+func (m *Manager) claimRing(g *group, id string) {
+	if len(g.reqBlocks[id]) > 0 {
+		return
+	}
+	g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(1)...)
+	if _, ok := g.numCached[id]; !ok {
+		// The ring never caches, but a request holding it is running: a later step must not
+		// adopt a hit for it (allocate_new_computed_blocks' running check, :280-286).
+		g.numCached[id] = 0
+	}
 }
 
 // RemainingBlocks is the scheduler's _request_remaining_blocks (scheduler.py:3060-3076): the
@@ -522,14 +702,14 @@ func (m *Manager) isRunning(id string) bool {
 // :779-794 for several): the computed tokens less the ones a multi-module MTP drafter may
 // re-prefill; a hybrid coordinator also rounds down to the block, and an EAGLE group keeps
 // one block past it.
-func (m *Manager) cacheable(numTokens int) int {
+func (m *Manager) cacheable(g *group, numTokens int) int {
 	if len(m.groups) == 1 {
 		return max(0, numTokens-m.reprefillable)
 	}
 	aligned := numTokens / m.blockSize * m.blockSize
-	if m.eagle && aligned > 0 {
+	if g.eagle && aligned > 0 {
 		finalized := max(0, numTokens-m.reprefillable)
-		return min(finalized, finalized/m.blockSize*m.blockSize+m.blockSize)
+		return min(finalized, finalized/m.blockSize*m.blockSize+g.blockSize)
 	}
 	return aligned
 }
@@ -538,7 +718,7 @@ func (m *Manager) cacheable(numTokens int) int {
 // :1135-1171): the tokens below a sliding window less the extra ones it retains, none for
 // full attention.
 func (g *group) skippedTokens(computed int) int {
-	if g.spec.Kind != SlidingWindow {
+	if !g.spec.window() {
 		return 0
 	}
 	return max(0, computed-g.spec.Window+1-g.extraRetained)
@@ -557,7 +737,7 @@ func (m *Manager) removeSkipped(id string, processed int) {
 		if !ok {
 			continue
 		}
-		last := min(n/m.blockSize, len(bs))
+		last := min(n/g.blockSize, len(bs))
 		var freed []*Block
 		for i := last - 1; i >= 0; i-- {
 			if bs[i] == m.Pool.null {
@@ -581,19 +761,27 @@ func (m *Manager) removeSkipped(id string, processed int) {
 func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, totalComputed int, admission bool) int {
 	total := 0
 	for i, g := range m.groups {
-		required := cdiv(numTokens, m.blockSize)
-		if admission && g.spec.Kind == SlidingWindow {
+		have := len(g.reqBlocks[id])
+		if g.spec.Kind == CircularBuffer {
+			// CircularBufferManager.get_num_blocks_to_allocate (:1190-1201): the ring's one
+			// block, until the request holds it.
+			if have == 0 {
+				total++
+			}
+			continue
+		}
+		required := cdiv(numTokens, g.blockSize)
+		if admission && g.spec.window() {
 			// max_admission_blocks_per_request (kv_cache_interface.py:859-885).
 			capTokens := min(g.spec.Window-1+g.extraRetained+m.maxInFlight, m.maxModelLen)
-			required = min(required, cdiv(capTokens, m.blockSize)+1)
+			required = min(required, cdiv(capTokens, g.blockSize)+1)
 		}
-		have := len(g.reqBlocks[id])
 		if _, ok := g.numCached[id]; ok {
 			total += max(required-have, 0)
 			continue
 		}
 		hit := newComputed[i]
-		skippedBlocks := g.skippedTokens(totalComputed) / m.blockSize
+		skippedBlocks := g.skippedTokens(totalComputed) / g.blockSize
 		local := len(hit) + have
 		newBlocks := max(required-max(skippedBlocks, local), 0)
 		evictable := 0
@@ -622,7 +810,7 @@ func (m *Manager) CacheUpTo(id string, hashes []BlockHash, numTokens int, run St
 		return
 	}
 	for _, g := range m.groups {
-		m.cache(g, id, hashes, m.cacheable(numTokens), run)
+		m.cache(g, id, hashes, m.cacheable(g, numTokens), run)
 	}
 }
 
@@ -635,23 +823,31 @@ func (m *Manager) CacheBlocks(id string, hashes []BlockHash, numComputed int, ru
 		return
 	}
 	for _, g := range m.groups {
-		m.cache(g, id, hashes, m.cacheable(numComputed), run)
+		m.cache(g, id, hashes, m.cacheable(g, numComputed), run)
 	}
 }
 
 // cache records the request's full blocks up to numTokens as prefix-cached in one group
 // (cache_blocks, single_type_kv_cache_manager.py:468-516).
+// A group that opts out of prefix caching caches nothing (:498-499, the ring's no-op
+// :1229-1237); a group of its own block size caches its blocks under the hashes at that size.
+// Every full block is cached, as vLLM caches them with prefix_cache_retention_interval None
+// (reachable_block_mask's dense policy, single_type_kv_cache_manager.py:1054-1133@5df63a72).
 func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, run StoredRun) {
+	if !g.spec.cacheable() {
+		return
+	}
 	numCached := g.numCached[id]
-	numFull := numTokens / m.blockSize
+	numFull := numTokens / g.blockSize
 	if numCached >= numFull {
 		return
 	}
+	hashes = m.groupHashes(hashes, g.blockSize)
 	numFull = min(numFull, len(hashes))
 	if numCached >= numFull {
 		return
 	}
-	m.Pool.CacheFullIn(g.id, g.reqBlocks[id], hashes, numCached, numFull, run, m.blockSize)
+	m.Pool.CacheFullIn(g.id, g.reqBlocks[id], hashes, numCached, numFull, run, g.blockSize)
 	g.numCached[id] = numFull
 }
 

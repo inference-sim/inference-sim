@@ -270,7 +270,7 @@ func (s *Scheduler) Add(r *Request) error {
 	r.Status = Waiting
 	s.seq++
 	r.seq = s.seq
-	r.updateHashes(s.cfg.BlockSize)
+	r.updateHashes(s.KV.HashBlockSize())
 	// A new request holds no blocks, so _enqueue_waiting_request queues it in waiting
 	// (scheduler.py:2457-2462, 2633).
 	s.waiting.add(r)
@@ -344,8 +344,10 @@ func (s *Scheduler) Request(id string) *Request { return s.requests[id] }
 // MaxModelLen is the scheduler's max_model_len.
 func (s *Scheduler) MaxModelLen() int { return s.cfg.MaxModelLen }
 
-// BlockSize is the KV cache's block size, in tokens.
-func (s *Scheduler) BlockSize() int { return s.cfg.BlockSize }
+// BlockSize is the scheduler block size, in tokens: the KV cache's block size, or with groups of
+// several block sizes their LCM (resolve_kv_cache_block_sizes, vllm/v1/core/kv_cache_utils.py:
+// 804-861@5df63a72), which vLLM's EngineCore hands the Scheduler as block_size.
+func (s *Scheduler) BlockSize() int { return s.KV.BlockSize() }
 
 // PrefixCaching reports whether prefix-cache lookups run (enable_prefix_caching).
 func (s *Scheduler) PrefixCaching() bool { return s.cfg.EnablePrefixCaching }
@@ -571,7 +573,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				if s.connector != nil {
 					// The connector sees the block-aligned local hit (:968-980). A hit here is
 					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
-					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.cfg.BlockSize)
+					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
 				}
 				numComputed = newLocal + external
 				if async {
@@ -729,7 +731,7 @@ func (s *Scheduler) inflightReserved() int {
 	if k := s.cfg.Spec.NumTokens; k > 0 {
 		extra = 1 + k + s.cfg.Spec.Lookahead
 	}
-	n := s.KV.NumGroups() * cdiv(extra, s.cfg.BlockSize)
+	n := s.KV.SpecDecodeStepBlocks(extra)
 	for r := range s.inflight {
 		n += s.KV.RemainingBlocks(r.ID, min(r.NumTokens(), s.cfg.MaxModelLen)+extra, r.NumComputed)
 	}
@@ -836,7 +838,7 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 		emitted := 0
 		for _, tok := range toks {
 			r.Output = append(r.Output, tok)
-			r.updateHashes(s.cfg.BlockSize)
+			r.updateHashes(s.KV.HashBlockSize())
 			emitted++
 			switch {
 			case tok == r.EOS:

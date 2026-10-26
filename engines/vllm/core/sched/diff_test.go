@@ -416,12 +416,21 @@ func blockRows(bs []*kv.Block, hybrid bool) []any {
 }
 
 // kvLayerRun is a run of attention layers of one spec in a scenario's "kv_layers".
+//
+// DeepSeek V4's runs also state their own block size, tokens per state, state bytes, element
+// size, alignment and bounded replay, as oracle/run_scheduler.py layer_specs builds them.
 type kvLayerRun struct {
-	Count         int    `json:"count"`
-	Spec          string `json:"spec"`
-	SlidingWindow int    `json:"sliding_window"`
-	NumKVHeads    int    `json:"num_kv_heads"`
-	HeadSize      int    `json:"head_size"`
+	Count          int    `json:"count"`
+	Spec           string `json:"spec"`
+	SlidingWindow  int    `json:"sliding_window"`
+	NumKVHeads     int    `json:"num_kv_heads"`
+	HeadSize       int    `json:"head_size"`
+	BlockSize      int    `json:"block_size"`
+	TokensPerState int    `json:"tokens_per_state"`
+	StateBytes     int    `json:"state_bytes"`
+	ElemBytes      int    `json:"elem_bytes"`
+	Alignment      int    `json:"alignment"`
+	BoundedReplay  bool   `json:"bounded_replay"`
 }
 
 // kvGroups is the scenario's KV cache groups for the scheduler: its "kv_layers" through
@@ -438,8 +447,14 @@ func kvGroups(t *testing.T, gs []struct {
 			if err != nil {
 				t.Fatal(err)
 			}
+			heads := r.NumKVHeads
+			if spec == kv.LayerMLA || spec == kv.LayerSlidingWindowMLA || spec == kv.LayerCircularBuffer {
+				heads = 1 // DeepSeek V4's caches are one latent head (layer_specs)
+			}
 			for i := 0; i < r.Count; i++ {
-				layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads, HeadSize: r.HeadSize})
+				layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
+					BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
+					ElemBytes: r.ElemBytes, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay})
 			}
 		}
 		groups, err := kv.GroupsOfLayers(layers, disableHybrid)

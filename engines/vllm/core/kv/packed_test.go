@@ -58,10 +58,11 @@ func deepseekV4ProRatios() []int {
 }
 
 // deepseekV41FlashLayers are deepseek-v4.1-flash's KV layers as vLLM v0.32.0's modules register
-// them (vllm/models/deepseek_v41/attention.py:480-600, 1138-1240, compressor.py:136-167
-// @5df63a72): per layer, an index-source layer's indexer key cache, the sliding window (block
-// 32), then a kv-source layer's MLA cache and, at ratio 2, its compressor ring of
-// max(8, next power of two of K + 2) rows; then a DSpark drafter's three sliding-window layers.
+// them (vllm/models/deepseek_v41/attention.py:420-600, 1138-1240, compressor.py:136-167
+// @5df63a72): per layer, a kv-source layer's indexer key cache (only kv sources own one; other
+// index sources share it, :433-455), the sliding window (block 32), then a kv-source layer's MLA
+// cache and, at ratio 2, its compressor ring of max(8, next power of two of K + 2) rows; then a
+// DSpark drafter's three sliding-window layers.
 func deepseekV41FlashLayers(blockSize, numSpec int, replay bool) []Layer {
 	ratios := []int{0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 	kvSource := map[int]bool{2: true, 8: true, 14: true, 20: true}
@@ -73,7 +74,7 @@ func deepseekV41FlashLayers(blockSize, numSpec int, replay bool) []Layer {
 	swa := Layer{Spec: LayerSlidingWindowMLA, Window: 128, KVHeads: 1, HeadSize: 512, BlockSize: 32, StateBytes: 584, Alignment: 576, BoundedReplay: replay}
 	var out []Layer
 	for i, cr := range ratios {
-		if indexSource[i] {
+		if indexSource[i] && kvSource[i] {
 			out = append(out, Layer{Spec: LayerMLA, KVHeads: 1, HeadSize: 132, BlockSize: blockSize, TokensPerState: max(cr, 1), Alignment: 576})
 		}
 		out = append(out, swa)
@@ -126,18 +127,18 @@ func TestPackedGroupsAreVLLMs(t *testing.T) {
 		{"deepseek-v4-pro mtp", deepseekV4ProLayers(256, deepseekV4ProRatios(), true), cat(repeat(2, swa(64)),
 			[]Group{{Kind: FullAttention, BlockSize: 256}, {Kind: SlidingWindowMLA, Window: 128, BlockSize: 8},
 				{Kind: SlidingWindowMLA, Window: 8, BlockSize: 4}})},
-		// d030: three window groups at 32, the MLA caches at 128, one ring group of 3 rings.
-		{"deepseek-v4.1-flash 128", deepseekV41FlashLayers(128, 0, false), cat(repeat(3, swa(32)),
+		// d030: four window groups at 32, the 8 MLA caches at 128, one ring group of 3 rings.
+		{"deepseek-v4.1-flash 128", deepseekV41FlashLayers(128, 0, false), cat(repeat(4, swa(32)),
 			[]Group{{Kind: FullAttention, BlockSize: 128}, {Kind: CircularBuffer, BlockSize: 8}})},
-		{"deepseek-v4.1-flash 128 dspark", deepseekV41FlashLayers(128, 2, false), cat(repeat(3, swa(32)),
+		{"deepseek-v4.1-flash 128 dspark", deepseekV41FlashLayers(128, 2, false), cat(repeat(4, swa(32)),
 			[]Group{{Kind: FullAttention, BlockSize: 128}, {Kind: CircularBuffer, BlockSize: 8}})},
-		// d033-d035: block 64 halves the MLA group's page, so a block fits 7 window pages and
-		// the 43 window layers split into seven groups.
-		{"deepseek-v4.1-flash 64 dspark", deepseekV41FlashLayers(64, 2, false), cat(repeat(7, swa(32)),
+		// d033-d035: block 64 halves the MLA group's page, so the 43 window layers split into
+		// eight groups.
+		{"deepseek-v4.1-flash 64 dspark", deepseekV41FlashLayers(64, 2, false), cat(repeat(8, swa(32)),
 			[]Group{{Kind: FullAttention, BlockSize: 64}, {Kind: CircularBuffer, BlockSize: 8}})},
 		// swa_bounded_replay keeps the window out of prefix caching; the grouping is the same.
 		{"deepseek-v4.1-flash bounded replay", deepseekV41FlashLayers(128, 2, true), cat(
-			repeat(3, Group{Kind: SlidingWindowMLA, Window: 128, BlockSize: 32, BoundedReplay: true}),
+			repeat(4, Group{Kind: SlidingWindowMLA, Window: 128, BlockSize: 32, BoundedReplay: true}),
 			[]Group{{Kind: FullAttention, BlockSize: 128}, {Kind: CircularBuffer, BlockSize: 8}})},
 		// A ring bucket wider than the block the others need is split until a group fits it:
 		// 9 rings of 512 bytes beside a 3072-byte block are 3 groups (kv_cache_utils.py:1960-1968).
@@ -202,6 +203,32 @@ func TestApproximateGCD(t *testing.T) {
 	} {
 		if got := approximateGCD(c.values, c.lower); got != c.want {
 			t.Errorf("approximateGCD(%v, %d) = %d, want %d", c.values, c.lower, got, c.want)
+		}
+	}
+}
+
+// With a trailing drafter (MTP, or DeepSeek V4's DSpark), the group holding the model's last
+// layer is the drafter's (_annotate_eagle_groups, kv_cache_utils.py:2051-2109@5df63a72): the
+// probes above mark it, deepseek-v4-pro's second window group with MTP and
+// deepseek-v4.1-flash's third with DSpark.
+func TestPackedGroupsFlagTheDrafterGroup(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		layers []Layer
+		eagle  int
+	}{
+		{"deepseek-v4-pro mtp", deepseekV4ProLayers(256, deepseekV4ProRatios(), true), 1},
+		{"deepseek-v4.1-flash 128 dspark", deepseekV41FlashLayers(128, 2, false), 2},
+		{"deepseek-v4.1-flash 64 dspark", deepseekV41FlashLayers(64, 2, false), 2},
+	} {
+		got, err := GroupLayers(c.layers, GroupOptions{TrailingDrafter: true})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		for i, g := range got {
+			if g.Eagle != (i == c.eagle) {
+				t.Errorf("%s: group %d Eagle %t, want only group %d", c.name, i, g.Eagle, c.eagle)
+			}
 		}
 	}
 }

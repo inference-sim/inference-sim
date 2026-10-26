@@ -131,14 +131,14 @@ func (b packedBucket) widestGroupBytes(n int) int {
 // _approximate_gcd picks over every balanced bucket; each balanced bucket then splits into
 // cdiv(its repeats, that) groups, and a state bucket is split until a group fits the block the
 // others need. It returns nil when every layer has one page size, which vLLM groups another
-// way. Each group is one spec type at its own block size.
-func packedGroups(layers []Layer) []Group {
+// way. Each group is one spec type at its own block size; members are each group's layers.
+func packedGroups(layers []Layer) (groups []Group, members [][]int) {
 	pageSet := map[int]bool{}
 	for _, l := range layers {
 		pageSet[pageBytes(l)] = true
 	}
 	if len(pageSet) <= 1 {
-		return nil
+		return nil, nil
 	}
 	var buckets []packedBucket
 	index := map[specType]int{}
@@ -192,16 +192,37 @@ func packedGroups(layers []Layer) []Group {
 		}
 		anchor = max(anchor, b.widestGroupBytes(n))
 	}
-	var out []Group
 	for _, b := range buckets {
 		n := numGroupsFor(b)
 		if anchor > 0 && b.isState(repeats > 0) {
 			perBlock := max(anchor/pageBytes(layers[b.layers[b.pages[0]][0]]), 1)
 			n = max(n, (b.n+perBlock-1)/perBlock)
 		}
-		for range n {
-			out = append(out, b.typ.group())
+		if n == 1 {
+			var all []int
+			for i, l := range layers {
+				if typeOf(l) == b.typ {
+					all = append(all, i)
+				}
+			}
+			groups, members = append(groups, b.typ.group()), append(members, all)
+			continue
+		}
+		// pattern_repeats: one layer of each page size per repeat (zip over the page sizes),
+		// and group i takes repeats i, i+n, ... (:1975-1983).
+		repeatsOf := len(b.layers[b.pages[0]])
+		for _, p := range b.pages {
+			repeatsOf = min(repeatsOf, len(b.layers[p]))
+		}
+		for i := range n {
+			var m []int
+			for r := i; r < repeatsOf; r += n {
+				for _, p := range b.pages {
+					m = append(m, b.layers[p][r])
+				}
+			}
+			groups, members = append(groups, b.typ.group()), append(members, m)
 		}
 	}
-	return out
+	return groups, members
 }
