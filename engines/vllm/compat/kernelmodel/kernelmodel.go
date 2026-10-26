@@ -469,9 +469,6 @@ func (m *Model) V032Pieces() []string {
 	if hybrid {
 		out = append(out, "hybrid KV groups")
 	}
-	if dp := m.DataParallelWidth(); dp > 1 {
-		out = append(out, fmt.Sprintf("data parallelism (dp %d)", dp))
-	}
 	return out
 }
 

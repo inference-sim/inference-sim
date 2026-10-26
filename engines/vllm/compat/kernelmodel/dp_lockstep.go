@@ -93,4 +93,32 @@ func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
 	return out
 }
 
+// StepTimesAcrossDPOfShapes is StepTimesAcrossDP for batches already in the kernel's shapes:
+// one lockstep step of a data-parallel group, each rank's forward pass priced with the group's
+// padding, an empty rank as the dummy batch. The shapes are the caller's: under speculation a
+// decode's Scheduled is already its verify width.
+func (m *Model) StepTimesAcrossDPOfShapes(ranks [][]ReqShape) []int64 {
+	kbs := make([]kernel.Batch, len(ranks))
+	maxTokens := 0
+	allDecode := true
+	for i, reqs := range ranks {
+		kbs[i] = kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+		dummy := len(reqs) == 0
+		if dummy {
+			kbs[i].PadTokens = m.pad.dummyWidth
+		}
+		maxTokens = max(maxTokens, kbs[i].PaddedTokens())
+		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
+	}
+	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
+	out := make([]int64, len(ranks))
+	for i := range kbs {
+		if padded {
+			kbs[i].PadTokens += maxTokens - kbs[i].PaddedTokens()
+		}
+		out[i] = max(1, ticks(m.k.StepTime(kbs[i]).NoOverlap))
+	}
+	return out
+}
+
 var _ sim.DPStepPricer = (*Model)(nil)

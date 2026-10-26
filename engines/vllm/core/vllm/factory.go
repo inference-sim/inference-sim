@@ -80,6 +80,9 @@ func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vllm: pricer: %w", err)
 	}
+	if st.dp.ranks > 1 {
+		return newDPGroup(st, p)
+	}
 	return newEngine(st, p)
 }
 

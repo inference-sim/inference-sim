@@ -74,20 +74,48 @@ func (d *DP) Add(id string) int {
 	return rank
 }
 
-// Step runs every rank's busy-loop iteration, then the wave's all-reduce on each.
+// Step runs every rank's busy-loop iteration, then the wave's all-reduce on each. It is
+// StepBegin, every rank's output applied (StepEnd), then EndStep: the split a simulator driving
+// the group through blis-schemas' engine.Engine uses, where the forward pass runs on its clock
+// between the two halves.
 func (d *DP) Step() []RankStep {
+	out := d.StepBegin()
+	for i, c := range d.Ranks {
+		if out[i].Step.Scheduled != nil {
+			out[i].Step = c.StepEnd(out[i].Step)
+		}
+	}
+	d.EndStep(out)
+	return out
+}
+
+// StepBegin is the first half of every rank's busy-loop iteration: a rank with requests
+// schedules, throttled as _should_throttle_prefills says (core.py:2318-2325), and queues the
+// batch its forward pass then runs. A rank with none schedules nothing. The caller applies each
+// queued batch's output (Core.StepEnd) and then calls EndStep.
+func (d *DP) StepBegin() []RankStep {
 	out := make([]RankStep, len(d.Ranks))
-	local := make([]bool, len(d.Ranks))
 	for i, c := range d.Ranks {
 		w := d.Waves[i]
 		if c.Sched.HasRequests() {
 			throttle := w.Throttle()
 			c.Throttle = func() bool { return throttle }
 			out[i].Throttled = throttle
-			out[i].Step = c.Step()
+			out[i].Step, _ = c.StepBegin()
 		}
+	}
+	return out
+}
+
+// EndStep is the rest of the iteration once every rank's output is applied: a rank that ran
+// nothing but has unfinished requests, or whose wave is still running, ran a dummy batch
+// (core.py:2357-2368); then every rank's wave takes the all-reduce of the ranks' unfinished
+// flags (_has_global_unfinished_reqs, core.py:2370-2394).
+func (d *DP) EndStep(out []RankStep) {
+	local := make([]bool, len(d.Ranks))
+	for i, c := range d.Ranks {
 		unfinished := c.Sched.HasUnfinished()
-		if !out[i].Step.Executed && (unfinished || w.Running) {
+		if !out[i].Step.Executed && (unfinished || d.Waves[i].Running) {
 			out[i].Dummy = true
 		}
 		local[i] = unfinished
@@ -107,7 +135,6 @@ func (d *DP) Step() []RankStep {
 			w.StepCounter = 0
 		}
 	}
-	return out
 }
 
 // LoadBalancer is DPLBAsyncMPClient's routing state for one client (core_client.py:1607-1640):

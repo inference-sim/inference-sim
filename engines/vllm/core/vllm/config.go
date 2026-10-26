@@ -53,6 +53,18 @@ type Config struct {
 	PipelineParallelSize  *int  `yaml:"pipeline_parallel_size"`
 	UseV2ModelRunner      *bool `yaml:"use_v2_model_runner,omitempty"`
 	MTPNextnPredictLayers int   `yaml:"mtp_nextn_predict_layers,omitempty"`
+	// DataParallelSize is the pool's parallel.dp, restated as pipeline_parallel_size is: above 1
+	// the factory builds a data-parallel group of that many ranks behind one endpoint (DPGroup).
+	// Unstated or 1 is one engine.
+	DataParallelSize int `yaml:"data_parallel_size,omitempty"`
+	// DPSyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162@5df63a72,
+	// default 16): the steps between a DP group's unfinished-request all-reduces.
+	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
+	// DPStatsIntervalUs is how often the DP coordinator publishes the ranks' request counts to
+	// the front end's load balancer: min_stats_update_interval_ms = 100
+	// (vllm/v1/engine/coordinator.py:154-162, 267-269@5df63a72), 100000 µs unstated. A
+	// behavioural test states it as a step count's worth of time.
+	DPStatsIntervalUs int64 `yaml:"dp_stats_interval_us,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -79,6 +91,15 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
+	// coordinator's publish interval and the prefill throttle interval.
+	dp dpSettings
+}
+
+// dpSettings are a data-parallel group's settings.
+type dpSettings struct {
+	ranks, syncInterval, prefillInterval int
+	statsIntervalUs                      int64
 }
 
 // resolve turns an engine block into the scheduler configuration vLLM v0.32.0 would run, or
@@ -90,7 +111,7 @@ type settings struct {
 func resolve(c Config) (settings, error) {
 	var s settings
 	e := c.Engine
-	if err := refuseUnmodelled(e); err != nil {
+	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
 		return s, err
 	}
 	if c.NumGPUBlocks < 2 {
@@ -264,6 +285,23 @@ func resolve(c Config) (settings, error) {
 		UseV2ModelRunner:     v2,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
+		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
+	if s.dp.syncInterval == 0 {
+		s.dp.syncInterval = 16
+	}
+	if s.dp.statsIntervalUs == 0 {
+		s.dp.statsIntervalUs = 100_000
+	}
+	if s.dp.ranks > 1 && queue > 1 {
+		// A DP rank with a batch queue (async scheduling, PP) steps step_with_batch_queue inside
+		// run_busy_loop; the DP oracle diff-tests the waves over step() ranks only
+		// (oracle/run_dp.py), so the group runs one batch in flight per rank.
+		return settings{}, fmt.Errorf("vllm: data parallelism with async scheduling (dp %d, a batch queue of %d on each "+
+			"rank) is not built yet: the DP group is diff-tested with each rank stepping step() (oracle/run_dp.py), and "+
+			"vLLM v0.32.0 resolves async scheduling on for this deployment (vllm/config/vllm.py:1585-1644@5df63a72)",
+			s.dp.ranks, queue)
+	}
 	// The release's own accepted values and refusals, for what the checks above do not cover.
 	if err := checkRules(e, pp); err != nil {
 		return settings{}, err
@@ -339,7 +377,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // refuseUnmodelled refuses engine settings whose effect on scheduling this engine does not
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
-func refuseUnmodelled(e deployment.Engine) error {
+func refuseUnmodelled(e deployment.Engine, dataParallel bool) error {
 	if keys := unreadEnv(e.Env); len(keys) > 0 {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
@@ -352,11 +390,12 @@ func refuseUnmodelled(e deployment.Engine) error {
 		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
 	case e.PrefixCacheRetentionInterval != nil:
 		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
-	case e.PrefillScheduleInterval > 1:
-		// _should_throttle_prefills acts across data-parallel ranks (vllm/v1/engine/core.py:2318-2325@5df63a72);
-		// one engine here is one rank.
-		return fmt.Errorf("vllm: prefill_schedule_interval throttles across data-parallel ranks; one engine is one rank " +
-			"(data parallelism through engine.Engine: https://github.com/inference-sim/blis-vllm/issues/28)")
+	case e.PrefillScheduleInterval > 1 && !dataParallel:
+		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
+		// EngineCore's never throttles (:652-655), so on one engine the setting has no effect vLLM
+		// would show, and stating it is refused rather than dropped.
+		return fmt.Errorf("vllm: prefill_schedule_interval throttles a data-parallel group's ranks; this engine " +
+			"has data_parallel_size 1")
 	case e.MaxCPULoRAs != 0:
 		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
 	case e.MambaCacheMode != "":

@@ -2,6 +2,7 @@ package vllmengine
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,8 +130,10 @@ func req(id string, prompt, output int) engine.Request {
 
 // A 0.32.0 deployment that needs a piece this engine does not build yet is refused, naming the
 // piece, rather than run without it: hybrid KV groups (a sliding-window, indexer or recurrent
-// cache beside full attention) or data parallelism across ranks. A drafter is not such a piece:
-// d001's MTP and d027's DSpark are refused for their KV groups alone.
+// cache beside full attention). A drafter is not such a piece: d001's MTP and d027's DSpark are
+// refused for their KV groups alone. Nor is data parallelism: it builds a DPGroup, so d116 is
+// refused for its KV groups alone, and d079 only for running each rank's batch queue (vLLM
+// resolves async scheduling on for it), which the group does not build yet.
 func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 	Register()
 	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
@@ -139,11 +142,11 @@ func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 		scenario string
 		want     []string
 	}{
-		{"d036-032.yaml", []string{"hybrid KV groups"}},                            // gpt-oss-120b: sliding window
-		{"d001-032.yaml", []string{"hybrid KV groups"}},                            // deepseek-v4-pro with mtp
-		{"d027-032.yaml", []string{"hybrid KV groups"}},                            // deepseek-v4.1-flash with dspark
-		{"d116-032.yaml", []string{"hybrid KV groups", "data parallelism (dp 4)"}}, // minimax-m3 dp 4
-		{"d079-032.yaml", []string{"data parallelism (dp 2)"}},                     // minimax-m2.5 dp 2
+		{"d036-032.yaml", []string{"hybrid KV groups"}},                       // gpt-oss-120b: sliding window
+		{"d001-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4-pro with mtp
+		{"d027-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4.1-flash with dspark
+		{"d116-032.yaml", []string{"hybrid KV groups"}},                       // minimax-m3 dp 4
+		{"d079-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m2.5 dp 2
 	} {
 		abs, _ := filepath.Abs(filepath.Join("testdata", c.scenario))
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
@@ -159,6 +162,9 @@ func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "drafter") {
 			t.Errorf("%s: %v, refused for its drafter, which the engine builds", c.scenario, err)
+		}
+		if strings.Contains(err.Error(), "data parallelism (dp") {
+			t.Errorf("%s: %v refuses data parallelism as such, which the engine builds", c.scenario, err)
 		}
 	}
 }
@@ -177,11 +183,11 @@ func openPool(t *testing.T, scenario string) pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	node, pp, err := poolBlock(r[RootScenario], 0)
+	node, par, err := poolBlock(r[RootScenario], 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool{model: m, blocks: st.KVBlocks, engine: node, pp: pp}
+	return pool{model: m, blocks: st.KVBlocks, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}
 }
 
 // stated is the value a completed engine block gives key, "" when it states none.
@@ -253,5 +259,58 @@ func TestDashboardDrafterBlocksBuild(t *testing.T) {
 				t.Errorf("finished %d of 2 requests, verifying %d drafts", len(tr.Finished), drafts)
 			}
 		})
+	}
+}
+
+// The data-parallel group builds from a dashboard deployment's own pool and runs its requests to
+// completion through the engine contract, every lockstep step priced by the kernel's rule: d079
+// (minimax-m2.5, dp 2, expert parallel, one node), with async scheduling stated off. As stated,
+// d079 resolves async scheduling on, which the group does not build yet (the refusal case above).
+func TestDashboardDataParallelDeploymentRuns(t *testing.T) {
+	Register()
+	r := roots(t, "d079-032.yaml")
+	_, par, err := poolBlock(r[RootScenario], 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if par.DP != 2 {
+		t.Fatalf("d079 states dp %d, want 2", par.DP)
+	}
+	block, _, err := poolBlock(r[RootScenario], 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setIfAbsent(&block, "async_scheduling", "false")
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: block, Roots: r}
+	eng, err := engine.New(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, ok := eng.(*vllm.DPGroup)
+	if !ok {
+		t.Fatalf("d079 (dp 2) built %T, not a DPGroup", eng)
+	}
+	if g.Ranks() != 2 {
+		t.Fatalf("d079 built %d ranks, want 2", g.Ranks())
+	}
+	var reqs []enginetest.Arrival
+	for i := 0; i < 8; i++ {
+		rq := engine.Request{ID: fmt.Sprintf("r%d", i), Prompt: make([]int32, 300), Output: make([]int32, 20)}
+		for j := range rq.Prompt {
+			rq.Prompt[j] = int32(i*1000 + j + 1)
+		}
+		for j := range rq.Output {
+			rq.Output[j] = int32(90000 + j)
+		}
+		reqs = append(reqs, enginetest.Arrival{At: engine.Time(i * 1000), Req: rq})
+	}
+	tr := enginetest.TestEngine(t, func() (engine.Engine, error) { return engine.New(spec) }, reqs, enginetest.Options{})
+	if len(tr.Finished) != 8 {
+		t.Fatalf("finished %d of 8 requests", len(tr.Finished))
+	}
+	for _, s := range tr.Steps {
+		if s.End-s.Start <= 1 && !s.Batch.Empty() {
+			t.Errorf("batch %d priced at %d µs; the kernel prices a real forward pass", s.Batch.ID, s.End-s.Start)
+		}
 	}
 }

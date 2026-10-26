@@ -394,6 +394,13 @@ func (e *Engine) Assumptions() []string {
 
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
+	res, _, err := e.complete(id, outcome)
+	return res, err
+}
+
+// complete is Complete, also returning the scheduler's finish records, which a data-parallel
+// group's wave step reads (DPGroup).
+func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Result, []sched.Finished, error) {
 	idx := -1
 	for i, p := range e.pending {
 		if p.id == id {
@@ -403,9 +410,9 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 	}
 	switch {
 	case idx < 0:
-		return engine.Result{}, engine.ErrUnknownBatch
+		return engine.Result{}, nil, engine.ErrUnknownBatch
 	case idx > 0:
-		return engine.Result{}, engine.ErrOutOfOrder
+		return engine.Result{}, nil, engine.ErrOutOfOrder
 	}
 	pb := e.pending[0]
 	e.pending = e.pending[1:]
@@ -521,7 +528,7 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 		}
 		e.s.UpdateDrafts(drafts)
 	}
-	return res, nil
+	return res, fins, nil
 }
 
 // TransferDone implements engine.Engine. No connector is modelled through this adapter yet,

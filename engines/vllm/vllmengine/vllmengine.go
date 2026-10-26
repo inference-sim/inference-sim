@@ -62,7 +62,7 @@ type pool struct {
 	model  *kernelmodel.Model
 	blocks int64
 	engine yaml.Node
-	pp     int
+	pp, dp int
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
@@ -92,18 +92,18 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
-	node, pp, err := poolBlock(path, s.Pool)
+	node, par, err := poolBlock(path, s.Pool)
 	if err != nil {
 		return pool{}, err
 	}
-	return pool{model: m, blocks: st.KVBlocks, engine: node, pp: pp}, nil
+	return pool{model: m, blocks: st.KVBlocks, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
 }
 
-// poolBlock reads the pool's engine block, as the document gave it, and its parallel.pp.
-func poolBlock(path string, index int) (yaml.Node, int, error) {
+// poolBlock reads the pool's engine block, as the document gave it, and its parallel block.
+func poolBlock(path string, index int) (yaml.Node, deployment.Parallelism, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return yaml.Node{}, 0, fmt.Errorf("vllmengine: %w", err)
+		return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %w", err)
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	for {
@@ -115,17 +115,17 @@ func poolBlock(path string, index int) (yaml.Node, int, error) {
 			} `yaml:"pools"`
 		}
 		if err := dec.Decode(&doc); err == io.EOF {
-			return yaml.Node{}, 0, fmt.Errorf("vllmengine: %s has no Deployment document", path)
+			return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %s has no Deployment document", path)
 		} else if err != nil {
-			return yaml.Node{}, 0, fmt.Errorf("vllmengine: %s: %w", path, err)
+			return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %s: %w", path, err)
 		}
 		if doc.Kind != "Deployment" {
 			continue
 		}
 		if index < 0 || index >= len(doc.Pools) {
-			return yaml.Node{}, 0, fmt.Errorf("vllmengine: %s has %d pools, not a pool %d", path, len(doc.Pools), index)
+			return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %s has %d pools, not a pool %d", path, len(doc.Pools), index)
 		}
-		return doc.Pools[index].Engine, max(doc.Pools[index].Parallel.PP, 1), nil
+		return doc.Pools[index].Engine, doc.Pools[index].Parallel, nil
 	}
 }
 
@@ -157,6 +157,10 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	block = *cloneNode(&block)
 	setIfAbsent(&block, "num_gpu_blocks", fmt.Sprint(p.blocks))
 	setIfAbsent(&block, "pipeline_parallel_size", fmt.Sprint(p.pp))
+	if p.dp > 1 {
+		// The pool's parallel.dp: the factory builds the data-parallel group behind one endpoint.
+		setIfAbsent(&block, "data_parallel_size", fmt.Sprint(p.dp))
+	}
 	runner, _ := p.model.ModelRunner()
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
 	if n := p.model.MTPDraftLayers(); n > 0 {
@@ -202,6 +206,22 @@ func (k kernelPricer) Assumptions() []string {
 // width, and the contract's Tokens already counts the drafts; Computed and PromptLen pass
 // through; CachedTokens is zero because a prefix hit is already in Computed, and the kernel
 // subtracts CachedTokens from Scheduled only for a caller that has not.
+// StepTimesAcrossDP implements core/vllm.DPPricer: one lockstep step of a data-parallel group,
+// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfShapes, the
+// rule the compatibility engine prices its lockstep with), an empty rank as vLLM's dummy batch.
+func (k kernelPricer) StepTimesAcrossDP(ranks []engine.Batch) []engine.Duration {
+	in := make([][]kernelmodel.ReqShape, len(ranks))
+	for i, b := range ranks {
+		in[i] = shapes(b)
+	}
+	got := k.m.StepTimesAcrossDPOfShapes(in)
+	out := make([]engine.Duration, len(got))
+	for i, d := range got {
+		out[i] = engine.Duration(d)
+	}
+	return out
+}
+
 func shapes(b engine.Batch) []kernelmodel.ReqShape {
 	out := make([]kernelmodel.ReqShape, len(b.Reqs))
 	for i, r := range b.Reqs {
