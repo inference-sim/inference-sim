@@ -151,10 +151,10 @@ github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFd
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd h1:YWB6KPtCFsz9nwpTEk1pYIzZUQhktlFU84aCoLXeUcM=
-github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
-github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802 h1:rLRC/YkB7C63v0x9sav60YpkoGwTD9YJwo07Wg7vwmk=
-github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802/go.mod h1:sPgmd8quCVEqOgnR4N1awqyHfZYLJ0pay8U7PhdhqZo=
+github.com/namasl/blis-schemas v0.0.0-20261026135607-1f9912ab119f h1:sScB9C6HAmvrcBv3aXORzklFRsYwajg+MPQoQdZDns0=
+github.com/namasl/blis-schemas v0.0.0-20261026135607-1f9912ab119f/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/namasl/llm-d-router v0.0.0-20261026140247-903c971af5a9 h1:CleHfIuXPs6EM/IRUQKwYQNDJcapmODJ+n7zf70RCjU=
+github.com/namasl/llm-d-router v0.0.0-20261026140247-903c971af5a9/go.mod h1:6oupSddPs75mAxa/C7Q9YqHXnh+bBWbQwbhP+9BWjbw=
 github.com/onsi/ginkgo/v2 v2.31.0 h1:GtuJos5DFUV9EerYJo8RhYxosYNGvOdDE5haKq6Grfs=
 github.com/onsi/ginkgo/v2 v2.31.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=

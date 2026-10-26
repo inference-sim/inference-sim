@@ -156,8 +156,14 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 	if p := r.Validate(); !p.OK() {
 		return nil, fmt.Errorf("agentic replay:\n%s", p.Error())
 	}
-	if r.WarmupMode() != workload.WarmupSynthesized {
-		return nil, fmt.Errorf("warmup mode %q is not implemented (only %q)", r.WarmupMode(), workload.WarmupSynthesized)
+	// Synthesized primers are always implemented; the request-bounded cache-pressure extras
+	// (requests_per_lane) are too. The time-bounded cache-pressure warmup (duration_s) is not
+	// yet modelled.
+	if w := r.Warmup; w != nil && w.Mode == workload.WarmupCachePressure && w.DurationS > 0 {
+		return nil, fmt.Errorf("a time-bounded cache_pressure warmup (duration_s) is not implemented; " +
+			"use requests_per_lane, or the synthesized warmup")
+	} else if r.WarmupMode() != workload.WarmupSynthesized && (w == nil || w.RequestsPerLane == 0) {
+		return nil, fmt.Errorf("warmup mode %q is not implemented", r.WarmupMode())
 	}
 	return r, nil
 }
@@ -214,16 +220,18 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		graceUs = int64(math.Round(grace * 1e6))
 	}
 	drv, err := simworkload.NewAgentXReplay(corpus, simworkload.AgentXReplayConfig{
-		Concurrency:      spec.Concurrency,
-		Seed:             spec.Seed(),
-		DurationUs:       int64(math.Round(spec.Duration() * 1e6)),
-		GraceUs:          graceUs,
-		IdleCapUs:        int64(math.Round(spec.IdleCap() * 1e6)),
-		MinRatio:         lo,
-		MaxRatio:         hi,
-		RequestTimeoutUs: simworkload.AgentXRequestTimeoutUs,
-		MaxModelLen:      maxModelLen,
-		HorizonCapUs:     horizonCap(cmd),
+		Concurrency:           spec.Concurrency,
+		Seed:                  spec.Seed(),
+		DurationUs:            int64(math.Round(spec.Duration() * 1e6)),
+		GraceUs:               graceUs,
+		IdleCapUs:             int64(math.Round(spec.IdleCap() * 1e6)),
+		TraceIdleCapUs:        agxTraceIdleCapUs(spec),
+		WarmupRequestsPerLane: agxWarmupRequestsPerLane(spec),
+		MinRatio:              lo,
+		MaxRatio:              hi,
+		RequestTimeoutUs:      simworkload.AgentXRequestTimeoutUs,
+		MaxModelLen:           maxModelLen,
+		HorizonCapUs:          horizonCap(cmd),
 	})
 	if err != nil {
 		logrus.Fatalf("agentic replay: %v", err)
@@ -232,6 +240,24 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		logrus.Warnf("agentic replay: built %d lanes for concurrency %d (too few spawnable traces)", drv.Lanes(), spec.Concurrency)
 	}
 	return &agentXRun{spec: spec, corpus: corpus, driver: drv, limit: limit}, drv.Start()
+}
+
+// agxTraceIdleCapUs is the per-trace idle cap in microseconds, 0 when the spec leaves it
+// unset (the scenario default: no per-tree watchdog).
+func agxTraceIdleCapUs(spec *workload.Replay) int64 {
+	if v, ok := spec.TraceIdleCap(); ok {
+		return int64(math.Round(v * 1e6))
+	}
+	return 0
+}
+
+// agxWarmupRequestsPerLane is the request-bounded cache-pressure warmup count, 0 unless a
+// cache_pressure warmup states requests_per_lane.
+func agxWarmupRequestsPerLane(spec *workload.Replay) int {
+	if w := spec.Warmup; w != nil && w.Mode == workload.WarmupCachePressure {
+		return w.RequestsPerLane
+	}
+	return 0
 }
 
 // emitOptions are the agentic replay's additions to the results file: the measured-window

@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.3.0
-	github.com/inference-sim/blis-schemas v0.6.0
+	github.com/inference-sim/blis-schemas v0.7.0
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -128,7 +128,7 @@ require (
 // The llm-d router fork keeps upstream's module path, so this replace is the one that stays after
 // merge (docs/contributing/llm-d-router-fork.md).
 // TEMPORARY (review only): inference-sim/llm-d-router#3; moves to github.com/inference-sim/llm-d-router v1.0.0-blis.1 before leaving draft.
-replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261023204508-f583ad6cb802
+replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261026140247-903c971af5a9
 
-// TEMPORARY (review only): inference-sim/blis-schemas#100; removed (the require names v0.6.0) before leaving draft.
-replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261023200325-699671fc15bd
+// TEMPORARY (review only): inference-sim/blis-schemas#100; removed (the require names v0.7.0) before leaving draft.
+replace github.com/inference-sim/blis-schemas => github.com/namasl/blis-schemas v0.0.0-20261026135607-1f9912ab119f
