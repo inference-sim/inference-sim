@@ -49,7 +49,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
-	return func(index int) (*sim.EngineDriver, error) {
+	build := func(index int) (*sim.EngineDriver, error) {
 		kinds := engine.Kinds()
 		if len(kinds) != 1 {
 			return nil, fmt.Errorf("scenario %q: engine_version %s: the build site registers one engine kind, "+
@@ -75,6 +75,20 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 			cfg.QueueingTime = latency.QueueingTime
 		}
 		return sim.NewEngineDriver(eng, cfg), nil
+	}
+	// Build the first instance's engine now: a deployment the engine refuses (one needing a
+	// piece it does not build yet) is a CLI refusal, named, before the cluster is assembled.
+	first, err := build(0)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return func(index int) (*sim.EngineDriver, error) {
+		if index == 0 && first != nil {
+			d := first
+			first = nil
+			return d, nil
+		}
+		return build(index)
 	}
 }
 

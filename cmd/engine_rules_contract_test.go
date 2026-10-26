@@ -405,3 +405,47 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 		}
 	}
 }
+
+// inference-sim reaches blis-vllm's v0.32.0 engine only through blis-schemas' engine.Engine
+// contract (GOAL.md): no inference-sim package imports blis-vllm/core/... directly, the
+// build site's registration package included only through its facade, and the host's driver
+// (sim/engine_driver.go) imports the contract's engine package and no engine implementation.
+func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}|{{join .Imports \",\"}}", "..").Output()
+	if err != nil {
+		t.Fatalf("go list -deps: %v", err)
+	}
+	checked := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pkg, imports, _ := strings.Cut(line, "|")
+		if !strings.HasPrefix(pkg, "github.com/inference-sim/inference-sim") {
+			continue
+		}
+		checked++
+		for _, imp := range strings.Split(imports, ",") {
+			if strings.HasPrefix(imp, "github.com/inference-sim/blis-vllm/core") {
+				t.Errorf("%s imports %s; inference-sim reaches the v0.32.0 engine only through engine.Engine", pkg, imp)
+			}
+		}
+	}
+	if checked < 3 {
+		t.Fatalf("go list -deps saw %d inference-sim packages; the check is vacuous", checked)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "../sim/engine_driver.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := false
+	for _, imp := range parsed.Imports {
+		p := strings.Trim(imp.Path.Value, `"`)
+		if p == "github.com/inference-sim/blis-schemas/engine" {
+			contract = true
+		}
+		if strings.HasPrefix(p, "github.com/inference-sim/blis-vllm") {
+			t.Errorf("sim/engine_driver.go imports %s; the driver knows only the contract", p)
+		}
+	}
+	if !contract {
+		t.Error("sim/engine_driver.go does not import blis-schemas' engine package: it must drive the engine through the contract")
+	}
+}
