@@ -1,31 +1,25 @@
 package sim
 
-// RouterState provides cluster-wide state to policy interfaces.
-// Built by ClusterSimulator before each policy invocation.
-// This is a bridge type in sim/ (not sim/cluster/) to avoid import cycles —
-// same pattern as RoutingSnapshot.
+// RouterState is a cluster-wide view of live instance state, read by the model autoscaler.
+// Despite the name it feeds no routing decision: routing is the embedded llm-d router's
+// (sim/llmd), which reads the engines' published metrics, not this struct. The rename is
+// tracked in #1951.
 //
-// USAGE BOUNDARY: In production, only constructed by ClusterSimulator's event
-// handlers (via buildRouterState). Tests may construct directly.
-// Single-instance Simulator does not use RouterState — instance-level policies
-// (InstanceScheduler) receive parameters directly.
-// This prevents import cycles: sim/cluster/ imports sim/, not the reverse.
+// USAGE BOUNDARY: In production, only constructed by buildRouterState
+// (sim/cluster/cluster_event.go), called once per autoscaler tick; its consumers are the
+// autoscaler Collector (DefaultCollector) and, through LoadingSnapshots, the saturation
+// analyzer's pending-supply terms. Tests may construct it directly. The single-instance
+// Simulator does not use it. It lives in sim/ (not sim/cluster/) so the Collector interface
+// can name it without an import cycle.
 type RouterState struct {
-	Snapshots        []RoutingSnapshot // One per routable instance (Active + WarmingUp)
+	Snapshots []RoutingSnapshot // One per routable instance (Active + WarmingUp)
 	// One per Loading instance. Populated fields: ID, Model, GPUType, TPDegree, CostPerHour,
 	// TotalKvCapacityTokens. QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate,
 	// InFlightRequests, KvTokensInUse remain zero.
 	LoadingSnapshots []RoutingSnapshot
 	Clock            int64 // Current simulation clock in microseconds
-	// SelectedInstance is the instance ID pre-selected by an upstream caller
-	// (typically the decode-routing policy) before invoking a
-	// DisaggregationDecider. Empty for contexts where no prior selection has
-	// been made (e.g., RoutingPolicy.Route itself receives RouterState with
-	// SelectedInstance == ""). DisaggregationDecider implementations may use
-	// this ID to locate the selected pod's state (e.g., in a per-pod cache-
-	// query map). Membership in Snapshots is not structurally guaranteed —
-	// implementations must tolerate both a zero value ("no selection known")
-	// and an ID that has no corresponding entry in Snapshots (e.g., the pod
-	// was removed after routing) and guard accordingly.
+	// SelectedInstance is never set: buildRouterState leaves it empty and nothing reads it.
+	// Its only writer and reader (BLIS's native P/D decider) were removed with BLIS's own
+	// routing (#2000).
 	SelectedInstance string
 }

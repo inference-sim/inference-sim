@@ -42,8 +42,7 @@ func WithOffloadRNG(rng *rand.Rand) OffloadOption {
 // OffloadCache is the N-tier KV-offload chain (H1, #1590): the GPU tier
 // (KVCacheState) plus a ref_cnt-managed CPU staging tier and ordered secondary
 // "fs" tiers, with a bounded transfer station (#1588) driving promotion/cascade
-// service. It implements sim.KVStore (still 12 entities) and the optional
-// SnapshotCachedBlocksFn used by cluster routing.
+// service. It implements sim.KVStore (still 12 entities).
 //
 // It is driven through the synchronous KVStore seam: SetClock advances the
 // station and applies completions; AllocateKVBlocks consults the chain and either
@@ -266,13 +265,6 @@ func (o *OffloadCache) ReloadablePrefixEnd(req *sim.Request, startIndex int64) (
 	chunks, _ := o.cpuRun(tail)
 	reloadableEnd := startIndex + tail.loadableBlocks(chunks)*bs
 	return reloadableEnd, reloadableEnd > startIndex
-}
-
-// SnapshotCachedBlocksFn delegates to the GPU tier so cluster routing keeps its
-// frozen-snapshot semantics (INV-7). Offload tiers are intentionally invisible to
-// the router in H1 (a routing-fidelity boundary; a later hole may expose them).
-func (o *OffloadCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
-	return o.gpu.SnapshotCachedBlocksFn()
 }
 
 // PendingTransferLatency / ConsumePendingTransferLatency return 0: the offload path

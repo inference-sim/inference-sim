@@ -49,8 +49,8 @@ type ParentRequest struct {
 	CompletionTime int64
 
 	// Instance assignment.
-	// DecodeInstanceID is set upfront at executeDisaggregatedRouting time (decode-first routing),
-	// before prefill routing begins. PrefillInstanceID is set by PrefillRoutingEvent.
+	// Both are the router's choice, set by dispatchDisaggregated (sim/cluster/gateway.go)
+	// before the prefill sub-request is injected.
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 

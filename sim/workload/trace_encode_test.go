@@ -9,7 +9,7 @@ func i64p(v int64) *int64 { return &v }
 
 // TestEncodeSessionToTraceRecords_DeltaLaw verifies the shared encoder's core
 // contract (#1479): absolute per-round inputs → per-round deltas, round-0 full,
-// non-monotone clamp to 0, Model left empty (routing safety), RequestID left 0,
+// non-monotone clamp to 0, Model left empty (no phantom per-model metrics), RequestID left 0,
 // and ThinkUs surfaced onto the think_time_us column (#1478).
 func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 	rounds := []NormalizedRound{
@@ -58,7 +58,7 @@ func TestEncodeSessionToTraceRecords_DeltaLaw(t *testing.T) {
 			t.Errorf("record %d RequestID = %d, want 0 (caller assigns global ids)", i, r.RequestID)
 		}
 		if r.Model != "" {
-			t.Errorf("record %d Model = %q, want empty (routing safety)", i, r.Model)
+			t.Errorf("record %d Model = %q, want empty (no phantom per-model metrics)", i, r.Model)
 		}
 		if r.SessionID != "sess" {
 			t.Errorf("record %d SessionID = %q, want sess", i, r.SessionID)
