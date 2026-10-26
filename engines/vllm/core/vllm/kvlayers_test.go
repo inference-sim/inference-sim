@@ -74,3 +74,44 @@ func TestKVPoolBlocksAreTheMemoryOverTheWidestGroup(t *testing.T) {
 		t.Error("KVPoolBlocks sized a pool from a fractional element size")
 	}
 }
+
+// A trailing drafter's group is flagged when the engine block resolves: vLLM locates the drafter's
+// layers by position when they register after the target's (_uses_trailing_mtp_layers,
+// vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72), which is MTP on any model and every
+// EAGLE-family method on DeepSeek V4. Here two DeepSeek V4 windows and a compressed cache, the
+// drafter's window last: packed, the windows are two groups beside the compressed one, and the
+// second window group holds the drafter's layer, so only it is the drafter's; with no drafter no
+// group is.
+func TestTheTrailingDrafterGroupIsFlagged(t *testing.T) {
+	const deepseek = "kv_layers:\n" +
+		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 64, state_bytes: 584, alignment: 576}\n" +
+		"- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 256, tokens_per_state: 128, state_bytes: 584, alignment: 576}\n" +
+		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 64, state_bytes: 584, alignment: 576}\n"
+	for _, c := range []struct {
+		name, extra string
+		eagle       []bool
+	}{
+		{"mtp", "speculative: {method: mtp, num_spec_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
+		{"dspark", "speculative: {method: dspark, num_spec_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
+		{"none", "", []bool{false, false, false}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := decodeConfig(block(t, deepseek+"block_size: 256\n"+c.extra))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, err := resolve(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(s.sched.KVGroups) != len(c.eagle) {
+				t.Fatalf("groups %v, want %d", s.sched.KVGroups, len(c.eagle))
+			}
+			for i, g := range s.sched.KVGroups {
+				if g.Eagle != c.eagle[i] {
+					t.Errorf("group %d (%v) Eagle %t, want %t", i, g, g.Eagle, c.eagle[i])
+				}
+			}
+		})
+	}
+}
