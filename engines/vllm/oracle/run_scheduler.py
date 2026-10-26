@@ -215,7 +215,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     }
 
 
-def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
+def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dict | None = None):
     """vLLM's real Scheduler for the scenario's configuration.
 
     vLLM's CPU test helper (tests/v1/core/utils.py:54 create_scheduler) builds the Scheduler;
@@ -226,6 +226,10 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
     environment set-up, listed in oracle/mocks.json; no scheduler, KV-cache or config logic is
     replaced or edited, and every derived value (draft slots, lookahead, prefill lookahead,
     EAGLE block drop, the scheduled-token budget) is computed by vLLM itself.
+
+    extra are create_scheduler's arguments a caller adds, such as the tier-3 oracle's
+    async_scheduling, pipeline_parallel_size, use_v2_model_runner and scheduler_cls
+    (oracle/run_enginecore.py); they override what this function would pass.
     """
     from vllm.config import KVEventsConfig, LoRAConfig, SpeculativeConfig  # noqa: E402
 
@@ -327,7 +331,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
     import vllm.config.vllm as vllm_config_module  # noqa: E402
 
     saved_triton, saved_env = vllm_config_module.HAS_TRITON, os.environ.get("VLLM_USE_V2_MODEL_RUNNER")
-    v2 = bool(spec) and spec["method"] == "dspark"
+    v2 = (bool(spec) and spec["method"] == "dspark") or bool((extra or {}).get("use_v2_model_runner"))
     if v2:
         vllm_config_module.HAS_TRITON = True
         os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
@@ -344,7 +348,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict):
             block_size=cfg["block_size"],
             max_model_len=cfg.get("max_model_len"),
             scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
-            use_v2_model_runner=v2 or None,
+            **{"use_v2_model_runner": v2 or None, **(extra or {})},
         )
     finally:
         helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config

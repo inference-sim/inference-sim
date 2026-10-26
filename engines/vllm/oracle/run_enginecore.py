@@ -18,7 +18,12 @@ What is replaced, all listed in oracle/mocks.json:
   (EngineCore.__init__, core.py:118-259) need a GPU, so the oracle builds the EngineCore with
   object.__new__ and sets the attributes step_with_batch_queue reads, to the values __init__
   would give them (batch_queue_size = max_concurrent_batches, a deque of that length, the
-  scheduler, no structured output, no spec decode);
+  scheduler, no structured output, and use_spec_decode and check_for_draft_tokens as __init__
+  sets them from the speculative config, core.py:184-187);
+- with a drafter, tier 2's: vLLM's own SpeculativeConfig on a configuration-only draft
+  checkpoint (oracle/drafts), the drafter's proposals (DraftTokenIds, num_speculative_tokens
+  for every request the last executed batch ran, handed over by vLLM's own post_step), and
+  the scenario's acceptance as the verify step's input;
 - the CPU platform's override of async scheduling: vllm/platforms/cpu.py:329-331@5df63a72
   turns async scheduling off on CPU ("not required on CPU"), so the oracle sets the
   scheduler config's async_scheduling back to the scenario's value after the platform ran,
@@ -103,7 +108,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # vLLM refuses to start this (vllm/config/vllm.py:2970-2974@5df63a72).
         sys.exit(f"{scenario_path}: the V1 model runner does not support PP with async scheduling")
 
-    scheduler = helpers.create_scheduler(
+    spec = cfg.get("speculative")
+    sched_kwargs = dict(
         model=model,
         max_num_seqs=cfg["max_num_seqs"],
         max_num_batched_tokens=cfg["max_num_batched_tokens"],
@@ -118,6 +124,21 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         use_v2_model_runner=v2,
         scheduler_cls=AsyncScheduler if async_sched else Scheduler,
     )
+    if spec:
+        # The drafter is tier 2's (oracle/run_scheduler.py build_scheduler): vLLM's own
+        # SpeculativeConfig on a configuration-only draft checkpoint (oracle/drafts), which
+        # names the drafter's architecture and its num_nextn_predict_layers, never weights.
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        from run_scheduler import build_scheduler  # noqa: E402
+
+        scheduler = build_scheduler(helpers, helpers.create_scheduler, model, cfg, extra={
+            "async_scheduling": async_sched, "pipeline_parallel_size": pp,
+            "use_v2_model_runner": v2 or None,
+            "scheduler_cls": AsyncScheduler if async_sched else Scheduler})
+    else:
+        scheduler = helpers.create_scheduler(**sched_kwargs)
     vllm_config = scheduler.vllm_config
     # The CPU platform turned async scheduling off (vllm/platforms/cpu.py:329-331); restore
     # the scenario's value.
@@ -143,8 +164,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     core.batch_queue = deque(maxlen=batch_queue_size) if batch_queue_size > 1 else None
     core.is_mm_encoder_only = False
     core.is_pooling_model = False
-    core.check_for_draft_tokens = False
-    core.use_spec_decode = False
+    # As EngineCore.__init__ sets them (core.py:184-187): a drafter makes both true.
+    core.use_spec_decode = bool(spec)
+    core.check_for_draft_tokens = bool(spec)
     core.async_scheduling = async_sched
     core._weight_version = "default"
     import queue as _queue
@@ -155,6 +177,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     by_id = {r["id"]: r for r in sc["requests"]}
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     sampled = {r["id"]: 0 for r in sc["requests"]}
+    # Draft acceptance is the scenario's input (#2021 B3), one entry per verify step, as tier 2
+    # reads it (oracle/run_scheduler.py).
+    accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
+    verify_steps = {r["id"]: 0 for r in sc["requests"]}
+    num_spec = scheduler.num_spec_tokens
     batches: list[dict] = []
     steps: list[dict] = []
     finished: dict[str, dict] = {}
@@ -185,20 +212,27 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         state at execute time (is_prefill_chunk, set by _update_after_schedule for exactly this
         batch); what they sample is the scenario's assigned output, at completion."""
 
+        _last = None  # the last batch that ran tokens, whose requests the drafter proposes for
+
         def execute_model(self, scheduler_output, non_block=False):
             bid = len(batches)
             samples = [rid for rid in scheduler_output.num_scheduled_tokens
                        if not scheduler.requests[rid].is_prefill_chunk]
-            batches.append({
+            rec = {
                 "batch": bid,
                 "scheduled": dict(sorted(scheduler_output.num_scheduled_tokens.items())),
                 "preempted": sorted(scheduler_output.preempted_req_ids or []),
                 "samples": sorted(samples),
-            })
+            }
+            spec_sched = {rid: len(d) for rid, d in scheduler_output.scheduled_spec_decode_tokens.items() if d}
+            if spec_sched:
+                rec["spec_scheduled"] = dict(sorted(spec_sched.items()))
+            batches.append(rec)
             if scheduler_output.total_num_scheduled_tokens == 0:
                 # No sampling follows: the engine queues this future itself (core.py:733-735).
                 return Done(gpu_output(scheduler_output, []))
             self._pending = (scheduler_output, samples)
+            self._last = scheduler_output
             return Done(None)
 
         def sample_tokens(self, grammar_output, non_block=False):
@@ -206,6 +240,19 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             if non_block:
                 return Lazy(lambda: gpu_output(so, samples))
             return gpu_output(so, samples)
+
+        def take_draft_token_ids(self):
+            # The drafter (oracle/mocks.json): post_step asks for its proposals after a step
+            # that ran, without async scheduling (core.py:689-696); it proposes
+            # num_speculative_tokens drafts for every request the step ran. Only their count
+            # reaches a decision, and acceptance is the scenario's input.
+            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+            so = self._last
+            if so is None:
+                return None
+            ids = [rid for rid in so.num_scheduled_tokens if rid in scheduler.requests]
+            return DraftTokenIds(ids, [[0] * num_spec for _ in ids])
 
     core.model_executor = MockExecutor()
 
@@ -216,13 +263,28 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             if rid not in samples:
                 tokens.append([])
                 continue
-            k = sampled[rid]
             outp = by_id[rid]["output"]
-            # The last assigned token is sampled as EOS; a step scheduled after it (async
-            # scheduling runs one step ahead) samples EOS again, which the engine ignores
-            # for a request that has already finished.
-            tokens.append([EOS_TOKEN_ID if k >= len(outp) - 1 else outp[k]])
-            sampled[rid] = k + 1
+            n = 1
+            drafts = scheduler_output.scheduled_spec_decode_tokens.get(rid, [])
+            if drafts:
+                # Accepted drafts from the scenario's plan, at most the real ones: a
+                # placeholder (-1) is always rejected (vllm/v1/sample/rejection_sampler.py:
+                # 762-763), as tier 2's mock rejects it.
+                plan, i = accepted_plan[rid], verify_steps[rid]
+                verify_steps[rid] = i + 1
+                real = len([d for d in drafts if d >= 0]) if not async_sched else len(drafts)
+                n = 1 + min(plan[i] if i < len(plan) else 0, real)
+            toks = []
+            for _ in range(n):
+                k = sampled[rid]
+                # The last assigned token is sampled as EOS; a step scheduled after it (async
+                # scheduling runs one step ahead) samples EOS again, which the engine ignores
+                # for a request that has already finished.
+                toks.append(EOS_TOKEN_ID if k >= len(outp) - 1 else outp[k])
+                sampled[rid] = k + 1
+                if k >= len(outp) - 1:
+                    break
+            tokens.append(toks)
         return ModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
@@ -259,6 +321,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             outputs, executed = step_fn()
         else:
             outputs, executed = core.step()
+        # EngineCore._process_engine_step calls post_step after every step
+        # (vllm/v1/engine/core.py:1603-1611@5df63a72): without async scheduling, a drafter's
+        # proposals reach the scheduler there. It is vLLM's own method, run as released.
+        core.post_step(executed)
         done = []
         for eco in (outputs or {}).values():
             for o in eco.outputs:

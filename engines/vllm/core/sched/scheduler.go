@@ -700,6 +700,15 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			// step samples, and the drafts it verifies, are placeholders until the output
 			// returns.
 			r.Placeholders += 1 + len(out.SpecDecode[id])
+			// The next step's drafts are num_spec_tokens_to_schedule placeholders (:28-31,
+			// :48-50): the worker proposes the real ones itself, and EngineCore.post_step
+			// never calls update_draft_token_ids under async scheduling
+			// (vllm/v1/engine/core.py:689-696@5df63a72). num_spec_tokens_to_schedule is
+			// num_spec_tokens without dynamic speculative decoding (scheduler.py:1486-1490),
+			// which no deployment this engine builds turns on.
+			if k := s.cfg.Spec.NumTokens; k > 0 {
+				r.SpecTokens = placeholderDrafts(k)
+			}
 			if s.cfg.UseV2ModelRunner {
 				r.nextDecodeStep = s.currentStep + max(s.cfg.DecodeStagger, 1)
 			}
@@ -882,6 +891,17 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 		s.transfersFinished(o)
 	}
 	return finished
+}
+
+// placeholderDrafts are k draft placeholders, -1 each: the AsyncScheduler's
+// _spec_token_placeholders (async_scheduler.py:17, 29-31@5df63a72). The rejection sampler always
+// rejects one, as a real draft it never verified (vllm/v1/sample/rejection_sampler.py:762-763).
+func placeholderDrafts(k int) []int64 {
+	d := make([]int64, k)
+	for i := range d {
+		d[i] = -1
+	}
+	return d
 }
 
 // UpdateDrafts is update_draft_token_ids (:2550-2569): the drafter's proposals after a step,

@@ -31,6 +31,11 @@ type scenario struct {
 		PipelineParallelSize      int    `json:"pipeline_parallel_size"`
 		AsyncScheduling           bool   `json:"async_scheduling"`
 		UseV2ModelRunner          bool   `json:"use_v2_model_runner"`
+		Speculative               *struct {
+			Method    string `json:"method"`
+			NumTokens int    `json:"num_speculative_tokens"`
+			Draft     string `json:"draft"`
+		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -39,6 +44,8 @@ type scenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		// Accepted is the drafts accepted at each verify step, an input (#2021 B3).
+		Accepted []int `json:"accepted"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -48,6 +55,8 @@ type batchRec struct {
 	Scheduled map[string]int `json:"scheduled"`
 	Preempted []string       `json:"preempted"`
 	Samples   []string       `json:"samples"`
+	// SpecScheduled is how many drafts each request verifies in the batch.
+	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 }
 
 type stepRec struct {
@@ -92,18 +101,51 @@ type trace struct {
 type mockGPU struct {
 	outputs map[string][]int64
 	sampled map[string]int
+	// accepted and verified are the drafts accepted at each of a request's verify steps, and
+	// how many verify steps it has had.
+	accepted map[string][]int
+	verified map[string]int
+	// async is whether the engine schedules asynchronously: its drafts are placeholders the
+	// worker fills, so each is a draft the plan may accept.
+	async bool
 }
 
 func (g *mockGPU) Output(b Batch) map[string][]int64 {
 	out := map[string][]int64{}
 	for _, id := range b.Samples {
-		k, o := g.sampled[id], g.outputs[id]
-		if k >= len(o)-1 {
-			out[id] = []int64{eosToken}
-		} else {
-			out[id] = []int64{o[k]}
+		n := 1
+		if drafts := b.Out.SpecDecode[id]; len(drafts) > 0 {
+			// The plan's accepted drafts, at most the real ones: a placeholder (-1) the
+			// scheduler set for a first decode is always rejected, while an async placeholder
+			// is the worker's real draft (oracle/run_enginecore.py).
+			real := len(drafts)
+			if !g.async {
+				real = 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+			}
+			plan, i := g.accepted[id], g.verified[id]
+			g.verified[id] = i + 1
+			if i < len(plan) {
+				n += min(plan[i], real)
+			}
 		}
-		g.sampled[id] = k + 1
+		o := g.outputs[id]
+		for j := 0; j < n; j++ {
+			k := g.sampled[id]
+			if k >= len(o)-1 {
+				out[id] = append(out[id], eosToken)
+			} else {
+				out[id] = append(out[id], o[k])
+			}
+			g.sampled[id] = k + 1
+			if k >= len(o)-1 {
+				break
+			}
+		}
 	}
 	return out
 }
@@ -118,17 +160,25 @@ func run(t *testing.T, sc scenario) trace {
 	if maxLen == 0 {
 		maxLen = c.MaxNumBatchedTokens
 	}
+	var spec sched.Spec
+	if sp := c.Speculative; sp != nil {
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens,
+			NextnPredictLayers: draftNextnLayers(t, sp.Draft)})
+	}
+	queue := MaxConcurrentBatches(pp, c.AsyncScheduling, c.UseV2ModelRunner)
 	s, err := sched.New(sched.Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: c.UseV2ModelRunner,
+		Spec: spec, MaxConcurrentBatches: queue,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}}
-	core := &Core{Sched: s, QueueSize: MaxConcurrentBatches(pp, c.AsyncScheduling, c.UseV2ModelRunner), GPU: gpu}
+	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}, accepted: map[string][]int{},
+		verified: map[string]int{}, async: c.AsyncScheduling}
+	core := &Core{Sched: s, QueueSize: queue, GPU: gpu}
 	reqs := append(sc.Requests[:0:0], sc.Requests...)
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
@@ -159,6 +209,7 @@ func run(t *testing.T, sc scenario) trace {
 				t.Fatal(err)
 			}
 			gpu.outputs[r.ID] = r.Output
+			gpu.accepted[r.ID] = r.Accepted
 			next++
 		}
 		if !core.HasWork() && next == len(reqs) {
@@ -169,6 +220,16 @@ func run(t *testing.T, sc scenario) trace {
 			continue
 		}
 		res := core.Step()
+		if spec.NumTokens > 0 && !c.AsyncScheduling && res.Executed && res.Scheduled != nil {
+			// EngineCore.post_step (core.py:689-696): without async scheduling, the drafter's
+			// proposals reach the scheduler after a step that ran, num_speculative_tokens for
+			// every request it ran, as the oracle's drafter mock proposes them.
+			drafts := map[string][]int64{}
+			for id := range res.Scheduled.Out.Scheduled {
+				drafts[id] = make([]int64, spec.NumTokens)
+			}
+			s.UpdateDrafts(drafts)
+		}
 		rec := stepRec{Step: i, QueueLen: core.InFlight(), Processed: res.Processed != nil, Finished: []string{}}
 		if res.Scheduled != nil {
 			b := res.Scheduled
@@ -178,7 +239,16 @@ func run(t *testing.T, sc scenario) trace {
 			sort.Strings(pre)
 			samples := append([]string{}, b.Samples...)
 			sort.Strings(samples)
-			tr.Batches = append(tr.Batches, batchRec{Batch: b.ID, Scheduled: b.Out.Scheduled, Preempted: nonNil(pre), Samples: nonNil(samples)})
+			br := batchRec{Batch: b.ID, Scheduled: b.Out.Scheduled, Preempted: nonNil(pre), Samples: nonNil(samples)}
+			for rid, d := range b.Out.SpecDecode {
+				if len(d) > 0 {
+					if br.SpecScheduled == nil {
+						br.SpecScheduled = map[string]int{}
+					}
+					br.SpecScheduled[rid] = len(d)
+				}
+			}
+			tr.Batches = append(tr.Batches, br)
 		}
 		for _, f := range res.Finished {
 			rec.Finished = append(rec.Finished, f.ID)
@@ -239,6 +309,9 @@ func earliestDivergence(want, got trace) string {
 		}
 		if !reflect.DeepEqual(nonNil(w.Samples), nonNil(g.Samples)) {
 			return fmt.Sprintf("batch %d, samples: vLLM %v, blis-vllm %v", i, w.Samples, g.Samples)
+		}
+		if !reflect.DeepEqual(nonNilMap(w.SpecScheduled), nonNilMap(g.SpecScheduled)) {
+			return fmt.Sprintf("batch %d, spec_scheduled: vLLM %v, blis-vllm %v", i, w.SpecScheduled, g.SpecScheduled)
 		}
 	}
 	for i := 0; i < max(len(want.Steps), len(got.Steps)); i++ {
@@ -411,4 +484,18 @@ func TestScenarioFromEnv(t *testing.T) {
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
 		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
 	}
+}
+
+// draftNextnLayers is a draft checkpoint's num_nextn_predict_layers (oracle/drafts/<name>), 0
+// for none.
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var c struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "oracle", "drafts", draft, "config.json"), &c)
+	return c.Layers
 }
