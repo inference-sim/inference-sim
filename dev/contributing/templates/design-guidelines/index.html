@@ -4380,14 +4380,14 @@
 <tr>
 <td><strong>Admission</strong></td>
 <td>Accept/reject requests at cluster entry</td>
-<td><code>AdmissionPolicy</code> (single method)</td>
-<td>Implemented, frozen</td>
+<td>The embedded llm-d router (<code>sim/llmd</code>; admitters, flow control) behind <code>cluster.Gateway</code></td>
+<td>Delegated to llm-d</td>
 </tr>
 <tr>
 <td><strong>Router</strong></td>
 <td>Select target instance for admitted requests</td>
-<td><code>RoutingPolicy</code> (single method)</td>
-<td>Implemented, frozen</td>
+<td>The embedded llm-d router (<code>sim/llmd</code>; filters, scorers, picker) behind <code>cluster.Gateway</code></td>
+<td>Delegated to llm-d</td>
 </tr>
 <tr>
 <td><strong>Scheduler</strong></td>
@@ -4456,7 +4456,7 @@
 <li><strong>Events</strong> — what events does this module produce or consume? (Exogenous/endogenous classification)</li>
 <li><strong>Extension friction</strong> — how many files must change to add one more variant of this module?</li>
 </ol>
-<p>Example — Router module contract:</p>
+<p>Example — Router module contract (historical: BLIS's native router was replaced by the embedded llm-d router in #2000; the example still illustrates the six aspects):</p>
 <table>
 <thead>
 <tr>

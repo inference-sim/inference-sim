@@ -4631,8 +4631,9 @@ prefix for realistic KV-cache reuse).</p>
 </code></pre></div>
 <p>The recorded source model names are pure provenance and are dropped during
 conversion — all calls are simulated under the scenario's model. (They are deliberately not
-written into the trace: <code>TraceRecord.Model</code> is routing-significant, and a name
-that differs from the simulated model would filter out every request at routing.)
+written into the trace: <code>TraceRecord.Model</code> becomes the request's model at replay, and
+a name that differs from the simulated model would report every request under a model
+the run never simulated.)
 <code>--concurrent-sessions</code> implies closed-loop session semantics; without it,
 replay behaves as a standard fixed/closed-loop replay.</p>
 <h3 id="driving-the-corpus-against-a-real-server-blis-observe-deprecated">Driving the corpus against a real server (<code>blis observe</code>, deprecated)<a class="headerlink" href="#driving-the-corpus-against-a-real-server-blis-observe-deprecated" title="Permanent link">&para;</a></h3>
@@ -4753,7 +4754,7 @@ since Weka gaps are genuine away-from-keyboard times). The column is <strong>non
 (#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as <code>&amp;0</code>,
 distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
 recorded zeros rather than degrading to arrival-gap think. The recorded <code>claude-*</code>
-model names are dropped during conversion (same routing-safety reason as OTel).</p>
+model names are dropped during conversion (same reason as OTel: no phantom per-model metrics).</p>
 <div class="admonition note">
 <p class="admonition-title">Context compaction is represented (#1609)</p>
 <p>Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
