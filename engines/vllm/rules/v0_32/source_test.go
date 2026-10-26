@@ -232,6 +232,24 @@ func TestMLAPrefillBackendsMatchSource(t *testing.T) {
 	}
 	sort.Strings(members)
 	assertSameSet(t, "mlaPrefillBackends", set(mlaPrefillBackends...), members)
+
+	// The rule warns rather than refuses because a plugin can add a name: a new string name is
+	// registered as a member, and vllm serve loads plugins while it builds its parser, before it
+	// parses the flag. A release that dropped either would make an unknown name a refusal again.
+	if !strings.Contains(src, `backend = MLAPrefillBackendEnum.register(backend, class_path or "")`) {
+		t.Error("registry.py no longer registers a new MLA prefill backend by name; the rule's severity rests on it")
+	}
+	args := readSource(t, root, "vllm", "engine", "arg_utils.py")
+	a := strings.Index(args, "class AsyncEngineArgs(EngineArgs):")
+	if a < 0 {
+		t.Fatal("no AsyncEngineArgs found; the engine may have moved its command-line arguments")
+	}
+	load := strings.Index(args[a:], "load_general_plugins()")
+	flags := strings.Index(args[a:], "parser = EngineArgs.add_cli_args(parser)")
+	if load < 0 || flags < 0 || load > flags {
+		t.Error("AsyncEngineArgs.add_cli_args no longer loads plugins before it adds the engine's flags; " +
+			"the rule's severity rests on it")
+	}
 }
 
 func TestOffloadSpecsMatchSource(t *testing.T) {

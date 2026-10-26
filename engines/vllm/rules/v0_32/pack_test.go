@@ -406,6 +406,8 @@ func TestDCPCommBackendKnown(t *testing.T) {
 // TestMLAPrefillBackendKnown: vLLM v0.32.0 looks attention_config.mla_prefill_backend up in
 // MLAPrefillBackendEnum after upper-casing it, and refuses a name that is not a member
 // (vllm/config/attention.py:195-201, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@5df63a72).
+// A plugin can make a new name a member before the flag is parsed, so a name outside the in-tree
+// members warns rather than refuses.
 func TestMLAPrefillBackendKnown(t *testing.T) {
 	for _, c := range []struct {
 		backend string
@@ -421,9 +423,11 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 		if got := fired(p, "mla-prefill-backend-known"); got != c.want {
 			t.Errorf("mla_prefill_backend %q: rule fired=%v, want %v\n%s", c.backend, got, c.want, p.Error())
 		}
-		// vLLM refuses the name at startup, so the finding is an error, not a warning.
-		if c.want && len(p.Errors()) == 0 {
-			t.Errorf("mla_prefill_backend %q: the finding is not an error: %s", c.backend, p.Error())
+		for _, it := range p.All() {
+			if it.Rule == "mla-prefill-backend-known" && it.Severity != rules.SeverityWarning {
+				t.Errorf("mla_prefill_backend %q: the finding is %s, not a warning, though a plugin may "+
+					"register the name", c.backend, it.Severity)
+			}
 		}
 		if c.want && !strings.Contains(p.Error(), "FLASHINFER, FLASH_ATTN") {
 			t.Errorf("message should name the accepted set: %s", p.Error())

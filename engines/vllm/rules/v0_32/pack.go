@@ -82,13 +82,13 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 	"mtp", "kimi_k3_mtp", "pangu_ultra_moe_mtp", "step3p5_mtp", "hy_v3_mtp", "hy_v4_mtp",
 	"gemma4_mtp", "inkling_mtp", "glm5_next_mtp"}
 
-// mlaPrefillBackends are the members of the engine's MLAPrefillBackendEnum
+// mlaPrefillBackends are the in-tree members of the engine's MLAPrefillBackendEnum
 // (vllm/v1/attention/backends/mla/prefill/registry.py:37-65@5df63a72). attention_config parses
-// mla_prefill_backend by looking the upper-cased name up in it and refuses any other
-// (vllm/config/attention.py:195-201@5df63a72). CUSTOM is the member an out-of-tree backend takes.
-// EngineArgs builds the AttentionConfig before it loads plugins (vllm/engine/arg_utils.py:864-865,
-// 906@5df63a72), so a backend a plugin registers under a new name is not a member yet when the
-// name is parsed.
+// mla_prefill_backend by looking the upper-cased name up in it and refuses one it lacks
+// (vllm/config/attention.py:195-201@5df63a72). A plugin can add a member under a new name
+// (registry.py:190), and vllm serve loads plugins while it builds its parser, before it parses
+// the flag (vllm/engine/arg_utils.py:3202-3204@5df63a72), so a name outside this set may be a
+// plugin's. CUSTOM is the member an out-of-tree backend can take instead.
 var mlaPrefillBackends = []string{"FLASH_ATTN", "FLASHINFER", "TRTLLM_RAGGED", "TOKENSPEED_MLA",
 	"ROCM_AITER_FA", "CPU", "ZEN_CPU", "CUSTOM"}
 
@@ -363,13 +363,16 @@ func ruleList(p *rules.Pack) []rules.Rule {
 		{
 			Name: "mla-prefill-backend-known",
 			Because: "attention_config parses mla_prefill_backend by looking the upper-cased name up in " +
-				"MLAPrefillBackendEnum and refuses any other at startup (vllm/config/attention.py:195-201@5df63a72)",
+				"MLAPrefillBackendEnum and refuses one it lacks at startup (vllm/config/attention.py:195-201@5df63a72); " +
+				"it is a warning because a plugin, which vllm serve loads before it parses the flag, can add a name " +
+				"this set cannot enumerate",
 			Check: func(in rules.Input, out *rules.Problems) {
 				known := set(mlaPrefillBackends...)
 				forEachEngine(in, func(at string, e deployment.Engine) {
 					if e.MLAPrefillBackend != "" && !known[strings.ToUpper(e.MLAPrefillBackend)] {
-						out.RuleErrorf("mla-prefill-backend-known",
-							"%s.engine.mla_prefill_backend %q is not one engine %s accepts (%s)",
+						out.RuleWarnf("mla-prefill-backend-known",
+							"%s.engine.mla_prefill_backend %q is not an in-tree backend of engine %s (%s); if a plugin "+
+								"registers it this is expected, otherwise vLLM refuses it at startup: check the spelling",
 							at, e.MLAPrefillBackend, Version, strings.Join(sortedKeys(known), ", "))
 					}
 				})
