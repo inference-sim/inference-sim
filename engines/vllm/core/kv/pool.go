@@ -197,10 +197,17 @@ func (p *Pool) CacheFull(blocks []*Block, hashes []BlockHash, numCached, numFull
 // CacheFullIn is CacheFull in KV cache group g. A null block (a sliding window's freed slot)
 // is skipped, its hash neither cached nor reported (:275-278, :319-322).
 func (p *Pool) CacheFullIn(g uint32, blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun, blockSize int) {
+	p.CacheFullMaskedIn(g, blocks, hashes, numCached, numFull, run, blockSize, nil)
+}
+
+// CacheFullMaskedIn is CacheFullIn with cache_full_blocks' block_mask (block_pool.py:264-278):
+// a block whose mask entry is false is skipped like a null one. A nil mask caches every block.
+func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun,
+	blockSize int, mask []bool) {
 	var stored []BlockHash
 	for i := numCached; i < numFull; i++ {
 		b := blocks[i]
-		if b.Null {
+		if b.Null || mask != nil && !mask[i-numCached] {
 			continue
 		}
 		if b.Hash != nil {

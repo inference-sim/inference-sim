@@ -831,8 +831,8 @@ func (m *Manager) CacheBlocks(id string, hashes []BlockHash, numComputed int, ru
 // (cache_blocks, single_type_kv_cache_manager.py:468-516).
 // A group that opts out of prefix caching caches nothing (:498-499, the ring's no-op
 // :1229-1237); a group of its own block size caches its blocks under the hashes at that size.
-// Every full block is cached, as vLLM caches them with prefix_cache_retention_interval None
-// (reachable_block_mask's dense policy, single_type_kv_cache_manager.py:1054-1133@5df63a72).
+// A sliding window whose block size is below the scheduler block size caches only the blocks a
+// hit at an aligned boundary can use (reachableWindowBlocks).
 func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, run StoredRun) {
 	if !g.spec.cacheable() {
 		return
@@ -847,8 +847,37 @@ func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, 
 	if numCached >= numFull {
 		return
 	}
-	m.Pool.CacheFullIn(g.id, g.reqBlocks[id], hashes, numCached, numFull, run, g.blockSize)
+	mask := m.reachableWindowBlocks(g, numCached, numFull)
+	m.Pool.CacheFullMaskedIn(g.id, g.reqBlocks[id], hashes, numCached, numFull, run, g.blockSize, mask)
 	g.numCached[id] = numFull
+}
+
+// reachableWindowBlocks is SlidingWindowManager.reachable_block_mask
+// (single_type_kv_cache_manager.py:1054-1133@5df63a72) for blocks [from, to) of a window
+// group, with hits aligned to the scheduler block size and dense retention (a retention
+// interval of None, which the oracle's KV cache config carries): a hit needs the window's
+// contiguous blocks ending on an aligned boundary, so of each aligned segment only its last
+// `need` blocks (one further along with the EAGLE peek) are kept. nil caches every block: full
+// attention, and a window whose run covers its whole segment, as one at the scheduler block
+// size always does.
+func (m *Manager) reachableWindowBlocks(g *group, from, to int) []bool {
+	if !g.spec.window() || m.blockSize%g.blockSize != 0 {
+		return nil
+	}
+	perSegment := m.blockSize / g.blockSize
+	need := cdiv(g.spec.Window-1, g.blockSize) // _contiguous_blocks_for_hit, :943-955
+	shift := 0
+	if g.eagle {
+		need, shift = need+1, 1
+	}
+	if need >= perSegment {
+		return nil
+	}
+	mask := make([]bool, to-from)
+	for i := from; i < to; i++ {
+		mask[i-from] = i >= shift && (i-shift)%perSegment >= perSegment-need
+	}
+	return mask
 }
 
 // Free releases the request's blocks, each group's tail first, so tail blocks are evicted
