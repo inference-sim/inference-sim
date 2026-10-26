@@ -123,8 +123,9 @@ func TestAdopt_RefusesTwoColocatedPools(t *testing.T) {
 	}
 }
 
-// A scenario stating a release the compatibility engine does not model is refused, naming the
-// release and the ones it does; the releases it models adopt. One build models one release
+// A scenario stating a release this build models nowhere is refused, naming the release and the
+// ones it does; the compatibility engine's releases adopt to it, and 0.32.0 adopts to the v0.32.0
+// engine (core/vllm, through vllmengine) with CoreEngine set. One build models one release
 // (#2021 B6), so a 0.32.0 deployment is never run as a 0.29 or 0.31 one.
 func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	repos := vendoredRepos(t)
@@ -135,7 +136,7 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	for _, c := range []struct {
 		version string
 		ok      bool
-	}{{"0.29.0", true}, {"0.31.0", true}, {"0.32.0", false}, {"0.30.0", false}, {"", false}} {
+	}{{"0.29.0", true}, {"0.31.0", true}, {"0.32.0", true}, {"0.30.0", false}, {"", false}} {
 		body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+c.version+`"`, 1)
 		if !strings.Contains(body, `engine_version: "`+c.version+`"`) {
 			t.Fatalf("fixture has no engine_version to edit")
@@ -144,14 +145,40 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+		a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
 		switch {
 		case c.ok && err != nil:
 			t.Errorf("engine_version %s: %v, want it adopted", c.version, err)
+		case c.ok && a.CoreEngine != (c.version == "0.32.0"):
+			t.Errorf("engine_version %s: CoreEngine %t, want it set exactly for 0.32.0", c.version, a.CoreEngine)
 		case !c.ok && (err == nil || !strings.Contains(err.Error(), statedVersion(c.version)) ||
-			!strings.Contains(err.Error(), "0.29.0 and 0.31.0")):
+			!strings.Contains(err.Error(), "0.29.0, 0.31.0 and 0.32.0")):
 			t.Errorf("engine_version %q: %v, want a refusal naming it and the modelled releases", c.version, err)
 		}
+	}
+}
+
+// A 0.32.0 scenario adopts with the settings blis-schemas added with the v0.32.0 engine: that
+// engine reads or refuses each of them itself (core/vllm), so they are not the compatibility
+// engine's refusal to make.
+func TestAdopt_032LeavesItsSettingsToTheV032Engine(t *testing.T) {
+	repos := vendoredRepos(t)
+	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
+	body = strings.Replace(body, "      gpu_memory_utilization: 0.9\n", "      gpu_memory_utilization: 0.9\n      max_num_active_seqs: 64\n", 1)
+	if !strings.Contains(body, "max_num_active_seqs: 64") || !strings.Contains(body, `"0.32.0"`) {
+		t.Fatal("fixture edit failed")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+	if err != nil || !a.CoreEngine {
+		t.Errorf("a 0.32.0 scenario stating max_num_active_seqs: %v (CoreEngine %t), want it adopted to the v0.32.0 engine", err, a.CoreEngine)
 	}
 }
 

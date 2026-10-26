@@ -276,6 +276,16 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 // StepTime implements engine.Engine.
 func (e *Engine) StepTime(b engine.Batch) engine.Duration { return max(e.pricer.StepTime(b), 1) }
 
+// Assumptions are the pricer's disclosed assumptions, when it records any: for the latency
+// kernel, that it prices vLLM 0.31.0's engine behaviour for a 0.32.0 scenario. A simulator reads
+// them by type-asserting interface{ Assumptions() []string } on the engine.Engine.
+func (e *Engine) Assumptions() []string {
+	if a, ok := e.pricer.(interface{ Assumptions() []string }); ok {
+		return a.Assumptions()
+	}
+	return nil
+}
+
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
 	idx := -1

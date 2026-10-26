@@ -433,6 +433,20 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
+// ReqShape is one request's share of a batch in the kernel's terms (blis-schemas
+// kernel.ReqShape), for a caller pricing batches it formed itself, such as blis-vllm's v0.32.0
+// engine through vllmengine.
+type ReqShape = kernel.ReqShape
+
+// StepTimeOfShapes prices a batch already in the kernel's shapes, exactly as StepTime prices a
+// BLIS batch once batchOf has translated it: the kernel's NoOverlap step time in ticks, at
+// least one. The shapes are the caller's: under speculation a decode's Scheduled is already
+// its verify width.
+func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
+	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	return max(1, ticks(m.k.StepTime(b).NoOverlap))
+}
+
 // QueueingTime is the host work before a request can be scheduled: tokenization and
 // prompt preprocessing. It excludes queue waiting, which depends on engine busyness and
 // is the simulator's own concern rather than a pure function's.

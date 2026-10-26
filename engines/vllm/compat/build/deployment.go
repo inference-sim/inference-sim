@@ -10,6 +10,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	vllm "github.com/inference-sim/blis-vllm/core/vllm"
 )
 
 // CompatVersions are the vLLM releases the compatibility engine models: the releases the
@@ -35,6 +36,12 @@ type AdoptInputs struct {
 type Adopted struct {
 	Shape         kernelmodel.Shape
 	Disaggregated bool
+	// CoreEngine is set for a scenario stating vLLM 0.32.0, which runs on blis-vllm's v0.32.0
+	// engine (core/vllm) built through blis-schemas' engine registry (vllmengine), not on the
+	// compatibility engine. The kernel opened for the first pool still sizes the host's side of
+	// the run (the model, hardware and parallelism), and prices 0.32.0 with its 0.31.0 tuning,
+	// which it discloses.
+	CoreEngine bool
 	// CatalogRoot is the catalog root the run reads.
 	CatalogRoot string
 	// Model is the kernel for the scenario's first pool.
@@ -75,17 +82,18 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 		return Adopted{}, fmt.Errorf("scenario %q: %v", in.Scenario, err)
 	}
 	// One build models one engine release (#2021 B6): the compatibility engine is inference-sim's
-	// engine as it ran for the releases its scenarios state, and refuses any other rather than
-	// run it as one of those (a v0.32.0 deployment runs on blis-vllm's core/vllm engine, which
-	// this simulator does not build yet).
-	if !slices.Contains(CompatVersions(), shape.EngineVersion) {
+	// engine as it ran for the releases its scenarios state, and a 0.32.0 deployment runs on
+	// blis-vllm's v0.32.0 engine (core/vllm). Any other release is refused rather than run as one
+	// of those.
+	core := shape.EngineVersion == vllm.Version
+	if !core && !slices.Contains(CompatVersions(), shape.EngineVersion) {
 		stated := fmt.Sprintf("states engine_version %q", shape.EngineVersion)
 		if shape.EngineVersion == "" {
 			stated = "states no engine_version"
 		}
-		return Adopted{}, fmt.Errorf("scenario %q %s; this simulator runs blis-vllm's "+
-			"compatibility engine, which models the releases %s (the v0.32.0 engine is not wired in yet)",
-			in.Scenario, stated, strings.Join(CompatVersions(), " and "))
+		return Adopted{}, fmt.Errorf("scenario %q %s; blis-vllm models the releases %s and %s: the "+
+			"compatibility engine runs the first ones and the v0.32.0 engine %s",
+			in.Scenario, stated, strings.Join(CompatVersions(), ", "), vllm.Version, vllm.Version)
 	}
 	// The compatibility engine models the settings the 0.29/0.31 releases had, as inference-sim's
 	// engine did. A setting blis-schemas added with the v0.32.0 engine would be dropped without a
@@ -93,7 +101,8 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	// is inference-sim#2027; some of these settings that engine refuses too, each until its own
 	// issue (docs/feature-matrix.md).
 	for i, names := range shape.Unmodelled {
-		if len(names) == 0 {
+		if len(names) == 0 || core {
+			// The v0.32.0 engine reads or refuses each of these settings itself.
 			continue
 		}
 		stated := make([]string, len(names))
@@ -111,7 +120,7 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 		return Adopted{}, fmt.Errorf("scenario %q states %d colocated pools; a run simulates one colocated "+
 			"engine, so state one pool and scale it with --num-instances", in.Scenario, len(shape.Roles))
 	}
-	return Adopted{Shape: shape, Disaggregated: slices.Contains(shape.Roles, deployment.RolePrefill)}, nil
+	return Adopted{Shape: shape, Disaggregated: slices.Contains(shape.Roles, deployment.RolePrefill), CoreEngine: core}, nil
 }
 
 // OpenFirstPool opens the scenario's first pool and sizes it, once the caller has taken the

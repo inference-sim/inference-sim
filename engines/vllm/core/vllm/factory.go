@@ -28,6 +28,11 @@ type Factory struct {
 	// Compat builds the compatibility engine for a CompatVersions release; nil refuses those
 	// releases with the reason.
 	Compat func(s engine.Spec) (engine.Engine, error)
+	// Prepare, when set, completes a v0.32.0 spec before its engine block is decoded: a
+	// production caller fills in what the block does not state and the cost model knows (the KV
+	// block count, the pool's pipeline_parallel_size, the model runner), or the whole block from
+	// the scenario. Nil decodes the spec as given.
+	Prepare func(s engine.Spec) (engine.Spec, error)
 }
 
 // Kind implements engine.Factory.
@@ -52,6 +57,12 @@ func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 	default:
 		return nil, fmt.Errorf("vllm: this build models vLLM %s; engine_version %q is refused (compatibility "+
 			"releases: %v)", Version, s.UpstreamVersion, CompatVersions)
+	}
+	if f.Prepare != nil {
+		var err error
+		if s, err = f.Prepare(s); err != nil {
+			return nil, err
+		}
 	}
 	cfg, err := decodeConfig(s.Config)
 	if err != nil {
