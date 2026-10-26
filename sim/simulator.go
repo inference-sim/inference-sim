@@ -48,7 +48,7 @@ func (eq *EventQueue) Pop() any {
 
 // Simulator is one instance: the host's event loop and clock (inference-sim's, #2021 B3) around
 // the engine that makes every scheduling, KV-cache and metric decision (EngineCore). The host
-// fields stay with the simulator when the engine moves to blis-vllm (PLAN-E2 E2.3): the clock,
+// fields stay with the simulator when the engine moves to blis-vllm (#2027, addendum 4 item 2): the clock,
 // the horizon, the event queue and its seqIDs, the pending step, the idle park, the progress
 // hook and the callbacks. EngineCore is embedded so its fields and methods read as the
 // simulator's own while the split is made one method at a time.

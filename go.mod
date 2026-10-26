@@ -9,12 +9,12 @@ require (
 	// TEMPORARY: the head of inference-sim/blis-latency-kernel#82 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261025124457-4f8110fb2dba
-	// TEMPORARY: the head of inference-sim/blis-schemas#102 (https://github.com/inference-sim/blis-schemas/pull/102).
+	// TEMPORARY: inference-sim/blis-schemas#102 at 630937e (https://github.com/inference-sim/blis-schemas/pull/102; its later commits change only comments).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025121631-630937e6f21f
 	// TEMPORARY: inference-sim/blis-vllm main (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261026110159-9c552d931f94
+	github.com/inference-sim/blis-vllm v0.0.0-20261026133118-981f6b9925c0
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -75,7 +75,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	// TEMPORARY: inference-sim/blis-vllm main's rules module; moves to a release tag with blis-vllm (#2038).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261026105912-8a1eb6c212b7 // indirect
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261026132615-4e838b6382cd // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

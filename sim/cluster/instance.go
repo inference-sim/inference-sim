@@ -610,7 +610,7 @@ func (i *InstanceSimulator) ForgetRequest(id string) {
 // engineCore is the instance's engine for the replica and report builders that still take the
 // concrete type (sim.NewLockstepGroup, sim.ShareRenderer, sim.BuildServerSeries); nil for an
 // instance with no engine. It is the one place sim/cluster names the concrete engine type
-// outside this file, and goes when those builders move with the engine (PLAN-E2 stage E2.3).
+// outside this file, and goes when those builders move with the engine (#2027, addendum 4 item 2).
 func (i *InstanceSimulator) engineCore() *sim.Simulator { return i.sim }
 
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
