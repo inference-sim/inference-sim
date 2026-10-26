@@ -83,3 +83,34 @@ func gcdOf(a, b int64) int64 {
 	}
 	return a
 }
+
+// PoolBytesPerBlock is the shared pool's bytes per block for a model's attention layers as
+// vLLM groups them (GroupLayers, with the layers each group holds): BytesPerBlock over every
+// group's page_size_bytes (pageBytes, at the engine's blockSize where a layer states none).
+//
+// The layout is the one the grouping implies. Packed groups of several page sizes exist only on
+// a block-outermost layout (_get_packed_kv_cache_groups returns None on any other,
+// kv_cache_utils.py:1875-1878@5df63a72), so DeepSeek V4's layers are sized block-outer; every
+// other model's on vLLM's default for backends that state none, LBNHC, which is layer-outer
+// (_DEFAULT_LAYOUT_PREFERENCE, vllm/v1/attention/backends/utils.py:195-202). A layer's stride
+// alignment is its StrideAlignment, 1 when unstated: a backend's whole-kernel-block alignment
+// (customize_attention_spec, vllm/v1/worker/utils.py:478-486) is 1 whenever its kernel block
+// divides the block size, and otherwise a fraction of the page that divides it, so it changes no
+// page of these specs.
+func PoolBytesPerBlock(layers []Layer, o GroupOptions, blockSize int) (int64, error) {
+	_, members, err := groupLayers(layers, o)
+	if err != nil {
+		return 0, err
+	}
+	groups := make([]PageGroup, len(members))
+	for i, m := range members {
+		for _, j := range m {
+			l := layers[j]
+			if l.BlockSize == 0 {
+				l.BlockSize = blockSize
+			}
+			groups[i] = append(groups[i], PageLayer{PageBytes: int64(pageBytes(l)), Alignment: int64(max(l.StrideAlignment, 1))})
+		}
+	}
+	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
+}

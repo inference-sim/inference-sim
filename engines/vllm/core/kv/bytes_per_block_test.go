@@ -59,3 +59,52 @@ func TestBytesPerBlockRefusesWhatHasNoPage(t *testing.T) {
 		}
 	}
 }
+
+// layersOf is n layers of spec s, KV heads and head size, at 2 bytes an element.
+func layersOf(n int, s LayerSpec, window, heads, head int) []Layer {
+	out := make([]Layer, n)
+	for i := range out {
+		out[i] = Layer{Spec: s, Window: window, KVHeads: heads, HeadSize: head, ElemBytes: 2}
+	}
+	return out
+}
+
+// The pool's block from a model's layers as vLLM groups them: the groups' members are what
+// get_kv_cache_groups puts in each (a bucket of n layers split into ceil(n / size) groups of its
+// layers [i::groups], kv_cache_utils.py:1462-1501@5df63a72), each layer's page its spec's.
+func TestPoolBytesPerBlockSizesTheGroupsVLLMBuilds(t *testing.T) {
+	var gptOSS []Layer
+	for range 18 {
+		gptOSS = append(gptOSS, layersOf(1, LayerSlidingWindow, 128, 8, 64)[0], layersOf(1, LayerFull, 0, 8, 64)[0])
+	}
+	var m3 []Layer
+	m3 = append(m3, layersOf(3, LayerFull, 0, 2, 128)...)
+	for range 57 {
+		m3 = append(m3, layersOf(1, LayerIndexer, 0, 1, 128)[0], layersOf(1, LayerFull, 0, 2, 128)[0])
+	}
+	const page = 16 * 2 * 8 * 64 * 2 // a gpt-oss layer's page at 16 tokens: K and V, 8 heads of 64, bf16
+	for _, c := range []struct {
+		name   string
+		layers []Layer
+		want   int64
+	}{
+		// Two groups of 18: the block is one group's 18 pages.
+		{"gpt-oss-120b", gptOSS, 18 * page},
+		// One uniform-type group of 60 full-attention pages and 57 key-only indexer pages.
+		{"minimax-m3", m3, 60*16*2*2*128*2 + 57*16*1*128*2},
+		{"full attention only", layersOf(36, LayerFull, 0, 8, 64), 36 * page},
+		// 30 windows and 10 full: groups of 10, three of windows and one of full.
+		{"3:1", append(layersOf(30, LayerSlidingWindow, 128, 8, 64), layersOf(10, LayerFull, 0, 8, 64)...), 10 * page},
+		// 13 windows and 12 full: under 1.5 times, so groups of 13, the full group padded.
+		{"13:12", append(layersOf(13, LayerSlidingWindow, 128, 8, 64), layersOf(12, LayerFull, 0, 8, 64)...), 13 * page},
+	} {
+		got, err := PoolBytesPerBlock(c.layers, GroupOptions{}, 16)
+		if err != nil || got != c.want {
+			t.Errorf("%s: PoolBytesPerBlock = %d (%v), want %d", c.name, got, err, c.want)
+		}
+	}
+	// With the hybrid manager off, gpt-oss's windows fold into full attention: one group.
+	if got, _ := PoolBytesPerBlock(gptOSS, GroupOptions{DisableHybrid: true}, 16); got != 36*page {
+		t.Errorf("gpt-oss-120b, hybrid manager off: PoolBytesPerBlock = %d, want %d", got, 36*page)
+	}
+}

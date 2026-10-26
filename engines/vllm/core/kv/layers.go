@@ -67,6 +67,10 @@ type Layer struct {
 	// BoundedReplay is SlidingWindowMLASpec.bounded_replay: DeepSeek V4.1's sliding window
 	// kept out of prefix caching (vllm/v1/kv_cache_interface.py:1003-1009@5df63a72).
 	BoundedReplay bool
+	// StrideAlignment is the spec's get_block_stride_alignment(), the bytes a stride between
+	// physical blocks must be a multiple of (vllm/v1/kv_cache_interface.py:183-193@5df63a72),
+	// which sizes the KV pool (PoolBytesPerBlock); 0 is 1.
+	StrideAlignment int
 }
 
 // GroupsOfLayers is get_kv_cache_groups (kv_cache_utils.py:2159-2253@5df63a72) over a model's
@@ -103,9 +107,20 @@ type GroupOptions struct {
 
 // GroupLayers is GroupsOfLayers with the drafter's position.
 func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
+	groups, _, err := groupLayers(layers, o)
+	return groups, err
+}
+
+// groupLayers is GroupLayers with each group's layers, by index: vLLM's KVCacheGroupSpec
+// layer_names, which get_kv_cache_config_from_groups sizes the pool from.
+func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 	disableHybrid := o.DisableHybrid
 	if len(layers) == 0 {
-		return nil, errors.New("kv: a model with no KV cache layers")
+		return nil, nil, errors.New("kv: a model with no KV cache layers")
+	}
+	all := make([]int, len(layers))
+	for i := range all {
+		all[i] = i
 	}
 	hasFull := false
 	for _, l := range layers {
@@ -114,14 +129,14 @@ func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
 		}
 	}
 	if disableHybrid && hasFull && !deepseek(layers) {
-		return []Group{{Kind: FullAttention}}, nil
+		return []Group{{Kind: FullAttention}}, [][]int{all}, nil
 	}
 	if uniformType(layers) {
-		return []Group{groupOf(layers[0])}, nil
+		return []Group{groupOf(layers[0])}, [][]int{all}, nil
 	}
 	if deepseek(layers) {
 		if disableHybrid {
-			return nil, errors.New("kv: disable_hybrid_kv_cache_manager with DeepSeek V4's sliding-window MLA and " +
+			return nil, nil, errors.New("kv: disable_hybrid_kv_cache_manager with DeepSeek V4's sliding-window MLA and " +
 				"circular-buffer caches is not modelled")
 		}
 		if g, members := packedGroups(layers); g != nil {
@@ -134,41 +149,50 @@ func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
 					}
 				}
 			}
-			return g, nil
+			return g, members, nil
 		}
-		return nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")
+		return nil, nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")
 	}
 	for _, l := range layers {
 		if page(l) != page(layers[0]) {
-			return nil, fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d elements per token) "+
+			return nil, nil, fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d elements per token) "+
 				"need vLLM's packed KV cache groups of several block sizes, which are not modelled",
 				page(layers[0]), page(l))
 		}
 	}
 	var buckets []Group
-	count := map[Group]int{}
-	for _, l := range layers {
+	of := map[Group][]int{}
+	for i, l := range layers {
 		g := groupOf(l)
-		if count[g] == 0 {
+		if len(of[g]) == 0 {
 			buckets = append(buckets, g)
 		}
-		count[g]++
+		of[g] = append(of[g], i)
 	}
 	fewest, most := len(layers), 0
 	for _, g := range buckets {
-		fewest, most = min(fewest, count[g]), max(most, count[g])
+		fewest, most = min(fewest, len(of[g])), max(most, len(of[g]))
 	}
 	size := fewest
 	if 2*most < 3*fewest {
 		size = most
 	}
 	var out []Group
+	var members [][]int
 	for _, g := range buckets {
-		for i := 0; i < (count[g]+size-1)/size; i++ {
+		// The i-th of a bucket's n groups takes its layers [i::n] (:1495-1501).
+		in := of[g]
+		n := (len(in) + size - 1) / size
+		for i := 0; i < n; i++ {
 			out = append(out, g)
+			var m []int
+			for j := i; j < len(in); j += n {
+				m = append(m, in[j])
+			}
+			members = append(members, m)
 		}
 	}
-	return out, nil
+	return out, members, nil
 }
 
 // deepseek is whether the layers have DeepSeek V4's spec kinds, which vLLM groups by page

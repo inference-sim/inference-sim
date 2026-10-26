@@ -13,8 +13,10 @@
 //     compat/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
 //     one cost model. The kernel's engine behaviour is vLLM 0.31.0's; it records that as an
 //     assumption for a 0.32.0 scenario, and the engine discloses it (Assumptions);
-//   - sizes the KV cache from the kernel's memory model (compat/kernelmodel KVBudget), so the
-//     engine holds exactly the blocks the compatibility engine holds for the same deployment;
+//   - sizes the KV cache from the kernel's memory model (compat/kernelmodel KVBudget): the
+//     compatibility engine's block count for a model of one full-attention group, and for a
+//     hybrid model the memory left for KV over its widest KV cache group's bytes per block, as
+//     vLLM sizes its shared pool (poolBlocks);
 //   - fills in the facts the engine block does not carry: the KV block count, the pool's
 //     pipeline_parallel_size, and the model runner, which vLLM picks from the image (see
 //     modelRunner).
@@ -96,7 +98,35 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, err
 	}
-	return pool{model: m, blocks: st.KVBlocks, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
+	blocks, err := poolBlocks(m, st)
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
+	return pool{model: m, blocks: blocks, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
+}
+
+// poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
+// memory left for KV over the widest group's bytes per block (get_kv_cache_config_from_groups,
+// vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72), because every group draws its blocks from
+// one shared pool. A model of one full-attention group is the compatibility engine's count, the
+// kernel's allocatable bytes over its bytes for one block of every layer; a hybrid model's
+// groups each hold a share of the layers, so its pool holds more blocks than that
+// (gpt-oss-120b's two groups of 18 layers, twice as many).
+func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, error) {
+	runs, err := m.KVLayers()
+	if err != nil || len(runs) == 0 {
+		return st.KVBlocks, err
+	}
+	b, err := m.KVBudget()
+	if err != nil {
+		return 0, err
+	}
+	e, err := m.Engine()
+	if err != nil {
+		return 0, err
+	}
+	return vllm.KVPoolBlocks(vllmRuns(runs), e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
+		e.BlockSize, b.PerBlockBytes, b.AllocatableBytes)
 }
 
 // poolBlock reads the pool's engine block, as the document gave it, and its parallel block.
@@ -178,16 +208,21 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 
 // kvLayersNode is the kernel's KV layer runs as an engine block's kv_layers.
 func kvLayersNode(runs []kernelmodel.KVLayerRun) *yaml.Node {
+	var n yaml.Node
+	if err := n.Encode(vllmRuns(runs)); err != nil {
+		panic(err) // a slice of plain structs always encodes
+	}
+	return &n
+}
+
+// vllmRuns is the kernel's KV layer runs in core/vllm's terms.
+func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 	out := make([]vllm.KVLayerRun, len(runs))
 	for i, r := range runs {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
 			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize}
 	}
-	var n yaml.Node
-	if err := n.Encode(out); err != nil {
-		panic(err) // a slice of plain structs always encodes
-	}
-	return &n
+	return out
 }
 
 // pricerFor is the kernel's pricing for the spec's pool.

@@ -358,3 +358,39 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 		})
 	}
 }
+
+// The KV pool holds what vLLM's would for the same memory: the memory left for KV over the widest
+// KV cache group's bytes per block (get_kv_cache_config_from_groups,
+// vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72). gpt-oss-120b's 36 layers are two groups of
+// 18, a window and full attention, so a block is 18 layers' pages and the pool holds twice the
+// compatibility engine's count, which prices a block as all 36. A model of one group keeps the
+// compatibility engine's count: MiniMax-M3 (full attention and its indexers, one uniform-type
+// group) and kimi-k2.5 (full attention only).
+func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
+	Register()
+	for _, c := range []struct {
+		scenario string
+		want     func(compat kernelmodel.KVBudget) int64
+	}{
+		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / (b.PerBlockBytes / 2) }}, // gpt-oss-120b
+		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // minimax-m3
+		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // kimi-k2.5
+	} {
+		t.Run(c.scenario, func(t *testing.T) {
+			b, err := openPool(t, c.scenario).model.KVBudget()
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := c.want(b)
+			if got := e.Snapshot().KVBlocksTotal + 1; got != want {
+				// Snapshot excludes the null block.
+				t.Errorf("KV pool of %d blocks, want %d (compat sizes %d of %d bytes each from %d bytes)",
+					got, want, b.PerRankBlocks, b.PerBlockBytes, b.AllocatableBytes)
+			}
+		})
+	}
+}

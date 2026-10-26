@@ -8,6 +8,7 @@ package vllm
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/inference-sim/blis-vllm/core/kv"
 )
@@ -30,6 +31,60 @@ func KVGroups(runs []KVLayerRun, disableHybrid bool) ([]kv.Group, error) {
 	if len(runs) == 0 {
 		return nil, nil
 	}
+	layers, err := kvLayers(runs)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := kv.GroupsOfLayers(layers, disableHybrid)
+	if err != nil {
+		return nil, fmt.Errorf("vllm: kv_layers: %w", err)
+	}
+	return groups, nil
+}
+
+// KVPoolBlocks is the KV pool's block count over the layers' KV cache groups, as
+// get_kv_cache_config_from_groups sizes it (vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72):
+// availableBytes, the memory the KV cache may take, over the widest group's bytes per block
+// (kv.PoolBytesPerBlock).
+//
+// A layer that states no bytes of its own (no state_content_bytes, no element size) takes the
+// cache dtype's from the caller's memory model: kernelPerBlock is its bytes for one block of
+// every layer's page, block_size x the layers' elements a token x the dtype's bytes for these
+// specs. One group of every layer is then kernelPerBlock exactly, so it keeps the memory model's
+// count. A kernelPerBlock that is not a whole number of bytes for each of the layers' elements
+// is refused, naming both, rather than sized from a guessed dtype.
+func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock, availableBytes int64) (int64, error) {
+	layers, err := kvLayers(runs)
+	if err != nil {
+		return 0, err
+	}
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 || l.ElemBytes > 0 }) {
+		elems := int64(0)
+		for _, l := range layers {
+			l.ElemBytes, l.BlockSize = 1, blockSize
+			one, err := kv.PoolBytesPerBlock([]kv.Layer{l}, kv.GroupOptions{}, blockSize)
+			if err != nil {
+				return 0, fmt.Errorf("vllm: kv_layers: %w", err)
+			}
+			elems += one
+		}
+		if kernelPerBlock <= 0 || kernelPerBlock%elems != 0 {
+			return 0, fmt.Errorf("vllm: kv_layers: the memory model's %d bytes a block are not a whole number of bytes "+
+				"for each of the layers' %d elements a block", kernelPerBlock, elems)
+		}
+		for i := range layers {
+			layers[i].ElemBytes = int(kernelPerBlock / elems)
+		}
+	}
+	per, err := kv.PoolBytesPerBlock(layers, kv.GroupOptions{DisableHybrid: disableHybrid}, blockSize)
+	if err != nil {
+		return 0, fmt.Errorf("vllm: kv_layers: %w", err)
+	}
+	return availableBytes / per, nil
+}
+
+// kvLayers is the runs' layers, one per layer in model order.
+func kvLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 	var layers []kv.Layer
 	for _, r := range runs {
 		spec, err := kv.ParseLayerSpec(r.Spec)
@@ -43,9 +98,5 @@ func KVGroups(runs []KVLayerRun, disableHybrid bool) ([]kv.Group, error) {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads, HeadSize: r.HeadSize})
 		}
 	}
-	groups, err := kv.GroupsOfLayers(layers, disableHybrid)
-	if err != nil {
-		return nil, fmt.Errorf("vllm: kv_layers: %w", err)
-	}
-	return groups, nil
+	return layers, nil
 }
