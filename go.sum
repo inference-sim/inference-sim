@@ -177,6 +177,8 @@ github.com/inference-sim/blis-vllm v0.0.0-20261026074529-0c7d9741cb87 h1:Y+NUcPc
 github.com/inference-sim/blis-vllm v0.0.0-20261026074529-0c7d9741cb87/go.mod h1:MnsAfSIU3FpU9Yf1TjzjN10BpPTC9i87unQ74jfl70c=
 github.com/inference-sim/blis-vllm v0.0.0-20261026094546-b0338309e2b8 h1:hhzmJfJyBYqwkeHAdQkWmEEFblXkt4fOR6xlRaVruys=
 github.com/inference-sim/blis-vllm v0.0.0-20261026094546-b0338309e2b8/go.mod h1:R/MgS5C6uY4YXV4H2kXRZ+OO4VOM6llKMbuEyXtZWmc=
+github.com/inference-sim/blis-vllm v0.0.0-20261026110159-9c552d931f94 h1:NfU5Nq/t3za25XV7py9AJGXdq/ooK8lFgZnedDIEcdU=
+github.com/inference-sim/blis-vllm v0.0.0-20261026110159-9c552d931f94/go.mod h1:dP/R1q0FWnaElIph2jSi6asBd+FlTDjLXOq1SnVNOxY=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584 h1:sS7cVqMmULUtGyTZPSMLWi6pLB9/9b6SAta1lf5C2DE=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025013633-f43fad16b584/go.mod h1:EhZYWnBLaqnR6CLfzJ1l5CqdSiiN9ZbL0BsMaVWv/kA=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025105718-bfd996404321 h1:fYhAovPiv5jtc470JoFn+ZI4yC6Baf3zbtl4puiKJOs=
@@ -187,6 +189,8 @@ github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda h1:l
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda/go.mod h1:2fsgOZx4jrx/ptNhXiGLTpYP+Otl5RatR01S3rR8iqU=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261026093849-d912f49697cf h1:FdlZposYVU6uML8MiPZMXvlfI7oY24+Ulkb+m2Ahxwo=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261026093849-d912f49697cf/go.mod h1:Ptv67+TEUlpzHg17EK8RhrCPOcVFr6T53BLNV5kXoZk=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261026105912-8a1eb6c212b7 h1:Wzn9SobAqM2nLctHeHTbmsRbNsKpJXGLJjKzAphzalc=
+github.com/inference-sim/blis-vllm/rules v0.0.0-20261026105912-8a1eb6c212b7/go.mod h1:Ptv67+TEUlpzHg17EK8RhrCPOcVFr6T53BLNV5kXoZk=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
