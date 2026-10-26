@@ -58,6 +58,10 @@ type RankStep struct {
 	// Dummy is whether the rank ran a dummy batch: nothing it scheduled ran, but it has
 	// unfinished requests or its wave is still running (core.py:2357-2368).
 	Dummy bool
+	// Block is whether the rank's step blocked on its oldest queued batch's output: the batch
+	// it scheduled, with a queue of one (step(), core.py:657-687), or with a batch queue the
+	// one step_with_batch_queue waits on (core.py:754-766). Core.StepEnd applies it.
+	Block bool
 }
 
 // Add routes a request with the internal load balancer and hands it to the rank it picks.
@@ -81,7 +85,7 @@ func (d *DP) Add(id string) int {
 func (d *DP) Step() []RankStep {
 	out := d.StepBegin()
 	for i, c := range d.Ranks {
-		if out[i].Step.Scheduled != nil {
+		if out[i].Block {
 			out[i].Step = c.StepEnd(out[i].Step)
 		}
 	}
@@ -89,10 +93,13 @@ func (d *DP) Step() []RankStep {
 	return out
 }
 
-// StepBegin is the first half of every rank's busy-loop iteration: a rank with requests
-// schedules, throttled as _should_throttle_prefills says (core.py:2318-2325), and queues the
-// batch its forward pass then runs. A rank with none schedules nothing. The caller applies each
-// queued batch's output (Core.StepEnd) and then calls EndStep.
+// StepBegin is the first half of every rank's busy-loop iteration: each rank's engine step
+// (step(), or step_with_batch_queue with a batch queue) up to where it blocks on a GPU result.
+// A rank with requests schedules, throttled as _should_throttle_prefills says
+// (core.py:2318-2325), and queues the batch its forward pass then runs; a rank with no requests
+// but batches still queued blocks on the oldest (core.py:760-766). A rank with neither steps
+// nothing: its loop waits for input (_process_input_queue, core.py:1573-1594). The caller
+// applies the output each blocked rank waits on (Core.StepEnd) and then calls EndStep.
 func (d *DP) StepBegin() []RankStep {
 	out := make([]RankStep, len(d.Ranks))
 	for i, c := range d.Ranks {
@@ -101,7 +108,9 @@ func (d *DP) StepBegin() []RankStep {
 			throttle := w.Throttle()
 			c.Throttle = func() bool { return throttle }
 			out[i].Throttled = throttle
-			out[i].Step, _ = c.StepBegin()
+		}
+		if c.Sched.HasRequests() || c.InFlight() > 0 {
+			out[i].Step, out[i].Block = c.StepBegin()
 		}
 	}
 	return out
