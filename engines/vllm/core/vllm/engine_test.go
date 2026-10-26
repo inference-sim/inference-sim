@@ -14,7 +14,7 @@ import (
 
 // base is the engine block every test starts from.
 const base = "block_size: 16\nmax_num_seqs: 4\nmax_num_batched_tokens: 64\nmax_model_len: 512\n" +
-	"num_gpu_blocks: 64\nuse_v2_model_runner: false\nasync_scheduling: false\n"
+	"num_gpu_blocks: 64\nuse_v2_model_runner: false\nasync_scheduling: false\npipeline_parallel_size: 1\n"
 
 // block is the base engine block with extra's top-level keys added or replacing the base's.
 func block(t testing.TB, extra string) yaml.Node {
@@ -211,6 +211,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"PP2 async on the V2 runner", Version, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", "max_concurrent_batches 3"},
 		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
 		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
+		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// An env key the engine does not read is refused, naming it (blis-schemas' Env rule).
 		{"an env key the engine does not read", Version, "env: {VLLM_MARLIN_USE_ATOMIC_ADD: \"1\"}\n", "VLLM_MARLIN_USE_ATOMIC_ADD"},
 		{"env keys are named in order", Version, "env: {VLLM_B: \"1\", VLLM_A: \"1\"}\n", "VLLM_A, VLLM_B"},
@@ -237,7 +238,7 @@ func TestFactoryRefuses(t *testing.T) {
 	// SchedulerConfig's own values are test defaults (review I7). An unstated async_scheduling
 	// resolves on, which opens the batch queue the adapter refuses.
 	for _, missing := range []string{"block_size", "max_model_len", "use_v2_model_runner", "max_num_seqs",
-		"max_num_batched_tokens", "async_scheduling"} {
+		"max_num_batched_tokens", "async_scheduling", "pipeline_parallel_size"} {
 		var kept []string
 		for _, l := range strings.Split(strings.TrimSpace(base), "\n") {
 			if !strings.HasPrefix(l, missing+":") {
@@ -449,7 +450,7 @@ func TestMetricsFamilies(t *testing.T) {
 func ExampleFactory() {
 	var n yaml.Node
 	_ = yaml.Unmarshal([]byte("block_size: 16\nmax_num_seqs: 8\nmax_num_batched_tokens: 256\nmax_model_len: 4096\n"+
-		"num_gpu_blocks: 1024\nuse_v2_model_runner: true\nasync_scheduling: false\n"), &n)
+		"num_gpu_blocks: 1024\nuse_v2_model_runner: true\nasync_scheduling: false\npipeline_parallel_size: 1\n"), &n)
 	e, err := Factory{Pricer: func(engine.Spec) (Pricer, error) { return FixedPricer(1000), nil }}.New(
 		engine.Spec{Kind: Kind, UpstreamVersion: Version, Config: *n.Content[0]})
 	if err != nil {

@@ -32,8 +32,10 @@ import (
 //   - NumGPUBlocks is the KV cache's block count. vLLM derives it from the GPU memory left after
 //     loading the model (vllm/v1/core/kv_cache_utils.py:1003-1035@5df63a72); that is a cost
 //     model's answer, not this engine's, so the caller states it (#2021 B5).
-//   - PipelineParallelSize is parallel.pp, which sets max_concurrent_batches with async
-//     scheduling (vllm/config/vllm.py:577-588@5df63a72).
+//   - PipelineParallelSize is the pool's parallel.pp, which sets max_concurrent_batches with
+//     async scheduling (vllm/config/vllm.py:577-588@5df63a72). The parallel block is not part of
+//     the engine block a Spec carries, so the caller restates it here, and it must be stated: an
+//     unstated one would build a one-batch engine for a pool that pipelines.
 //
 // UseV2ModelRunner is whether the V2 model runner runs (VllmConfig.use_v2_model_runner,
 // vllm/config/vllm.py:703-739@5df63a72). vLLM resolves an unset VLLM_USE_V2_MODEL_RUNNER from
@@ -42,7 +44,7 @@ import (
 type Config struct {
 	deployment.Engine    `yaml:",inline"`
 	NumGPUBlocks         int   `yaml:"num_gpu_blocks"`
-	PipelineParallelSize int   `yaml:"pipeline_parallel_size,omitempty"`
+	PipelineParallelSize *int  `yaml:"pipeline_parallel_size"`
 	UseV2ModelRunner     *bool `yaml:"use_v2_model_runner,omitempty"`
 }
 
@@ -90,7 +92,13 @@ func resolve(c Config) (settings, error) {
 		return s, fmt.Errorf("vllm: num_gpu_blocks %d leaves no block for KV: the caller sizes the cache, "+
 			"as vLLM sizes it from the memory left after the model loads", c.NumGPUBlocks)
 	}
-	pp := max(c.PipelineParallelSize, 1)
+	if c.PipelineParallelSize == nil || *c.PipelineParallelSize < 1 {
+		// The pool's parallel.pp is not in the engine block, and it changes how many batches
+		// vLLM keeps in flight (vllm/config/vllm.py:577-588@5df63a72), so it is not assumed.
+		return s, fmt.Errorf("vllm: pipeline_parallel_size must be stated, at least 1: it is the pool's parallel.pp, " +
+			"which is not in the engine block, and it sets max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72)")
+	}
+	pp := *c.PipelineParallelSize
 
 	blockSize := e.BlockSize
 	if blockSize <= 0 {

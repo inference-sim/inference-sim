@@ -137,7 +137,7 @@ func adapterDivergence(t *testing.T, sc oracleScenario, want oracleTrace) string
 		policy = "fcfs"
 	}
 	src := fmt.Sprintf("block_size: %d\nmax_num_seqs: %d\nmax_num_batched_tokens: %d\nmax_model_len: %d\n"+
-		"num_gpu_blocks: %d\nuse_v2_model_runner: false\nasync_scheduling: false\nscheduling_policy: %s\n"+
+		"num_gpu_blocks: %d\nuse_v2_model_runner: false\nasync_scheduling: false\npipeline_parallel_size: 1\nscheduling_policy: %s\n"+
 		"enable_prefix_caching: %t\nlong_prefill_token_threshold: %d\nmax_num_active_seqs: %d\n",
 		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, maxLen, c.NumBlocks, policy,
 		c.EnablePrefixCaching, c.LongPrefillTokenThreshold, c.MaxNumActiveSeqs)
