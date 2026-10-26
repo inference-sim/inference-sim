@@ -1234,6 +1234,9 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 		{"an EP megakernel at allgather_reducescatter", "flashinfer_moe_ep_mega_deep_gemm", "allgather_reducescatter", false},
 		{"an EP megakernel stating passthrough", "flashinfer_moe_ep_cutedsl", "passthrough", false},
 		{"an EP megakernel beside another backend", "flashinfer_moe_ep_cutedsl", "deepep_low_latency", true},
+		// Both members of FLASHINFER_MOE_EP_BACKENDS (vllm/config/kernel.py:148-157@5df63a72) bind.
+		{"the DeepGEMM EP megakernel stating passthrough", "flashinfer_moe_ep_mega_deep_gemm", "passthrough", false},
+		{"the DeepGEMM EP megakernel beside another backend", "flashinfer_moe_ep_mega_deep_gemm", "deepep_low_latency", true},
 		// ParallelConfig renames the removed pplx and naive to allgather_reducescatter
 		// (vllm/config/parallel.py:532-538@5df63a72) before the binding runs, from
 		// VllmConfig's post-init (vllm/config/vllm.py:1777), so both start.

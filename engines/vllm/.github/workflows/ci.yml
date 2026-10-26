@@ -356,7 +356,7 @@ jobs:
           python3 -I oracle/mutate_t4.py . oracle/out/fuzz-connector "$RUNNER_TEMP/mutants-t4" | tee oracle/out/mutation-results-t4.txt
           python3 -I oracle/mutate_e24.py . "$RUNNER_TEMP/mutants-e24" | tee oracle/out/mutation-results-e24.txt
           python3 -I oracle/mutate_metrics.py . oracle/out/fuzz "$RUNNER_TEMP/mutants-metrics" | tee oracle/out/mutation-results-metrics.txt
-          python3 -I oracle/mutate_rules.py . "$RUNNER_TEMP/mutants-rules" | tee oracle/out/mutation-results-rules.txt
+          python3 -I oracle/mutate_rules.py . "$RUNNER_TEMP/mutants-rules" vllm-source | tee oracle/out/mutation-results-rules.txt
           python3 -I oracle/mutate_hash_manifest.py . "$RUNNER_TEMP/mutants-hash" hash | tee oracle/out/mutation-results-hash.txt
       - uses: actions/upload-artifact@v4
         if: always()
