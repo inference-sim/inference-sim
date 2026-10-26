@@ -138,3 +138,36 @@ func trailingDrafter(method string, runs []KVLayerRun) bool {
 	}
 	return false
 }
+
+// checkKVLayersFit is vLLM's start-up check over a model's KV cache groups (get_kv_cache_configs,
+// vllm/v1/core/kv_cache_utils.py:2627-2646@5df63a72, kv.CheckEnoughKVCacheMemory): a rank's pool
+// must hold one request of max_model_len tokens in every group at once, each sliding window at
+// its admission cap of window - 1 + extra_retained_tokens + max_in_flight_tokens tokens.
+// inFlight is max_in_flight_tokens (max_concurrent_batches x max_num_batched_tokens,
+// vllm/config/vllm.py:589-598) and prefillLookahead num_prefill_lookahead_tokens (:644-664),
+// whose extra_retained_tokens is one less. A block without kv_layers is one full-attention group,
+// which resolve's own check covers.
+func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahead int, method string) error {
+	if len(c.KVLayers) == 0 {
+		return nil
+	}
+	layers, err := KVLayers(c.KVLayers)
+	if err != nil {
+		return err
+	}
+	o := kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager != nil && *c.DisableHybridKVCacheManager,
+		TrailingDrafter: trailingDrafter(method, c.KVLayers)}
+	var perBlock int64
+	if c.KVAvailableBytes > 0 {
+		if perBlock, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {
+			return fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+	}
+	limits := kv.RequestLimits{MaxModelLen: maxModelLen, MaxInFlightTokens: inFlight,
+		ExtraRetained: max(0, prefillLookahead-1)}
+	if err := kv.CheckEnoughKVCacheMemory(layers, o, blockSize, limits, int64(c.NumGPUBlocks), perBlock,
+		c.KVAvailableBytes); err != nil {
+		return fmt.Errorf("vllm: %w", err)
+	}
+	return nil
+}

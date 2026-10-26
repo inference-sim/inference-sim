@@ -386,3 +386,42 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		})
 	}
 }
+
+// vLLM v0.32.0 refuses to start an engine whose KV pool cannot hold one max_model_len request
+// across every KV cache group (get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2627-2646@5df63a72),
+// and so does the factory. Dashboard d025 (deepseek-v4-pro, h200, tp1 dp8, max_model_len 9472)
+// has 3.01 GiB of KV per rank, 2250 blocks. vLLM resolves async scheduling on for it, two
+// batches in flight, so each sliding window's admission cap holds window - 1 + 2 x 8192 tokens:
+// one request needs 5.2 GiB, and vLLM's own check raises with these numbers (4.53 GiB with
+// async scheduling off; oracle/scenarios/dashboard-deepseek-v4-pro-startup*.json). The same
+// deployment at max_model_len 4096 fits and builds.
+func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) {
+	Register()
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d025-032.yaml")})
+	want := "To serve at least one request with the model's max seq len (9472), (5.2 GiB KV cache is needed, " +
+		"which is larger than the available KV cache memory (3.01 GiB). Based on the available memory, the " +
+		"estimated maximum model length is 5468."
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("d025: err %v, want vLLM's start-up refusal %q", err, want)
+	}
+	dir := t.TempDir()
+	body, rerr := os.ReadFile(filepath.Join("testdata", "d025-032.yaml"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	fits := strings.Replace(string(body), "max_model_len: 9472", "max_model_len: 4096", 1)
+	if err := os.WriteFile(filepath.Join(dir, "d025-4096.yaml"), []byte(fits), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := roots(t, "d025-032.yaml")
+	r[RootScenario] = filepath.Join(dir, "d025-4096.yaml")
+	tr, err := enginetest.Drive(func() (engine.Engine, error) {
+		return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	}, []enginetest.Arrival{{At: 0, Req: req("a", 2048, 16)}}, enginetest.Options{})
+	if err != nil {
+		t.Fatalf("d025 at max_model_len 4096: %v", err)
+	}
+	if len(tr.Finished) != 1 {
+		t.Errorf("d025 at max_model_len 4096 finished %d of 1 requests", len(tr.Finished))
+	}
+}

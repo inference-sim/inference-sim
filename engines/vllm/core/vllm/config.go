@@ -68,6 +68,10 @@ type Config struct {
 	// (vllm/v1/engine/coordinator.py:154-162, 267-269@5df63a72), 100000 µs unstated. A
 	// behavioural test states it as a step count's worth of time.
 	DPStatsIntervalUs int64 `yaml:"dp_stats_interval_us,omitempty"`
+	// KVAvailableBytes is the memory one rank's KV cache was sized from, when the caller sized
+	// num_gpu_blocks from memory: the start-up check then states vLLM's numbers in GiB
+	// (kv_cache_utils.py:1031-1040@5df63a72). Unstated, it states them in blocks.
+	KVAvailableBytes int64 `yaml:"kv_available_bytes,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -264,6 +268,9 @@ func resolve(c Config) (settings, error) {
 	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
 		trailingDrafter(method, c.KVLayers))
 	if err != nil {
+		return settings{}, err
+	}
+	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
 	s.sched = sched.Config{

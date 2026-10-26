@@ -60,11 +60,14 @@ func Factory() vllm.Factory {
 }
 
 // pool is one opened pool: the kernel that prices it, its KV block count and its engine block.
+// kvBytes is the memory a hybrid model's pool was sized from (poolBlocks), 0 for one sized as
+// the compatibility engine sizes it.
 type pool struct {
-	model  *kernelmodel.Model
-	blocks int64
-	engine yaml.Node
-	pp, dp int
+	model   *kernelmodel.Model
+	blocks  int64
+	kvBytes int64
+	engine  yaml.Node
+	pp, dp  int
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
@@ -98,11 +101,11 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, err
 	}
-	blocks, err := poolBlocks(m, st)
+	blocks, kvBytes, err := poolBlocks(m, st)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	return pool{model: m, blocks: blocks, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
+	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
 }
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
@@ -112,21 +115,25 @@ func open(s engine.Spec) (pool, error) {
 // kernel's allocatable bytes over its bytes for one block of every layer; a hybrid model's
 // groups each hold a share of the layers, so its pool holds more blocks than that
 // (gpt-oss-120b's two groups of 18 layers, twice as many).
-func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, error) {
+//
+// For a hybrid model it also returns the memory the pool was sized from, which the engine block
+// states as kv_available_bytes so vLLM's start-up check reports its numbers in GiB.
+func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, int64, error) {
 	runs, err := m.KVLayers()
 	if err != nil || len(runs) == 0 {
-		return st.KVBlocks, err
+		return st.KVBlocks, 0, err
 	}
 	b, err := m.KVBudget()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	e, err := m.Engine()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return vllm.KVPoolBlocks(vllmRuns(runs), e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
+	blocks, err := vllm.KVPoolBlocks(vllmRuns(runs), e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
 		e.BlockSize, b.PerBlockBytes, b.AllocatableBytes)
+	return blocks, b.AllocatableBytes, err
 }
 
 // poolBlock reads the pool's engine block, as the document gave it, and its parallel block.
@@ -186,6 +193,10 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	}
 	block = *cloneNode(&block)
 	setIfAbsent(&block, "num_gpu_blocks", fmt.Sprint(p.blocks))
+	if p.kvBytes > 0 {
+		// The memory the pool's blocks were sized from, for vLLM's start-up check's message.
+		setIfAbsent(&block, "kv_available_bytes", fmt.Sprint(p.kvBytes))
+	}
 	setIfAbsent(&block, "pipeline_parallel_size", fmt.Sprint(p.pp))
 	if p.dp > 1 {
 		// The pool's parallel.dp: the factory builds the data-parallel group behind one endpoint.
