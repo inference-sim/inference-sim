@@ -7,9 +7,9 @@ the scheduler's (core/sched), the EngineCore's and the DP loop's (core/engine), 
 connector's (core/connector/nixl) and the metric series' (core/metrics); and core/kv's block
 hashes (GOLDEN_FILES), which are vLLM's own hash_block_tokens output. A commit that changes
 the recorded content of an existing golden, or deletes one, must carry a
-`golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario, or
-refreshing only its `provenance` block, needs none, and this check verifies that such a commit
-changed nothing else. A golden directory this list does not name fails the check, so a new
+`golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario (in a
+golden file, appending a case), or refreshing only its `provenance` block, needs none, and this
+check verifies that such a commit changed nothing else. A golden directory this list does not name fails the check, so a new
 tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
 head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its provenance
 must name a commit anyone can check out.
@@ -45,6 +45,15 @@ def decisions(rev: str, path: str):
     trace = json.loads(git("show", f"{rev}:{path}"))
     trace.pop("provenance", None)
     return trace
+
+
+def decisions_changed(old_rev: str, new_rev: str, path: str) -> bool:
+    old, new = decisions(old_rev, path), decisions(new_rev, path)
+    if path in GOLDEN_FILES:
+        # Each case is one golden: appending cases adds goldens; changing or removing one does not.
+        old_cases, new_cases = old.pop("cases", []), new.pop("cases", [])
+        return old != new or new_cases[: len(old_cases)] != old_cases
+    return old != new
 
 
 def is_golden(path: str) -> bool:
@@ -104,7 +113,7 @@ def main(base: str, head: str) -> int:
                 needs_review.append(f"{path} deleted")
             elif status.startswith("R"):
                 needs_review.append(f"{path} renamed to {paths[1]}")
-            elif status == "M" and decisions(c + "^", path) != decisions(c, path):
+            elif status == "M" and decisions_changed(c + "^", c, path):
                 needs_review.append(f"{path} decisions changed")
         if not needs_review:
             continue

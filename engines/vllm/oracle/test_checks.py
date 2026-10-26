@@ -63,20 +63,30 @@ class CheckGoldens(unittest.TestCase):
 
     def test_the_block_hash_fixture_is_guarded(self):
         os.makedirs(os.path.join(self.repo, "core/kv/testdata"), exist_ok=True)
-        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "cases": [{"hashes": ["aa"]}]})
+        a, b = {"name": "a", "hashes": ["aa"]}, {"name": "b", "hashes": ["bb"]}
+        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "none_hash": "00", "cases": [a]})
         self.commit("add the fixture")
         base = git(self.repo, "rev-parse", "HEAD")
-        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "cases": [{"hashes": ["bb"]}]})
-        self.commit("change a hash")
-        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn("block_hashes.json decisions changed without a golden-reviewed: trailer", r.stdout)
-        # A provenance-only refresh of it needs no trailer.
-        git(self.repo, "reset", "-q", "--hard", base)
-        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 2}, "cases": [{"hashes": ["aa"]}]})
-        self.commit("refresh provenance")
-        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
-        self.assertEqual(r.returncode, 0, r.stdout)
+        # Changing a case, removing one, or changing what every case rests on needs a trailer.
+        for name, doc in [("change a hash", {"provenance": {"v": 1}, "none_hash": "00", "cases": [{**a, "hashes": ["ab"]}]}),
+                          ("remove a case", {"provenance": {"v": 1}, "none_hash": "00", "cases": []}),
+                          ("change none_hash", {"provenance": {"v": 1}, "none_hash": "01", "cases": [a, b]})]:
+            with self.subTest(name):
+                git(self.repo, "reset", "-q", "--hard", base)
+                self.write("core/kv/testdata/block_hashes.json", doc)
+                self.commit(name)
+                r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("block_hashes.json decisions changed without a golden-reviewed: trailer", r.stdout)
+        # Appending a case adds a golden, and a provenance-only refresh changes none: no trailer.
+        for name, doc in [("append a case", {"provenance": {"v": 1}, "none_hash": "00", "cases": [a, b]}),
+                          ("refresh provenance", {"provenance": {"v": 2}, "none_hash": "00", "cases": [a]})]:
+            with self.subTest(name):
+                git(self.repo, "reset", "-q", "--hard", base)
+                self.write("core/kv/testdata/block_hashes.json", doc)
+                self.commit(name)
+                r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+                self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_every_directory_is_guarded(self):
         for d in self.DIRS:
