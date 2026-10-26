@@ -11,6 +11,8 @@
 
 package kv
 
+import "fmt"
+
 // GroupKind is a KV cache group's attention type (vllm/v1/kv_cache_interface.py@5df63a72).
 type GroupKind int
 
@@ -249,6 +251,23 @@ func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
 
 // NumGroups is the number of KV cache groups.
 func (m *Manager) NumGroups() int { return len(m.groups) }
+
+// PrefixReplayTokens is the scheduler's prefix_replay_tokens (vllm/v1/core/sched/scheduler.py:
+// 290-305@5df63a72): the window a bounded-replay group rebuilds after a prefix hit by recomputing
+// its trailing tokens (SlidingWindowMLASpec.prefix_replay_tokens, vllm/v1/kv_cache_interface.py:
+// 972-974@5df63a72), 0 when no group replays. Every such group states one window.
+func (m *Manager) PrefixReplayTokens() int {
+	window := 0
+	for _, g := range m.groups {
+		if g.spec.Kind == SlidingWindowMLA && g.spec.BoundedReplay {
+			if window != 0 && g.spec.Window != window {
+				panic(fmt.Sprintf("kv: prefix replay windows should agree: %d and %d", window, g.spec.Window))
+			}
+			window = g.spec.Window
+		}
+	}
+	return window
+}
 
 // Blocks returns the request's block table in group 0. The slice is the manager's own.
 func (m *Manager) Blocks(id string) []*Block { return m.groups[0].reqBlocks[id] }

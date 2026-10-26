@@ -147,6 +147,13 @@ MUTANTS = [
     # blis-vllm#20 review S17.
     ("M55", "layers sharing one spec form one KV cache group", "core/kv/manager.go",
      "\tif uniform {\n\t\treturn []Group{layers[0]}\n\t}\n", "\tif uniform && false {\n\t\treturn []Group{layers[0]}\n\t}\n"),
+    # swa_bounded_replay (dashboard-deepseek-v4.1-flash-replay).
+    ("M59", "swa_bounded_replay", "core/sched/scheduler.go",
+     "\tn := min(window, hitTokens)\n", "\tn := hitTokens\n"),
+    ("M60", "swa_bounded_replay", "core/sched/scheduler.go",
+     "0 < numComputed && numComputed <= replay {", "0 < numComputed && numComputed < replay {"),
+    ("M61", "swa_bounded_replay", "core/sched/scheduler.go",
+     "New: max(numNew-replayed, 0),", "New: numNew,"),
 ]
 
 

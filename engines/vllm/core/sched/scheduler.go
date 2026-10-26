@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 // Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
 // Also vllm/v1/core/sched/request_queue.py, vllm/v1/core/sched/utils.py (check_stop) and
-// vllm/v1/core/sched/async_scheduler.py (AsyncScheduler).
+// vllm/v1/core/sched/async_scheduler.py (AsyncScheduler). SWA bounded replay: scheduler.py:290-305,
+// 1047-1066, 1103-1124, 1253-1256 and 3103-3121.
 
 // Package sched is vLLM's v1 Scheduler: schedule() and update_from_output() for a
 // full-attention model, with chunked prefill, the long-prefill cap, FCFS and priority
@@ -128,6 +129,9 @@ type Request struct {
 	numStale int
 	// nextDecodeStep is next_decode_eligible_step.
 	nextDecodeStep int
+	// ReplayStart is replay_start (vllm/v1/request.py:209@5df63a72): where a bounded-replay
+	// prefix hit's recomputed window begins, 0 when nothing is replayed (markPrefixReplay).
+	ReplayStart int
 }
 
 // NumTokens is len(all_token_ids): prompt plus output.
@@ -376,6 +380,19 @@ func (s *Scheduler) reservePrefillLookahead(r *Request, computed, numNew int) in
 	return max(numNew, 0)
 }
 
+// markPrefixReplay is _mark_prefix_replay (scheduler.py:3103-3121) without a KV load: it records
+// where a prefix hit's replay starts and returns the hit tokens to recompute, the hit's last
+// prefix_replay_tokens, whose sliding-window KV the worker rebuilds while their cached KV stays.
+func (s *Scheduler) markPrefixReplay(r *Request, hitTokens int) int {
+	window := s.KV.PrefixReplayTokens()
+	if window == 0 {
+		return 0
+	}
+	n := min(window, hitTokens)
+	r.ReplayStart = hitTokens - n
+	return n
+}
+
 // Schedule is schedule() (scheduler.py:591-1558) for this configuration.
 func (s *Scheduler) Schedule() Output { return s.ScheduleThrottled(false) }
 
@@ -576,13 +593,19 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
 				}
 				numComputed = newLocal + external
+				// SWA bounded replay (:1047-1066): a hit no longer than the replayed window would be
+				// recomputed in full and save nothing, so it is dropped. No connector runs beside
+				// several KV cache groups (SetConnector), so no load restores the window here.
+				if replay := s.KV.PrefixReplayTokens(); 0 < numComputed && numComputed <= replay {
+					hit, newLocal, external, async, numComputed = nil, 0, 0, false, 0
+				}
 				if async {
 					s.setFetchStage(r, FetchWaitingToStart)
 				} else {
 					s.setFetchStage(r, fetchNone)
 				}
 			}
-			numNew, pad := 0, false
+			numNew, pad, replayed := 0, false, 0
 			if !async {
 				if deferPrefills && numComputed < r.NumTokens()-1 {
 					// DP prefill balancing defers this step's prefill (:1113-1116): the pass
@@ -590,6 +613,11 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					break
 				}
 				room := min(tokenBudget, inputBudget-draftSlots)
+				if lookedUp {
+					// A fresh admission recomputes its hit's last window (:1117-1124).
+					replayed = s.markPrefixReplay(r, numComputed)
+					numComputed -= replayed
+				}
 				numNew = r.NumTokens() - numComputed
 				// First-decode padding (:1130-1152): a request whose first step is a single
 				// decode token runs as 1 + K, so the batch keeps the speculative decodes' shape.
@@ -618,7 +646,9 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			if async {
 				lookahead, reserved = 0, s.inflightReserved()
 			}
-			if !s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: lookahead, NewComputed: hit,
+			// The replayed tokens are already counted in the adopted hit; a chunk that ends inside
+			// them needs no new slots (:1253-1256).
+			if !s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: max(numNew-replayed, 0), Lookahead: lookahead, NewComputed: hit,
 				NumNewComputed: newLocal, External: external, Reserved: reserved, DelayCache: async,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, Waiting: true,
 				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
