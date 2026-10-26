@@ -128,4 +128,4 @@ require (
 // The llm-d router fork keeps upstream's module path, so this replace is the one that stays after
 // merge (docs/contributing/llm-d-router-fork.md).
 // TEMPORARY (review only): inference-sim/llm-d-router#3; moves to github.com/inference-sim/llm-d-router v1.0.0-blis.1 before leaving draft.
-replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261026181501-633ad0529578
+replace github.com/llm-d/llm-d-router => github.com/namasl/llm-d-router v0.0.0-20261026190615-ec087e98f357
