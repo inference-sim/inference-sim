@@ -10,6 +10,8 @@ import (
 
 	"github.com/inference-sim/blis-schemas/engine"
 	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 )
 
 // base is the engine block every test starts from.
@@ -276,6 +278,67 @@ func TestFactoryAccepts(t *testing.T) {
 	} {
 		if _, err := build(t, c.extra)(); err != nil {
 			t.Errorf("%s: refused: %v", c.name, err)
+		}
+	}
+}
+
+// The factory checks rules/v0_32 over the engine block alone, so it refuses only what the block
+// decides. The pool's other parallel widths are not in the block: a rule clause that turns on
+// them is the caller's, which validates the whole document set. dp_shared_memory "requires dp
+// above 1" (engram-config-valid), which the block cannot state, and it requires cpu_offload,
+// which the block does state (vllm/config/engram.py@5df63a72).
+func TestFactoryRulesRefuseOnlyWhatTheBlockStates(t *testing.T) {
+	if _, err := build(t, "engram_config: {dp_shared_memory: true}\n")(); err != nil {
+		t.Errorf("dp_shared_memory with its defaults: refused: %v", err)
+	}
+	_, err := build(t, "engram_config: {dp_shared_memory: true, cpu_offload: false}\n")()
+	switch {
+	case err == nil || !strings.Contains(err.Error(), "dp_shared_memory requires cpu_offload"):
+		t.Errorf("dp_shared_memory without cpu_offload: err %v, want the block's own refusal", err)
+	case strings.Contains(err.Error(), "dp above 1"):
+		t.Errorf("dp_shared_memory without cpu_offload: err %v names the data-parallel width, which the block "+
+			"does not state", err)
+	}
+	if _, err := build(t, "engram_config: {use_thp: true, dp_shared_memory: true}\n")(); err == nil ||
+		!strings.Contains(err.Error(), "use_thp requires cpu_offload and not dp_shared_memory") {
+		t.Errorf("use_thp with dp_shared_memory: err %v, want the block's own refusal", err)
+	}
+	if _, err := build(t, "cache_dtype: fp9\n")(); err == nil || !strings.Contains(err.Error(), "enum-values-known") {
+		t.Errorf("a cache dtype v0.32.0 does not accept: err %v, want the value-list refusal", err)
+	}
+}
+
+// A rule clause that turns on the tensor-parallel width, which the engine block does not state,
+// refuses nothing in the factory, whichever width it asks for; one the block decides refuses.
+func TestFactoryRulesIgnoreClausesOnUnstatedWidths(t *testing.T) {
+	var e deployment.Engine
+	for _, c := range []struct {
+		name   string
+		pp     int
+		fires  func(deployment.Parallelism) bool
+		refuse bool
+	}{
+		{"needs tp above 1", 1, func(pl deployment.Parallelism) bool { return pl.TP <= 1 }, false},
+		{"needs tp of 1", 1, func(pl deployment.Parallelism) bool { return pl.TP > 1 }, false},
+		{"needs dp above 1", 1, func(pl deployment.Parallelism) bool { return pl.DP <= 1 }, false},
+		{"needs dp of 1", 1, func(pl deployment.Parallelism) bool { return pl.DP > 1 }, false},
+		{"refused but at tp 1 and dp 2", 1, func(pl deployment.Parallelism) bool { return pl.TP != 1 || pl.DP != 2 }, false},
+		{"refused but at tp 2 and dp 1", 1, func(pl deployment.Parallelism) bool { return pl.TP != 2 || pl.DP != 1 }, false},
+		{"refused whatever the widths", 1, func(deployment.Parallelism) bool { return true }, true},
+		// pipeline_parallel_size is stated, so a clause on it decides (ModelSequenceParallel
+		// reads it): the stated pp is what the pack sees.
+		{"refused at the stated pp", 2, func(pl deployment.Parallelism) bool { return pl.PP == 2 }, true},
+		{"refused only at another pp", 2, func(pl deployment.Parallelism) bool { return pl.PP != 2 }, false},
+		{"refused at pp 1, stated 1", 1, func(pl deployment.Parallelism) bool { return pl.PP == 1 }, true},
+	} {
+		fires := c.fires
+		pack := &rules.Pack{Version: "0.32.0", Rules: []rules.Rule{{Name: "probe", Check: func(in rules.Input, out *rules.Problems) {
+			if fires(in.Deployment.Pools[0].Parallel) {
+				out.RuleErrorf("probe", "pools[0].engine: refused")
+			}
+		}}}}
+		if err := checkRulesWith(pack, e, c.pp); (err != nil) != c.refuse {
+			t.Errorf("%s: err %v, want refused=%v", c.name, err, c.refuse)
 		}
 	}
 }

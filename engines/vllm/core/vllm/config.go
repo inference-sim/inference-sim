@@ -425,26 +425,53 @@ func fullCUDAGraphs(mode string) bool {
 }
 
 // checkRules runs the v0.32.0 rules pack (rules/v0_32) over the engine block, the startup check
-// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes. The
-// block is checked as one pool's engine; a rule that needs the model graph or the cluster has
-// neither here and checks nothing, which leaves it to the caller that validates the whole
-// document set. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
-func checkRules(e deployment.Engine, pp int) error {
-	in := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
-		Role:     deployment.RoleColocated,
-		Parallel: deployment.Parallelism{TP: 1, PP: max(pp, 1), DP: 1},
-		Engine:   e,
-	}}}}
-	errs := v0_32.Pack().Check(in).Errors()
-	if len(errs) == 0 {
-		return nil
+// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
+// The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
+// and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
+// stands only where the block decides it whatever those widths are: the pack runs once for each
+// parallel shape in blockShapes, and only an error every run reports refuses. A clause that
+// turns on a width the block does not state, such as engram-config-valid's "dp_shared_memory
+// requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
+// the whole document set, as is every rule that needs the model graph, which checks nothing
+// without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
+func checkRules(e deployment.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
+
+// blockShapes are the tensor and data parallel widths checkRules runs the pack under: each at 1
+// and at 2, so that a clause turning on either width, whichever way, is silent in one of them.
+var blockShapes = []struct{ tp, dp int }{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
+
+// checkRulesWith is checkRules for a given rules pack.
+func checkRulesWith(pack rules.EngineRules, e deployment.Engine, pp int) error {
+	var first []rules.Problem       // the first shape's errors, in the order the pack reports them
+	in := map[string]map[int]bool{} // an error's key: the shapes that reported it
+	for i, shape := range blockShapes {
+		doc := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
+			Role:     deployment.RoleColocated,
+			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp},
+			Engine:   e,
+		}}}}
+		for _, p := range pack.Check(doc).Errors() {
+			key := p.Rule + "\x00" + p.Message
+			if in[key] == nil {
+				in[key] = map[int]bool{}
+				if i == 0 {
+					first = append(first, p)
+				}
+			}
+			in[key][i] = true
+		}
 	}
 	// The block is checked as the one pool of a document, so its findings are named from the
 	// engine block, not from a pool index the caller never wrote.
-	lines := make([]string, len(errs))
-	for i, p := range errs {
-		lines[i] = fmt.Sprintf("[%s] %s", p.Rule, strings.TrimPrefix(p.Message, "pools[0]."))
+	var lines []string
+	for _, p := range first {
+		if len(in[p.Rule+"\x00"+p.Message]) == len(blockShapes) {
+			lines = append(lines, fmt.Sprintf("[%s] %s", p.Rule, strings.TrimPrefix(p.Message, "pools[0].")))
+		}
 	}
-	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules (rules/v0_32): %s", v0_32.Version,
+	if len(lines) == 0 {
+		return nil
+	}
+	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
 		strings.Join(lines, "; "))
 }
