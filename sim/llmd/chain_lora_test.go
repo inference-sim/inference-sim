@@ -2,6 +2,7 @@ package llmd
 
 import (
 	"math/rand"
+	"strings"
 	"testing"
 
 	_ "github.com/inference-sim/blis-vllm/compat/lora" // links the LoRA subsystem, as the CLI does
@@ -132,5 +133,21 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 	t.Logf("adapter loads: load-only %d, lora-affinity %d", base, affinity)
 	if base == 0 || float64(affinity) > 0.7*float64(base) {
 		t.Errorf("lora-affinity loaded adapters %d times, load-only %d: want at least 30%% fewer", affinity, base)
+	}
+}
+
+// TestPrecisePrefixRefusedOverLoRAEngines: the precise prefix producer keys blocks by adapter, and
+// the compatibility engine this simulator runs keys its prefix cache without
+// it, so a router configuration with that producer over engines serving adapters is refused at
+// startup, naming which engine's cache lacks the key.
+func TestPrecisePrefixRefusedOverLoRAEngines(t *testing.T) {
+	dep := testDeployment(2)
+	capacity, base, bw, fp := 2, 1000.0, 2.0e6, 2.0e6
+	dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+		LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []sim.AdapterSpec{{ID: "a0", Rank: 8}}}
+	err := refusal(t, dep, preciseConfig(""), nil)
+	if err == nil || !strings.Contains(err.Error(), "precise-prefix-cache-producer") ||
+		!strings.Contains(err.Error(), "compatibility engine") {
+		t.Fatalf("want the precise producer refused over LoRA engines, naming the compatibility engine; got %v", err)
 	}
 }

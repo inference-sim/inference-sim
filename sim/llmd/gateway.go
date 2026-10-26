@@ -1344,8 +1344,8 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
 	if len(g.kvIngest) > 0 && inst.AdapterCapacity() > 0 {
 		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
-			"keys blocks by LoRA adapter, but the simulated engines' prefix caches do not, so their KV events " +
-			"cannot name the adapter a block belongs to")
+			"keys blocks by LoRA adapter, but the compatibility engine this simulator runs keys its prefix cache " +
+			"without the adapter, so its KV events cannot name the adapter a block belongs to")
 	}
 	return nil
 }

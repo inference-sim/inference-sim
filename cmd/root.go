@@ -300,8 +300,9 @@ const dpPlacementInstanceWarnThreshold = 512
 // Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
 // is simply a no-op.
 func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
-	if !isMoE || dp <= 1 {
-		// No expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
+	if dpLockstepRanks(isMoE, dp) == 0 {
+		// No lockstep group (the engine's rule: an MoE model at dp > 1 forms one) ⇒ no
+		// expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
 		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
 	}
 	if autoscalerActive {
