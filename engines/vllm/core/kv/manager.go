@@ -16,6 +16,12 @@ const (
 	FullAttention GroupKind = iota
 	// SlidingWindow is SlidingWindowSpec.
 	SlidingWindow
+	// SlidingWindowMLA is SlidingWindowMLASpec, DeepSeek V4's sliding-window caches; vLLM
+	// manages it with the SlidingWindowManager (single_type_kv_cache_manager.py:2663-2667).
+	SlidingWindowMLA
+	// CircularBuffer is CircularBufferSpec, one ring block per request (CircularBufferManager,
+	// single_type_kv_cache_manager.py:1173-1260).
+	CircularBuffer
 )
 
 // Group is one KV cache group: its attention type and, for a sliding window, the window.
@@ -23,6 +29,13 @@ type Group struct {
 	Kind GroupKind
 	// Window is SlidingWindowSpec.sliding_window, in tokens.
 	Window int
+	// BlockSize is the group's own block size, in tokens, when it differs from the engine's
+	// (_get_packed_kv_cache_groups' groups, vllm/v1/core/kv_cache_utils.py:1860-2014@5df63a72);
+	// 0 is the engine's.
+	BlockSize int
+	// BoundedReplay is a sliding-window MLA group kept out of prefix caching
+	// (SlidingWindowMLASpec.prefix_cacheable, vllm/v1/kv_cache_interface.py:1003-1009@5df63a72).
+	BoundedReplay bool
 }
 
 // ResolveGroups is the grouping of a model's layer specs that the scheduler sees
