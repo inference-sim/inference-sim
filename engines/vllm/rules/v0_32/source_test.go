@@ -202,6 +202,38 @@ func TestCUDAGraphModesMatchSource(t *testing.T) {
 	assertSameSet(t, "CUDAGraphModes", Pack().CUDAGraphModes, members)
 }
 
+// mlaPrefillBackends is MLAPrefillBackendEnum's members, the names attention_config's parser
+// looks an upper-cased mla_prefill_backend up in (vllm/config/attention.py:195-201). The members
+// are the class body's assignments at its own indent, as for CUDAGraphMode.
+func TestMLAPrefillBackendsMatchSource(t *testing.T) {
+	root := vllmSource(t)
+	attn := readSource(t, root, "vllm", "config", "attention.py")
+	for _, want := range []string{
+		`@field_validator("mla_prefill_backend", mode="before")`,
+		"return MLAPrefillBackendEnum[value.upper()]",
+	} {
+		if !strings.Contains(attn, want) {
+			t.Errorf("vllm/config/attention.py no longer has %q; the rule's basis moved", want)
+		}
+	}
+	src := readSource(t, root, "vllm", "v1", "attention", "backends", "mla", "prefill", "registry.py")
+	i := strings.Index(src, "class MLAPrefillBackendEnum(")
+	if i < 0 {
+		t.Fatal("no MLAPrefillBackendEnum found; the engine may have moved it")
+	}
+	body := src[i:]
+	if j := strings.Index(body, "\n    @classmethod"); j > 0 {
+		body = body[:j]
+	}
+	re := regexp.MustCompile(`(?m)^\s{4}([A-Z][A-Z0-9_]*)\s*=`)
+	var members []string
+	for _, m := range re.FindAllStringSubmatch(body, -1) {
+		members = append(members, m[1])
+	}
+	sort.Strings(members)
+	assertSameSet(t, "mlaPrefillBackends", set(mlaPrefillBackends...), members)
+}
+
 func TestOffloadSpecsMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "v1", "kv_offload", "factory.py")

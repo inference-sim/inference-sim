@@ -6,7 +6,7 @@ and report whether each is caught.
 Each mutant breaks one clause of a rule a supported row of docs/feature-matrix.md names, or one
 piece of the data, rule or parser that v0.32.0 added over v0.31.0 (the 0.32.0 pack's commit), so
 those mutants exist and run in CI rather than only on a contributor's machine. The mutant IDs are
-C1-C19; D1-D11 are oracle/mutate_t3.py's.
+C1-C25; D1-D11 are oracle/mutate_t3.py's.
 
 Usage: python3 oracle/mutate_rules.py <blis-vllm checkout> <scratch dir> <vLLM v0.32.0 source> [C1,...]
 Exits non-zero if the unmutated module fails, or a mutant survives or breaks the build without a
@@ -22,6 +22,7 @@ SOURCE = "rules/v0_32/source_test.go"
 
 DCP = "TestDCPDividesTP"
 BIND = "TestMoEEPBackendBindsPassthrough"
+MLA = "TestMLAPrefillBackendKnown"
 
 # (id, the clause it breaks, file, exact old text, new text, the tests that must catch it)
 MUTANTS = [
@@ -86,6 +87,23 @@ MUTANTS = [
      "\t\t\t\tTensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true},",
      "rules.ArchDeepseekV4: rules.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
      "\t\t\t\tTensorParallelAboveOne: true},", "TestModelSequenceParallelRulesMatchSource"),
+    # mla-prefill-backend-known (vllm/config/attention.py:195-201@5df63a72; the members are
+    # MLAPrefillBackendEnum's, vllm/v1/attention/backends/mla/prefill/registry.py:37-65).
+    ("C20", "mla-prefill-backend-known: the rule fires", PACK,
+     "if e.MLAPrefillBackend != \"\" && !known[strings.ToUpper(e.MLAPrefillBackend)] {", "if false {",
+     MLA),
+    ("C21", "mla-prefill-backend-known: the name is upper-cased before the lookup", PACK,
+     "!known[strings.ToUpper(e.MLAPrefillBackend)]", "!known[e.MLAPrefillBackend]", MLA),
+    ("C22", "mla-prefill-backend-known: an unstated backend is the engine's own choice", PACK,
+     "if e.MLAPrefillBackend != \"\" && !known", "if !known", MLA),
+    ("C23", "mla-prefill-backend-known: an unknown name is a startup refusal, not a warning", PACK,
+     "out.RuleErrorf(\"mla-prefill-backend-known\",", "out.RuleWarnf(\"mla-prefill-backend-known\",", MLA),
+    ("C24", "MLAPrefillBackendEnum: every member is accepted", PACK,
+     "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\"}", "\"ROCM_AITER_FA\", \"CPU\", \"CUSTOM\"}",
+     "TestMLAPrefillBackendsMatchSource"),
+    ("C25", "MLAPrefillBackendEnum: no name it lacks is accepted", PACK,
+     "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\"}", "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\", \"TRTLLM\"}",
+     "TestMLAPrefillBackendsMatchSource"),
 ]
 
 TESTS = "|".join(sorted({t for m in MUTANTS for t in m[5].split("|")}))

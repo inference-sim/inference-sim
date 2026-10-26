@@ -92,6 +92,7 @@ func TestPackRuleSet(t *testing.T) {
 		"long-prefill-threshold-within-max-model-len",
 		"mamba-cache-mode-matches-model",
 		"max-model-len-within-context-window",
+		"mla-prefill-backend-known",
 		"model-sequence-parallel-collectives",
 		"moe-ep-backend-binds-passthrough",
 		"moonep-requirements",
@@ -397,6 +398,34 @@ func TestDCPCommBackendKnown(t *testing.T) {
 			t.Errorf("dcp_comm_backend %q: rule fired=%v, want %v\n%s", c.backend, got, c.want, p.Error())
 		}
 		if c.want && !strings.Contains(p.Error(), "a2a, ag_rs") {
+			t.Errorf("message should name the accepted set: %s", p.Error())
+		}
+	}
+}
+
+// TestMLAPrefillBackendKnown: vLLM v0.32.0 looks attention_config.mla_prefill_backend up in
+// MLAPrefillBackendEnum after upper-casing it, and refuses a name that is not a member
+// (vllm/config/attention.py:195-201, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@5df63a72).
+func TestMLAPrefillBackendKnown(t *testing.T) {
+	for _, c := range []struct {
+		backend string
+		want    bool
+	}{
+		{"", false}, {"TRTLLM_RAGGED", false}, {"FLASHINFER", false}, {"ROCM_AITER_FA", false},
+		{"flash_attn", false}, // upper-cased before the lookup
+		{"CUSTOM", false},     // a member: a backend registered out of tree takes it
+		{"TRTLLM", true}, {"FLASH_MLA", true}, {"auto", true},
+	} {
+		p := run(t, dep(colocated(deployment.Parallelism{TP: 1, PP: 1, DP: 1},
+			deployment.Engine{MLAPrefillBackend: c.backend})), nil)
+		if got := fired(p, "mla-prefill-backend-known"); got != c.want {
+			t.Errorf("mla_prefill_backend %q: rule fired=%v, want %v\n%s", c.backend, got, c.want, p.Error())
+		}
+		// vLLM refuses the name at startup, so the finding is an error, not a warning.
+		if c.want && len(p.Errors()) == 0 {
+			t.Errorf("mla_prefill_backend %q: the finding is not an error: %s", c.backend, p.Error())
+		}
+		if c.want && !strings.Contains(p.Error(), "FLASHINFER, FLASH_ATTN") {
 			t.Errorf("message should name the accepted set: %s", p.Error())
 		}
 	}

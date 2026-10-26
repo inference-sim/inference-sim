@@ -82,6 +82,16 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 	"mtp", "kimi_k3_mtp", "pangu_ultra_moe_mtp", "step3p5_mtp", "hy_v3_mtp", "hy_v4_mtp",
 	"gemma4_mtp", "inkling_mtp", "glm5_next_mtp"}
 
+// mlaPrefillBackends are the members of the engine's MLAPrefillBackendEnum
+// (vllm/v1/attention/backends/mla/prefill/registry.py:37-65@5df63a72). attention_config parses
+// mla_prefill_backend by looking the upper-cased name up in it and refuses any other
+// (vllm/config/attention.py:195-201@5df63a72). CUSTOM is the member an out-of-tree backend takes.
+// EngineArgs builds the AttentionConfig before it loads plugins (vllm/engine/arg_utils.py:864-865,
+// 906@5df63a72), so a backend a plugin registers under a new name is not a member yet when the
+// name is parsed.
+var mlaPrefillBackends = []string{"FLASH_ATTN", "FLASHINFER", "TRTLLM_RAGGED", "TOKENSPEED_MLA",
+	"ROCM_AITER_FA", "CPU", "ZEN_CPU", "CUSTOM"}
+
 // Pack returns the rules pack for this version. It is a function rather than a
 // package-level variable so a caller can hold two versions at once — useful when
 // comparing what a scenario would mean across releases.
@@ -346,6 +356,21 @@ func ruleList(p *rules.Pack) []rules.Rule {
 						out.RuleErrorf("dcp-comm-backend-known",
 							"%s.engine.dcp_comm_backend %q is not one engine %s accepts (%s)",
 							at, e.DCPCommBackend, Version, strings.Join(sortedKeys(p.DCPCommBackends), ", "))
+					}
+				})
+			},
+		},
+		{
+			Name: "mla-prefill-backend-known",
+			Because: "attention_config parses mla_prefill_backend by looking the upper-cased name up in " +
+				"MLAPrefillBackendEnum and refuses any other at startup (vllm/config/attention.py:195-201@5df63a72)",
+			Check: func(in rules.Input, out *rules.Problems) {
+				known := set(mlaPrefillBackends...)
+				forEachEngine(in, func(at string, e deployment.Engine) {
+					if e.MLAPrefillBackend != "" && !known[strings.ToUpper(e.MLAPrefillBackend)] {
+						out.RuleErrorf("mla-prefill-backend-known",
+							"%s.engine.mla_prefill_backend %q is not one engine %s accepts (%s)",
+							at, e.MLAPrefillBackend, Version, strings.Join(sortedKeys(known), ", "))
 					}
 				})
 			},
