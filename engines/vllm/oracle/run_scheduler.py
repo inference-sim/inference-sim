@@ -88,12 +88,10 @@ def layer_groups(cfg: dict, vllm_config) -> list:
         if isinstance(layer, SlidingWindowSpec):
             layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
     # The engine core resolves the KV cache layout from the backends' supported layouts before
-    # it groups (vllm/v1/engine/core.py:292-301@5df63a72). These layers' backends state no
-    # preference, so the workers report vLLM's default preference.
-    if vllm_config.cache_config.kv_cache_layout is None:
-        layout = resolve_kv_cache_layout(vllm_config, [[m.name for m in _DEFAULT_LAYOUT_PREFERENCE]],
-                                         layers.values())
-        vllm_config.cache_config.kv_cache_layout = layout.name
+    # it groups (vllm/v1/engine/core.py:292-301@5df63a72), and resolve_kv_cache_layout records it
+    # on the cache config (vllm/v1/attention/backends/utils.py:348). These layers' backends state
+    # no preference, so the workers report vLLM's default preference.
+    resolve_kv_cache_layout(vllm_config, [[m.name for m in _DEFAULT_LAYOUT_PREFERENCE]], layers.values())
     groups = get_kv_cache_groups(vllm_config, layers)
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
     # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
