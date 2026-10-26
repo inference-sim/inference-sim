@@ -1,0 +1,1265 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 14,
+    "b": 12
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b",
+    "c"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3,
+    "c": 10
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [
+    "c"
+   ],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [
+    "b"
+   ],
+   "samples": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 3
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 8
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [
+    "b"
+   ],
+   "samples": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 3
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 7,
+   "preempted": [],
+   "samples": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 3
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 8,
+   "preempted": [],
+   "samples": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 3
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 9,
+   "preempted": [],
+   "samples": [
+    "b",
+    "c"
+   ],
+   "scheduled": {
+    "b": 5,
+    "c": 11
+   }
+  },
+  {
+   "batch": 10,
+   "preempted": [],
+   "samples": [
+    "b",
+    "c"
+   ],
+   "scheduled": {
+    "b": 3,
+    "c": 3
+   },
+   "spec_scheduled": {
+    "b": 2,
+    "c": 2
+   }
+  },
+  {
+   "batch": 11,
+   "preempted": [],
+   "samples": [
+    "b",
+    "c"
+   ],
+   "scheduled": {
+    "b": 3,
+    "c": 3
+   },
+   "spec_scheduled": {
+    "b": 2,
+    "c": 2
+   }
+  },
+  {
+   "batch": 12,
+   "preempted": [],
+   "samples": [
+    "b",
+    "c"
+   ],
+   "scheduled": {
+    "b": 3,
+    "c": 3
+   },
+   "spec_scheduled": {
+    "b": 2,
+    "c": 2
+   }
+  },
+  {
+   "batch": 13,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 3
+   },
+   "spec_scheduled": {
+    "c": 2
+   }
+  },
+  {
+   "batch": 14,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 3
+   },
+   "spec_scheduled": {
+    "c": 2
+   }
+  },
+  {
+   "batch": 15,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 3
+   },
+   "spec_scheduled": {
+    "c": 2
+   }
+  },
+  {
+   "batch": 16,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "a": {
+   "output_tokens": 12,
+   "reason": "stop",
+   "step": 8
+  },
+  "b": {
+   "output_tokens": 12,
+   "reason": "stop",
+   "step": 12
+  },
+  "c": {
+   "output_tokens": 10,
+   "reason": "stop",
+   "step": 15
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "5ce2dbeeeaf9f9fe02b8d7153984c17ac1785514",
+  "engine": {
+   "async_scheduling": true,
+   "max_concurrent_batches": 2,
+   "pipeline_parallel_size": 1,
+   "scheduler_class": "AsyncScheduler",
+   "use_v2_model_runner": false
+  },
+  "lockfile_sha256": "60c0c8363ebaf8890b298506701599c8d8c44e86175bddb595c56bb01130b103",
+  "mock_version": "gpu-mock/2+025b232da37d",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "c4d571f0f3062cd8e72c97d1d55e4f14671d36b482c082877bc2127cf9f5b5e5",
+  "seed": null,
+  "tier": 3,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 14,
+    "b": 12
+   },
+   "finished": [],
+   "free_blocks": 5,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "b": 1
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 17,
+    "b": 15,
+    "c": 10
+   },
+   "finished": [],
+   "free_blocks": 0,
+   "num_running": 3,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 3,
+    "b": 3,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 18,
+    "b": 17
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "num_running": 2,
+   "num_waiting": 1,
+   "placeholders": {
+    "a": 3,
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      "0b26f093d19a3844761f5ff7033b74ebd5de1573fd943395300d9688026ca04f00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      "23266c13a94bb49e1ca5b626acea91f6637b794b2f7cc9360e3da5d9f596941500000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 20,
+    "b": 20
+   },
+   "finished": [],
+   "free_blocks": 1,
+   "num_running": 2,
+   "num_waiting": 1,
+   "placeholders": {
+    "a": 3,
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      "0b26f093d19a3844761f5ff7033b74ebd5de1573fd943395300d9688026ca04f00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 21
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "num_running": 1,
+   "num_waiting": 2,
+   "placeholders": {
+    "a": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      "0b26f093d19a3844761f5ff7033b74ebd5de1573fd943395300d9688026ca04f00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      "23266c13a94bb49e1ca5b626acea91f6637b794b2f7cc9360e3da5d9f596941500000000",
+      1
+     ],
+     [
+      "a2aac926101cccb5afa9b9d244668e0e51f6c9ef220872afbddba0716c20a54500000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 22,
+    "b": 20
+   },
+   "finished": [],
+   "free_blocks": 0,
+   "num_running": 2,
+   "num_waiting": 1,
+   "placeholders": {
+    "a": 3,
+    "b": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      "0b26f093d19a3844761f5ff7033b74ebd5de1573fd943395300d9688026ca04f00000000",
+      1
+     ],
+     [
+      "4b5d5818111fa0875fddc0c35a7806fdc0775d536202c9ac18e6351685c95e4f00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 25
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "num_running": 1,
+   "num_waiting": 2,
+   "placeholders": {
+    "a": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a"
+   ],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "1d78a5af8269735b0f09138badd1ac5036057c04da169286f5d37224903fccb800000000",
+      1
+     ],
+     [
+      "2ca41ed6c7a417ec62cd724165a6bd41741b963480a8f427d462d8b74b11d3bb00000000",
+      1
+     ],
+     [
+      "a20c0319378fea28dfad3a7ab51f5f699540a0af4833317f70aae2814584bbbd00000000",
+      1
+     ],
+     [
+      "0b26f093d19a3844761f5ff7033b74ebd5de1573fd943395300d9688026ca04f00000000",
+      1
+     ],
+     [
+      "4b5d5818111fa0875fddc0c35a7806fdc0775d536202c9ac18e6351685c95e4f00000000",
+      1
+     ],
+     [
+      "42114c33989dc9c140e54d56b3a9bfb7b5311c511a491ff35932ba8a99a809ba00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 27
+   },
+   "finished": [],
+   "free_blocks": 5,
+   "num_running": 1,
+   "num_waiting": 2,
+   "placeholders": {
+    "a": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a"
+   ],
+   "scheduled_batch": 7,
+   "step": 7
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 13,
+   "num_running": 0,
+   "num_waiting": 2,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 8,
+   "step": 8
+  },
+  {
+   "blocks": {
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      "23266c13a94bb49e1ca5b626acea91f6637b794b2f7cc9360e3da5d9f596941500000000",
+      1
+     ],
+     [
+      "a2aac926101cccb5afa9b9d244668e0e51f6c9ef220872afbddba0716c20a54500000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "b": 21,
+    "c": 11
+   },
+   "finished": [],
+   "free_blocks": 3,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "b": 1,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 9,
+   "step": 9
+  },
+  {
+   "blocks": {
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      "23266c13a94bb49e1ca5b626acea91f6637b794b2f7cc9360e3da5d9f596941500000000",
+      1
+     ],
+     [
+      "a2aac926101cccb5afa9b9d244668e0e51f6c9ef220872afbddba0716c20a54500000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "b": 24,
+    "c": 14
+   },
+   "finished": [],
+   "free_blocks": 2,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "b": 3,
+    "c": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 10,
+   "step": 10
+  },
+  {
+   "blocks": {
+    "b": [
+     [
+      "86ee92990cf4dd4bcfa7c19af66574d567c44de7b25fd67539a46b53cc41cd7600000000",
+      1
+     ],
+     [
+      "68f3f68fd58e7571cf385ceac789dc7b66a71eb2745dbc0d8547a247acafe7ca00000000",
+      1
+     ],
+     [
+      "7e00f904e43804e44fe160ae08fb3bcf90208af5c431ff2cbfae547cfc9b971700000000",
+      1
+     ],
+     [
+      "23266c13a94bb49e1ca5b626acea91f6637b794b2f7cc9360e3da5d9f596941500000000",
+      1
+     ],
+     [
+      "a2aac926101cccb5afa9b9d244668e0e51f6c9ef220872afbddba0716c20a54500000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      "4dc5b9a11eca1777e873daae0ebbda1dab06619f4602c019422c7d7e129ba7d700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "b": 25,
+    "c": 15
+   },
+   "finished": [],
+   "free_blocks": 0,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "b": 3,
+    "c": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 11,
+   "step": 11
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      "4dc5b9a11eca1777e873daae0ebbda1dab06619f4602c019422c7d7e129ba7d700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 18
+   },
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 8,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 12,
+   "step": 12
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      "4dc5b9a11eca1777e873daae0ebbda1dab06619f4602c019422c7d7e129ba7d700000000",
+      1
+     ],
+     [
+      "d8b1a328b2090942a5c4d06156f37126c5fbed63e8ebf69474a24e33dbef3e6000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 20
+   },
+   "finished": [],
+   "free_blocks": 7,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 13,
+   "step": 13
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      "3e466143ba52304187237eac6eb63050d23bc3451170581557cb62a48975b66a00000000",
+      1
+     ],
+     [
+      "da577596567d72f5e4e826bbbd281a6a2f644ab5939415873100be21ab62444a00000000",
+      1
+     ],
+     [
+      "4dc5b9a11eca1777e873daae0ebbda1dab06619f4602c019422c7d7e129ba7d700000000",
+      1
+     ],
+     [
+      "d8b1a328b2090942a5c4d06156f37126c5fbed63e8ebf69474a24e33dbef3e6000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 21
+   },
+   "finished": [],
+   "free_blocks": 6,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 14,
+   "step": 14
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "c"
+   ],
+   "free_blocks": 13,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 15,
+   "step": 15
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 13,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 16,
+   "step": 16
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 13,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 17
+  }
+ ]
+}
