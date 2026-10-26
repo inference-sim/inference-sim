@@ -27,6 +27,7 @@ type dpScenario struct {
 		DPSyncInterval            int    `json:"dp_sync_interval"`
 		StatsInterval             int    `json:"stats_interval"`
 		StatsLag                  int    `json:"stats_lag"`
+		AsyncScheduling           bool   `json:"async_scheduling"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -45,6 +46,10 @@ type dpRankRec struct {
 	Scheduled map[string]int `json:"scheduled"`
 	Finished  []string       `json:"finished"`
 	Throttled bool           `json:"throttled"`
+	// Processed and QueueLen are the async trace's (oracle/run_dp_async.py): whether the rank's
+	// step applied a batch's output, and its batch queue's length after the step.
+	Processed *bool `json:"processed,omitempty"`
+	QueueLen  *int  `json:"queue_len,omitempty"`
 }
 
 type dpStepRec struct {
@@ -78,19 +83,22 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 	if maxLen == 0 {
 		maxLen = c.MaxNumBatchedTokens
 	}
-	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}}
+	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}, async: c.AsyncScheduling}
 	d := &DP{LB: NewLoadBalancer(n)}
+	// With async scheduling every rank runs the AsyncScheduler and step_with_batch_queue with a
+	// queue of max_concurrent_batches (oracle/run_dp_async.py); otherwise step() (run_dp.py).
+	queue := MaxConcurrentBatches(1, c.AsyncScheduling, false)
 	for i := 0; i < n; i++ {
 		s, err := sched.New(sched.Config{
 			MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 			NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 			EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
-			ReserveFullSequence: true,
+			ReserveFullSequence: true, Async: c.AsyncScheduling, DecodeStagger: 1, MaxConcurrentBatches: queue,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.Ranks = append(d.Ranks, &Core{Sched: s, QueueSize: 1, GPU: gpu})
+		d.Ranks = append(d.Ranks, &Core{Sched: s, QueueSize: queue, GPU: gpu})
 		d.Waves = append(d.Waves, &Wave{PrefillScheduleInterval: max(c.PrefillScheduleInterval, 1), SyncInterval: max(c.DPSyncInterval, 1)})
 	}
 	reqs := append(sc.Requests[:0:0], sc.Requests...)
@@ -146,7 +154,7 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 		}
 		idle := next == len(reqs)
 		for i, r := range d.Ranks {
-			if r.Sched.HasRequests() || d.Waves[i].Running {
+			if r.HasWork() || d.Waves[i].Running {
 				idle = false
 			}
 		}
@@ -157,6 +165,10 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 			rr := dpRankRec{Rank: i, Dummy: rs.Dummy, Throttled: rs.Throttled, Scheduled: map[string]int{}, Finished: []string{}}
 			if rs.Step.Scheduled != nil {
 				rr.Scheduled = rs.Step.Scheduled.Out.Scheduled
+			}
+			if c.AsyncScheduling {
+				processed, ql := rs.Step.Processed != nil, d.Ranks[i].InFlight()
+				rr.Processed, rr.QueueLen = &processed, &ql
 			}
 			for _, f := range rs.Step.Finished {
 				rr.Finished = append(rr.Finished, f.ID)
@@ -202,6 +214,8 @@ func dpDivergence(want, got dpTrace) string {
 				{"dummy", wr.Dummy, gr.Dummy},
 				{"throttled", wr.Throttled, gr.Throttled},
 				{"finished", nonNil(wr.Finished), nonNil(gr.Finished)},
+				{"processed", wr.Processed, gr.Processed},
+				{"queue_len", wr.QueueLen, gr.QueueLen},
 			} {
 				if !reflect.DeepEqual(f.w, f.g) {
 					return fmt.Sprintf("step %d, rank %d, %s: vLLM %v, blis-vllm %v", i, r, f.name, f.w, f.g)
@@ -286,5 +300,34 @@ func TestDPFuzzCorpusAgainstVLLM(t *testing.T) {
 	t.Logf("DP fuzz corpus: %d scenarios, %d mismatches", len(traces), mismatches)
 	if mismatches > 0 {
 		t.Fail()
+	}
+}
+
+// TestDPAsyncAgainstVLLM runs every async DP scenario (oracle/scenarios-dp-async) through DP,
+// each rank running the AsyncScheduler and its batch queue, and compares it, step by step and
+// rank by rank, with the trace vLLM v0.32.0's DP engine-core loop produced with each rank's own
+// step_with_batch_queue (oracle/run_dp_async.py, testdata/golden-dp-async/<name>.json): the
+// routing, every rank's schedule, finishes, dummy batches and throttle, which steps applied an
+// output, each rank's queue length, and the waves.
+func TestDPAsyncAgainstVLLM(t *testing.T) {
+	scenarios, err := filepath.Glob("../../oracle/scenarios-dp-async/*.json")
+	if err != nil || len(scenarios) == 0 {
+		t.Fatalf("no async DP scenarios (%v)", err)
+	}
+	for _, path := range scenarios {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var sc dpScenario
+			readJSON(t, path, &sc)
+			if !sc.Config.AsyncScheduling {
+				t.Fatalf("%s does not turn async scheduling on", name)
+			}
+			var want dpTrace
+			readJSON(t, filepath.Join("testdata", "golden-dp-async", name+".json"), &want)
+			checkDPProvenance(t, path, want)
+			if d := dpDivergence(want, runDP(t, sc)); d != "" {
+				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+			}
+		})
 	}
 }

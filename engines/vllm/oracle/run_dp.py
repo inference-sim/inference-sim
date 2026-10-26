@@ -30,6 +30,17 @@ request starting the next wave, a simplification of the coordinator's START_DP_W
 oracle/mocks.json lists that transcription, and a trace's dummy, waves, running and step_counter
 fields are evidence only that blis-vllm matches it.
 
+With async_scheduling (oracle/scenarios-dp-async), each rank serves as a dashboard DP
+deployment does by default (vllm/config/vllm.py:1585-1644@5df63a72): its scheduler is the
+AsyncScheduler and its step is its own EngineCore.step_with_batch_queue
+(vllm/v1/engine/core.py:698-812@5df63a72), unmodified, with a queue of max_concurrent_batches,
+the step_fn __init__ picks (core.py:242-244) and _process_engine_step calls with post_step
+(:1603-1619). Each rank's DPEngineCoreProc then also holds what step_with_batch_queue reads, and
+its GPU is run_enginecore.py's mock executor; both are oracle/run_enginecore.py's own
+(engine_core, MockExecutor), listed in oracle/mocks.json. A rank steps while it has work
+(has_work, core.py:1534-1540: requests, batches queued, or the wave running); its step's
+model_executed is what the dummy batch reads.
+
 Usage: python -I oracle/run_dp.py <vllm checkout> <scenario.json | dir> [out dir]
 """
 
@@ -72,6 +83,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     from vllm.sampling_params import SamplingParams  # noqa: E402
     from vllm.utils.hashing import sha256  # noqa: E402
     from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash  # noqa: E402
+    from vllm.v1.core.sched.async_scheduler import AsyncScheduler  # noqa: E402
+    from vllm.v1.core.sched.scheduler import Scheduler  # noqa: E402
     from vllm.v1.engine.core import DPEngineCoreProc  # noqa: E402
     from vllm.v1.engine.core_client import DPLBAsyncMPClient  # noqa: E402
     from vllm.v1.outputs import ModelRunnerOutput  # noqa: E402
@@ -79,6 +92,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
 
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
+    from run_enginecore import MockGPU, engine_core, restore_async  # noqa: E402
     from run_scheduler import provenance  # noqa: E402
 
     with open(scenario_path) as f:
@@ -93,6 +107,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # can miss requests the client has routed since, which the in-flight floor covers.
     stats_lag = int(cfg.get("stats_lag", 0))
     block_size = cfg["block_size"]
+    # Async scheduling: each rank runs the AsyncScheduler and its own step_with_batch_queue.
+    async_sched = bool(cfg.get("async_scheduling", False))
 
     ranks = []
     for _ in range(dp):
@@ -106,6 +122,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             block_size=block_size,
             max_model_len=cfg.get("max_model_len"),
             scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+            **({"async_scheduling": True, "scheduler_cls": AsyncScheduler} if async_sched else {}),
         ))
 
     # Each rank's DP engine core: exactly the state _has_global_unfinished_reqs and
@@ -123,6 +140,25 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         core.ignore_start_dp_wave = False
         core.engines_running = False
         cores.append(core)
+
+    init_none_hash(sha256)
+    hasher = get_request_block_hasher(block_size, sha256)
+    by_id = {r["id"]: r for r in sc["requests"]}
+    pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
+    sampled = {r["id"]: 0 for r in sc["requests"]}
+
+    # With async scheduling each rank's DP core also holds what step_with_batch_queue reads, and
+    # its GPU is the shared mock (oracle/run_enginecore.py), one per rank.
+    batches: list[list[dict]] = [[] for _ in range(dp)]
+    if async_sched:
+        for i, core in enumerate(cores):
+            vllm_config, queue_size = restore_async(ranks[i], True, False)
+            assert isinstance(ranks[i], AsyncScheduler) and queue_size > 1
+            gpu = MockGPU(lambda s=ranks[i]: s, by_id, sampled, {}, {}, 0, True, batches[i],
+                          ModelRunnerOutput, EOS_TOKEN_ID)
+            engine_core(ranks[i], vllm_config, queue_size, True, False, gpu, core=core)
+    else:
+        assert all(type(s) is Scheduler for s in ranks)
 
     # The all-reduce: the sum over ranks (sync_dp_state's process-group collective), answered
     # from every rank's local flag of this step. A rank's call is answered once all have voted.
@@ -144,11 +180,6 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     client.vllm_config = SimpleNamespace(use_v2_model_runner=False,
                                          parallel_config=SimpleNamespace(all2all_backend="allgather_reducescatter"))
 
-    init_none_hash(sha256)
-    hasher = get_request_block_hasher(block_size, sha256)
-    by_id = {r["id"]: r for r in sc["requests"]}
-    pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
-    sampled = {r["id"]: 0 for r in sc["requests"]}
     routed: dict[str, int] = {}
     steps = []
     finished = {}
@@ -168,6 +199,34 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             client.lb_engines = [list(c) for c in history[idx]]
         else:
             client.lb_engines = [[0, 0, 0.0] for _ in range(dp)]
+
+    def step_batch_queue(i, s, core, r_rec) -> bool:
+        # The rank's busy-loop step with a batch queue: step_with_batch_queue, the step_fn
+        # EngineCore.__init__ picks for a queue (core.py:242-244), then post_step, as
+        # _process_engine_step runs them (core.py:1603-1619); a rank with no requests and no
+        # batch queued has no work and does not step (has_work, core.py:1534-1540).
+        if not (s.has_requests() or core.batch_queue):
+            r_rec["processed"], r_rec["queue_len"] = False, 0
+            return False
+        if s.has_requests():
+            r_rec["throttled"] = DPEngineCoreProc._should_throttle_prefills(core)
+        before = len(batches[i])
+        outputs, executed = core.step_with_batch_queue()
+        core.post_step(executed)
+        if len(batches[i]) > before:
+            r_rec["scheduled"] = batches[i][before]["scheduled"]
+        r_rec["processed"] = outputs is not None
+        for eco in (outputs or {}).values():
+            for o in eco.outputs:
+                if o.finish_reason is not None:
+                    r_rec["finished"].append(o.request_id)
+                    finished[o.request_id] = {"reason": str(o.finish_reason), "rank": i,
+                                              "output_tokens": sampled[o.request_id], "step": step}
+                    if (eng := client.reqs_in_flight.pop(o.request_id, None)) is not None:
+                        client.engine_inflight[eng] -= 1
+        r_rec["finished"].sort()
+        r_rec["queue_len"] = len(core.batch_queue)
+        return executed
 
     step = 0
     record_counts()
@@ -193,7 +252,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             if not cores[rank].engines_running:
                 for c in cores:
                     c.engines_running = True
-        if not pending and not any(s.has_requests() for s in ranks) and not any(c.engines_running for c in cores):
+        if not pending and not any(s.has_requests() for s in ranks) and not any(c.engines_running for c in cores) \
+                and not any(c.batch_queue for c in cores if async_sched):
             break
         rec = {"step": step, "arrivals": arrivals, "ranks": []}
         votes.clear()
@@ -201,7 +261,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         for i, (s, core) in enumerate(zip(ranks, cores)):
             r_rec = {"rank": i, "dummy": False, "scheduled": {}, "finished": [], "throttled": False}
             executed = False
-            if s.has_requests():
+            if async_sched:
+                executed = step_batch_queue(i, s, core, r_rec)
+            elif s.has_requests():
                 throttle = DPEngineCoreProc._should_throttle_prefills(core)
                 r_rec["throttled"] = throttle
                 out = s.schedule(throttle)
@@ -258,6 +320,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov["engine"] = {"data_parallel_size": dp, "prefill_schedule_interval": interval,
                       "dp_sync_interval": sync_interval, "stats_interval": stats_interval,
                       "stats_lag": stats_lag}
+    if async_sched:
+        prov["engine"].update({"async_scheduling": True, "max_concurrent_batches": cores[0].batch_queue_size,
+                               "scheduler_class": type(ranks[0]).__name__})
     return {"provenance": prov, "routed": dict(sorted(routed.items())), "steps": steps,
             "finished": dict(sorted(finished.items()))}
 

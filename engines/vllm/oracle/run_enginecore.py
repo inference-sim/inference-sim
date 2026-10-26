@@ -93,7 +93,6 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash  # noqa: E402
     from vllm.v1.core.sched.async_scheduler import AsyncScheduler  # noqa: E402
     from vllm.v1.core.sched.scheduler import Scheduler  # noqa: E402
-    from vllm.v1.engine.core import EngineCore  # noqa: E402
     from vllm.v1.outputs import ModelRunnerOutput  # noqa: E402
     from vllm.v1.request import Request  # noqa: E402
 
@@ -139,38 +138,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             "scheduler_cls": AsyncScheduler if async_sched else Scheduler})
     else:
         scheduler = helpers.create_scheduler(**sched_kwargs)
-    vllm_config = scheduler.vllm_config
-    # The CPU platform turned async scheduling off (vllm/platforms/cpu.py:329-331); restore
-    # the scenario's value.
-    vllm_config.scheduler_config.async_scheduling = async_sched
-    # vLLM's own max_concurrent_batches (vllm/config/vllm.py:577-588), evaluated with the
-    # scenario's model-runner choice: the CPU wheel cannot select the V2 runner (no Triton).
-    from types import SimpleNamespace  # noqa: E402
-    from vllm.config import VllmConfig  # noqa: E402
-    batch_queue_size = VllmConfig.max_concurrent_batches.fget(SimpleNamespace(
-        parallel_config=vllm_config.parallel_config,
-        scheduler_config=vllm_config.scheduler_config,
-        use_v2_model_runner=v2))
+    vllm_config, batch_queue_size = restore_async(scheduler, async_sched, v2)
     if async_sched:
         assert isinstance(scheduler, AsyncScheduler)
         assert scheduler.decode_stagger == pp
-
-    # A bare EngineCore holding exactly what step_with_batch_queue reads.
-    core = object.__new__(EngineCore)
-    core.vllm_config = vllm_config
-    core.log_stats = True
-    core.scheduler = scheduler
-    core.batch_queue_size = batch_queue_size
-    core.batch_queue = deque(maxlen=batch_queue_size) if batch_queue_size > 1 else None
-    core.is_mm_encoder_only = False
-    core.is_pooling_model = False
-    # As EngineCore.__init__ sets them (core.py:184-187): a drafter makes both true.
-    core.use_spec_decode = bool(spec)
-    core.check_for_draft_tokens = bool(spec)
-    core.async_scheduling = async_sched
-    core._weight_version = "default"
-    import queue as _queue
-    core.aborts_queue = _queue.Queue()
 
     init_none_hash(sha256)
     hasher = get_request_block_hasher(block_size, sha256)
@@ -186,113 +157,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     steps: list[dict] = []
     finished: dict[str, dict] = {}
 
-    class Done:
-        """A future that has already resolved."""
-
-        def __init__(self, value):
-            self._value = value
-
-        def result(self):
-            return self._value
-
-    class Lazy:
-        """A future resolved when the batch queue pops it: the GPU mock runs in completion
-        order, which on one device is the order the batches were queued."""
-
-        def __init__(self, fn):
-            self._fn, self._value, self._done = fn, None, False
-
-        def result(self):
-            if not self._done:
-                self._value, self._done = self._fn(), True
-            return self._value
-
-    class MockExecutor:
-        """The GPU (oracle/mocks.json): which requests sample is read from the scheduler's own
-        state at execute time (is_prefill_chunk, set by _update_after_schedule for exactly this
-        batch); what they sample is the scenario's assigned output, at completion."""
-
-        _last = None  # the last batch that ran tokens, whose requests the drafter proposes for
-
-        def execute_model(self, scheduler_output, non_block=False):
-            bid = len(batches)
-            samples = [rid for rid in scheduler_output.num_scheduled_tokens
-                       if not scheduler.requests[rid].is_prefill_chunk]
-            rec = {
-                "batch": bid,
-                "scheduled": dict(sorted(scheduler_output.num_scheduled_tokens.items())),
-                "preempted": sorted(scheduler_output.preempted_req_ids or []),
-                "samples": sorted(samples),
-            }
-            spec_sched = {rid: len(d) for rid, d in scheduler_output.scheduled_spec_decode_tokens.items() if d}
-            if spec_sched:
-                rec["spec_scheduled"] = dict(sorted(spec_sched.items()))
-            batches.append(rec)
-            if scheduler_output.total_num_scheduled_tokens == 0:
-                # No sampling follows: the engine queues this future itself (core.py:733-735).
-                return Done(gpu_output(scheduler_output, []))
-            self._pending = (scheduler_output, samples)
-            self._last = scheduler_output
-            return Done(None)
-
-        def sample_tokens(self, grammar_output, non_block=False):
-            so, samples = self._pending
-            if non_block:
-                return Lazy(lambda: gpu_output(so, samples))
-            return gpu_output(so, samples)
-
-        def take_draft_token_ids(self):
-            # The drafter (oracle/mocks.json): post_step asks for its proposals after a step
-            # that ran, without async scheduling (core.py:689-696); it proposes
-            # num_speculative_tokens drafts for every request the step ran. Only their count
-            # reaches a decision, and acceptance is the scenario's input.
-            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
-
-            so = self._last
-            if so is None:
-                return None
-            ids = [rid for rid in so.num_scheduled_tokens if rid in scheduler.requests]
-            return DraftTokenIds(ids, [[0] * num_spec for _ in ids])
-
-    core.model_executor = MockExecutor()
-
-    def gpu_output(scheduler_output, samples):
-        req_ids = list(scheduler_output.num_scheduled_tokens.keys())
-        tokens = []
-        for rid in req_ids:
-            if rid not in samples:
-                tokens.append([])
-                continue
-            outp = by_id[rid]["output"]
-            n = 1
-            drafts = scheduler_output.scheduled_spec_decode_tokens.get(rid, [])
-            if drafts:
-                # Accepted drafts from the scenario's plan, at most the real ones: a
-                # placeholder (-1) is always rejected (vllm/v1/sample/rejection_sampler.py:
-                # 762-763), as tier 2's mock rejects it.
-                plan, i = accepted_plan[rid], verify_steps[rid]
-                verify_steps[rid] = i + 1
-                real = len([d for d in drafts if d >= 0]) if not async_sched else len(drafts)
-                n = 1 + min(plan[i] if i < len(plan) else 0, real)
-            toks = []
-            for _ in range(n):
-                k = sampled[rid]
-                # The last assigned token is sampled as EOS; a step scheduled after it (async
-                # scheduling runs one step ahead) samples EOS again, which the engine ignores
-                # for a request that has already finished.
-                toks.append(EOS_TOKEN_ID if k >= len(outp) - 1 else outp[k])
-                sampled[rid] = k + 1
-                if k >= len(outp) - 1:
-                    break
-            tokens.append(toks)
-        return ModelRunnerOutput(
-            req_ids=req_ids,
-            req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
-            sampled_token_ids=tokens,
-            logprobs=None,
-            prompt_logprobs_dict={},
-            pooler_output=[],
-        )
+    gpu = MockGPU(lambda: scheduler, by_id, sampled, accepted_plan, verify_steps, num_spec, async_sched,
+                  batches, ModelRunnerOutput, EOS_TOKEN_ID)
+    core = engine_core(scheduler, vllm_config, batch_queue_size, async_sched, bool(spec), gpu)
 
     def add_arrivals(upto: int) -> None:
         while pending and pending[0]["arrival_step"] <= upto:
@@ -353,6 +220,185 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         "steps": steps,
         "finished": dict(sorted(finished.items())),
     }
+
+
+class Done:
+    """A future that has already resolved."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def result(self):
+        return self._value
+
+
+class Lazy:
+    """A future resolved when the batch queue pops it: the GPU mock runs in completion order,
+    which on one device is the order the batches were queued."""
+
+    def __init__(self, fn):
+        self._fn, self._value, self._done = fn, None, False
+
+    def result(self):
+        if not self._done:
+            self._value, self._done = self._fn(), True
+        return self._value
+
+
+class MockGPU:
+    """The shared GPU mock for one engine (oracle/mocks.json): which requests of a batch sample
+    is read from the scheduler's own state when the batch executes (is_prefill_chunk, set by
+    _update_after_schedule for exactly this batch); what they sample is the scenario's assigned
+    output, the last token as EOS, consumed in completion order, plus the drafts the scenario's
+    acceptance plan accepts. Each batch executed is appended to batches."""
+
+    def __init__(self, scheduler_of, by_id, sampled, accepted_plan, verify_steps, num_spec, async_sched,
+                 batches, output_cls, eos):
+        self.scheduler_of, self.by_id, self.sampled = scheduler_of, by_id, sampled
+        self.accepted_plan, self.verify_steps, self.num_spec = accepted_plan, verify_steps, num_spec
+        self.async_sched, self.batches, self.output_cls, self.eos = async_sched, batches, output_cls, eos
+
+    def executor(self):
+        return MockExecutor(self)
+
+    def output(self, scheduler_output, samples):
+        req_ids = list(scheduler_output.num_scheduled_tokens.keys())
+        tokens = []
+        for rid in req_ids:
+            if rid not in samples:
+                tokens.append([])
+                continue
+            outp = self.by_id[rid]["output"]
+            n = 1
+            drafts = scheduler_output.scheduled_spec_decode_tokens.get(rid, [])
+            if drafts:
+                # Accepted drafts from the scenario's plan, at most the real ones: a
+                # placeholder (-1) is always rejected (vllm/v1/sample/rejection_sampler.py:
+                # 762-763), as tier 2's mock rejects it.
+                plan, i = self.accepted_plan[rid], self.verify_steps[rid]
+                self.verify_steps[rid] = i + 1
+                real = len([d for d in drafts if d >= 0]) if not self.async_sched else len(drafts)
+                n = 1 + min(plan[i] if i < len(plan) else 0, real)
+            toks = []
+            for _ in range(n):
+                k = self.sampled[rid]
+                # The last assigned token is sampled as EOS; a step scheduled after it (async
+                # scheduling runs one step ahead) samples EOS again, which the engine ignores
+                # for a request that has already finished.
+                toks.append(self.eos if k >= len(outp) - 1 else outp[k])
+                self.sampled[rid] = k + 1
+                if k >= len(outp) - 1:
+                    break
+            tokens.append(toks)
+        return self.output_cls(
+            req_ids=req_ids,
+            req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
+            sampled_token_ids=tokens,
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+        )
+
+
+class MockExecutor:
+    """The GPU (oracle/mocks.json), as the engine's model_executor: execute_model and
+    sample_tokens return futures that resolve to MockGPU's output when the batch queue pops
+    them."""
+
+    _last = None  # the last batch that ran tokens, whose requests the drafter proposes for
+
+    def __init__(self, gpu):
+        self.gpu = gpu
+
+    def execute_model(self, scheduler_output, non_block=False):
+        g = self.gpu
+        scheduler = g.scheduler_of()
+        bid = len(g.batches)
+        samples = [rid for rid in scheduler_output.num_scheduled_tokens
+                   if not scheduler.requests[rid].is_prefill_chunk]
+        rec = {
+            "batch": bid,
+            "scheduled": dict(sorted(scheduler_output.num_scheduled_tokens.items())),
+            "preempted": sorted(scheduler_output.preempted_req_ids or []),
+            "samples": sorted(samples),
+        }
+        spec_sched = {rid: len(d) for rid, d in scheduler_output.scheduled_spec_decode_tokens.items() if d}
+        if spec_sched:
+            rec["spec_scheduled"] = dict(sorted(spec_sched.items()))
+        g.batches.append(rec)
+        if scheduler_output.total_num_scheduled_tokens == 0:
+            # No sampling follows: the engine queues this future itself (core.py:733-735).
+            return Done(g.output(scheduler_output, []))
+        self._pending = (scheduler_output, samples)
+        self._last = scheduler_output
+        return Done(None)
+
+    def sample_tokens(self, grammar_output, non_block=False):
+        so, samples = self._pending
+        if non_block:
+            return Lazy(lambda: self.gpu.output(so, samples))
+        return self.gpu.output(so, samples)
+
+    def take_draft_token_ids(self):
+        # The drafter (oracle/mocks.json): post_step asks for its proposals after a step that
+        # ran, without async scheduling (core.py:689-696); it proposes num_speculative_tokens
+        # drafts for every request the step ran. Only their count reaches a decision, and
+        # acceptance is the scenario's input.
+        from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+        so = self._last
+        if so is None:
+            return None
+        scheduler = self.gpu.scheduler_of()
+        ids = [rid for rid in so.num_scheduled_tokens if rid in scheduler.requests]
+        return DraftTokenIds(ids, [[0] * self.gpu.num_spec for _ in ids])
+
+
+def restore_async(scheduler, async_sched: bool, v2: bool):
+    """The scheduler's VllmConfig with the scenario's async scheduling restored, and vLLM's own
+    max_concurrent_batches for it. The CPU platform turned async scheduling off
+    (vllm/platforms/cpu.py:329-331); max_concurrent_batches (vllm/config/vllm.py:577-588) is
+    evaluated with the scenario's model-runner choice: the CPU wheel cannot select the V2 runner
+    (no Triton). oracle/run_dp.py's batch-queue ranks use it too."""
+    from types import SimpleNamespace  # noqa: E402
+    from vllm.config import VllmConfig  # noqa: E402
+
+    vllm_config = scheduler.vllm_config
+    vllm_config.scheduler_config.async_scheduling = async_sched
+    batch_queue_size = VllmConfig.max_concurrent_batches.fget(SimpleNamespace(
+        parallel_config=vllm_config.parallel_config,
+        scheduler_config=vllm_config.scheduler_config,
+        use_v2_model_runner=v2))
+    return vllm_config, batch_queue_size
+
+
+def engine_core(scheduler, vllm_config, batch_queue_size: int, async_sched: bool, drafts: bool, gpu,
+                core=None):
+    """A bare EngineCore holding exactly what step_with_batch_queue reads, to the values
+    EngineCore.__init__ would give them (core.py:118-259), its model_executor gpu's mock
+    executor. Given a core (oracle/run_dp.py's bare DPEngineCoreProc, an EngineCore subclass),
+    it sets the same attributes on that one."""
+    import queue as _queue  # noqa: E402
+
+    from vllm.v1.engine.core import EngineCore  # noqa: E402
+
+    if core is None:
+        core = object.__new__(EngineCore)
+    core.vllm_config = vllm_config
+    core.log_stats = True
+    core.scheduler = scheduler
+    core.batch_queue_size = batch_queue_size
+    core.batch_queue = deque(maxlen=batch_queue_size) if batch_queue_size > 1 else None
+    core.is_mm_encoder_only = False
+    core.is_pooling_model = False
+    # As EngineCore.__init__ sets them (core.py:184-187): a drafter makes both true.
+    core.use_spec_decode = drafts
+    core.check_for_draft_tokens = drafts
+    core.async_scheduling = async_sched
+    core._weight_version = "default"
+    core.aborts_queue = _queue.Queue()
+    core.model_executor = gpu.executor()
+    return core
 
 
 def _kv(scheduler) -> dict:

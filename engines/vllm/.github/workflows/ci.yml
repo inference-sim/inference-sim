@@ -302,20 +302,23 @@ jobs:
         run: |
           mkdir -p oracle/out/scenarios-t3
           python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
-          # Data parallel: vLLM's DP engine-core loop and internal load balancer.
-          mkdir -p oracle/out/scenarios-dp
+          # Data parallel: vLLM's DP engine-core loop and internal load balancer; with async
+          # scheduling, each rank's own step_with_batch_queue.
+          mkdir -p oracle/out/scenarios-dp oracle/out/scenarios-dp-async
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp oracle/out/scenarios-dp
+          python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp-async oracle/out/scenarios-dp-async
       - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
         env:
           BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3
           BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3-dp
         run: |
           set -o pipefail
-          go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
+          go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
       # Tier 4: vLLM's real NIXL connector scheduler side (pull mode), with only the worker's
       # transfer outcomes as the mock input, on every NIXL scenario and 1000 fuzz seeds.
       - name: run every NIXL scenario through vLLM's Scheduler

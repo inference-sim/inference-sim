@@ -25,6 +25,7 @@ GOLDEN_DIRS = (
     "core/sched/testdata/golden/",
     "core/engine/testdata/golden/",
     "core/engine/testdata/golden-dp/",
+    "core/engine/testdata/golden-dp-async/",
     "core/connector/nixl/testdata/golden/",
     "core/metrics/testdata/golden/",
 )
