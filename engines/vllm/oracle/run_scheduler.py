@@ -27,6 +27,81 @@ import subprocess
 import sys
 
 
+def layer_specs(cfg: dict) -> dict:
+    """A model's KV cache layers as its attention modules build them, from the scenario's
+    "kv_layers": runs of {"count", "spec", ...}. "full" is Attention's FullAttentionSpec and
+    "sliding_window" its SlidingWindowSpec (vllm/model_executor/layers/attention/attention.py:
+    606-677@5df63a72); "indexer" is a key-only MLAAttentionSpec with the INDEXER role, as
+    MiniMax-M3's lightning indexer builds it (vllm/models/minimax_m3/common/indexer.py:145-154).
+    Heads and head size are each run's own, so page sizes are the model's own ratios."""
+    import torch  # noqa: E402
+    from vllm.v1.kv_cache_interface import (  # noqa: E402
+        FullAttentionSpec,
+        MLAAttentionSpec,
+        SlidingWindowSpec,
+        SparseCacheRole,
+    )
+
+    out = {}
+    for r, run in enumerate(cfg["kv_layers"]):
+        for i in range(run["count"]):
+            common = {"block_size": cfg["block_size"], "num_kv_heads": run.get("num_kv_heads", 1),
+                      "head_size": run.get("head_size", 1), "dtype": torch.float32}
+            kind = run["spec"]
+            if kind == "full":
+                spec = FullAttentionSpec(**common)
+            elif kind == "sliding_window":
+                spec = SlidingWindowSpec(sliding_window=run["sliding_window"], **common)
+            elif kind == "indexer":
+                spec = MLAAttentionSpec(cache_role=SparseCacheRole.INDEXER, **common)
+            else:
+                raise ValueError(f"unknown KV layer spec {kind!r}")
+            out[f"run{r}.layer{i}"] = spec
+    return out
+
+
+def layer_groups(cfg: dict, vllm_config) -> list:
+    """vLLM's own grouping of the layers (get_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:
+    2159-2253@5df63a72), with the spec registry the engine registers before it groups
+    (register_all_kvcache_specs, vllm/v1/core/single_type_kv_cache_manager.py:2633). The
+    layers are named in run order. vLLM buckets layers by spec in order of first appearance and
+    splits each bucket by stride, so only which spec comes first matters: a run order that
+    starts with the model's first layer's spec (gpt-oss's layer 0 is windowed) groups as the
+    model does."""
+    import dataclasses  # noqa: E402
+
+    from vllm.v1.core.kv_cache_utils import get_kv_cache_groups  # noqa: E402
+    from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
+    from vllm.v1.kv_cache_interface import SlidingWindowSpec  # noqa: E402
+
+    from vllm.v1.attention.backends.utils import (  # noqa: E402
+        _DEFAULT_LAYOUT_PREFERENCE,
+        resolve_kv_cache_layout,
+    )
+    from vllm.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config  # noqa: E402
+    from vllm.v1.kv_cache_interface import KVCacheConfig  # noqa: E402
+
+    register_all_kvcache_specs(vllm_config)
+    layers = layer_specs(cfg)
+    extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
+    for name, layer in layers.items():
+        if isinstance(layer, SlidingWindowSpec):
+            layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
+    # The engine core resolves the KV cache layout from the backends' supported layouts before
+    # it groups (vllm/v1/engine/core.py:292-301@5df63a72). These layers' backends state no
+    # preference, so the workers report vLLM's default preference.
+    if vllm_config.cache_config.kv_cache_layout is None:
+        layout = resolve_kv_cache_layout(vllm_config, [[m.name for m in _DEFAULT_LAYOUT_PREFERENCE]],
+                                         layers.values())
+        vllm_config.cache_config.kv_cache_layout = layout.name
+    groups = get_kv_cache_groups(vllm_config, layers)
+    # The scheduler's view: a uniform-type group is represented by one of its layers' specs
+    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
+    projected = generate_scheduler_kv_cache_config(
+        [KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=groups)])
+    return projected.kv_cache_groups
+
+
 def main() -> None:
     vllm_root, scenario_path = sys.argv[1], sys.argv[2]
     if os.path.isdir(scenario_path):
@@ -269,6 +344,11 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
         # A hybrid model's KV cache groups, from vLLM's own spec classes, one 1-head, 1-dim
         # float32 layer each, as the helper builds its single full-attention group; vLLM's
         # KVCacheManager picks the coordinator and per-group managers from them.
+        if cfg.get("kv_layers"):
+            # A dashboard model's attention layers, each with its own spec as the model builds it
+            # (layer_specs), grouped by vLLM's own get_kv_cache_groups.
+            return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                        kv_cache_groups=layer_groups(cfg, built["config"]))
         if not groups:
             return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
                                         kv_cache_groups=kv_cache_groups)

@@ -44,7 +44,10 @@ type scenario struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
 		} `json:"kv_groups"`
-		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
+		// KVLayers is a model's attention layers as runs of one spec each, in model order,
+		// which vLLM's get_kv_cache_groups groups (kv.GroupsOfLayers).
+		KVLayers                    []kvLayerRun `json:"kv_layers"`
+		DisableHybridKVCacheManager bool         `json:"disable_hybrid_kv_cache_manager"`
 		Speculative                 *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
@@ -116,7 +119,7 @@ func run(t *testing.T, sc scenario) trace {
 		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
-		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents, KVGroups: kvGroups(t, c.KVGroups, c.DisableHybridKVCacheManager),
+		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents, KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, c.DisableHybridKVCacheManager),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -412,12 +415,40 @@ func blockRows(bs []*kv.Block, hybrid bool) []any {
 	return rows
 }
 
-// kvGroups is the scenario's KV cache groups for the scheduler, through ResolveKVGroups.
+// kvLayerRun is a run of attention layers of one spec in a scenario's "kv_layers".
+type kvLayerRun struct {
+	Count         int    `json:"count"`
+	Spec          string `json:"spec"`
+	SlidingWindow int    `json:"sliding_window"`
+	NumKVHeads    int    `json:"num_kv_heads"`
+	HeadSize      int    `json:"head_size"`
+}
+
+// kvGroups is the scenario's KV cache groups for the scheduler: its "kv_layers" through
+// GroupsOfLayers, or its "kv_groups" through ResolveGroups.
 func kvGroups(t *testing.T, gs []struct {
 	Kind          string `json:"kind"`
 	SlidingWindow int    `json:"sliding_window"`
-}, disableHybrid bool) []kv.Group {
+}, runs []kvLayerRun, disableHybrid bool) []kv.Group {
 	t.Helper()
+	if len(runs) > 0 {
+		specs := map[string]kv.LayerSpec{"full": kv.LayerFull, "sliding_window": kv.LayerSlidingWindow, "indexer": kv.LayerIndexer}
+		var layers []kv.Layer
+		for _, r := range runs {
+			spec, ok := specs[r.Spec]
+			if !ok {
+				t.Fatalf("unknown KV layer spec %q", r.Spec)
+			}
+			for i := 0; i < r.Count; i++ {
+				layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads, HeadSize: r.HeadSize})
+			}
+		}
+		groups, err := kv.GroupsOfLayers(layers, disableHybrid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return groups
+	}
 	var layers []kv.Group
 	for _, g := range gs {
 		switch g.Kind {
