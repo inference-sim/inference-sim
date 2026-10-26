@@ -8,11 +8,13 @@ require (
 	// anything merges (blis-latency-kernel#88).
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261025124457-4f8110fb2dba
 	// TEMPORARY: the head of inference-sim/blis-schemas#102 (the engine contract and
-	// rules.EngineRules). Moves to a blis-schemas release tag before anything merges.
+	// rules.EngineRules). Moves to a blis-schemas release tag before anything merges
+	// (blis-latency-kernel#88, which gives the tags' order).
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025121631-630937e6f21f
-	// The rules packs, a separate module in this repository (rules/); compat/kernelmodel hands
-	// them to the kernel. Pinned at this repository's own commit 169a5bf (the dcp-divides-tp
-	// source check), the commit inference-sim pins.
+	// TEMPORARY: the rules packs, a separate module in this repository (rules/); compat/kernelmodel
+	// hands them to the kernel. Pinned at this repository's own commit 169a5bf (the dcp-divides-tp
+	// source check), the commit inference-sim pins. Moves to a rules/ release tag
+	// (blis-latency-kernel#88).
 	github.com/inference-sim/blis-vllm/rules v0.0.0-20261025185924-169a5bfffeda
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
