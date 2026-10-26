@@ -130,14 +130,21 @@ func poolBlock(path string, index int) (yaml.Node, int, error) {
 }
 
 // prepare completes a spec's engine block with what the kernel and the deployment know: the KV
-// block count, pipeline_parallel_size and the model runner. A block the spec carries is used as
+// block count, pipeline_parallel_size, the model runner and an MTP drafter's layer count. A block the spec carries is used as
 // given; an empty one is the pool's own, read from the scenario, so a simulator need not open it.
 func prepare(s engine.Spec) (engine.Spec, error) {
 	p, err := open(s)
 	if err != nil {
 		return s, err
 	}
-	block := s.Config
+	s.Config = p.complete(s.Config)
+	return s, nil
+}
+
+// complete is the engine block given, or the pool's own when none is, with what the pool knows
+// added where the block does not state it.
+func (p pool) complete(given yaml.Node) yaml.Node {
+	block := given
 	if block.Kind == 0 {
 		block = p.engine
 	}
@@ -152,8 +159,12 @@ func prepare(s engine.Spec) (engine.Spec, error) {
 	setIfAbsent(&block, "pipeline_parallel_size", fmt.Sprint(p.pp))
 	runner, _ := p.model.ModelRunner()
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
-	s.Config = block
-	return s, nil
+	if n := p.model.MTPDraftLayers(); n > 0 {
+		// An MTP drafter's prefill lookahead turns on its checkpoint's layer count
+		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
+		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
+	}
+	return block
 }
 
 // pricerFor is the kernel's pricing for the spec's pool.

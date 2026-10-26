@@ -442,8 +442,6 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 //   - "hybrid KV groups": a KV cache group beside full attention, from a sliding-window
 //     attention node or a window, indexer or recurrent-state cache, which vLLM manages as its
 //     own group (HybridKVCacheCoordinator, vllm/v1/core/kv_cache_coordinator.py:609@5df63a72);
-//   - "MTP drafter": a speculative method of the multi-token-prediction family, whose prefill
-//     lookahead depends on the checkpoint's draft layers (vllm/config/vllm.py:655-665@5df63a72);
 //   - "data parallelism (dp N)": more than one data-parallel rank, whose waves, lockstep and
 //     balancer run across engines (vllm/v1/engine/core.py:2143-2414@5df63a72).
 //
@@ -471,19 +469,26 @@ func (m *Model) V032Pieces() []string {
 	if hybrid {
 		out = append(out, "hybrid KV groups")
 	}
-	if sp := m.k.Deployment().Engine.Speculative; sp != nil && sp.NumSpecTokens > 0 && isMTPFamily(sp.Method) {
-		out = append(out, "MTP drafter")
-	}
 	if dp := m.DataParallelWidth(); dp > 1 {
 		out = append(out, fmt.Sprintf("data parallelism (dp %d)", dp))
 	}
 	return out
 }
 
-// isMTPFamily reports whether a speculative method is vLLM's multi-token-prediction family:
-// "mtp" and the per-model MTP names vLLM maps onto it (vllm/config/speculative.py:38@5df63a72).
-func isMTPFamily(method string) bool {
-	return method == "mtp" || strings.HasSuffix(method, "_mtp")
+// MTPDraftLayers is the pool's MTP drafter's layer count, the checkpoint's
+// num_nextn_predict_layers, as the model graph's speculator stack holds it; 0 when the pool does
+// not draft with method mtp or the graph describes no speculator. It sets the prefill lookahead
+// vLLM reserves (use_multi_module_mtp, vllm/config/speculative.py:1982-1988@5df63a72), as
+// prefillBackoffOf reads it.
+func (m *Model) MTPDraftLayers() int {
+	return mtpDraftLayersOf(m.graph, m.k.Deployment().Engine.Speculative)
+}
+
+func mtpDraftLayersOf(g *model.Graph, sp *deployment.Speculative) int {
+	if sp == nil || sp.Method != "mtp" || g == nil || g.Speculator == nil {
+		return 0
+	}
+	return g.Speculator.Stack.Layers()
 }
 
 // ReqShape is one request's share of a batch in the kernel's terms (blis-schemas
