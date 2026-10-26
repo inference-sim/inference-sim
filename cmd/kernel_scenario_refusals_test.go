@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -288,6 +289,48 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "engine assumption: engine_version = 0.31.0") {
 		t.Errorf("the kernel's 0.31.0 tuning must be disclosed; stderr:\n%s", lastLines(stderr, 6))
+	}
+}
+
+// A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
+// queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
+// the engine, as on the 0.31.0 compatibility engine. The queue adds the same TTFT on both, and
+// --renderer-num-workers 0 turns it off on both.
+func TestRunCmd_A032ScenarioRendersOnTheHostFrontEnd(t *testing.T) {
+	ttft := func(version string, extra ...string) float64 {
+		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+		args := append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--concurrency", "128", "--num-requests", "128", "--prompt-tokens", "1024", "--output-tokens", "8",
+			"--seed", "7"}, extra...)
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("%s %v: %v\nstderr:\n%s", version, extra, err, lastLines(stderr, 5))
+		}
+		for _, raw := range extractJSONObjects(stdout) {
+			var obj map[string]any
+			if json.Unmarshal([]byte(raw), &obj) == nil && obj["instance_id"] == "cluster" {
+				return obj["ttft_mean_ms"].(float64)
+			}
+		}
+		t.Fatalf("no cluster metrics in stdout:\n%s", stdout)
+		return 0
+	}
+	off := []string{"--renderer-num-workers", "0"}
+	queued31, free31 := ttft("0.31.0"), ttft("0.31.0", off...)
+	queued32, free32 := ttft("0.32.0"), ttft("0.32.0", off...)
+	if queued31-free31 <= 0.05*free31 {
+		t.Fatalf("0.31.0: the render queue adds %.1f ms of mean TTFT to %.1f ms; the workload no longer "+
+			"exercises it", queued31-free31, free31)
+	}
+	if q, c := queued32-free32, queued31-free31; q < 0.5*c {
+		t.Errorf("the render queue adds %.1f ms of mean TTFT on 0.32.0 against %.1f ms on 0.31.0; the front "+
+			"end is the host's, the same for both engines", q, c)
+	}
+	for _, p := range [][2]float64{{queued32, queued31}, {free32, free31}} {
+		if math.Abs(p[0]-p[1]) > 0.05*p[1] {
+			t.Errorf("mean TTFT %.1f ms on 0.32.0 against %.1f ms on 0.31.0 (render queue %v), want within 5%%",
+				p[0], p[1], p == [2]float64{queued32, queued31})
+		}
 	}
 }
 

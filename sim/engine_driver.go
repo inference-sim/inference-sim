@@ -54,6 +54,10 @@ type EngineDriver struct {
 	gpuFreeAt int64
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
+	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
+	renderer *Renderer
+	// stepPending is set while a step is queued for after the current instant's arrivals.
+	stepPending bool
 
 	// OnRequestDone and OnFirstToken are the cluster's callbacks, as on Simulator.
 	OnRequestDone func(req *Request, tick int64) []*Request
@@ -65,7 +69,7 @@ type EngineDriver struct {
 type driverReq struct {
 	req          *Request
 	scheduledIdx int
-	lastTokenAt  int64 // when the client saw the last token, for the next ITL entry
+	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
 }
 
@@ -74,10 +78,30 @@ type driverBatch struct {
 	end int64
 }
 
-// NewEngineDriver wraps an engine for the host's event loop.
+// NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
+// request's QueueingTime is an uncontended delay.
 func NewEngineDriver(eng engine.Engine, cfg EngineDriverConfig) *EngineDriver {
 	return &EngineDriver{eng: eng, cfg: cfg, Horizon: cfg.Horizon, Metrics: NewMetrics(),
 		reqs: map[string]*driverReq{}}
+}
+
+// NewEngineDriverWithFrontend wraps an engine behind the host's API-server front end, the
+// compatibility path's render stage (FrontendConfig, Renderer; INV-R1): each request's
+// QueueingTime runs on one of the endpoint's render threads, in arrival order, and the request
+// reaches the engine when its render finishes. The front end is the host's, not the engine's.
+func NewEngineDriverWithFrontend(eng engine.Engine, cfg EngineDriverConfig, f FrontendConfig) (*EngineDriver, error) {
+	if err := f.Validate(); err != nil {
+		return nil, fmt.Errorf("NewEngineDriverWithFrontend: %w", err)
+	}
+	d := NewEngineDriver(eng, cfg)
+	if f.Enabled() {
+		r, err := NewRenderer(max(f.APIServerCount, 1), f.RendererNumWorkers)
+		if err != nil {
+			return nil, err
+		}
+		d.renderer = r
+	}
+	return d, nil
 }
 
 // Engine returns the engine the driver holds.
@@ -167,7 +191,8 @@ func (d *EngineDriver) InjectArrivalAt(req *Request, eventTime int64) {
 	d.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 }
 
-// driverArrivalEvent delivers a request after the host's queueing work.
+// driverArrivalEvent delivers a request after the host's queueing work: its render, on the
+// front end's render stage when there is one (Simulator.QueuedAt's rule).
 type driverArrivalEvent struct {
 	at  int64
 	req *Request
@@ -176,9 +201,13 @@ type driverArrivalEvent struct {
 func (e *driverArrivalEvent) Timestamp() int64 { return e.at }
 func (e *driverArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *driverArrivalEvent) run(d *EngineDriver) {
-	at := e.at
+	var render int64
 	if d.cfg.QueueingTime != nil {
-		at += d.cfg.QueueingTime(e.req)
+		render = d.cfg.QueueingTime(e.req)
+	}
+	at := e.at + render
+	if d.renderer != nil {
+		at = d.renderer.Admit(e.at, render)
 	}
 	d.schedule(&driverQueuedEvent{at: at, req: e.req})
 }
@@ -225,6 +254,32 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {
 		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
 	}
+	d.stepAfterArrivals(e.at)
+}
+
+// stepAfterArrivals answers an Add: it asks the engine when to wake, and, when no batch is in
+// flight, queues a step at now that runs after every arrival of this instant (the contract's
+// same-instant order, arrivals before steps; the compatibility engine's scheduleStepBy), so
+// requests that reach the engine together share its next batch. With a batch in flight, vLLM's
+// loop waits on that batch's output, and its Complete steps the engine.
+func (d *EngineDriver) stepAfterArrivals(now int64) {
+	d.rearmWake(now)
+	if len(d.inFlight) > 0 || d.stepPending {
+		return
+	}
+	d.stepPending = true
+	d.schedule(&driverArrivalStep{at: now})
+}
+
+// driverArrivalStep is the step stepAfterArrivals queued.
+type driverArrivalStep struct {
+	at int64
+}
+
+func (e *driverArrivalStep) Timestamp() int64 { return e.at }
+func (e *driverArrivalStep) Priority() int    { return PriorityStep }
+func (e *driverArrivalStep) run(d *EngineDriver) {
+	d.stepPending = false
 	d.kick(e.at)
 }
 
@@ -375,14 +430,16 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			if d.OnFirstToken != nil {
 				d.OnFirstToken(r.req, r.req.ArrivalTime+r.req.FirstTokenTime)
 			}
-			r.lastTokenAt = tokenAt
+			r.lastEnd = end
 			n-- // the first token's latency is TTFT, not an ITL entry
 		}
 		if n > 0 {
-			// A step emitting n tokens charges its gap to one entry (spec decode emits more than
-			// one per step), as the compatibility engine's executeBatchStep does.
-			r.req.ITL = append(r.req.ITL, tokenAt-r.lastTokenAt+int64(n-1)*d.cfg.OutputTokenProcessingTime)
-			r.lastTokenAt = tokenAt + int64(n-1)*d.cfg.OutputTokenProcessingTime
+			// A step emitting n tokens is one ITL entry, as the compatibility engine's
+			// executeBatchStep records it: the step's advance since the request's last emitting
+			// step plus n tokens of output processing (currStepAdvance + NumNewTokens x OTPT,
+			// blis-vllm compat/engine/engine.go:996). The first token's own OTPT is TTFT's.
+			r.req.ITL = append(r.req.ITL, end-r.lastEnd+int64(n)*d.cfg.OutputTokenProcessingTime)
+			r.lastEnd = end
 		}
 		r.emitted += res.Emitted[id]
 	}

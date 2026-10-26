@@ -29,8 +29,8 @@ func runsThroughContract(version string) bool { return coreEngineVersions[versio
 // engineDriverFactory returns the cluster's engine constructor for a contract-built release,
 // nil for one the compatibility engine runs. Each instance's engine is built from the
 // scenario's first pool and driven by a sim.EngineDriver; the host overheads (queueing,
-// per-token output processing, post-decode) are the latency model's, as on the compatibility
-// path.
+// per-token output processing, post-decode) are the latency model's, and the API-server front
+// end (--renderer-num-workers, --api-server-count) is the run's, as on the compatibility path.
 func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel) func(int) (*sim.EngineDriver, error) {
 	if !runsThroughContract(version) {
 		return nil
@@ -49,6 +49,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
+	frontend := frontendConfigFromCLI()
 	build := func(index int) (*sim.EngineDriver, error) {
 		kinds := engine.Kinds()
 		if len(kinds) != 1 {
@@ -74,7 +75,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 			cfg.OutputTokenProcessingTime = latency.OutputTokenProcessingTime()
 			cfg.QueueingTime = latency.QueueingTime
 		}
-		return sim.NewEngineDriver(eng, cfg), nil
+		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
 	}
 	// Build the first instance's engine now: a deployment the engine refuses (one needing a
 	// piece it does not build yet) is a CLI refusal, named, before the cluster is assembled.
