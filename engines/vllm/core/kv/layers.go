@@ -126,3 +126,19 @@ func page(l Layer) int {
 	}
 	return 2 * l.KVHeads * l.HeadSize
 }
+
+// layerSpecNames are the spec names of an engine block's kv_layers and of the oracle's
+// "kv_layers" scenarios (oracle/run_scheduler.py layer_specs).
+var layerSpecNames = map[string]LayerSpec{
+	"full":           LayerFull,
+	"sliding_window": LayerSlidingWindow,
+	"indexer":        LayerIndexer,
+}
+
+// ParseLayerSpec is the LayerSpec a kv_layers spec name names.
+func ParseLayerSpec(name string) (LayerSpec, error) {
+	if s, ok := layerSpecNames[name]; ok {
+		return s, nil
+	}
+	return 0, fmt.Errorf("kv: unknown KV layer spec %q", name)
+}

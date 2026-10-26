@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-schemas/engine/enginetest"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
@@ -142,10 +144,9 @@ func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 		scenario string
 		want     []string
 	}{
-		{"d036-032.yaml", []string{"hybrid KV groups"}},                       // gpt-oss-120b: sliding window
 		{"d001-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4-pro with mtp
 		{"d027-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4.1-flash with dspark
-		{"d116-032.yaml", []string{"hybrid KV groups"}},                       // minimax-m3 dp 4
+		{"d116-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m3 dp 4
 		{"d079-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m2.5 dp 2
 	} {
 		abs, _ := filepath.Abs(filepath.Join("testdata", c.scenario))
@@ -312,5 +313,48 @@ func TestDashboardDataParallelDeploymentRuns(t *testing.T) {
 		if s.End-s.Start <= 1 && !s.Batch.Empty() {
 			t.Errorf("batch %d priced at %d µs; the kernel prices a real forward pass", s.Batch.ID, s.End-s.Start)
 		}
+	}
+}
+
+// The hybrid-KV dashboard models whose layers vLLM groups at one block size build through
+// engine.New with vLLM's groups and run requests to completion: gpt-oss-120b's windowed and
+// full layers are two groups, window first, and MiniMax-M3's full-attention and indexer layers
+// are one, as vLLM v0.32.0's get_kv_cache_groups groups them (core/sched's dashboard-* diff
+// scenarios).
+func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
+	Register()
+	for _, c := range []struct {
+		scenario string
+		want     []kv.Group
+	}{
+		{"d036-032.yaml", []kv.Group{{Kind: kv.SlidingWindow, Window: 128}, {Kind: kv.FullAttention}}}, // gpt-oss-120b
+		{"d106-032.yaml", []kv.Group{{Kind: kv.FullAttention}}},                                        // minimax-m3
+	} {
+		t.Run(c.scenario, func(t *testing.T) {
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
+			done, err := prepare(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var block struct {
+				Layers []vllm.KVLayerRun `yaml:"kv_layers"`
+			}
+			if err := done.Config.Decode(&block); err != nil {
+				t.Fatal(err)
+			}
+			got, err := vllm.KVGroups(block.Layers, false)
+			if err != nil || !reflect.DeepEqual(got, c.want) {
+				t.Errorf("KV groups %v (%v), want %v", got, err, c.want)
+			}
+			tr, err := enginetest.Drive(func() (engine.Engine, error) { return engine.New(spec) },
+				[]enginetest.Arrival{{At: 0, Req: req("a", 512, 64)}, {At: 5000, Req: req("b", 1024, 32)}},
+				enginetest.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tr.Finished) != 2 {
+				t.Fatalf("finished %d of 2 requests", len(tr.Finished))
+			}
+		})
 	}
 }

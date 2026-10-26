@@ -432,12 +432,11 @@ func kvGroups(t *testing.T, gs []struct {
 }, runs []kvLayerRun, disableHybrid bool) []kv.Group {
 	t.Helper()
 	if len(runs) > 0 {
-		specs := map[string]kv.LayerSpec{"full": kv.LayerFull, "sliding_window": kv.LayerSlidingWindow, "indexer": kv.LayerIndexer}
 		var layers []kv.Layer
 		for _, r := range runs {
-			spec, ok := specs[r.Spec]
-			if !ok {
-				t.Fatalf("unknown KV layer spec %q", r.Spec)
+			spec, err := kv.ParseLayerSpec(r.Spec)
+			if err != nil {
+				t.Fatal(err)
 			}
 			for i := 0; i < r.Count; i++ {
 				layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads, HeadSize: r.HeadSize})

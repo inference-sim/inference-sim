@@ -168,7 +168,26 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
+	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
+		// The model's attention layers by the KV cache spec vLLM builds for each, which the
+		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_utils.py:2159@5df63a72).
+		setNodeIfAbsent(&block, "kv_layers", kvLayersNode(runs))
+	}
 	return block
+}
+
+// kvLayersNode is the kernel's KV layer runs as an engine block's kv_layers.
+func kvLayersNode(runs []kernelmodel.KVLayerRun) *yaml.Node {
+	out := make([]vllm.KVLayerRun, len(runs))
+	for i, r := range runs {
+		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
+			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize}
+	}
+	var n yaml.Node
+	if err := n.Encode(out); err != nil {
+		panic(err) // a slice of plain structs always encodes
+	}
+	return &n
 }
 
 // pricerFor is the kernel's pricing for the spec's pool.
@@ -232,14 +251,17 @@ func shapes(b engine.Batch) []kernelmodel.ReqShape {
 
 // setIfAbsent adds key: value to a mapping node that does not state key.
 func setIfAbsent(m *yaml.Node, key, value string) {
+	setNodeIfAbsent(m, key, &yaml.Node{Kind: yaml.ScalarNode, Value: value})
+}
+
+// setNodeIfAbsent adds key: value to a mapping node that does not state key.
+func setNodeIfAbsent(m *yaml.Node, key string, value *yaml.Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
 			return
 		}
 	}
-	m.Content = append(m.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: value})
+	m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
 }
 
 // cloneNode copies a node tree, so completing a block never edits the caller's.

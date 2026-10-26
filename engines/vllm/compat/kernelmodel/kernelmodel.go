@@ -439,35 +439,17 @@ func (m *Model) StepTime(batch []*sim.Request) int64 {
 // V032Pieces names the parts of the pool's deployment that blis-vllm's v0.32.0 engine
 // (core/vllm) does not build yet, from the kernel's model graph and resolved layout:
 //
-//   - "hybrid KV groups": a KV cache group beside full attention, from a sliding-window
-//     attention node or a window, indexer or recurrent-state cache, which vLLM manages as its
-//     own group (HybridKVCacheCoordinator, vllm/v1/core/kv_cache_coordinator.py:609@5df63a72);
+//   - "hybrid KV groups": an attention layer whose KV cache spec KVLayers does not map, such as
+//     a window or state cache or recurrent state, which vLLM manages as its own group
+//     (HybridKVCacheCoordinator, vllm/v1/core/kv_cache_coordinator.py:609@5df63a72);
 //   - "data parallelism (dp N)": more than one data-parallel rank, whose waves, lockstep and
 //     balancer run across engines (vllm/v1/engine/core.py:2143-2414@5df63a72).
 //
 // It returns none for a pool the v0.32.0 engine builds as it stands.
 func (m *Model) V032Pieces() []string {
 	var out []string
-	hybrid := false
-	g := m.graph
-	if g != nil {
-		check := func(n model.Node) {
-			if n.Op == model.OpAttention && n.AttentionKind == model.AttentionSWA {
-				hybrid = true
-			}
-			if n.Op == model.OpRecurrentUpdate {
-				hybrid = true
-			}
-			for _, c := range n.Caches {
-				if c.Kind == model.CacheWindow || c.Kind == model.CacheIndex || c.Kind == model.CacheState {
-					hybrid = true
-				}
-			}
-		}
-		g.EachNode(func(_ string, n model.Node) { check(n) })
-	}
-	if hybrid {
-		out = append(out, "hybrid KV groups")
+	if _, err := m.KVLayers(); err != nil {
+		out = append(out, "hybrid KV groups ("+err.Error()+")")
 	}
 	return out
 }

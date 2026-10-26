@@ -57,6 +57,9 @@ type Config struct {
 	// the factory builds a data-parallel group of that many ranks behind one endpoint (DPGroup).
 	// Unstated or 1 is one engine.
 	DataParallelSize int `yaml:"data_parallel_size,omitempty"`
+	// KVLayers are the model's attention layers by KV cache spec, which vLLM groups into the
+	// scheduler's KV cache groups (KVGroups). Unstated is one full-attention group.
+	KVLayers []KVLayerRun `yaml:"kv_layers,omitempty"`
 	// DPSyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162@5df63a72,
 	// default 16): the steps between a DP group's unfinished-request all-reduces.
 	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
@@ -258,6 +261,10 @@ func resolve(c Config) (settings, error) {
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
 	}
+	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager)
+	if err != nil {
+		return settings{}, err
+	}
 	s.sched = sched.Config{
 		MaxNumSeqs:                seqs,
 		MaxNumActiveSeqs:          e.MaxNumActiveSeqs,
@@ -283,6 +290,7 @@ func resolve(c Config) (settings, error) {
 		Async:                async,
 		DecodeStagger:        pp,
 		UseV2ModelRunner:     v2,
+		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
