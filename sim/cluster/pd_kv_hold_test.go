@@ -211,6 +211,89 @@ func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T
 	}
 }
 
+// pdHandoffDropAt is a test event that ends a held handoff without a pull, with the given
+// outcome, as the cluster's drop paths do (releasePrefillOnDrop). heldAfter records how many
+// holds remain the moment the call returns.
+type pdHandoffDropAt struct {
+	time      int64
+	parent    string
+	outcome   sim.NIXLOutcome
+	heldAfter *int
+}
+
+func (e *pdHandoffDropAt) Timestamp() int64 { return e.time }
+func (e *pdHandoffDropAt) Priority() int    { return 5 }
+func (e *pdHandoffDropAt) Execute(cs *ClusterSimulator) {
+	cs.releasePrefillOnDrop(cs.parentRequests[e.parent], e.outcome, e.time)
+	*e.heldAfter = cs.PrefillKVHeld()
+}
+
+// The host applies the connector's release rule for each way a handoff can end without a pull
+// (code review S8 of #2033). The drop here comes well after the prefill completed, the one case
+// in which the rules' expiries differ: a decode side that never received the request leaves
+// the first lease, prefill end + lease (nixl/base_worker.py:3056-3082); one that had it and
+// vanished at the drop holds until drop + 2/3 lease, the extension its last heartbeat granted
+// (base_worker.py:563-567, 3084-3096); one that rejected it frees at once
+// (pull_scheduler.py:219-232). The cluster's own drops at transfer start run at the prefill's
+// completion, where the first two coincide (TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease).
+func TestPrefillKVHold_DropReleasesAsTheConnectorRuleSays(t *testing.T) {
+	const (
+		lease    = 3_000_000
+		transfer = 4_000_000 // the pull is still running at the drop
+		dropLag  = 2_000_000 // the drop comes this long after the prefill completed
+	)
+	// prefillEnd is when the request's prefill completes, from an undisturbed run.
+	var prefillEnd int64
+	{
+		cfg := holdConfig(true, transfer)
+		cfg.PDKVLeaseUs = lease
+		p := runHold(t, cfg, holdTestRequest("r", 1, 0, 160, 4)).ParentRequests()[0]
+		prefillEnd = p.PrefillCompleteTime
+		if prefillEnd == 0 || p.TransferCompleteTime <= prefillEnd+dropLag {
+			t.Fatalf("the pull must outlast the drop: prefill end %d, pull complete %d", prefillEnd, p.TransferCompleteTime)
+		}
+	}
+	drop := prefillEnd + dropLag
+	// run returns the cluster stopped at horizon, and the holds left the moment the drop's
+	// release call returned (-1 if the drop had not run by horizon).
+	run := func(outcome sim.NIXLOutcome, horizon int64) (*ClusterSimulator, int) {
+		cfg := holdConfig(true, transfer)
+		cfg.PDKVLeaseUs = lease
+		cfg.Horizon = horizon
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+		heldAfter := -1
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &pdHandoffDropAt{time: drop, parent: "r", outcome: outcome, heldAfter: &heldAfter}, seqID: cs.nextSeqID()})
+		mustRun(t, cs)
+		return cs, heldAfter
+	}
+	held := func(cs *ClusterSimulator, _ int) bool { return cs.PrefillKVHeld() == 1 }
+	for _, tc := range []struct {
+		name    string
+		outcome sim.NIXLOutcome
+		frees   int64
+	}{
+		{"never received: the first lease", sim.NIXLDecodeNeverReceived, prefillEnd + lease},
+		{"vanished: the renewed lease", sim.NIXLDecodeVanished, drop + lease*2/3},
+		{"rejected: at once", sim.NIXLDecodeRejected, drop},
+	} {
+		if !held(run(tc.outcome, drop-1)) {
+			t.Fatalf("%s: the prefill KV must still be held just before the drop at %d", tc.name, drop)
+		}
+		// "At once" is within the drop itself, not at a lease event later in the same tick.
+		if _, after := run(tc.outcome, drop); (after == 0) != (tc.frees == drop) {
+			t.Errorf("%s: %d holds left as the drop returned, want them freed in the call iff the rule frees at once",
+				tc.name, after)
+		}
+		if tc.frees > drop && !held(run(tc.outcome, tc.frees-1)) {
+			t.Errorf("%s: freed before %d", tc.name, tc.frees)
+		}
+		if held(run(tc.outcome, tc.frees)) {
+			t.Errorf("%s: still held at %d", tc.name, tc.frees)
+		}
+	}
+}
+
 // Metamorphic: when the prefill pool's KV never runs short, holding blocks changes nothing a
 // client sees. The hold only removes capacity; it does not move a step or a prefix hit, since a
 // released block keeps its hash on the free list just as a held one keeps it in use.
