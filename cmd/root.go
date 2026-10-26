@@ -459,19 +459,6 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 	return plan, nil
 }
 
-// offloadPerBlockBytes is the per-rank KV bytes of one block of blockSize tokens, which sizes
-// the offload tiers and their transfer jobs: the kernel's own answer (SequenceVariableBytes:
-// page-quantized, sharded by the layout and the cache dtype). Fatal when it is not positive:
-// a zero-byte block would make every offload transfer free.
-func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
-	b := kernelOpened.Kernel().SequenceVariableBytes(int(blockSize))
-	if b <= 0 {
-		logrus.Fatalf("kv_offload: the kernel prices a %d-token block at %d bytes; per_block_bytes must be > 0",
-			blockSize, b)
-	}
-	return b
-}
-
 // adoptSchedulingPolicy takes the instance scheduler from the scenario's
 // engine.scheduling_policy, vLLM's own setting: fcfs, or priority (served lowest priority value
 // first, then by arrival -- BLIS's priority-fcfs). Precedence is an explicit --scheduler, then a
@@ -616,13 +603,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			logrus.Fatalf("%v", err)
 		}
 	}
-	// The expert geometry the graph stated. Nothing else of ModelConfig is populated: no HF
-	// config is parsed, and a half-filled struct read as complete is how a dense model comes
-	// to be treated as MoE.
-	var modelConfig sim.ModelConfig
-	modelConfig.NumLocalExperts = kernelDeploymentExperts
-	modelConfig.NumExpertsPerTok = kernelDeploymentTopK
-
+	modelConfig := expertModelConfig()
 	if err := checkParallelism(modelConfig.IsMoE()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -1304,12 +1285,7 @@ var runCmd = &cobra.Command{
 		// per-rank KV byte size of one GPU block -- and record it on the resolved offload
 		// config. It feeds the CPU-tier block capacity and transfer-job sizing, and
 		// round-trips through the trace header (INV-13). Only when offload is enabled.
-		if kvOffloadCfg.IsEnabled() {
-			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
-			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-		}
+		sizeOffloadBlocks(&kvOffloadCfg, false)
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge. Shared with replayCmd

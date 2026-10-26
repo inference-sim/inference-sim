@@ -166,10 +166,12 @@ func f() any { return sim.NewBatchConfig }`); len(got) != 0 {
 }
 
 // Outside the build site, package cmd neither builds a value of the engine's configuration types
-// as a composite literal nor validates one: such a value comes from blis-vllm compat/build, which
-// cmd/engine_build.go calls. The check is type-checked, so it sees the types under any name: sim's
-// aliases (sim/engine_aliases.go), compat/engine's own, or a local alias. The engine's types are
-// the struct types compat/engine declares whose names end in Config or Tier.
+// as a composite literal, nor writes one of its fields, nor validates or checks one: such a value
+// comes from blis-vllm compat/build, which cmd/engine_build.go calls. Nor does it ask the kernel
+// model to resolve the engine or reach its kernel, or call the kernel's pricing. The check is
+// type-checked, so it sees the types under any name: sim's aliases (sim/engine_aliases.go),
+// compat/engine's own, or a local alias. The engine's types are the struct types compat/engine
+// declares whose names end in Config or Tier.
 func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 	findings, scanned := engineConfigValuesIn(t, ".", "github.com/inference-sim/inference-sim/cmd")
 	if scanned < 10 {
@@ -220,9 +222,10 @@ func isEngineConfigType(typ types.Type) bool {
 // kernelModelPath is blis-vllm's kernel adapter, whose Model resolves a pool's engine.
 const kernelModelPath = "github.com/inference-sim/blis-vllm/compat/kernelmodel"
 
-// kernelModelResolvers are the kernel model's methods that resolve a pool's engine settings: the
-// build site calls them, through blis-vllm compat/build, and nothing else in cmd does.
-var kernelModelResolvers = map[string]bool{"Settings": true, "SettingsReserving": true, "PrefixHit": true, "Engine": true}
+// kernelModelResolvers are the kernel model's methods that resolve a pool's engine settings or
+// reach the kernel that prices them (Kernel): the build site calls them, through blis-vllm
+// compat/build, and nothing else in cmd does.
+var kernelModelResolvers = map[string]bool{"Settings": true, "SettingsReserving": true, "PrefixHit": true, "Engine": true, "Kernel": true}
 
 // isNamed reports whether typ is, or points to, the named type pkg.name.
 func isNamed(typ types.Type, pkg, name string) bool {
@@ -233,13 +236,38 @@ func isNamed(typ types.Type, pkg, name string) bool {
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == pkg && n.Obj().Name() == name
 }
 
+// derefType is typ, or the type it points to.
+func derefType(typ types.Type) types.Type {
+	if p, ok := types.Unalias(typ).(*types.Pointer); ok {
+		return p.Elem()
+	}
+	return typ
+}
+
+// returnsError reports whether the selected method's last result is an error: on an engine
+// configuration type, such a method is one of vLLM's checks of it (Validate, CheckFitsOneChunk).
+func returnsError(sel *types.Selection) bool {
+	sig, ok := sel.Type().(*types.Signature)
+	if !ok || sig.Results().Len() == 0 {
+		return false
+	}
+	return types.Identical(sig.Results().At(sig.Results().Len()-1).Type(), types.Universe.Lookup("error").Type())
+}
+
 // isKernelModel reports whether typ is, or points to, the kernel adapter's Model.
 func isKernelModel(typ types.Type) bool { return isNamed(typ, kernelModelPath, "Model") }
 
+// kernelPath is blis-schemas' kernel contract, whose Kernel prices a pool's batches, blocks and
+// transfers.
+const kernelPath = "github.com/inference-sim/blis-schemas/kernel"
+
 // engineConfigValuesIn type-checks the non-test Go files of dir as package path (dependencies from
 // the build's export data) and lists, as "file:line: what", each composite literal of an engine
-// configuration type and each Validate call on a value of one. An empty literal, a zero value
-// passed through, is not counted. It also returns how many files it checked.
+// configuration type, each write to a field of one, each check of one (a method returning an
+// error: Validate, CheckFitsOneChunk), each call of a kernel model resolver
+// (kernelModelResolvers), each read of a kernelmodel.Settings field, and each method call on the
+// kernel. An empty literal, a zero value passed through, is not counted. It also returns how many
+// files it checked.
 func engineConfigValuesIn(t *testing.T, dir, path string) ([]string, int) {
 	t.Helper()
 	return engineConfigValuesInWith(t, dir, path, dir)
@@ -274,6 +302,20 @@ func engineConfigValuesInWith(t *testing.T, dir, path, depsDir string) ([]string
 	for _, f := range parsed {
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch x := n.(type) {
+			case *ast.AssignStmt:
+				// A write to a field of an engine configuration value (cfg.PerBlockBytes = ...):
+				// the value is the engine's, set by blis-vllm compat/build through the build site.
+				for _, lhs := range x.Lhs {
+					sel, ok := lhs.(*ast.SelectorExpr)
+					if !ok {
+						continue
+					}
+					if s, ok := info.Selections[sel]; ok && s.Kind() == types.FieldVal && isEngineConfigType(derefType(s.Recv())) {
+						at := fset.Position(sel.Pos())
+						out = append(out, fmt.Sprintf("%s:%d: writes %s.%s", filepath.Base(at.Filename), at.Line,
+							types.Unalias(derefType(s.Recv())).(*types.Named).Obj().Name(), sel.Sel.Name))
+					}
+				}
 			case *ast.CompositeLit:
 				if tv, ok := info.Types[x]; ok && isEngineConfigType(tv.Type) && len(x.Elts) > 0 {
 					at := fset.Position(x.Pos())
@@ -286,10 +328,13 @@ func engineConfigValuesInWith(t *testing.T, dir, path, depsDir string) ([]string
 				}
 				at := fset.Position(x.Pos())
 				switch {
-				case x.Sel.Name == "Validate" && sel.Kind() == types.MethodVal && isEngineConfigType(sel.Recv()):
-					out = append(out, fmt.Sprintf("%s:%d: %s.Validate", filepath.Base(at.Filename), at.Line, types.Unalias(sel.Recv()).(*types.Named).Obj().Name()))
+				case sel.Kind() == types.MethodVal && isEngineConfigType(derefType(sel.Recv())) && returnsError(sel):
+					out = append(out, fmt.Sprintf("%s:%d: %s.%s", filepath.Base(at.Filename), at.Line,
+						types.Unalias(derefType(sel.Recv())).(*types.Named).Obj().Name(), x.Sel.Name))
 				case sel.Kind() == types.MethodVal && isKernelModel(sel.Recv()) && kernelModelResolvers[x.Sel.Name]:
 					out = append(out, fmt.Sprintf("%s:%d: Model.%s", filepath.Base(at.Filename), at.Line, x.Sel.Name))
+				case sel.Kind() == types.MethodVal && isNamed(sel.Recv(), kernelPath, "Kernel"):
+					out = append(out, fmt.Sprintf("%s:%d: Kernel.%s", filepath.Base(at.Filename), at.Line, x.Sel.Name))
 				case sel.Kind() == types.FieldVal && isNamed(sel.Recv(), kernelModelPath, "Settings"):
 					out = append(out, fmt.Sprintf("%s:%d: Settings.%s", filepath.Base(at.Filename), at.Line, x.Sel.Name))
 				}
@@ -330,9 +375,10 @@ func exportImporter(t *testing.T, fset *token.FileSet, dir string) types.Importe
 }
 
 // The value check sees each form: a literal through sim's alias, through compat/engine itself, a
-// nested tier literal, a pointer literal, and a Validate call through a local alias. A literal of
-// another package's type with the same name, an empty literal, and a non-Validate method are not
-// findings.
+// nested tier literal, a pointer literal, a Validate call through a local alias, a chunk check
+// through a pointer, a field write, the kernel model's resolvers and its kernel, a kernel pricing
+// call, and a Settings field read. A literal of another package's type with the same name, an
+// empty literal, a method that checks nothing and a kernel model's role are not findings.
 func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
@@ -342,10 +388,14 @@ func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
 		"a pointer literal":               `func f() *sim.FrontendConfig { return &sim.FrontendConfig{APIServerCount: 2} }`,
 		"a Validate through a local alias": `type fc = sim.FrontendConfig
 func f(c fc) error { return c.Validate() }`,
-		"a pool overrides literal":    `func f() cluster.PoolOverrides { return cluster.PoolOverrides{GPU: "h100"} }`,
-		"a kernel model's settings":   `func f(m *kernelmodel.Model) error { _, err := m.Settings(); return err }`,
-		"a kernel model's prefix hit": `func f(m *kernelmodel.Model) bool { return m.PrefixHit(nil).Note == "" }`,
-		"a settings field read":       `func f(s kernelmodel.Settings) int64 { return s.KVBlocks }`,
+		"a pool overrides literal":        `func f() cluster.PoolOverrides { return cluster.PoolOverrides{GPU: "h100"} }`,
+		"a kernel model's settings":       `func f(m *kernelmodel.Model) error { _, err := m.Settings(); return err }`,
+		"a kernel model's prefix hit":     `func f(m *kernelmodel.Model) bool { return m.PrefixHit(nil).Note == "" }`,
+		"a settings field read":           `func f(s kernelmodel.Settings) int64 { return s.KVBlocks }`,
+		"a kernel model's kernel":         `func f(m *kernelmodel.Model) any { return m.Kernel() }`,
+		"a kernel pricing call":           `func f(k kernel.Kernel) int64 { return k.SequenceFixedBytes() }`,
+		"a config field write":            `func f(c *sim.KVOffloadConfig) { c.PerBlockBytes = 64 }`,
+		"a chunk check through a pointer": `func f(c *sim.KVOffloadConfig) error { return c.CheckFitsOneChunk() }`,
 	}
 	clean := map[string]string{
 		"another package's FrontendConfig": `type FrontendConfig struct{ N int }
@@ -359,7 +409,7 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.ResolvePoolConfig\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-schemas/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.ResolvePoolConfig\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}

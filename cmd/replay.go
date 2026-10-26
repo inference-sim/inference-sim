@@ -363,12 +363,7 @@ Example:
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
-		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
-			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
-			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-		}
+		sizeOffloadBlocks(&kvOffloadCfg, true)
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge, through the SAME helper

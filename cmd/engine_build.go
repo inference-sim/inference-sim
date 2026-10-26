@@ -351,6 +351,15 @@ func offloadPricing() build.OffloadPricing {
 		MaxNumBatchedTokens: maxNumBatchedTokens}
 }
 
+// sizeOffloadBlocks records the kernel's per-rank bytes of one GPU block on an enabled offload
+// config and refuses a CPU tier smaller than one chunk (build.SizeOffloadBlocks). keepStated
+// keeps the bytes a replayed trace header carries (INV-13).
+func sizeOffloadBlocks(cfg *sim.KVOffloadConfig, keepStated bool) {
+	if err := build.SizeOffloadBlocks(kernelOpened, cfg, blockSizeTokens, keepStated); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+}
+
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
 // run (build.PriceColocatedOffload). It returns the legacy per-block charge. Shared by run and
 // replay.
@@ -398,6 +407,17 @@ func openFirstPool(in build.AdoptInputs, a *build.Adopted) error { return build.
 // without adopting the deployment (build.OpenModel).
 func openModel(catalogRoot string) (*kernelmodel.Model, error) {
 	return build.OpenModel(kernelScenario, kernelScenarioDir, catalogRoot, kernelRegistry)
+}
+
+// expertModelConfig is the engine's model configuration as the scenario's graph states it: its
+// expert geometry only (routed experts and experts per token, 0 for a dense model). Nothing
+// else of ModelConfig is populated: no HF config is parsed, and a half-filled struct read as
+// complete is how a dense model comes to be treated as MoE.
+func expertModelConfig() sim.ModelConfig {
+	var c sim.ModelConfig
+	c.NumLocalExperts = kernelDeploymentExperts
+	c.NumExpertsPerTok = kernelDeploymentTopK
+	return c
 }
 
 // checkParallelism refuses data and expert parallelism a dense model cannot run
