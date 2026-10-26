@@ -23,13 +23,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: check out vLLM v0.32.0 (for its test helpers)
+      - name: check out vLLM v0.32.0 at its pinned commit (for its test helpers)
         uses: actions/checkout@v4
         with:
           repository: vllm-project/vllm
-          ref: v0.32.0
+          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
           path: vllm-source
           fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       - name: install the oracle environment
         run: |
           python -m pip install pip==26.2.2

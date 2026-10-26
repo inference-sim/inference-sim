@@ -16,11 +16,24 @@ The oracle is vLLM itself, at the pinned release, running on CPU with no GPU. Th
 - it calls `schedule()` and `update_from_output()` as `EngineCore` does, one step at a time.
 
 **Patch the environment, never the decisions.** The oracle may replace only the GPU, the clock,
-transports and external services. Every replacement is listed by symbol in `oracle/mocks.json`,
-and `oracle/check_mocks.py` fails CI if an entry names scheduler, KV-cache, EngineCore or
-connector code. Where vLLM reads the clock to make a decision (tiered-offload backpressure,
-P2P deadlines), the oracle replaces the clock with the scenario's virtual time; the decision code
-runs unmodified.
+transports and external services. Every replacement is listed in `oracle/mocks.json` with its
+kind and how it is made, and `oracle/check_mocks.py` (run in CI) checks three things:
+- each entry's kind is `gpu`, `clock`, `transport`, `environment` or `external-service`, and no
+  entry whose symbol is a dotted path under vLLM's decision modules (`vllm.v1.core.`,
+  `vllm.v1.engine.core`, `vllm.distributed.kv_transfer.kv_connector.v1.`,
+  `vllm.v1.kv_offload.`) is anything but a clock;
+- every place an `oracle/run_*.py` writes into an object it did not build (attribute and item
+  stores, `setattr`, `del`, `object.__new__`) is a listed site of some entry, and every listed
+  site is one a runner makes;
+- the mock version names the list's digest.
+
+The check reads symbols and sites; it cannot judge an entry's prose. Entries named in words
+rather than by a dotted symbol are not covered by the first test. These include "EngineCore
+construction" and the harness's copy of the DP wave loop, which set the state the decision
+code reads. Each says in `how` what it sets and why; they are listed in review, and the DP loop
+copy is a limitation in its own right (blis-vllm#26). Where vLLM reads the clock to make a
+decision (tiered-offload backpressure, P2P deadlines), the oracle replaces the clock with the
+scenario's virtual time; the decision code runs unmodified.
 
 ## The shared GPU mock
 
@@ -139,8 +152,8 @@ so the Go tests can run without Python. It is never overwritten without review:
 push or pull request with a commit that changes the decisions an existing golden records (its
 `steps` or `finished`), or deletes one, without a `golden-reviewed: <reviewer>` trailer naming
 the person who checked it. A new golden for a new scenario, or a refresh of only the
-`provenance` block, needs no trailer; the check verifies the decisions are byte-for-byte
-unchanged. It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
+`provenance` block, needs no trailer; the check verifies the decisions are unchanged as JSON
+values (parsed and compared, so a reformatted file with the same decisions passes). It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
 history, so a golden's provenance always names a commit anyone can check out: a refresh takes
 its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`). The differential test also refuses a golden whose recorded
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
