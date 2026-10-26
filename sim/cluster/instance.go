@@ -42,7 +42,7 @@ type InstanceSimulator struct {
 	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 
 	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
-	// Used by buildRouterState() to populate RoutingSnapshot for the autoscaler Collector.
+	// Read by buildRouterState() into RoutingSnapshot for the autoscaler Collector.
 	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
@@ -394,35 +394,6 @@ func (i *InstanceSimulator) MaxBatchSize() int {
 		return 0
 	}
 	return int(i.maxNumSeqs)
-}
-
-// GetCachedBlockCount returns the number of consecutive cached prefix blocks
-// matching the given token sequence. Used by precise prefix cache scoring.
-func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
-	if i.sim == nil || i.drv != nil {
-		return 0
-	}
-	return i.sim.CachedBlockCount(tokens)
-}
-
-// SnapshotCacheQueryFn returns a function that queries a frozen copy of this
-// instance's KV cache hash map. The returned function is safe to call after
-// the live cache state has changed — it always returns results as of snapshot time.
-// Returns a zero-returning function if the simulator is nil or the KV cache
-// does not support snapshotting.
-func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
-	if i.sim == nil || i.drv != nil {
-		return func([]sim.TokenID) int { return 0 }
-	}
-	if fn, ok := i.sim.SnapshotCacheQuery(); ok {
-		return fn
-	}
-	// Fallback: live query (for KVStore implementations without snapshot support).
-	// Callers (CachedSnapshotProvider) are responsible for warning about stale-cache
-	// semantics not being honored — this function is intentionally side-effect-free.
-	return func(tokens []sim.TokenID) int {
-		return i.GetCachedBlockCount(tokens)
-	}
 }
 
 // InjectRequestOnline injects a request during the event loop (online routing mode).

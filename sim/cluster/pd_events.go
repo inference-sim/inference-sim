@@ -116,7 +116,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	// Split diagnostics for the two failure modes: a nil instance is a
-	// programming error (routing policy returned an ID not in cs.instances);
+	// programming error (the gateway chose an ID not in cs.instances);
 	// a non-routable instance is a legitimate drain/terminate event during
 	// the transfer window.
 	if decodeInst == nil {

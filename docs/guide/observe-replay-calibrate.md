@@ -343,8 +343,9 @@ blis replay --trace-header corpus.yaml --trace-data corpus.csv \
 
 The recorded source model names are pure provenance and are dropped during
 conversion — all calls are simulated under the scenario's model. (They are deliberately not
-written into the trace: `TraceRecord.Model` is routing-significant, and a name
-that differs from the simulated model would filter out every request at routing.)
+written into the trace: `TraceRecord.Model` becomes the request's model at replay, and
+a name that differs from the simulated model would report every request under a model
+the run never simulated.)
 `--concurrent-sessions` implies closed-loop session semantics; without it,
 replay behaves as a standard fixed/closed-loop replay.
 
@@ -485,7 +486,7 @@ since Weka gaps are genuine away-from-keyboard times). The column is **non-lossy
 (#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as `&0`,
 distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
 recorded zeros rather than degrading to arrival-gap think. The recorded `claude-*`
-model names are dropped during conversion (same routing-safety reason as OTel).
+model names are dropped during conversion (same reason as OTel: no phantom per-model metrics).
 
 !!! note "Context compaction is represented (#1609)"
     Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the

@@ -19,7 +19,8 @@
 //   - sim/cluster/: multi-instance cluster orchestration
 //   - sim/workload/: workload generation and trace replay
 //   - sim/trace/: decision trace recording
-//   - sim/llmd/: the embedded llm-d router
+//   - sim/llmd/: the embedded llm-d router, which makes every admission, routing and
+//     flow-control decision
 //
 // The engine's KV store and adapter registry register their constructors when blis-vllm's
 // compat/kv and compat/lora are linked (NewKVStoreFromConfig); inference-sim links them at its

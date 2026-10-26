@@ -20,8 +20,8 @@ import (
 //     input-token DELTAS + input_tokens_reset compaction markers, re-derived from the
 //     replayed absolute inputs via the shared EncodeSessionToTraceRecords law (#1613).
 //     The re-export header MUST also set session_context_growth: accumulate (caller's
-//     responsibility) so the corpus re-replays correctly. Model is left empty (routing
-//     safety) — every reachable accumulate corpus is converter-produced (empty
+//     responsibility) so the corpus re-replays correctly. Model is left empty (no
+//     phantom per-model metrics) — every reachable accumulate corpus is converter-produced (empty
 //     Model/SLO/deadline/adapter), so this reproduces the converter shape exactly.
 //   - "" (non-accumulate): each round's input is independent, so records carry the
 //     ABSOLUTE per-round suffix via RequestsToTraceRecords, preserving SLO / model /
@@ -227,9 +227,9 @@ func accumulatedOutputLen(req *sim.Request) int {
 // PrefixGroup/PrefixLength are deliberately NOT copied: accumulate folds the prefix into
 // round-0's absolute input and drops the group (a prefix_length on a delta-encoded record
 // would double-count on re-replay). Model IS copied — unlike the converter (which sets
-// Model="" for routing safety), req.Model here came from the original trace and already
-// drove routing in THIS replay, so preserving it keeps re-replay routing consistent (it is
-// empty for converter corpora, which still inherit the run's model).
+// Model="" so no phantom per-model metrics appear), req.Model here came from the original
+// trace and already keyed this replay's per-model metrics, so preserving it keeps the
+// re-replay's per-model block consistent (it is empty for converter corpora).
 func copyReExportMetadata(rec *TraceRecord, req *sim.Request) {
 	rec.ClientID = req.ClientID
 	rec.TenantID = req.TenantID
