@@ -1,0 +1,2950 @@
+{
+ "finished": {
+  "l0": {
+   "output_tokens": 2,
+   "rank": 0,
+   "reason": "stop",
+   "step": 2
+  },
+  "l1": {
+   "output_tokens": 7,
+   "rank": 1,
+   "reason": "stop",
+   "step": 7
+  },
+  "l10": {
+   "output_tokens": 7,
+   "rank": 2,
+   "reason": "stop",
+   "step": 14
+  },
+  "l11": {
+   "output_tokens": 3,
+   "rank": 3,
+   "reason": "stop",
+   "step": 12
+  },
+  "l12": {
+   "output_tokens": 8,
+   "rank": 0,
+   "reason": "stop",
+   "step": 17
+  },
+  "l13": {
+   "output_tokens": 4,
+   "rank": 1,
+   "reason": "stop",
+   "step": 13
+  },
+  "l14": {
+   "output_tokens": 9,
+   "rank": 0,
+   "reason": "stop",
+   "step": 19
+  },
+  "l15": {
+   "output_tokens": 5,
+   "rank": 1,
+   "reason": "stop",
+   "step": 16
+  },
+  "l2": {
+   "output_tokens": 3,
+   "rank": 2,
+   "reason": "stop",
+   "step": 4
+  },
+  "l3": {
+   "output_tokens": 8,
+   "rank": 3,
+   "reason": "stop",
+   "step": 10
+  },
+  "l4": {
+   "output_tokens": 4,
+   "rank": 0,
+   "reason": "stop",
+   "step": 7
+  },
+  "l5": {
+   "output_tokens": 9,
+   "rank": 1,
+   "reason": "stop",
+   "step": 12
+  },
+  "l6": {
+   "output_tokens": 5,
+   "rank": 2,
+   "reason": "stop",
+   "step": 9
+  },
+  "l7": {
+   "output_tokens": 10,
+   "rank": 3,
+   "reason": "stop",
+   "step": 15
+  },
+  "l8": {
+   "output_tokens": 6,
+   "rank": 0,
+   "reason": "stop",
+   "step": 12
+  },
+  "l9": {
+   "output_tokens": 2,
+   "rank": 2,
+   "reason": "stop",
+   "step": 9
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "36b8be698b2fca4606d744fd33221fc23d645f91",
+  "engine": {
+   "async_scheduling": true,
+   "data_parallel_size": 4,
+   "dp_sync_interval": 16,
+   "max_concurrent_batches": 2,
+   "prefill_schedule_interval": 1,
+   "scheduler_class": "AsyncScheduler",
+   "stats_interval": 3,
+   "stats_lag": 0
+  },
+  "lockfile_sha256": "unrecorded",
+  "mock_version": "gpu-mock/2+025b232da37d",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.15",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "23ad2bc8e8901f24ce590f929736135b13452f1e79b1089c5bb64849775d65d5",
+  "seed": null,
+  "tier": 3,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "routed": {
+  "l0": 0,
+  "l1": 1,
+  "l10": 2,
+  "l11": 3,
+  "l12": 0,
+  "l13": 1,
+  "l14": 0,
+  "l15": 1,
+  "l2": 2,
+  "l3": 3,
+  "l4": 0,
+  "l5": 1,
+  "l6": 2,
+  "l7": 3,
+  "l8": 0,
+  "l9": 2
+ },
+ "steps": [
+  {
+   "arrivals": [
+    [
+     "l0",
+     0
+    ],
+    [
+     "l1",
+     1
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": false,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l0": 5
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": false,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 12
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 0,
+   "step_counter": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l2",
+     2
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l0": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": false,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l2": 6
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 1,
+   "step_counter": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l3",
+     3
+    ]
+   ],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [
+      "l0"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l0": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l2": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": false,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 13
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 2,
+   "step_counter": [
+    3,
+    3,
+    3,
+    3
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l4",
+     0
+    ],
+    [
+     "l5",
+     1
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l4": 7
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1,
+      "l5": 14
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l2": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 3,
+   "step_counter": [
+    4,
+    4,
+    4,
+    4
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l6",
+     2
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l4": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l2"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l2": 1,
+      "l6": 8
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 4,
+   "step_counter": [
+    5,
+    5,
+    5,
+    5
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l7",
+     3
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l4": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l6": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 1,
+      "l7": 15
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 5,
+   "step_counter": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l8",
+     0
+    ],
+    [
+     "l9",
+     2
+    ]
+   ],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l4": 1,
+      "l8": 9
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l6": 1,
+      "l9": 15
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 6,
+   "step_counter": [
+    7,
+    7,
+    7,
+    7
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l10",
+     2
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [
+      "l4"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l4": 1,
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l1"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l1": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 10,
+      "l6": 1,
+      "l9": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l3": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 7,
+   "step_counter": [
+    8,
+    8,
+    8,
+    8
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l11",
+     3
+    ]
+   ],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1,
+      "l6": 1,
+      "l9": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l11": 14,
+      "l3": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 8,
+   "step_counter": [
+    9,
+    9,
+    9,
+    9
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l12",
+     0
+    ],
+    [
+     "l13",
+     1
+    ]
+   ],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 11,
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l13": 5,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l6",
+      "l9"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1,
+      "l6": 1,
+      "l9": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l11": 3,
+      "l3": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 9,
+   "step_counter": [
+    10,
+    10,
+    10,
+    10
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l14",
+     0
+    ]
+   ],
+   "counts": [
+    [
+     3,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 12,
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l13": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l3"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l11": 1,
+      "l3": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 10,
+   "step_counter": [
+    11,
+    11,
+    11,
+    11
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [
+    [
+     "l15",
+     1
+    ]
+   ],
+   "counts": [
+    [
+     3,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1,
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l13": 1,
+      "l15": 6,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l11": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 11,
+   "step_counter": [
+    12,
+    12,
+    12,
+    12
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [
+      "l8"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1,
+      "l8": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l5"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l13": 1,
+      "l15": 1,
+      "l5": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l11"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l11": 1,
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 12,
+   "step_counter": [
+    13,
+    13,
+    13,
+    13
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l13"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l13": 1,
+      "l15": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 13,
+   "step_counter": [
+    14,
+    14,
+    14,
+    14
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l15": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l10"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {
+      "l10": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 14,
+   "step_counter": [
+    15,
+    15,
+    15,
+    15
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l15": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l7"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {
+      "l7": 1
+     },
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 15,
+   "step_counter": [
+    16,
+    16,
+    16,
+    16
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     2,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": false,
+     "finished": [
+      "l15"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {
+      "l15": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 16,
+   "step_counter": [
+    17,
+    17,
+    17,
+    17
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [
+      "l12"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l12": 1,
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 17,
+   "step_counter": [
+    18,
+    18,
+    18,
+    18
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 18,
+   "step_counter": [
+    19,
+    19,
+    19,
+    19
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": false,
+     "finished": [
+      "l14"
+     ],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {
+      "l14": 1
+     },
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 19,
+   "step_counter": [
+    20,
+    20,
+    20,
+    20
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 1,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 20,
+   "step_counter": [
+    21,
+    21,
+    21,
+    21
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": true,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 21,
+   "step_counter": [
+    22,
+    22,
+    22,
+    22
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 22,
+   "step_counter": [
+    23,
+    23,
+    23,
+    23
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 23,
+   "step_counter": [
+    24,
+    24,
+    24,
+    24
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 24,
+   "step_counter": [
+    25,
+    25,
+    25,
+    25
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 25,
+   "step_counter": [
+    26,
+    26,
+    26,
+    26
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 26,
+   "step_counter": [
+    27,
+    27,
+    27,
+    27
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 27,
+   "step_counter": [
+    28,
+    28,
+    28,
+    28
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 28,
+   "step_counter": [
+    29,
+    29,
+    29,
+    29
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 29,
+   "step_counter": [
+    30,
+    30,
+    30,
+    30
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "step": 30,
+   "step_counter": [
+    31,
+    31,
+    31,
+    31
+   ],
+   "waves": [
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "arrivals": [],
+   "counts": [
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     0,
+     0
+    ]
+   ],
+   "ranks": [
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 0,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 1,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 2,
+     "scheduled": {},
+     "throttled": false
+    },
+    {
+     "dummy": true,
+     "finished": [],
+     "processed": false,
+     "queue_len": 0,
+     "rank": 3,
+     "scheduled": {},
+     "throttled": false
+    }
+   ],
+   "running": [
+    false,
+    false,
+    false,
+    false
+   ],
+   "step": 31,
+   "step_counter": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "waves": [
+    1,
+    1,
+    1,
+    1
+   ]
+  }
+ ]
+}
