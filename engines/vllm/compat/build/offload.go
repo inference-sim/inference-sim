@@ -510,6 +510,12 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 		return nil, fmt.Errorf("offload.connector %q is not simulated: BLIS models vLLM's "+
 			"OffloadingConnector, so state it (or leave the field out)", o.Connector)
 	}
+	if c := o.ConnectorOptions; c != nil {
+		return nil, fmt.Errorf("offload.connector_options (%s) is not simulated: blis-schemas added the "+
+			"connector options with the v0.32.0 engine, and blis-vllm's compatibility engine models the "+
+			"0.29/0.31 offload block (connector, spec, tiers, eviction_policy), so drop them",
+			strings.Join(statedConnectorOptions(c), ", "))
+	}
 	if o.Connector == SimpleConnector {
 		return simpleOffloadBlock(o)
 	}
@@ -552,6 +558,28 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 		block.EvictionPolicy = &ep
 	}
 	return block, nil
+}
+
+// statedConnectorOptions are the connector options c states, by their scenario field names, in
+// declaration order.
+func statedConnectorOptions(c *deployment.ConnectorOptions) []string {
+	var out []string
+	add := func(stated bool, name string) {
+		if stated {
+			out = append(out, name)
+		}
+	}
+	add(c.LoadAsync != nil, "load_async")
+	add(c.LookupAsync != nil, "lookup_async")
+	add(c.EnableOffload != nil, "enable_offload")
+	add(c.EnableCrossLayersBlocks != nil, "enable_cross_layers_blocks")
+	add(c.LazyOffload != nil, "lazy_offload")
+	add(c.BlocksPerChunk != 0, "blocks_per_chunk")
+	add(c.KVLoadFailurePolicy != "", "kv_load_failure_policy")
+	if len(out) == 0 {
+		out = append(out, "an empty block")
+	}
+	return out
 }
 
 // OffloadConfigDiff names the fields in which two resolved offload configs differ, "" when

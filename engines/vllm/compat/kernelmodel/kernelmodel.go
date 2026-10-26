@@ -683,8 +683,8 @@ type Shape struct {
 }
 
 // unmodelledSettings are the engine settings a deployment states that the compatibility engine
-// does not model: the ones blis-schemas added with the v0.32.0 engine, which models them
-// (blis-vllm core/vllm). It returns their scenario field names, in declaration order.
+// does not model: the ones blis-schemas added with the v0.32.0 engine (blis-schemas#102), which
+// core/vllm reads. It returns their scenario field names, in declaration order.
 func unmodelledSettings(e deployment.Engine) []string {
 	var out []string
 	add := func(stated bool, name string) {
@@ -701,7 +701,12 @@ func unmodelledSettings(e deployment.Engine) []string {
 	add(e.DisableHybridKVCacheManager != nil, "disable_hybrid_kv_cache_manager")
 	add(e.KVCacheMemoryBytes != nil, "kv_cache_memory_bytes")
 	add(e.PrefixMatchUnit != 0, "prefix_match_unit")
+	// The compatibility engine models vLLM's default interval 0, which keeps only the semantic
+	// checkpoints (compat/kv/prefix_hit.go), so a stated 0 is what it runs.
+	add(e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0, "prefix_cache_retention_interval")
+	add(e.KVEvents != nil, "kv_events")
 	add(e.MaxLoRAs != 0, "max_loras")
+	add(e.MaxCPULoRAs != 0, "max_cpu_loras")
 	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative.draft_model")
 	return out
 }

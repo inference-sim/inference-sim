@@ -157,9 +157,10 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 
 // A 0.29/0.31 scenario that states an engine setting the compatibility engine does not model is
 // refused, naming the setting and the pool, rather than run with the setting silently dropped:
-// the setting came with the v0.32.0 engine (blis-schemas#102), which models it (core/vllm), and a
-// 0.32.0 scenario runs there once it is wired in (inference-sim#2027). The same scenario without
-// the setting adopts.
+// the setting came with the v0.32.0 engine (blis-schemas#102), and a 0.32.0 scenario runs on that
+// engine (core/vllm) once it is wired in (inference-sim#2027). The same scenario without the
+// setting adopts, and so does one stating prefix_cache_retention_interval at vLLM's default 0,
+// which is what the compatibility engine models.
 func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testing.T) {
 	repos := vendoredRepos(t)
 	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
@@ -183,6 +184,9 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 	if err := adopt(t, ""); err != nil {
 		t.Fatalf("the fixture itself must adopt: %v", err)
 	}
+	if err := adopt(t, "      prefix_cache_retention_interval: 0\n"); err != nil {
+		t.Errorf("prefix_cache_retention_interval 0 is the default the compatibility engine models: %v", err)
+	}
 	for _, c := range []struct{ yaml, name string }{
 		{"      max_num_scheduled_tokens: 4096\n", "max_num_scheduled_tokens"},
 		{"      max_num_active_seqs: 64\n", "max_num_active_seqs"},
@@ -194,6 +198,10 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		{"      watermark: 0.02\n", "watermark"},
 		{"      prefix_match_unit: 16\n", "prefix_match_unit"},
 		{"      long_prefill_token_threshold_adaptive: true\n", "long_prefill_token_threshold_adaptive"},
+		{"      prefix_cache_retention_interval: 16\n", "prefix_cache_retention_interval"},
+		{"      kv_events:\n        enable_kv_cache_events: true\n", "kv_events"},
+		{"      kv_events:\n        enable_kv_cache_events: false\n", "kv_events"},
+		{"      max_cpu_loras: 4\n", "max_cpu_loras"},
 	} {
 		err := adopt(t, c.yaml)
 		if err == nil {
