@@ -638,6 +638,17 @@ func frontendConfigFromCLI() sim.FrontendConfig {
 	return c
 }
 
+// groupFrontendConfigFromCLI is frontendConfigFromCLI for one endpoint whose engine is a whole
+// data-parallel group of dp ranks (a contract-built release): vLLM's internal balancer defaults
+// its API servers to one per rank (api_server_count = data_parallel_size,
+// vllm/entrypoints/cli/serve.py:123-130@5df63a72), as the compatibility path's DP replica
+// renders (sim.ReplicaAPIServers). A stated --api-server-count is kept.
+func groupFrontendConfigFromCLI(dp int) sim.FrontendConfig {
+	c := frontendConfigFromCLI()
+	c.APIServerCount = sim.ReplicaAPIServers(c.APIServerCount, max(dp, 1))
+	return c
+}
+
 // dpLockstepRanks is how many replicas of one logical instance form one vLLM DP group that
 // steps in lockstep (build.DPLockstepRanks): dp for an MoE model at dp > 1.
 func dpLockstepRanks(isMoE bool, dp int) int { return build.DPLockstepRanks(isMoE, dp) }

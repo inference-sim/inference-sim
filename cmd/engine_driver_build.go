@@ -57,7 +57,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
-	frontend := frontendConfigFromCLI()
+	frontend := groupFrontendConfigFromCLI(dataParallelism)
 	build := func(index int) (*sim.EngineDriver, error) {
 		kinds := engine.Kinds()
 		if len(kinds) != 1 {

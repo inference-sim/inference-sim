@@ -352,9 +352,10 @@ func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
 	}
 }
 
-// A 0.32.0 deployment the v0.32.0 engine cannot build yet (here a DeepSeek-V4.1 checkpoint, whose
-// sliding-window and indexer KV groups are hybrid) is refused at the build site: exit 1 with the
-// engine's message naming the missing piece, not a panic out of the cluster's construction.
+// A 0.32.0 deployment the v0.32.0 engine cannot build (here a DeepSeek-V4.1 checkpoint stating
+// max_model_len auto, a window the engine takes only as stated) is refused at the build site:
+// exit 1 with the engine's message naming the missing piece, not a panic out of the cluster's
+// construction.
 func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	body := readFile(t, filepath.Join("..", "testdata", "scenarios", "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"))
 	if !strings.Contains(body, `engine_version: "0.31.0"`) {
@@ -369,13 +370,13 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 		"--catalog", "../testdata/catalog", "--speculative-acceptance-rate", "0.7",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
-		t.Fatal("a 0.32.0 deployment needing hybrid KV groups ran")
+		t.Fatal("a 0.32.0 deployment stating max_model_len auto ran")
 	}
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("the refusal must be a clean CLI error, not a panic; stderr:\n%s", lastLines(stderr, 8))
 	}
-	if !strings.Contains(stderr, "hybrid KV groups") {
-		t.Errorf("the refusal must name the missing piece; stderr:\n%s", lastLines(stderr, 4))
+	if !strings.Contains(stderr, "engine_version 0.32.0: vllm: max_model_len must be stated") {
+		t.Errorf("the refusal must be the engine's, naming the missing piece; stderr:\n%s", lastLines(stderr, 4))
 	}
 }
 
@@ -415,5 +416,40 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"completed_requests": 8`) {
 		t.Errorf("want all 8 requests completed; stdout:\n%s", lastLines(stdout, 30))
+	}
+}
+
+// A 0.32.0 data-parallel group's endpoint renders on vLLM's default API servers for the internal
+// balancer: one per rank (api_server_count = data_parallel_size, vllm/entrypoints/cli/serve.py:
+// 123-130@5df63a72), as the compatibility path's DP replica does (ReplicaAPIServers). With one
+// server instead, requests that arrive together queue for its render thread twice as long, so
+// the group's mean TTFT would be well above the stated-two-servers run, which it must match.
+func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) {
+	dir := dp032Variant(t, "")
+	ttft := func(extra ...string) float64 {
+		args := append([]string{"run", "--scenarios", dir, "--scenario", "v032-dp2.yaml",
+			"--concurrency", "128", "--num-requests", "128", "--prompt-tokens", "1024", "--output-tokens", "8",
+			"--seed", "7"}, extra...)
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\nstderr:\n%s", extra, err, lastLines(stderr, 5))
+		}
+		for _, raw := range extractJSONObjects(stdout) {
+			var obj map[string]any
+			if json.Unmarshal([]byte(raw), &obj) == nil && obj["instance_id"] == "cluster" {
+				return obj["ttft_mean_ms"].(float64)
+			}
+		}
+		t.Fatalf("no cluster metrics in stdout:\n%s", stdout)
+		return 0
+	}
+	byDefault, stated := ttft(), ttft("--api-server-count", "2")
+	if byDefault != stated {
+		t.Errorf("mean TTFT %.3f ms with the default API servers against %.3f ms with 2 stated; a dp 2 "+
+			"group's default is one API server per rank", byDefault, stated)
+	}
+	if one := ttft("--api-server-count", "1"); one <= stated {
+		t.Fatalf("one API server gives %.3f ms against %.3f ms with 2; the workload no longer exercises "+
+			"render contention", one, stated)
 	}
 }
