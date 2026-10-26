@@ -31,7 +31,7 @@ func runsThroughContract(version string) bool { return coreEngineVersions[versio
 // scenario's first pool and driven by a sim.EngineDriver; the host overheads (queueing,
 // per-token output processing, post-decode) are the latency model's, and the API-server front
 // end (--renderer-num-workers, --api-server-count) is the run's, as on the compatibility path.
-func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel) func(int) (*sim.EngineDriver, error) {
+func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel, acceptance float64) func(int) (*sim.EngineDriver, error) {
 	if !runsThroughContract(version) {
 		return nil
 	}
@@ -69,7 +69,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 			return nil, fmt.Errorf("scenario %q: engine_version %s: %w", kernelScenario, version, err)
 		}
 		reportAssumptions(eng)
-		cfg := sim.EngineDriverConfig{Horizon: horizon}
+		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance}
 		if latency != nil {
 			cfg.PostDecodeFixedOverhead = latency.PostDecodeFixedOverhead()
 			cfg.OutputTokenProcessingTime = latency.OutputTokenProcessingTime()

@@ -239,3 +239,34 @@ func TestEngineDriver_ITLIncludesOutputProcessingAsTheCompatibilityEngine(t *tes
 		t.Errorf("E2E = %v, want %v", got, want)
 	}
 }
+
+// Acceptance is an input the host supplies (#2021 B3): a request verifying K drafts a step is
+// told α x K of them were accepted, by the compatibility engine's deterministic carry. With K = 3
+// and α = 0.5, the accepted counts alternate 1, 2, so the request finishes in fewer decode steps
+// than it would accepting none.
+func TestEngineDriver_SuppliesTheRunsAcceptanceToTheEngine(t *testing.T) {
+	run := func(alpha float64) (*Request, *EngineDriver) {
+		eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100, Drafts: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Acceptance: alpha})
+		req := &Request{ID: "r0", InputTokens: tokens(8), OutputTokens: tokens(13), ArrivalTime: 0}
+		d.InjectArrival(req)
+		d.Run()
+		return req, d
+	}
+	none, _ := run(0)
+	half, d := run(0.5)
+	if d.Metrics.CompletedRequests != 1 {
+		t.Fatalf("completed = %d, want 1", d.Metrics.CompletedRequests)
+	}
+	// 12 decode tokens after the first: accepting none takes 12 decode steps; accepting
+	// 1, 2, 1, 2, ... (plus the bonus token each step) takes 5.
+	if got := len(none.ITL); got != 12 {
+		t.Errorf("α 0: ITL entries = %d, want 12", got)
+	}
+	if got := len(half.ITL); got != 5 {
+		t.Errorf("α 0.5: ITL entries = %d, want 5 (accepted 1, 2, 1, 2 then the rest)", got)
+	}
+}

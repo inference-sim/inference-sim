@@ -29,6 +29,12 @@ type EngineDriverConfig struct {
 	// QueueingTime is the host work before a request reaches the engine (tokenization and
 	// prompt preprocessing), in µs; nil means none.
 	QueueingTime func(req *Request) int64
+	// Acceptance is the run's mean draft acceptance rate α in [0, 1], an input the simulator
+	// owns (#2021 B3: spec-decode acceptance is an input). A request that verifies drafts in a
+	// batch is told how many of them the target accepted (engine.Outcome.Accepted), by the
+	// compatibility engine's deterministic carry: a mean of α x drafts per step, no RNG
+	// (commitDecodeTokens). Zero accepts none.
+	Acceptance float64
 }
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
@@ -71,6 +77,7 @@ type driverReq struct {
 	scheduledIdx int
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
+	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 }
 
 type driverBatch struct {
@@ -296,12 +303,39 @@ func (e *driverStepEnd) run(d *EngineDriver) {
 	}
 	fb := d.inFlight[0]
 	d.inFlight = d.inFlight[1:]
-	res, err := d.eng.Complete(fb.b.ID, engine.Outcome{}, e.at)
+	res, err := d.eng.Complete(fb.b.ID, d.outcome(fb.b), e.at)
 	if err != nil {
 		panic(fmt.Sprintf("engine driver: Complete(%d) at %d: %v", fb.b.ID, e.at, err))
 	}
 	d.apply(fb.b, res, e.at)
 	d.kick(e.at)
+}
+
+// outcome is what executing b produced that the engine does not decide: for each request that
+// verified drafts, how many the target accepted. The count is the compatibility engine's carry
+// rule (commitDecodeTokens): the request accrues α x drafts each step it verifies, and is told
+// the whole part, so the long-run mean is exactly α of the drafts, deterministically (INV-6).
+func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
+	var out engine.Outcome
+	if d.cfg.Acceptance <= 0 {
+		return out
+	}
+	for _, s := range b.Reqs {
+		r := d.reqs[s.ID]
+		if r == nil || s.Drafts <= 0 {
+			continue
+		}
+		r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
+		n := min(int(r.acceptCarry), s.Drafts)
+		r.acceptCarry -= float64(n)
+		if n > 0 {
+			if out.Accepted == nil {
+				out.Accepted = map[string]int{}
+			}
+			out.Accepted[s.ID] = n
+		}
+	}
+	return out
 }
 
 // driverWakeEvent steps the engine at an instant it asked for.

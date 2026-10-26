@@ -1319,7 +1319,7 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
-			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel),
+			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
