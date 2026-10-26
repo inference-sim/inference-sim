@@ -213,7 +213,7 @@ func TestFactoryRefuses(t *testing.T) {
 		// vllm/envs.py:2151-2152@5df63a72); use_v2_model_runner restates it, so the two must agree.
 		{"the runner field and its env key disagree", Version, "use_v2_model_runner: true\n" +
 			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n", "disagree"},
-		{"async with drafts", Version, "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n", "async scheduling with speculative"},
+		{"an mtp drafter without its layer count", Version, "speculative: {method: mtp, num_spec_tokens: 2}\n", "mtp_nextn_predict_layers"},
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
@@ -287,6 +287,8 @@ func TestFactoryRefuses(t *testing.T) {
 func TestFactoryAccepts(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
 		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
+		// The AsyncScheduler's placeholder drafts are diff-tested (core/engine t3-async-mtp*, t3-async-dspark).
+		{"async with drafts", "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n"},
 		{"the runner field and its env key agreeing", "use_v2_model_runner: true\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
 		{"dspark on V2 by its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +

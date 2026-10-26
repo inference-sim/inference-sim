@@ -34,6 +34,11 @@ type t3Scenario struct {
 		PipelineParallelSize int    `json:"pipeline_parallel_size"`
 		AsyncScheduling      bool   `json:"async_scheduling"`
 		UseV2ModelRunner     bool   `json:"use_v2_model_runner"`
+		Speculative          *struct {
+			Method    string `json:"method"`
+			NumTokens int    `json:"num_speculative_tokens"`
+			Draft     string `json:"draft"`
+		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -42,6 +47,8 @@ type t3Scenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		// Accepted is the drafts accepted at each verify step, the outcome's (#2021 B3).
+		Accepted []int `json:"accepted"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -57,6 +64,8 @@ type t3Golden struct {
 		Batch     int            `json:"batch"`
 		Scheduled map[string]int `json:"scheduled"`
 		Preempted []string       `json:"preempted"`
+		// SpecScheduled is how many drafts each request verifies in the batch.
+		SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	} `json:"batches"`
 	Finished map[string]struct {
 		Reason       string `json:"reason"`
@@ -70,8 +79,11 @@ type t3Golden struct {
 // oracle builds EngineCore directly and skips that check. Their goldens cannot be run at a
 // smaller max_model_len either, because the scheduler reads it in decisions
 // (core/sched/scheduler.go:446, 595, 725, 835). Their batch-queue behaviour is diff-tested in
-// core/engine, whose Core this adapter drives.
-var batchQueueGoldens = []string{"t3-async", "t3-async-maxtokens"}
+// core/engine, whose Core this adapter drives, as is t3-async-mtp-preempt's for the same reason.
+// The async-draft scenarios run MTP (one and four nextn layers) and DSpark through the
+// AsyncScheduler's placeholder drafts, accepting each verify step's drafts as the scenario plans.
+var batchQueueGoldens = []string{"t3-async", "t3-async-maxtokens", "t3-async-mtp", "t3-async-mtp-multi",
+	"t3-async-dspark"}
 
 func TestBatchQueueAgainstVLLM(t *testing.T) {
 	for _, name := range batchQueueGoldens {
@@ -112,6 +124,16 @@ func driveBatchQueue(t *testing.T, sc t3Scenario) t3Golden {
 		"scheduling_policy: %s\nenable_prefix_caching: %t\n",
 		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, c.MaxModelLen, c.NumBlocks, c.UseV2ModelRunner,
 		c.AsyncScheduling, max(c.PipelineParallelSize, 1), policy, c.EnablePrefixCaching)
+	if sp := c.Speculative; sp != nil {
+		src += fmt.Sprintf("speculative: {method: %s, num_spec_tokens: %d}\n", sp.Method, sp.NumTokens)
+		if sp.Draft != "" {
+			var draft struct {
+				Layers int `json:"num_nextn_predict_layers"`
+			}
+			readT3(t, filepath.Join("..", "..", "oracle", "drafts", sp.Draft, "config.json"), &draft)
+			src += fmt.Sprintf("mtp_nextn_predict_layers: %d\n", draft.Layers)
+		}
+	}
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &node); err != nil {
 		t.Fatal(err)
@@ -132,7 +154,13 @@ func driveBatchQueue(t *testing.T, sc t3Scenario) t3Golden {
 		Reason       string `json:"reason"`
 		OutputTokens int    `json:"output_tokens"`
 	}{}
-	var inFlight []engine.BatchID
+	// The scenario's acceptance plan, consumed one verify step at a time, as the oracle's GPU
+	// mock consumes it (oracle/run_enginecore.py gpu_output).
+	plan, verified := map[string][]int{}, map[string]int{}
+	for _, r := range sc.Requests {
+		plan[r.ID] = r.Accepted
+	}
+	var inFlight []engine.Batch
 	next, maxSteps := 0, sc.MaxSteps
 	if maxSteps == 0 {
 		maxSteps = 10000
@@ -169,22 +197,35 @@ func driveBatchQueue(t *testing.T, sc t3Scenario) t3Golden {
 			t.Fatal(err)
 		}
 		if err == nil && !b.Empty() {
-			inFlight = append(inFlight, b.ID)
-			sched := map[string]int{}
+			inFlight = append(inFlight, b)
+			sched, spec := map[string]int{}, map[string]int{}
 			for _, s := range b.Reqs {
 				sched[s.ID] = s.Tokens
+				if s.Drafts > 0 {
+					spec[s.ID] = s.Drafts
+				}
 			}
 			pre := append([]string{}, b.Preempted...)
 			sort.Strings(pre)
 			got.Batches = append(got.Batches, struct {
-				Batch     int            `json:"batch"`
-				Scheduled map[string]int `json:"scheduled"`
-				Preempted []string       `json:"preempted"`
-			}{len(got.Batches), sched, pre})
+				Batch         int            `json:"batch"`
+				Scheduled     map[string]int `json:"scheduled"`
+				Preempted     []string       `json:"preempted"`
+				SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
+			}{len(got.Batches), sched, pre, spec})
 		}
 		eng := e.(*Engine)
 		if eng.blocked && len(inFlight) > 0 {
-			res, err := e.Complete(inFlight[0], engine.Outcome{}, now)
+			accepted := map[string]int{}
+			for _, s := range inFlight[0].Reqs {
+				if s.Drafts > 0 {
+					if i := verified[s.ID]; i < len(plan[s.ID]) {
+						accepted[s.ID] = plan[s.ID][i]
+					}
+					verified[s.ID]++
+				}
+			}
+			res, err := e.Complete(inFlight[0].ID, engine.Outcome{Accepted: accepted}, now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -204,7 +245,7 @@ func driveBatchQueue(t *testing.T, sc t3Scenario) t3Golden {
 }
 
 func batchQueueDivergence(want, got t3Golden) string {
-	var wantRun []map[string]int
+	var wantRun, wantSpec []map[string]int
 	var wantPre [][]string
 	for _, b := range want.Batches {
 		if sumTokens(b.Scheduled) == 0 {
@@ -214,6 +255,7 @@ func batchQueueDivergence(want, got t3Golden) string {
 		pre := append([]string{}, b.Preempted...)
 		sort.Strings(pre)
 		wantPre = append(wantPre, pre)
+		wantSpec = append(wantSpec, b.SpecScheduled)
 	}
 	for i := 0; i < max(len(wantRun), len(got.Batches)); i++ {
 		switch {
@@ -225,6 +267,9 @@ func batchQueueDivergence(want, got t3Golden) string {
 			return fmt.Sprintf("batch %d, scheduled: vLLM %v, adapter %v", i, wantRun[i], got.Batches[i].Scheduled)
 		case !reflect.DeepEqual(nonEmpty(wantPre[i]), nonEmpty(got.Batches[i].Preempted)):
 			return fmt.Sprintf("batch %d, preempted: vLLM %v, adapter %v", i, wantPre[i], got.Batches[i].Preempted)
+		case len(wantSpec[i])+len(got.Batches[i].SpecScheduled) > 0 &&
+			!reflect.DeepEqual(wantSpec[i], got.Batches[i].SpecScheduled):
+			return fmt.Sprintf("batch %d, drafts verified: vLLM %v, adapter %v", i, wantSpec[i], got.Batches[i].SpecScheduled)
 		}
 	}
 	// The batch queue's length after every loop step: a run that kept one batch in flight, or

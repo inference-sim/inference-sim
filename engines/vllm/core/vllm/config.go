@@ -36,16 +36,23 @@ import (
 //     async scheduling (vllm/config/vllm.py:577-588@5df63a72). The parallel block is not part of
 //     the engine block a Spec carries, so the caller restates it here, and it must be stated: an
 //     unstated one would build a one-batch engine for a pool that pipelines.
+//   - MTPNextnPredictLayers is an MTP drafter checkpoint's num_nextn_predict_layers, which sets
+//     the prefill lookahead the scheduler reserves: num_speculative_tokens for multi-module MTP
+//     (min(layers, K) > 1), else one (VllmConfig.num_prefill_lookahead_tokens,
+//     vllm/config/vllm.py:644-664; use_multi_module_mtp, vllm/config/speculative.py:1982-1988
+//     @5df63a72). It is the model's, not the deployment's, so the caller states it from the
+//     checkpoint's config.json; an MTP drafter without it is refused.
 //
 // UseV2ModelRunner is whether the V2 model runner runs (VllmConfig.use_v2_model_runner,
 // vllm/config/vllm.py:703-739@5df63a72). vLLM resolves an unset VLLM_USE_V2_MODEL_RUNNER from
 // whether Triton is installed and which features are on, so it is a fact of the serving image
 // the caller states, here or as the env key; see resolveV2Runner.
 type Config struct {
-	deployment.Engine    `yaml:",inline"`
-	NumGPUBlocks         int   `yaml:"num_gpu_blocks"`
-	PipelineParallelSize *int  `yaml:"pipeline_parallel_size"`
-	UseV2ModelRunner     *bool `yaml:"use_v2_model_runner,omitempty"`
+	deployment.Engine     `yaml:",inline"`
+	NumGPUBlocks          int   `yaml:"num_gpu_blocks"`
+	PipelineParallelSize  *int  `yaml:"pipeline_parallel_size"`
+	UseV2ModelRunner      *bool `yaml:"use_v2_model_runner,omitempty"`
+	MTPNextnPredictLayers int   `yaml:"mtp_nextn_predict_layers,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -186,13 +193,18 @@ func resolve(c Config) (settings, error) {
 		method = sp.Method
 		if !specMethodModelled(method) {
 			// draft_model's draft slots depend on parallel_drafting (PARD, K slots, or one;
-			// vllm/config/speculative.py:1907-1926@5df63a72), and an MTP drafter's prefill
-			// lookahead on its checkpoint's num_nextn_predict_layers (vllm/config/vllm.py:655-665@5df63a72):
-			// neither is a deployment field, so neither method is built until it is.
+			// vllm/config/speculative.py:1907-1926@5df63a72), which is not a deployment field.
 			return s, fmt.Errorf("vllm: speculative method %q is not built by this factory; it builds eagle, "+
-				"eagle3 and dspark, whose scheduler numbers the deployment fully states (docs/feature-matrix.md)", method)
+				"eagle3, mtp and dspark, whose scheduler numbers the engine block fully states (docs/feature-matrix.md)", method)
 		}
-		spec = sched.ResolveSpec(sched.SpecOptions{Method: method, NumTokens: sp.NumSpecTokens})
+		if method == "mtp" && c.MTPNextnPredictLayers < 1 {
+			// The prefill lookahead depends on the drafter checkpoint's layer count
+			// (vllm/config/vllm.py:644-664@5df63a72), which only its config.json holds.
+			return s, fmt.Errorf("vllm: an mtp drafter needs mtp_nextn_predict_layers, its checkpoint's " +
+				"num_nextn_predict_layers, which sets the prefill lookahead (vllm/config/vllm.py:644-664@5df63a72)")
+		}
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: method, NumTokens: sp.NumSpecTokens,
+			NextnPredictLayers: c.MTPNextnPredictLayers})
 	}
 
 	v2, err := resolveV2Runner(c)
@@ -212,12 +224,10 @@ func resolve(c Config) (settings, error) {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
 	queue := engine.MaxConcurrentBatches(pp, async, v2)
-	if async && spec.NumTokens > 0 {
-		// The AsyncScheduler's draft placeholders (async_scheduler.py:26-49@5df63a72) are not
-		// diff-tested together with speculative decoding (docs/feature-matrix.md).
-		return s, fmt.Errorf("vllm: async scheduling with speculative decoding is not modelled; " +
-			"state async_scheduling: false to run the drafter synchronously")
-	}
+	// Async scheduling with a drafter runs the AsyncScheduler's placeholder drafts
+	// (async_scheduler.py:25-58@5df63a72), diff-tested with MTP and DSpark against vLLM's own
+	// EngineCore through the batch queue (core/engine/testdata/golden/t3-async-mtp*.json,
+	// t3-async-dspark.json).
 	// max_concurrent_batches > 1 runs vLLM's batch queue: the adapter keeps step_with_batch_queue's
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
@@ -265,7 +275,7 @@ func resolve(c Config) (settings, error) {
 // (docs/feature-matrix.md, "Speculative decoding") whose scheduler numbers depend only on the
 // method and num_speculative_tokens.
 func specMethodModelled(method string) bool {
-	return slices.Contains([]string{"eagle", "eagle3", "dspark"}, method)
+	return slices.Contains([]string{"eagle", "eagle3", "mtp", "dspark"}, method)
 }
 
 // resolveV2Runner is VllmConfig.use_v2_model_runner (vllm/config/vllm.py:703-739@5df63a72) for

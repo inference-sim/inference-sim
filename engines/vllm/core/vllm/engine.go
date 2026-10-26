@@ -79,6 +79,9 @@ type Engine struct {
 	adapters map[string]int
 	// maxLoRAs is max_loras, 0 when LoRA is off; specTokens is num_speculative_tokens.
 	maxLoRAs, specTokens int
+	// async is async scheduling: a decode's drafts are the AsyncScheduler's placeholders, which
+	// the worker fills with its own proposals (async_scheduler.py:25-58@5df63a72).
+	async bool
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
@@ -130,7 +133,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 	e := &Engine{
 		s: s, pricer: pricer, reqs: map[string]*reqState{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
-		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens,
+		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
 	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
 	return e, nil
@@ -407,8 +410,9 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 	pb := e.pending[0]
 	e.pending = e.pending[1:]
 	// The GPU's answer: each sampling request's next assigned token, plus the drafts the
-	// outcome accepted (at most the real drafts it verified; a -1 placeholder is always
-	// rejected), the last assigned token as EOS.
+	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
+	// rejected, while under async scheduling every placeholder is the worker's real draft), the
+	// last assigned token as EOS.
 	tokens := map[string][]int64{}
 	firsts := []string{}
 	emitted := map[string]int{}
@@ -419,10 +423,13 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 		}
 		n := 1
 		if drafts := pb.b.Out.SpecDecode[rid]; len(drafts) > 0 {
-			real := 0
-			for _, d := range drafts {
-				if d >= 0 {
-					real++
+			real := len(drafts)
+			if !e.async {
+				real = 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
 				}
 			}
 			n += min(max(outcome.Accepted[rid], 0), real)
@@ -502,11 +509,12 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 	}
 	res.KVEvents = kvEvents(e.s.TakeKVEvents())
 	e.finishStep(pb.b, emitted, fins)
-	if e.specTokens > 0 && len(pb.b.Out.Scheduled) > 0 {
-		// EngineCore.post_step (vllm/v1/engine/core.py:689-696@5df63a72): after a step that ran,
-		// the drafter proposes num_speculative_tokens drafts for every request it ran, as the
-		// shared GPU mock does (oracle/mocks.json). Only their count reaches a decision; their
-		// acceptance is the outcome's (#2021 B3).
+	if e.specTokens > 0 && !e.async && len(pb.b.Out.Scheduled) > 0 {
+		// EngineCore.post_step (vllm/v1/engine/core.py:689-696@5df63a72): without async
+		// scheduling, after a step that ran, the drafter proposes num_speculative_tokens drafts
+		// for every request it ran, as the shared GPU mock does (oracle/mocks.json). Only their
+		// count reaches a decision; their acceptance is the outcome's (#2021 B3). Under async
+		// scheduling post_step proposes nothing: the scheduler set placeholders (core/sched).
 		drafts := map[string][]int64{}
 		for id := range pb.b.Out.Scheduled {
 			drafts[id] = make([]int64, e.specTokens)
