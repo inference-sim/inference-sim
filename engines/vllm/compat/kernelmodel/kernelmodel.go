@@ -121,6 +121,10 @@ type Model struct {
 	rules ruleReport
 	// routing is the pool's routing-imbalance resolution for the results file.
 	routing *sim.RoutingRecord
+	// cacheDType is the cache dtype that runs, as the release's rules resolve the pool's
+	// requested one for the model's architecture, the chip's family and the TP width
+	// (rules.EngineRules.ResolveCacheDType), the key a cache record is read by (KVLayers).
+	cacheDType string
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -167,6 +171,9 @@ type identity struct {
 	prefillBackoff int
 	// prefix is the KV cache group layout a prefix hit is cut by (PrefixHit).
 	prefix prefixLayout
+	// capabilityMajor is the chip's compute-capability major version, the family the kernel
+	// resolves the model graph for (ForCapability); 0 when the chip states none.
+	capabilityMajor int
 }
 
 func identityOf(in latencykernel.Inputs) identity {
@@ -178,23 +185,24 @@ func identityOf(in latencykernel.Inputs) identity {
 	}
 	pl := pool.Parallel
 	return identity{
-		model:          in.Scenario.Model,
-		hardware:       in.Chip.Name,
-		memoryGiB:      in.Chip.MemoryGiB,
-		smCount:        in.Chip.SMCount,
-		experts:        experts,
-		expertsPerTok:  topK,
-		defaultWindow:  in.Model.Global.DefaultWindow(),
-		role:           pool.Role,
-		firstNode:      first,
-		poolNodes:      pool.Nodes,
-		gpusPerNode:    in.Scenario.Cluster.GPUsPerNode,
-		gpusPerRack:    in.Scenario.Cluster.GPUsPerRack,
-		rankGPUs:       max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
-		tpRanks:        max(1, pl.TP),
-		latentKV:       allLatent(in.Model),
-		prefillBackoff: prefillBackoffOf(in.Model, pool.Engine.Speculative),
-		prefix:         prefixLayoutOf(in.Model, pool),
+		model:           in.Scenario.Model,
+		hardware:        in.Chip.Name,
+		memoryGiB:       in.Chip.MemoryGiB,
+		smCount:         in.Chip.SMCount,
+		experts:         experts,
+		expertsPerTok:   topK,
+		defaultWindow:   in.Model.Global.DefaultWindow(),
+		role:            pool.Role,
+		firstNode:       first,
+		poolNodes:       pool.Nodes,
+		gpusPerNode:     in.Scenario.Cluster.GPUsPerNode,
+		gpusPerRack:     in.Scenario.Cluster.GPUsPerRack,
+		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
+		tpRanks:         max(1, pl.TP),
+		latentKV:        allLatent(in.Model),
+		prefillBackoff:  prefillBackoffOf(in.Model, pool.Engine.Speculative),
+		prefix:          prefixLayoutOf(in.Model, pool),
+		capabilityMajor: func() int { f, _ := in.Chip.CapabilityMajor(); return f }(),
 	}
 }
 
@@ -294,6 +302,10 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	m.graph = in.Model
+	if in.Rules != nil {
+		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
+			max(pool.Parallel.TP, 1), pool.Engine.CacheDType)
+	}
 	return m, nil
 }
 

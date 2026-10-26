@@ -131,11 +131,9 @@ func req(id string, prompt, output int) engine.Request {
 }
 
 // A 0.32.0 deployment that needs a piece this engine does not build yet is refused, naming the
-// piece, rather than run without it: hybrid KV groups (a sliding-window, indexer or recurrent
-// cache beside full attention). A drafter is not such a piece: d001's MTP and d027's DSpark are
-// refused for their KV groups alone. Nor is data parallelism: it builds a DPGroup, so d116 is
-// refused for its KV groups alone, and d079 only for running each rank's batch queue (vLLM
-// resolves async scheduling on for it), which the group does not build yet.
+// piece, rather than run without it. Data parallelism as such is not one: it builds a DPGroup, so
+// d116 (minimax-m3, whose KV groups build) and d079 are refused only for running each rank's batch
+// queue (vLLM resolves async scheduling on for them), which the group does not build yet.
 func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 	Register()
 	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
@@ -144,8 +142,6 @@ func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
 		scenario string
 		want     []string
 	}{
-		{"d001-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4-pro with mtp
-		{"d027-032.yaml", []string{"hybrid KV groups"}},                       // deepseek-v4.1-flash with dspark
 		{"d116-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m3 dp 4
 		{"d079-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m2.5 dp 2
 	} {
@@ -342,7 +338,7 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 			if err := done.Config.Decode(&block); err != nil {
 				t.Fatal(err)
 			}
-			got, err := vllm.KVGroups(block.Layers, false)
+			got, err := vllm.KVGroups(block.Layers, false, false)
 			if err != nil || !reflect.DeepEqual(got, c.want) {
 				t.Errorf("KV groups %v (%v), want %v", got, err, c.want)
 			}

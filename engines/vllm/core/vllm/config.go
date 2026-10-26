@@ -261,7 +261,8 @@ func resolve(c Config) (settings, error) {
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
 	}
-	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager)
+	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
+		trailingDrafter(method, c.KVLayers))
 	if err != nil {
 		return settings{}, err
 	}

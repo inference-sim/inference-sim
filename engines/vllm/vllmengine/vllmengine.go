@@ -220,7 +220,9 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 	out := make([]vllm.KVLayerRun, len(runs))
 	for i, r := range runs {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
-			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize}
+			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
+			StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
+			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay}
 	}
 	return out
 }
