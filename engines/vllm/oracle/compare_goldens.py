@@ -3,7 +3,8 @@
 
 The goldens under core/sched/testdata/golden were produced once, by the oracle on a
 developer's machine. CI re-runs vLLM v0.32.0 (the pinned release wheel) on every scenario and
-this compares each fresh trace with its golden, decision by decision (`steps` and `finished`),
+this compares each fresh trace with its golden, decision by decision (`steps` and `finished`,
+and `kv_pool`, the pool vLLM sized, where a scenario states its KV memory),
 so a golden passes only while the pinned vLLM release still produces it.
 
 Usage: python3 -I oracle/compare_goldens.py <golden dir> <fresh dir>
@@ -26,6 +27,8 @@ def first_difference(golden: dict, fresh: dict) -> str:
             return f"step {i}: fields {keys} differ"
     if golden["finished"] != fresh["finished"]:
         return "the finished records differ"
+    if golden.get("kv_pool") != fresh.get("kv_pool"):
+        return "the KV pools vLLM sized differ"
     return ""
 
 

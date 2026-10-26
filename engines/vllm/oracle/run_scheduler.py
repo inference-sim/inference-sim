@@ -41,7 +41,8 @@ def layer_specs(cfg: dict) -> dict:
     vllm/models/deepseek_v41/attention.py:1138-1240), "sliding_window_mla" SlidingWindowMLASpec
     (vllm/v1/attention/backends/mla/sparse_swa.py:116-140, vllm/models/deepseek_v4/compressor.py:
     179-193) and "circular_buffer" CircularBufferSpec (vllm/models/deepseek_v41/compressor.py:
-    159-167). Their uint8 caches are uint8 here; a float32 cache states "elem_bytes": 4."""
+    159-167). Their uint8 caches are uint8 here; a float32 cache states "elem_bytes": 4. The
+    attention specs' caches are float32 unless a run states "elem_bytes" (2 is bfloat16)."""
     import torch  # noqa: E402
     from vllm.v1.kv_cache_interface import (  # noqa: E402
         CircularBufferSpec,
@@ -57,7 +58,7 @@ def layer_specs(cfg: dict) -> dict:
     for r, run in enumerate(cfg["kv_layers"]):
         for i in range(run["count"]):
             common = {"block_size": cfg["block_size"], "num_kv_heads": run.get("num_kv_heads", 1),
-                      "head_size": run.get("head_size", 1), "dtype": torch.float32}
+                      "head_size": run.get("head_size", 1), "dtype": dtypes[run.get("elem_bytes", 4)]}
             kind = run["spec"]
             deepseek = {"block_size": run.get("block_size", cfg["block_size"]), "num_kv_heads": 1,
                         "head_size": run["head_size"] if "head_size" in run else 1,
@@ -127,11 +128,26 @@ def layer_groups(cfg: dict, vllm_config) -> list:
         supported = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
     resolve_kv_cache_layout(vllm_config, [supported], layers.values())
     groups = get_kv_cache_groups(vllm_config, layers)
+    if cfg.get("kv_available_bytes"):
+        # The pool vLLM sizes from that much KV memory over these groups: its own
+        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_utils.py:1588-1628@5df63a72) on the
+        # groups it just built, as the engine core calls it per worker (get_kv_cache_configs,
+        # :2687-2695). Recorded beside the trace; the scenario's num_blocks still runs the
+        # scheduler, so no decision moves.
+        from vllm.v1.core.kv_cache_utils import get_kv_cache_config_from_groups  # noqa: E402
+
+        sized = get_kv_cache_config_from_groups(vllm_config, groups, cfg["kv_available_bytes"])
+        pool_sizes.append({"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
+                           "kv_cache_layout": vllm_config.cache_config.kv_cache_layout})
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
     # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
     projected = generate_scheduler_kv_cache_config(
         [KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=groups)])
     return projected.kv_cache_groups
+
+
+# What layer_groups sized for a scenario stating kv_available_bytes, for run_one's trace.
+pool_sizes: list = []
 
 
 def main() -> None:
@@ -318,11 +334,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         steps.append(record)
         step += 1
 
-    return {
+    out = {
         "provenance": provenance(vllm_root, scenario_path),
         "steps": steps,
         "finished": dict(sorted(finished.items())),
     }
+    if pool_sizes:
+        out["kv_pool"] = pool_sizes[-1]
+        pool_sizes.clear()
+    return out
 
 
 def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dict | None = None):

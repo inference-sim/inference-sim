@@ -108,3 +108,17 @@ func TestPoolBytesPerBlockSizesTheGroupsVLLMBuilds(t *testing.T) {
 		t.Errorf("gpt-oss-120b, hybrid manager off: PoolBytesPerBlock = %d, want %d", got, 36*page)
 	}
 }
+
+// The layout follows the grouping: a model of attention specs sizes its block layer-outer, each
+// page padded to its own stride alignment, as vLLM's default LBNHC does; a block-outer sizing
+// would pad only the summed block.
+func TestPoolBytesPerBlockSizesAttentionSpecsLayerOuter(t *testing.T) {
+	layers := []Layer{
+		{Spec: LayerFull, KVHeads: 1, HeadSize: 25, ElemBytes: 1, StrideAlignment: 64}, // a 16 x 50 = 800-byte page
+		{Spec: LayerFull, KVHeads: 1, HeadSize: 25, ElemBytes: 1, StrideAlignment: 64},
+	}
+	// Layer-outer: each page padded to 832; block-outer would give round_up(1600, 64) = 1600.
+	if got, err := PoolBytesPerBlock(layers, GroupOptions{}, 16); err != nil || got != 2*832 {
+		t.Errorf("PoolBytesPerBlock = %d (%v), want %d (each page padded to its alignment)", got, err, 2*832)
+	}
+}

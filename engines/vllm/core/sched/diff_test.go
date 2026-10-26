@@ -46,8 +46,11 @@ type scenario struct {
 		} `json:"kv_groups"`
 		// KVLayers is a model's attention layers as runs of one spec each, in model order,
 		// which vLLM's get_kv_cache_groups groups (kv.GroupsOfLayers).
-		KVLayers                    []kvLayerRun `json:"kv_layers"`
-		DisableHybridKVCacheManager bool         `json:"disable_hybrid_kv_cache_manager"`
+		KVLayers []kvLayerRun `json:"kv_layers"`
+		// KVAvailableBytes is KV memory the oracle sizes vLLM's pool from over the groups
+		// (trace.KVPool); the scenario's num_blocks still runs the scheduler.
+		KVAvailableBytes            int64 `json:"kv_available_bytes"`
+		DisableHybridKVCacheManager bool  `json:"disable_hybrid_kv_cache_manager"`
 		Speculative                 *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
@@ -101,6 +104,13 @@ type trace struct {
 		OutputTokens int    `json:"output_tokens"`
 		Step         int    `json:"step"`
 	} `json:"finished"`
+	// KVPool is the KV pool vLLM sized from the scenario's kv_available_bytes over its groups
+	// (get_kv_cache_config_from_groups), when the scenario states that memory.
+	KVPool *struct {
+		AvailableBytes int64  `json:"available_bytes"`
+		NumBlocks      int64  `json:"num_blocks"`
+		Layout         string `json:"kv_cache_layout"`
+	} `json:"kv_pool"`
 }
 
 // run drives the scenario through the Go scheduler exactly as oracle/run_scheduler.py drives
@@ -441,23 +451,7 @@ func kvGroups(t *testing.T, gs []struct {
 }, runs []kvLayerRun, disableHybrid bool) []kv.Group {
 	t.Helper()
 	if len(runs) > 0 {
-		var layers []kv.Layer
-		for _, r := range runs {
-			spec, err := kv.ParseLayerSpec(r.Spec)
-			if err != nil {
-				t.Fatal(err)
-			}
-			heads := r.NumKVHeads
-			if spec == kv.LayerMLA || spec == kv.LayerSlidingWindowMLA || spec == kv.LayerCircularBuffer {
-				heads = 1 // DeepSeek V4's caches are one latent head (layer_specs)
-			}
-			for i := 0; i < r.Count; i++ {
-				layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
-					BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
-					ElemBytes: r.ElemBytes, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay})
-			}
-		}
-		groups, err := kv.GroupsOfLayers(layers, disableHybrid)
+		groups, err := kv.GroupsOfLayers(scenarioLayers(t, runs), disableHybrid)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -598,4 +592,73 @@ func TestScenarioFromEnv(t *testing.T) {
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
 		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
 	}
+}
+
+// TestKVPoolAgainstVLLM sizes the KV pool of every scenario stating kv_available_bytes over its
+// KV cache groups (kv.PoolBytesPerBlock) and compares the block count with the one vLLM v0.32.0's
+// own get_kv_cache_config_from_groups gave on the same layers and memory (the golden's kv_pool,
+// oracle/run_scheduler.py layer_groups): the widest group's bytes per block, the shared pool's
+// count. gpt-oss-120b's two groups of 18 hold twice the blocks one group of every layer would.
+func TestKVPoolAgainstVLLM(t *testing.T) {
+	scenarios, err := filepath.Glob("../../oracle/scenarios/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compared := 0
+	for _, path := range scenarios {
+		var sc scenario
+		readJSON(t, path, &sc)
+		if sc.Config.KVAvailableBytes == 0 {
+			continue
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var want trace
+			readJSON(t, filepath.Join("testdata", "golden", name+".json"), &want)
+			checkProvenance(t, path, want)
+			if want.KVPool == nil || want.KVPool.AvailableBytes != sc.Config.KVAvailableBytes {
+				t.Fatalf("golden %s records no kv_pool for %d bytes", name, sc.Config.KVAvailableBytes)
+			}
+			layers := scenarioLayers(t, sc.Config.KVLayers)
+			per, err := kv.PoolBytesPerBlock(layers, kv.GroupOptions{DisableHybrid: sc.Config.DisableHybridKVCacheManager},
+				sc.Config.BlockSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := sc.Config.KVAvailableBytes / per; got != want.KVPool.NumBlocks {
+				t.Errorf("KV pool of %d blocks (%d bytes a block), vLLM v0.32.0 sizes %d on %s",
+					got, per, want.KVPool.NumBlocks, want.KVPool.Layout)
+			}
+		})
+		compared++
+	}
+	if compared < 2 {
+		t.Fatalf("compared %d KV pools with vLLM's, want at least 2", compared)
+	}
+}
+
+// scenarioLayers is a scenario's kv_layers as core/kv's layers, one per layer in model order,
+// with the oracle's element sizes (layer_specs): the attention specs' caches float32 unless a run
+// states elem_bytes, DeepSeek V4's uint8 and one latent head.
+func scenarioLayers(t *testing.T, runs []kvLayerRun) []kv.Layer {
+	t.Helper()
+	var layers []kv.Layer
+	for _, r := range runs {
+		spec, err := kv.ParseLayerSpec(r.Spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		heads, elem := r.NumKVHeads, r.ElemBytes
+		if spec == kv.LayerMLA || spec == kv.LayerSlidingWindowMLA || spec == kv.LayerCircularBuffer {
+			heads = 1 // DeepSeek V4's caches are one latent head (layer_specs)
+		} else if elem == 0 {
+			elem = 4
+		}
+		for i := 0; i < r.Count; i++ {
+			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
+				BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
+				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay})
+		}
+	}
+	return layers
 }
