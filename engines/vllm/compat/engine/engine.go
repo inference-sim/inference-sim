@@ -2,7 +2,7 @@
 
 // sim/engine.go: the engine half of an instance (EngineCore): every scheduling, KV-cache and
 // metric decision, reaching its host only through EngineHost and its report only through
-// Recorder (#2021 B3, PLAN-E2 E2.3).
+// Recorder (#2021 B3; the split's last step is inference-sim#2027, addendum 4 item 2).
 package engine
 
 import (

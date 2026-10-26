@@ -6,7 +6,7 @@ import "fmt"
 
 // The engine's state queries and host-initiated actions: what the cluster (sim/cluster) asks of
 // an instance's engine, so it never reaches into the engine's KV store, wait queue or running
-// batch (#2021 B3: blis-vllm answers state queries; PLAN-E2 E2.3).
+// batch (#2021 B3: blis-vllm answers state queries; inference-sim#2027, addendum 4 item 2).
 
 // KVThrashing returns the KV store's thrashing rate and, for a store that counts them, the
 // thrash events and opportunities behind it (ok false otherwise).

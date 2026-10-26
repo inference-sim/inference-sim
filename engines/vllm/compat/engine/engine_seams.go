@@ -7,7 +7,8 @@ package engine
 
 // EngineHost is what the engine needs from the simulator it runs in (#2021 B3: the clock,
 // the event queue and the callbacks stay with the host). The engine reaches the host only
-// through it, so the engine can move to blis-vllm with the host left behind (PLAN-E2 E2.3).
+// through it, so the engine can move to blis-vllm with the host left behind (inference-sim#2027,
+// addendum 4 item 2).
 // The calls are made at exactly the points the engine made them before, so events are
 // created in the same order with the same seqIDs (hazard 2).
 type EngineHost interface {
@@ -40,7 +41,7 @@ type EngineHost interface {
 // Recorder is how the engine writes the host's report record: every count, latency and series
 // the engine produces goes through one of these calls, at exactly the point the engine used to
 // write the field (#2021 B2: inference-sim owns its reports; the engine updates them through
-// the seam, PLAN-E2 E2.3b). *Metrics implements it.
+// the seam, inference-sim#2027 addendum 4 item 2). *Metrics implements it.
 type Recorder interface {
 	// RecordArrival registers a request the instance has received; arrivedAt is its arrival
 	// in seconds.
