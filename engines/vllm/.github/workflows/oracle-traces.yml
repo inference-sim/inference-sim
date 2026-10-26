@@ -64,6 +64,8 @@ jobs:
           python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+          # core/kv's block hashes: the generator refuses to write if any hash differs.
+          python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       - name: record the Go side's provenance
         run: go run ./cmd/provenance > oracle/out/provenance.json
       - uses: actions/upload-artifact@v4

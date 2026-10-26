@@ -252,6 +252,8 @@ jobs:
       # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
       # the generator exits non-zero if any differs from the committed file.
       - name: the block-hash fixture is vLLM's own hashes
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
         run: python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       # The seeded fuzz corpus: 4000 random scenarios from fixed seeds, each run through vLLM's
       # Scheduler and then through blis-vllm, which must match at zero mismatches.

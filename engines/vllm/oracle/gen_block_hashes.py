@@ -18,12 +18,20 @@ committed ones means vLLM's hashing moved, and the file must not be overwritten 
 The file is written compact (no indentation): the large-block cases hold some 600 thousand
 token ids, one per line otherwise.
 
+The provenance block records what every oracle trace does (docs/testing.md, "Provenance"): the
+vLLM version, commit and installed distribution, the Python version and the platform, the two
+lock hashes, the blis-vllm commit and the mocks. The generator loads no model, runs no scenario
+and replaces nothing, so it records no model and no scenario digest, its mock list is empty and
+its mock version null; its inputs are the committed cases themselves.
+
 Usage: python -I oracle/gen_block_hashes.py <vllm checkout> <committed json> > <new json>
 """
 
+import hashlib
 import importlib.metadata
 import json
 import os
+import platform
 import random
 import subprocess
 import sys
@@ -82,15 +90,33 @@ def main() -> None:
     def git(*args):
         return subprocess.run(["git", "-C", vllm_root, *args], capture_output=True, text=True).stdout.strip()
 
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, here)
+    from run_scheduler import blis_vllm_commit, committed_lock_sha256  # noqa: E402
+
+    # ORACLE_LOCKFILE names the frozen package list of the environment that ran vLLM, as for
+    # every oracle trace (oracle/run_scheduler.py provenance).
+    lockfile = os.environ.get("ORACLE_LOCKFILE")
+    lock_digest = "unrecorded"
+    if lockfile:
+        with open(lockfile, "rb") as f:
+            lock_digest = hashlib.sha256(f.read()).hexdigest()
     json.dump({
         "provenance": {
             "generator": "oracle/gen_block_hashes.py",
             "vllm_version": importlib.metadata.version("vllm").split("+")[0],
+            "vllm_distribution": importlib.metadata.version("vllm"),
             "vllm_commit": git("rev-parse", "HEAD"),
             "functions": ["vllm.v1.core.kv_cache_utils.hash_block_tokens", "vllm.v1.core.kv_cache_utils.init_none_hash",
                           "vllm.utils.hashing.sha256"],
             "python": ".".join(map(str, sys.version_info[:3])),
+            "platform": platform.system().lower() + "-" + platform.machine(),
             "pythonhashseed": os.environ.get("PYTHONHASHSEED", "unset"),
+            "lockfile_sha256": lock_digest,
+            "requirements_lock_sha256": committed_lock_sha256(),
+            "blis_vllm_commit": blis_vllm_commit(),
+            "mock_version": None,
+            "mocks": [],
         },
         "none_hash_seed": kcu._NONE_HASH_SEED,
         "none_hash": bytes(kcu.NONE_HASH).hex(),
