@@ -302,14 +302,12 @@ func resolve(c Config) (settings, error) {
 	if s.dp.statsIntervalUs == 0 {
 		s.dp.statsIntervalUs = 100_000
 	}
-	if s.dp.ranks > 1 && queue > 1 {
-		// A DP rank with a batch queue (async scheduling, PP) steps step_with_batch_queue inside
-		// run_busy_loop; the DP oracle diff-tests the waves over step() ranks only
-		// (oracle/run_dp.py), so the group runs one batch in flight per rank.
-		return settings{}, fmt.Errorf("vllm: data parallelism with async scheduling (dp %d, a batch queue of %d on each "+
-			"rank) is not built yet: the DP group is diff-tested with each rank stepping step() (oracle/run_dp.py), and "+
-			"vLLM v0.32.0 resolves async scheduling on for this deployment (vllm/config/vllm.py:1585-1644@5df63a72)",
-			s.dp.ranks, queue)
+	if s.dp.ranks > 1 && pp > 1 {
+		// A DP rank's batch queue is diff-tested inside vLLM's DP loop with async scheduling on one
+		// pipeline stage (oracle/run_dp.py, core/engine/testdata/golden-dp-async); pipeline
+		// parallelism inside a DP rank is not.
+		return settings{}, fmt.Errorf("vllm: data parallelism with pipeline parallelism (dp %d, pp %d) is not built "+
+			"yet: the DP group is diff-tested on one pipeline stage per rank (oracle/run_dp.py)", s.dp.ranks, pp)
 	}
 	// The release's own accepted values and refusals, for what the checks above do not cover.
 	if err := checkRules(e, pp); err != nil {

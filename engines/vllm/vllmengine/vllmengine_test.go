@@ -130,38 +130,29 @@ func req(id string, prompt, output int) engine.Request {
 	return r
 }
 
-// A 0.32.0 deployment that needs a piece this engine does not build yet is refused, naming the
-// piece, rather than run without it. Data parallelism as such is not one: it builds a DPGroup, so
-// d116 (minimax-m3, whose KV groups build) and d079 are refused only for running each rank's batch
-// queue (vLLM resolves async scheduling on for them), which the group does not build yet.
-func TestDashboardDeploymentsNeedingAPieceAreRefusedNamingIt(t *testing.T) {
+// No dashboard deployment in testdata needs a piece this engine refuses: data parallelism
+// builds a DPGroup with or without each rank's batch queue, and a drafter and the DeepSeek and
+// MiniMax KV cache groups build. d116 (minimax-m3, dp 4) and d079 (minimax-m2.5, dp 2), which
+// were refused for running each rank's batch queue, build as stated, and the build never names
+// data parallelism as a missing piece.
+func TestDashboardDataParallelDeploymentsAreNotRefused(t *testing.T) {
 	Register()
 	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
 	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
-	for _, c := range []struct {
-		scenario string
-		want     []string
-	}{
-		{"d116-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m3 dp 4
-		{"d079-032.yaml", []string{"data parallelism with async scheduling"}}, // minimax-m2.5 dp 2
-	} {
-		abs, _ := filepath.Abs(filepath.Join("testdata", c.scenario))
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+	for _, scenario := range []string{"d116-032.yaml", "d079-032.yaml", "d088-032.yaml", "d103-032.yaml"} {
+		abs, _ := filepath.Abs(filepath.Join("testdata", scenario))
+		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
 			Roots: map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}})
-		if err == nil {
-			t.Errorf("%s: built, want a refusal naming %v", c.scenario, c.want)
+		if err != nil {
+			if strings.Contains(err.Error(), "data parallelism") {
+				t.Errorf("%s: %v refuses data parallelism, which the engine builds", scenario, err)
+			} else {
+				t.Errorf("%s: %v", scenario, err)
+			}
 			continue
 		}
-		for _, w := range c.want {
-			if !strings.Contains(err.Error(), w) {
-				t.Errorf("%s: %v, want it to name %q", c.scenario, err, w)
-			}
-		}
-		if strings.Contains(err.Error(), "drafter") {
-			t.Errorf("%s: %v, refused for its drafter, which the engine builds", c.scenario, err)
-		}
-		if strings.Contains(err.Error(), "data parallelism (dp") {
-			t.Errorf("%s: %v refuses data parallelism as such, which the engine builds", c.scenario, err)
+		if g, ok := eng.(*vllm.DPGroup); !ok || g.InFlightLimit() != 2 {
+			t.Errorf("%s built %T, want a DPGroup with a batch queue of 2 on each rank", scenario, eng)
 		}
 	}
 }
@@ -259,56 +250,61 @@ func TestDashboardDrafterBlocksBuild(t *testing.T) {
 	}
 }
 
-// The data-parallel group builds from a dashboard deployment's own pool and runs its requests to
-// completion through the engine contract, every lockstep step priced by the kernel's rule: d079
-// (minimax-m2.5, dp 2, expert parallel, one node), with async scheduling stated off. As stated,
-// d079 resolves async scheduling on, which the group does not build yet (the refusal case above).
-func TestDashboardDataParallelDeploymentRuns(t *testing.T) {
+// The data-parallel dashboard deployments whose KV cache is one full-attention group build, as
+// stated, a DPGroup through engine.New and run requests to completion through the engine
+// contract, every lockstep step priced by the kernel's rule: minimax-m2.5 at dp 2 with expert
+// parallelism on one node, on B200 (d079) and B300 (d088, and d103 at an 8192-token prompt).
+// vLLM resolves async scheduling on for each, so every rank runs its batch queue of two.
+func TestDashboardDataParallelDeploymentsRun(t *testing.T) {
 	Register()
-	r := roots(t, "d079-032.yaml")
-	_, par, err := poolBlock(r[RootScenario], 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if par.DP != 2 {
-		t.Fatalf("d079 states dp %d, want 2", par.DP)
-	}
-	block, _, err := poolBlock(r[RootScenario], 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	setIfAbsent(&block, "async_scheduling", "false")
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: block, Roots: r}
-	eng, err := engine.New(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, ok := eng.(*vllm.DPGroup)
-	if !ok {
-		t.Fatalf("d079 (dp 2) built %T, not a DPGroup", eng)
-	}
-	if g.Ranks() != 2 {
-		t.Fatalf("d079 built %d ranks, want 2", g.Ranks())
-	}
-	var reqs []enginetest.Arrival
-	for i := 0; i < 8; i++ {
-		rq := engine.Request{ID: fmt.Sprintf("r%d", i), Prompt: make([]int32, 300), Output: make([]int32, 20)}
-		for j := range rq.Prompt {
-			rq.Prompt[j] = int32(i*1000 + j + 1)
-		}
-		for j := range rq.Output {
-			rq.Output[j] = int32(90000 + j)
-		}
-		reqs = append(reqs, enginetest.Arrival{At: engine.Time(i * 1000), Req: rq})
-	}
-	tr := enginetest.TestEngine(t, func() (engine.Engine, error) { return engine.New(spec) }, reqs, enginetest.Options{})
-	if len(tr.Finished) != 8 {
-		t.Fatalf("finished %d of 8 requests", len(tr.Finished))
-	}
-	for _, s := range tr.Steps {
-		if s.End-s.Start <= 1 && !s.Batch.Empty() {
-			t.Errorf("batch %d priced at %d µs; the kernel prices a real forward pass", s.Batch.ID, s.End-s.Start)
-		}
+	for _, name := range []string{"d079", "d088", "d103"} {
+		t.Run(name, func(t *testing.T) {
+			r := roots(t, name+"-032.yaml")
+			_, par, err := poolBlock(r[RootScenario], 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if par.DP != 2 {
+				t.Fatalf("%s states dp %d, want 2", name, par.DP)
+			}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+			eng, err := engine.New(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, ok := eng.(*vllm.DPGroup)
+			if !ok {
+				t.Fatalf("%s (dp 2) built %T, not a DPGroup", name, eng)
+			}
+			if g.Ranks() != 2 || g.InFlightLimit() != 2 {
+				t.Fatalf("%s built %d ranks with %d batches in flight, want 2 ranks, each with async scheduling's "+
+					"queue of 2", name, g.Ranks(), g.InFlightLimit())
+			}
+			prompt := 300
+			if name == "d103" {
+				prompt = 8192
+			}
+			var reqs []enginetest.Arrival
+			for i := 0; i < 2; i++ {
+				rq := engine.Request{ID: fmt.Sprintf("r%d", i), Prompt: make([]int32, prompt), Output: make([]int32, 20)}
+				for j := range rq.Prompt {
+					rq.Prompt[j] = int32(i*100000 + j + 1)
+				}
+				for j := range rq.Output {
+					rq.Output[j] = int32(900000 + j)
+				}
+				reqs = append(reqs, enginetest.Arrival{At: engine.Time(i * 1000), Req: rq})
+			}
+			tr := enginetest.TestEngine(t, func() (engine.Engine, error) { return engine.New(spec) }, reqs, enginetest.Options{})
+			if len(tr.Finished) != 2 {
+				t.Fatalf("finished %d of 2 requests", len(tr.Finished))
+			}
+			for _, s := range tr.Steps {
+				if s.End-s.Start <= 1 && !s.Batch.Empty() {
+					t.Errorf("batch %d priced at %d µs; the kernel prices a real forward pass", s.Batch.ID, s.End-s.Start)
+				}
+			}
+		})
 	}
 }
 

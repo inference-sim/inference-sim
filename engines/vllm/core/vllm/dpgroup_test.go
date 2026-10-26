@@ -31,6 +31,7 @@ type dpGoldenScenario struct {
 		DPSyncInterval          int    `json:"dp_sync_interval"`
 		StatsInterval           int    `json:"stats_interval"`
 		StatsLag                int    `json:"stats_lag"`
+		AsyncScheduling         bool   `json:"async_scheduling"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -52,6 +53,7 @@ type dpGoldenTrace struct {
 			Scheduled map[string]int `json:"scheduled"`
 			Finished  []string       `json:"finished"`
 			Throttled bool           `json:"throttled"`
+			QueueLen  *int           `json:"queue_len"`
 		} `json:"ranks"`
 	} `json:"steps"`
 }
@@ -64,11 +66,12 @@ type dpGoldenTrace struct {
 // is a time interval through the contract: one step is one microsecond here.
 func TestDPGroupAgainstVLLM(t *testing.T) {
 	scenarios, _ := filepath.Glob(filepath.Join("..", "..", "oracle", "scenarios-dp", "*.json"))
-	if len(scenarios) == 0 {
+	async, _ := filepath.Glob(filepath.Join("..", "..", "oracle", "scenarios-dp-async", "*.json"))
+	if len(scenarios) == 0 || len(async) == 0 {
 		t.Fatal("no DP scenarios found")
 	}
 	ran := 0
-	for _, path := range scenarios {
+	for _, path := range append(scenarios, async...) {
 		name := strings.TrimSuffix(filepath.Base(path), ".json")
 		var sc dpGoldenScenario
 		readFile(t, path, &sc)
@@ -78,7 +81,11 @@ func TestDPGroupAgainstVLLM(t *testing.T) {
 			continue
 		}
 		var want dpGoldenTrace
-		readFile(t, filepath.Join("..", "engine", "testdata", "golden-dp", name+".json"), &want)
+		golden := "golden-dp"
+		if sc.Config.AsyncScheduling {
+			golden = "golden-dp-async"
+		}
+		readFile(t, filepath.Join("..", "engine", "testdata", golden, name+".json"), &want)
 		t.Run(name, func(t *testing.T) {
 			if d := dpGroupDivergence(t, sc, want); d != "" {
 				t.Errorf("earliest divergence from vLLM v0.32.0: %s", d)
@@ -86,8 +93,8 @@ func TestDPGroupAgainstVLLM(t *testing.T) {
 		})
 		ran++
 	}
-	if ran < 4 {
-		t.Fatalf("compared %d DP goldens, want at least 4", ran)
+	if ran < 8 {
+		t.Fatalf("compared %d DP goldens, want at least 8 (4 with a batch queue per rank)", ran)
 	}
 }
 
@@ -114,10 +121,10 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 		policy = "fcfs"
 	}
 	src := fmt.Sprintf("block_size: %d\nmax_num_seqs: %d\nmax_num_batched_tokens: %d\nmax_model_len: %d\n"+
-		"num_gpu_blocks: %d\nuse_v2_model_runner: false\nasync_scheduling: false\npipeline_parallel_size: 1\n"+
+		"num_gpu_blocks: %d\nuse_v2_model_runner: false\nasync_scheduling: %t\npipeline_parallel_size: 1\n"+
 		"scheduling_policy: %s\nenable_prefix_caching: %t\ndata_parallel_size: %d\nprefill_schedule_interval: %d\n"+
 		"dp_sync_interval: %d\ndp_stats_interval_us: %d\n",
-		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, maxLen, c.NumBlocks, policy, c.EnablePrefixCaching,
+		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, maxLen, c.NumBlocks, c.AsyncScheduling, policy, c.EnablePrefixCaching,
 		c.DataParallelSize, max(c.PrefillScheduleInterval, 1), max(c.DPSyncInterval, 1), max(c.StatsInterval, 1))
 	// The oracle builds each rank's Scheduler with vLLM's create_scheduler, which makes no
 	// startup check of the KV cache against max_model_len; a KV-pressure scenario states fewer
@@ -151,6 +158,8 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 	})
 	routed := map[string]int{}
 	next := 0
+	// The contract's batches in flight, oldest first.
+	var inflight []engine.Batch
 	for step := 0; step < len(want.Steps)+1; step++ {
 		now := engine.Time(step)
 		for next < len(reqs) && reqs[next].ArrivalStep <= step {
@@ -169,12 +178,16 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 		if step == len(want.Steps) {
 			break
 		}
+		w := want.Steps[step]
+		// One iteration of the DP loop: Schedule takes every rank's step; then, while a rank's
+		// step waits on a batch in flight, that batch completes in the same iteration, as vLLM's
+		// loop blocks on it.
+		before := g.iterations
 		b, err := g.Schedule(now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := want.Steps[step]
-		if g.pending == nil {
+		if g.iterations == before {
 			// The group has nothing to step; vLLM's loop records the idle iteration while
 			// requests are still to arrive, with no rank scheduling or running a dummy batch.
 			for r, wr := range w.Ranks {
@@ -185,20 +198,40 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 			}
 			continue
 		}
-		per := g.rankBatches(b)
-		res, err := g.Complete(b.ID, engine.Outcome{}, now)
-		if err != nil {
-			t.Fatal(err)
+		// One step is one microsecond here: an iteration of dummy batches never holds the next.
+		g.busyUntil = 0
+		steps := g.last
+		if g.open != nil {
+			steps = g.open.steps
+		}
+		scheduled := make([]map[string]int, len(g.ranks))
+		for r := range scheduled {
+			scheduled[r] = map[string]int{}
+			if st := steps[r].Step.Scheduled; st != nil {
+				for id, n := range st.Out.Scheduled {
+					scheduled[r][id] = n
+				}
+			}
+		}
+		if !b.Empty() {
+			inflight = append(inflight, b)
 		}
 		fin := map[string]bool{}
-		for _, f := range res.Finished {
-			fin[f.ID] = true
+		for g.open != nil {
+			if len(inflight) == 0 {
+				return fmt.Sprintf("step %d: a rank waits on a batch, but none is in flight", step)
+			}
+			res, err := g.Complete(inflight[0].ID, engine.Outcome{}, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inflight = inflight[1:]
+			for _, f := range res.Finished {
+				fin[f.ID] = true
+			}
 		}
 		for r, wr := range w.Ranks {
-			got := map[string]int{}
-			for _, s := range per[r].Reqs {
-				got[s.ID] = s.Tokens
-			}
+			got := scheduled[r]
 			if (len(got) > 0 || len(wr.Scheduled) > 0) && !reflect.DeepEqual(got, wr.Scheduled) {
 				return fmt.Sprintf("step %d, rank %d, scheduled: vLLM %v, blis-vllm %v", step, r, wr.Scheduled, got)
 			}
@@ -210,6 +243,10 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 			if rs := g.pendingOrLast(r); rs != nil && (rs.Throttled != wr.Throttled || rs.Dummy != wr.Dummy) {
 				return fmt.Sprintf("step %d, rank %d: vLLM throttled %t dummy %t, blis-vllm throttled %t dummy %t",
 					step, r, wr.Throttled, wr.Dummy, rs.Throttled, rs.Dummy)
+			}
+			if wr.QueueLen != nil && g.ranks[r].e.core.InFlight() != *wr.QueueLen {
+				return fmt.Sprintf("step %d, rank %d: vLLM's batch queue holds %d, blis-vllm's %d",
+					step, r, *wr.QueueLen, g.ranks[r].e.core.InFlight())
 			}
 		}
 	}
@@ -274,5 +311,22 @@ func TestDPGroupStepIsTheSlowestRank(t *testing.T) {
 	}
 	if got := g.StepTime(b); got != 30 {
 		t.Errorf("the iteration's step time is %d, want 30: the slower rank's 30-token prefill", got)
+	}
+}
+
+// With a batch queue per rank (async scheduling) the DP group keeps every law of the engine
+// contract (blis-schemas enginetest), two lockstep iterations' batches in flight.
+func TestDPGroupBatchQueueConformance(t *testing.T) {
+	src := "block_size: 4\nmax_num_seqs: 4\nmax_num_batched_tokens: 32\nmax_model_len: 256\nnum_gpu_blocks: 80\n" +
+		"use_v2_model_runner: false\nasync_scheduling: true\npipeline_parallel_size: 1\ndata_parallel_size: 2\n"
+	tr := enginetest.TestEngine(t, build(t, src), arrivals(req("a", 12, 4), req("b", 20, 6), req("c", 8, 3), req("d", 30, 2)),
+		enginetest.Options{})
+	if len(tr.Finished) != 4 {
+		t.Errorf("finished %d of 4 requests", len(tr.Finished))
+	}
+	for id, f := range tr.Finished {
+		if f.Reason != engine.FinishStop {
+			t.Errorf("%s finished %+v, want stop", id, f)
+		}
 	}
 }

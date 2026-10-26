@@ -416,6 +416,26 @@ func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Res
 	}
 	pb := e.pending[0]
 	e.pending = e.pending[1:]
+	res, fins := e.apply(pb.b, outcome, func() []sched.Finished {
+		if e.core.QueueSize > 1 {
+			// The step that blocked on this batch, or a later one, takes it off the queue
+			// (core.py:760-783): it is the oldest queued batch once the empty schedules queued
+			// ahead of it are applied.
+			e.drainEmpty()
+			res := e.core.StepEnd(core.StepResult{})
+			e.blocked = false
+			return res.Finished
+		}
+		return e.core.Complete(pb.b)
+	})
+	return res, fins, nil
+}
+
+// apply is update_from_output of one batch that ran tokens: the GPU's sampled tokens for it,
+// then take, which takes the batch off the queue and applies them, then the result, the
+// metrics step and post_step. A data-parallel rank's batch is applied the same way (DPGroup).
+func (e *Engine) apply(b core.Batch, outcome engine.Outcome, take func() []sched.Finished) (engine.Result, []sched.Finished) {
+	pb := pendingBatch{b: b}
 	// The GPU's answer: each sampling request's next assigned token, plus the drafts the
 	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
 	// rejected, while under async scheduling every placeholder is the worker's real draft), the
@@ -456,18 +476,7 @@ func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Res
 	for rid := range tokens {
 		before[rid] = len(e.s.Request(rid).Output)
 	}
-	var fins []sched.Finished
-	if e.core.QueueSize > 1 {
-		// The step that blocked on this batch, or a later one, takes it off the queue
-		// (core.py:760-783): it is the oldest queued batch once the empty schedules queued ahead
-		// of it are applied.
-		e.drainEmpty()
-		res := e.core.StepEnd(core.StepResult{})
-		fins = res.Finished
-		e.blocked = false
-	} else {
-		fins = e.core.Complete(pb.b)
-	}
+	fins := take()
 	e.gpu.tokens = nil
 	res := engine.Result{Emitted: map[string]int{}}
 	for _, rid := range sortedTokens(tokens) {
@@ -528,7 +537,7 @@ func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Res
 		}
 		e.s.UpdateDrafts(drafts)
 	}
-	return res, fins, nil
+	return res, fins
 }
 
 // TransferDone implements engine.Engine. No connector is modelled through this adapter yet,

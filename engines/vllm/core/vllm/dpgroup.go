@@ -8,6 +8,7 @@ package vllm
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/inference-sim/blis-schemas/engine"
@@ -29,20 +30,39 @@ import (
 // every rank wait for it; a rank with nothing ready runs vLLM's dummy batch inside that step.
 // The pricer prices the iteration's per-rank batches (DPPricer) when it can, the merged batch
 // otherwise.
+//
+// With a batch queue (async scheduling, max_concurrent_batches 2), each rank's step is its own
+// step_with_batch_queue (core.py:698-812@5df63a72), diff-tested inside the DP loop against vLLM
+// (oracle/run_dp.py, core/engine/testdata/golden-dp-async): a rank's batch stays queued past the
+// iteration that scheduled it, and the iteration's Complete applies the output each rank's step
+// blocked on, which is that rank's oldest queued batch, scheduled this iteration or earlier.
+// The iteration's own forward passes are what it prices; the group's all-reduce still ends
+// every iteration, so the contract keeps one iteration in flight.
 type DPGroup struct {
-	dp      *core.DP
-	ranks   []*rankState
-	pricer  Pricer
-	rankOf  map[string]int
-	pending *dpPending
-	nextID  engine.BatchID
+	dp     *core.DP
+	ranks  []*rankState
+	pricer Pricer
+	rankOf map[string]int
+	// inflight are the lockstep iterations whose batches run tokens and have not completed,
+	// oldest first: at most the ranks' batch queue size (InFlightLimit).
+	inflight []*dpIter
+	// open is the iteration whose step still waits on a rank's output: a rank blocked on its
+	// oldest queued batch, which runs tokens and completes with an in-flight iteration. Its
+	// wave all-reduce (core.DP.EndStep) runs once every such rank has its output.
+	open      *dpOpen
+	queueSize int
+	nextID    engine.BatchID
 	// statsIntervalUs is the coordinator's publication interval; epoch is the interval the
 	// balancer's counts were last published in, -1 before the first.
 	statsIntervalUs int64
 	epoch           int64
-	idleWake        engine.Time
-	// last is the last completed iteration's per-rank record.
-	last []core.RankStep
+	// busyUntil is when an iteration that ran only dummy batches ends: no batch of it is in
+	// flight through the contract, so the group asks to be stepped then (NextWake).
+	busyUntil engine.Time
+	// iterations counts the lockstep iterations run; last is the last ended iteration's
+	// per-rank record.
+	iterations int
+	last       []core.RankStep
 }
 
 // rankState is one rank: its scheduler, its engine core and the requests it serves.
@@ -50,12 +70,19 @@ type rankState struct {
 	e *Engine
 }
 
-// dpPending is the lockstep iteration in flight: each rank's scheduled batch and the
-// iteration's per-rank step record.
-type dpPending struct {
+// dpIter is one lockstep iteration in flight: its contract batch and each rank's batch it
+// scheduled that runs tokens.
+type dpIter struct {
 	id    engine.BatchID
-	steps []core.RankStep
 	batch engine.Batch
+	rank  map[int]core.Batch
+}
+
+// dpOpen is the iteration under way: every rank's step record, and which ranks' steps wait on
+// their oldest queued batch's output.
+type dpOpen struct {
+	steps []core.RankStep
+	waits []bool
 }
 
 // DPPricer prices one lockstep iteration of a data-parallel group from its per-rank batches,
@@ -72,7 +99,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 	}
 	n := st.dp.ranks
 	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{},
-		statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
+		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	for i := 0; i < n; i++ {
 		e, err := newEngine(st, pricer)
 		if err != nil {
@@ -119,48 +146,97 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 	return nil
 }
 
-// Schedule runs the first half of one lockstep iteration: every rank with requests schedules.
-// The iteration is in flight until Complete, whether or not a rank ran tokens, because a rank
-// whose wave is running steps a dummy batch even with nothing scheduled. An iteration in which
-// no rank has unfinished work and no wave runs is not stepped.
+// Schedule starts one lockstep iteration: every rank with work takes its engine step up to where
+// it blocks on a GPU result (core.DP.StepBegin). The contract batch is the iteration's batches
+// that run tokens, in flight until Complete. A rank whose step blocks on a schedule that ran no
+// tokens applies it at once: it has no forward pass to wait for. A rank whose step blocks on a
+// batch that runs tokens waits for it: with one batch in flight (step()) that is the batch it
+// just scheduled, with a batch queue (step_with_batch_queue) the one it queued the iteration
+// before (vllm/v1/engine/core.py:754-766@5df63a72). The iteration ends, with its dummy batches
+// and the wave's all-reduce, when no rank waits any longer.
+//
+// No iteration starts while one is under way, while an iteration of dummy batches is still
+// running, or when no rank has work. An iteration that runs no tokens on any rank is not in
+// flight: its dummy batches are priced, and the group steps again when they end.
 func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
-	if g.pending != nil {
+	if len(g.inflight) >= g.InFlightLimit() {
 		return engine.Batch{}, engine.ErrNoCapacity
 	}
-	if !g.stepping() {
+	if g.open != nil || now < g.busyUntil || !g.stepping() {
 		return engine.Batch{}, nil
 	}
 	steps := g.dp.StepBegin()
-	b := engine.Batch{}
-	executed := false
+	g.iterations++
+	it := &dpIter{rank: map[int]core.Batch{}}
+	open := &dpOpen{steps: steps, waits: make([]bool, len(steps))}
+	waiting := false
 	for i, st := range steps {
-		if st.Step.Scheduled == nil {
+		e := g.ranks[i].e
+		if st.Step.Scheduled != nil {
+			cb := *st.Step.Scheduled
+			rb, err := e.batchOf(cb)
+			if err != nil {
+				return engine.Batch{}, err
+			}
+			e.recordSchedule(cb)
+			if core.Executed(cb) {
+				it.batch.Reqs = append(it.batch.Reqs, rb.Reqs...)
+				it.rank[i] = cb
+			}
+			it.batch.Preempted = append(it.batch.Preempted, rb.Preempted...)
+		}
+		if !st.Block {
 			continue
 		}
-		rb, err := g.ranks[i].e.batchOf(*st.Step.Scheduled)
-		if err != nil {
-			return engine.Batch{}, err
+		if oldest, _ := e.core.Oldest(); core.Executed(oldest) {
+			open.waits[i], waiting = true, true
+			continue
 		}
-		g.ranks[i].e.recordSchedule(*st.Step.Scheduled)
-		b.Reqs = append(b.Reqs, rb.Reqs...)
-		b.Preempted = append(b.Preempted, rb.Preempted...)
-		executed = executed || core.Executed(*st.Step.Scheduled)
+		res := e.core.StepEnd(st.Step)
+		steps[i].Step = res
+		e.finishStep(*res.Processed, nil, res.Finished)
 	}
-	g.nextID++
-	b.ID = g.nextID
-	g.pending = &dpPending{id: b.ID, steps: steps, batch: b}
-	g.idleWake = 0
-	// An iteration in which no rank ran tokens is still in flight: every rank stepped a dummy
-	// batch (or nothing), which the group's all-reduce waits for.
-	_ = executed
-	return b, nil
+	if !it.batch.Empty() {
+		g.nextID++
+		it.id, it.batch.ID = g.nextID, g.nextID
+		g.inflight = append(g.inflight, it)
+	}
+	switch {
+	case waiting:
+		g.open = open
+	case it.batch.Empty():
+		// Every rank ran a dummy batch, or nothing: no forward pass of it is in flight.
+		g.endStep(steps)
+		g.busyUntil = now + g.dummyTime()
+	default:
+		g.endStep(steps)
+	}
+	return it.batch, nil
+}
+
+// endStep ends an iteration: the dummy batches and the wave's all-reduce (core.DP.EndStep).
+func (g *DPGroup) endStep(steps []core.RankStep) {
+	g.dp.EndStep(steps)
+	g.last = steps
+}
+
+// dummyTime prices an iteration of dummy batches on every rank.
+func (g *DPGroup) dummyTime() engine.Duration {
+	if p, ok := g.pricer.(DPPricer); ok {
+		var worst engine.Duration
+		for _, d := range p.StepTimesAcrossDP(make([]engine.Batch, len(g.ranks))) {
+			worst = max(worst, d)
+		}
+		return max(worst, 1)
+	}
+	return max(g.pricer.StepTime(engine.Batch{}), 1)
 }
 
 // stepping reports whether a lockstep iteration would do anything: a rank has requests or
 // unfinished work, or a wave is still running (run_busy_loop's idle check, core.py:2353-2356).
 func (g *DPGroup) stepping() bool {
 	for i, r := range g.ranks {
-		if r.e.s.HasRequests() || r.e.s.HasUnfinished() || g.dp.Waves[i].Running {
+		if r.e.core.HasWork() || r.e.s.HasUnfinished() || g.dp.Waves[i].Running {
 			return true
 		}
 	}
@@ -197,25 +273,47 @@ func (g *DPGroup) rankBatches(b engine.Batch) []engine.Batch {
 	return per
 }
 
-// Complete applies the iteration's outcome on every rank, then the dummy batches and the wave's
-// all-reduce (core.DP.EndStep), and merges the ranks' results.
+// Complete applies an in-flight iteration's batches: on each rank, its batch's sampled tokens
+// and update_from_output, the batch being that rank's oldest queued one (Core.StepEnd). The
+// iteration under way whose ranks waited on these outputs then ends (endStep).
 func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
-	if g.pending == nil || g.pending.id != id {
-		return engine.Result{}, engine.ErrUnknownBatch
+	idx := -1
+	for i, it := range g.inflight {
+		if it.id == id {
+			idx = i
+			break
+		}
 	}
-	p := g.pending
-	g.pending = nil
+	switch {
+	case idx < 0:
+		return engine.Result{}, engine.ErrUnknownBatch
+	case idx > 0:
+		return engine.Result{}, engine.ErrOutOfOrder
+	}
+	it := g.inflight[0]
+	g.inflight = g.inflight[1:]
 	res := engine.Result{Emitted: map[string]int{}}
-	for i, st := range p.steps {
-		if st.Step.Scheduled == nil {
+	for i, r := range g.ranks {
+		cb, ok := it.rank[i]
+		if !ok {
 			continue
 		}
-		rr, fin, err := g.ranks[i].e.completeLockstep(*st.Step.Scheduled, outcome)
-		if err != nil {
-			return engine.Result{}, err
+		e := r.e
+		if oldest, ok := e.core.Oldest(); !ok || oldest.ID != cb.ID {
+			return engine.Result{}, fmt.Errorf("vllm: rank %d's batch %d is not its oldest queued batch", i, cb.ID)
 		}
-		p.steps[i].Step.Processed = st.Step.Scheduled
-		p.steps[i].Step.Finished = fin
+		waited := g.open != nil && g.open.waits[i]
+		var base, step core.StepResult
+		if waited {
+			base = g.open.steps[i].Step
+		}
+		rr, _ := e.apply(cb, outcome, func() []sched.Finished {
+			step = e.core.StepEnd(base)
+			return step.Finished
+		})
+		if waited {
+			g.open.steps[i].Step, g.open.waits[i] = step, false
+		}
 		for k, v := range rr.Emitted {
 			res.Emitted[k] = v
 		}
@@ -223,8 +321,11 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 		res.Finished = append(res.Finished, rr.Finished...)
 		res.KVEvents = append(res.KVEvents, rr.KVEvents...)
 	}
-	g.dp.EndStep(p.steps)
-	g.last = p.steps
+	if g.open != nil && !slices.Contains(g.open.waits, true) {
+		steps := g.open.steps
+		g.open = nil
+		g.endStep(steps)
+	}
 	for _, f := range res.Finished {
 		g.dp.LB.Finished(f.ID)
 	}
@@ -248,17 +349,21 @@ func (g *DPGroup) Finish(id string, why engine.FinishReason, now engine.Time) er
 	return g.ranks[r].e.Finish(id, why, now)
 }
 
-// NextWake implements engine.Engine: an idle group with a running wave, or with work it could
-// not schedule, steps again at once, as run_busy_loop does; between those, nothing changes.
+// NextWake implements engine.Engine: with no batch in flight, a group with work steps again when
+// its dummy batches end, as run_busy_loop steps again after them.
 func (g *DPGroup) NextWake(now engine.Time) (engine.Time, bool) {
-	if g.pending == nil && g.stepping() {
-		return now + idlePollUs, true
+	if len(g.inflight) > 0 || g.open != nil || !g.stepping() {
+		return 0, false
 	}
-	return 0, false
+	if g.busyUntil > now {
+		return g.busyUntil, true
+	}
+	return now + idlePollUs, true
 }
 
-// InFlightLimit implements engine.Engine: one lockstep iteration at a time.
-func (g *DPGroup) InFlightLimit() int { return 1 }
+// InFlightLimit implements engine.Engine: each rank's max_concurrent_batches, as many lockstep
+// iterations' batches as a rank's batch queue holds.
+func (g *DPGroup) InFlightLimit() int { return g.queueSize }
 
 // Metrics implements engine.Engine: every rank's families, each sample labelled with its rank
 // as vLLM labels a DP engine's series with its index (engine="i").
@@ -297,9 +402,7 @@ func (g *DPGroup) Snapshot() engine.State {
 		st.KVBlocksUsed += s.KVBlocksUsed
 		st.KVBlockSize = s.KVBlockSize
 	}
-	if g.pending != nil {
-		st.InFlight = 1
-	}
+	st.InFlight = len(g.inflight)
 	return st
 }
 
@@ -318,13 +421,3 @@ func (g *DPGroup) pendingOrLast(r int) *core.RankStep {
 }
 
 var _ engine.Engine = (*DPGroup)(nil)
-
-// completeLockstep applies a lockstep iteration's batch to this rank: the outcome's sampled
-// tokens, the scheduler's update (the batch is the oldest queued one, as core/engine.Core.StepEnd
-// takes it) and the rank's metrics step. It is Complete for a batch the group scheduled.
-func (e *Engine) completeLockstep(cb core.Batch, outcome engine.Outcome) (engine.Result, []sched.Finished, error) {
-	e.nextID++
-	e.pending = append(e.pending, pendingBatch{id: e.nextID, b: cb})
-	res, fins, err := e.complete(e.nextID, outcome)
-	return res, fins, err
-}
