@@ -92,7 +92,8 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
   smallest scenario and kept under `oracle/scenarios/` as a permanent test.
 - **Mutation:** a test that cannot fail proves nothing, so each supported feature has a
   deliberate one-line bug (a mutant) that the differential and fuzz tests must catch
-  (`oracle/mutate.py`, a CI step). The sweep runs the mutants in `core/sched` and `core/kv`
+  (`oracle/mutate.py`, run by the on-demand `mutation` workflow, `.github/workflows/mutation.yml`,
+  rather than on every push). The sweep runs the mutants in `core/sched` and `core/kv`
   (speculative decoding, KV events and hybrid KV among them) against the 40 scenarios and 4000
   fuzz seeds; every one is caught, and none is listed as a known gap. Two candidate mutants are
   left out as equivalent in a synchronous scheduler, each with its reason in `oracle/mutate.py`
@@ -113,7 +114,8 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
   `MLAPrefillBackendEnum`'s members and the identifier refusal, C20-C28; each against its unit tests and its
   MatchSource checks on the pinned v0.32.0 source, after the unmutated module passes them); and `oracle/mutate_hash_manifest.py` covers
   the block hash (H1-H6, against the hashes vLLM v0.32.0 computed) and the metrics manifest
-  generator (K1-K2, against its own `-check` on the v0.32.0 source, in the metrics-manifest job).
+  generator (K1-K2, against its own `-check` on the v0.32.0 source). All of them run in the
+  `mutation` workflow; the push and pull-request CI runs the checks they mutate.
 
 ## Provenance
 
