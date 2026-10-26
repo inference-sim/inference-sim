@@ -193,6 +193,17 @@ func TestFactoryRefuses(t *testing.T) {
 		{"an unmodelled draft method", Version, "speculative: {method: ngram, num_spec_tokens: 3}\n", "not built"},
 		{"a drafter whose slots the deployment cannot state", Version, "speculative: {method: draft_model, num_spec_tokens: 3}\n", "not built"},
 		{"dspark on the V1 runner", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
+		// The resolved runner decides, not either statement alone (vllm/config/vllm.py:2976-2979@5df63a72):
+		// an env key saying V1 refuses DSpark, and a field saying V1 beside an env key saying V2
+		// is refused as the contradiction it is, before DSpark could be built on either.
+		{"dspark on the V1 runner by its env key", Version, "use_v2_model_runner: null\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\nspeculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
+		{"dspark on the V1 runner, the env saying V2", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n", "disagree"},
+		// vLLM reads the runner only from VLLM_USE_V2_MODEL_RUNNER (vllm/config/vllm.py:720-722,
+		// vllm/envs.py:2151-2152@5df63a72); use_v2_model_runner restates it, so the two must agree.
+		{"the runner field and its env key disagree", Version, "use_v2_model_runner: true\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n", "disagree"},
 		{"async with drafts", Version, "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n", "async scheduling with speculative"},
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
@@ -267,6 +278,10 @@ func TestFactoryRefuses(t *testing.T) {
 func TestFactoryAccepts(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
 		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
+		{"the runner field and its env key agreeing", "use_v2_model_runner: true\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
+			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
+		{"dspark on V2 by its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
+			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
 		{"adaptive verification on V2 with full graphs", "use_v2_model_runner: true\ncudagraph_mode: FULL_DECODE_ONLY\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +

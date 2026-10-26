@@ -192,16 +192,17 @@ func resolve(c Config) (settings, error) {
 			return s, fmt.Errorf("vllm: speculative method %q is not built by this factory; it builds eagle, "+
 				"eagle3 and dspark, whose scheduler numbers the deployment fully states (docs/feature-matrix.md)", method)
 		}
-		if method == "dspark" && !boolOr(c.UseV2ModelRunner, false) && c.Env["VLLM_USE_V2_MODEL_RUNNER"] != "1" {
-			// DSpark is implemented only by the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72).
-			return s, fmt.Errorf("vllm: dspark speculative decoding runs only on the V2 model runner")
-		}
 		spec = sched.ResolveSpec(sched.SpecOptions{Method: method, NumTokens: sp.NumSpecTokens})
 	}
 
 	v2, err := resolveV2Runner(c)
 	if err != nil {
 		return s, err
+	}
+	if method == "dspark" && !v2 {
+		// DSpark is implemented only by the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72),
+		// which is the runner as resolved, not either statement of it alone.
+		return s, fmt.Errorf("vllm: dspark speculative decoding runs only on the V2 model runner")
 	}
 	if err := checkAdaptiveVerification(e, pp, v2); err != nil {
 		return s, err
@@ -275,31 +276,38 @@ func specMethodModelled(method string) bool {
 	return slices.Contains([]string{"eagle", "eagle3", "dspark"}, method)
 }
 
-func boolOr(b *bool, def bool) bool {
-	if b == nil {
-		return def
-	}
-	return *b
-}
-
 // resolveV2Runner is VllmConfig.use_v2_model_runner (vllm/config/vllm.py:703-739@5df63a72) for
 // what a deployment states: use_v2_model_runner, else the VLLM_USE_V2_MODEL_RUNNER env key,
 // read as vLLM reads it (bool(int(value)), vllm/envs.py:358-361@5df63a72). Unstated, vLLM
 // decides from whether Triton is installed (:724-728) and the features on (:730-737), which
 // this engine cannot see, so it refuses rather than guess.
+//
+// vLLM itself reads only the env key (vllm/config/vllm.py:720-722, vllm/envs.py:2151-2152@5df63a72):
+// use_v2_model_runner is this engine block's restatement of it, so when both are stated they must
+// agree, and a disagreement is refused rather than one silently winning.
 func resolveV2Runner(c Config) (bool, error) {
-	if c.UseV2ModelRunner != nil {
-		return *c.UseV2ModelRunner, nil
-	}
+	var fromEnv *bool
 	if v, ok := c.Env["VLLM_USE_V2_MODEL_RUNNER"]; ok {
+		var b bool
 		switch v {
 		case "0":
-			return false, nil
 		case "1":
-			return true, nil
+			b = true
+		default:
+			return false, fmt.Errorf("vllm: env VLLM_USE_V2_MODEL_RUNNER=%q is not 0 or 1, which vLLM reads as int "+
+				"(vllm/envs.py:358-361@5df63a72)", v)
 		}
-		return false, fmt.Errorf("vllm: env VLLM_USE_V2_MODEL_RUNNER=%q is not 0 or 1, which vLLM reads as int "+
-			"(vllm/envs.py:358-361@5df63a72)", v)
+		fromEnv = &b
+	}
+	switch {
+	case c.UseV2ModelRunner != nil && fromEnv != nil && *c.UseV2ModelRunner != *fromEnv:
+		return false, fmt.Errorf("vllm: use_v2_model_runner %t and env VLLM_USE_V2_MODEL_RUNNER=%s disagree; vLLM reads "+
+			"only the env key (vllm/config/vllm.py:720-722@5df63a72), so state one, or both alike",
+			*c.UseV2ModelRunner, c.Env["VLLM_USE_V2_MODEL_RUNNER"])
+	case c.UseV2ModelRunner != nil:
+		return *c.UseV2ModelRunner, nil
+	case fromEnv != nil:
+		return *fromEnv, nil
 	}
 	return false, fmt.Errorf("vllm: use_v2_model_runner must be stated (or env VLLM_USE_V2_MODEL_RUNNER): " +
 		"vLLM resolves it from whether the image has Triton (vllm/config/vllm.py:720-737@5df63a72)")
