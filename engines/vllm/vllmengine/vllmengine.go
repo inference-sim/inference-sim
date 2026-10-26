@@ -152,10 +152,6 @@ func prepare(s engine.Spec) (engine.Spec, error) {
 	setIfAbsent(&block, "pipeline_parallel_size", fmt.Sprint(p.pp))
 	runner, _ := p.model.ModelRunner()
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
-	// TEMPORARY: one batch in flight until the adapter reproduces vLLM's batch queue
-	// (step_with_batch_queue, vllm/v1/engine/core.py:698-810@5df63a72), which an unstated
-	// async_scheduling, on by default, needs. The next commit lifts this.
-	setIfAbsent(&block, "async_scheduling", "false")
 	s.Config = block
 	return s, nil
 }

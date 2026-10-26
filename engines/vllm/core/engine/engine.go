@@ -117,17 +117,34 @@ func (c *Core) process(b Batch) []sched.Finished {
 }
 
 // Step is one engine step: step_with_batch_queue (core.py:698-810) when QueueSize > 1,
-// step() (core.py:657-687) otherwise.
+// step() (core.py:657-687) otherwise. It is StepBegin, then StepEnd when the step blocks.
 func (c *Core) Step() StepResult {
+	res, block := c.StepBegin()
+	if !block {
+		return res
+	}
+	return c.StepEnd(res)
+}
+
+// StepBegin is a step up to the point where vLLM's loop blocks on the GPU: it schedules a batch
+// when the scheduler has requests and queues it, and reports whether the step then blocks on
+// the oldest queued batch's output (block) or returns without one. A caller that runs the GPU
+// on its own clock, as a simulator does through blis-schemas' engine.Engine, calls StepEnd once
+// that batch's output exists; Step calls it at once.
+//
+// With QueueSize 1, step() (core.py:657-687) schedules and then always blocks on the batch it
+// scheduled. With a batch queue, step_with_batch_queue (core.py:698-810) blocks unless the queue
+// has room and the batch ran tokens or the scheduler has more to schedule (core.py:754-759);
+// with no requests it blocks on the oldest queued batch, if any (core.py:760-766).
+func (c *Core) StepBegin() (res StepResult, block bool) {
 	if c.QueueSize <= 1 {
 		if !c.Sched.HasRequests() {
-			return StepResult{}
+			return StepResult{}, false
 		}
 		b := c.schedule()
-		fin := c.process(b)
-		return StepResult{Scheduled: &b, Processed: &b, Finished: fin, Executed: total(b) > 0}
+		c.queue = append(c.queue, b)
+		return StepResult{Scheduled: &b, Executed: total(b) > 0}, true
 	}
-	var res StepResult
 	if c.Sched.HasRequests() {
 		b := c.schedule()
 		res.Scheduled = &b
@@ -136,17 +153,35 @@ func (c *Core) Step() StepResult {
 		if len(c.queue) < c.QueueSize && (res.Executed || c.Sched.HasRequests()) {
 			// Don't block on the next output unless the queue is full or there is nothing
 			// more to schedule (core.py:754-759).
-			return res
+			return res, false
 		}
 	} else if len(c.queue) == 0 {
-		return res
+		return res, false
 	}
+	return res, true
+}
+
+// StepEnd is the rest of a step StepBegin left blocked: it dequeues the oldest batch and
+// applies its output (update_from_output, core.py:768-783).
+func (c *Core) StepEnd(res StepResult) StepResult {
 	b := c.queue[0]
 	c.queue = c.queue[1:]
 	res.Processed = &b
 	res.Finished = c.process(b)
 	return res
 }
+
+// Oldest is the oldest queued batch, the one a blocked step waits on; ok is false for an empty
+// queue.
+func (c *Core) Oldest() (b Batch, ok bool) {
+	if len(c.queue) == 0 {
+		return Batch{}, false
+	}
+	return c.queue[0], true
+}
+
+// Executed reports whether a batch ran tokens (model_executed, core.py:733).
+func Executed(b Batch) bool { return total(b) > 0 }
 
 // Schedule is the first half of a step for a caller that runs the batch queue itself, as a
 // simulator does through blis-schemas' engine.Engine: it schedules one batch and queues it, and

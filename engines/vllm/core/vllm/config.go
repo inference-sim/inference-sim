@@ -218,17 +218,9 @@ func resolve(c Config) (settings, error) {
 		return s, fmt.Errorf("vllm: async scheduling with speculative decoding is not modelled; " +
 			"state async_scheduling: false to run the drafter synchronously")
 	}
-	if queue > 1 {
-		// vLLM's batch queue decides batch membership from its own loop: an empty schedule
-		// occupies a slot, a full queue blocks on the oldest batch, and new requests are read only
-		// between steps (vllm/v1/engine/core.py:724-768, 1573-1601@5df63a72). Through engine.Engine
-		// the simulator decides when Schedule runs, so the adapter would co-schedule requests vLLM
-		// holds back. Async scheduling is vLLM's default, so an unstated one is refused too.
-		return s, fmt.Errorf("vllm: max_concurrent_batches %d (async_scheduling %t, pipeline_parallel_size %d) is not "+
-			"modelled through engine.Engine: vLLM's batch queue (vllm/v1/engine/core.py:724-768@5df63a72) is not "+
-			"reproduced yet; state async_scheduling: false and pipeline_parallel_size 1 "+
-			"(https://github.com/inference-sim/blis-vllm/issues/21)", queue, async, pp)
-	}
+	// max_concurrent_batches > 1 runs vLLM's batch queue: the adapter keeps step_with_batch_queue's
+	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
+	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
 	maxLoRAs := 0

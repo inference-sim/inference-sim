@@ -82,6 +82,12 @@ type Engine struct {
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
+	// blocked is set while vLLM's busy loop, with a batch queue, would be blocked on the oldest
+	// queued batch's output: no new batch forms until the simulator completes it.
+	blocked bool
+	// queuedEmpty are the IDs of queued schedules that ran no tokens, oldest first, whose outputs
+	// a blocked step applies before the batch it waits on (core/engine's queue order).
+	queuedEmpty []int
 	// gpu is the sampled tokens of the batch being completed, which Core's GPU interface asks
 	// for once per batch.
 	gpu batchOutput
@@ -230,29 +236,105 @@ func (e *Engine) maxModelLen() int {
 }
 
 // Schedule implements engine.Engine.
+//
+// With one batch in flight it is schedule() of EngineCore.step (vllm/v1/engine/core.py:657-687
+// @5df63a72), and the step completes when the simulator completes its batch.
+//
+// With a batch queue (max_concurrent_batches > 1: async scheduling or PP) it is
+// step_with_batch_queue's first half (core.py:698-760@5df63a72), run only where vLLM's busy loop
+// would run it. That loop schedules a batch, queues it, and returns without blocking unless the
+// queue is full or nothing more can be scheduled (:754-759). A step that would block waits on
+// the oldest batch's output, and no new batch forms until that batch completes (:760-783). So
+// Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
+// next Complete ends that step, and its following Schedule call is the loop's next step.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
-	if e.core.InFlight() >= e.InFlightLimit() {
+	if len(e.pending) >= e.InFlightLimit() {
+		// The contract's capacity is the batches in flight: an empty schedule holds a slot of
+		// vLLM's queue but no forward pass, and is drained before the next batch is completed.
 		return engine.Batch{}, engine.ErrNoCapacity
+	}
+	if e.blocked || e.core.InFlight() >= e.core.QueueSize {
+		// vLLM's loop is blocked on the oldest queued batch, or its queue is full of empty
+		// schedules waiting behind one: no new batch forms until a Complete.
+		return engine.Batch{}, nil
+	}
+	if e.core.QueueSize > 1 {
+		// Each call is one loop step, so a step with nothing to schedule still takes the oldest
+		// queued batch: an empty schedule's output is applied, or the loop blocks on a batch in
+		// flight (core.py:760-766).
+		return e.scheduleQueued(now)
 	}
 	if !e.s.HasRequests() {
 		return engine.Batch{}, nil
 	}
 	cb := e.core.Schedule()
-	b := engine.Batch{}
-	for _, id := range cb.Out.Order {
-		r := e.s.Request(id)
-		n := cb.Out.Scheduled[id]
-		computed := r.NumComputed - n
-		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
-			Drafts: len(cb.Out.SpecDecode[id])}
-		if hit, ok := cb.Out.PrefixHit[id]; ok {
-			sc.CachedTokens = hit
+	return e.admit(cb, now)
+}
+
+// scheduleQueued is one step_with_batch_queue (vllm/v1/engine/core.py:698-810@5df63a72) up to the
+// point where it waits on a GPU result. The step schedules a batch when the scheduler has
+// requests and queues it. When the queue is then full, or nothing more can be scheduled, it pops
+// the oldest queued batch and waits for that batch's output (:754-766). A schedule that ran no
+// tokens has no forward pass to wait for, so its output is applied at once and the step ends.
+// A batch in flight is waited on: the engine is blocked until the simulator completes it.
+func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
+	res, block := e.core.StepBegin()
+	var b engine.Batch
+	executed := false
+	if res.Scheduled != nil {
+		cb := *res.Scheduled
+		var err error
+		if b, err = e.batchOf(cb); err != nil {
+			return engine.Batch{}, err
 		}
-		b.Reqs = append(b.Reqs, sc)
+		e.recordSchedule(cb)
+		executed = core.Executed(cb)
+		if executed {
+			e.nextID++
+			b.ID = e.nextID
+			e.pending = append(e.pending, pendingBatch{id: b.ID, b: cb})
+		} else {
+			// It holds a queue slot (vLLM queues its future), but it is not in flight through the
+			// contract: there is nothing to price.
+			e.queuedEmpty = append(e.queuedEmpty, cb.ID)
+			b.ID = 0
+		}
 	}
-	b.Preempted = append([]string(nil), cb.Out.Preempted...)
-	for _, id := range cb.Out.Preempted {
-		e.reqs[id].preemptions++
+	if block {
+		if oldest, ok := e.core.Oldest(); ok && len(e.queuedEmpty) > 0 && oldest.ID == e.queuedEmpty[0] {
+			e.drainEmpty()
+		} else {
+			e.blocked = true
+		}
+	}
+	e.idleWake = 0
+	if !executed && e.s.HasRequests() && len(e.pending) == 0 {
+		// A step that ran no model sleeps 1 ms before the loop steps again
+		// (vllm/v1/engine/core.py:1611-1616@5df63a72).
+		e.idleWake = now + idlePollUs
+	}
+	return b, nil
+}
+
+// drainEmpty applies the outputs of queued schedules that ran no tokens, oldest first, while the
+// oldest queued batch is one: vLLM's step pops them in turn, each at once.
+func (e *Engine) drainEmpty() {
+	for len(e.queuedEmpty) > 0 {
+		oldest, ok := e.core.Oldest()
+		if !ok || oldest.ID != e.queuedEmpty[0] {
+			return
+		}
+		e.queuedEmpty = e.queuedEmpty[1:]
+		res := e.core.StepEnd(core.StepResult{})
+		e.finishStep(*res.Processed, nil, res.Finished)
+	}
+}
+
+// admit turns one scheduled batch into the contract's, and keeps it in flight if it runs tokens.
+func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
+	b, err := e.batchOf(cb)
+	if err != nil {
+		return b, err
 	}
 	e.recordSchedule(cb)
 	if b.Empty() {
@@ -270,6 +352,27 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	e.nextID++
 	b.ID = e.nextID
 	e.pending = append(e.pending, pendingBatch{id: b.ID, b: cb})
+	return b, nil
+}
+
+// batchOf is a scheduled batch in the contract's terms.
+func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
+	b := engine.Batch{}
+	for _, id := range cb.Out.Order {
+		r := e.s.Request(id)
+		n := cb.Out.Scheduled[id]
+		computed := r.NumComputed - n
+		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
+			Drafts: len(cb.Out.SpecDecode[id])}
+		if hit, ok := cb.Out.PrefixHit[id]; ok {
+			sc.CachedTokens = hit
+		}
+		b.Reqs = append(b.Reqs, sc)
+	}
+	b.Preempted = append([]string(nil), cb.Out.Preempted...)
+	for _, id := range cb.Out.Preempted {
+		e.reqs[id].preemptions++
+	}
 	return b, nil
 }
 
@@ -339,7 +442,18 @@ func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.
 	for rid := range tokens {
 		before[rid] = len(e.s.Request(rid).Output)
 	}
-	fins := e.core.Complete(pb.b)
+	var fins []sched.Finished
+	if e.core.QueueSize > 1 {
+		// The step that blocked on this batch, or a later one, takes it off the queue
+		// (core.py:760-783): it is the oldest queued batch once the empty schedules queued ahead
+		// of it are applied.
+		e.drainEmpty()
+		res := e.core.StepEnd(core.StepResult{})
+		fins = res.Finished
+		e.blocked = false
+	} else {
+		fins = e.core.Complete(pb.b)
+	}
 	e.gpu.tokens = nil
 	res := engine.Result{Emitted: map[string]int{}}
 	for _, rid := range sortedTokens(tokens) {

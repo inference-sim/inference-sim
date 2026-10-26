@@ -164,17 +164,26 @@ func TestBuildsThroughTheRegistry(t *testing.T) {
 		arrivals(req("a", 40, 6), req("b", 70, 3)), enginetest.Options{})
 }
 
-// InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72), which
-// is 1 for every engine the factory builds: a synchronous one on one pipeline stage. Larger
-// queues are refused (TestFactoryRefuses) until the adapter reproduces vLLM's batch queue
-// (https://github.com/inference-sim/blis-vllm/issues/21).
+// InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72): 1 for a
+// synchronous engine on one pipeline stage, 2 with async scheduling on the V1 runner, pp + 1 with
+// it on the V2 runner, and pp without it.
 func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
-	e, err := build(t, "")()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := e.InFlightLimit(); got != 1 {
-		t.Errorf("InFlightLimit %d, want 1", got)
+	for _, c := range []struct {
+		extra string
+		want  int
+	}{
+		{"", 1},
+		{"async_scheduling: true\n", 2},
+		{"pipeline_parallel_size: 2\n", 2},
+		{"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", 3},
+	} {
+		e, err := build(t, c.extra)()
+		if err != nil {
+			t.Fatalf("%q: %v", c.extra, err)
+		}
+		if got := e.InFlightLimit(); got != c.want {
+			t.Errorf("%q: InFlightLimit %d, want %d", c.extra, got, c.want)
+		}
 	}
 }
 
@@ -218,10 +227,6 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a negative max_num_active_seqs", Version, "max_num_active_seqs: -1\n", "max_num_active_seqs -1 is negative"},
 		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
 		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
-		// The batch queue, until the adapter reproduces it (review C1, issue 21).
-		{"async scheduling", Version, "async_scheduling: true\n", "max_concurrent_batches 2"},
-		{"PP on the V1 runner", Version, "pipeline_parallel_size: 2\n", "max_concurrent_batches 2"},
-		{"PP2 async on the V2 runner", Version, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", "max_concurrent_batches 3"},
 		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
 		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
@@ -253,9 +258,9 @@ func TestFactoryRefuses(t *testing.T) {
 	// Settings vLLM resolves from facts the deployment cannot state must be stated.
 	// max_num_seqs and max_num_batched_tokens: vllm serve sizes them from the GPU, and
 	// SchedulerConfig's own values are test defaults (review I7). An unstated async_scheduling
-	// resolves on, which opens the batch queue the adapter refuses.
+	// resolves as vLLM resolves it (resolveAsync), so it is not among these.
 	for _, missing := range []string{"block_size", "max_model_len", "use_v2_model_runner", "max_num_seqs",
-		"max_num_batched_tokens", "async_scheduling", "pipeline_parallel_size"} {
+		"max_num_batched_tokens", "pipeline_parallel_size"} {
 		var kept []string
 		for _, l := range strings.Split(strings.TrimSpace(base), "\n") {
 			if !strings.HasPrefix(l, missing+":") {
@@ -567,5 +572,15 @@ func TestAcceptanceIsTheOutcomes(t *testing.T) {
 		if f := tr.Finished["a"]; f.OutputTokens != 13 {
 			t.Errorf("accepted %d: finished %+v, want all 13 tokens", c.accepted, f)
 		}
+	}
+}
+
+// The batch queue keeps the contract's laws (enginetest): with async scheduling two batches may
+// be in flight, each completes in order, and every request finishes.
+func TestBatchQueueKeepsTheContract(t *testing.T) {
+	for _, extra := range []string{"async_scheduling: true\n", "pipeline_parallel_size: 2\n",
+		"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n"} {
+		enginetest.TestEngine(t, build(t, extra),
+			arrivals(req("a", 40, 6), req("b", 70, 3), req("c", 300, 9), req("d", 12, 1)), enginetest.Options{})
 	}
 }
