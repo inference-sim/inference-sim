@@ -6,6 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
 	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
 	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
@@ -651,4 +652,17 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 	}
 	return build.CheckHybridDPNodeLocal(dpLoadBalancing, plan.Replicas, numInstances,
 		func(rank int) int { return kernelOpened.PlacementOf(rank).Node })
+}
+
+// registerContractEngines registers the engine kind a contract-built release is built by:
+// blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
+// (its Register). It is the one place this binary links an engine the contract reaches;
+// later calls are no-ops.
+func registerContractEngines() { coreengine.Register() }
+
+// contractRoots are the roots the registered factory reads: the catalog and registry clone
+// roots, and the scenario file's path, which it opens itself.
+func contractRoots(catalog, registry, scenarioPath string) map[string]string {
+	return map[string]string{coreengine.RootCatalog: catalog, coreengine.RootRegistry: registry,
+		coreengine.RootScenario: scenarioPath}
 }

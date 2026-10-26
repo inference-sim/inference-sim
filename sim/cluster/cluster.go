@@ -412,7 +412,18 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
 			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
 			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
-			inst := NewInstanceSimulator(id, simCfg)
+			var inst *InstanceSimulator
+			if config.NewEngine != nil {
+				// A release the compatibility engine does not model: the instance's engine is
+				// built and driven through blis-schemas' engine.Engine contract.
+				drv, err := config.NewEngine(idx)
+				if err != nil {
+					panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", id, err))
+				}
+				inst = NewEngineInstance(id, simCfg, drv)
+			} else {
+				inst = NewInstanceSimulator(id, simCfg)
+			}
 			inst.Model = config.Model
 			if config.ScenarioEndpointTopology != nil {
 				inst.endpointTopology = config.ScenarioEndpointTopology(id)

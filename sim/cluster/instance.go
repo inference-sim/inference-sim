@@ -24,7 +24,11 @@ type InstanceSimulator struct {
 	onTransition func(*InstanceSimulator)
 	id           InstanceID
 	sim          *sim.Simulator
-	hasRun       bool
+	// drv is the instance's engine when it is reached through blis-schemas' engine.Engine
+	// contract (engine_version 0.32.0); nil for the compatibility engine, which sim holds.
+	// Exactly one of sim and drv is set.
+	drv    *sim.EngineDriver
+	hasRun bool
 
 	// Phase 1A: lifecycle and placement fields.
 	// All zero-value safe (backward-compatible with no-node-pool mode).
@@ -67,6 +71,21 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	}
 }
 
+// NewEngineInstance creates an InstanceSimulator whose engine is reached through the
+// engine.Engine contract (sim.EngineDriver), for a release the compatibility engine does not
+// model.
+func NewEngineInstance(id InstanceID, cfg sim.SimConfig, drv *sim.EngineDriver) *InstanceSimulator {
+	return &InstanceSimulator{id: id, drv: drv, gpu: cfg.GPU, maxNumSeqs: cfg.MaxNumSeqs}
+}
+
+// contract panics for a method the engine.Engine path does not support yet: the run path of
+// an aggregated, single-pool deployment does not reach it.
+func (i *InstanceSimulator) contract(method string) {
+	if i.drv != nil {
+		panic(fmt.Sprintf("instance %s: %s is not supported for an engine driven through engine.Engine", i.id, method))
+	}
+}
+
 // GPU returns the GPU type this instance was constructed with.
 // When NodePools are configured, this reflects the pool's gpu_type (authoritative).
 // When NodePools are absent, this reflects config.GPU (the CLI flag).
@@ -85,6 +104,10 @@ func (i *InstanceSimulator) Run() {
 		panic("InstanceSimulator.Run() called more than once")
 	}
 	i.hasRun = true
+	if i.drv != nil {
+		i.drv.Run()
+		return
+	}
 	i.sim.Run()
 }
 
@@ -95,17 +118,26 @@ func (i *InstanceSimulator) ID() InstanceID {
 
 // Clock returns the current simulation clock (in ticks).
 func (i *InstanceSimulator) Clock() int64 {
+	if i.drv != nil {
+		return i.drv.Clock
+	}
 	return i.sim.CurrentClock()
 }
 
 // Metrics returns the simulation metrics.
 // Returns pointer to wrapped Simulator's Metrics (not a copy).
 func (i *InstanceSimulator) Metrics() *sim.Metrics {
+	if i.drv != nil {
+		return i.drv.Metrics
+	}
 	return i.sim.Metrics
 }
 
 // Horizon returns the simulation horizon (in ticks).
 func (i *InstanceSimulator) Horizon() int64 {
+	if i.drv != nil {
+		return i.drv.Horizon
+	}
 	return i.sim.SimHorizon()
 }
 
@@ -113,6 +145,9 @@ func (i *InstanceSimulator) Horizon() int64 {
 // from the instance's underlying latency model. Used by detectDecodeCompletions
 // to stamp parent.CompletionTime with the correct client-visible completion time.
 func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
+	if i.drv != nil {
+		return i.drv.PostDecodeFixedOverhead()
+	}
 	return i.sim.PostDecodeFixedOverhead()
 }
 
@@ -121,22 +156,45 @@ func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
 	if i.hasRun {
 		panic("InstanceSimulator.InjectRequest() called after Run()")
 	}
+	if i.drv != nil {
+		i.drv.InjectArrival(req)
+		return
+	}
 	i.sim.InjectArrival(req)
 }
 
 // HasPendingEvents returns true if the instance has pending events.
-func (i *InstanceSimulator) HasPendingEvents() bool { return i.sim.HasPendingEvents() }
+func (i *InstanceSimulator) HasPendingEvents() bool {
+	if i.drv != nil {
+		return i.drv.HasPendingEvents()
+	}
+	return i.sim.HasPendingEvents()
+}
 
 // PeekNextEventTime returns the timestamp of the earliest pending event.
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
-func (i *InstanceSimulator) PeekNextEventTime() int64 { return i.sim.PeekNextEventTime() }
+func (i *InstanceSimulator) PeekNextEventTime() int64 {
+	if i.drv != nil {
+		return i.drv.PeekNextEventTime()
+	}
+	return i.sim.PeekNextEventTime()
+}
 
 // ProcessNextEvent pops and executes the earliest event, returning it.
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
-func (i *InstanceSimulator) ProcessNextEvent() sim.Event { return i.sim.ProcessNextEvent() }
+func (i *InstanceSimulator) ProcessNextEvent() sim.Event {
+	if i.drv != nil {
+		return i.drv.ProcessNextEvent()
+	}
+	return i.sim.ProcessNextEvent()
+}
 
 // Finalize sets SimEndedTime, captures KV metrics, and logs completion.
 func (i *InstanceSimulator) Finalize() {
+	if i.drv != nil {
+		i.drv.Finalize()
+		return
+	}
 	i.sim.Finalize()
 	// Capture KV metrics at finalization for CollectRawMetrics
 	rate, counts, counted := i.sim.KVThrashing()
@@ -154,18 +212,24 @@ func (i *InstanceSimulator) Finalize() {
 
 // QueueDepth returns the number of requests in the wait queue.
 func (i *InstanceSimulator) QueueDepth() int {
+	if i.drv != nil {
+		return i.drv.QueueDepth()
+	}
 	return i.sim.QueueDepth()
 }
 
 // BatchSize returns the number of requests in the running batch, or 0 if nil.
 func (i *InstanceSimulator) BatchSize() int {
+	if i.drv != nil {
+		return i.drv.BatchSize()
+	}
 	return i.sim.BatchSize()
 }
 
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
 // instance, or nil when the LoRA subsystem is inert.
 func (i *InstanceSimulator) ResidentAdapterIDs() []string {
-	if i.sim == nil {
+	if i.sim == nil || i.drv != nil {
 		return nil
 	}
 	return i.sim.ResidentAdapterIDs()
@@ -174,6 +238,13 @@ func (i *InstanceSimulator) ResidentAdapterIDs() []string {
 // KVUtilization returns the fraction of KV cache blocks in use.
 // Returns 0 when TotalCapacity is 0 to avoid division by zero (R11 defensive guard).
 func (i *InstanceSimulator) KVUtilization() float64 {
+	if i.drv != nil {
+		s := i.drv.Snapshot()
+		if s.KVBlocksTotal <= 0 {
+			return 0
+		}
+		return float64(s.KVBlocksUsed) / float64(s.KVBlocksTotal)
+	}
 	total := i.sim.KVCapacity()
 	if total <= 0 {
 		return 0
@@ -183,11 +254,18 @@ func (i *InstanceSimulator) KVUtilization() float64 {
 
 // FreeKVBlocks returns the number of free KV cache blocks.
 func (i *InstanceSimulator) FreeKVBlocks() int64 {
+	if i.drv != nil {
+		s := i.drv.Snapshot()
+		return s.KVBlocksTotal - s.KVBlocksUsed
+	}
 	return i.sim.KVCapacity() - i.sim.KVUsed()
 }
 
 // CacheHitRate returns the cumulative cache hit rate.
 func (i *InstanceSimulator) CacheHitRate() float64 {
+	if i.drv != nil {
+		return i.drv.Metrics.PromptCacheHitRate()
+	}
 	return i.sim.KVCacheHitRate()
 }
 
@@ -197,6 +275,10 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 // Loading instances have correct non-zero capacity from construction —
 // NewInstanceSimulator always initializes the KV store before any lifecycle transition.
 func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
+	if i.drv != nil {
+		s := i.drv.Snapshot()
+		return s.KVBlocksTotal * int64(s.KVBlockSize)
+	}
 	if i.sim == nil {
 		return 0
 	}
@@ -206,6 +288,10 @@ func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
 // KvTokensInUse returns current KV cache occupancy in tokens.
 // Returns 0 when the KV cache is not yet initialized.
 func (i *InstanceSimulator) KvTokensInUse() int64 {
+	if i.drv != nil {
+		s := i.drv.Snapshot()
+		return s.KVBlocksUsed * int64(s.KVBlockSize)
+	}
 	if i.sim == nil {
 		return 0
 	}
@@ -214,6 +300,9 @@ func (i *InstanceSimulator) KvTokensInUse() int64 {
 
 // TotalKVBlocks returns the total number of KV cache blocks for this instance.
 func (i *InstanceSimulator) TotalKVBlocks() int64 {
+	if i.drv != nil {
+		return i.drv.Snapshot().KVBlocksTotal
+	}
 	if i.sim == nil {
 		return 0
 	}
@@ -222,7 +311,7 @@ func (i *InstanceSimulator) TotalKVBlocks() int64 {
 
 // PreemptionCount returns the cumulative number of preemption events on this instance.
 func (i *InstanceSimulator) PreemptionCount() int64 {
-	return i.sim.Metrics.PreemptionCount
+	return i.Metrics().PreemptionCount
 }
 
 // InstanceLatencyStats holds cumulative averages of per-instance latency and throughput from completed requests.
@@ -241,10 +330,10 @@ type InstanceLatencyStats struct {
 // All fields are 0 when no requests have completed.
 // TTFT and ITL are in microseconds; DispatchRate is in req/s.
 func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
-	if i.sim == nil {
+	if i.sim == nil && i.drv == nil {
 		return InstanceLatencyStats{}
 	}
-	m := i.sim.Metrics
+	m := i.Metrics()
 	if m == nil || m.CompletedRequests == 0 {
 		return InstanceLatencyStats{}
 	}
@@ -301,7 +390,7 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 // MaxBatchSize returns the simulator's configured maximum number of concurrent requests
 // (BatchConfig.MaxNumSeqs). Returns 0 when the instance has no underlying simulator.
 func (i *InstanceSimulator) MaxBatchSize() int {
-	if i.sim == nil {
+	if i.sim == nil && i.drv == nil {
 		return 0
 	}
 	return int(i.maxNumSeqs)
@@ -310,7 +399,7 @@ func (i *InstanceSimulator) MaxBatchSize() int {
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
 // matching the given token sequence. Used by precise prefix cache scoring.
 func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
-	if i.sim == nil {
+	if i.sim == nil || i.drv != nil {
 		return 0
 	}
 	return i.sim.CachedBlockCount(tokens)
@@ -322,7 +411,7 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
 // Returns a zero-returning function if the simulator is nil or the KV cache
 // does not support snapshotting.
 func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
-	if i.sim == nil {
+	if i.sim == nil || i.drv != nil {
 		return func([]sim.TokenID) int { return 0 }
 	}
 	if fn, ok := i.sim.SnapshotCacheQuery(); ok {
@@ -339,6 +428,10 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
 // InjectRequestOnline injects a request during the event loop (online routing mode).
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {
+	if i.drv != nil {
+		i.drv.InjectArrivalAt(req, eventTime)
+		return
+	}
 	i.sim.InjectArrivalAt(req, eventTime)
 }
 
@@ -359,7 +452,7 @@ func (i *InstanceSimulator) IsRoutable() bool {
 
 // HasSim returns true if the instance has an underlying simulator (false in test-only scenarios).
 func (i *InstanceSimulator) HasSim() bool {
-	return i.sim != nil
+	return i.sim != nil || i.drv != nil
 }
 
 // IsWarmingUp returns true if the warm-up TTFT penalty should be applied.
@@ -454,18 +547,23 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 // the decode instance becomes non-routable between KVTransferStartedEvent
 // and KVTransferCompletedEvent.
 func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) (pulledTokens int64, ok bool) {
+	i.contract("a P/D handoff (ReserveTransferredKV)")
 	return i.sim.ReserveRemoteKV(req)
 }
 
 // CacheRemoteKV registers a decode sub-request's pulled blocks in this instance's prefix
 // cache once the pull has landed (sim.Simulator.CacheRemoteKV).
-func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) { i.sim.CacheRemoteKV(req) }
+func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) {
+	i.contract("a P/D handoff (CacheRemoteKV)")
+	i.sim.CacheRemoteKV(req)
+}
 
 // ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
 // Used when a reservation must be undone (e.g., decode instance transitioned
 // to a non-routable state mid-transfer). Safe to call when the request holds
 // no blocks.
 func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
+	i.contract("a P/D handoff (ReleaseReservedKV)")
 	i.sim.ReleaseKV(req)
 }
 
@@ -478,14 +576,21 @@ func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
 		panic(fmt.Sprintf("ReleaseHeldKV %s: request %s is not a finished request that retains its KV",
 			i.id, req.ID))
 	}
+	i.contract("a P/D handoff (ReleaseHeldKV)")
 	i.sim.ReleaseKV(req)
 }
 
 // WakeIfParked wakes a parked engine for KV freed at cluster time t (sim.Simulator.WakeIfParked).
-func (i *InstanceSimulator) WakeIfParked(t int64) { i.sim.WakeIfParked(t) }
+func (i *InstanceSimulator) WakeIfParked(t int64) {
+	if i.drv != nil {
+		return // an engine driven through engine.Engine reports its own wakes (NextWake)
+	}
+	i.sim.WakeIfParked(t)
+}
 
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
+	i.contract("a P/D handoff (KVBlocksOf)")
 	blocks, ok := i.sim.RequestBlocks(req)
 	if !ok {
 		panic(fmt.Sprintf("instance %s: KV store %s does not report a request's blocks", i.id, i.sim.KVStoreKind()))
@@ -497,6 +602,7 @@ func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
 // now: its blocks are freed (their hashes were never registered, ReserveTransferredKV), and the
 // engine publishes its state after the abort.
 func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
+	i.contract("a P/D handoff (AbortReservedKV)")
 	i.sim.ReleaseKV(req)
 	i.sim.NoteAbort(now) // also wakes a parked engine (scheduleStepAt)
 }
@@ -507,6 +613,7 @@ func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
 // Registers request in metrics and directly enqueues into wait queue.
 // clusterTime is the cluster clock at the time of injection (from KVTransferCompletedEvent).
 func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
+	i.contract("a P/D decode sub-request (InjectDecodeOnline)")
 	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 	i.sim.EnqueueDecodeSubRequest(req, clusterTime)
 }
@@ -515,6 +622,7 @@ func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int
 // from the instance's wait queue and returns them.
 // Used by DrainRedirect to re-inject requests elsewhere.
 func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
+	i.contract("draining a wait queue (DrainWaitQueue)")
 	return i.sim.DrainWaitQueue()
 }
 
@@ -537,64 +645,114 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 	return true
 }
 
-func (i *InstanceSimulator) evictRequest(req *sim.Request) bool { return i.sim.Evict(req) }
+func (i *InstanceSimulator) evictRequest(req *sim.Request) bool {
+	i.contract("evicting a request (EvictRequest)")
+	return i.sim.Evict(req)
+}
 
 // AdmitRemoteKV hands the instance's waiting handoffs, in the order they arrived, to its engine,
 // which admits, in its own order, those whose pull may start (sim.EngineCore.AdmitRemoteKV,
 // INV-PD-9).
 func (i *InstanceSimulator) AdmitRemoteKV(waiting []*sim.Request) []sim.RemoteKVAdmission {
+	i.contract("a P/D handoff (AdmitRemoteKV)")
 	return i.sim.AdmitRemoteKV(waiting)
 }
 
 // RemoteKVLanded tells the engine a handoff's pull has landed, or was dropped, so its first-step
 // blocks no longer count against new pulls.
-func (i *InstanceSimulator) RemoteKVLanded(req *sim.Request) { i.sim.RemoteKVLanded(req) }
+func (i *InstanceSimulator) RemoteKVLanded(req *sim.Request) {
+	i.contract("a P/D handoff (RemoteKVLanded)")
+	i.sim.RemoteKVLanded(req)
+}
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.
-func (i *InstanceSimulator) UsedKVBlocks() int64 { return i.sim.KVUsed() }
+func (i *InstanceSimulator) UsedKVBlocks() int64 {
+	if i.drv != nil {
+		return i.drv.Snapshot().KVBlocksUsed
+	}
+	return i.sim.KVUsed()
+}
 
 // EngineMetricsAt returns the metrics a scrape of this instance's model server at time t sees.
 func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
+	if i.drv != nil {
+		return i.drv.EngineMetricsAt(t)
+	}
 	return i.sim.EngineMetricsAt(t)
 }
 
 // CachedBlockHashes returns the hashes of the blocks the instance's prefix cache can serve,
 // sorted (nil for a KV cache that does not track them).
 func (i *InstanceSimulator) CachedBlockHashes() []string {
+	if i.drv != nil {
+		return nil // the prefix cache is the engine's; routing on its blocks is the KV-event path
+	}
 	return i.sim.CachedBlockHashes()
 }
 
 // CPUBlockHashes returns the hashes of the blocks the instance's CPU KV tier holds, sorted (nil
 // without one).
 func (i *InstanceSimulator) CPUBlockHashes() []string {
+	if i.drv != nil {
+		return nil
+	}
 	return i.sim.CPUBlockHashes()
 }
 
 // TierBlockHashes returns the hashes of the blocks the secondary KV-offload tiers publishing as
 // medium (e.g. "shared_storage" for a filesystem tier) hold, sorted (nil without one).
 func (i *InstanceSimulator) TierBlockHashes(name string) []string {
+	if i.drv != nil {
+		return nil
+	}
 	return i.sim.TierBlockHashes(name)
 }
 
 // SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
 func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
+	i.contract("KV events to the router (SetKVEventSink)")
 	i.sim.SetKVEventSink(sink)
 }
 
 // SetRemoteKVAdmission installs the engine's admission of remote-KV pulls (sim.Simulator's).
-func (i *InstanceSimulator) SetRemoteKVAdmission(f func(now int64)) { i.sim.SetRemoteKVAdmission(f) }
+func (i *InstanceSimulator) SetRemoteKVAdmission(f func(now int64)) {
+	if i.drv != nil {
+		return // no P/D handoff reaches an engine driven through engine.Engine yet
+	}
+	i.sim.SetRemoteKVAdmission(f)
+}
 
 // SetRemoteKVWaiting records how many handoffs wait for this engine's KV.
-func (i *InstanceSimulator) SetRemoteKVWaiting(n int) { i.sim.SetRemoteKVWaiting(n) }
+func (i *InstanceSimulator) SetRemoteKVWaiting(n int) {
+	if i.drv != nil {
+		return
+	}
+	i.sim.SetRemoteKVWaiting(n)
+}
 
 // HasWork reports whether the engine has running or waiting requests.
-func (i *InstanceSimulator) HasWork() bool { return i.sim.HasWork() }
+func (i *InstanceSimulator) HasWork() bool {
+	if i.drv != nil {
+		return i.drv.HasWork()
+	}
+	return i.sim.HasWork()
+}
 
 // BusyUntil is when the engine's last executed step ends.
-func (i *InstanceSimulator) BusyUntil() int64 { return i.sim.BusyUntil() }
+func (i *InstanceSimulator) BusyUntil() int64 {
+	if i.drv != nil {
+		return i.drv.BusyUntil()
+	}
+	return i.sim.BusyUntil()
+}
 
 // SetCallbacks installs the engine's first-token and request-done callbacks.
 func (i *InstanceSimulator) SetCallbacks(onFirstToken func(*sim.Request, int64), onRequestDone func(*sim.Request, int64) []*sim.Request) {
+	if i.drv != nil {
+		i.drv.OnFirstToken = onFirstToken
+		i.drv.OnRequestDone = onRequestDone
+		return
+	}
 	i.sim.OnFirstToken = onFirstToken
 	i.sim.OnRequestDone = onRequestDone
 }
@@ -602,6 +760,10 @@ func (i *InstanceSimulator) SetCallbacks(onFirstToken func(*sim.Request, int64),
 // ForgetRequest drops a request's per-request record from the engine's metrics, for a request
 // drained away to another instance (the destination re-registers it).
 func (i *InstanceSimulator) ForgetRequest(id string) {
+	if i.drv != nil {
+		delete(i.drv.Metrics.Requests, id)
+		return
+	}
 	if i.sim != nil {
 		delete(i.sim.Metrics.Requests, id)
 	}
@@ -614,4 +776,9 @@ func (i *InstanceSimulator) ForgetRequest(id string) {
 func (i *InstanceSimulator) engineCore() *sim.Simulator { return i.sim }
 
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
-func (i *InstanceSimulator) AdapterCapacity() int { return i.sim.AdapterCapacity() }
+func (i *InstanceSimulator) AdapterCapacity() int {
+	if i.drv != nil {
+		return 0 // LoRA is not wired through engine.Engine yet; the engine refuses an adapter request
+	}
+	return i.sim.AdapterCapacity()
+}
