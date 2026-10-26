@@ -36,8 +36,9 @@ consecutive main turns and carried in the think_time_us column.
 
 Caveats: Weka input token counts are huge (p50 ≈ 110K, p90 ≈ 395K); replay them against a
 scenario whose engine.max_model_len and KV budget hold such prompts, or requests are dropped
-as unservable. The recorded model name (claude-*) is dropped so requests inherit the
-scenario's model (routing safety).
+as unservable. The recorded model name (claude-*) is dropped: every request is simulated
+under the scenario's model, and a recorded name would report it under a model the run
+never simulated.
 
 Note: unlike other 'blis convert' subcommands (which emit a WorkloadSpec to stdout),
 'convert weka' writes TraceV2 files, because it targets 'blis replay' (fixed per-call

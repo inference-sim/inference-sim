@@ -234,8 +234,8 @@ flowchart TD
 
 | Module | Responsibility | Interface Today | Status |
 |---|---|---|---|
-| **Admission** | Accept/reject requests at cluster entry | `AdmissionPolicy` (single method) | Implemented, frozen |
-| **Router** | Select target instance for admitted requests | `RoutingPolicy` (single method) | Implemented, frozen |
+| **Admission** | Accept/reject requests at cluster entry | The embedded llm-d router (`sim/llmd`; admitters, flow control) behind `cluster.Gateway` | Delegated to llm-d |
+| **Router** | Select target instance for admitted requests | The embedded llm-d router (`sim/llmd`; filters, scorers, picker) behind `cluster.Gateway` | Delegated to llm-d |
 | **Scheduler** | Order queued requests within an instance | `InstanceScheduler` (single method) | Implemented, frozen |
 | **Priority** | Map SLO class to vLLM-convention priority at instance entry | `SLOPriorityMap` (set once at `EnqueueRequest` via `InvertForVLLM`, not per-step) | Implemented, frozen |
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
@@ -259,7 +259,7 @@ Every module (current or target) is defined by this contract:
 5. **Events** — what events does this module produce or consume? (Exogenous/endogenous classification)
 6. **Extension friction** — how many files must change to add one more variant of this module?
 
-Example — Router module contract:
+Example — Router module contract (historical: BLIS's native router was replaced by the embedded llm-d router in #2000; the example still illustrates the six aspects):
 
 | Aspect | Contract |
 |---|---|
