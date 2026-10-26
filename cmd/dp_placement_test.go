@@ -177,7 +177,6 @@ func TestApplyDPPlacement(t *testing.T) {
 	tests := []struct {
 		name            string
 		plan            dpPlacementPlan
-		dp              int
 		in              dpPlacementDeployment
 		wantErrContains string
 		want            dpPlacementDeployment
@@ -186,7 +185,6 @@ func TestApplyDPPlacement(t *testing.T) {
 			// The no-op law that makes the feature byte-identical when unused (INV-6).
 			name: "inactive plan is the identity",
 			plan: inactive,
-			dp:   1,
 			in:   dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
 			want: dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
 		},
@@ -195,7 +193,6 @@ func TestApplyDPPlacement(t *testing.T) {
 			// or re-caps the window.
 			name: "active plan multiplies replicas and keeps the per-rank KV and window",
 			plan: active4,
-			dp:   4,
 			in:   dpPlacementDeployment{NumInstances: 2, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 			want: dpPlacementDeployment{NumInstances: 8, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 		},
@@ -204,33 +201,20 @@ func TestApplyDPPlacement(t *testing.T) {
 			// NumInstances, so P·N+D·N+S·N+E·N ≤ total·N is preserved.
 			name: "active plan scales every PD pool count by Replicas",
 			plan: active4,
-			dp:   4,
 			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 			want: dpPlacementDeployment{NumInstances: 40, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 12, DecodeInstances: 16, SharedInstances: 8, EncodeInstances: 4},
 		},
 		{
 			name: "inactive plan leaves PD pool counts untouched",
 			plan: inactive,
-			dp:   1,
 			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 			want: dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
-		},
-		{
-			// Defense in depth against a non-positive per-rank budget, which would panic
-			// NewSimulator: it errors and leaves the deployment untouched, so a caller that
-			// ignored the error cannot run a half-applied plan.
-			name:            "a non-positive per-rank KV budget errors instead of panicking downstream",
-			plan:            dpPlacementPlan{Active: true, Replicas: 8, PerRankDP: 1},
-			dp:              8,
-			in:              dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
-			wantErrContains: "per-rank KV budget must be positive",
-			want:            dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := applyDPPlacement(tc.plan, tc.dp, tc.in)
+			got, err := applyDPPlacement(tc.plan, tc.in)
 			if tc.wantErrContains != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got nil", tc.wantErrContains)

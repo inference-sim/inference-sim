@@ -440,9 +440,19 @@ var engineSettingGlobals = map[string]bool{
 	"noEnablePrefixCaching": true, "sequenceState": true, "prefixHit": true,
 }
 
+// engineSettingFields are the same settings as fields of the records cmd carries them in (the
+// DP placement's dpPlacementDeployment, blis-vllm's build.FirstPoolSettings): a comparison on
+// x.TotalKVBlocks is the same copy of the engine's check as one on totalKVBlocks.
+var engineSettingFields = map[string]bool{
+	"TotalKVBlocks": true, "BlockSize": true, "BlockSizeTokens": true, "MaxNumSeqs": true,
+	"MaxNumBatchedTokens": true, "MaxModelLen": true, "SpeculativeTokens": true,
+	"NumSpeculativeTokens": true, "SpeculativeMethod": true, "PrefixCachingDisabled": true,
+	"SequenceState": true, "PrefixHit": true,
+}
+
 // engineSettingComparisonsIn lists, for the non-test Go files of dir, each comparison (<, <=, >,
-// >=, ==, !=) with an engineSettingGlobals name as an operand, as "file:line: name op". It also
-// returns how many files it scanned.
+// >=, ==, !=) with an engineSettingGlobals name, or an engineSettingFields field of any value, as
+// an operand, as "file:line: name op". It also returns how many files it scanned.
 func engineSettingComparisonsIn(t *testing.T, dir string) ([]string, int) {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
@@ -472,9 +482,20 @@ func engineSettingComparisonsIn(t *testing.T, dir string) ([]string, int) {
 				return true
 			}
 			for _, side := range []ast.Expr{b.X, b.Y} {
-				if id, ok := side.(*ast.Ident); ok && engineSettingGlobals[id.Name] {
+				name := ""
+				switch x := side.(type) {
+				case *ast.Ident:
+					if engineSettingGlobals[x.Name] {
+						name = x.Name
+					}
+				case *ast.SelectorExpr:
+					if engineSettingFields[x.Sel.Name] {
+						name = "." + x.Sel.Name
+					}
+				}
+				if name != "" {
 					at := fset.Position(b.Pos())
-					out = append(out, fmt.Sprintf("%s:%d: %s %s", filepath.Base(at.Filename), at.Line, id.Name, b.Op))
+					out = append(out, fmt.Sprintf("%s:%d: %s %s", filepath.Base(at.Filename), at.Line, name, b.Op))
 				}
 			}
 			return true
@@ -507,6 +528,8 @@ func TestEngineSettingComparisonCheckCatchesEachForm(t *testing.T) {
 		"on the right side": `func f() bool { return 0 >= maxNumBatchedTokens }`,
 		"an equality":       `func f() bool { return totalKVBlocks == 0 }`,
 		"an upper bound":    `func f(n int64) bool { return n > maxModelLen }`,
+		"a field":           `func f(d struct{ TotalKVBlocks int64 }) bool { return d.TotalKVBlocks <= 0 }`,
+		"a nested field":    `func f(d struct{ S struct{ MaxNumSeqs int64 } }) bool { return 0 == d.S.MaxNumSeqs }`,
 	}
 	run := func(body string) []string {
 		dir := t.TempDir()

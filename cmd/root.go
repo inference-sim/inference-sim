@@ -354,7 +354,7 @@ type dpPlacementDeployment struct {
 //
 // The kernel sizes KV blocks and max_model_len per rank, so both pass through unchanged. A
 // non-Active plan is the identity.
-func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
+func applyDPPlacement(plan dpPlacementPlan, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
 	if !plan.Active {
 		return dep, nil
 	}
@@ -367,14 +367,9 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment) (
 	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
 	out.SharedInstances = dep.SharedInstances * plan.Replicas
 	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
-	// A replica with no KV blocks would panic NewSimulator, so it is reported as a clean
-	// error instead (R1). The kernel refuses a non-positive per-rank budget, so this is
-	// defense in depth.
-	if out.TotalKVBlocks <= 0 {
-		return dep, fmt.Errorf("dp %d leaves %d KV blocks on each of %d engine replicas; "+
-			"the scenario's per-rank KV budget must be positive",
-			dp, out.TotalKVBlocks, plan.Replicas)
-	}
+	// TotalKVBlocks is the engine's per-rank budget, passed through unchanged: blis-vllm
+	// refuses a budget with no blocks when it sizes it (compat/kernelmodel KVBudget, vLLM's
+	// "No available memory for the cache blocks"), before this runs.
 	return out, nil
 }
 
@@ -412,7 +407,7 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 		return plan, nil
 	}
 	logicalInstances := numInstances
-	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
+	dep, err := applyDPPlacement(plan, dpPlacementDeployment{
 		NumInstances:     numInstances,
 		TotalKVBlocks:    totalKVBlocks,
 		MaxModelLen:      maxModelLen,

@@ -62,6 +62,13 @@ jobs:
           - name: "llm-d router"
             packages: "./sim/llmd"
             timeout: "10m"
+          # Every other package with tests: the vendored catalog and registry's lock test, the
+          # saturation detectors, the invariant scan and the offline scoring tools. A new entry, not
+          # a renamed one, since the entries' names are required checks.
+          # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
+          - name: "other packages"
+            packages: "./sim/vendored ./sim/saturation ./internal/invariantscan ./cmd/kernelscore ./cmd/metricscore"
+            timeout: "5m"
 
     steps:
       - name: Checkout code
