@@ -56,6 +56,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -275,6 +276,10 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err := checkSpeculativeMethod(in); err != nil {
 		return nil, err
+	}
+	pool := in.Deployment.Pools[in.PoolIndex]
+	if err := checkDPLocal(pool.Parallel, in.Scenario.Cluster.GPUsPerNode); err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	k, err := latencykernel.New(in)
 	if err != nil {
@@ -708,6 +713,17 @@ func unmodelledSettings(e deployment.Engine) []string {
 	add(e.MaxLoRAs != 0, "max_loras")
 	add(e.MaxCPULoRAs != 0, "max_cpu_loras")
 	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative.draft_model")
+	// engine.env: blis-schemas requires a consumer to refuse or disclose every key it cannot
+	// honour (spec/deployment/deployment.go Engine.Env), and the compatibility engine reads none,
+	// so each stated key is named.
+	if len(e.Env) > 0 {
+		keys := make([]string, 0, len(e.Env))
+		for k := range e.Env {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out = append(out, "env ("+strings.Join(keys, ", ")+")")
+	}
 	return out
 }
 
@@ -762,6 +778,43 @@ func checkSpeculativeMethod(in latencykernel.Inputs) error {
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
 		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
 			sp.Method, in.Rules.EngineVersion(), strings.Join(in.Rules.SpeculativeMethodNames(), ", "))
+	}
+	return nil
+}
+
+// checkDPLocal refuses a stated parallel.dp_local that places a replica's ranks on other nodes
+// than PlacementOf's packing does. vLLM puts local data-parallel rank i at devices
+// [i x world, i x world + local_world) of its node (get_physical_gpu_ids_for_local_dp_rank,
+// vllm/v1/engine/utils.py:433-470@5df63a72), dp_local ranks to a node, while PlacementOf packs
+// the ranks onto the pool's nodes in order. The two agree when every rank of a replica lands on
+// the same node either way; otherwise endpoint hosts and P/D transfer prices would come from
+// another layout than the deployment's, so the setting is refused rather than dropped.
+// A rank wider than a node agrees only one replica to a node group (dp_local 1) of whole nodes.
+// An unstated dp_local is the engine's own inference from the launch, which is the packing.
+func checkDPLocal(pl deployment.Parallelism, gpusPerNode int) error {
+	local := pl.DPLocal
+	if local < 1 || gpusPerNode < 1 {
+		return nil
+	}
+	rankGPUs := max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP)
+	refuse := func() error {
+		return fmt.Errorf("parallel.dp_local %d puts %d data-parallel ranks of %d GPUs on each %d-GPU node, which "+
+			"the compatibility engine does not model: it packs a replica's ranks onto the pool's nodes in order "+
+			"(%d to a node), so it would price and host the ranks on other nodes. Leave dp_local unset, or state %d",
+			local, local, rankGPUs, gpusPerNode, max(1, gpusPerNode/rankGPUs), max(1, gpusPerNode/rankGPUs))
+	}
+	if rankGPUs > gpusPerNode {
+		if local != 1 || rankGPUs%gpusPerNode != 0 {
+			return refuse()
+		}
+		return nil
+	}
+	for i := 0; i < max(1, pl.DP); i++ {
+		node := i / local
+		first, last := i*rankGPUs/gpusPerNode, ((i+1)*rankGPUs-1)/gpusPerNode
+		if first != node || last != node {
+			return refuse()
+		}
 	}
 	return nil
 }

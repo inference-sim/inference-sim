@@ -10,13 +10,17 @@ import (
 	"bytes"
 	"fmt"
 	"slices"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/rules/v0_32"
 )
 
 // Config is the engine block of one pool, as the simulator hands it over in engine.Spec.Config.
@@ -191,6 +195,9 @@ func resolve(c Config) (settings, error) {
 	if err != nil {
 		return s, err
 	}
+	if err := checkAdaptiveVerification(e, pp, v2); err != nil {
+		return s, err
+	}
 	async := resolveAsync(e.AsyncScheduling, method, pp, v2)
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
@@ -246,6 +253,10 @@ func resolve(c Config) (settings, error) {
 		UseV2ModelRunner:     v2,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	// The release's own accepted values and refusals, for what the checks above do not cover.
+	if err := checkRules(e, pp); err != nil {
+		return settings{}, err
+	}
 	return s, nil
 }
 
@@ -311,6 +322,13 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
 func refuseUnmodelled(e deployment.Engine) error {
+	if keys := unreadEnv(e.Env); len(keys) > 0 {
+		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
+		// and never ignores one (spec/deployment/deployment.go Engine.Env).
+		return fmt.Errorf("vllm: env %s is not read by this engine, which reads only %s; the keys that "+
+			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-latency-kernel/issues/85)",
+			strings.Join(keys, ", "), strings.Join(readEnv, ", "))
+	}
 	switch {
 	case e.PrefixMatchUnit != 0:
 		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
@@ -340,4 +358,85 @@ func refuseUnmodelled(e deployment.Engine) error {
 			"https://github.com/inference-sim/blis-vllm/issues/17)")
 	}
 	return nil
+}
+
+// readEnv are the engine environment variables this engine reads (resolveV2Runner).
+var readEnv = []string{"VLLM_USE_V2_MODEL_RUNNER"}
+
+// unreadEnv are env's keys this engine does not read, sorted.
+func unreadEnv(env map[string]string) []string {
+	var out []string
+	for k := range env {
+		if !slices.Contains(readEnv, k) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checkAdaptiveVerification refuses speculative.enable_adaptive_verification where vLLM v0.32.0
+// refuses it at startup, for what the engine block states: the V1 model runner does not support
+// it (VllmConfig._get_v1_model_runner_unsupported_features, vllm/config/vllm.py:2980-2981@5df63a72),
+// and _validate_adaptive_verification (:3001-3032@5df63a72) refuses it with LoRA, without full
+// CUDA graphs and with pipeline parallelism. The verify width it trims is step time, which is
+// the latency kernel's (docs/feature-matrix.md, "DSpark adaptive verification").
+func checkAdaptiveVerification(e deployment.Engine, pp int, v2 bool) error {
+	sp := e.Speculative
+	if sp == nil || sp.EnableAdaptiveVerification == nil || !*sp.EnableAdaptiveVerification {
+		return nil
+	}
+	switch {
+	case !v2:
+		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: adaptive draft verification runs only " +
+			"on the V2 model runner, and vLLM refuses it on V1 (vllm/config/vllm.py:2980-2981@5df63a72)")
+	case e.MaxLoRAs > 0:
+		// LoRAConfig exists whenever LoRA is enabled, which max_loras states here
+		// (vllm/engine/arg_utils.py:2650-2669@5df63a72).
+		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+			"compatible with LoRA\" (vllm/config/vllm.py:3005-3010@5df63a72)")
+	case !fullCUDAGraphs(e.CUDAGraphMode):
+		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification requires full CUDA "+
+			"graphs\", and cudagraph_mode %s captures none (vllm/config/vllm.py:3012-3017@5df63a72)", e.CUDAGraphMode)
+	case pp > 1:
+		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+			"compatible with pipeline parallelism\" (vllm/config/vllm.py:3019-3028@5df63a72)")
+	}
+	return nil
+}
+
+// fullCUDAGraphs is CUDAGraphMode.has_full_cudagraphs for a stated mode: FULL, FULL_DECODE_ONLY
+// and FULL_AND_PIECEWISE capture full graphs (vllm/config/compilation.py:59-91@5df63a72). An
+// unstated mode is vLLM's default, FULL_AND_PIECEWISE (vllm/config/vllm.py:303@5df63a72).
+func fullCUDAGraphs(mode string) bool {
+	switch mode {
+	case "", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE":
+		return true
+	}
+	return false
+}
+
+// checkRules runs the v0.32.0 rules pack (rules/v0_32) over the engine block, the startup check
+// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes. The
+// block is checked as one pool's engine; a rule that needs the model graph or the cluster has
+// neither here and checks nothing, which leaves it to the caller that validates the whole
+// document set. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
+func checkRules(e deployment.Engine, pp int) error {
+	in := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
+		Role:     deployment.RoleColocated,
+		Parallel: deployment.Parallelism{TP: 1, PP: max(pp, 1), DP: 1},
+		Engine:   e,
+	}}}}
+	errs := v0_32.Pack().Check(in).Errors()
+	if len(errs) == 0 {
+		return nil
+	}
+	// The block is checked as the one pool of a document, so its findings are named from the
+	// engine block, not from a pool index the caller never wrote.
+	lines := make([]string, len(errs))
+	for i, p := range errs {
+		lines[i] = fmt.Sprintf("[%s] %s", p.Rule, strings.TrimPrefix(p.Message, "pools[0]."))
+	}
+	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules (rules/v0_32): %s", v0_32.Version,
+		strings.Join(lines, "; "))
 }

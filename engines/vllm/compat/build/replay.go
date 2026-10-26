@@ -126,7 +126,8 @@ func CheckHybridDPNodeLocal(mode string, dp, instances int, nodeOf RankNode) err
 		if a, b := nodeOf(first), nodeOf(first+dp-1); a != b {
 			return fmt.Errorf("--dp-load-balancing hybrid: the replica of ranks %d-%d spans nodes %d-%d, and a "+
 				"hybrid front-end balances only its own node's ranks (one endpoint per node), which BLIS does "+
-				"not model; use internal or external", first, first+dp-1, a, b)
+				"not model (https://github.com/inference-sim/blis-vllm/issues/28#issuecomment-6408150356); use "+
+				"internal or external", first, first+dp-1, a, b)
 		}
 	}
 	return nil

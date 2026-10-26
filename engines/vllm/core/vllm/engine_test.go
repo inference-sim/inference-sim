@@ -211,6 +211,19 @@ func TestFactoryRefuses(t *testing.T) {
 		{"PP2 async on the V2 runner", Version, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", "max_concurrent_batches 3"},
 		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
 		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
+		// An env key the engine does not read is refused, naming it (blis-schemas' Env rule).
+		{"an env key the engine does not read", Version, "env: {VLLM_MARLIN_USE_ATOMIC_ADD: \"1\"}\n", "VLLM_MARLIN_USE_ATOMIC_ADD"},
+		{"env keys are named in order", Version, "env: {VLLM_B: \"1\", VLLM_A: \"1\"}\n", "VLLM_A, VLLM_B"},
+		// Adaptive verification: vLLM's own refusals the factory can see
+		// (vllm/config/vllm.py:2980-2981, 3001-3032@5df63a72).
+		{"adaptive verification on the V1 runner", Version, "speculative: {method: eagle3, num_spec_tokens: 3, enable_adaptive_verification: true}\nuse_v2_model_runner: false\n", "adaptive draft verification runs only on the V2 model runner"},
+		{"adaptive verification with LoRA", Version, "use_v2_model_runner: true\nmax_loras: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "not currently compatible with LoRA"},
+		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\ncudagraph_mode: PIECEWISE\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "requires full CUDA graphs"},
+		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
+		// What rules/v0_32 refuses in an engine block (#2021 B11 step 2).
+		{"a cache dtype v0.32.0 does not accept", Version, "cache_dtype: fp9\n", "enum-values-known"},
+		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
+		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},
 	} {
 		s := spec(t, c.extra)
 		s.UpstreamVersion = c.version
@@ -242,6 +255,27 @@ func TestFactoryRefuses(t *testing.T) {
 	}
 	if _, err := (Factory{}).New(spec(t, "")); err == nil || !strings.Contains(err.Error(), "Pricer") {
 		t.Errorf("no pricer: err %v", err)
+	}
+}
+
+// The settings the factory accepts beside its refusals: the one env key it reads, adaptive
+// verification where vLLM v0.32.0 starts with it, and the rules pack's warnings, which are not
+// refusals.
+func TestFactoryAccepts(t *testing.T) {
+	for _, c := range []struct{ name, extra string }{
+		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
+		{"adaptive verification on V2 with full graphs", "use_v2_model_runner: true\ncudagraph_mode: FULL_DECODE_ONLY\n" +
+			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
+		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
+			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
+		{"adaptive verification stated off, on the V1 runner", "speculative: {method: eagle3, num_spec_tokens: 3, " +
+			"enable_adaptive_verification: false}\n"},
+		// quantization-known is a warning: vLLM admits out-of-tree methods the pack cannot list.
+		{"an out-of-tree quantization method", "quantization: my_out_of_tree_method\n"},
+	} {
+		if _, err := build(t, c.extra)(); err != nil {
+			t.Errorf("%s: refused: %v", c.name, err)
+		}
 	}
 }
 

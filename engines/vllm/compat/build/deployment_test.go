@@ -202,6 +202,9 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		{"      kv_events:\n        enable_kv_cache_events: true\n", "kv_events"},
 		{"      kv_events:\n        enable_kv_cache_events: false\n", "kv_events"},
 		{"      max_cpu_loras: 4\n", "max_cpu_loras"},
+		// engine.env: the compatibility engine reads no key, so any stated key is refused by name.
+		{"      env:\n        VLLM_USE_V2_MODEL_RUNNER: \"1\"\n", "env (VLLM_USE_V2_MODEL_RUNNER)"},
+		{"      env:\n        VLLM_B: \"1\"\n        VLLM_A: \"1\"\n", "env (VLLM_A, VLLM_B)"},
 	} {
 		err := adopt(t, c.yaml)
 		if err == nil {

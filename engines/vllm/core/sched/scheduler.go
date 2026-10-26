@@ -289,20 +289,26 @@ func (s *Scheduler) Add(r *Request) error {
 // SetConnector installs a KV connector (KVConnectorFactory.create_connector,
 // scheduler.py:170-182). Call before any request is added. A connector is modelled for one
 // full-attention KV cache group, synchronous scheduling and no drafter; the rest is refused
-// (docs/feature-matrix.md, "KV connectors and offload").
+// until connectorRefusalIssue lands (docs/feature-matrix.md, "KV connectors and offload").
 func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	switch {
 	case s.KV.NumGroups() > 1:
-		return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled", s.KV.NumGroups())
+		return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled (%s)", s.KV.NumGroups(),
+			connectorRefusalIssue)
 	case s.cfg.Async || s.cfg.MaxConcurrentBatches > 1:
 		// defer_block_free and requires_kv_delivery (scheduler.py:184-194) apply there.
-		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled")
+		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled (%s)",
+			connectorRefusalIssue)
 	case s.cfg.Spec.NumTokens > 0:
-		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled")
+		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled (%s)", connectorRefusalIssue)
 	}
 	s.connector, s.conf = c, conf
 	return nil
 }
+
+// connectorRefusalIssue tracks the connector combinations SetConnector refuses: several KV
+// cache groups, the batch queue and drafters.
+const connectorRefusalIssue = "https://github.com/inference-sim/blis-vllm/issues/34"
 
 // Counts is get_request_counts: (running, waiting) (scheduler.py:2608-2610).
 func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() + s.holding.len() }

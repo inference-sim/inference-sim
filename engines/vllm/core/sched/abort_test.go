@@ -1,6 +1,7 @@
 package sched
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/core/kv"
@@ -81,6 +82,41 @@ func TestRequestHashesAreTheBlockHashesOfItsTokens(t *testing.T) {
 	for i := range want {
 		if string(r.hashes[i]) != string(want[i]) {
 			t.Errorf("block %d: hash differs from kv.BlockHashes", i)
+		}
+	}
+}
+
+// A connector is refused where it is not modelled -- several KV cache groups, the batch queue
+// or a drafter -- each refusal naming the issue that brings it, and installed otherwise.
+func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
+	base := Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40, MaxModelLen: 128,
+		EnableChunkedPrefill: true, Policy: FCFS, EnablePrefixCaching: true, ReserveFullSequence: true}
+	for _, c := range []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{"one full-attention group, synchronous, no drafter", func(*Config) {}, ""},
+		{"several KV cache groups", func(c *Config) {
+			c.KVGroups = kv.ResolveGroups([]kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindow, Window: 8}}, false)
+		}, "KV cache groups"},
+		{"async scheduling", func(c *Config) { c.Async, c.MaxConcurrentBatches = true, 2 }, "async scheduling"},
+		{"concurrent batches", func(c *Config) { c.MaxConcurrentBatches = 2 }, "concurrent batches"},
+		{"a drafter", func(c *Config) { c.Spec = ResolveSpec(SpecOptions{Method: "eagle3", NumTokens: 2}) }, "speculative decoding"},
+	} {
+		cfg := base
+		c.edit(&cfg)
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		err = s.SetConnector(&loadingConnector{}, ConnectorConfig{})
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", c.name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want) ||
+			!strings.Contains(err.Error(), "https://github.com/inference-sim/blis-vllm/issues/34")):
+			t.Errorf("%s: %v, want a refusal naming %q and blis-vllm#34", c.name, err, c.want)
 		}
 	}
 }
