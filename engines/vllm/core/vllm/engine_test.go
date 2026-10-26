@@ -238,6 +238,10 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a cache dtype v0.32.0 does not accept", Version, "cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},
+		// No plugin can register an MLA prefill backend that is not a Python identifier
+		// (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72), so vLLM refuses it
+		// at startup whatever plugins are loaded, and so does the factory.
+		{"an MLA prefill backend no plugin can register", Version, "mla_prefill_backend: flash-attn\n", "mla-prefill-backend-known"},
 	} {
 		s := spec(t, c.extra)
 		s.UpstreamVersion = c.version
