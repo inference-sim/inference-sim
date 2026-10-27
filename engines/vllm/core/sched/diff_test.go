@@ -49,8 +49,11 @@ type scenario struct {
 		KVLayers []kvLayerRun `json:"kv_layers"`
 		// KVAvailableBytes is KV memory the oracle sizes vLLM's pool from over the groups
 		// (trace.KVPool); the scenario's num_blocks still runs the scheduler.
-		KVAvailableBytes            int64 `json:"kv_available_bytes"`
-		DisableHybridKVCacheManager bool  `json:"disable_hybrid_kv_cache_manager"`
+		KVAvailableBytes int64 `json:"kv_available_bytes"`
+		// KVStartupCheck has the oracle record vLLM's start-up KV memory check on the same
+		// layers and memory (trace.KVPool.Startup).
+		KVStartupCheck              bool `json:"kv_startup_check"`
+		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
 		Speculative                 *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
@@ -110,6 +113,15 @@ type trace struct {
 		AvailableBytes int64  `json:"available_bytes"`
 		NumBlocks      int64  `json:"num_blocks"`
 		Layout         string `json:"kv_cache_layout"`
+		// Startup is vLLM's start-up KV memory check on the pool (get_kv_cache_configs), when
+		// the scenario asks for it: whether it refused, and its message.
+		Startup *struct {
+			Refused bool   `json:"refused"`
+			Message string `json:"message"`
+			// MaxConcurrentBatches is vLLM's max_concurrent_batches the check ran at, which
+			// sets max_in_flight_tokens (vllm/config/vllm.py:577-598@5df63a72).
+			MaxConcurrentBatches int `json:"max_concurrent_batches"`
+		} `json:"startup"`
 	} `json:"kv_pool"`
 }
 
@@ -634,6 +646,74 @@ func TestKVPoolAgainstVLLM(t *testing.T) {
 	}
 	if compared < 2 {
 		t.Fatalf("compared %d KV pools with vLLM's, want at least 2", compared)
+	}
+}
+
+// TestKVStartupCheckAgainstVLLM holds core/kv's start-up check to vLLM v0.32.0's own on the
+// scenarios that ask for it (kv_startup_check): the oracle runs vLLM's get_kv_cache_configs on the
+// scenario's layers and memory (vllm/v1/core/kv_cache_utils.py:2531-2690@5df63a72), whose
+// _check_enough_kv_cache_memory refuses a pool that cannot hold one max_model_len request across
+// every group, and records the verdict, the message and the max_concurrent_batches it ran at.
+// kv.CheckEnoughKVCacheMemory must give the same verdict, and when it refuses, vLLM's numbers:
+// the GiB needed and available and the estimated maximum model length. A sliding window's
+// admission cap counts max_in_flight_tokens, max_concurrent_batches x max_num_batched_tokens,
+// and the extra_retained_tokens of a multi-module MTP drafter's prefill lookahead.
+func TestKVStartupCheckAgainstVLLM(t *testing.T) {
+	scenarios, err := filepath.Glob("../../oracle/scenarios/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused, passed := 0, 0
+	for _, path := range scenarios {
+		var sc scenario
+		readJSON(t, path, &sc)
+		if !sc.Config.KVStartupCheck {
+			continue
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var want trace
+			readJSON(t, filepath.Join("testdata", "golden", name+".json"), &want)
+			checkProvenance(t, path, want)
+			if want.KVPool == nil || want.KVPool.Startup == nil {
+				t.Fatalf("golden %s records no start-up check", name)
+			}
+			c := sc.Config
+			layers := scenarioLayers(t, c.KVLayers)
+			o := kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager}
+			per, err := kv.PoolBytesPerBlock(layers, o, c.BlockSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lookahead := 0
+			if c.Speculative != nil {
+				lookahead = ResolveSpec(SpecOptions{Method: c.Speculative.Method,
+					NumTokens: c.Speculative.NumTokens, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)}).PrefillLookahead
+				o.TrailingDrafter = c.Speculative.Method == "mtp"
+			}
+			limits := kv.RequestLimits{MaxModelLen: c.MaxModelLen,
+				MaxInFlightTokens: max(want.KVPool.Startup.MaxConcurrentBatches, 1) * c.MaxNumBatchedTokens,
+				ExtraRetained:     max(0, lookahead-1)}
+			got := kv.CheckEnoughKVCacheMemory(layers, o, c.BlockSize, limits, c.KVAvailableBytes/per, per,
+				c.KVAvailableBytes)
+			if (got != nil) != want.KVPool.Startup.Refused {
+				t.Fatalf("start-up check: %v, vLLM v0.32.0 refused %v (%s)", got, want.KVPool.Startup.Refused,
+					want.KVPool.Startup.Message)
+			}
+			if got == nil {
+				passed++
+				return
+			}
+			refused++
+			// vLLM's message up to its advice, which names its CPU backend: the numbers are the check.
+			head := want.KVPool.Startup.Message[:strings.Index(want.KVPool.Startup.Message, "Try increasing")]
+			if !strings.Contains(got.Error(), head) {
+				t.Errorf("start-up refusal\n  %v\nwant vLLM v0.32.0's\n  %s", got, head)
+			}
+		})
+	}
+	if refused < 1 || passed < 1 {
+		t.Fatalf("compared %d refused and %d passed start-up checks with vLLM's, want at least one of each", refused, passed)
 	}
 }
 

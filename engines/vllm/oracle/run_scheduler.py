@@ -137,8 +137,25 @@ def layer_groups(cfg: dict, vllm_config) -> list:
         from vllm.v1.core.kv_cache_utils import get_kv_cache_config_from_groups  # noqa: E402
 
         sized = get_kv_cache_config_from_groups(vllm_config, groups, cfg["kv_available_bytes"])
-        pool_sizes.append({"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
-                           "kv_cache_layout": vllm_config.cache_config.kv_cache_layout})
+        pool = {"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
+                "kv_cache_layout": vllm_config.cache_config.kv_cache_layout}
+        if cfg.get("kv_startup_check"):
+            # The engine core's start-up check on the same layers and memory: vLLM's own
+            # get_kv_cache_configs (vllm/v1/core/kv_cache_utils.py:2531-2690@5df63a72), whose
+            # _check_enough_kv_cache_memory (:2636-2646) refuses a worker whose KV cache cannot hold
+            # one max_model_len request across every group. The verdict, vLLM's message and the
+            # max_concurrent_batches its sliding windows' admission caps were counted at
+            # (max_in_flight_tokens, vllm/config/vllm.py:577-598) are recorded; the scenario's
+            # num_blocks still runs the scheduler.
+            from vllm.v1.core.kv_cache_utils import get_kv_cache_configs  # noqa: E402
+
+            try:
+                get_kv_cache_configs(vllm_config, [layer_specs(cfg)], [cfg["kv_available_bytes"]])
+                pool["startup"] = {"refused": False}
+            except ValueError as e:
+                pool["startup"] = {"refused": True, "message": str(e)}
+            pool["startup"]["max_concurrent_batches"] = vllm_config.max_concurrent_batches
+        pool_sizes.append(pool)
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
     # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
     projected = generate_scheduler_kv_cache_config(
