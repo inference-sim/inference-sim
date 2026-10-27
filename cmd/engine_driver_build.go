@@ -47,14 +47,12 @@ func compatThroughContract(version string) bool {
 	return contractCompatShape()
 }
 
-// contractCompatShape is the run shape the contract path carries so far: colocated instances
-// behind the router, P/D prefill and decode pools, and data-parallel replicas whose ranks are
-// each an instance (vLLM's external DP load balancer, or a P/D pool's ranks), with no shared
-// prefill-decode or encode pool. A replica behind vLLM's internal or hybrid balancer, one
-// endpoint whose ranks the engine picks among, still runs the compatibility host loop.
-func contractCompatShape() bool {
-	return prefillDecodeInstances == 0 && encodeInstances == 0
-}
+// contractCompatShape is the run shape the contract path carries: every shape a 0.29/0.31 run can
+// take. Colocated instances behind the router, P/D prefill and decode pools, and data-parallel
+// replicas under each balancer all run through the engine contract. Shared prefill-decode and
+// encode pools are refused before any engine is built (compat/build.OpenPools), since no scenario
+// describes the engine they would run.
+func contractCompatShape() bool { return true }
 
 // throughContract reports whether this run's engine is built by the registered factory and driven
 // through engine.Engine: a contract-built release, or a compatibility release under
