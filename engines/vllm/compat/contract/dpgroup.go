@@ -341,3 +341,77 @@ func (g *DPGroup) RankSnapshot(k int) engine.State { return g.ranks[k].Snapshot(
 // LockstepSteps are the group's lockstep steps so far, and how many of them ran only dummy
 // batches.
 func (g *DPGroup) LockstepSteps() (steps, dummy int) { return g.steps, g.dummy }
+
+// RankView is rank k of a group as an engine.Engine of its own, for a host that keeps one
+// instance per rank: under vLLM's external DP load balancer every rank is its own endpoint the
+// router picks among, and a P/D pool's ranks stay individually routable. A request added through
+// the view runs on its rank. The group steps every rank together, so rank 0's view schedules the
+// group's step, reports its wakes and every rank's share of the step, and the other views'
+// schedules and wakes are empty; a host completes that one batch and applies each request's
+// share to the instance that holds it.
+type RankView struct {
+	g *DPGroup
+	k int
+}
+
+// View is rank k's view.
+func (g *DPGroup) View(k int) *RankView { return &RankView{g: g, k: k} }
+
+var _ engine.Engine = (*RankView)(nil)
+
+func (v *RankView) Add(r engine.Request, now engine.Time) error { return v.g.AddToRank(v.k, r, now) }
+
+// Schedule runs the group's step on rank 0's view; every other view's schedule is empty.
+func (v *RankView) Schedule(now engine.Time) (engine.Batch, error) {
+	if v.k != 0 {
+		return engine.Batch{}, nil
+	}
+	return v.g.Schedule(now)
+}
+
+func (v *RankView) StepTime(b engine.Batch) engine.Duration { return v.g.StepTime(b) }
+
+func (v *RankView) Complete(id engine.BatchID, o engine.Outcome, end engine.Time) (engine.Result, error) {
+	return v.g.Complete(id, o, end)
+}
+
+func (v *RankView) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	return v.g.TransferDone(id, ok, now)
+}
+
+func (v *RankView) Finish(id string, why engine.FinishReason, now engine.Time) error {
+	return v.g.Finish(id, why, now)
+}
+
+// NextWake is the group's armed step, on rank 0's view.
+func (v *RankView) NextWake(now engine.Time) (engine.Time, bool) {
+	if v.k != 0 {
+		return 0, false
+	}
+	return v.g.NextWake(now)
+}
+
+func (v *RankView) InFlightLimit() int                     { return 1 }
+func (v *RankView) Metrics(now engine.Time) engine.Metrics { return v.g.RankMetrics(v.k, now) }
+func (v *RankView) Snapshot() engine.State                 { return v.g.RankSnapshot(v.k) }
+
+// Rank is the view's rank, and Group its group.
+func (v *RankView) Rank() int       { return v.k }
+func (v *RankView) Group() *DPGroup { return v.g }
+
+// The rank's own queries (Engine's): what the host reads per instance.
+func (v *RankView) EnableKVEvents()                          { v.g.ranks[v.k].EnableKVEvents() }
+func (v *RankView) QueueSnapshots() (waiting, running []int) { return v.g.ranks[v.k].QueueSnapshots() }
+func (v *RankView) OffloadCachedTokens(id string) int        { return v.g.ranks[v.k].OffloadCachedTokens(id) }
+func (v *RankView) KVThrashing() (rate float64, events, opportunities int64, counted bool) {
+	return v.g.ranks[v.k].KVThrashing()
+}
+func (v *RankView) CachedBlockHashes() []string          { return v.g.ranks[v.k].CachedBlockHashes() }
+func (v *RankView) CPUBlockHashes() []string             { return v.g.ranks[v.k].CPUBlockHashes() }
+func (v *RankView) TierBlockHashes(name string) []string { return v.g.ranks[v.k].TierBlockHashes(name) }
+func (v *RankView) ServerSeriesSpan() (interval, end int64) {
+	return v.g.ranks[v.k].ServerSeriesSpan()
+}
+func (v *RankView) ServerSeriesBlock(id string, end int64) ([]byte, error) {
+	return v.g.ranks[v.k].ServerSeriesBlock(id, end)
+}

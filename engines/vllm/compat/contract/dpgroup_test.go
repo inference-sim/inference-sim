@@ -117,4 +117,38 @@ func TestADPGroupsWaveRunsDummyStepsUntilItsNextSync(t *testing.T) {
 	if _, ok := g.NextWake(now); ok {
 		t.Error("the wave did not end at its sync")
 	}
+	// The sync step that ended the wave still holds the GPUs until it ends (100 ticks, a dummy
+	// batch): a request arriving during it starts the next wave at that step's end.
+	if err := g.AddToRank(0, req("late", 16, 2), now+50); err != nil {
+		t.Fatal(err)
+	}
+	if at, ok := g.NextWake(now + 50); !ok || at != now+100 {
+		t.Errorf("a request arriving during the last step wakes the group at %d, %v: want that step's end %d", at, ok, now+100)
+	}
+}
+
+// A rank's view runs the requests added through it on its rank, and rank 0's view steps the whole
+// group: its batch carries the other ranks' requests, and the other views schedule nothing.
+func TestARankViewAddsToItsRankAndRankZeroStepsTheGroup(t *testing.T) {
+	g := newGroup(t, 2)
+	v0, v1 := g.View(0), g.View(1)
+	if err := v1.Add(req("a", 40, 3), 0); err != nil {
+		t.Fatal(err)
+	}
+	if k, _ := g.RankOf("a"); k != 1 {
+		t.Fatalf("a request added through rank 1's view runs on rank %d", k)
+	}
+	if b, _ := v1.Schedule(0); !b.Empty() {
+		t.Error("rank 1's view scheduled a batch; only rank 0's steps the group")
+	}
+	if _, ok := v1.NextWake(0); ok {
+		t.Error("rank 1's view reported a wake; the group's wakes are rank 0's view's")
+	}
+	b, err := v0.Schedule(0)
+	if err != nil || len(b.Reqs) != 1 || b.Reqs[0].ID != "a" {
+		t.Fatalf("rank 0's view ran %v (%v), want rank 1's request a", b.Reqs, err)
+	}
+	if s := v1.Snapshot(); s.Running != 1 {
+		t.Errorf("rank 1's snapshot runs %d requests, want 1", s.Running)
+	}
 }
