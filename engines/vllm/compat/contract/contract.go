@@ -3,8 +3,8 @@
 // Package contract puts the compatibility engine (compat/engine) behind blis-schemas'
 // engine.Engine, the contract blis-vllm's v0.32.0 engine (core/vllm) implements, so a
 // simulator drives every release through one driver (inference-sim GOAL.md phase 2c). This
-// first stage carries one colocated instance with no data parallelism, P/D, KV offload or
-// LoRA; New refuses the others, naming them.
+// first stage carries one colocated instance with no data parallelism, P/D or LoRA; New
+// refuses the others, naming them.
 //
 // The engine executes a whole compatibility step when it is scheduled, as compat/engine's own
 // host loop does (inference-sim's Simulator.Step runs ExecuteStep, then FinishStep, at the
@@ -44,6 +44,9 @@ type Engine struct {
 	busyUntil int64
 	// wake is a step the engine itself asked for (ArmStep, WakeStep), -1 for none.
 	wake int64
+	// sleepUntil is the deferral wake the engine sleeps to when every waiting request waits on
+	// a KV fetch (deferralWake), 0 for none.
+	sleepUntil int64
 	// firsts and done collect what a call into the engine made visible.
 	firsts []string
 	done   []engine.Finished
@@ -66,8 +69,6 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 	switch {
 	case cfg.HasAdapters():
 		return nil, fmt.Errorf("contract: %s: LoRA adapters do not run through the engine contract yet", id)
-	case cfg.Offload.IsEnabled():
-		return nil, fmt.Errorf("contract: %s: a KV offload tier does not run through the engine contract yet", id)
 	case cfg.LatencyModel == nil:
 		return nil, fmt.Errorf("contract: %s: SimConfig.LatencyModel is nil", id)
 	}
@@ -107,6 +108,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	req := &cengine.Request{ID: r.ID, InputTokens: tokens(r.Prompt), OutputTokens: tokens(r.Output),
 		MaxOutputLen: r.MaxOutputTokens, ArrivalTime: r.ArrivalTime, Adapter: r.Adapter, State: cengine.StateQueued,
 		SLOClass: r.Tags[TagSLOClass]}
+	e.sleepUntil = 0 // an arrival ends a deferral sleep (the host loop's scheduleStepBy)
 	e.inEnque, e.dropped = true, false
 	e.core.EnqueueRequest(req)
 	e.inEnque = false
@@ -126,6 +128,10 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	if e.wake >= 0 && e.wake <= now {
 		e.wake = -1
 	}
+	if e.sleepUntil > now {
+		return engine.Batch{}, nil
+	}
+	e.sleepUntil = 0
 	if now < e.busyUntil {
 		return engine.Batch{}, nil
 	}
@@ -143,10 +149,9 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 			ran[req.ID] = true
 			sc := engine.Scheduled{ID: req.ID, Tokens: req.NumNewTokens, PromptLen: len(req.InputTokens)}
 			if l, ok := e.rec.lookups[req.ID]; ok {
-				// The admission's prefix-cache lookup: what the device cache supplied of the
-				// prompt (PrefixLookup.HitTokens). Offload, whose CPU tier also supplies a
-				// prefix, is refused at New.
-				sc.CachedTokens = int(l.HitTokens)
+				// The admission's prefix-cache lookup: what the device cache and the KV
+				// offload tier supplied of the prompt (PrefixLookup.HitTokens, CPUHitTokens).
+				sc.CachedTokens = int(l.HitTokens + l.CPUHitTokens)
 			}
 			b.Reqs = append(b.Reqs, sc)
 		}
@@ -162,6 +167,7 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		e.core.KeepRunning(remaining)
 	} else {
 		e.core.ClearRunning()
+		e.sleepUntil = e.deferralWake(now, now+advance)
 	}
 	e.core.PublishStep(now + advance)
 	e.running = map[string]bool{}
@@ -193,6 +199,36 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	b.ID = e.nextID
 	e.flight = &flight{id: b.ID, advance: advance, res: res}
 	return b, nil
+}
+
+// deferralWake is when an engine whose step at now left nothing running next steps, when every
+// waiting request is deferred on a KV fetch (the host loop's idle wake, scheduleNextStep): the
+// next instant a deferral can change state, clamped to the horizon, if that is later than the
+// step's end (next). Otherwise 0: the engine polls on, or parks, which polling reproduces. An
+// arrival ends the sleep early (Add), as does work the engine wakes itself for (WakeStep).
+func (e *Engine) deferralWake(now, next int64) int64 {
+	if !e.core.HasWaiting() || e.core.AdapterLoading() || e.core.IsQuiescent() {
+		return 0
+	}
+	wake, ok := e.core.IdleDeferralWake(now)
+	if !ok {
+		return 0
+	}
+	if wake = min(wake, e.horizon); wake <= next {
+		return 0
+	}
+	return wake
+}
+
+// OffloadCachedTokens is how much of id's Scheduled.CachedTokens, in the batch Schedule last
+// returned, the KV offload tier supplied (PrefixLookup.CPUHitTokens).
+func (e *Engine) OffloadCachedTokens(id string) int { return int(e.rec.lookups[id].CPUHitTokens) }
+
+// KVThrashing is the KV store's thrashing rate and, for a store that counts them (the offload
+// stores), the thrash events and opportunities behind it (cengine.KVThrashing).
+func (e *Engine) KVThrashing() (rate float64, events, opportunities int64, counted bool) {
+	rate, c, counted := e.core.KVThrashing()
+	return rate, c.Events, c.Opportunities, counted
 }
 
 // outputCount is how many output tokens a request has produced: the first token its prefill
@@ -252,9 +288,12 @@ func (e *Engine) Finish(id string, why engine.FinishReason, now engine.Time) err
 	return nil
 }
 
-// NextWake is the end of a step that ran nothing while work waits, or a step the engine asked
-// for itself.
+// NextWake is a deferral wake the engine sleeps to, the end of a step that ran nothing while
+// work waits, or a step the engine asked for itself.
 func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
+	if e.flight == nil && e.sleepUntil > now {
+		return e.sleepUntil, true
+	}
 	if e.flight == nil && (e.core.HasWaiting() || e.core.HasRunning()) && e.busyUntil > now {
 		return e.busyUntil, true
 	}
@@ -349,9 +388,22 @@ func (h host) ScheduleLeft(*cengine.Request, int64)       {}
 func (h host) ScheduleAdapterLoaded(string, int64)        {} // LoRA is refused at New
 func (h host) RequestDone(req *cengine.Request, _ int64)  { h.e.noteDone(req) }
 func (h host) FirstTokenAt(req *cengine.Request, _ int64) { h.e.firsts = append(h.e.firsts, req.ID) }
-func (h host) WakeStep(t int64)                           { h.e.askWake(t) }
 func (h host) ArmStep(t int64)                            { h.e.askWake(t) }
-func (h host) StepArmed() bool                            { return h.e.wake >= 0 || h.e.flight != nil }
+func (h host) StepArmed() bool {
+	return h.e.wake >= 0 || h.e.flight != nil || h.e.sleepUntil > 0
+}
+
+// WakeStep asks for a step by t; it ends a deferral sleep that would wake later (the host
+// loop's scheduleStepBy), and is moot under one that wakes sooner.
+func (h host) WakeStep(t int64) {
+	switch {
+	case h.e.sleepUntil > t:
+		h.e.sleepUntil = 0
+	case h.e.sleepUntil > 0:
+		return
+	}
+	h.e.askWake(t)
+}
 
 // recorder is the engine's report record (cengine.Recorder). The simulator keeps its own report
 // from what the contract returns; the engine reads back only its preemption count, and the
