@@ -54,6 +54,9 @@ jobs:
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
           HF_HUB_OFFLINE: "1"
+          # the helper model's config states 2048 positions; a dashboard scenario states its deployment's
+          # max_model_len (oracle/README.md)
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
         run: |
           set -o pipefail
           mkdir -p oracle/out/scenarios oracle/out/scenarios-metrics oracle/out/scenarios-t3 \

@@ -7,7 +7,7 @@ vLLM v0.32.0's own classes, driven through a scenario on CPU, with only the GPU 
 # A vLLM checkout at the pinned tag (for its test helpers) and a Python with vLLM 0.32.0:
 python -I oracle/check_mocks.py oracle/mocks.json
 ORACLE_MODEL=<local snapshot of facebook/opt-125m@27dcfa74, config files only> \
-ORACLE_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6 HF_HUB_OFFLINE=1 \
+ORACLE_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6 HF_HUB_OFFLINE=1 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
   python -I oracle/run_scheduler.py <vllm-checkout> oracle/scenarios/<scenario>.json > trace.json
 ```
 
@@ -27,6 +27,7 @@ freeze)` confirms it. The runners also read:
 | `ORACLE_MODEL_REVISION` | its revision, recorded in provenance |
 | `ORACLE_LOCKFILE` | the `pip freeze` of the environment, whose sha256 provenance records |
 | `HF_HUB_OFFLINE=1` | no Hub access while a scenario runs |
+| `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` | lets a scenario state a `max_model_len` above the helper model's 2048 positions (its `config.json`), as a dashboard deployment's start-up check needs; the window reaches only the scheduler's length checks and the KV start-up check, never a weight |
 | `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1` | lets a runner write into a `testdata/golden*` directory (then add a `golden-reviewed:` trailer) |
 
 ## Runners and tests, by tier
