@@ -131,8 +131,8 @@ github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027025153-6c22823d37a
 github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027025153-6c22823d37a3/go.mod h1:LTA67SVpEstAcTHpT9Vl1hfqXcmoz76mI6lsZ8sIZh0=
 github.com/inference-sim/blis-schemas v0.7.1-0.20261027124745-b29fe55134bd h1:2twxMpBaEy8EmdKnWFfjUPx72+cavqvm4/vDGpzCUdk=
 github.com/inference-sim/blis-schemas v0.7.1-0.20261027124745-b29fe55134bd/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
-github.com/inference-sim/blis-vllm v0.0.0-20261027124834-8ff7ac23c201 h1:DcCaaEkPtZrtwGCDzoftFv9cNZD5QmegqX3dK4Wcyck=
-github.com/inference-sim/blis-vllm v0.0.0-20261027124834-8ff7ac23c201/go.mod h1:pgWK+cqqbiL52hxQPt55m2W8KHYQP+AkOXf66YuBbfs=
+github.com/inference-sim/blis-vllm v0.0.0-20261027131844-6b1d02601be1 h1:JMCbQwMu+cWBkdRpukrexXhJopYM2YEl8y6jIOhv4x8=
+github.com/inference-sim/blis-vllm v0.0.0-20261027131844-6b1d02601be1/go.mod h1:pgWK+cqqbiL52hxQPt55m2W8KHYQP+AkOXf66YuBbfs=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261027023042-83a5874cc19f h1:zBU+qDN6m50E3kpFsQH9n9hcLp2u5LjPD0HoIvgtWUs=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261027023042-83a5874cc19f/go.mod h1:rjhfDcLCn1dc0mR5cCvHydy3Lp6dn0BorqitvFDUMno=
 github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=

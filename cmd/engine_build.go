@@ -686,7 +686,7 @@ func compatContractFactory(version string, global sim.SimConfig, acceptance floa
 			return nil, err
 		}
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance, ResumeGapFromLastToken: true,
-			ScrapeEngineMetrics: true, RecordPrefixLookups: true}
+			ScrapeEngineMetrics: true, RecordPrefixLookups: true, ApplyAtStepStart: true}
 		if cfg.LatencyModel != nil {
 			dcfg.PostDecodeFixedOverhead = cfg.LatencyModel.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = cfg.LatencyModel.OutputTokenProcessingTime()

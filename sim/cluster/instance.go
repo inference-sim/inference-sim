@@ -701,7 +701,7 @@ func (i *InstanceSimulator) EngineMetricsAt(t int64) sim.EngineMetrics {
 // sorted (nil for a KV cache that does not track them).
 func (i *InstanceSimulator) CachedBlockHashes() []string {
 	if i.drv != nil {
-		return nil // the prefix cache is the engine's; routing on its blocks is the KV-event path
+		return i.drv.CachedBlockHashes()
 	}
 	return i.sim.CachedBlockHashes()
 }
@@ -710,7 +710,7 @@ func (i *InstanceSimulator) CachedBlockHashes() []string {
 // without one).
 func (i *InstanceSimulator) CPUBlockHashes() []string {
 	if i.drv != nil {
-		return nil
+		return i.drv.CPUBlockHashes()
 	}
 	return i.sim.CPUBlockHashes()
 }
@@ -719,7 +719,7 @@ func (i *InstanceSimulator) CPUBlockHashes() []string {
 // medium (e.g. "shared_storage" for a filesystem tier) hold, sorted (nil without one).
 func (i *InstanceSimulator) TierBlockHashes(name string) []string {
 	if i.drv != nil {
-		return nil
+		return i.drv.TierBlockHashes(name)
 	}
 	return i.sim.TierBlockHashes(name)
 }

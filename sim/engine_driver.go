@@ -6,6 +6,7 @@ package sim
 
 import (
 	"container/heap"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -51,6 +52,13 @@ type EngineDriverConfig struct {
 	// report (the prompt's tokens, and Scheduled.CachedTokens of them hit), as the compatibility
 	// engine's recorder does. Only the compatibility engine's contract build sets it.
 	RecordPrefixLookups bool
+	// ApplyAtStepStart applies a batch's results when its step starts, as the compatibility
+	// engine's own host loop does (Simulator.Step executes a whole step at its start, so its
+	// completions, first tokens and finishes reach the cluster then, stamped with the step's
+	// end): the driver completes the batch at once, passing the step's end, as the contract allows
+	// a simulator that applies results at a step's start. Only the compatibility engine's
+	// contract build sets it.
+	ApplyAtStepStart bool
 }
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
@@ -228,7 +236,9 @@ func (d *EngineDriver) Finalize() {
 	}
 	d.Metrics.StillQueued = waiting
 	d.Metrics.StillRunning = running
-	if q, ok := d.eng.(interface{ QueueSnapshots() (waiting, running []int) }); ok {
+	if q, ok := d.eng.(interface {
+		QueueSnapshots() (waiting, running []int)
+	}); ok {
 		// The engine's per-step queue lengths, which the cluster's head-of-line blocking
 		// detector averages (the compatibility engine records them at each step).
 		d.Metrics.NumWaitQRequests, d.Metrics.NumRunningBatchRequests = q.QueueSnapshots()
@@ -390,14 +400,20 @@ func (e *driverArrivalStep) run(d *EngineDriver) {
 	d.kick(e.at)
 }
 
-// driverStepEnd completes the oldest in-flight batch at its step's end.
+// driverStepEnd completes the oldest in-flight batch at its step's end; for a batch already
+// applied at its start (ApplyAtStepStart), it only steps the engine again.
 type driverStepEnd struct {
-	at int64
+	at      int64
+	applied bool
 }
 
 func (e *driverStepEnd) Timestamp() int64 { return e.at }
 func (e *driverStepEnd) Priority() int    { return PriorityStep }
 func (e *driverStepEnd) run(d *EngineDriver) {
+	if e.applied {
+		d.kick(e.at)
+		return
+	}
 	if len(d.inFlight) == 0 {
 		panic(fmt.Sprintf("engine driver: a step ended at %d with no batch in flight", e.at))
 	}
@@ -522,6 +538,15 @@ func (d *EngineDriver) kick(now int64) {
 						HitTokens: int64(s.CachedTokens - offload), CPUHitTokens: int64(offload)})
 				}
 			}
+		}
+		if d.cfg.ApplyAtStepStart {
+			res, err := d.eng.Complete(b.ID, d.outcome(b), end)
+			if err != nil {
+				panic(fmt.Sprintf("engine driver: Complete(%d) at %d: %v", b.ID, now, err))
+			}
+			d.apply(b, res, end)
+			d.schedule(&driverStepEnd{at: end, applied: true})
+			continue
 		}
 		d.inFlight = append(d.inFlight, driverBatch{b: b, end: end})
 		d.schedule(&driverStepEnd{at: end})
@@ -657,9 +682,16 @@ func (d *EngineDriver) complete(r *driverReq, f engine.Finished, end int64) {
 	if f.OutputTokens > 0 {
 		itl = float64(itlSum) / float64(max(f.OutputTokens-1, 1))
 	}
+	// The completion is ordered by the clock it is processed at (Completion.Clock): the step's end,
+	// or its start for a batch applied at its start, as the compatibility engine's host loop
+	// processes it.
+	clock := end
+	if d.cfg.ApplyAtStepStart {
+		clock = d.Clock
+	}
 	d.Metrics.RecordCompletion(Completion{
 		Req: req, TTFT: req.FirstTokenTime, OutputTokens: f.OutputTokens, E2E: e2e, ITL: itl,
-		Steps: d.stepIdx - r.scheduledIdx, Clock: end, Overhead: overhead,
+		Steps: d.stepIdx - r.scheduledIdx, Clock: clock, Overhead: overhead,
 	})
 	delete(d.reqs, req.ID)
 	d.done(req, end)
@@ -710,6 +742,59 @@ func tokenIDs(in []int32) []TokenID {
 		out[i] = TokenID(v)
 	}
 	return out
+}
+
+// ServerSeriesSpan is the bin width of the engine's server time series and the last instant it
+// recorded anything (0, 0 for an engine that records none: one without a ServerSeriesSpan query).
+func (d *EngineDriver) ServerSeriesSpan() (interval, end int64) {
+	if q, ok := d.eng.(interface{ ServerSeriesSpan() (int64, int64) }); ok {
+		return q.ServerSeriesSpan()
+	}
+	return 0, 0
+}
+
+// ServerSeriesBlock is the engine's server time series as id, binned to end, as a block holding
+// this one engine; nil for an engine that records none.
+func (d *EngineDriver) ServerSeriesBlock(id string, end int64) (*ServerSeriesOutput, error) {
+	q, ok := d.eng.(interface {
+		ServerSeriesBlock(id string, end int64) ([]byte, error)
+	})
+	if !ok {
+		return nil, nil
+	}
+	b, err := q.ServerSeriesBlock(id, end)
+	if err != nil || b == nil {
+		return nil, err
+	}
+	var out ServerSeriesOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("engine driver: the engine's server series: %w", err)
+	}
+	return &out, nil
+}
+
+// CachedBlockHashes, CPUBlockHashes and TierBlockHashes are the hashes of the blocks the engine's
+// prefix cache, its CPU KV tier and its secondary offload tiers publishing as medium name hold,
+// sorted, for an engine that reports them; nil otherwise.
+func (d *EngineDriver) CachedBlockHashes() []string {
+	if q, ok := d.eng.(interface{ CachedBlockHashes() []string }); ok {
+		return q.CachedBlockHashes()
+	}
+	return nil
+}
+
+func (d *EngineDriver) CPUBlockHashes() []string {
+	if q, ok := d.eng.(interface{ CPUBlockHashes() []string }); ok {
+		return q.CPUBlockHashes()
+	}
+	return nil
+}
+
+func (d *EngineDriver) TierBlockHashes(name string) []string {
+	if q, ok := d.eng.(interface{ TierBlockHashes(string) []string }); ok {
+		return q.TierBlockHashes(name)
+	}
+	return nil
 }
 
 // PostDecodeFixedOverhead is the host's fixed per-request work at completion.

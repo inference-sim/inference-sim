@@ -2061,7 +2061,12 @@ func pdParentTerminal(parent *ParentRequest) bool {
 func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
 	ids := make([]string, 0, len(c.instances))
 	sims := make([]*sim.Simulator, 0, len(c.instances))
+	var driven []*InstanceSimulator
 	for _, inst := range c.instances {
+		if inst.drv != nil {
+			driven = append(driven, inst)
+			continue
+		}
 		core := inst.engineCore()
 		if core == nil {
 			continue
@@ -2069,5 +2074,38 @@ func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
 		ids = append(ids, string(inst.ID()))
 		sims = append(sims, core)
 	}
+	if len(driven) > 0 {
+		return serverSeriesOfEngines(driven)
+	}
 	return sim.BuildServerSeriesOf(ids, sims)
+}
+
+// serverSeriesOfEngines joins the server time series of engine-driven instances into one block,
+// every engine binned to the latest instant any of them recorded or reached (each instance's
+// clock), as sim.BuildServerSeriesOf bins the compatibility engine's; nil when none records one.
+func serverSeriesOfEngines(insts []*InstanceSimulator) *sim.ServerSeriesOutput {
+	var interval, end int64
+	for _, inst := range insts {
+		if iv, e := inst.drv.ServerSeriesSpan(); iv > 0 {
+			interval, end = iv, max(end, e, inst.drv.Clock)
+		}
+	}
+	if interval <= 0 {
+		return nil
+	}
+	var out *sim.ServerSeriesOutput
+	for _, inst := range insts {
+		block, err := inst.drv.ServerSeriesBlock(string(inst.ID()), end)
+		if err != nil {
+			panic(fmt.Sprintf("instance %s: %v", inst.ID(), err))
+		}
+		if block == nil {
+			continue
+		}
+		if out == nil {
+			out = &sim.ServerSeriesOutput{IntervalS: block.IntervalS, Origin: block.Origin}
+		}
+		out.Engines = append(out.Engines, block.Engines...)
+	}
+	return out
 }

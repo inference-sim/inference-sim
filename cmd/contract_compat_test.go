@@ -173,6 +173,66 @@ func TestContractCompatOffloadIsByteIdentical(t *testing.T) {
 	}
 }
 
+// The --metrics-path file, run both ways with the server time series on: every byte-gate case the
+// contract carries writes the same file, byte for byte, as the compatibility host loop: its
+// server_series block (the engine's own series, through the contract), the in-flight request
+// mean and maximum, and each request's completion index (both of which follow the instant a
+// step's results reach the cluster: its start, as on the host loop).
+func TestContractCompatMetricsFileIsByteIdentical(t *testing.T) {
+	for _, c := range contractCompatCases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(env string) (stdout, metrics string) {
+				t.Helper()
+				t.Setenv(ContractCompatEnv, env)
+				path := filepath.Join(t.TempDir(), "metrics.json")
+				args := append([]string{"run", "--scenarios", filepath.Join("..", c.dir), "--scenario", c.scenario,
+					"--server-series-interval-s", "1", "--metrics-path", path}, strings.Fields(c.flags)...)
+				stdout, stderr, err := runKernelCLI(t, args...)
+				if err != nil {
+					t.Fatalf("ContractCompatEnv=%q: %v\nstderr:\n%s", env, err, lastLines(stderr, 5))
+				}
+				return stdout, readFile(t, path)
+			}
+			want, wantMetrics := run("0")
+			got, gotMetrics := run("")
+			var m struct {
+				InFlightMean float64 `json:"in_flight_requests_mean"`
+				Series       *struct {
+					Engines []struct {
+						Bins int `json:"bins"`
+					} `json:"engines"`
+				} `json:"server_series"`
+			}
+			if err := json.Unmarshal([]byte(gotMetrics), &m); err != nil {
+				t.Fatal(err)
+			}
+			if m.Series == nil || len(m.Series.Engines) == 0 || m.Series.Engines[0].Bins == 0 {
+				t.Fatal("the contract path wrote no server_series; the comparison is vacuous")
+			}
+			if m.InFlightMean <= 0 {
+				t.Fatal("no request was in flight; the comparison is vacuous")
+			}
+			if got != want {
+				t.Errorf("the contract path's stdout differs from the compatibility host loop's")
+			}
+			if gotMetrics != wantMetrics {
+				t.Errorf("the contract path's metrics file differs from the compatibility host loop's:\n%s",
+					firstDifference(gotMetrics, wantMetrics))
+			}
+		})
+	}
+}
+
+// firstDifference shows where two files first differ, with a little context.
+func firstDifference(a, b string) string {
+	i := 0
+	for i < len(a) && i < len(b) && a[i] == b[i] {
+		i++
+	}
+	from := max(i-200, 0)
+	return fmt.Sprintf("contract: ...%s\nhost loop: ...%s", a[from:min(i+200, len(a))], b[from:min(i+200, len(b))])
+}
+
 // LoRA adapters, run both ways: two adapters over two resident slots and KV pressure, so the
 // run cold-loads adapters through the engine's load gate and preempts. The cold loads reach the
 // report (each adapter's load_count in --metrics-path), as the run's output does.

@@ -12,9 +12,9 @@ require (
 	// TEMPORARY: inference-sim/blis-schemas#102 at b29fe55 (https://github.com/inference-sim/blis-schemas/pull/102; engine-level only, the engine block and connector options held unopened; the P/D handoff).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.7.1-0.20261027124745-b29fe55134bd
-	// TEMPORARY: inference-sim/blis-vllm main at 8ff7ac2 (review PR https://github.com/inference-sim/blis-vllm/pull/20).
+	// TEMPORARY: inference-sim/blis-vllm main at 6b1d026 (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261027124834-8ff7ac23c201
+	github.com/inference-sim/blis-vllm v0.0.0-20261027131844-6b1d02601be1
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
