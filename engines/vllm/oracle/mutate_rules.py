@@ -83,9 +83,9 @@ MUTANTS = [
      'case clause == "moe_needs_token_sharded_input" && folded:',
      'case clause == "moe_needs_token_sharded_input" && !folded:', "TestModelSequenceParallelRulesMatchSource"),
     ("C19", "both DeepSeek-V4 releases keep the mega-MoE-or-dp clause", PACK,
-     "rules.ArchDeepseekV4: rules.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
+     "rules.ArchDeepseekV4: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
      "\t\t\t\tTensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true},",
-     "rules.ArchDeepseekV4: rules.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
+     "rules.ArchDeepseekV4: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
      "\t\t\t\tTensorParallelAboveOne: true},", "TestModelSequenceParallelRulesMatchSource"),
     # mla-prefill-backend-known (vllm/config/attention.py:195-201@5df63a72; the members are
     # MLAPrefillBackendEnum's, vllm/v1/attention/backends/mla/prefill/registry.py:37-65).

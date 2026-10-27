@@ -20,9 +20,9 @@ MUTANTS = [    ("A1 wake after an empty schedule that left work", "core/vllm/eng
     ("A3 last assigned token is EOS", "core/vllm/engine.go",
     "\t\t\tif st.sampled == len(out)-1 {", "\t\t\tif false {"),
     ("A4 complete in order", "core/vllm/engine.go",
-    "\tcase idx > 0:\n\t\treturn engine.Result{}, engine.ErrOutOfOrder", "\tcase idx > 99:\n\t\treturn engine.Result{}, engine.ErrOutOfOrder"),
+    "\tcase idx > 0:\n\t\treturn engine.Result{}, nil, engine.ErrOutOfOrder", "\tcase idx > 99:\n\t\treturn engine.Result{}, nil, engine.ErrOutOfOrder"),
     ("A5 in-flight limit", "core/vllm/engine.go",
-    "\tif e.core.InFlight() >= e.InFlightLimit() {", "\tif e.core.InFlight() >= e.InFlightLimit()+1 {"),
+    "\tif len(e.pending) >= e.InFlightLimit() {", "\tif len(e.pending) >= e.InFlightLimit()+1 {"),
     ("A6 abort frees", "core/vllm/engine.go",
     "\te.s.Abort([]string{id})", "\t_ = id"),
     ("A7 drafter proposes after a step", "core/vllm/engine.go",
@@ -57,8 +57,8 @@ MUTANTS = [    ("A1 wake after an empty schedule that left work", "core/vllm/eng
     "if !(watermark >= 0 && watermark < 1) {", "if watermark < 0 || watermark >= 1 {"),
     ("A22 unstated batch limits refused", "core/vllm/config.go",
     "\tif seqs == 0 || budget == 0 {", "\tif false {"),
-    ("A23 batch queue refused until reproduced", "core/vllm/config.go",
-    "\tif queue > 1 {", "\tif queue > 99 {"),
+    ("A23 DP with pipeline parallelism refused", "core/vllm/config.go",
+    "\tif s.dp.ranks > 1 && pp > 1 {", "\tif false {"),
 ]
 
 

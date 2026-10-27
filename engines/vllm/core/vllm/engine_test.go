@@ -232,6 +232,8 @@ func TestFactoryRefuses(t *testing.T) {
 		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
 		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
+		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
+		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},
 		// An env key the engine does not read is refused, naming it (blis-schemas' Env rule).
 		{"an env key the engine does not read", Version, "env: {VLLM_MARLIN_USE_ATOMIC_ADD: \"1\"}\n", "VLLM_MARLIN_USE_ATOMIC_ADD"},
 		{"env keys are named in order", Version, "env: {VLLM_B: \"1\", VLLM_A: \"1\"}\n", "VLLM_A, VLLM_B"},

@@ -53,7 +53,7 @@ MUTANTS = [
     ("D5", "DP waves: counter reset at wave end", "core/engine/dp.go",
      "\t\t\tw.Current++\n\t\t\tw.StepCounter = 0", "\t\t\tw.Current++"),
     ("D6", "DP waves: dummy batch", "core/engine/dp.go",
-     "if !out[i].Step.Executed && (unfinished || w.Running) {", "if !out[i].Step.Executed && unfinished {"),
+     "if !out[i].Step.Executed && (unfinished || d.Waves[i].Running) {", "if !out[i].Step.Executed && unfinished {"),
     ("D7", "DP waves: a request starts every rank's wave", "core/engine/dp.go",
      "\t\tfor _, w := range d.Waves {\n\t\t\tw.Running = true\n\t\t}",
      "\t\td.Waves[rank].Running = true"),
