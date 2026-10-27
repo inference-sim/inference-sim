@@ -40,6 +40,11 @@ type EngineDriverConfig struct {
 	// compatibility engine's executeBatchStep does for a resumed prefill; off, from the end of
 	// the last step that emitted for it. Only the compatibility engine's contract build sets it.
 	ResumeGapFromLastToken bool
+	// ScrapeEngineMetrics answers a scrape of the model server from the engine's own exported
+	// metrics (num_requests_waiting, num_requests_running, kv_cache_usage_perc,
+	// num_preemptions), as the engine published them, rather than from its live state. Only the
+	// compatibility engine's contract build sets it.
+	ScrapeEngineMetrics bool
 }
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
@@ -584,6 +589,17 @@ func (d *EngineDriver) BusyUntil() int64 { return d.gpuFreeAt }
 
 // EngineMetricsAt is what a scrape of the model server at t sees, from the engine's state.
 func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {
+	if d.cfg.ScrapeEngineMetrics {
+		// The engine's own published view (the compatibility engine's, at its last step end).
+		m := d.eng.Metrics(t)
+		v := func(name string) float64 {
+			x, _ := m.Value(name)
+			return x
+		}
+		return EngineMetrics{PublishedAt: m.At, Waiting: int(v("num_requests_waiting")),
+			Running: int(v("num_requests_running")), KVUsage: v("kv_cache_usage_perc"),
+			Preemptions: int64(v("num_preemptions"))}
+	}
 	s := d.eng.Snapshot()
 	usage := 0.0
 	if s.KVBlocksTotal > 0 {

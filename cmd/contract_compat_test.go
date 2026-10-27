@@ -84,6 +84,6 @@ func TestContractCompatIsTheDefaultPath(t *testing.T) {
 		t.Error("with the opt-out the compatibility engine's own host loop must run")
 	}
 	if !strings.Contains(run("", "--num-instances", "4"), "<< StepEvent") {
-		t.Error("a multi-instance run is not carried by the contract yet and must keep the host loop")
+		t.Error("several instances behind the router are not carried by the contract yet and must keep the host loop")
 	}
 }

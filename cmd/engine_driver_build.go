@@ -47,8 +47,10 @@ func compatThroughContract(version string) bool {
 	return contractCompatShape()
 }
 
-// contractCompatShape is the run shape the first stage carries: one colocated instance, dp 1, no
-// P/D pools, no offload tier, no adapters.
+// contractCompatShape is the run shape the contract path carries so far: one colocated instance,
+// dp 1, no P/D pools, no offload tier, no adapters. Several instances behind the router wait for
+// the contract to carry what the router reads from an engine: its KV events (the precise-prefix
+// producer), in-flight eviction, and the prefix-cache hit counts the reports print.
 func contractCompatShape() bool {
 	return numInstances == 1 && dataParallelism <= 1 &&
 		prefillInstances == 0 && decodeInstances == 0 && prefillDecodeInstances == 0 && encodeInstances == 0 &&
