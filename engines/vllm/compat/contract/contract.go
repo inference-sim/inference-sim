@@ -22,6 +22,10 @@ import (
 	_ "github.com/inference-sim/blis-vllm/compat/kv" // registers the KV store the engine is built with
 )
 
+// TagSLOClass is the engine.Request tag that carries a request's SLO class, which the
+// compatibility engine's priority policy reads (SLOPriorityMap). Other engines ignore it.
+const TagSLOClass = "slo_class"
+
 // Engine is one instance of the compatibility engine behind engine.Engine.
 type Engine struct {
 	core    *cengine.EngineCore
@@ -99,7 +103,8 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	}
 	e.now = now
 	req := &cengine.Request{ID: r.ID, InputTokens: tokens(r.Prompt), OutputTokens: tokens(r.Output),
-		MaxOutputLen: r.MaxOutputTokens, ArrivalTime: r.ArrivalTime, Adapter: r.Adapter, State: cengine.StateQueued}
+		MaxOutputLen: r.MaxOutputTokens, ArrivalTime: r.ArrivalTime, Adapter: r.Adapter, State: cengine.StateQueued,
+		SLOClass: r.Tags[TagSLOClass]}
 	e.inEnque, e.dropped = true, false
 	e.core.EnqueueRequest(req)
 	e.inEnque = false
