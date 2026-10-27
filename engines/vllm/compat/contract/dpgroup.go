@@ -87,6 +87,33 @@ func (r dpRank) Counts() dplb.Counts {
 
 func (r dpRank) InFlight() int { return r.g.inflight[r.k] }
 
+// frontRank is one rank as the balancer reads it when the host's front end keeps the in-flight
+// count: the rank's own live counts, and the front end's count of its unfinished requests on it.
+type frontRank struct {
+	dpRank
+	inFlight int
+}
+
+func (r frontRank) InFlight() int { return r.inFlight }
+
+// PickRank is the rank vLLM's internal DP load balancer sends a request that reached the
+// replica's endpoint at now to (dplb.Balancer.Pick), for a host that keeps one instance per rank
+// and hands the request to the picked rank's instance itself, through its render stage. inFlight
+// is the front end's exact count of its unfinished requests on each rank, which vLLM's API-server
+// front end keeps (engine_inflight, vllm/v1/engine/core_client.py:1569-1570, :1639, :1655-1660 at
+// v0.31.0): raised when it sends a request, lowered when the request finishes. The ranks'
+// published counts are the group's own (Counts), sampled once a stats period as the balancer does.
+func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
+	if len(inFlight) != len(g.ranks) {
+		return 0, fmt.Errorf("contract: %d in-flight counts for a group of %d ranks", len(inFlight), len(g.ranks))
+	}
+	view := make([]dplb.Rank, len(g.ranks))
+	for k := range g.ranks {
+		view[k] = frontRank{dpRank: dpRank{g: g, k: k}, inFlight: inFlight[k]}
+	}
+	return g.lb.Pick(view, now), nil
+}
+
 // Add routes the request to the rank the balancer picks at now and enqueues it there.
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 	return g.AddToRank(g.lb.Pick(g.lbView, now), r, now)
@@ -449,6 +476,11 @@ func (v *RankView) Snapshot() engine.State                 { return v.g.RankSnap
 // AdmitIdle admits the rank's waiting P/D handoffs at now when it has no other work and no step is
 // executing, as an idle decode engine does at once, and returns the pulls it started.
 func (v *RankView) AdmitIdle(now engine.Time) []engine.Transfer { return v.g.idleHandoffs(v.k, now) }
+
+// PickRank is the group's rank pick (DPGroup.PickRank).
+func (v *RankView) PickRank(now engine.Time, inFlight []int) (int, error) {
+	return v.g.PickRank(now, inFlight)
+}
 
 // LockstepSteps, LastActive and StepDue are the group's (DPGroup's).
 func (v *RankView) LockstepSteps() (steps, dummy int) { return v.g.LockstepSteps() }

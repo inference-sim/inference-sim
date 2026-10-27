@@ -157,3 +157,21 @@ func TestARankViewAddsToItsRankAndRankZeroStepsTheGroup(t *testing.T) {
 		t.Errorf("rank 1's snapshot runs %d requests, want 1", s.Running)
 	}
 }
+
+// PickRank is vLLM's internal balancer over the front end's in-flight counts: of two idle ranks,
+// the one the front end has sent fewer unfinished requests to.
+func TestPickRankReadsTheFrontEndsInFlight(t *testing.T) {
+	g := newGroup(t, 2)
+	for _, c := range []struct {
+		inFlight []int
+		want     int
+	}{{[]int{3, 0}, 1}, {[]int{0, 3}, 0}} {
+		k, err := g.PickRank(0, c.inFlight)
+		if err != nil || k != c.want {
+			t.Errorf("PickRank(in flight %v) = %d (%v), want rank %d", c.inFlight, k, err, c.want)
+		}
+	}
+	if _, err := g.PickRank(0, []int{0}); err == nil {
+		t.Error("PickRank took one in-flight count for a group of two ranks")
+	}
+}
