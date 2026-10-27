@@ -1,0 +1,50 @@
+gpu_memory_utilization: 0.92
+all2all_backend: deepep_low_latency
+disable_custom_all_reduce: true
+allreduce_backend: nccl
+cudagraph_mode: FULL_AND_PIECEWISE
+max_cudagraph_capture_size: 512
+cudagraph_capture_sizes: [1, 8, 512]
+decoder_replay_cudagraph_capture_sizes: [4]
+custom_ops: ["+rms_norm"]
+use_trtllm_attention: false
+mla_prefill_backend: FLASHINFER
+linear_backend: cutlass
+env: {VLLM_X: "1", A_B: "two"}
+async_scheduling: true
+frontend: rust
+disable_cascade_attn: true
+enable_prefix_caching: false
+swa_bounded_replay: true
+block_size: 64
+max_num_batched_tokens: 8192
+max_num_seqs: 256
+long_prefill_token_threshold: 2048
+long_prefill_token_threshold_adaptive: true
+max_num_scheduled_tokens: 4096
+max_num_active_seqs: 128
+watermark: 0.01
+prefill_schedule_interval: 2
+stream_interval: 4
+disable_hybrid_kv_cache_manager: false
+max_model_len: auto
+kv_cache_memory_bytes: 123456789
+prefix_match_unit: 16
+prefix_cache_retention_interval: 3
+kv_events: {enable_kv_cache_events: true, publisher: zmq, topic: kv}
+max_loras: 2
+max_cpu_loras: 4
+quantization: fp8
+cache_dtype: fp8_e4m3
+mamba_cache_dtype: float32
+mamba_ssm_cache_dtype: float32
+moe_backend: deep_gemm
+mamba_cache_mode: all
+scheduling_policy: priority
+dbo: {enable_dbo: true, dbo_decode_token_threshold: 32, dbo_prefill_token_threshold: 0}
+eplb: {enable_eplb: true, num_redundant_experts: 32, window_size: 1000, step_interval: 3000}
+speculative: {method: mtp, num_spec_tokens: 3, draft_model: dsv4-mtp, kv_cache_dtype: fp8, draft_sample_method: greedy, rejection_sample_method: standard, enable_adaptive_verification: true}
+engram_config: {cpu_offload: false, dp_shared_memory: true, use_thp: false}
+dcp_comm_backend: ag_rs
+dcp_q_replicate: true
+cp_kv_cache_interleave_size: 2

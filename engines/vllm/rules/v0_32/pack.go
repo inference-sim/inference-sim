@@ -1071,7 +1071,9 @@ func ruleList(p *rules.Pack) []rules.Rule {
 							at, p.Version)
 						return
 					}
-					c, _, err := p.CUDAGraphCaptureSizes(e)
+					c, _, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{Mode: e.CUDAGraphMode,
+						MaxCaptureSize: e.MaxCUDAGraphCaptureSize, CaptureSizes: e.CUDAGraphCaptureSizes,
+						MaxNumBatchedTokens: e.MaxNumBatchedTokens})
 					switch {
 					case errors.Is(err, rules.ErrCUDAGraphCaptureInconsistent):
 						out.RuleErrorf("cudagraph-capture-sizes",
