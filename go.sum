@@ -135,8 +135,8 @@ github.com/inference-sim/blis-vllm v0.0.0-20261027145043-635b7bfd3bfe h1:WUKYbCB
 github.com/inference-sim/blis-vllm v0.0.0-20261027145043-635b7bfd3bfe/go.mod h1:K3yWmY+9nnLbZl7uDfrXJNc5uZMHgmPQe89vZNjMR2s=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261027143841-9b5ec9da1999 h1:zawDz4Kgxq2zXHIScGEUTefbe0vAVsDWTV+kTh/Lgdg=
 github.com/inference-sim/blis-vllm/rules v0.0.0-20261027143841-9b5ec9da1999/go.mod h1:8F5TsReNTej20MaeC/4CNN8wal4iQ3b8bvCdloxJAAM=
-github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6 h1:FBBes/bv9zRzehqDKpjvTx+DVfFMi81fWW1i31RJ+EU=
-github.com/inference-sim/llm-d-router v0.10.0-rc.1.0.20261019165804-c8dc911a93a6/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
+github.com/inference-sim/llm-d-router v1.0.0-blis.1 h1:0Y6ahFjM34IXq2eV2vwZKEF9lGYubBsn75Yn94umbKY=
+github.com/inference-sim/llm-d-router v1.0.0-blis.1/go.mod h1:Hd8U6VhaYTkgw7x1qTQKvurjS+buK/khvpJVoWbOiqk=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

@@ -12,8 +12,11 @@ page adds the cross-repository steps around them.
 ## Repinning
 
 1. `go.mod`: the kernel, blis-schemas and the two blis-vllm modules (`blis-vllm` and
-   `blis-vllm/rules`) at their pushed heads' pseudo-versions (release tags before merge). Never commit a `replace` for a blis-* module (the llm-d router's `replace` to
-   the inference-sim fork is the one exception); run `go mod tidy`.
+   `blis-vllm/rules`) at their pushed heads' pseudo-versions (release tags before merge), then
+   the llm-d router fork's `replace` at its `vX.Y.Z-blis.N` tag, after blis-schemas because the
+   fork implements blis-schemas `embed` ([The llm-d Router Fork](llm-d-router-fork.md)). Never
+   commit a `replace` for a blis-* module (the llm-d router's `replace` to the inference-sim fork
+   is the one exception); run `go mod tidy`.
 2. `testdata/registry` and `testdata/catalog`: re-vendor from the registry and catalog heads,
    updating each `.upstream-commit` stamp.
 3. `testdata/upstream-prerelease.lock`: the same two heads (TEMPORARY). Empty it once the

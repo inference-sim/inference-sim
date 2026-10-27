@@ -25,16 +25,16 @@ metadata:
     topology.kubernetes.io/zone: zone-b
     topology.kubernetes.io/region: region-1
 `
-	res, err := parseManifests(newScheme(), []byte(docs), "default")
+	nodes, err := manifestNodes([]byte(docs))
 	if err != nil {
 		t.Fatal(err)
 	}
-	locations, err := nodeLocations(res.nodes)
+	locations, err := nodeLocations(nodes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(locations) != 2 || res.nodes[0].Namespace != "" {
-		t.Fatalf("simulated Nodes: locations=%v namespace=%q", locations, res.nodes[0].Namespace)
+	if len(locations) != 2 || nodes[0].Namespace != "" {
+		t.Fatalf("simulated Nodes: locations=%v namespace=%q", locations, nodes[0].Namespace)
 	}
 	base := cluster.EndpointTopology{Hostname: "blis-node-0", Rack: "blis-rack-0", NodeCount: 1}
 	got, err := overlayNodeLocation(base, locations)
