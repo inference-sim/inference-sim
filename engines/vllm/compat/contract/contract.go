@@ -13,6 +13,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
@@ -297,6 +298,31 @@ func (e *Engine) AdapterEvents() (loads, evictions map[string]int64) {
 func (e *Engine) QueueSnapshots() (waiting, running []int) {
 	return append([]int(nil), e.rec.waiting...), append([]int(nil), e.rec.runningN...)
 }
+
+// ServerSeriesSpan is the bin width of the engine's server time series (--server-series-interval-s)
+// and the last instant it recorded anything, in ticks; both 0 when the engine records none. A
+// simulator bins every engine of a run to the latest end, so their arrays line up.
+func (e *Engine) ServerSeriesSpan() (interval, end int64) {
+	return e.core.ServerSeriesIntervalUs(), e.core.ServerSeriesEnd()
+}
+
+// ServerSeriesBlock is the engine's server time series as id, binned to end, as a server_series
+// block holding this one engine, in its JSON form (cengine.BuildServerSeries); nil when the
+// engine records none. A simulator joins the engines of a run into one block.
+func (e *Engine) ServerSeriesBlock(id string, end int64) ([]byte, error) {
+	out := cengine.BuildServerSeries([]string{id}, []*cengine.EngineCore{e.core}, []int64{end})
+	if out == nil {
+		return nil, nil
+	}
+	return json.Marshal(out)
+}
+
+// CachedBlockHashes are the hashes of the blocks the engine's prefix cache can serve, sorted;
+// CPUBlockHashes those its CPU KV tier holds, and TierBlockHashes those of the secondary offload
+// tiers publishing as medium name. Each is nil for a KV store that does not track them.
+func (e *Engine) CachedBlockHashes() []string          { return e.core.CachedBlockHashes() }
+func (e *Engine) CPUBlockHashes() []string             { return e.core.CPUBlockHashes() }
+func (e *Engine) TierBlockHashes(name string) []string { return e.core.TierBlockHashes(name) }
 
 // OffloadCachedTokens is how much of id's Scheduled.CachedTokens, in the batch Schedule last
 // returned, the KV offload tier supplied (PrefixLookup.CPUHitTokens).
