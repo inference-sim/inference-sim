@@ -85,7 +85,7 @@ func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 		PrefixMatchUnit: 128, PrefixCacheRetentionInterval: ptrInt(32768),
 		KVEvents:  &KVEvents{EnableKVCacheEvents: true, Publisher: "zmq", Topic: "kv-events"},
 		CustomOps: []string{"all"}, DecoderReplayCUDAGraphCaptureSizes: []int{6, 12},
-		UseTRTLLMAttention: ptrBool(true), MLAPrefillBackend: "TRTLLM_RAGGED", LinearBackend: "flashinfer_cutlass",
+		UseTRTLLMAttention: ptrBool(true), MLAPrefillBackend: "TRTLLM_RAGGED", IndexerKVDType: "fp8", LinearBackend: "flashinfer_cutlass",
 		Env: map[string]string{"VLLM_FLASHINFER_ALLREDUCE_BACKEND": "trtllm"}, MaxLoRAs: 2, MaxCPULoRAs: 8,
 	}
 	out, err := yaml.Marshal(e)
@@ -97,7 +97,7 @@ func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 		"stream_interval", "max_num_active_seqs", "max_num_scheduled_tokens", "watermark",
 		"long_prefill_token_threshold_adaptive", "prefix_match_unit", "prefix_cache_retention_interval",
 		"kv_events", "custom_ops", "decoder_replay_cudagraph_capture_sizes", "use_trtllm_attention",
-		"mla_prefill_backend", "linear_backend", "env", "max_loras", "max_cpu_loras",
+		"mla_prefill_backend", "indexer_kv_dtype", "linear_backend", "env", "max_loras", "max_cpu_loras",
 	} {
 		if !containsKey(string(out), key) {
 			t.Errorf("%s is not written:\n%s", key, out)

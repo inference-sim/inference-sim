@@ -9,6 +9,7 @@ decoder_replay_cudagraph_capture_sizes: [4]
 custom_ops: ["+rms_norm"]
 use_trtllm_attention: false
 mla_prefill_backend: FLASHINFER
+indexer_kv_dtype: bf16
 linear_backend: cutlass
 env: {VLLM_X: "1", A_B: "two"}
 async_scheduling: true

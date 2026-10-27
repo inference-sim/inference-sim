@@ -72,6 +72,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"custom_ops":                             "-O/--compilation-config custom_ops",
 		"use_trtllm_attention":                   "--attention-config use_trtllm_attention",
 		"mla_prefill_backend":                    "--attention-config mla_prefill_backend",
+		"indexer_kv_dtype":                       "--attention-config indexer_kv_dtype",
 		"linear_backend":                         "--kernel-config linear_backend",
 		"env":                                    "the launch environment (VLLM_* variables), not a flag",
 	}

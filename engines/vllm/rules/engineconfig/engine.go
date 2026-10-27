@@ -69,6 +69,11 @@ type Engine struct {
 	// TRTLLM_RAGGED in v0.32.0 (vllm/config/attention.py:81@5df63a72). Empty selects
 	// automatically. Which names a release accepts is its rules pack's to say.
 	MLAPrefillBackend string `yaml:"mla_prefill_backend,omitempty"`
+	// IndexerKVDType is attention_config.indexer_kv_dtype, the sparse-attention indexer's key
+	// cache dtype: "auto" (or empty) picks the model's default, bf16 for MiniMax M3 and fp8 for
+	// DeepSeek's sparse indexer (vllm/config/attention.py:88-92, :163-167@5df63a72). It is
+	// independent of cache_dtype.
+	IndexerKVDType string `yaml:"indexer_kv_dtype,omitempty"`
 	// LinearBackend is kernel_config.linear_backend, the GEMM backend of linear layers
 	// (vllm/config/kernel.py:350@5df63a72). Empty is the engine's "auto".
 	LinearBackend string `yaml:"linear_backend,omitempty"`

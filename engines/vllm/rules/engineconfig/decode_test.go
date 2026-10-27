@@ -32,7 +32,7 @@ func block(t *testing.T, path string) deployment.EngineBlock {
 // tags. testdata/every-field.encoded.yaml is that encoding of testdata/every-field.yaml, taken
 // from blis-schemas' deployment.Engine at 70246460a379f8b1898fbf6c36a3091364118950, so a
 // consumer that re-encodes a deployment (a harness writing engine fields per point) writes the
-// same bytes as before.
+// same bytes as before. indexer_kv_dtype was added after the move, at its place in the struct.
 func TestDecodeThenEncodeIsTodaysEncoding(t *testing.T) {
 	e, err := Decode(block(t, "testdata/every-field.yaml"))
 	if err != nil {
