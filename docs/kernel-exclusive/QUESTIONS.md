@@ -236,7 +236,7 @@ and does it still hold?"
 ### Correctness
 
 1. Which values does this comparison supply that the snapshot does not state, and how much
-   does each move the score? (Answered by measurement, not judgement -- cmd/sensitivity.)
+   does each move the score? (Answered by measurement, not judgement -- tools/sensitivity.)
 2. Is `cache_dtype: fp8` an assumption that changes KV bytes per token, and therefore the
    KV-bound resident batch, rather than a cosmetic label?
 3. Does `engine_version: "0.29.0"` select engine rules that differ from what the measured

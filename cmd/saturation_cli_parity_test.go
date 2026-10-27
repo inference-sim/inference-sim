@@ -8,7 +8,6 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/saturation"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // TestSaturationCLI_RunReplayParity closes INV-13 through the ACTUAL command paths:

@@ -29,6 +29,9 @@ jobs:
         run: go build -v ./...
 
   test:
+    # Spelled out as GitHub derives a matrix job's name, because the names are main's required
+    # checks: an entry whose packages moved keeps its old name (name_packages), byte for byte.
+    name: test (${{ matrix.name }}, ${{ matrix.name_packages || matrix.packages }}, ${{ matrix.timeout }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -40,11 +43,16 @@ jobs:
           - name: "core packages"
             packages: "./sim ./sim/trace"
             timeout: "10m"
-          # The blis-latency-kernel adapter and its scoring harness. Hermetic: scenarios come
-          # from the kernel module go.mod pins, the catalog and registry are vendored under
+          # The latency kernel's scoring harness and the offline scoring tools. Hermetic: scenarios
+          # come from the kernel module go.mod pins, the catalog and registry are vendored under
           # testdata/. The measurement-corpus tests are behind -tags scoring and do not run here.
+          # The harness and the tools moved from sim/kernelmodel and cmd/ to tools/ (phase 2c of
+          # #2021), so that sim/ and cmd/ link blis-vllm only through cmd/engine_build.go. Only
+          # the package list moved: the entry's name is a required check, so it still names the
+          # harness's old path.
           - name: "kernel backend"
-            packages: "./sim/kernelmodel/..."
+            packages: "./tools/..."
+            name_packages: "./sim/kernelmodel/..."
             timeout: "10m"
           - name: "workload & cmd"
             packages: "./sim/workload ./cmd"
@@ -63,11 +71,12 @@ jobs:
             packages: "./sim/llmd"
             timeout: "10m"
           # Every other package with tests: the vendored catalog and registry's lock test, the
-          # saturation detectors, the invariant scan and the offline scoring tools. A new entry, not
-          # a renamed one, since the entries' names are required checks.
+          # saturation detectors and the invariant scan (the offline scoring tools moved to
+          # tools/, which "kernel backend" runs). A new entry, not a renamed one, since the
+          # entries' names are required checks; this one is not.
           # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
           - name: "other packages"
-            packages: "./sim/vendored ./sim/saturation ./internal/invariantscan ./cmd/kernelscore ./cmd/metricscore"
+            packages: "./sim/vendored ./sim/saturation ./internal/invariantscan"
             timeout: "5m"
 
     steps:

@@ -13,8 +13,8 @@ import (
 // until testdata/catalog and testdata/registry are re-vendored (docs/contributing/cross-repo-changes.md).
 //
 // The test moved to blis-vllm with the kernel adapter (compat/kernelmodel), where it checks
-// blis-vllm's own copies. This one checks this repository's, which the importing package's
-// init names as the adapter's vendoring root.
+// blis-vllm's own copies. This one checks this repository's, which this package's test init
+// (root_test.go) names as the adapter's vendoring root.
 //
 // An entry in testdata/upstream-prerelease.lock stands in for the kernel's while a pinned kernel
 // pre-release lags the unreleased upstreams it was developed against; it must name the same

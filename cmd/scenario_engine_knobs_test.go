@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // The scenario is the source of parallel.data_parallel_load_balancing (#76), as it is of the

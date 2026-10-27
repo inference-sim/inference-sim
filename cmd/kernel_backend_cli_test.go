@@ -17,7 +17,6 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"

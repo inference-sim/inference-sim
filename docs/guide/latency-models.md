@@ -417,7 +417,7 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 
 ## The published accuracy figures
 
-`cmd/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself. For
+`tools/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself. For
 every measured point it writes two files and runs `blis replay` on them, exactly as a user replays
 a trace:
 
@@ -440,7 +440,7 @@ At the tagged releases above, with the vendored catalog and registry and the mea
 
 ```bash
 go build -o blis main.go
-go run ./cmd/metricscore -blis ./blis -framework vllm
+go run ./tools/metricscore -blis ./blis -framework vllm
 ```
 
 Its flags are `-blis`, `-gaps`, `-corpus`, `-scenarios`, `-catalog`, `-registry`,

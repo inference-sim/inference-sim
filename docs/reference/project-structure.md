@@ -50,9 +50,6 @@ inference-sim/
 │                              #  compat/engine; sim/kv to compat/kv; sim/lora to compat/lora; the block hasher,
 │                              #  KV block keying, TokenID, util and the KV-transfer station to compat/prefix,
 │                              #  compat/kvkey, compat/tokenid, compat/internal/util and compat/kvtransfer)
-├── sim/kernelmodel/           # (the blis-latency-kernel adapter moved to blis-vllm compat/kernelmodel by #2021; what stays here is its scoring harness)
-│   ├── internal/artifacts/    # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
-│   └── harness/               # Closed-loop runs against the AISimulate accuracy corpus (used by cmd/metricscore)
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, hands arrivals to the Gateway, and aggregates metrics; Run() returns error
@@ -103,6 +100,14 @@ inference-sim/
 │                               #  subset of a tagged release is vendored at testdata/catalog/ for tests,
 │                               #  blis-registry's coefficient sets at testdata/registry/, and this repo's
 │                               #  own scenario fixtures (P/D, MTP) at testdata/scenarios/.)
+├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
+│   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (moved from sim/kernelmodel/harness; the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel since #2021)
+│   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
+│   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
+│   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
+│   ├── sensitivity/           # How much each assumed engine setting (and the length draw) moves the score
+│   ├── signedprobe/           # One CSV row per direct-corpus point, to find where the error is one-sided (temporary)
+│   └── validation/            # render_docs.py: renders docs/validation/ from the validation results
 ├── defaults.yaml              # LoRA cost coefficients only (latency coefficients live in blis-registry)
 ├── examples/                  # Example configuration files
 ├── testdata/goldendataset.json # Golden dataset for regression tests

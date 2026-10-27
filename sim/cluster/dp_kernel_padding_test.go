@@ -6,7 +6,6 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // plainLatency hides a latency model's DPStepPricer, so a lockstep group prices each rank

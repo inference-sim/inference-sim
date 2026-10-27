@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.

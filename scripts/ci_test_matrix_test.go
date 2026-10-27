@@ -25,7 +25,7 @@ type ciWorkflow struct {
 }
 
 // ciTestPatterns returns the package patterns ci.yml's test matrix runs, one per word of each
-// entry's packages, relative to the repository root ("./sim/cluster", "./sim/kernelmodel/...").
+// entry's packages, relative to the repository root ("./sim/cluster", "./tools/...").
 func ciTestPatterns(t *testing.T, path string) []string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -116,9 +116,9 @@ func TestCITestPatternCoverage(t *testing.T) {
 	}{
 		{"./sim/cluster", "./sim/cluster", true},
 		{"./sim", "./sim/cluster", false},
-		{"./sim/kernelmodel/...", "./sim/kernelmodel", true},
-		{"./sim/kernelmodel/...", "./sim/kernelmodel/harness", true},
-		{"./sim/kernelmodel/...", "./sim/kernelmodelx", false},
+		{"./tools/...", "./tools", true},
+		{"./tools/...", "./tools/harness/internal/artifacts", true},
+		{"./tools/...", "./toolsx", false},
 		{".", ".", true},
 		{".", "./cmd", false},
 		{"./sim/internal/...", "./sim/internal/testutil/fakelatency", true},

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // startingKVBlocks is the per-replica KV block count a run logs at info level, after

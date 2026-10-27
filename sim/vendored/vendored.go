@@ -5,19 +5,18 @@
 // repository from its own source path while it lived here (sim/kernelmodel). Now it lives in
 // blis-vllm, so this repository names itself.
 //
-// Import it (for its side effect) in every package that opens a kernel through the adapter's
-// defaults. It reads no environment and no configuration: BLIS_CATALOG and BLIS_REGISTRY still
-// override the defaults, inside the adapter, as before.
+// The package imports nothing from blis-vllm, so linking it links no engine. Every package that
+// opens a kernel through the adapter's defaults hands Root to the adapter itself, in an init:
+// kernelmodel.SetVendoredRoot(vendored.Root()). The simulator's packages do it in a test file,
+// and the offline tools under tools/ in their own code. It reads no environment and no
+// configuration: BLIS_CATALOG and BLIS_REGISTRY still override the defaults, inside the
+// adapter, as before.
 package vendored
 
 import (
 	"path/filepath"
 	"runtime"
-
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
-
-func init() { kernelmodel.SetVendoredRoot(Root()) }
 
 // Root is this repository's root. self is <repo>/sim/vendored/vendored.go. In a binary built
 // without file information the working directory stands in, as the adapter's own fallback did.

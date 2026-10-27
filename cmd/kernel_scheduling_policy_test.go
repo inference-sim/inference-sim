@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
 
 // mixedPriorityWorkload is a burst of n requests in two SLO classes sharing one engine:

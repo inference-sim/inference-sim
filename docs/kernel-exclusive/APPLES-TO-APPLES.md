@@ -51,7 +51,7 @@ output_lens = np.random.randint(int(OSL*0.8), OSL+1, size=10*CONC)
 `scripts/gen_inferencex_workloads.py` makes exactly these calls for every scored
 `(ISL, OSL, CONC)` and writes the vectors, in request order, to
 `testdata/inferencex-workloads/seed0.json`; its `--check` flag regenerates and diffs.
-`sim/kernelmodel/harness/fixture_test.go` recomputes every vector of every fixture with an
+`tools/harness/fixture_test.go` recomputes every vector of every fixture with an
 independent Go implementation of MT19937 and numpy's legacy bounded `randint` (masked rejection on
 32-bit outputs). That implementation is itself checked against numpy over five ranges and three
 seeds, so the fixture is verified in CI without Python. The legacy `RandomState` stream is frozen
@@ -152,7 +152,7 @@ admission, no offload tier):
   configuration with a prefix-cache producer, and these runs use neither. Request 0's prompt is the only main-phase
   prompt the warm-up cached, because no other main prompt shares a block with it.
 - **Router.** Nothing: every warm-up copy has completed, so every replica has zero requests in
-  flight when the main phase starts (`sim/kernelmodel/harness/vllm-dp-lb.epp.yaml`).
+  flight when the main phase starts (`tools/harness/vllm-dp-lb.epp.yaml`).
 - **Everything else.** The FCFS scheduler, batch formation and the kernel adapter hold no
   per-request state, no step price reads the clock, and a drained engine holds no KV block.
 
@@ -257,11 +257,11 @@ the errors are pooled over sweeps. Applied to AISimulate's own per-point data ov
 anchor-inclusive variant does not (`TestAISimulatesPublishedShapeErrorIsReproducible`, in
 `parity_test.go`). mape compares absolute latency at every point against
 `inferencex_absolutes.json`. Both errors are computed from the same scored observation per point
-(`TestThePrimedObservationEntersBothErrors`, in `cmd/metricscore`).
+(`TestThePrimedObservationEntersBothErrors`, in `tools/metricscore`).
 
 ## The draw
 
-`cmd/sensitivity` re-scores the sweeps with the vectors numpy draws at seeds 1 to 4 from the same
+`tools/sensitivity` re-scores the sweeps with the vectors numpy draws at seeds 1 to 4 from the same
 intervals. Those are other workloads, not repeated observations of the benchmark's seed 0. Their
 spread shows how far a figure scored against some other draw could move for that reason alone,
 which is the uncertainty that replaying the exact seed-0 vectors removes. They relax nothing.

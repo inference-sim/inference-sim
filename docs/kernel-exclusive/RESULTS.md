@@ -27,7 +27,7 @@ Each point is the InferenceX benchmark client's main phase, replayed by `blis re
 - scored with the client's own `mean_ttft` and `mean_tpot` definitions.
 
 What that does and does not reproduce is in `APPLES-TO-APPLES.md`, and the commands are in
-`REPRODUCE.md`. The figures below are printed by `cmd/metricscore -framework vllm` at
+`REPRODUCE.md`. The figures below are printed by `tools/metricscore -framework vllm` at
 `e4d76827`, as mean absolute error, BLIS / AISimulate / AIC on the same points:
 
 | tier | sweeps | n (shape / mape) | TPOT shape | TPOT mape | TTFT shape | TTFT mape |
@@ -126,7 +126,7 @@ MEASURED-OR-RESOLVED.
   logged point, including every MEASURED-OR-RESOLVED point. The Llama points are unverified (no
   log, gated tokenizer) and stay in ALL.
 - **The draw.** The 425 monotone vLLM points were re-scored with the vectors numpy draws at seeds
-  1 to 4 from the same intervals (`cmd/sensitivity`'s draw rows, at `e4d76827`). Those are other
+  1 to 4 from the same intervals (`tools/sensitivity`'s draw rows, at `e4d76827`). Those are other
   workloads, not repeated observations of the benchmark's seed 0. BLIS's TPOT shape error spans
   8.56% to 8.60% across the five draws, a range of 0.04 points. Its TTFT shape error spans 17.64%
   to 18.01%, a range of 0.38 points. A figure scored against any draw other than the benchmark's
@@ -301,7 +301,7 @@ prefix-caching flags. The scenario files default them.
 A first draft of this document argued that this bounds what the comparison can show, because
 the defaults were justified for a step-time ratio ("a constant cancels") and that
 justification fails with a scheduler in the loop. The first half is right; the conclusion was
-not, and `cmd/sensitivity` settles it by measurement on the 213 monotone vLLM points:
+not, and `tools/sensitivity` settles it by measurement on the 213 monotone vLLM points:
 
 | Setting | MAPE | delta |
 |---|---|---|
@@ -553,7 +553,7 @@ had converged. It did not reproduce the benchmark's two phases, which `Current s
 
 ### What remains
 
-About 1.5 points, and it is not closable by recalibration. `cmd/kernelscore` reports the
+About 1.5 points, and it is not closable by recalibration. `tools/kernelscore` reports the
 decomposition directly (`harness.Logs`), in log space, where a ratio's bias and scatter separate:
 
 | model | n | mean log | sd log | bias | floor |
@@ -593,7 +593,7 @@ it cannot answer which way, and the two imply different fixes. A consistent sign
 miscalibrated coefficient and is removable by rescaling. A sign that turns with batch size is a
 missing mechanism and is not.
 
-`cmd/kernelscore` now reports both. Errors are kept SIGNED at the point of computation and
+`tools/kernelscore` now reports both. Errors are kept SIGNED at the point of computation and
 absoluted only at each aggregation (`harness.Abs`), so every previously published absolute figure
 is unchanged by construction -- the headline reproduces at 10.41% against 8.87% on 192 points.
 

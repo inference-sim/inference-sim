@@ -9,7 +9,6 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 
 	host "github.com/inference-sim/inference-sim/sim"
 )

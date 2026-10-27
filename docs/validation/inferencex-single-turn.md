@@ -5,7 +5,7 @@
 !!! info "BLIS binaries these results describe"
     - `(devel)+9e3c509c8788fe0743605a8f06e0bf5c1c39ac1f`, binary sha256 `29fb09054a10ee51dc104f491cb09337e0ba527055b85653d281f23230451dff`
 
-`cmd/metricscore` scores BLIS against InferenceX's single-turn sweeps (random fixed ISL/OSL, closed loop at concurrency `CONC`, `10*CONC` requests) from the [InferenceX](https://github.com/SemiAnalysisAI/InferenceX) database dump of 2026-09-28. It replays the exact seed-0 length vectors the client drew; see [The published accuracy figures](../guide/latency-models.md#the-published-accuracy-figures) for the method.
+`tools/metricscore` scores BLIS against InferenceX's single-turn sweeps (random fixed ISL/OSL, closed loop at concurrency `CONC`, `10*CONC` requests) from the [InferenceX](https://github.com/SemiAnalysisAI/InferenceX) database dump of 2026-09-28. It replays the exact seed-0 length vectors the client drew; see [The published accuracy figures](../guide/latency-models.md#the-published-accuracy-figures) for the method.
 
 Signed error `100 * (BLIS / measured - 1)`: positive means BLIS predicts higher latency (pessimistic).
 

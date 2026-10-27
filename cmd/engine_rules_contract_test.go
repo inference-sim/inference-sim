@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -354,8 +355,10 @@ func okValidate(r rules.EngineRules) bool {
 
 // The blis binary reaches blis-vllm through the build site and the host's one seam onto the
 // compatibility engine, nothing else (#2021 B2): no other package it links imports a blis-vllm
-// package. sim/vendored, which names this repository as the kernel adapter's vendoring root for
-// tests and offline tools, is linked by their test files and commands only.
+// package, and no other non-test file under sim/ or cmd/ does, linked or not. The offline
+// scoring tools, which open kernels through blis-vllm's adapter themselves, live under tools/;
+// sim/vendored, which names this repository as the adapter's vendoring root, imports nothing
+// from blis-vllm.
 func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	allowed := map[string]bool{
 		"github.com/inference-sim/inference-sim/cmd": true, // cmd/engine_build.go, checked per file below
@@ -382,24 +385,29 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 		t.Fatalf("go list -deps saw %d inference-sim packages; the check is vacuous", linked)
 	}
 
-	// Within the two packages allowed above, only their one file each: cmd's build site and
-	// sim's compatibility seam (removed at #2027).
+	// Under sim/ and cmd/, in every package and not only the binary's, only one file each: cmd's
+	// build site and sim's compatibility seam (removed at #2027).
 	sites := map[string]bool{"cmd/engine_build.go": true, "sim/engine_aliases.go": true}
 	seen := map[string]bool{}
-	for _, dir := range []string{".", "../sim"} {
-		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, f := range files {
-			if strings.HasSuffix(f, "_test.go") {
-				continue
+	for _, tree := range []string{"cmd", "sim"} {
+		err := filepath.WalkDir(filepath.Join("..", tree), func(f string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case d.IsDir() && d.Name() == "testdata":
+				return filepath.SkipDir
+			case d.IsDir() || !strings.HasSuffix(f, ".go") || strings.HasSuffix(f, "_test.go"):
+				return nil
 			}
 			parsed, err := parser.ParseFile(token.NewFileSet(), f, nil, parser.ImportsOnly)
 			if err != nil {
-				t.Fatal(err)
+				return err
 			}
-			rel := filepath.ToSlash(filepath.Join(map[string]string{".": "cmd", "../sim": "sim"}[dir], filepath.Base(f)))
+			rel, err := filepath.Rel("..", f)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
 			for _, imp := range parsed.Imports {
 				if strings.HasPrefix(strings.Trim(imp.Path.Value, `"`), "github.com/inference-sim/blis-vllm") {
 					seen[rel] = true
@@ -408,6 +416,10 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	for site := range sites {
