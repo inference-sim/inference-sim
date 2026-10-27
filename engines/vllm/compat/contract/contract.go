@@ -189,6 +189,7 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 				// The admission's prefix-cache lookup: what the device cache and the KV
 				// offload tier supplied of the prompt (PrefixLookup.HitTokens, CPUHitTokens).
 				sc.CachedTokens = int(l.HitTokens + l.CPUHitTokens)
+				sc.PrefixLookup = true
 			}
 			b.Reqs = append(b.Reqs, sc)
 		}

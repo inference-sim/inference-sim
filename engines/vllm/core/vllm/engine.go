@@ -369,6 +369,10 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 			Drafts: len(cb.Out.SpecDecode[id])}
 		if hit, ok := cb.Out.PrefixHit[id]; ok {
 			sc.CachedTokens = hit
+			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
+			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
+			// vllm/v1/core/sched/scheduler.py:1314-1317 and kv_cache_manager.py:249-262@5df63a72).
+			sc.PrefixLookup = e.prefixCaching()
 		}
 		b.Reqs = append(b.Reqs, sc)
 	}

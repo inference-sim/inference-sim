@@ -486,15 +486,40 @@ func TestPrefixHitIsReported(t *testing.T) {
 		}
 		return bt
 	}
-	run(a)
+	first := run(a)
 	second := run(b)
 	if second.Reqs[0].CachedTokens != 32 {
 		t.Errorf("the second request's cached tokens: %d, want 32 (two full blocks; the last is recomputed)", second.Reqs[0].CachedTokens)
+	}
+	// Both admissions looked the prompt up, the first missing: a simulator's hit rate counts
+	// each over its whole prompt, as vLLM's prefix-cache stats do.
+	if !first.Reqs[0].PrefixLookup || !second.Reqs[0].PrefixLookup {
+		t.Errorf("PrefixLookup = %v, %v; want both admissions reported as lookups",
+			first.Reqs[0].PrefixLookup, second.Reqs[0].PrefixLookup)
 	}
 	m := e.Metrics(2)
 	hits, err := m.Value("vllm:prefix_cache_hits")
 	if err != nil || hits != 32 {
 		t.Errorf("vllm:prefix_cache_hits = %v (%v), want 32", hits, err)
+	}
+}
+
+// With prefix caching off the engine looks nothing up, so no admission is reported as a lookup
+// (record_prefix_cache_stats counts only a lookup that ran, kv_cache_manager.py:249-262@5df63a72).
+func TestNoPrefixLookupWithoutPrefixCaching(t *testing.T) {
+	e, err := build(t, "enable_prefix_caching: false\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(req("x", 48, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.Schedule(0)
+	if err != nil || b.Empty() {
+		t.Fatalf("the request did not run: %v", err)
+	}
+	if b.Reqs[0].PrefixLookup {
+		t.Error("an engine without prefix caching reported a prefix-cache lookup")
 	}
 }
 

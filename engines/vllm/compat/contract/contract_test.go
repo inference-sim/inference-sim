@@ -57,6 +57,47 @@ func TestTheAdapterKeepsTheContractsLaws(t *testing.T) {
 	}
 }
 
+// A request's first admission reports its prefix-cache lookup (Scheduled.PrefixLookup), and
+// what the cache supplied of it (CachedTokens): a miss for the first of two identical prompts,
+// whole blocks for the second.
+func TestTheFirstAdmissionReportsItsPrefixLookup(t *testing.T) {
+	e := newEngine(t)
+	var got []engine.Scheduled
+	for i, id := range []string{"a", "b"} {
+		r := req("p", 64, 2)
+		r.ID = id
+		at := engine.Time(i * 100000)
+		if err := e.Add(r, at); err != nil {
+			t.Fatal(err)
+		}
+		for range 4 {
+			b, err := e.Schedule(at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if b.Empty() {
+				break
+			}
+			for _, s := range b.Reqs {
+				if s.ID == id && s.PrefixLookup {
+					got = append(got, s)
+				}
+			}
+			at += e.StepTime(b)
+			if _, err := e.Complete(b.ID, engine.Outcome{}, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("lookups reported: %d, want one per request's first admission", len(got))
+	}
+	if got[0].CachedTokens != 0 || got[1].CachedTokens != 48 {
+		t.Errorf("cached tokens = %d, %d; want 0 (a miss) and 48 (three full blocks; the last is recomputed)",
+			got[0].CachedTokens, got[1].CachedTokens)
+	}
+}
+
 // An abort is a gateway eviction: the request's KV is freed at once, and it is not counted as
 // timed out, unlike a timeout's cancellation (compat/engine Evict, CancelOnTimeout).
 func TestAnAbortEvictsAndATimeoutCancels(t *testing.T) {

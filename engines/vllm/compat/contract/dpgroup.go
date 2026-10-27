@@ -180,6 +180,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 			sc := engine.Scheduled{ID: req.ID, Tokens: req.NumNewTokens, PromptLen: len(req.InputTokens)}
 			if l, ok := e.rec.lookups[req.ID]; ok {
 				sc.CachedTokens = int(l.HitTokens + l.CPUHitTokens)
+				sc.PrefixLookup = true
 			}
 			b.Reqs = append(b.Reqs, sc)
 		}
