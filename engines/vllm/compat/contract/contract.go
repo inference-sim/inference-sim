@@ -3,8 +3,8 @@
 // Package contract puts the compatibility engine (compat/engine) behind blis-schemas'
 // engine.Engine, the contract blis-vllm's v0.32.0 engine (core/vllm) implements, so a
 // simulator drives every release through one driver (inference-sim GOAL.md phase 2c). This
-// first stage carries one colocated instance with no data parallelism, P/D or LoRA; New
-// refuses the others, naming them.
+// first stage carries one colocated instance with no data parallelism or P/D; New refuses the
+// others, naming them.
 //
 // The engine executes a whole compatibility step when it is scheduled, as compat/engine's own
 // host loop does (inference-sim's Simulator.Step runs ExecuteStep, then FinishStep, at the
@@ -15,6 +15,8 @@ package contract
 
 import (
 	"fmt"
+	"maps"
+	"strings"
 
 	"github.com/inference-sim/blis-schemas/engine"
 
@@ -47,6 +49,14 @@ type Engine struct {
 	// sleepUntil is the deferral wake the engine sleeps to when every waiting request waits on
 	// a KV fetch (deferralWake), 0 for none.
 	sleepUntil int64
+	// loads are the LoRA adapter loads in flight (ScheduleAdapterLoaded), in the order they
+	// started; each completes at its instant, before a step at that instant (completeLoads).
+	loads []adapterLoad
+	// loadIdle is set while a step left nothing running and a waiting request is held for an
+	// adapter load: the host loop schedules no step then (scheduleNextStep), and the next one
+	// runs when the load completes, a request arrives, a timeout leaves work waiting, or the
+	// engine asks for one (WakeStep, ArmStep).
+	loadIdle bool
 	// firsts and done collect what a call into the engine made visible.
 	firsts []string
 	done   []engine.Finished
@@ -54,6 +64,11 @@ type Engine struct {
 	kvEvents []engine.KVEvent
 	inEnque  bool
 	dropped  bool
+}
+
+type adapterLoad struct {
+	adapter string
+	at      int64
 }
 
 type flight struct {
@@ -66,10 +81,7 @@ type flight struct {
 // inference-sim's sim.NewEngine builds it for its own host loop, with this adapter as its host.
 // It refuses what the first stage does not carry.
 func New(id string, cfg cengine.SimConfig) (*Engine, error) {
-	switch {
-	case cfg.HasAdapters():
-		return nil, fmt.Errorf("contract: %s: LoRA adapters do not run through the engine contract yet", id)
-	case cfg.LatencyModel == nil:
+	if cfg.LatencyModel == nil {
 		return nil, fmt.Errorf("contract: %s: SimConfig.LatencyModel is nil", id)
 	}
 	kvCfg := cfg.KVCacheConfig
@@ -112,6 +124,11 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	e.inEnque, e.dropped = true, false
 	e.core.EnqueueRequest(req)
 	e.inEnque = false
+	if e.core.HasWaiting() {
+		// An arrival that leaves work waiting steps an engine idle for an adapter load (the host
+		// loop's QueuedEvent, scheduleStepBy).
+		e.loadIdle = false
+	}
 	if e.dropped {
 		return fmt.Errorf("contract: the compatibility engine dropped request %s at enqueue", r.ID)
 	}
@@ -121,6 +138,10 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 
 // Schedule runs one compatibility step at now (Simulator.Step), and returns the batch it ran.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
+	if len(e.loads) > 0 {
+		e.now = now
+		e.completeLoads(now)
+	}
 	if e.flight != nil {
 		return engine.Batch{}, engine.ErrNoCapacity
 	}
@@ -132,6 +153,9 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		return engine.Batch{}, nil
 	}
 	e.sleepUntil = 0
+	if e.loadIdle {
+		return engine.Batch{}, nil
+	}
 	if now < e.busyUntil {
 		return engine.Batch{}, nil
 	}
@@ -168,6 +192,9 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	} else {
 		e.core.ClearRunning()
 		e.sleepUntil = e.deferralWake(now, now+advance)
+		// The host loop schedules no step while a waiting request is held for an adapter load
+		// (scheduleNextStep); the load's completion steps the engine (CompleteAdapterLoad).
+		e.loadIdle = e.core.HasWaiting() && e.core.AdapterLoading()
 	}
 	e.core.PublishStep(now + advance)
 	e.running = map[string]bool{}
@@ -218,6 +245,31 @@ func (e *Engine) deferralWake(now, next int64) int64 {
 		return 0
 	}
 	return wake
+}
+
+// completeLoads completes, in the order they started, the adapter loads that end by now, each at
+// its own instant, as the host loop's AdapterLoadCompletionEvent does before a step at that
+// instant (PriorityAdapterLoad < PriorityStep). A load's completion asks for a step when work
+// waits (ScheduleStepIfIdle), which ends an idle wait for it.
+func (e *Engine) completeLoads(now int64) {
+	for len(e.loads) > 0 && e.loads[0].at <= now {
+		l := e.loads[0]
+		e.loads = e.loads[1:]
+		e.core.CompleteAdapterLoad(l.at, l.adapter)
+	}
+}
+
+// ResidentAdapterIDs are the LoRA adapters resident on the engine, sorted; nil when it serves
+// none.
+func (e *Engine) ResidentAdapterIDs() []string { return e.core.ResidentAdapterIDs() }
+
+// AdapterCapacity is the engine's resident adapter slots (vLLM max_loras), 0 without LoRA.
+func (e *Engine) AdapterCapacity() int { return e.core.AdapterCapacity() }
+
+// AdapterEvents are the engine's cold adapter loads and evictions so far, by adapter (INV-L3).
+// The maps are copies.
+func (e *Engine) AdapterEvents() (loads, evictions map[string]int64) {
+	return maps.Clone(e.rec.loads), maps.Clone(e.rec.evictions)
 }
 
 // OffloadCachedTokens is how much of id's Scheduled.CachedTokens, in the batch Schedule last
@@ -281,6 +333,11 @@ func (e *Engine) Finish(id string, why engine.FinishReason, now engine.Time) err
 		}
 	} else {
 		e.core.CancelOnTimeout(req)
+		if e.loadIdle && !e.core.HasRunning() && e.core.HasWaiting() {
+			// The host loop's TimeoutEvent steps an engine that has no step scheduled while work
+			// still waits.
+			e.loadIdle = false
+		}
 	}
 	delete(e.reqs, id)
 	delete(e.out, id)
@@ -290,11 +347,22 @@ func (e *Engine) Finish(id string, why engine.FinishReason, now engine.Time) err
 
 // NextWake is a deferral wake the engine sleeps to, the end of a step that ran nothing while
 // work waits, or a step the engine asked for itself.
+//
+// An adapter load in flight is a wake at its completion, whether or not the engine is stepping,
+// as the host loop's AdapterLoadCompletionEvent is an event of its own.
 func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
+	at, ok := e.nextWake(now)
+	if len(e.loads) > 0 && e.loads[0].at > now && (!ok || e.loads[0].at < at) {
+		return e.loads[0].at, true
+	}
+	return at, ok
+}
+
+func (e *Engine) nextWake(now engine.Time) (engine.Time, bool) {
 	if e.flight == nil && e.sleepUntil > now {
 		return e.sleepUntil, true
 	}
-	if e.flight == nil && (e.core.HasWaiting() || e.core.HasRunning()) && e.busyUntil > now {
+	if e.flight == nil && !e.loadIdle && (e.core.HasWaiting() || e.core.HasRunning()) && e.busyUntil > now {
 		return e.busyUntil, true
 	}
 	if e.wake > now {
@@ -314,6 +382,14 @@ const (
 	MetricRunning     = "num_requests_running"
 	MetricKVUsage     = "kv_cache_usage_perc"
 	MetricPreemptions = "num_preemptions"
+	// MetricLoRARequests is vLLM's lora_requests_info for an engine serving LoRA adapters: one
+	// info sample whose labels LabelRunningAdapters and LabelWaitingAdapters list the adapters
+	// with a running or waiting request, sorted and comma-joined, and LabelMaxLoRA the resident
+	// adapter slots.
+	MetricLoRARequests   = "lora_requests_info"
+	LabelRunningAdapters = "running_lora_adapters"
+	LabelWaitingAdapters = "waiting_lora_adapters"
+	LabelMaxLoRA         = "max_lora"
 )
 
 // Metrics is the engine's published view at now (EngineMetricsAt).
@@ -322,13 +398,22 @@ func (e *Engine) Metrics(now engine.Time) engine.Metrics {
 	gauge := func(name string, v float64) engine.Family {
 		return engine.Family{Name: name, Kind: engine.Gauge, Samples: []engine.Sample{{Name: name, Value: v}}}
 	}
-	return engine.Metrics{At: m.PublishedAt, Families: []engine.Family{
+	out := engine.Metrics{At: m.PublishedAt, Families: []engine.Family{
 		gauge(MetricWaiting, float64(m.Waiting)),
 		gauge(MetricRunning, float64(m.Running)),
 		gauge(MetricKVUsage, m.KVUsage),
 		{Name: MetricPreemptions, Kind: engine.Counter,
 			Samples: []engine.Sample{{Name: MetricPreemptions, Value: float64(m.Preemptions)}}},
 	}}
+	if slots := e.core.AdapterCapacity(); slots > 0 {
+		out.Families = append(out.Families, engine.Family{Name: MetricLoRARequests, Kind: engine.Info,
+			Samples: []engine.Sample{{Name: MetricLoRARequests, Value: 1, Labels: map[string]string{
+				LabelRunningAdapters: strings.Join(m.RunningAdapters, ","),
+				LabelWaitingAdapters: strings.Join(m.WaitingAdapters, ","),
+				LabelMaxLoRA:         fmt.Sprint(slots),
+			}}}})
+	}
+	return out
 }
 
 // EnableKVEvents makes the engine publish its prefix-cache changes (SetKVEventSink): from the next
@@ -380,15 +465,20 @@ func (e *Engine) noteDone(req *cengine.Request) {
 // last called at, and the callbacks the engine makes, kept for the batch they belong to.
 type host struct{ e *Engine }
 
-func (h host) CurrentClock() int64                        { return h.e.now }
-func (h host) SimHorizon() int64                          { return h.e.horizon }
-func (h host) ScheduleTimeout(*cengine.Request, int64)    {} // the simulator times deadlines (Finish)
-func (h host) ScheduleScheduled(*cengine.Request, int64)  {}
-func (h host) ScheduleLeft(*cengine.Request, int64)       {}
-func (h host) ScheduleAdapterLoaded(string, int64)        {} // LoRA is refused at New
+func (h host) CurrentClock() int64                       { return h.e.now }
+func (h host) SimHorizon() int64                         { return h.e.horizon }
+func (h host) ScheduleTimeout(*cengine.Request, int64)   {} // the simulator times deadlines (Finish)
+func (h host) ScheduleScheduled(*cengine.Request, int64) {}
+func (h host) ScheduleLeft(*cengine.Request, int64)      {}
+func (h host) ScheduleAdapterLoaded(adapter string, t int64) {
+	h.e.loads = append(h.e.loads, adapterLoad{adapter: adapter, at: t})
+}
 func (h host) RequestDone(req *cengine.Request, _ int64)  { h.e.noteDone(req) }
 func (h host) FirstTokenAt(req *cengine.Request, _ int64) { h.e.firsts = append(h.e.firsts, req.ID) }
-func (h host) ArmStep(t int64)                            { h.e.askWake(t) }
+func (h host) ArmStep(t int64) {
+	h.e.loadIdle = false // the host loop's scheduleStepAt
+	h.e.askWake(t)
+}
 func (h host) StepArmed() bool {
 	return h.e.wake >= 0 || h.e.flight != nil || h.e.sleepUntil > 0
 }
@@ -396,6 +486,7 @@ func (h host) StepArmed() bool {
 // WakeStep asks for a step by t; it ends a deferral sleep that would wake later (the host
 // loop's scheduleStepBy), and is moot under one that wakes sooner.
 func (h host) WakeStep(t int64) {
+	h.e.loadIdle = false // the host loop's scheduleStepBy, which steps an engine with none scheduled
 	switch {
 	case h.e.sleepUntil > t:
 		h.e.sleepUntil = 0
@@ -410,6 +501,8 @@ func (h host) WakeStep(t int64) {
 // adapter reads the step's admission lookups into the batch it returns.
 type recorder struct {
 	preemptions int64
+	// loads and evictions count each adapter's cold loads and evictions (INV-L3).
+	loads, evictions map[string]int64
 	// lookups are the prefix-cache lookups of the requests the step admitted, by ID.
 	lookups map[string]cengine.PrefixLookup
 }
@@ -431,9 +524,16 @@ func (r *recorder) RecordKVUsage(int64, int64, bool)    {}
 func (r *recorder) RecordCompletion(cengine.Completion) {}
 func (r *recorder) RecordLengthCapped(*cengine.Request) {}
 func (r *recorder) RecordKVAllocationFailure()          {}
-func (r *recorder) RecordAdapterLoad(string)            {}
-func (r *recorder) RecordAdapterEviction(string)        {}
+func (r *recorder) RecordAdapterLoad(id string)         { count(&r.loads, id) }
+func (r *recorder) RecordAdapterEviction(id string)     { count(&r.evictions, id) }
 func (r *recorder) RecordStillHeldAtEnd(int, int)       {}
+
+func count(m *map[string]int64, id string) {
+	if *m == nil {
+		*m = map[string]int64{}
+	}
+	(*m)[id]++
+}
 
 func tokens(in []int32) []cengine.TokenID {
 	out := make([]cengine.TokenID, len(in))

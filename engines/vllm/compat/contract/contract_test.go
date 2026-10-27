@@ -9,6 +9,7 @@ import (
 	"github.com/inference-sim/blis-schemas/engine/enginetest"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	_ "github.com/inference-sim/blis-vllm/compat/lora" // registers the resident set and adapter cost
 )
 
 type fixedLatency struct{}
@@ -87,5 +88,54 @@ func TestAnAbortEvictsAndATimeoutCancels(t *testing.T) {
 		if got := held.State == cengine.StateTimedOut; got != c.timedOut {
 			t.Errorf("%s: timed out = %v, want %v", c.why, got, c.timedOut)
 		}
+	}
+}
+
+// A cold adapter request waits for its adapter's load, which is a wake of its own: the engine
+// reports the load's end through NextWake while nothing runs, completes the load at that wake
+// before it schedules, and then runs the request (compat/engine maybeStartAdapterLoad,
+// CompleteAdapterLoad; the host loop's AdapterLoadCompletionEvent). The resident adapters,
+// the slots and the cold-load count are the engine's.
+func TestAnAdapterLoadIsAWakeAndCompletesBeforeTheStep(t *testing.T) {
+	slots, base, bw, fp := 1, 5000.0, 1.0e9, 1.0e3
+	cfg := cengine.SimConfig{
+		Horizon:       1 << 40,
+		KVCacheConfig: cengine.NewKVCacheConfig(64, 16, 0, 0, 0, 0),
+		BatchConfig:   cengine.NewBatchConfig(16, 2048, 0),
+		LatencyModel:  fixedLatency{},
+	}
+	cfg.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &slots, LoadBaseLatencyUs: &base,
+		LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []cengine.AdapterSpec{{ID: "a0", Rank: 8}}}
+	e, err := New("instance_0", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.AdapterCapacity(); got != slots {
+		t.Fatalf("AdapterCapacity = %d, want %d", got, slots)
+	}
+	r := req("a", 40, 3)
+	r.Adapter = "a0"
+	if err := e.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := e.Schedule(0); err != nil || !b.Empty() {
+		t.Fatalf("a cold adapter's request ran before its load: %+v, %v", b, err)
+	}
+	at, ok := e.NextWake(0)
+	if !ok || at < int64(base) {
+		t.Fatalf("NextWake = %d, %v: want the load's end, at least %v", at, ok, base)
+	}
+	if ids := e.ResidentAdapterIDs(); len(ids) != 0 {
+		t.Fatalf("resident before the load completes: %v", ids)
+	}
+	b, err := e.Schedule(at)
+	if err != nil || b.Empty() {
+		t.Fatalf("at the load's end the request did not run: %+v, %v", b, err)
+	}
+	if ids := e.ResidentAdapterIDs(); len(ids) != 1 || ids[0] != "a0" {
+		t.Errorf("resident after the load: %v, want [a0]", ids)
+	}
+	if loads, _ := e.AdapterEvents(); loads["a0"] != 1 {
+		t.Errorf("cold loads of a0 = %d, want 1", loads["a0"])
 	}
 }
