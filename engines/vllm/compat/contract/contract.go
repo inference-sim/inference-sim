@@ -250,8 +250,30 @@ func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
 // InFlightLimit is one: the compatibility engine runs one step at a time.
 func (e *Engine) InFlightLimit() int { return 1 }
 
-// Metrics: the simulator reads this engine's state through Snapshot.
-func (e *Engine) Metrics(engine.Time) engine.Metrics { return engine.Metrics{} }
+// The metric families Metrics exports: the engine's state as a scrape of its model server at an
+// instant sees it. The compatibility engine publishes that view at the end of each step
+// (PublishStep), so a scrape between two step ends sees the earlier one's.
+const (
+	MetricWaiting     = "num_requests_waiting"
+	MetricRunning     = "num_requests_running"
+	MetricKVUsage     = "kv_cache_usage_perc"
+	MetricPreemptions = "num_preemptions"
+)
+
+// Metrics is the engine's published view at now (EngineMetricsAt).
+func (e *Engine) Metrics(now engine.Time) engine.Metrics {
+	m := e.core.EngineMetricsAt(now)
+	gauge := func(name string, v float64) engine.Family {
+		return engine.Family{Name: name, Kind: engine.Gauge, Samples: []engine.Sample{{Name: name, Value: v}}}
+	}
+	return engine.Metrics{At: m.PublishedAt, Families: []engine.Family{
+		gauge(MetricWaiting, float64(m.Waiting)),
+		gauge(MetricRunning, float64(m.Running)),
+		gauge(MetricKVUsage, m.KVUsage),
+		{Name: MetricPreemptions, Kind: engine.Counter,
+			Samples: []engine.Sample{{Name: MetricPreemptions, Value: float64(m.Preemptions)}}},
+	}}
+}
 
 // Snapshot is the engine's queues and KV pool.
 func (e *Engine) Snapshot() engine.State {
