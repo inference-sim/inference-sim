@@ -58,9 +58,9 @@ type flight struct {
 // It refuses what the first stage does not carry.
 func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 	switch {
-	case cfg.LoRAConfig.HasAdapters():
+	case cfg.HasAdapters():
 		return nil, fmt.Errorf("contract: %s: LoRA adapters do not run through the engine contract yet", id)
-	case cfg.KVCacheConfig.Offload.IsEnabled():
+	case cfg.Offload.IsEnabled():
 		return nil, fmt.Errorf("contract: %s: a KV offload tier does not run through the engine contract yet", id)
 	case cfg.LatencyModel == nil:
 		return nil, fmt.Errorf("contract: %s: SimConfig.LatencyModel is nil", id)
