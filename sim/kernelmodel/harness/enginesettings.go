@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -202,6 +202,16 @@ type PointConfig struct {
 	EngineVersion       string
 }
 
+// runSettings is the point's settings as blis-vllm writes them onto a scenario.
+func (pc PointConfig) runSettings() build.RunSettings {
+	return build.RunSettings{
+		MaxNumSeqs: pc.MaxNumSeqs, MaxNumBatchedTokens: pc.MaxNumBatchedTokens, BlockSize: pc.BlockSize,
+		PrefixCachingDisabled: pc.PrefixCachingDisabled, MaxModelLen: pc.MaxModelLen,
+		GPUMemoryUtilization: pc.GPUMemoryUtilization, EnableExpertParallel: pc.EnableExpertParallel,
+		MaxCUDAGraphCaptureSize: pc.MaxCUDAGraphCaptureSize,
+	}
+}
+
 // vLLM's CacheConfig.gpu_memory_utilization default, which changed in v0.20.0
 // (vllm-project/vllm 96a85c5750, #38284, "Enable CUDAGraph memory profiling by default"):
 // Field(default=0.9) in vllm/config/cache.py at v0.15.0 through v0.20.0rc1, Field(default=0.92)
@@ -235,18 +245,21 @@ func vllmDefaultGPUMemUtil(version string) (float64, bool) {
 // setting the run did not pass -- the engine resolved it the same way, so reproducing that is
 // a measurement of the engine's behaviour rather than a guess. The scenario last, which in
 // practice means the non-vLLM sweeps where no log exists.
-func resolveAdmission(sw Sweep, concurrency int, eng deployment.Engine,
+//
+// stated is what the scenario's pool states (build.StatedRunSettings): blis-vllm reads the
+// engine block, so this names none of its fields.
+func resolveAdmission(sw Sweep, concurrency int, stated build.RunSettings,
 	dep kernelmodel.Deployment, set *EngineSettingSet) PointConfig {
 	a := PointConfig{
-		MaxNumSeqs:          eng.MaxNumSeqs,
-		MaxNumBatchedTokens: eng.MaxNumBatchedTokens,
-		BlockSize:           eng.BlockSize,
+		MaxNumSeqs:          stated.MaxNumSeqs,
+		MaxNumBatchedTokens: stated.MaxNumBatchedTokens,
+		BlockSize:           stated.BlockSize,
 		// The scenario's own setting, so a sweep with no measurement and no vLLM resolution
 		// (a non-vLLM engine) runs what its scenario states rather than caching by default.
-		PrefixCachingDisabled: dep.PrefixCachingDisabled,
-		MaxModelLen:           int(eng.MaxModelLen),
-		GPUMemoryUtilization:  eng.GPUMemoryUtilization,
-		EnableExpertParallel:  dep.ExpertParallel,
+		PrefixCachingDisabled: stated.PrefixCachingDisabled,
+		MaxModelLen:           stated.MaxModelLen,
+		GPUMemoryUtilization:  stated.GPUMemoryUtilization,
+		EnableExpertParallel:  stated.EnableExpertParallel,
 		SeqsFrom:              SourceScenario,
 		TokensFrom:            SourceScenario,
 		BlockFrom:             SourceScenario,

@@ -27,8 +27,8 @@ import (
 	"strings"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
 
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
 )
@@ -272,7 +272,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		cv.sweepGap(sw, "kernel refuses the deployment", OwnerKernel, err.Error())
 		return
 	}
-	eng, err := m.Engine()
+	stated, err := build.StatedRunSettings(m)
 	if err != nil {
 		cv.sweepGap(sw, "scenario states no usable engine", OwnerKernel, err.Error())
 		return
@@ -310,7 +310,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		} else if ok, why := evidence.Verified(sw, p.Concurrency); !ok {
 			cv.pointGap(sw, p.Concurrency, GapApproximate, promptLengthCause, OwnerSim, why)
 		}
-		pc := resolveAdmission(sw, p.Concurrency, eng, d, cfg.EngineSettings)
+		pc := resolveAdmission(sw, p.Concurrency, stated, d, cfg.EngineSettings)
 		ps := rec.At(p.Concurrency)
 		if ps == nil {
 			// No engine-args log: what the run passed is unknown, so even settings resolved
@@ -350,8 +350,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 		}
 		// Compare against the VARIANT the point runs, not the committed scenario: a setting
 		// is carried exactly when the variant states the value the run passed.
-		variant := pool
-		applyPointConfig(&variant, pc)
+		rs := pc.runSettings()
 		keys := make([]string, 0, len(ps.PassedRaw))
 		for k := range ps.PassedRaw {
 			keys = append(keys, k)
@@ -364,14 +363,14 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 				continue
 			}
 			passed := decodeAny(ps.PassedRaw[k])
-			stated, known := schemaValue(variant, k)
+			carried, known := build.PoolEngineValue(pool, &rs, k)
 			switch {
 			case !known:
 				cv.pointGap(sw, p.Concurrency, GapApproximate, "run setting blis-schemas cannot express: "+k, OwnerSchemas,
 					fmt.Sprintf("run passed %v", passed))
-			case !reflect.DeepEqual(passed, stated):
+			case !reflect.DeepEqual(passed, carried):
 				cv.pointGap(sw, p.Concurrency, GapApproximate, "run setting not carried into the simulation: "+k, OwnerSim,
-					fmt.Sprintf("run passed %v, simulation states %v", passed, describe(stated)))
+					fmt.Sprintf("run passed %v, simulation states %v", passed, describe(carried)))
 			}
 		}
 	}
@@ -398,34 +397,6 @@ func missingArtifact(model, hardware, fabric string, coefficients []string, r ke
 		}
 	}
 	return "", "", ""
-}
-
-// schemaValue returns the pool's value for a setting named by its blis-schemas YAML key, in
-// Engine or Parallelism, decoded the way a JSON measurement is (so the two compare), and
-// whether the schema has such a field at all. An unstated pointer field reads as nil.
-func schemaValue(pool deployment.Pool, key string) (any, bool) {
-	for _, v := range []reflect.Value{reflect.ValueOf(pool.Engine), reflect.ValueOf(pool.Parallel)} {
-		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			tag := strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0]
-			if tag != key {
-				continue
-			}
-			f := v.Field(i)
-			if f.Kind() == reflect.Pointer && f.IsNil() {
-				return nil, true
-			}
-			if f.IsZero() {
-				return nil, true // omitempty: unstated
-			}
-			raw, err := json.Marshal(f.Interface())
-			if err != nil {
-				return nil, true
-			}
-			return decodeAny(raw), true
-		}
-	}
-	return nil, false
 }
 
 func decodeAny(raw json.RawMessage) any {

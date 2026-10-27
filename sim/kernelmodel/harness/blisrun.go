@@ -20,9 +20,8 @@ import (
 	"strconv"
 	"strings"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"gopkg.in/yaml.v3"
+	"github.com/inference-sim/blis-vllm/compat/build"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -48,68 +47,21 @@ func RequireBlis(path string) error {
 }
 
 // writeScenarioVariant writes the scenario file src to dst with its single pool's run settings
-// replaced by pc's: max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching,
+// replaced by pc's, through blis-vllm (compat/build.ScenarioVariant), which owns the engine
+// block: max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching,
 // max_model_len, gpu_memory_utilization, parallel.enable_expert_parallel and, when the run
-// passed one, max_cudagraph_capture_size. Everything else --
-// model, hardware, parallel widths, quantization, the remaining engine knobs -- is carried
-// over as the committed file states it.
-//
-// The file is decoded and re-encoded through the blis-schemas types (via the kernel's own
-// loader) rather than edited as text, so the variant is a well-formed Scenario + Deployment
-// pair by construction and a field the schema does not know is refused rather than copied.
-//
-// A scenario stating more than one pool is refused: the corpus scores aggregated serving, and
-// the resolved settings describe one engine.
+// passed one, max_cudagraph_capture_size. Everything else is carried over as the committed file
+// states it. A scenario stating more than one pool is refused: the corpus scores aggregated
+// serving, and the resolved settings describe one engine.
 //
 // A non-nil router becomes the variant's router block (its paths relative to dst's directory); a
 // committed scenario that already states one is refused rather than overwritten.
 func writeScenarioVariant(src, dst string, pc PointConfig, router *deployment.Router) error {
-	sc, dep, err := latencykernel.LoadBundle(src)
+	out, err := build.ScenarioVariant(src, pc.runSettings(), router)
 	if err != nil {
 		return err
 	}
-	if len(dep.Pools) != 1 {
-		return fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
-	}
-	applyPointConfig(&dep.Pools[0], pc)
-	if router != nil {
-		if dep.Router != nil {
-			return fmt.Errorf("%s states a router block; the harness routes every point with its own", src)
-		}
-		dep.Router = router
-	}
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(sc); err != nil {
-		return fmt.Errorf("encoding scenario: %w", err)
-	}
-	if err := enc.Encode(dep); err != nil {
-		return fmt.Errorf("encoding deployment: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return err
-	}
-	return os.WriteFile(dst, buf.Bytes(), 0o644)
-}
-
-// applyPointConfig writes the point's run settings onto a pool. Prefix caching is written
-// explicitly in both directions, so the variant states the point's resolved value rather than
-// leaving it to the tri-state's default.
-func applyPointConfig(pool *deployment.Pool, pc PointConfig) {
-	e := &pool.Engine
-	e.MaxNumSeqs = pc.MaxNumSeqs
-	e.MaxNumBatchedTokens = pc.MaxNumBatchedTokens
-	e.BlockSize = pc.BlockSize
-	enabled := !pc.PrefixCachingDisabled
-	e.EnablePrefixCaching = &enabled
-	e.MaxModelLen = deployment.MaxModelLen(pc.MaxModelLen)
-	e.GPUMemoryUtilization = pc.GPUMemoryUtilization
-	pool.Parallel.EnableExpertParallel = pc.EnableExpertParallel
-	if pc.MaxCUDAGraphCaptureSize != nil {
-		c := *pc.MaxCUDAGraphCaptureSize
-		e.MaxCUDAGraphCaptureSize = &c
-	}
+	return os.WriteFile(dst, out, 0o644)
 }
 
 // blisArgs is the `blis replay` command line for one point: the variant scenario's file name

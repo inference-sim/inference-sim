@@ -10,6 +10,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
@@ -26,6 +27,8 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 			MaxModelLen: 2304, GPUMemoryUtilization: 0.95, EnableExpertParallel: true},
 		{MaxNumSeqs: 1024, MaxNumBatchedTokens: 16384, BlockSize: 16, PrefixCachingDisabled: false,
 			MaxModelLen: 9472, GPUMemoryUtilization: 0.9, EnableExpertParallel: false},
+		{MaxNumSeqs: 1024, MaxNumBatchedTokens: 16384, BlockSize: 16, MaxModelLen: 9472,
+			GPUMemoryUtilization: 0.9, MaxCUDAGraphCaptureSize: func() *int { c := 256; return &c }()},
 	} {
 		dst := filepath.Join(t.TempDir(), name)
 		if err := writeScenarioVariant(src, dst, pc, nil); err != nil {
@@ -39,19 +42,37 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the variant does not load as a scenario: %v", err)
 		}
-		e := gotDep.Pools[0].Engine
-		if e.MaxNumSeqs != pc.MaxNumSeqs || e.MaxNumBatchedTokens != pc.MaxNumBatchedTokens ||
-			e.BlockSize != pc.BlockSize || e.EnablePrefixCaching == nil ||
-			*e.EnablePrefixCaching == pc.PrefixCachingDisabled || int(e.MaxModelLen) != pc.MaxModelLen ||
-			e.GPUMemoryUtilization != pc.GPUMemoryUtilization ||
-			gotDep.Pools[0].Parallel.EnableExpertParallel != pc.EnableExpertParallel {
-			t.Errorf("variant pool %+v does not carry %+v", gotDep.Pools[0], pc)
+		// The variant states each run setting, read back by its key as the gap report reads it:
+		// prefix caching in both directions, and expert parallelism off as unstated (nil).
+		wantKeys := map[string]any{
+			"max_num_seqs": float64(pc.MaxNumSeqs), "max_num_batched_tokens": float64(pc.MaxNumBatchedTokens),
+			"block_size": float64(pc.BlockSize), "enable_prefix_caching": !pc.PrefixCachingDisabled,
+			"max_model_len": float64(pc.MaxModelLen), "gpu_memory_utilization": pc.GPUMemoryUtilization,
+			"enable_expert_parallel": nil,
 		}
-		// Everything else is the committed file's.
-		applyPointConfig(&wantDep.Pools[0], pc)
-		if !reflect.DeepEqual(gotSc, wantSc) || !reflect.DeepEqual(gotDep, wantDep) {
-			t.Errorf("the variant changed more than the run settings:\n got %+v %+v\nwant %+v %+v",
-				gotSc, gotDep, wantSc, wantDep)
+		if pc.EnableExpertParallel {
+			wantKeys["enable_expert_parallel"] = true
+		}
+		if pc.MaxCUDAGraphCaptureSize != nil {
+			wantKeys["max_cudagraph_capture_size"] = float64(*pc.MaxCUDAGraphCaptureSize)
+		}
+		for key, want := range wantKeys {
+			if got, _ := build.PoolEngineValue(gotDep.Pools[0], nil, key); !reflect.DeepEqual(got, want) {
+				t.Errorf("variant states %s = %v, want %v", key, got, want)
+			}
+		}
+		// Everything else is the committed file's: the scenario document unchanged, and the
+		// deployment the committed one once the run settings are restated on it.
+		if !reflect.DeepEqual(gotSc, wantSc) {
+			t.Errorf("the variant changed the scenario document:\n got %+v\nwant %+v", gotSc, wantSc)
+		}
+		for _, key := range []string{"quantization", "cache_dtype", "cudagraph_mode", "tp", "pp", "dp"} {
+			rs := pc.runSettings()
+			got, _ := build.PoolEngineValue(gotDep.Pools[0], nil, key)
+			want, _ := build.PoolEngineValue(wantDep.Pools[0], &rs, key)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("the variant changed %s: %v, the committed file states %v", key, got, want)
+			}
 		}
 		// And the kernel reads the same settings back, which is what `blis replay` sizes from.
 		r := testRepos()

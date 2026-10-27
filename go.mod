@@ -6,15 +6,15 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	// TEMPORARY: the head of inference-sim/blis-latency-kernel#82 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
+	// TEMPORARY: inference-sim/blis-latency-kernel#82 at 141c652 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261025124457-4f8110fb2dba
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027001045-141c652a34f2
 	// TEMPORARY: inference-sim/blis-schemas#102 at 630937e (https://github.com/inference-sim/blis-schemas/pull/102; its later commits change only comments).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.6.1-0.20261025121631-630937e6f21f
 	// TEMPORARY: inference-sim/blis-vllm main (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261026222157-3ae8b4fb5b63
+	github.com/inference-sim/blis-vllm v0.0.0-20261027003949-fa3eced8a0e8
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2

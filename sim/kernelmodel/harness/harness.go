@@ -48,6 +48,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	_ "github.com/inference-sim/inference-sim/sim/vendored" // the adapter's vendoring root
@@ -363,12 +364,12 @@ func pointSettings(sw Sweep, concurrency int, cfg Config) (PointConfig, int, err
 	if err != nil {
 		return PointConfig{}, 0, fmt.Errorf("%s: %w", sw.Scenario, err)
 	}
-	eng, err := m.Engine()
+	stated, err := build.StatedRunSettings(m)
 	if err != nil {
 		return PointConfig{}, 0, err
 	}
 	d := m.Deployment()
-	return resolveAdmission(sw, concurrency, eng, d, cfg.EngineSettings), d.DP, nil
+	return resolveAdmission(sw, concurrency, stated, d, cfg.EngineSettings), d.DP, nil
 }
 
 // RunCold is Run with the main phase started from an empty engine whatever the point's prefix

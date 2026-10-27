@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	kvcache "github.com/inference-sim/blis-vllm/compat/kv"
 	"github.com/inference-sim/inference-sim/sim"
@@ -112,7 +113,7 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := m.Engine()
+	eng, err := build.StatedRunSettings(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +297,7 @@ func TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := m.Engine()
+	eng, err := build.StatedRunSettings(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +434,7 @@ func TestADataParallelPointPlacesLikeVLLMsBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := m.Engine()
+	eng, err := build.StatedRunSettings(m)
 	if err != nil {
 		t.Fatal(err)
 	}
