@@ -290,6 +290,22 @@ func (e *Engine) ResidentAdapterIDs() []string { return e.core.ResidentAdapterID
 // AdapterCapacity is the engine's resident adapter slots (vLLM max_loras), 0 without LoRA.
 func (e *Engine) AdapterCapacity() int { return e.core.AdapterCapacity() }
 
+// AdapterPins is how many of the engine's requests hold a pin on each LoRA adapter's resident slot
+// (a running request does until it ends), nil without LoRA, so a host can check that an eviction
+// released its victim's pin (INV-L5). The map is a copy.
+func (e *Engine) AdapterPins() map[string]int {
+	if e.core.AdapterCapacity() == 0 {
+		return nil
+	}
+	pins := map[string]int{}
+	for _, req := range e.reqs {
+		if req.Adapter != "" && req.AdapterPinned() {
+			pins[req.Adapter]++
+		}
+	}
+	return pins
+}
+
 // AdapterEvents are the engine's cold adapter loads and evictions so far, by adapter (INV-L3).
 // The maps are copies.
 func (e *Engine) AdapterEvents() (loads, evictions map[string]int64) {

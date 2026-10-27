@@ -493,6 +493,7 @@ func (v *RankView) Group() *DPGroup { return v.g }
 
 // The rank's own queries (Engine's): what the host reads per instance.
 func (v *RankView) EnableKVEvents()                          { v.g.ranks[v.k].EnableKVEvents() }
+func (v *RankView) AdapterPins() map[string]int              { return v.g.ranks[v.k].AdapterPins() }
 func (v *RankView) QueueSnapshots() (waiting, running []int) { return v.g.ranks[v.k].QueueSnapshots() }
 func (v *RankView) OffloadCachedTokens(id string) int        { return v.g.ranks[v.k].OffloadCachedTokens(id) }
 

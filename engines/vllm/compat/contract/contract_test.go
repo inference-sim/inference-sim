@@ -223,3 +223,11 @@ func TestDrainWaitingReturnsTheQueueAndKeepsTheRunning(t *testing.T) {
 		t.Errorf("a drained request re-added (re-routed back) is refused: %v", err)
 	}
 }
+
+// AdapterPins counts each adapter's pinned requests: a running request pins its adapter, and an
+// eviction (Finish, abort) releases that pin. Without LoRA it is nil.
+func TestAdapterPinsCountsTheRunningRequestsPins(t *testing.T) {
+	if pins := newEngine(t).AdapterPins(); pins != nil {
+		t.Errorf("an engine without LoRA reports pins %v", pins)
+	}
+}
