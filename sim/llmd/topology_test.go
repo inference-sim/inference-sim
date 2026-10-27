@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	fwkdl "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/datalayer"
-	attrtopology "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/topology"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -66,19 +64,12 @@ func TestGateway_TopologyExtractorChangesDecodeChoice(t *testing.T) {
 			if len(cs.ParentRequests()) != 6 {
 				t.Fatalf("disaggregated %d of 6 requests", len(cs.ParentRequests()))
 			}
-			endpoints := gw.emb.Datastore.PodList(func(fwkdl.Endpoint) bool { return true })
-			if len(endpoints) != 3 {
-				t.Fatalf("EPP datastore has %d endpoints, want 3", len(endpoints))
+			if len(gw.endpoints) != 3 {
+				t.Fatalf("the router was given %d endpoints, want 3", len(gw.endpoints))
 			}
-			for _, ep := range endpoints {
-				meta := ep.GetMetadata()
-				if meta == nil || meta.Labels[corev1.LabelHostname] == "" {
-					t.Errorf("endpoint has no hostname metadata: %v", meta)
-					continue
-				}
-				got, ok := fwkdl.ReadAttribute[*attrtopology.Topology](ep.GetAttributes(), attrtopology.TopologyAttributeKey)
-				if !ok || got == nil || got.Hostname != meta.Labels[corev1.LabelHostname] {
-					t.Errorf("endpoint %s topology = %v (present %v), metadata hostname %q", meta.Name, got, ok, meta.Labels[corev1.LabelHostname])
+			for id, ep := range gw.endpoints {
+				if ep.ep.Labels[corev1.LabelHostname] == "" || ep.ep.Labels[corev1.LabelHostname] != ep.ep.NodeName {
+					t.Errorf("endpoint %s hostname label %q, node %q; want both the simulated host", id, ep.ep.Labels[corev1.LabelHostname], ep.ep.NodeName)
 				}
 			}
 		})
@@ -150,16 +141,33 @@ func TestTopologyConfigRefusesUnsupportedParameterizations(t *testing.T) {
 		{"wrong producer name", "- type: topology-extractor\n  name: topology-a\n- type: topology-affinity-filter\n  parameters:\n    topologyProducerName: topology-b\n", "topology-b"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := topologyConfig([]byte("plugins:\n" + tc.plugins))
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("topologyConfig error = %v, want %q", err, tc.want)
+			err := refusal(t, placedDeployment(), topologyConfigText(tc.plugins), nil, "--allow-experimental-plugins")
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "cannot be simulated faithfully") {
+				t.Errorf("startup error = %v, want %q", err, tc.want)
 			}
 		})
 	}
-	valid := []byte("plugins:\n- type: topology-extractor\n  name: topology-a\n- type: topology-affinity-filter\n  parameters:\n    topologyProducerName: topology-a\n")
-	if enabled, err := topologyConfig(valid); err != nil || !enabled {
-		t.Errorf("matching named producer: enabled=%v error=%v", enabled, err)
+	valid := "- type: topology-extractor\n  name: topology-a\n- type: topology-affinity-filter\n  parameters:\n    topologyProducerName: topology-a\n"
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n" + valid +
+		"- type: single-profile-handler\n- type: max-score-picker\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: topology-affinity-filter\n  - pluginRef: max-score-picker\n"
+	if err := refusal(t, placedDeployment(), config, nil, "--allow-experimental-plugins"); err != nil {
+		t.Errorf("matching named producer must run: %v", err)
 	}
+}
+
+// placedDeployment is one instance on one simulated host, so topology checks pass placement.
+func placedDeployment() cluster.DeploymentConfig {
+	dep := testDeployment(1)
+	dep.ScenarioEndpointTopology = cluster.StaticEndpointTopology(map[cluster.InstanceID]cluster.EndpointTopology{
+		"instance_0": {Hostname: "blis-node-0", NodeCount: 1},
+	})
+	return dep
+}
+
+// topologyConfigText is an EndpointPickerConfig with plugins and a single default profile.
+func topologyConfigText(plugins string) string {
+	return "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n" + plugins +
+		"- type: max-score-picker\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: max-score-picker\n- name: prefill\n  plugins:\n  - pluginRef: max-score-picker\n"
 }
 
 // Internal data-parallel load balancing exposes one Pod for multiple ranks.
@@ -199,8 +207,8 @@ func TestGateway_GroupedEndpointHasNoSingleHostTopology(t *testing.T) {
 				t.Fatalf("got %d EPP endpoints, want one grouped endpoint", len(gw.endpoints))
 			}
 			for _, ep := range gw.endpoints {
-				if ep.pod.Spec.NodeName != "" || ep.pod.Labels[corev1.LabelHostname] != "" {
-					t.Errorf("grouped Pod claims one host: node=%q labels=%v", ep.pod.Spec.NodeName, ep.pod.Labels)
+				if ep.ep.NodeName != "" || ep.ep.Labels[corev1.LabelHostname] != "" {
+					t.Errorf("grouped Pod claims one host: node=%q labels=%v", ep.ep.NodeName, ep.ep.Labels)
 				}
 			}
 		})

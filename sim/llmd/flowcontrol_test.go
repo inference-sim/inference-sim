@@ -1,10 +1,13 @@
 package llmd
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/inference-sim/blis-schemas/embed"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -292,6 +295,18 @@ func TestFlowControl_QueueDelayRecorded(t *testing.T) {
 // control holds it leaves the queue at its deadline and counts as timed out, not as a router
 // expiry or capacity rejection.
 func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
+	// Repeated: a cancellation delivered asynchronously (a context type the stdlib must watch
+	// from a goroutine) races the simulation, so one run alone may not show it.
+	for range 8 {
+		clientDeadlineWhileQueued(t)
+		if t.Failed() {
+			return
+		}
+	}
+}
+
+func clientDeadlineWhileQueued(t *testing.T) {
+	t.Helper()
 	reqs := testRequests(150, 11, 1000, 0)
 	for _, r := range reqs {
 		r.Deadline = r.ArrivalTime + 20000 // the client waits at most 20 ms
@@ -300,6 +315,30 @@ func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
 	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
 	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+globalStrictConfig)})
+	// Each held request's cancellation reaches the router at its client deadline, and the
+	// router's ContextCancelled outcome lands at that same simulated instant (INV-6: no
+	// cancellation is delivered later, by a goroutine outside the runtime).
+	byID := map[string]*sim.Request{}
+	for _, r := range reqs {
+		byID[r.ID] = r
+	}
+	cancelled := 0
+	gw.observe = func(kind, detail string) {
+		if kind != "rejected" {
+			return
+		}
+		var id, k string
+		var at int64
+		if _, err := fmt.Sscanf(detail, "%s %s %d", &id, &k, &at); err != nil {
+			t.Fatalf("observe %q: %v", detail, err)
+		}
+		if k == string(embed.ContextCancelled) {
+			cancelled++
+			if at != byID[id].Deadline {
+				t.Errorf("%s: cancelled at %d, its client deadline is %d", id, at, byID[id].Deadline)
+			}
+		}
+	}
 	cs.SetGateway(gw)
 	var final sim.ProgressSnapshot
 	cs.SetProgressHook(progressFunc(func(s sim.ProgressSnapshot) { final = s }), 1_000_000)
@@ -323,13 +362,12 @@ func TestFlowControl_ClientDeadlineWhileQueued(t *testing.T) {
 			t.Errorf("%s dispatched at %d, after its client deadline %d", r.ID, r.GatewayDispatchTime, r.Deadline)
 		}
 	}
-	if timedOutInGateway == 0 {
-		t.Fatal("no request timed out while held in flow control; the test does not exercise the path")
+	if timedOutInGateway == 0 || cancelled == 0 {
+		t.Fatalf("%d requests timed out while held in flow control, %d cancelled in the router; the test does not exercise the path", timedOutInGateway, cancelled)
 	}
 	if res.metrics.TimedOutRequests < timedOutInGateway {
 		t.Errorf("timed_out_requests %d < %d requests whose deadline passed in the gateway", res.metrics.TimedOutRequests, timedOutInGateway)
 	}
-	t.Logf("%d timed out in the gateway, %d timed out in total", timedOutInGateway, res.metrics.TimedOutRequests)
 }
 
 type progressFunc func(sim.ProgressSnapshot)
@@ -436,25 +474,23 @@ func TestClientDeadline_SameInstantAsTheDecision(t *testing.T) {
 func TestRequestTTL(t *testing.T) {
 	for _, tc := range []struct {
 		life int64
-		want string
+		want time.Duration
 		ok   bool
 	}{
-		{30_000_000, "30s", true},
-		{1, "1µs", true},
-		{maxTTLMicros, (time.Duration(maxTTLMicros) * time.Microsecond).String(), true},
-		{maxTTLMicros + 1, "", false},
-		{math.MaxInt64, "", false},
-		{0, "", false},
-		{-5, "", false},
+		{30_000_000, 30 * time.Second, true},
+		{1, time.Microsecond, true},
+		{maxTTLMicros, time.Duration(maxTTLMicros) * time.Microsecond, true},
+		{maxTTLMicros + 1, 0, false},
+		{math.MaxInt64, 0, false},
+		{0, 0, false},
+		{-5, 0, false},
 	} {
 		got, ok := requestTTL(tc.life)
 		if got != tc.want || ok != tc.ok {
-			t.Errorf("requestTTL(%d) = %q, %v; want %q, %v", tc.life, got, ok, tc.want, tc.ok)
+			t.Errorf("requestTTL(%d) = %v, %v; want %v, %v", tc.life, got, ok, tc.want, tc.ok)
 		}
-		if ok {
-			if d, err := time.ParseDuration(got); err != nil || d <= 0 {
-				t.Errorf("requestTTL(%d) = %q: not a positive Go duration (%v, %v)", tc.life, got, d, err)
-			}
+		if ok && got <= 0 {
+			t.Errorf("requestTTL(%d) = %v: not a positive Go duration", tc.life, got)
 		}
 	}
 }
