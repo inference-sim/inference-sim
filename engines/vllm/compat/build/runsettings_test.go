@@ -141,3 +141,50 @@ func TestPoolEngineValueIsTheHarnessesLookup(t *testing.T) {
 		t.Fatalf("non-vacuity: %d lookups compared", compared)
 	}
 }
+
+// StatedRunSettings is what each pool's scenario states, field for field, which is what
+// inference-sim's harness read from Model.Engine and Model.Deployment (resolveAdmission at
+// 01bbf6bf): the block's caps, block size, context bound and memory utilization as written, prefix
+// caching off only where the block disables it, and the resolved expert parallelism.
+func TestStatedRunSettingsAreTheScenarios(t *testing.T) {
+	opened := 0
+	for _, dir := range []string{kernelmodel.DefaultScenarios(), filepath.Join("..", "..", "testdata", "scenarios")} {
+		files, _ := filepath.Glob(filepath.Join(dir, "*.yaml"))
+		for _, path := range files {
+			_, dep, err := latencykernel.LoadBundle(path)
+			if err != nil {
+				continue
+			}
+			r := kernelmodel.DefaultRepos()
+			r.Scenarios = dir
+			for pool := range dep.Pools {
+				m, err := kernelmodel.OpenPool(filepath.Base(path), r, pool)
+				if err != nil {
+					continue
+				}
+				got, err := StatedRunSettings(m)
+				e := dep.Pools[pool].Engine
+				if e.BlockSize <= 0 || e.MaxNumSeqs <= 0 || e.MaxNumBatchedTokens <= 0 {
+					if err == nil {
+						t.Errorf("%s pool %d: no refusal for a block missing a required setting", path, pool)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatalf("%s pool %d: %v", path, pool, err)
+				}
+				want := RunSettings{MaxNumSeqs: e.MaxNumSeqs, MaxNumBatchedTokens: e.MaxNumBatchedTokens,
+					BlockSize: e.BlockSize, PrefixCachingDisabled: e.EnablePrefixCaching != nil && !*e.EnablePrefixCaching,
+					MaxModelLen: int(e.MaxModelLen), GPUMemoryUtilization: e.GPUMemoryUtilization,
+					EnableExpertParallel: m.Deployment().ExpertParallel}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("%s pool %d: StatedRunSettings = %+v, want the scenario's %+v", path, pool, got, want)
+				}
+				opened++
+			}
+		}
+	}
+	if opened < 50 {
+		t.Fatalf("non-vacuity: only %d pools compared", opened)
+	}
+}

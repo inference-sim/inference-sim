@@ -15,6 +15,8 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // RunSettings are the settings one measured point ran with that a scoring harness restates on a
@@ -31,6 +33,29 @@ type RunSettings struct {
 	GPUMemoryUtilization    float64
 	EnableExpertParallel    bool
 	MaxCUDAGraphCaptureSize *int
+}
+
+// StatedRunSettings are the run settings m's pool states, which a harness restates a point with
+// where the run recorded nothing better: the engine block's caps, block size, context bound and
+// memory utilization as written, prefix caching off only where the block disables it, and the
+// expert parallelism the kernel resolved. It errors as Model.Engine does, for a pool that states no
+// block size, sequence cap or token budget. MaxCUDAGraphCaptureSize is nil: a variant keeps the
+// scenario's own ceiling unless a run passed one.
+func StatedRunSettings(m *kernelmodel.Model) (RunSettings, error) {
+	e, err := m.Engine()
+	if err != nil {
+		return RunSettings{}, err
+	}
+	d := m.Deployment()
+	return RunSettings{
+		MaxNumSeqs:            e.MaxNumSeqs,
+		MaxNumBatchedTokens:   e.MaxNumBatchedTokens,
+		BlockSize:             e.BlockSize,
+		PrefixCachingDisabled: d.PrefixCachingDisabled,
+		MaxModelLen:           int(e.MaxModelLen),
+		GPUMemoryUtilization:  e.GPUMemoryUtilization,
+		EnableExpertParallel:  d.ExpertParallel,
+	}, nil
 }
 
 // ScenarioVariant is the scenario file src with its single pool's run settings replaced by rs:
