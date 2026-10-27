@@ -1,0 +1,133 @@
+// Moved from inference-sim/sim/kernelmodel/harness/blisrun.go and gaps.go at
+// 01bbf6bf50c4b81bc91b0bfdb9b26f91e3155b60 (writeScenarioVariant, applyPointConfig, schemaValue).
+
+package build
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-schemas/spec/deployment"
+
+	latencykernel "github.com/inference-sim/blis-latency-kernel"
+)
+
+// RunSettings are the settings one measured point ran with that a scoring harness restates on a
+// scenario before replaying it: the scheduler's caps, the block size, prefix caching, the context
+// bound, the memory utilization, expert parallelism and, when the run passed one, the CUDA graph
+// capture ceiling. The engine block is the engine model's, so the harness hands these over and
+// this package writes them onto it (ScenarioVariant).
+type RunSettings struct {
+	MaxNumSeqs              int
+	MaxNumBatchedTokens     int
+	BlockSize               int
+	PrefixCachingDisabled   bool
+	MaxModelLen             int
+	GPUMemoryUtilization    float64
+	EnableExpertParallel    bool
+	MaxCUDAGraphCaptureSize *int
+}
+
+// ScenarioVariant is the scenario file src with its single pool's run settings replaced by rs:
+// max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching, max_model_len,
+// gpu_memory_utilization, parallel.enable_expert_parallel and, when rs states one,
+// max_cudagraph_capture_size. Everything else is carried over as the committed file states it.
+//
+// The file is decoded and re-encoded through the blis-schemas types (the kernel's own loader)
+// rather than edited as text, so the variant is a well-formed Scenario + Deployment pair by
+// construction and a field the schema does not know is refused rather than copied. Prefix caching
+// is written in both directions, so the variant states the point's resolved value rather than
+// leaving it to the tri-state's default.
+//
+// A scenario stating more than one pool is refused: the resolved settings describe one engine. A
+// non-nil router becomes the variant's router block; a scenario that already states one is
+// refused rather than overwritten.
+func ScenarioVariant(src string, rs RunSettings, router *deployment.Router) ([]byte, error) {
+	sc, dep, err := latencykernel.LoadBundle(src)
+	if err != nil {
+		return nil, err
+	}
+	if len(dep.Pools) != 1 {
+		return nil, fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
+	}
+	applyRunSettings(&dep.Pools[0], rs)
+	if router != nil {
+		if dep.Router != nil {
+			return nil, fmt.Errorf("%s states a router block; the harness routes every point with its own", src)
+		}
+		dep.Router = router
+	}
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(sc); err != nil {
+		return nil, fmt.Errorf("encoding scenario: %w", err)
+	}
+	if err := enc.Encode(dep); err != nil {
+		return nil, fmt.Errorf("encoding deployment: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// applyRunSettings writes a point's run settings onto a pool.
+func applyRunSettings(pool *deployment.Pool, rs RunSettings) {
+	e := &pool.Engine
+	e.MaxNumSeqs = rs.MaxNumSeqs
+	e.MaxNumBatchedTokens = rs.MaxNumBatchedTokens
+	e.BlockSize = rs.BlockSize
+	enabled := !rs.PrefixCachingDisabled
+	e.EnablePrefixCaching = &enabled
+	e.MaxModelLen = deployment.MaxModelLen(rs.MaxModelLen)
+	e.GPUMemoryUtilization = rs.GPUMemoryUtilization
+	pool.Parallel.EnableExpertParallel = rs.EnableExpertParallel
+	if rs.MaxCUDAGraphCaptureSize != nil {
+		c := *rs.MaxCUDAGraphCaptureSize
+		e.MaxCUDAGraphCaptureSize = &c
+	}
+}
+
+// PoolEngineValue is the value pool states for a setting named by its engine-block or parallel
+// YAML key, decoded the way a JSON measurement is (so the two compare), after rs is written onto
+// it, and whether either block has such a field at all. An unstated field reads as nil.
+//
+// A harness compares the settings a run passed with what its variant states through this, so it
+// names no engine field itself.
+func PoolEngineValue(pool deployment.Pool, rs *RunSettings, key string) (any, bool) {
+	if rs != nil {
+		applyRunSettings(&pool, *rs)
+	}
+	for _, v := range []reflect.Value{reflect.ValueOf(pool.Engine), reflect.ValueOf(pool.Parallel)} {
+		t := v.Type()
+		for i := 0; i < t.NumField(); i++ {
+			tag := strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0]
+			if tag != key {
+				continue
+			}
+			f := v.Field(i)
+			if f.Kind() == reflect.Pointer && f.IsNil() {
+				return nil, true
+			}
+			if f.IsZero() {
+				return nil, true // omitempty: unstated
+			}
+			raw, err := json.Marshal(f.Interface())
+			if err != nil {
+				return nil, true
+			}
+			var out any
+			if err := json.Unmarshal(raw, &out); err != nil {
+				return string(raw), true
+			}
+			return out, true
+		}
+	}
+	return nil, false
+}
