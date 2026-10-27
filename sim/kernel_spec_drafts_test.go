@@ -6,7 +6,6 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -42,7 +41,9 @@ func openDSparkDrafting(t *testing.T, k int) (*kernelmodel.Model, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.Deployment.Pools[0].Engine.Speculative = &deployment.Speculative{Method: "dspark", NumSpecTokens: k}
+	if err := kernelmodel.DraftForTest(&in, "dspark", k); err != nil {
+		t.Fatal(err)
+	}
 	return kernelmodel.FromInputsForTest(in)
 }
 
