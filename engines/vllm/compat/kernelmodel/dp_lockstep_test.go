@@ -12,6 +12,8 @@ import (
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 const dpLockstepScenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
@@ -69,7 +71,7 @@ func openWithGraphMode(t *testing.T, mode string) (*Model, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.Deployment.Pools[0].Engine.CUDAGraphMode = mode
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.CUDAGraphMode = mode })
 	m, err := fromInputs(in)
 	if err != nil {
 		t.Fatalf("New with cudagraph_mode %q: %v", mode, err)

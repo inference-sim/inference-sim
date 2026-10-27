@@ -124,7 +124,9 @@ func TestPoolEngineValueIsTheHarnessesLookup(t *testing.T) {
 			}
 			for _, pool := range dep.Pools {
 				variant := pool
-				applyRunSettings(&variant, rs)
+				if err := applyRunSettings(&variant, rs); err != nil {
+					t.Fatal(err)
+				}
 				for _, key := range harnessKeys {
 					wantV, wantOK := harnessSchemaValue(variant, key)
 					gotV, gotOK := PoolEngineValue(pool, &rs, key)

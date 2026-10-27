@@ -9,6 +9,8 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -18,7 +20,7 @@ func boolPtr(b bool) *bool { return &b }
 // SWA bounded replay the window groups leave the lookup and a hit replays its last 128
 // tokens; without it they cut the hit to a retained window tail.
 func TestPrefixHit_DeepSeekV41LayoutFollowsTheDraftsWindowCache(t *testing.T) {
-	m, err := openDrafting(t, dspark, &deployment.Speculative{Method: "dspark", NumSpecTokens: 5})
+	m, err := openDrafting(t, dspark, &engineconfig.Speculative{Method: "dspark", NumSpecTokens: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,16 +55,22 @@ func TestPrefixHit_V1RunnerAndPCPTurnBoundedReplayOff(t *testing.T) {
 		runner string
 	}{
 		{"V1-only speculative method", func(p *deployment.Pool) {
-			p.Engine.Speculative = &deployment.Speculative{Method: "ngram", NumSpecTokens: 3}
+			editPoolEngine(t, p, func(e *engineconfig.Engine) {
+				e.Speculative = &engineconfig.Speculative{Method: "ngram", NumSpecTokens: 3}
+			})
 		}, "v1"},
-		{"dual batch overlap", func(p *deployment.Pool) { p.Engine.DBO = &deployment.DBO{Enabled: true} }, "v1"},
-		{"mamba cache mode all", func(p *deployment.Pool) { p.Engine.MambaCacheMode = "all" }, "v1"},
+		{"dual batch overlap", func(p *deployment.Pool) {
+			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} })
+		}, "v1"},
+		{"mamba cache mode all", func(p *deployment.Pool) {
+			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.MambaCacheMode = "all" })
+		}, "v1"},
 		{"prefill context parallelism", func(p *deployment.Pool) { p.Parallel.PCP = 2 }, "v2"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64}}
 			tt.edit(&pool)
-			m := &Model{k: fixedDeployment{pool: pool}, engine: pool.Engine, id: identity{prefix: prefixLayout{
+			m := &Model{k: fixedDeployment{pool: pool}, engine: mustDecode(t, pool), id: identity{prefix: prefixLayout{
 				known: true, v41: true, window: 128, windowBlock: 32, pcp: max(pool.Parallel.PCP, 1)}}}
 			got := m.PrefixHit(nil)
 			if got.Runner != tt.runner {
@@ -105,9 +113,9 @@ func TestPrefixHit_ThePoolsStatedBoundedReplayIsTheCacheConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64, SWABoundedReplay: tt.stated}}
 			if tt.v1 != nil {
-				pool.Engine.DBO = &deployment.DBO{Enabled: true}
+				editPoolEngine(t, &pool, func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} })
 			}
-			m := &Model{k: fixedDeployment{pool: pool}, engine: pool.Engine, id: identity{prefix: prefixLayout{
+			m := &Model{k: fixedDeployment{pool: pool}, engine: mustDecode(t, pool), id: identity{prefix: prefixLayout{
 				known: true, v41: true, window: 128, windowBlock: 32, pcp: 1}}}
 			got := m.PrefixHit(tt.override)
 			if got.BoundedReplay == nil || *got.BoundedReplay != tt.bounded || got.BoundedReplayFrom != tt.from {
@@ -119,4 +127,14 @@ func TestPrefixHit_ThePoolsStatedBoundedReplayIsTheCacheConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mustDecode is a pool's engine block as this package decodes it at open.
+func mustDecode(t testing.TB, pool deployment.Pool) engineconfig.Engine {
+	t.Helper()
+	e, err := decodeEngine(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
 }

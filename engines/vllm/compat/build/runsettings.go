@@ -18,6 +18,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // RunSettings are the settings one measured point ran with that a scoring harness restates on a
@@ -81,7 +82,9 @@ func ScenarioVariant(src string, rs RunSettings, router *deployment.Router) ([]b
 	if len(dep.Pools) != 1 {
 		return nil, fmt.Errorf("%s states %d pools; the harness scores one aggregated pool", src, len(dep.Pools))
 	}
-	applyRunSettings(&dep.Pools[0], rs)
+	if err := applyRunSettings(&dep.Pools[0], rs); err != nil {
+		return nil, fmt.Errorf("%s: %w", src, err)
+	}
 	if router != nil {
 		if dep.Router != nil {
 			return nil, fmt.Errorf("%s states a router block; the harness routes every point with its own", src)
@@ -103,17 +106,27 @@ func ScenarioVariant(src string, rs RunSettings, router *deployment.Router) ([]b
 	return buf.Bytes(), nil
 }
 
-// applyRunSettings writes a point's run settings onto a pool.
-func applyRunSettings(pool *deployment.Pool, rs RunSettings) {
-	e := &pool.Engine
+// applyRunSettings writes a point's run settings onto a pool: its engine block decoded as vLLM's
+// engine configuration, the settings written, and the block encoded back.
+func applyRunSettings(pool *deployment.Pool, rs RunSettings) error {
+	e, err := kernelmodel.DecodeEngine(*pool)
+	if err != nil {
+		return err
+	}
+	writeRunSettings(&e, rs)
+	pool.Parallel.EnableExpertParallel = rs.EnableExpertParallel
+	return kernelmodel.SetEngine(pool, e)
+}
+
+// writeRunSettings writes the run settings that live in the engine block.
+func writeRunSettings(e *engineconfig.Engine, rs RunSettings) {
 	e.MaxNumSeqs = rs.MaxNumSeqs
 	e.MaxNumBatchedTokens = rs.MaxNumBatchedTokens
 	e.BlockSize = rs.BlockSize
 	enabled := !rs.PrefixCachingDisabled
 	e.EnablePrefixCaching = &enabled
-	e.MaxModelLen = deployment.MaxModelLen(rs.MaxModelLen)
+	e.MaxModelLen = engineconfig.MaxModelLen(rs.MaxModelLen)
 	e.GPUMemoryUtilization = rs.GPUMemoryUtilization
-	pool.Parallel.EnableExpertParallel = rs.EnableExpertParallel
 	if rs.MaxCUDAGraphCaptureSize != nil {
 		c := *rs.MaxCUDAGraphCaptureSize
 		e.MaxCUDAGraphCaptureSize = &c
@@ -127,10 +140,15 @@ func applyRunSettings(pool *deployment.Pool, rs RunSettings) {
 // A harness compares the settings a run passed with what its variant states through this, so it
 // names no engine field itself.
 func PoolEngineValue(pool deployment.Pool, rs *RunSettings, key string) (any, bool) {
-	if rs != nil {
-		applyRunSettings(&pool, *rs)
+	e, err := kernelmodel.DecodeEngine(pool)
+	if err != nil {
+		return nil, false
 	}
-	for _, v := range []reflect.Value{reflect.ValueOf(pool.Engine), reflect.ValueOf(pool.Parallel)} {
+	if rs != nil {
+		writeRunSettings(&e, *rs)
+		pool.Parallel.EnableExpertParallel = rs.EnableExpertParallel
+	}
+	for _, v := range []reflect.Value{reflect.ValueOf(e), reflect.ValueOf(pool.Parallel)} {
 		t := v.Type()
 		for i := 0; i < t.NumField(); i++ {
 			tag := strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0]

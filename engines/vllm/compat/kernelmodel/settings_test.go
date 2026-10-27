@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Laws Settings must satisfy on every committed scenario, so a simulator sized from it is
@@ -79,20 +79,20 @@ func TestMaxModelLenResolvesAsTheEngineStarts(t *testing.T) {
 	m := &Model{id: identity{defaultWindow: 1 << 20}}
 	for _, tt := range []struct {
 		name      string
-		stated    deployment.MaxModelLen
+		stated    engineconfig.MaxModelLen
 		fitTokens int
 		want      int
 	}{
 		{"a stated count", 32768, 1000, 32768},
 		{"unstated", 0, 1000, 1 << 20},
-		{"auto, the cache holds less than the window", deployment.MaxModelLenAuto, 400_000, 400_000},
-		{"auto, the cache holds the whole window", deployment.MaxModelLenAuto, 4 << 20, 1 << 20},
+		{"auto, the cache holds less than the window", engineconfig.MaxModelLenAuto, 400_000, 400_000},
+		{"auto, the cache holds the whole window", engineconfig.MaxModelLenAuto, 4 << 20, 1 << 20},
 	} {
 		if got, _ := m.resolvedMaxModelLen(tt.stated, tt.fitTokens); got != tt.want {
 			t.Errorf("%s: max_model_len %d, want %d", tt.name, got, tt.want)
 		}
 	}
-	if got, _ := (&Model{}).resolvedMaxModelLen(deployment.MaxModelLenAuto, 1000); got != 0 {
+	if got, _ := (&Model{}).resolvedMaxModelLen(engineconfig.MaxModelLenAuto, 1000); got != 0 {
 		t.Errorf("auto on a graph stating no window resolved to %d; it must stay unknown (0)", got)
 	}
 }

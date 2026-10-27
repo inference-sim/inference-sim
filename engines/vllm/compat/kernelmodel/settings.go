@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Settings is everything a simulator sizes one engine from, every value answered by the
@@ -210,7 +210,7 @@ func (m *Model) sequenceState(b KVBudget) sim.KVSequenceState {
 //     derived cap because it cannot see the KV budget; the simulator can, so it applies the fit.
 //
 // A window one rank cannot hold is not refused here; checkEnoughKVCacheMemory refuses it.
-func (m *Model) resolvedMaxModelLen(stated deployment.MaxModelLen, fitTokens int) (int, string) {
+func (m *Model) resolvedMaxModelLen(stated engineconfig.MaxModelLen, fitTokens int) (int, string) {
 	if n, ok := stated.Stated(); ok {
 		return n, "stated"
 	}

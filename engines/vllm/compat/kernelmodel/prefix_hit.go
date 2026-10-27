@@ -10,6 +10,8 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/model"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // eagleMethods are vLLM v0.31.0's use_eagle() methods, whose prefix hits drop the trailing
@@ -33,9 +35,9 @@ type prefixLayout struct {
 	pcp           int
 }
 
-func prefixLayoutOf(g *model.Graph, pool deployment.Pool) prefixLayout {
+func prefixLayoutOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine) prefixLayout {
 	l := prefixLayout{pcp: max(pool.Parallel.PCP, 1)}
-	sp := pool.Engine.Speculative
+	sp := engine.Speculative
 	l.eagle = sp != nil && sp.NumSpecTokens > 0 && slices.Contains(eagleMethods, sp.Method)
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {

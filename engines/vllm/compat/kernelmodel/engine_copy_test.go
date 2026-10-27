@@ -9,8 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"gopkg.in/yaml.v3"
+
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-latency-kernel/vllmsettings"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // engineCopyScenarioDirs are the scenario directories the copy is checked over: the kernel's
@@ -51,18 +56,27 @@ func TestTheEngineCopyIsTheKernelsDeploymentEngine(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if file := dep.Pools[pool].Engine; !reflect.DeepEqual(m.engine, file) {
+				file, err := engineconfig.Decode(mustBlock(t, dep.Pools[pool]))
+				if err != nil {
+					t.Fatalf("%s pool %d: %v", path, pool, err)
+				}
+				if !reflect.DeepEqual(m.engine, file) {
 					t.Errorf("%s pool %d: the engine copy is not the pool's engine block", path, pool)
 				}
 				if s := m.k.(*latencykernel.Kernel).Engine(); !reflect.DeepEqual(s, vllmsettings.Of(m.engine)) {
 					t.Errorf("%s pool %d: the kernel prices settings other than the copy's", path, pool)
 				}
-				if want := m.k.Deployment().Engine; !reflect.DeepEqual(m.engine, want) {
+				// The block the kernel's deployment carried is the same block, read the same way.
+				kernelBlock, err := engineconfig.Decode(mustBlock(t, m.k.Deployment()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(m.engine, kernelBlock) {
 					t.Errorf("%s pool %d: the engine copy differs from the kernel's deployment engine:\n"+
-						"  copy   %+v\n  kernel %+v", path, pool, m.engine, want)
+						"  copy   %+v\n  kernel %+v", path, pool, m.engine, kernelBlock)
 				}
 				got, err := m.Engine()
-				if err == nil && !reflect.DeepEqual(got, m.k.Deployment().Engine) {
+				if err == nil && !reflect.DeepEqual(got, kernelBlock) {
 					t.Errorf("%s pool %d: Engine() is not the kernel's deployment engine", path, pool)
 				}
 			}
@@ -128,4 +142,17 @@ func must(s string, err error) string {
 		panic(err)
 	}
 	return s
+}
+
+// mustBlock is a pool's engine block as an opaque deployment.EngineBlock.
+//
+// TEMPORARY: until blis-schemas#102's switch makes Pool.Engine that block, the struct is encoded
+// into one.
+func mustBlock(t testing.TB, pool deployment.Pool) deployment.EngineBlock {
+	t.Helper()
+	var n yaml.Node
+	if err := n.Encode(pool.Engine); err != nil {
+		t.Fatal(err)
+	}
+	return deployment.NewEngineBlock(&n)
 }

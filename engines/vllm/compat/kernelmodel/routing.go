@@ -17,6 +17,8 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/workload"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Expert-parallel routing imbalance is resolved here, per pool, by blis-schemas'
@@ -44,12 +46,12 @@ func SetRoutingOverrides(o RoutingOverrides) { routingOverrides = o }
 
 // resolveRouting resolves one pool's routing imbalance. A miss falls to the default and is
 // not an error; a scenario's named set that is missing or lacks the key is.
-func resolveRouting(in latencykernel.Inputs, registry string, o RoutingOverrides) (*routing.Resolution, error) {
+func resolveRouting(in latencykernel.Inputs, engine engineconfig.Engine, registry string, o RoutingOverrides) (*routing.Resolution, error) {
 	pool := in.Deployment.Pools[in.PoolIndex]
 	req := routing.Request{
 		Model:          in.Scenario.Model,
 		ExpertParallel: pool.Parallel.ExpertParallelWidth(),
-		EPLB:           pool.Engine.EPLB != nil && pool.Engine.EPLB.Enabled,
+		EPLB:           engine.EPLB != nil && engine.EPLB.Enabled,
 		Hardware:       in.Chip.Name,
 		Workload:       bindingRoutingTerms(in.Scenario.Workload),
 		Scenario:       in.Scenario.Routing,

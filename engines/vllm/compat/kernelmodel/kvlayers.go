@@ -17,6 +17,8 @@ import (
 	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // KVLayerRun is a run of consecutive attention layers of one KV cache spec, in core/vllm's
@@ -58,16 +60,16 @@ type KVLayerRun struct {
 // beside these, and a drafter's layers beside them.
 func (m *Model) KVLayers() ([]KVLayerRun, error) {
 	runner, _ := m.ModelRunner()
-	return kvLayersOf(m.graph, m.k.Deployment(),
+	return kvLayersOf(m.graph, m.k.Deployment(), m.engine,
 		deepseekServing{runner: runner, family: m.id.capabilityMajor, cacheDType: m.cacheDType})
 }
 
-func kvLayersOf(g *model.Graph, pool deployment.Pool, ds deepseekServing) ([]KVLayerRun, error) {
+func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	if g == nil {
 		return nil, nil
 	}
 	if a := g.Global.Architecture; a == rules.ArchDeepseekV4 || a == rules.ArchDeepseekV41 {
-		return deepseekKVLayers(g, pool, ds)
+		return deepseekKVLayers(g, pool, engine, ds)
 	}
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {
@@ -113,7 +115,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, ds deepseekServing) ([]KVL
 			}
 		}
 	}
-	switch sp := pool.Engine.Speculative; {
+	switch sp := engine.Speculative; {
 	case plain:
 		return nil, nil
 	case shared:
@@ -150,13 +152,13 @@ type deepseekServing struct {
 // cache the compressed MLA cache at its tokens_per_entry, and a state cache the compressor's state,
 // of 2 x coff x head_dim float32 rows. The graph is resolved for the chip's family first, as the
 // kernel resolves it, so V4.1's SM100 record and alignment are the ones that run.
-func deepseekKVLayers(g *model.Graph, pool deployment.Pool, ds deepseekServing) ([]KVLayerRun, error) {
+func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	g, err := g.ForCapability(ds.family)
 	if err != nil {
 		return nil, fmt.Errorf("deepseek KV layers: %w", err)
 	}
 	v41 := g.Global.Architecture == rules.ArchDeepseekV41
-	e := pool.Engine
+	e := engine
 	k := 0
 	if sp := e.Speculative; sp != nil {
 		k = sp.NumSpecTokens

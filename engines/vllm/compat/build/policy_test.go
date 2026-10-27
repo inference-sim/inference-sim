@@ -202,3 +202,16 @@ func TestResolveAcceptance_TheCommandLineIsTheHighestLayer(t *testing.T) {
 		t.Errorf("no layer states it (empty registry): %v; want a refusal naming the flags", err)
 	}
 }
+
+// ShapeOf reads each pool's long_prefill_token_threshold from the block blis-vllm decodes, per pool.
+func TestShapeOfReadsEachPoolsLongPrefillThreshold(t *testing.T) {
+	sh, err := kernelmodel.ShapeOf("variant.yaml",
+		pdVariant(t, "      long_prefill_token_threshold: 512\n", "      long_prefill_token_threshold: 256\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sh.LongPrefillTokenThresholds) != 2 || sh.LongPrefillTokenThresholds[0] != 512 ||
+		sh.LongPrefillTokenThresholds[1] != 256 {
+		t.Errorf("ShapeOf's thresholds are %v, want each pool's own [512 256]", sh.LongPrefillTokenThresholds)
+	}
+}

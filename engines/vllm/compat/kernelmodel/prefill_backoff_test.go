@@ -5,8 +5,9 @@ package kernelmodel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // NIXL's _prefill_backoff (nixl/base_scheduler.py:385-398 at v0.31.0): 1 for a Mamba-state
@@ -20,13 +21,13 @@ func TestPrefillBackoffOf(t *testing.T) {
 		g.Speculator = &model.Speculator{Stack: model.Stack{Pattern: []string{"draft"}, Repeat: layers}}
 		return &g
 	}
-	spec := func(method string, k int) *deployment.Speculative {
-		return &deployment.Speculative{Method: method, NumSpecTokens: k}
+	spec := func(method string, k int) *engineconfig.Speculative {
+		return &engineconfig.Speculative{Method: method, NumSpecTokens: k}
 	}
 	for _, tc := range []struct {
 		name string
 		g    *model.Graph
-		sp   *deployment.Speculative
+		sp   *engineconfig.Speculative
 		want int
 	}{
 		{"attention, no drafter", attention, nil, 0},
@@ -53,13 +54,13 @@ func TestMTPDraftLayersOf(t *testing.T) {
 		g.Speculator = &model.Speculator{Stack: model.Stack{Pattern: pattern, Repeat: repeat}}
 		return &g
 	}
-	spec := func(method string) *deployment.Speculative {
-		return &deployment.Speculative{Method: method, NumSpecTokens: 2}
+	spec := func(method string) *engineconfig.Speculative {
+		return &engineconfig.Speculative{Method: method, NumSpecTokens: 2}
 	}
 	for _, tc := range []struct {
 		name string
 		g    *model.Graph
-		sp   *deployment.Speculative
+		sp   *engineconfig.Speculative
 		want int
 	}{
 		{"one MTP module", drafter([]string{"mtp"}, 1), spec("mtp"), 1},

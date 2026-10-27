@@ -100,3 +100,37 @@ func TestRoutingRegistryRoles(t *testing.T) {
 		t.Errorf("the registry curve did not reach the step")
 	}
 }
+
+// The pool's engine.eplb reaches the routing resolution from the block this package decoded: a
+// registry curve describes linear placement, so with EPLB on it does not apply and the default
+// is recorded with EPLB as its reason.
+func TestRoutingReadsTheDecodedEPLB(t *testing.T) {
+	reg := registryWith(t, "default")
+	text := &routing.Workload{Category: "text"}
+	SetRoutingOverrides(RoutingOverrides{Workload: text})
+	t.Cleanup(func() { SetRoutingOverrides(RoutingOverrides{}) })
+	src, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", epScenario))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	const engine = "    engine:\n"
+	if strings.Count(string(src), engine) != 1 {
+		t.Fatalf("%s has %d engine blocks, want 1", epScenario, strings.Count(string(src), engine))
+	}
+	withEPLB := strings.Replace(string(src), engine, engine+"      eplb:\n        enable_eplb: true\n", 1)
+	if err := os.WriteFile(filepath.Join(dir, epScenario), []byte(withEPLB), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := repos()
+	r.Scenarios = dir
+	r.Registry = reg
+	m, err := OpenPool(epScenario, r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := m.Provenance().Routing; rec == nil || rec.SourceLayer != string(routing.LayerDefault) ||
+		!strings.Contains(rec.Reason, "EPLB") {
+		t.Errorf("with engine.eplb enabled the routing record is %+v, want the default for EPLB", rec)
+	}
+}

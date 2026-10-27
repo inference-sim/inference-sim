@@ -69,6 +69,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/model"
 	"github.com/inference-sim/blis-schemas/spec/workload"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 )
@@ -110,7 +111,7 @@ type Model struct {
 	// engine is the pool's engine block as this package decodes it, once at open: the kernel
 	// prices the settings converted from it (Inputs.Engine), and the simulator's settings and
 	// sizing read the rest (Engine).
-	engine deployment.Engine
+	engine engineconfig.Engine
 
 	decodeThreshold int
 	smBudget        int
@@ -187,7 +188,7 @@ type identity struct {
 	capabilityMajor int
 }
 
-func identityOf(in latencykernel.Inputs) identity {
+func identityOf(in latencykernel.Inputs, engine engineconfig.Engine) identity {
 	experts, topK := expertCounts(in.Model)
 	pool := in.Deployment.Pools[in.PoolIndex]
 	first := 0
@@ -211,8 +212,8 @@ func identityOf(in latencykernel.Inputs) identity {
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
-		prefillBackoff:  prefillBackoffOf(in.Model, pool.Engine.Speculative),
-		prefix:          prefixLayoutOf(in.Model, pool),
+		prefillBackoff:  prefillBackoffOf(in.Model, engine.Speculative),
+		prefix:          prefixLayoutOf(in.Model, pool, engine),
 		capabilityMajor: func() int { f, _ := in.Chip.CapabilityMajor(); return f }(),
 	}
 }
@@ -223,7 +224,7 @@ func identityOf(in latencykernel.Inputs) identity {
 // Eagle-family drafter, num_speculative_tokens for multi-module MTP (method mtp with
 // min(draft layers, K) > 1, config/speculative.py:1973-1979), and 1 for every other Eagle-family
 // drafter -- DSpark included (speculative.py:1938-1942) -- so DSpark backs off nothing.
-func prefillBackoffOf(g *model.Graph, sp *deployment.Speculative) int {
+func prefillBackoffOf(g *model.Graph, sp *engineconfig.Speculative) int {
 	backoff := 0
 	g.EachNode(func(_ string, n model.Node) {
 		if n.Op == model.OpRecurrentUpdate {
@@ -286,32 +287,46 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	if in.Routing, err = resolveRouting(in, r.Registry, routingOverrides); err != nil {
+	// One decoding of the pool's engine block, which the routing resolution, the model and the
+	// kernel all read: this package keeps it (Model.engine), and the kernel prices the settings
+	// converted from that same copy, never from a second read.
+	engine, err := decodeEngine(in.Deployment.Pools[in.PoolIndex])
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
-	return fromInputs(in)
+	if in.Routing, err = resolveRouting(in, engine, r.Registry, routingOverrides); err != nil {
+		return nil, fmt.Errorf("%s: %w", scenario, err)
+	}
+	return fromDecoded(in, engine)
 }
 
-// fromInputs builds and adapts the kernel for loaded Inputs, refusing a speculative method
-// the scenario's engine release does not accept first.
+// fromInputs builds and adapts the kernel for loaded Inputs, decoding the priced pool's engine
+// block first; see fromDecoded.
 func fromInputs(in latencykernel.Inputs) (*Model, error) {
-	if err := checkSpeculativeMethod(in); err != nil {
+	engine, err := decodeEngine(in.Deployment.Pools[in.PoolIndex])
+	if err != nil {
+		return nil, err
+	}
+	return fromDecoded(in, engine)
+}
+
+// fromDecoded builds and adapts the kernel for loaded Inputs and the priced pool's decoded engine
+// block, refusing a speculative method the scenario's engine release does not accept first.
+func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, error) {
+	if err := checkSpeculativeMethod(in, engine); err != nil {
 		return nil, err
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
 	if err := checkDPLocal(pool.Parallel, in.Scenario.Cluster.GPUsPerNode); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
-	// One decoding of the pool's engine block: this package keeps it (Model.engine), and the
-	// kernel prices the settings converted from that same copy, never from a second read.
-	engine := pool.Engine
 	settings := vllmsettings.Of(engine)
 	in.Engine = &settings
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
 	}
-	m, err := newModel(k, identityOf(in))
+	m, err := newModel(k, identityOf(in, engine))
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +336,7 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	m.graph = in.Model
 	if in.Rules != nil {
 		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
-			max(pool.Parallel.TP, 1), pool.Engine.CacheDType)
+			max(pool.Parallel.TP, 1), engine.CacheDType)
 	}
 	return m, nil
 }
@@ -492,7 +507,7 @@ func (m *Model) MTPDraftLayers() int {
 	return mtpDraftLayersOf(m.graph, m.engine.Speculative)
 }
 
-func mtpDraftLayersOf(g *model.Graph, sp *deployment.Speculative) int {
+func mtpDraftLayersOf(g *model.Graph, sp *engineconfig.Speculative) int {
 	if sp == nil || sp.Method != "mtp" || g == nil || g.Speculator == nil {
 		return 0
 	}
@@ -636,7 +651,7 @@ func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 	return m.k.Deployment().Parallel.DataParallelLoadBalancing
 }
 
-func (m *Model) Engine() (deployment.Engine, error) {
+func (m *Model) Engine() (engineconfig.Engine, error) {
 	e := m.engine
 	if e.BlockSize <= 0 {
 		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
@@ -779,7 +794,7 @@ type Shape struct {
 // unmodelledSettings are the engine settings a deployment states that the compatibility engine
 // does not model: the ones blis-schemas added with the v0.32.0 engine (blis-schemas#102), which
 // core/vllm reads. It returns their scenario field names, in declaration order.
-func unmodelledSettings(e deployment.Engine) []string {
+func unmodelledSettings(e engineconfig.Engine) []string {
 	var out []string
 	add := func(stated bool, name string) {
 		if stated {
@@ -835,11 +850,15 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		sh.Offload = &o
 	}
 	for i, p := range dep.Pools {
+		e, err := decodeEngine(p)
+		if err != nil {
+			return Shape{}, fmt.Errorf("%s: %w", scenario, err)
+		}
 		sh.Roles[i] = p.Role
 		sh.Labels[i] = p.Labels
-		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, p.Engine.LongPrefillTokenThreshold)
+		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, e.LongPrefillTokenThreshold)
 		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
-		sh.Unmodelled = append(sh.Unmodelled, unmodelledSettings(p.Engine))
+		sh.Unmodelled = append(sh.Unmodelled, unmodelledSettings(e))
 	}
 	return sh, nil
 }
@@ -855,8 +874,8 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 // label would price. The whole rule layer is not applied here either: it also checks the
 // graph's own speculator name against the release, which refuses committed fixtures that do
 // not speculate at all.
-func checkSpeculativeMethod(in latencykernel.Inputs) error {
-	sp := in.Deployment.Pools[in.PoolIndex].Engine.Speculative
+func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine) error {
+	sp := engine.Speculative
 	if sp == nil {
 		return nil
 	}

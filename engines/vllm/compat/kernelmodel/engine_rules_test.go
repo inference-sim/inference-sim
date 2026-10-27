@@ -8,8 +8,9 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // The engine rules come from the caller, the vLLM rules packs of blis-vllm (inference-sim#2021
@@ -58,7 +59,7 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 		t.Errorf("DSpark through rules that are not a *rules.Pack: %v", err)
 	}
 	_, err := openDraftingWith(t, r, "llama-3.1-70b-instruct-h200-tp4-4node.yaml",
-		&deployment.Speculative{Method: "bogus", NumSpecTokens: 3})
+		&engineconfig.Speculative{Method: "bogus", NumSpecTokens: 3})
 	if err == nil || !strings.Contains(err.Error(), `"bogus" is not accepted by engine 0.29.0`) {
 		t.Errorf("got %v, want the release's refusal of an unknown method", err)
 	}
@@ -69,12 +70,12 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 // SpeculativeMethods) is reachable on it: the check must go through rules.EngineRules.
 type wrapped struct{ rules.EngineRules }
 
-func openDraftingWith(t *testing.T, r Repos, scenario string, sp *deployment.Speculative) (*Model, error) {
+func openDraftingWith(t *testing.T, r Repos, scenario string, sp *engineconfig.Speculative) (*Model, error) {
 	t.Helper()
 	in, err := latencykernel.OpenInputs(scenario, r, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.Deployment.Pools[0].Engine.Speculative = sp
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.Speculative = sp })
 	return fromInputs(in)
 }

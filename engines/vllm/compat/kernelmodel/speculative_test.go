@@ -8,11 +8,12 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // openSpeculative opens a committed scenario with its pool given a draft configuration of k
@@ -24,7 +25,9 @@ func openSpeculative(t *testing.T, scenario string, k int) *Model {
 		t.Fatal(err)
 	}
 	if k > 0 {
-		in.Deployment.Pools[0].Engine.Speculative = &deployment.Speculative{Method: "mtp", NumSpecTokens: k}
+		editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) {
+			e.Speculative = &engineconfig.Speculative{Method: "mtp", NumSpecTokens: k}
+		})
 	}
 	m, err := fromInputs(in)
 	if err != nil {
@@ -96,7 +99,7 @@ const dspark = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"
 
 // openDrafting opens a scenario from testdata/scenarios with its pool's speculative block
 // replaced by sp (nil: no speculation), through the path OpenPool takes.
-func openDrafting(t *testing.T, scenario string, sp *deployment.Speculative) (*Model, error) {
+func openDrafting(t *testing.T, scenario string, sp *engineconfig.Speculative) (*Model, error) {
 	t.Helper()
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
@@ -104,7 +107,7 @@ func openDrafting(t *testing.T, scenario string, sp *deployment.Speculative) (*M
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.Deployment.Pools[0].Engine.Speculative = sp
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.Speculative = sp })
 	return fromInputs(in)
 }
 
@@ -127,13 +130,13 @@ func TestTheReleaseRulesPackDecidesTheSpeculativeMethod(t *testing.T) {
 			`"draft" is not accepted by engine 0.29.0`},
 		{"MTP on DeepSeek-V4.1", dspark, "mtp", "mtp"},
 	} {
-		_, err := openDrafting(t, tt.scenario, &deployment.Speculative{Method: tt.method, NumSpecTokens: 3})
+		_, err := openDrafting(t, tt.scenario, &engineconfig.Speculative{Method: tt.method, NumSpecTokens: 3})
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: got %v, want a refusal containing %q", tt.name, err, tt.want)
 		}
 	}
 	if _, err := openDrafting(t, "llama-3.1-70b-instruct-h200-tp4-4node.yaml",
-		&deployment.Speculative{Method: "ngram", NumSpecTokens: 3}); err != nil {
+		&engineconfig.Speculative{Method: "ngram", NumSpecTokens: 3}); err != nil {
 		t.Errorf("ngram, which 0.29.0 lists, on a dense model: %v", err)
 	}
 }
@@ -147,7 +150,7 @@ func TestTheReleaseRulesPackDecidesTheSpeculativeMethod(t *testing.T) {
 // drafts twice.
 func TestNoDraftCostIsAddedOnTheBLISSide(t *testing.T) {
 	const k = 5
-	spec, err := openDrafting(t, dspark, &deployment.Speculative{Method: "dspark", NumSpecTokens: k})
+	spec, err := openDrafting(t, dspark, &engineconfig.Speculative{Method: "dspark", NumSpecTokens: k})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,9 +193,9 @@ func TestNoDraftCostIsAddedOnTheBLISSide(t *testing.T) {
 // 9-token verify as a prefill chunk (#1932).
 func TestTheDecodeThresholdCoversTheVerifyWidth(t *testing.T) {
 	for _, k := range []int{0, 5, 8, 12} {
-		var sp *deployment.Speculative
+		var sp *engineconfig.Speculative
 		if k > 0 {
-			sp = &deployment.Speculative{Method: "dspark", NumSpecTokens: k}
+			sp = &engineconfig.Speculative{Method: "dspark", NumSpecTokens: k}
 		}
 		m, err := openDrafting(t, dspark, sp)
 		if err != nil {

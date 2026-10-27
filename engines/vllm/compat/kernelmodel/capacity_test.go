@@ -12,6 +12,8 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kv"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // A KV budget must be derived from the kernel's own memory answers, and it must be
@@ -217,7 +219,7 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 	budgetAt := func(util float64) KVBudget {
-		in.Deployment.Pools[0].Engine.GPUMemoryUtilization = util
+		editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.GPUMemoryUtilization = util })
 		m, err := fromInputs(in)
 		if err != nil {
 			t.Fatal(err)
