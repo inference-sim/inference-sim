@@ -156,6 +156,42 @@ func TestProtocolErrors(t *testing.T) {
 	}
 }
 
+// An unstated async_scheduling resolves as VllmConfig resolves it
+// (vllm/config/vllm.py:1585-1644@5df63a72): on, so the batch queue holds two batches, unless the
+// draft method is not one async scheduling supports or PP runs on the V1 runner (whose PP batch
+// queue holds one batch per stage); a stated value stands.
+func TestUnstatedAsyncSchedulingResolvesAsVLLMDoes(t *testing.T) {
+	unstated := func(extra string) engine.Spec {
+		s := spec(t, extra)
+		for i := 0; i+1 < len(s.Config.Content); i += 2 {
+			if s.Config.Content[i].Value == "async_scheduling" {
+				s.Config.Content = append(s.Config.Content[:i], s.Config.Content[i+2:]...)
+				break
+			}
+		}
+		return s
+	}
+	for _, c := range []struct {
+		name  string
+		s     engine.Spec
+		limit int
+	}{
+		{"unstated", unstated(""), 2},
+		{"unstated with an EAGLE drafter", unstated("speculative: {method: eagle, num_spec_tokens: 2}\n"), 2},
+		{"unstated with PP on the V1 runner", unstated("pipeline_parallel_size: 2\n"), 2},
+		{"stated off", spec(t, ""), 1},
+		{"stated on", spec(t, "async_scheduling: true\n"), 2},
+	} {
+		e, err := Factory{Pricer: fixed}.New(c.s)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got := e.InFlightLimit(); got != c.limit {
+			t.Errorf("%s: InFlightLimit %d, want %d", c.name, got, c.limit)
+		}
+	}
+}
+
 // The engine is built through blis-schemas' registry from an opaque spec, as a simulator
 // builds any engine; Register is idempotent.
 func TestBuildsThroughTheRegistry(t *testing.T) {
