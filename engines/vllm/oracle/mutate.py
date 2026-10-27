@@ -154,6 +154,10 @@ MUTANTS = [
      "0 < numComputed && numComputed <= replay {", "0 < numComputed && numComputed < replay {"),
     ("M61", "swa_bounded_replay", "core/sched/scheduler.go",
      "New: max(numNew-replayed, 0),", "New: numNew,"),
+    # A drafter's EAGLE block drop reaches the target groups of its spec group
+    # (dashboard-deepseek-v4-pro-mtp-layers).
+    ("M62", "EAGLE block drop across the drafter's spec group", "core/kv/manager.go",
+     "\t\t\t\tm.groups[i].eagle = true\n", "\t\t\t\t_ = i\n"),
 ]
 
 

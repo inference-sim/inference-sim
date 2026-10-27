@@ -141,7 +141,9 @@ func run(t *testing.T, sc scenario) trace {
 		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
-		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents, KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, c.DisableHybridKVCacheManager),
+		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
+		KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager,
+			TrailingDrafter: c.Speculative != nil && trailingDrafter(c.Speculative.Method, c.KVLayers)}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -455,15 +457,34 @@ type kvLayerRun struct {
 	BoundedReplay  bool   `json:"bounded_replay"`
 }
 
+// trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72)
+// for a scenario: an MTP drafter, or an EAGLE-family drafter of DeepSeek V4/V4.1 (a layer of its
+// MLA, sliding-window MLA or circular-buffer specs), as core/vllm's factory decides it.
+func trailingDrafter(method string, runs []kvLayerRun) bool {
+	switch method {
+	case "mtp":
+		return true
+	case "eagle", "eagle3", "dflash", "dspark":
+		for _, r := range runs {
+			switch r.Spec {
+			case "mla", "sliding_window_mla", "circular_buffer":
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // kvGroups is the scenario's KV cache groups for the scheduler: its "kv_layers" through
-// GroupsOfLayers, or its "kv_groups" through ResolveGroups.
+// GroupLayers, with the drafter's group flagged as vLLM's _annotate_eagle_groups flags it, or its
+// "kv_groups" through ResolveGroups.
 func kvGroups(t *testing.T, gs []struct {
 	Kind          string `json:"kind"`
 	SlidingWindow int    `json:"sliding_window"`
-}, runs []kvLayerRun, disableHybrid bool) []kv.Group {
+}, runs []kvLayerRun, o kv.GroupOptions) []kv.Group {
 	t.Helper()
 	if len(runs) > 0 {
-		groups, err := kv.GroupsOfLayers(scenarioLayers(t, runs), disableHybrid)
+		groups, err := kv.GroupLayers(scenarioLayers(t, runs), o)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -480,7 +501,7 @@ func kvGroups(t *testing.T, gs []struct {
 			t.Fatalf("unknown KV cache group kind %q", g.Kind)
 		}
 	}
-	return kv.ResolveGroups(layers, disableHybrid)
+	return kv.ResolveGroups(layers, o.DisableHybrid)
 }
 
 // TestDifferentialAgainstVLLM runs every scenario under oracle/scenarios through the Go

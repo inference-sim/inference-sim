@@ -181,6 +181,16 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 	for _, g := range m.groups {
 		g.eagle = m.eagle && (g.spec.Eagle || !flagged)
 	}
+	// The coordinator then propagates the bit to every member of a spec group holding a
+	// drafter's group (verify_and_split_kv_cache_groups, kv_cache_coordinator.py:726-736 and
+	// 761-765@5df63a72): a target group of the drafter group's spec drops the EAGLE block too.
+	for _, sg := range m.specGroups() {
+		if sg.eagle {
+			for _, i := range sg.ids {
+				m.groups[i].eagle = true
+			}
+		}
+	}
 	return m
 }
 
