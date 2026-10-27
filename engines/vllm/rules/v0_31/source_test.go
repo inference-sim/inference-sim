@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/rules"
+
+	"github.com/inference-sim/blis-vllm/rules/pack"
 )
 
 // This file re-derives the pack's constants from an engine checkout, when one is
@@ -546,7 +548,7 @@ func TestMTPMethodsMatchSource(t *testing.T) {
 // spCondition parses an architecture's _use_sequence_parallel into the condition the pack
 // encodes, clause by clause, failing on a clause it does not recognize -- so a release that
 // adds, drops or changes one fails here rather than leaving the pack's data stale.
-func spCondition(t *testing.T, src string) rules.SequenceParallelCondition {
+func spCondition(t *testing.T, src string) pack.SequenceParallelCondition {
 	t.Helper()
 	i := strings.Index(src, "def _use_sequence_parallel(")
 	if i < 0 {
@@ -559,7 +561,7 @@ func spCondition(t *testing.T, src string) rules.SequenceParallelCondition {
 	}
 	body = body[r+len("return ("):]
 	body = body[:strings.Index(body, "\n    )")]
-	var c rules.SequenceParallelCondition
+	var c pack.SequenceParallelCondition
 	for _, clause := range strings.Split(body, "\n") {
 		clause = strings.TrimPrefix(strings.TrimSpace(clause), "and ")
 		switch clause {
@@ -752,12 +754,12 @@ func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 }
 
 // The engine lower-cases --moe-backend and turns dashes into underscores, as
-// rules.NormalizeMoEBackend does.
+// pack.NormalizeMoEBackend does.
 func TestMoEBackendNormalizationMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	if !strings.Contains(readSource(t, root, "vllm", "config", "kernel.py"),
 		`return value.lower().replace("-", "_")`) {
-		t.Error("the engine no longer normalizes moe_backend as rules.NormalizeMoEBackend does")
+		t.Error("the engine no longer normalizes moe_backend as pack.NormalizeMoEBackend does")
 	}
 }
 
@@ -989,7 +991,7 @@ func TestDataParallelLoadBalancingMatchSource(t *testing.T) {
 }
 
 // The frontend is chosen by VLLM_USE_RUST_FRONTEND, off by default, and serve launches
-// the Rust binary only when it is set: what deployment.Engine.Frontend's python default
+// the Rust binary only when it is set: what engineconfig.Engine.Frontend's python default
 // and rust value transcribe.
 func TestFrontendMatchSource(t *testing.T) {
 	root := vllmSource(t)
@@ -1009,7 +1011,7 @@ func TestFrontendMatchSource(t *testing.T) {
 }
 
 // swa_bounded_replay defaults to true and is the --swa-bounded-replay flag: what
-// deployment.Engine.SWABoundedReplay's unstated (engine-resolved) value and name transcribe.
+// engineconfig.Engine.SWABoundedReplay's unstated (engine-resolved) value and name transcribe.
 func TestSWABoundedReplayMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	cache := readSource(t, root, "vllm", "config", "cache.py")

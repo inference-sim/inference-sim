@@ -31,3 +31,26 @@ func Encode(e Engine) (deployment.EngineBlock, error) {
 	}
 	return deployment.NewEngineBlock(&n), nil
 }
+
+// Pool is one deployment pool with its engine block opened.
+type Pool struct {
+	deployment.Pool
+	Engine Engine
+}
+
+// Pools opens every pool's engine block of a deployment, in order. The first block that does
+// not decode is the error, naming its pool.
+func Pools(d *deployment.Deployment) ([]Pool, error) {
+	if d == nil {
+		return nil, nil
+	}
+	out := make([]Pool, len(d.Pools))
+	for i, p := range d.Pools {
+		e, err := Decode(p.Engine)
+		if err != nil {
+			return nil, fmt.Errorf("pools[%d].engine: %w", i, err)
+		}
+		out[i] = Pool{Pool: p, Engine: e}
+	}
+	return out, nil
+}
