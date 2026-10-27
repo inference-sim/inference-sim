@@ -340,7 +340,7 @@ func TestQuestionerCapsOversizedInput(t *testing.T) {
 		}
 	})
 
-		t.Run("a-small-body-leaves-its-share-to-the-diff", func(t *testing.T) {
+	t.Run("a-small-body-leaves-its-share-to-the-diff", func(t *testing.T) {
 		const limit = 4096
 		b, d, _ := run("b\n", 5, "+diff line\n", 2000, limit)
 		if b != strings.Repeat("b\n", 5) {
