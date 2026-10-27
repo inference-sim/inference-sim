@@ -164,7 +164,14 @@ REPLY_DETAIL_LIMIT = 300
 
 
 def _reply_detail(exc):
+    """One line of `exc` for stderr: whitespace collapsed, other control characters
+    (ESC, BEL, ...) escaped so a model-supplied string cannot drive a terminal or log
+    viewer, and length-capped."""
     text = " ".join(str(exc).split()) or type(exc).__name__
+    text = "".join(
+        ch if ch.isprintable() else "\\x%02x" % ord(ch) if ord(ch) < 256 else "\\u%04x" % ord(ch)
+        for ch in text
+    )
     if len(text) > REPLY_DETAIL_LIMIT:
         text = text[:REPLY_DETAIL_LIMIT] + "... (truncated)"
     return text

@@ -40,6 +40,13 @@ def fake_send(req, timeout):
     prompts.append(body["messages"][1]["content"])
     c = contents[min(len(prompts) - 1, len(contents) - 1)]
     msg = {"role": "assistant"}
+    if isinstance(c, dict) and "tool_call_with_content" in c:
+        # An intermediate turn: a tool call whose content is empty/garbage. It must be
+        # executed, never retried as an unusable final reply.
+        msg["content"] = c["tool_call_with_content"]
+        msg["tool_calls"] = [{"id": "t%d" % len(prompts),
+                              "function": {"name": "list_dir", "arguments": "{}"}}]
+        c = None
     if c is not None:
         msg["content"] = c
     return json.dumps({"choices": [{"message": msg, "finish_reason": "stop"}]})
@@ -175,6 +182,54 @@ func TestUnusableReplyIsRetriedThenSucceeds(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestToolCallTurnIsNeverTreatedAsUnusable: validate_turn applies only to a FINAL reply. A turn that
+// carries tool calls is executed whatever its content (empty, null or prose), so the hook must not
+// retry it — that would re-send the same history and burn the attempt budget on a healthy loop.
+func TestToolCallTurnIsNeverTreatedAsUnusable(t *testing.T) {
+	requirePython3(t)
+	for _, mod := range []string{"answerer", "adjudicator"} {
+		for i, content := range []any{"", nil, "thinking out loud, not JSON"} {
+			t.Run(mod+"/"+itoa(i), func(t *testing.T) {
+				turn := map[string]any{"tool_call_with_content": content}
+				got, stderr := runReplyProbe(t, mod, []any{turn, validReply[mod]})
+				if got.RC != 0 {
+					t.Fatalf("%s rc=%d stderr=%s", mod, got.RC, stderr)
+				}
+				if got.Attempts != 2 {
+					t.Errorf("%s made %d calls, want 2 (one tool turn, one final)", mod, got.Attempts)
+				}
+				if strings.Contains(stderr, "unparseable reply") {
+					t.Errorf("%s treated a tool-call turn as an unusable reply: %q", mod, stderr)
+				}
+			})
+		}
+	}
+}
+
+// replyDetailProbe renders an exception through _http._reply_detail.
+const replyDetailProbe = `
+import sys, _http
+sys.stdout.write(_http._reply_detail(ValueError(sys.argv[1])))
+`
+
+// TestReplyDetailEscapesControlCharacters: an unusable reply's reason can quote model text and is
+// written to stderr; ESC/BEL and other control characters must be escaped, not passed through.
+func TestReplyDetailEscapesControlCharacters(t *testing.T) {
+	requirePython3(t)
+	stdout, stderr, code := runPython(t, "", "-c", replyDetailProbe, "bad \x1b[31mred\x07\nnext\u2028line")
+	if code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr)
+	}
+	for _, r := range stdout {
+		if r < 0x20 || r == 0x7f || r == 0x2028 {
+			t.Fatalf("control character %U survived into the stderr detail: %q", r, stdout)
+		}
+	}
+	if !strings.Contains(stdout, `\x1b`) || !strings.Contains(stdout, "red") {
+		t.Errorf("the escaped detail lost content: %q", stdout)
 	}
 }
 
