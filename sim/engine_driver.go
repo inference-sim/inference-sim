@@ -48,10 +48,6 @@ type EngineDriverConfig struct {
 	// num_preemptions), as the engine published them, rather than from its live state. Only the
 	// compatibility engine's contract build sets it.
 	ScrapeEngineMetrics bool
-	// RecordPrefixLookups records each request's first admission's prefix-cache lookup in the
-	// report (the prompt's tokens, and Scheduled.CachedTokens of them hit), as the compatibility
-	// engine's recorder does. Only the compatibility engine's contract build sets it.
-	RecordPrefixLookups bool
 	// ApplyAtStepStart applies a batch's results when its step starts, as the compatibility
 	// engine's own host loop does (Simulator.Step executes a whole step at its start, so its
 	// completions, first tokens and finishes reach the cluster then, stamped with the step's
@@ -114,7 +110,7 @@ type driverReq struct {
 	emitted      int
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 	resumed      bool    // preempted after its first token, not yet emitting again
-	lookedUp     bool    // its admission's prefix-cache lookup is recorded
+	lookedUp     bool    // its first admission's prefix-cache lookup is recorded
 	remote       bool    // a decode sub-request whose prompt a peer's prefill computed (LandRemote)
 }
 
@@ -524,11 +520,14 @@ func (d *EngineDriver) kick(now int64) {
 				r.req.State = StateRunning
 				r.scheduledIdx = d.stepIdx
 				d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
-				if d.cfg.RecordPrefixLookups && !r.lookedUp {
-					// The admission's prefix-cache lookup, as the compatibility engine's report
-					// records it (RecordScheduled): the prompt, and what the cache supplied of it,
-					// split into the device cache's part and the KV offload tier's (an engine with
-					// an offload tier says how much it supplied: OffloadCachedTokens).
+				if s.PrefixLookup && !r.lookedUp {
+					// The first admission's prefix-cache lookup, as the engine reports it
+					// (Scheduled.PrefixLookup): the prompt, and what the cache supplied of it, split
+					// into the device cache's part and the KV offload tier's (an engine with an
+					// offload tier says how much it supplied: OffloadCachedTokens). The report's
+					// hit rate is vLLM's prefix-cache stat over first admissions: a preempted
+					// request's lookup again is not counted (PrefixCacheStats.record,
+					// vllm/v1/metrics/stats.py:138-155@5df63a72).
 					r.lookedUp = true
 					var offload int
 					if o, ok := d.eng.(interface{ OffloadCachedTokens(id string) int }); ok {

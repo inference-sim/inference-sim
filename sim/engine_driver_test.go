@@ -3,6 +3,7 @@ package sim
 import (
 	"testing"
 
+	"github.com/inference-sim/blis-schemas/engine"
 	"github.com/inference-sim/blis-schemas/engine/enginetest"
 )
 
@@ -268,5 +269,80 @@ func TestEngineDriver_SuppliesTheRunsAcceptanceToTheEngine(t *testing.T) {
 	}
 	if got := len(half.ITL); got != 5 {
 		t.Errorf("α 0.5: ITL entries = %d, want 5 (accepted 1, 2, 1, 2 then the rest)", got)
+	}
+}
+
+// lookupEngine is an engine.Engine that reports a scripted prefix-cache lookup at each admission
+// of a request: a first admission's, and, after the driver is told the request was preempted, a
+// resumption's. It wraps the FIFO fake, which never preempts: the batch after "resumed"'s second
+// reports it preempted and, the fake having kept it, readmitted on that same batch.
+type lookupEngine struct {
+	engine.Engine
+	waiting map[string]bool // not running since their last admission
+	seen    map[string]int  // batches each request ran in
+	resumes int
+	preempt bool // preempt "resumed" on the next batch
+}
+
+func (e *lookupEngine) Add(r engine.Request, now engine.Time) error {
+	e.waiting[r.ID] = true
+	return e.Engine.Add(r, now)
+}
+
+func (e *lookupEngine) Schedule(now engine.Time) (engine.Batch, error) {
+	b, err := e.Engine.Schedule(now)
+	if err != nil || b.Empty() {
+		return b, err
+	}
+	if e.preempt {
+		// The schedule preempts "resumed": it is reported preempted, and, the fake having kept
+		// it, readmitted on this same batch, as an engine that frees and readmits it at once.
+		e.preempt = false
+		b.Preempted = append(b.Preempted, "resumed")
+		e.waiting["resumed"] = true
+	}
+	for i, s := range b.Reqs {
+		e.seen[s.ID]++
+		switch {
+		case e.waiting[s.ID] && s.ID == "skipped":
+			// The engine ran no lookup for it (its prefix cache is off for it).
+		case e.waiting[s.ID] && e.seen[s.ID] == 1:
+			b.Reqs[i].PrefixLookup, b.Reqs[i].CachedTokens = true, 8
+		case e.waiting[s.ID]:
+			// A resumption's lookup: reported, and not counted again by the host.
+			b.Reqs[i].PrefixLookup, b.Reqs[i].CachedTokens = true, 16
+			e.resumes++
+		}
+		e.waiting[s.ID] = false
+		if s.ID == "resumed" && e.seen[s.ID] == 2 {
+			e.preempt = true
+		}
+	}
+	return b, nil
+}
+
+// The report's prefix-cache hit rate is over each request's first admission's lookup, as the
+// engine reports it (Scheduled.PrefixLookup): a request the engine did not look up counts
+// neither its prompt nor a hit, and a resumption's lookup is not counted again, as vLLM's
+// prefix-cache stats count only a request's first (PrefixCacheStats.record,
+// vllm/v1/metrics/stats.py:138-155@5df63a72).
+func TestEngineDriver_RecordsEachRequestsFirstPrefixLookup(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &lookupEngine{Engine: fifo, waiting: map[string]bool{}, seen: map[string]int{}}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	for _, id := range []string{"resumed", "skipped"} {
+		d.InjectArrival(&Request{ID: id, InputTokens: tokens(32), OutputTokens: tokens(4)})
+	}
+	d.Run()
+	m := d.Metrics
+	if m.CompletedRequests != 2 || eng.resumes != 1 {
+		t.Fatalf("completed = %d, resumptions = %d; want 2 and 1", m.CompletedRequests, eng.resumes)
+	}
+	if m.PrefixCacheQueryTokens != 32 || m.PrefixCacheHitTokens != 8 {
+		t.Errorf("queries %d, hits %d; want 32 and 8: only the looked-up request's first admission",
+			m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens)
 	}
 }

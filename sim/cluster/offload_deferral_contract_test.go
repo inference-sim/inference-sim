@@ -44,7 +44,7 @@ func TestContractEngine_SlowTierDeferralWakeMatchesTheHostLoop(t *testing.T) {
 			}
 			counted := &countingEngine{Engine: eng}
 			drv := sim.NewEngineDriver(counted, sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
-				ScrapeEngineMetrics: true, RecordPrefixLookups: true,
+				ScrapeEngineMetrics: true,
 				PostDecodeFixedOverhead:   cfg.LatencyModel.PostDecodeFixedOverhead(),
 				OutputTokenProcessingTime: cfg.LatencyModel.OutputTokenProcessingTime(),
 				QueueingTime:              cfg.LatencyModel.QueueingTime})

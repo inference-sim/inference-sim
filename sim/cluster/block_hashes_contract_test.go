@@ -20,7 +20,7 @@ func TestContractEngine_BlockHashesAreTheHostLoops(t *testing.T) {
 		t.Fatal(err)
 	}
 	drv := sim.NewEngineDriver(eng, sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
-		ScrapeEngineMetrics: true, RecordPrefixLookups: true, ApplyAtStepStart: true,
+		ScrapeEngineMetrics: true, ApplyAtStepStart: true,
 		PostDecodeFixedOverhead:   cfg.LatencyModel.PostDecodeFixedOverhead(),
 		OutputTokenProcessingTime: cfg.LatencyModel.OutputTokenProcessingTime(),
 		QueueingTime:              cfg.LatencyModel.QueueingTime})

@@ -9,12 +9,12 @@ require (
 	// TEMPORARY: inference-sim/blis-latency-kernel#82 at 6c22823 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027025153-6c22823d37a3
-	// TEMPORARY: inference-sim/blis-schemas#102 at b29fe55 (https://github.com/inference-sim/blis-schemas/pull/102; engine-level only, the engine block and connector options held unopened; the P/D handoff).
+	// TEMPORARY: inference-sim/blis-schemas#102 at 6c207b4 (https://github.com/inference-sim/blis-schemas/pull/102; engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-schemas v0.7.1-0.20261027124745-b29fe55134bd
-	// TEMPORARY: inference-sim/blis-vllm main at 6b1d026 (review PR https://github.com/inference-sim/blis-vllm/pull/20).
+	github.com/inference-sim/blis-schemas v0.7.1-0.20261027144933-6c207b46a5e7
+	// TEMPORARY: inference-sim/blis-vllm main at 635b7bf (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261027131844-6b1d02601be1
+	github.com/inference-sim/blis-vllm v0.0.0-20261027145043-635b7bfd3bfe
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -74,8 +74,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	// TEMPORARY: inference-sim/blis-vllm main's rules module at 83a5874 (https://github.com/inference-sim/blis-vllm/pull/20); moves to a release tag with blis-vllm (#2038).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261027023042-83a5874cc19f // indirect
+	// TEMPORARY: inference-sim/blis-vllm main's rules module at 9b5ec9d (https://github.com/inference-sim/blis-vllm/pull/20); moves to a release tag with blis-vllm (#2038).
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261027143841-9b5ec9da1999 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

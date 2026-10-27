@@ -319,6 +319,35 @@ func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
 	}
 }
 
+// A 0.32.0 run reports its prefix cache's hit rate as the 0.29/0.31 run does: each request's
+// first admission's lookup, from the engine (engine.Scheduled.PrefixLookup). On a workload whose
+// requests share prefixes, both versions' engines hit, and their rates agree to the token: the
+// same blocks hit on each, since the shared prefixes are whole blocks.
+func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
+	rate := func(version string) string {
+		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60")
+		if err != nil {
+			t.Fatalf("%s: %v\nstderr:\n%s", version, err, lastLines(stderr, 5))
+		}
+		for _, l := range strings.Split(stdout, "\n") {
+			if strings.HasPrefix(l, "Cache Hit Rate: ") {
+				return strings.TrimPrefix(l, "Cache Hit Rate: ")
+			}
+		}
+		t.Fatalf("%s: no Cache Hit Rate line in stdout:\n%s", version, lastLines(stdout, 30))
+		return ""
+	}
+	got, want := rate("0.32.0"), rate("0.29.0")
+	if got == "0.0000" {
+		t.Fatal("the 0.32.0 engine's prefix cache reported no hits on a workload of shared prefixes")
+	}
+	if got != want {
+		t.Errorf("0.32.0 cache hit rate %s, 0.29.0 %s", got, want)
+	}
+}
+
 // A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
 // queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
 // the engine, as on the 0.31.0 compatibility engine. The queue adds the same TTFT on both, and
