@@ -1,6 +1,7 @@
-// Moved from inference-sim/blis-schemas/spec/deployment/deployment.go and validate.go at 2c38342:
-// vLLM's KV connector options and their checks, which blis-schemas now holds unopened
-// (deployment.Offload.ConnectorOptions, a deployment.EngineBlock).
+// Moved from inference-sim/blis-schemas/spec/deployment/deployment.go at 2c38342bcf3489b567befceebab05a7515babb40:
+// vLLM's KV connector options, and their checks from spec/deployment/validate.go at the same
+// commit, which blis-schemas now holds unopened (deployment.Offload.ConnectorOptions, a
+// deployment.EngineBlock).
 
 package engineconfig
 

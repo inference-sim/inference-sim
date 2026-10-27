@@ -1,4 +1,4 @@
-// Moved from inference-sim/blis-schemas/spec/deployment/speculative_offload_test.go at 2c38342
+// Moved from inference-sim/blis-schemas/spec/deployment/speculative_offload_test.go at 2c38342bcf3489b567befceebab05a7515babb40
 // (TestOffloadConnectorOptions).
 
 package engineconfig
