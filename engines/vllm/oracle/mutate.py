@@ -51,7 +51,7 @@ MUTANTS = [
     ("M17", "free order tail first", "core/kv/manager.go",
      "rev[len(bs)-1-i] = b", "rev[i] = b"),
     ("M18", "prefix caching (cache full blocks)", "core/kv/manager.go",
-     "\t\t\tm.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)\n", "\t\t\t_ = g\n"),
+     "\t\t\tm.cache(g, id, a.Hashes, m.cacheable(g, min(mainModel, a.NumTokens)), a.Run)\n", "\t\t\t_ = g\n"),
     ("M19", "kv usage (null block excluded)", "core/kv/pool.go",
      "total := len(p.blocks) - 1", "total := len(p.blocks)"),
     ("M20", "evictable prefix-hit blocks counted", "core/kv/manager.go",
@@ -68,9 +68,9 @@ MUTANTS = [
     ("M25", "lookahead slots in allocate_slots", "core/kv/manager.go",
      "needSlots := min(mainModel+a.Lookahead, m.maxModelLen)", "needSlots := min(mainModel, m.maxModelLen)"),
     ("M26", "drafts are never cached", "core/kv/manager.go",
-     "m.cache(g, id, a.Hashes, m.cacheable(min(mainModel, a.NumTokens)), a.Run)", "m.cache(g, id, a.Hashes, m.cacheable(mainModel), a.Run)"),
+     "m.cache(g, id, a.Hashes, m.cacheable(g, min(mainModel, a.NumTokens)), a.Run)", "m.cache(g, id, a.Hashes, m.cacheable(g, mainModel), a.Run)"),
     ("M27", "EAGLE block drop", "core/kv/manager.go",
-     "hit := m.fullHit(hashes, maxLen, []int{0}, m.eagle)", "hit := m.fullHit(hashes, maxLen, []int{0}, false)"),
+     "hit := m.fullHit(hashes, maxLen, []int{0}, m.groups[0].eagle)", "hit := m.fullHit(hashes, maxLen, []int{0}, false)"),
     ("M28", "multi-module MTP reprefillable tokens", "core/kv/manager.go",
      "return max(0, numTokens-m.reprefillable)", "return max(0, numTokens)"),
     ("M29", "prefill lookahead reservation", "core/sched/scheduler.go",
@@ -105,11 +105,11 @@ MUTANTS = [
     # (kv_cache_manager.py:545-557) is equivalent here, because num_in_flight_tokens is zero
     # whenever a synchronous scheduler schedules; it binds under async scheduling (tier 3).
     ("M43", "window hit needs the window's contiguous blocks", "core/kv/manager.go",
-     "need := cdiv(sg.spec.Window-1, m.blockSize) // _contiguous_blocks_for_hit, :943-955", "need := 1"),
+     "need := cdiv(sg.spec.Window-1, bs) // _contiguous_blocks_for_hit, :943-955", "need := 1"),
     ("M44", "window blocks freed into null slots", "core/kv/manager.go",
      "\t\tif len(freed) > 0 {\n\t\t\tm.Pool.Free(freed)\n\t\t}\n\t}\n}", "\t\t_ = freed\n\t}\n}"),
     ("M45", "sliding window admission cap", "core/kv/manager.go",
-     "required = min(required, cdiv(capTokens, m.blockSize)+1)", "required = min(required, cdiv(capTokens, m.blockSize))"),
+     "required = min(required, cdiv(capTokens, g.blockSize)+1)", "required = min(required, cdiv(capTokens, g.blockSize))"),
     # Not M46: rounding the hybrid cacheable count down to the block
     # (kv_cache_coordinator.py:767-777) is equivalent here, because cache_blocks floors to
     # full blocks anyway when every group has one block size and no partial hash hits.
@@ -119,7 +119,7 @@ MUTANTS = [
      "\t\tif simple {\n\t\t\tbreak\n\t\t}\n", "\t\tif simple || true {\n\t\t\tbreak\n\t\t}\n"),
     # blis-vllm#20 review I10, I11.
     ("M49", "one sliding-window group looks up through the window", "core/kv/manager.go",
-     "\t\tif g := m.groups[0]; g.spec.Kind == SlidingWindow {", "\t\tif g := m.groups[0]; g.spec.Kind == SlidingWindow && false {"),
+     "\t\tif g := m.groups[0]; g.spec.window() {", "\t\tif g := m.groups[0]; g.spec.window() && false {"),
     ("M50", "multi-module MTP keeps extra tokens below the window", "core/kv/manager.go",
      "\t\t\tgr.extraRetained = m.reprefillable\n", "\t\t\tgr.extraRetained = 0\n"),
     ("M51", "extra retained tokens widen the window admission cap", "core/kv/manager.go",
@@ -140,7 +140,7 @@ MUTANTS = [
      "\tif s.cfg.MaxNumActiveSeqs > 0 {\n\t\treturn s.cfg.MaxNumActiveSeqs\n\t}",
      "\tif false && s.cfg.MaxNumActiveSeqs > 0 {\n\t\treturn s.cfg.MaxNumActiveSeqs\n\t}"),
     ("M57", "block_size", "core/kv/manager.go",
-     "\t\trequired := cdiv(numTokens, m.blockSize)\n", "\t\trequired := cdiv(numTokens, m.blockSize+1)\n"),
+     "\t\trequired := cdiv(numTokens, g.blockSize)\n", "\t\trequired := cdiv(numTokens, g.blockSize+1)\n"),
     ("M58", "max_loras per-batch skip", "core/sched/scheduler.go",
      "if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) == s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {",
      "if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 && len(scheduledLoRAs) > s.cfg.MaxLoRAs && !scheduledLoRAs[r.LoRA] {"),
