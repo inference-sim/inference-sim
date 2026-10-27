@@ -19,19 +19,20 @@ import (
 // rules.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
 // the versions go.mod names, not a copy -- so the claim is checked rather than taken on trust.
 //
-// The concrete pack type and blis-vllm's own pack registry may appear in exactly one place: the
-// adaptation that hands blis-vllm/rules' lookup to the kernel's RulesFrom, which turns it into a
-// function returning rules.EngineRules, with the list of releases it answers for
-// (allowedPackUses). Anywhere else, any use of *rules.Pack is a finding: a
+// The concrete pack type (blis-vllm's rules/pack.Pack since blis-schemas#102 2c38342) and
+// blis-vllm's pack registry may appear in exactly one place: the adaptation that hands
+// blis-vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
+// rules.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,
+// any use of *pack.Pack is a finding: a
 // type assertion or type-switch case, a conversion, a parameter, result, field or variable of
 // that type, a field read or write on a pack, or an alias of the type. So is any call to the
-// global registry (rules.Lookup, rules.Apply, rules.Register, rules.Versions), which looks a pack
-// up instead of taking the caller's.
+// global registry (blis-vllm/rules' Lookup, Packs and Versions), which looks a pack up instead of
+// taking the caller's.
 //
-// The registry can also be reached one call away, through blis-schemas' own Validate: with no
-// Bundle.Rules it applies the packs blis-schemas registers for itself (schemas.go). So a call
-// to Validate in scope is a finding unless the Bundle it is handed states Rules; Validate's own
-// fallback is then dead for the engine (code review round 2, N1).
+// blis-schemas' Validate takes the caller's rules too (Bundle.Rules); with none it refuses the
+// bundle since #102's switch, where it once applied blis-schemas' own registered packs. A call to
+// Validate in scope is still a finding unless the Bundle it is handed states Rules (code review
+// round 2, N1), so a validation that would only refuse is not mistaken for one that checks.
 func TestPinnedEngineReadsRulesOnlyThroughEngineRules(t *testing.T) {
 	findings := packFindings(t, engineRulesScope)
 	if len(findings) > 0 {
@@ -60,17 +61,17 @@ var allowedPackUses = map[string][]string{
 }
 
 const (
-	schemasRulesPath = "github.com/inference-sim/blis-schemas/rules"
-	vllmRulesPath    = "github.com/inference-sim/blis-vllm/rules"
-	schemasRootPath  = "github.com/inference-sim/blis-schemas"
+	vllmPackPath    = "github.com/inference-sim/blis-vllm/rules/pack"
+	vllmRulesPath   = "github.com/inference-sim/blis-vllm/rules"
+	schemasRootPath = "github.com/inference-sim/blis-schemas"
 )
 
-// validatorsReadingRules are blis-schemas' root functions that apply a release's rules: each
-// falls back to the module's own registered packs unless its Bundle states Rules.
+// validatorsReadingRules are blis-schemas' root functions that apply a release's rules, which they
+// take from the Bundle (Rules) and refuse without.
 var validatorsReadingRules = map[string]bool{"Validate": true}
 
 // globalRegistry are the functions that look a pack up by version instead of taking the
-// caller's rules, in the schemas package and in blis-vllm's packs module.
+// caller's rules, in blis-vllm's packs module.
 var globalRegistry = map[string]bool{"Lookup": true, "Apply": true, "Register": true, "Versions": true, "Packs": true}
 
 // packFindings type-checks each package and lists every use of the concrete pack type and every
@@ -179,7 +180,7 @@ func checkPackUse(t *testing.T, path string, fset *token.FileSet, imp types.Impo
 					return true
 				}
 				if fn, ok := obj.(*types.Func); ok && fn.Pkg() != nil && globalRegistry[fn.Name()] &&
-					(fn.Pkg().Path() == schemasRulesPath || fn.Pkg().Path() == vllmRulesPath) &&
+					fn.Pkg().Path() == vllmRulesPath &&
 					fn.Type().(*types.Signature).Recv() == nil {
 					report(x, "uses the global registry "+fn.Pkg().Name()+"."+fn.Name())
 				}
@@ -192,7 +193,7 @@ func checkPackUse(t *testing.T, path string, fset *token.FileSet, imp types.Impo
 			case *ast.CallExpr:
 				if fn := calledFunc(info, x.Fun); fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == schemasRootPath &&
 					validatorsReadingRules[fn.Name()] && !bundleStatesRules(x) {
-					report(x, "calls blis-schemas' "+fn.Name()+" with no Bundle.Rules, so it applies blis-schemas' own registered packs")
+					report(x, "calls blis-schemas' "+fn.Name()+" with no Bundle.Rules, so it validates nothing (it refuses the bundle)")
 				}
 				if tv, ok := info.Types[x]; ok && tv.IsValue() && mentionsPack(tv.Type) {
 					report(x, "has the concrete type "+tv.Type.String())
@@ -243,13 +244,13 @@ func bundleStatesRules(call *ast.CallExpr) bool {
 	return false
 }
 
-// isPackType reports whether typ is blis-schemas' rules.Pack (behind any aliases).
+// isPackType reports whether typ is blis-vllm's pack.Pack (behind any aliases).
 func isPackType(typ types.Type) bool {
 	n, ok := types.Unalias(typ).(*types.Named)
-	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == schemasRulesPath && n.Obj().Name() == "Pack"
+	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == vllmPackPath && n.Obj().Name() == "Pack"
 }
 
-// mentionsPack reports whether typ is, points to, or is built from rules.Pack: a pointer, slice,
+// mentionsPack reports whether typ is, points to, or is built from pack.Pack: a pointer, slice,
 // array, map, channel or function signature that carries a pack.
 func mentionsPack(typ types.Type) bool {
 	switch u := types.Unalias(typ).(type) {
@@ -280,36 +281,46 @@ func mentionsPack(typ types.Type) bool {
 // The check catches each way code can reach a concrete pack, which a name-based scan misses: an
 // assertion, a type-switch case, a conversion, a parameter or result, a field, a field read or
 // write, an alias, and the global registry. Each planted form, in a package that imports the
-// real rules package, is a finding; the interface-only form is none.
+// real pack and rules packages, is a finding; the interface-only form is none.
 func TestPackUseCheckCatchesEachForm(t *testing.T) {
-	const header = `package probe
+	// The registry forms import blis-vllm/rules, whose every export is the registry; the others
+	// do not, so the clean probe imports nothing that is itself a finding.
+	header := func(registry bool) string {
+		imp := ""
+		if registry {
+			imp = "\tvllmrules \"github.com/inference-sim/blis-vllm/rules\"\n"
+		}
+		return `package probe
 
 import (
 	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/rules"
+` + imp + `	"github.com/inference-sim/blis-vllm/rules/pack"
 )
 
 var (
-	_ = rules.NormalizeMoEBackend
+	_ = pack.NormalizeMoEBackend
 	_ = blisschemas.Validate
+	_ rules.EngineRules
 )
 `
+	}
 	clean := `func ok(r rules.EngineRules) string { return r.EngineVersion() }
 
 func okValidate(r rules.EngineRules) bool {
 	return blisschemas.Validate(blisschemas.Bundle{Rules: func(string) rules.EngineRules { return r }}).OK()
 }`
 	forms := map[string]string{
-		"type assertion":                      `func f(r rules.EngineRules) bool { _, ok := r.(*rules.Pack); return ok }`,
-		"type switch case":                    `func f(r rules.EngineRules) int { switch r.(type) { case *rules.Pack: return 1 }; return 0 }`,
-		"parameter":                           `func f(p *rules.Pack) {}`,
-		"result":                              `func f() *rules.Pack { return nil }`,
-		"struct field":                        `type s struct{ p *rules.Pack }`,
-		"field write":                         `func f(r rules.EngineRules) { if p, ok := r.(*rules.Pack); ok { p.Version = "x" } }`,
-		"alias":                               `type myPack = rules.Pack`,
-		"conversion":                          `func f(r any) any { return (*rules.Pack)(r.(*rules.Pack)) }`,
-		"global lookup":                       `func f() bool { return rules.Lookup("0.31.0") != nil }`,
-		"global apply":                        `func f(in rules.Input) bool { return rules.Apply(in).OK() }`,
+		"type assertion":                      `func f(r rules.EngineRules) bool { _, ok := r.(*pack.Pack); return ok }`,
+		"type switch case":                    `func f(r rules.EngineRules) int { switch r.(type) { case *pack.Pack: return 1 }; return 0 }`,
+		"parameter":                           `func f(p *pack.Pack) {}`,
+		"result":                              `func f() *pack.Pack { return nil }`,
+		"struct field":                        `type s struct{ p *pack.Pack }`,
+		"field write":                         `func f(r rules.EngineRules) { if p, ok := r.(*pack.Pack); ok { p.Version = "x" } }`,
+		"alias":                               `type myPack = pack.Pack`,
+		"conversion":                          `func f(r any) any { return (*pack.Pack)(r.(*pack.Pack)) }`,
+		"global lookup":                       `func f() bool { return vllmrules.Lookup("0.31.0") != nil }`,
+		"global packs":                        `func f() int { return len(vllmrules.Packs()) }`,
 		"validate without the caller's rules": `func f() bool { return blisschemas.Validate(blisschemas.Bundle{}).OK() }`,
 		"validate a bundle built elsewhere":   `func f(b blisschemas.Bundle) bool { return blisschemas.Validate(b).OK() }`,
 	}
@@ -317,7 +328,7 @@ func okValidate(r rules.EngineRules) bool {
 	imp := importer.ForCompiler(fset, "source", nil)
 	run := func(body string) []string {
 		path := filepath.Join(t.TempDir(), "probe.go")
-		if err := os.WriteFile(path, []byte(header+body+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(header(strings.Contains(body, "vllmrules."))+body+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
