@@ -674,8 +674,7 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 // instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
 // unchanged.
 func compatContractFactory(version string, cfg sim.SimConfig, acceptance float64) func(int) (*sim.EngineDriver, error) {
-	if !compatThroughContract(version) || cfg.HasAdapters() {
-		// The adapter does not carry LoRA yet, however the run came by its adapters.
+	if !compatThroughContract(version) {
 		return nil
 	}
 	build := func(index int) (*sim.EngineDriver, error) {

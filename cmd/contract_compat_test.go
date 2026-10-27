@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -159,6 +162,117 @@ func TestContractCompatOffloadIsByteIdentical(t *testing.T) {
 	}
 	if gm["cpu_tier_hit_rate"] != m["cpu_tier_hit_rate"] {
 		t.Errorf("cpu_tier_hit_rate: contract %v, host loop %v", gm["cpu_tier_hit_rate"], m["cpu_tier_hit_rate"])
+	}
+}
+
+// LoRA adapters, run both ways: two adapters over two resident slots and KV pressure, so the
+// run cold-loads adapters through the engine's load gate and preempts. The cold loads reach the
+// report (each adapter's load_count in --metrics-path), as the run's output does.
+func TestContractCompatLoRAIsByteIdentical(t *testing.T) {
+	dir, lora, spec := writeLoRAPressureFixtures(t)
+	args := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--lora-config", lora,
+		"--workload-spec", spec, "--seed", "5", "--horizon", "6000000000", "--log", "debug"}
+	run := func(env string) (stdout, metrics, stderr string) {
+		t.Helper()
+		t.Setenv(ContractCompatEnv, env)
+		path := filepath.Join(t.TempDir(), "metrics.json")
+		stdout, stderr, err := runKernelCLI(t, append(args, "--metrics-path", path)...)
+		if err != nil {
+			t.Fatalf("ContractCompatEnv=%q: %v\nstderr:\n%s", env, err, lastLines(stderr, 5))
+		}
+		return stdout, readFile(t, path), stderr
+	}
+	want, wantMetrics, wantErr := run("0")
+	if !strings.Contains(wantErr, "<< StepEvent") {
+		t.Fatal("with the opt-out the compatibility host loop logged no step events; the comparison is vacuous")
+	}
+	if !strings.Contains(wantErr, "<< AdapterLoadCompletion") {
+		t.Fatal("the run loaded no adapter; the comparison is vacuous")
+	}
+	got, gotMetrics, gotErr := run("")
+	if strings.Contains(gotErr, "<< StepEvent") {
+		t.Fatal("by default the compatibility engine's own host loop ran; the comparison is vacuous")
+	}
+	if got != want {
+		t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+			lastLines(got, 30), lastLines(want, 30))
+	}
+	loads := func(metrics string) map[string]float64 {
+		t.Helper()
+		var m struct {
+			Adapters map[string]struct {
+				LoadCount float64 `json:"load_count"`
+			} `json:"adapters"`
+		}
+		if err := json.Unmarshal([]byte(metrics), &m); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]float64{}
+		for id, a := range m.Adapters {
+			out[id] = a.LoadCount
+		}
+		return out
+	}
+	wantLoads, gotLoads := loads(wantMetrics), loads(gotMetrics)
+	if wantLoads["a0"] <= 0 || wantLoads["a1"] <= 0 {
+		t.Fatalf("the host loop's report counts no cold load of each adapter (%v); the comparison is vacuous", wantLoads)
+	}
+	if !maps.Equal(gotLoads, wantLoads) {
+		t.Errorf("adapter loads: contract %v, host loop %v", gotLoads, wantLoads)
+	}
+}
+
+// lora-affinity routing over four instances, run both ways: the router reads the adapters each
+// engine publishes (vllm:lora_requests_info: its slots, and the adapters with a running or
+// waiting request), so its picks, and the cold loads they cause, follow the engines' LoRA view.
+// Six adapters over two slots each make the instances load and evict adapters.
+func TestContractCompatLoRAAffinityRoutingIsByteIdentical(t *testing.T) {
+	dir := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: lora.yaml\n", "", nil)
+	if err := os.WriteFile(filepath.Join(dir, "lora.yaml"), []byte("apiVersion: llm-d.ai/v1\n"+
+		"kind: EndpointPickerConfig\nplugins:\n- type: lora-affinity-scorer\n- type: max-score-picker\n"+
+		"- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n"+
+		"  - pluginRef: lora-affinity-scorer\n  - pluginRef: max-score-picker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapters := []string{"a0", "a1", "a2", "a3", "a4", "a5"}
+	var lora, spec strings.Builder
+	lora.WriteString("lora:\n  adapter_capacity: 2\n  adapters:\n")
+	spec.WriteString("version: \"2\"\ncategory: language\naggregate_rate: 30.0\nnum_requests: 240\nclients:\n")
+	for i, a := range adapters {
+		fmt.Fprintf(&lora, "    - id: %s\n      rank: 16\n", a)
+		fmt.Fprintf(&spec, "  - id: c%d\n    tenant_id: t\n    slo_class: batch\n    adapter: %s\n    rate_fraction: %d\n"+
+			"    arrival:\n      process: poisson\n"+
+			"    input_distribution:\n      type: constant\n      params: { value: 512 }\n"+
+			"    output_distribution:\n      type: constant\n      params: { value: 64 }\n", i, a, len(adapters)-i)
+	}
+	files := t.TempDir()
+	loraPath, specPath := filepath.Join(files, "lora.yaml"), filepath.Join(files, "spec.yaml")
+	for p, body := range map[string]string{loraPath: lora.String(), specPath: spec.String()} {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "4",
+		"--lora-config", loraPath, "--workload-spec", specPath, "--seed", "7", "--log", "debug"}
+	t.Setenv(ContractCompatEnv, "0")
+	want, wantErr, err := runKernelCLI(t, args...)
+	if err != nil {
+		t.Fatalf("the compatibility host loop: %v\nstderr:\n%s", err, lastLines(wantErr, 5))
+	}
+	if !strings.Contains(wantErr, "<< AdapterLoadCompletion") {
+		t.Fatal("the run loaded no adapter; the comparison is vacuous")
+	}
+	t.Setenv(ContractCompatEnv, "")
+	got, gotErr, err := runKernelCLI(t, args...)
+	if err != nil {
+		t.Fatalf("the contract path: %v\nstderr:\n%s", err, lastLines(gotErr, 5))
+	}
+	if strings.Contains(gotErr, "<< StepEvent") {
+		t.Fatal("by default the compatibility engine's own host loop ran; the comparison is vacuous")
+	}
+	if got != want {
+		t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+			lastLines(got, 40), lastLines(want, 40))
 	}
 }
 

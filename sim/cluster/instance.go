@@ -229,7 +229,10 @@ func (i *InstanceSimulator) BatchSize() int {
 // ResidentAdapterIDs returns the ids of LoRA adapters currently resident on this
 // instance, or nil when the LoRA subsystem is inert.
 func (i *InstanceSimulator) ResidentAdapterIDs() []string {
-	if i.sim == nil || i.drv != nil {
+	if i.drv != nil {
+		return i.drv.ResidentAdapterIDs()
+	}
+	if i.sim == nil {
 		return nil
 	}
 	return i.sim.ResidentAdapterIDs()
@@ -757,7 +760,7 @@ func (i *InstanceSimulator) engineCore() *sim.Simulator { return i.sim }
 // AdapterCapacity returns the resident LoRA adapter slots (vLLM max_loras), 0 when LoRA is inert.
 func (i *InstanceSimulator) AdapterCapacity() int {
 	if i.drv != nil {
-		return 0 // LoRA is not wired through engine.Engine yet; the engine refuses an adapter request
+		return i.drv.AdapterCapacity()
 	}
 	return i.sim.AdapterCapacity()
 }

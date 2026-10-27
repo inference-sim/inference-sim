@@ -8,7 +8,9 @@ import (
 	"container/heap"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -227,8 +229,35 @@ func (d *EngineDriver) Finalize() {
 			d.Metrics.KVThrashEvents, d.Metrics.KVThrashOpportunities = events, opportunities
 		}
 	}
+	if a, ok := d.eng.(interface {
+		AdapterEvents() (loads, evictions map[string]int64)
+	}); ok {
+		// The engine's cold LoRA adapter loads and evictions (INV-L3), which the report prints
+		// per adapter.
+		loads, evictions := a.AdapterEvents()
+		maps.Copy(d.Metrics.AdapterLoadCounts, loads)
+		maps.Copy(d.Metrics.AdapterEvictionCounts, evictions)
+	}
 	d.Metrics.SimEndedTime = min(d.Clock, d.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", d.Clock)
+}
+
+// ResidentAdapterIDs are the LoRA adapters resident on the engine, for an engine that reports
+// them; nil otherwise.
+func (d *EngineDriver) ResidentAdapterIDs() []string {
+	if a, ok := d.eng.(interface{ ResidentAdapterIDs() []string }); ok {
+		return a.ResidentAdapterIDs()
+	}
+	return nil
+}
+
+// AdapterCapacity is the engine's resident LoRA adapter slots, for an engine that reports them;
+// 0 otherwise.
+func (d *EngineDriver) AdapterCapacity() int {
+	if a, ok := d.eng.(interface{ AdapterCapacity() int }); ok {
+		return a.AdapterCapacity()
+	}
+	return 0
 }
 
 // InjectArrival schedules a request's arrival and registers it in the report.
@@ -673,9 +702,16 @@ func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {
 			x, _ := m.Value(name)
 			return x
 		}
-		return EngineMetrics{PublishedAt: m.At, Waiting: int(v("num_requests_waiting")),
+		em := EngineMetrics{PublishedAt: m.At, Waiting: int(v("num_requests_waiting")),
 			Running: int(v("num_requests_running")), KVUsage: v("kv_cache_usage_perc"),
 			Preemptions: int64(v("num_preemptions"))}
+		if f, ok := m.Family("lora_requests_info"); ok && len(f.Samples) == 1 {
+			// The adapters with a running or waiting request, as the engine's
+			// lora_requests_info labels list them.
+			em.RunningAdapters = adapterList(f.Samples[0].Labels["running_lora_adapters"])
+			em.WaitingAdapters = adapterList(f.Samples[0].Labels["waiting_lora_adapters"])
+		}
+		return em
 	}
 	s := d.eng.Snapshot()
 	usage := 0.0
@@ -684,6 +720,14 @@ func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {
 	}
 	return EngineMetrics{PublishedAt: t, Waiting: s.Waiting, Running: s.Running, KVUsage: usage,
 		Preemptions: d.Metrics.PreemptionCount}
+}
+
+// adapterList splits a comma-joined adapter list; nil for none.
+func adapterList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }
 
 func int32s(ts []TokenID) []int32 {
