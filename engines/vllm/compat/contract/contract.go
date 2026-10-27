@@ -45,10 +45,12 @@ type Engine struct {
 	// wake is a step the engine itself asked for (ArmStep, WakeStep), -1 for none.
 	wake int64
 	// firsts and done collect what a call into the engine made visible.
-	firsts  []string
-	done    []engine.Finished
-	inEnque bool
-	dropped bool
+	firsts []string
+	done   []engine.Finished
+	// kvEvents are the prefix-cache changes the engine published since the last step returned.
+	kvEvents []engine.KVEvent
+	inEnque  bool
+	dropped  bool
 }
 
 type flight struct {
@@ -131,7 +133,7 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		e.core.IdleStep(now)
 		return engine.Batch{}, nil
 	}
-	e.firsts, e.done = e.firsts[:0], e.done[:0]
+	e.firsts, e.done, e.rec.lookups = e.firsts[:0], e.done[:0], map[string]cengine.PrefixLookup{}
 	advance := e.core.ExecuteStep(now)
 	e.busyUntil = now + advance
 	var b engine.Batch
@@ -139,8 +141,14 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	if rb := e.core.RunningBatch; rb != nil {
 		for _, req := range rb.Requests {
 			ran[req.ID] = true
-			b.Reqs = append(b.Reqs, engine.Scheduled{ID: req.ID, Tokens: req.NumNewTokens,
-				PromptLen: len(req.InputTokens)})
+			sc := engine.Scheduled{ID: req.ID, Tokens: req.NumNewTokens, PromptLen: len(req.InputTokens)}
+			if l, ok := e.rec.lookups[req.ID]; ok {
+				// The admission's prefix-cache lookup: what the device cache supplied of the
+				// prompt (PrefixLookup.HitTokens). Offload, whose CPU tier also supplies a
+				// prefix, is refused at New.
+				sc.CachedTokens = int(l.HitTokens)
+			}
+			b.Reqs = append(b.Reqs, sc)
 		}
 	}
 	for id := range e.running {
@@ -161,7 +169,8 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		e.running[req.ID] = true
 	}
 	res := engine.Result{Emitted: map[string]int{}, FirstTokens: append([]string(nil), e.firsts...),
-		Finished: append([]engine.Finished(nil), e.done...)}
+		Finished: append([]engine.Finished(nil), e.done...), KVEvents: e.kvEvents}
+	e.kvEvents = nil
 	for id := range ran {
 		req := e.reqs[id]
 		if req == nil {
@@ -221,14 +230,22 @@ func (e *Engine) TransferDone(engine.TransferID, bool, engine.Time) error {
 	return engine.ErrUnknownTransfer
 }
 
-// Finish ends a request the engine did not finish: a timeout or an abort (CancelOnTimeout).
-func (e *Engine) Finish(id string, _ engine.FinishReason, now engine.Time) error {
+// Finish ends a request the engine did not finish. A timeout cancels it as the engine's
+// deadline does (CancelOnTimeout); an abort is a gateway eviction (Evict), whose freed state the
+// engine's next step publishes (NoteAbort).
+func (e *Engine) Finish(id string, why engine.FinishReason, now engine.Time) error {
 	req := e.reqs[id]
 	if req == nil {
 		return nil
 	}
 	e.now = now
-	e.core.CancelOnTimeout(req)
+	if why == engine.FinishAbort {
+		if e.core.Evict(req) {
+			e.core.NoteAbort(now)
+		}
+	} else {
+		e.core.CancelOnTimeout(req)
+	}
 	delete(e.reqs, id)
 	delete(e.out, id)
 	delete(e.running, id)
@@ -273,6 +290,18 @@ func (e *Engine) Metrics(now engine.Time) engine.Metrics {
 		{Name: MetricPreemptions, Kind: engine.Counter,
 			Samples: []engine.Sample{{Name: MetricPreemptions, Value: float64(m.Preemptions)}}},
 	}}
+}
+
+// EnableKVEvents makes the engine publish its prefix-cache changes (SetKVEventSink): from the next
+// step on, a step's events come back in its Result.KVEvents, stamped at the step's end, and an
+// abort's at the next step. A no-op when the engine runs no prefix cache.
+func (e *Engine) EnableKVEvents() {
+	e.core.SetKVEventSink(func(_ int64, events []cengine.KVEvent) {
+		for _, ev := range events {
+			e.kvEvents = append(e.kvEvents, engine.KVEvent{Removed: ev.Removed, Hash: ev.Hash,
+				Parent: ev.Parent, Tokens: int32s(ev.Tokens), Tier: ev.Tier})
+		}
+	})
 }
 
 // Snapshot is the engine's queues and KV pool.
@@ -325,30 +354,47 @@ func (h host) ArmStep(t int64)                            { h.e.askWake(t) }
 func (h host) StepArmed() bool                            { return h.e.wake >= 0 || h.e.flight != nil }
 
 // recorder is the engine's report record (cengine.Recorder). The simulator keeps its own report
-// from what the contract returns; the engine reads back only its preemption count.
-type recorder struct{ preemptions int64 }
+// from what the contract returns; the engine reads back only its preemption count, and the
+// adapter reads the step's admission lookups into the batch it returns.
+type recorder struct {
+	preemptions int64
+	// lookups are the prefix-cache lookups of the requests the step admitted, by ID.
+	lookups map[string]cengine.PrefixLookup
+}
 
-func (r *recorder) RecordArrival(*cengine.Request, float64)                       {}
-func (r *recorder) RecordDrop(*cengine.Request, bool)                             {}
-func (r *recorder) RecordInputTokens(int64)                                       {}
-func (r *recorder) RecordTimedOut(*cengine.Request)                               {}
-func (r *recorder) RecordPreemption()                                             { r.preemptions++ }
-func (r *recorder) PreemptionsSoFar() int64                                       { return r.preemptions }
-func (r *recorder) RecordScheduled(*cengine.Request, int64, cengine.PrefixLookup) {}
-func (r *recorder) RecordFirstToken(*cengine.Request)                             {}
-func (r *recorder) RecordQueueSnapshot(int, int)                                  {}
-func (r *recorder) RecordKVUsage(int64, int64, bool)                              {}
-func (r *recorder) RecordCompletion(cengine.Completion)                           {}
-func (r *recorder) RecordLengthCapped(*cengine.Request)                           {}
-func (r *recorder) RecordKVAllocationFailure()                                    {}
-func (r *recorder) RecordAdapterLoad(string)                                      {}
-func (r *recorder) RecordAdapterEviction(string)                                  {}
-func (r *recorder) RecordStillHeldAtEnd(int, int)                                 {}
+func (r *recorder) RecordArrival(*cengine.Request, float64) {}
+func (r *recorder) RecordDrop(*cengine.Request, bool)       {}
+func (r *recorder) RecordInputTokens(int64)                 {}
+func (r *recorder) RecordTimedOut(*cengine.Request)         {}
+func (r *recorder) RecordPreemption()                       { r.preemptions++ }
+func (r *recorder) PreemptionsSoFar() int64                 { return r.preemptions }
+func (r *recorder) RecordScheduled(req *cengine.Request, _ int64, l cengine.PrefixLookup) {
+	if r.lookups != nil && l.QueryTokens > 0 {
+		r.lookups[req.ID] = l
+	}
+}
+func (r *recorder) RecordFirstToken(*cengine.Request)   {}
+func (r *recorder) RecordQueueSnapshot(int, int)        {}
+func (r *recorder) RecordKVUsage(int64, int64, bool)    {}
+func (r *recorder) RecordCompletion(cengine.Completion) {}
+func (r *recorder) RecordLengthCapped(*cengine.Request) {}
+func (r *recorder) RecordKVAllocationFailure()          {}
+func (r *recorder) RecordAdapterLoad(string)            {}
+func (r *recorder) RecordAdapterEviction(string)        {}
+func (r *recorder) RecordStillHeldAtEnd(int, int)       {}
 
 func tokens(in []int32) []cengine.TokenID {
 	out := make([]cengine.TokenID, len(in))
 	for i, v := range in {
 		out[i] = cengine.TokenID(v)
+	}
+	return out
+}
+
+func int32s(in []cengine.TokenID) []int32 {
+	out := make([]int32, len(in))
+	for i, v := range in {
+		out[i] = int32(v)
 	}
 	return out
 }
