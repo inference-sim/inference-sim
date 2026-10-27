@@ -190,3 +190,27 @@ func TestDPGroupServerSeriesIsOneEnginePerRank(t *testing.T) {
 		t.Errorf("generation tokens over both ranks: %d, want 15", gen)
 	}
 }
+
+// A gauge's bin is the time-weighted mean of its step function over the bin, and its _last is the
+// value in effect at the bin's end: a running count of 2 from 0 to 250 us and 4 from 250 us, on
+// 100 us bins, gives means 2, 2, 3 and 4, and lasts 2, 2, 4 and 4.
+func TestServerSeriesGaugeIsTheTimeWeightedMean(t *testing.T) {
+	var g stepGauge
+	g.set(0, 100, 2)
+	g.set(250, 100, 4)
+	g.advanceTo(400, 100)
+	wantSums, wantLast := []float64{200, 200, 300, 400}, []float64{2, 2, 4, 4}
+	for k := range wantSums {
+		if g.sums[k] != wantSums[k] || g.last[k] != wantLast[k] {
+			t.Errorf("bin %d: integral %v, last %v; want %v and %v", k, g.sums[k], g.last[k], wantSums[k], wantLast[k])
+		}
+	}
+	s := &serverSeries{interval: 100}
+	s.gauges[1] = g
+	e := s.output("e", 400, 4)
+	for k, want := range []float64{2, 2, 3, 4} {
+		if e.NumRequestsRunning[k] != want {
+			t.Errorf("bin %d: mean %v, want %v", k, e.NumRequestsRunning[k], want)
+		}
+	}
+}
