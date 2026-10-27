@@ -84,7 +84,7 @@ branch head at push time. Process: docs/contributing/cross-repo-changes.md -->
 |---|---|---|---|
 | | | | |
 
-- [ ] No `replace` in `go.mod`; vendored `testdata/{catalog,registry}` equal the pinned heads
+- [ ] No `replace` in `go.mod` other than the llm-d router fork's ([fork guide](docs/contributing/llm-d-router-fork.md)); vendored `testdata/{catalog,registry}` equal the pinned heads
 - [ ] `git merge-tree --write-tree origin/main HEAD` is clean
 - [ ] N/A — this PR pins nothing new from another BLIS repository
 

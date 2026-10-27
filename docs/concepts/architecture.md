@@ -146,8 +146,9 @@ loading, draining or terminating.
 ## The DES Hosting Runtime
 
 The router is written for wall-clock time and goroutines. The fork routes every clock read,
-background loop, blocking wait, random draw and outbound HTTP call through a `hosting.Runtime`;
-`sim/llmd/runtime.go` implements it on the cluster's event loop:
+background loop, blocking wait, random draw and outbound HTTP call through the runtime of the
+router contract (blis-schemas `embed.Runtime`); `sim/llmd/runtime.go` implements it on the
+cluster's event loop:
 
 - **Virtual clock.** `Now()` is a fixed epoch plus the simulation clock; tickers, timers and
   deadlines are cluster events.

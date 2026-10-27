@@ -86,7 +86,7 @@ The simulation time limit in ticks (microseconds). The simulation stops when the
 
 ### Hosting Runtime
 
-The seam (`hosting.Runtime`, in the inference-sim fork of llm-d-router) through which the router reads time, starts background work, sets deadlines, blocks, draws randomness and makes outbound HTTP calls. BLIS's implementation (`sim/llmd/runtime.go`) runs the router on the cluster's event loop: a virtual clock, coroutines that run one at a time, seeded random streams, and background work as daemon events that never keep a simulation alive. See [The llm-d Router Fork](../contributing/llm-d-router-fork.md).
+The seam (blis-schemas `embed.Runtime`, which the inference-sim fork of llm-d-router adapts to its internal `hosting.Runtime`) through which the router reads time, starts background work, sets deadlines, blocks, draws randomness and makes outbound HTTP calls. BLIS's implementation (`sim/llmd/runtime.go`) runs the router on the cluster's event loop: a virtual clock, coroutines that run one at a time, seeded random streams, and background work as daemon events that never keep a simulation alive. See [The llm-d Router Fork](../contributing/llm-d-router-fork.md).
 
 ### InferenceObjective
 

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	request "github.com/llm-d/llm-d-router/pkg/common/request"
 )
 
 // This exercises the real EPP's response-header plugin. BLIS runs one EPP, so
@@ -42,7 +41,7 @@ func TestGateway_TopologyStampSelectedPrefiller(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("observed %d responses, want 1", len(got))
 			}
-			stamp := got[0][request.PeerTopologyHeaderKey]
+			stamp := got[0][peerTopologyHeader]
 			if tc.skipPrefill {
 				if len(cs.ParentRequests()) != 0 {
 					t.Fatalf("prefill ran despite the decider skipping it")
@@ -101,11 +100,13 @@ func TestTopologyConfig_StampReferences(t *testing.T) {
 		{"wrong profile", "- type: topology-extractor\n- type: topology-stamp-handler\n  parameters:\n    profileName: missing\n", "profileName"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw := []byte("plugins:\n" + tc.plugins + "schedulingProfiles:\n- name: prefill\n")
-			_, err := topologyConfig(raw)
+			err := refusal(t, placedDeployment(), topologyConfigText(tc.plugins), nil, "--allow-experimental-plugins")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("topologyConfig error = %v, want %q", err, tc.want)
+				t.Fatalf("startup error = %v, want %q", err, tc.want)
 			}
 		})
 	}
 }
+
+// peerTopologyHeader is the response header llm-d's topology-stamp-handler writes.
+const peerTopologyHeader = "x-peer-topology"

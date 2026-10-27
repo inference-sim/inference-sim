@@ -4,39 +4,25 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/utils/clock"
+	"github.com/inference-sim/blis-schemas/embed"
 )
 
-// desClock is the router's clock.WithTicker on simulated time. Tickers and timers deliver on
-// buffered channels from simulation events; a coroutine waiting on one parks until the value is
-// there.
-type desClock struct{ rt *desRuntime }
+// The router's timers and tickers run on simulated time. They deliver on buffered channels from
+// simulation events; a coroutine waiting on one parks until the value is there.
 
-var _ clock.WithTicker = (*desClock)(nil)
-
-func (c *desClock) Now() time.Time                  { return c.rt.Now() }
-func (c *desClock) Since(t time.Time) time.Duration { return c.rt.Now().Sub(t) }
-
-func (c *desClock) Sleep(d time.Duration) {
-	panic(fmt.Sprintf("llmd: router called Sleep(%v): blocking sleeps are not supported in a hosted runtime", d))
-}
-
-func (c *desClock) After(d time.Duration) <-chan time.Time { return c.NewTimer(d).C() }
-
-func (c *desClock) Tick(d time.Duration) <-chan time.Time { return c.NewTicker(d).C() }
-
-func (c *desClock) NewTimer(d time.Duration) clock.Timer {
-	t := &desTimer{rt: c.rt, ch: make(chan time.Time, 1)}
+// NewTimer implements embed.Runtime.
+func (rt *desRuntime) NewTimer(d time.Duration) embed.Timer {
+	t := &desTimer{rt: rt, ch: make(chan time.Time, 1)}
 	t.Reset(d)
 	return t
 }
 
-func (c *desClock) NewTicker(d time.Duration) clock.Ticker {
+// NewTicker implements embed.Runtime.
+func (rt *desRuntime) NewTicker(d time.Duration) embed.Ticker {
 	if d <= 0 {
 		panic(fmt.Sprintf("llmd: NewTicker with non-positive interval %v", d))
 	}
 	t := &desTicker{ch: make(chan time.Time, 1)}
-	rt := c.rt
 	step := toMicros(d)
 	t.p = rt.startPeriodic(rt.host.Now()+step, step, PriorityTimer, func() bool {
 		select { // like time.Ticker, a slow reader drops ticks

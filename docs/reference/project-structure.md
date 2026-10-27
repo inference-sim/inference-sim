@@ -72,16 +72,16 @@ inference-sim/
 │   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
 │   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
 ├── sim/llmd/                  # The embedded llm-d router (Endpoint Picker), from the inference-sim fork of llm-d-router; see docs/guide/routing.md and docs/contributing/llm-d-router-fork.md
-│   ├── gateway.go             # Gateway (implements cluster.Gateway): builds the router from EPP flags, EndpointPickerConfig and manifests; translates arrivals into router requests, router decisions into dispatches, router errors into INV-1 buckets; DefaultEPPFlags
-│   ├── runtime.go             # hosting.Runtime on the cluster event loop: fixed Epoch + simulation clock, timers and deadlines as (daemon) cluster events, seeded named random streams
-│   ├── clock.go               # desClock: the router's clock (tickers and timers) on simulated time
+│   ├── gateway.go             # Gateway (implements cluster.Gateway): builds the router (blis-schemas embed) from EPP flags, EndpointPickerConfig and manifests, with BLIS's pre-build checks (Config.Check); translates arrivals into router requests, decisions into dispatches, rejection kinds into INV-1 buckets; DefaultEPPFlags
+│   ├── router.go              # newRouter = the fork's pkg/embed.New, the only identifier BLIS takes from the fork (imports_test.go guards it)
+│   ├── runtime.go             # embed.Runtime on the cluster event loop: fixed Epoch + simulation clock, timers and deadlines as (daemon) cluster events, seeded named random streams
+│   ├── clock.go               # the runtime's timers and tickers on simulated time
 │   ├── coroutine.go           # Coroutine scheduler: the router's goroutines run one at a time under a single baton, parked until their ready predicate holds; watchdog for unconverted blocking calls
 │   ├── server.go              # The simulated model servers' HTTP surface for the router: /metrics (published vLLM series) and /v1/completions/render (prompt token IDs)
-│   ├── manifests.go           # Kubernetes manifest parsing (InferencePool, InferenceObjective, InferenceModelRewrite) and the default per-SLO-class InferenceObjectives
-│   └── kvevents.go            # the engines' KV-cache events to the router's precise-prefix-cache-producer (ordered, delayed, canonical tokens)
+│   └── kvevents.go            # the engines' KV-cache events to the router (embed.KVBatch: ordered, delayed, canonical tokens)
 │   └── prompt.go              # canonical prompt tokens the router sees (prefix-chain blocks), so a replay shows it the run's prompts
-│   └── crd_defaults.go        # applies the router CRDs' defaults to manifests, as an API server does (CRD copies in crds/)
-│   └── support.go             # supported / unsupported plugin types and startup checks: audited plugins run, anything else is refused before its constructor runs, with the reason
+│   └── node_topology.go       # zone/region from explicit Node manifests, overlaid on the simulated placement
+│   └── support.go             # BLIS's signal policy (embed.Config.Allow) and the checks of the router's Requirements against what the simulated engines produce
 ├── sim/workload/              # ServeGen-informed workload generation
 │   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)

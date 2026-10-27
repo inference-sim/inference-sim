@@ -1,8 +1,6 @@
 package llmd
 
 import (
-	"fmt"
-	"sort"
 	"strings"
 	"testing"
 
@@ -142,26 +140,38 @@ spec:
 	if manifests == poolManifests {
 		t.Fatal("fixture substitution did not apply")
 	}
+	// The v1alpha2 objective is reconciled exactly as its v1 form: the saturated pool sheds the
+	// sheddable (priority -2) requests only, as with the v1 manifests.
 	res := runPool(t, manifests, map[string]string{"app": "vllm"})
-	var prios []string
-	for _, o := range res.gw.emb.Datastore.ObjectiveGetAll() {
-		prios = append(prios, fmt.Sprintf("%s=%d", o.Name, *o.Spec.Priority))
+	assertConservation(t, res, len(res.reqs))
+	shed := map[string]int{}
+	for _, r := range res.reqs {
+		if r.AssignedInstance == "" {
+			shed[r.SLOClass]++
+		}
 	}
-	sort.Strings(prios)
-	if got := strings.Join(prios, ","); got != "critical=4,sheddable=-2" {
-		t.Errorf("reconciled objectives %s, want critical=4,sheddable=-2", got)
+	if shed["critical"] != 0 || shed["sheddable"] == 0 || shed["sheddable"] != res.cs.RejectedRequests() {
+		t.Errorf("shed %v (rejected %d); want the v1alpha2 sheddable objective to govern admission", shed, res.cs.RejectedRequests())
+	}
+	v1 := runPool(t, poolManifests, map[string]string{"app": "vllm"})
+	if v1.cs.RejectedRequests() != res.cs.RejectedRequests() {
+		t.Errorf("v1alpha2 objectives shed %d requests, the v1 form %d", res.cs.RejectedRequests(), v1.cs.RejectedRequests())
 	}
 }
 
-// TestParseManifests_UnservedRouterVersionRefused: a manifest in a router API group at a version
-// no installed CRD serves is an error, as applying it to a cluster is; other unknown kinds are
+// TestManifests_UnservedRouterVersionRefused: a manifest in a router API group at a version no
+// installed CRD serves is an error, as applying it to a cluster is; other unknown kinds are
 // ignored.
-func TestParseManifests_UnservedRouterVersionRefused(t *testing.T) {
-	_, err := parseManifests(newScheme(), []byte("apiVersion: llm-d.ai/v9\nkind: InferenceObjective\nmetadata:\n  name: x\n"), defaultNamespace)
-	if err == nil || !strings.Contains(err.Error(), "not served") {
+func TestManifests_UnservedRouterVersionRefused(t *testing.T) {
+	run := func(manifests string) error {
+		cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(testRequests(1, 1, 1000, 0)), nil)
+		cs.SetGateway(New(Options{Model: "test-model", Manifests: []byte(manifests)}))
+		return cs.Run()
+	}
+	if err := run("apiVersion: llm-d.ai/v9\nkind: InferenceObjective\nmetadata:\n  name: x\n"); err == nil || !strings.Contains(err.Error(), "not served") {
 		t.Errorf("err = %v, want a refusal naming the unserved version", err)
 	}
-	if _, err := parseManifests(newScheme(), []byte("apiVersion: example.com/v1\nkind: Widget\nmetadata:\n  name: x\n"), defaultNamespace); err != nil {
+	if err := run("apiVersion: example.com/v1\nkind: Widget\nmetadata:\n  name: x\n"); err != nil {
 		t.Errorf("a kind the router never reads must be ignored: %v", err)
 	}
 }
