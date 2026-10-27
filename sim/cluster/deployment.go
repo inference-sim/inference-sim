@@ -14,9 +14,10 @@ type DeploymentConfig struct {
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
 	// release the compatibility engine does not model (engine_version 0.32.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
-	// cluster. The build site (cmd/engine_build.go) supplies it, so this package names no
-	// engine implementation.
-	NewEngine func(index int) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
+	// cluster and its configuration, resolved for its pool role as the compatibility engine's is.
+	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
+	// implementation.
+	NewEngine func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
 
 	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
 	// many consecutive instances is one replica whose ranks step in lockstep and share one

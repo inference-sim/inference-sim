@@ -48,10 +48,10 @@ func compatThroughContract(version string) bool {
 }
 
 // contractCompatShape is the run shape the contract path carries so far: colocated instances
-// behind the router, dp 1, no P/D pools.
+// behind the router and P/D prefill and decode pools, dp 1, with no shared prefill-decode or
+// encode pool.
 func contractCompatShape() bool {
-	return dataParallelism <= 1 &&
-		prefillInstances == 0 && decodeInstances == 0 && prefillDecodeInstances == 0 && encodeInstances == 0
+	return dataParallelism <= 1 && prefillDecodeInstances == 0 && encodeInstances == 0
 }
 
 // throughContract reports whether this run's engine is built by the registered factory and driven
@@ -77,7 +77,7 @@ func dpPlacementFor(version string, plan dpPlacementPlan) dpPlacementPlan {
 // scenario's first pool and driven by a sim.EngineDriver; the host overheads (queueing,
 // per-token output processing, post-decode) are the latency model's, and the API-server front
 // end (--renderer-num-workers, --api-server-count) is the run's, as on the compatibility path.
-func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel, acceptance float64) func(int) (*sim.EngineDriver, error) {
+func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel, acceptance float64) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
 	if !throughContract(version) {
 		return nil
 	}
@@ -140,7 +140,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return func(index int) (*sim.EngineDriver, error) {
+	return func(index int, _ sim.SimConfig) (*sim.EngineDriver, error) {
 		if index == 0 && first != nil {
 			d := first
 			first = nil

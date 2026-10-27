@@ -1,0 +1,61 @@
+# The 3P1D GLM-5 deployment of testdata/scenarios/glm-5-h200-3p1d-ib.yaml with a decode pool
+# sized to 134 blocks of 64 tokens (gpu_memory_utilization 0.6356) and max_model_len 8192, so two
+# 4287-token handoffs fill it. The decode engine's last running request then preempts itself to
+# fit its next block beside a landed pull: the step that schedules nothing after a preemption
+# (bytegate case pd-preempt-park). Byte-gate input only; not catalog or registry data.
+kind: Scenario
+name: glm-5-h200-3p1d-tightdecode
+engine_version: "0.29.0"
+
+model: glm-5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: glm-5-h200-3p1d-tightdecode
+
+pools:
+  - role: prefill
+    nodes: 3
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 64
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 8192
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+  - role: decode
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 64
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 8192
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.6356
+
+pd_transfer:
+  connector: NixlConnector
+
+# The router disaggregates every request (router/pd-always.yaml, beside this file).
+router:
+  endpoint_picker_config: router/pd-always.yaml

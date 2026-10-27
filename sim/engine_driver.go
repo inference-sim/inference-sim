@@ -88,6 +88,15 @@ type EngineDriver struct {
 	stepIdx int
 	// kvEventSink receives the engine's prefix-cache changes (SetKVEventSink); nil when none.
 	kvEventSink func(at int64, events []KVEvent)
+
+	// P/D handoffs (engine_driver_handoff.go): remote are the decode sub-requests the engine
+	// holds before their pull lands, pulls the pulls in flight, and holds the KV the engine keeps
+	// for a peer's pull, all by request ID. OnPullStarted is the host's pricing of a pull the
+	// engine started, at the instant it started.
+	remote        map[string]*Request
+	pulls         map[string]engine.TransferID
+	holds         map[string]engine.Handoff
+	OnPullStarted func(req *Request, pulledTokens int64, at int64)
 }
 
 type driverReq struct {
@@ -98,6 +107,7 @@ type driverReq struct {
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 	resumed      bool    // preempted after its first token, not yet emitting again
 	lookedUp     bool    // its admission's prefix-cache lookup is recorded
+	remote       bool    // a decode sub-request whose prompt a peer's prefill computed (LandRemote)
 }
 
 type driverBatch struct {
@@ -218,6 +228,11 @@ func (d *EngineDriver) Finalize() {
 	}
 	d.Metrics.StillQueued = waiting
 	d.Metrics.StillRunning = running
+	if q, ok := d.eng.(interface{ QueueSnapshots() (waiting, running []int) }); ok {
+		// The engine's per-step queue lengths, which the cluster's head-of-line blocking
+		// detector averages (the compatibility engine records them at each step).
+		d.Metrics.NumWaitQRequests, d.Metrics.NumRunningBatchRequests = q.QueueSnapshots()
+	}
 	if k, ok := d.eng.(interface {
 		KVThrashing() (rate float64, events, opportunities int64, counted bool)
 	}); ok {
@@ -312,18 +327,9 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 		d.done(req, e.at)
 		return
 	}
-	er := engine.Request{
-		ID:              req.ID,
-		Prompt:          int32s(req.InputTokens),
-		Output:          int32s(req.OutputTokens),
-		MaxOutputTokens: req.MaxOutputLen,
-		ArrivalTime:     req.ArrivalTime,
-		Adapter:         req.Adapter,
-	}
-	if req.SLOClass != "" {
-		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
-		er.Tags = map[string]string{"slo_class": req.SLOClass}
-	}
+	er := d.engineRequest(req)
+	// A disaggregated prefill keeps its KV for the decode side's pull (Result.Handoffs).
+	er.RemoteDecode = req.RetainKVOnFinish
 	if err := d.eng.Add(er, e.at); err != nil {
 		logrus.Warnf("dropping request %s: the engine refused it: %v", req.ID, err)
 		d.Metrics.DroppedUnservable++
@@ -339,6 +345,23 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
 	}
 	d.stepAfterArrivals(e.at)
+}
+
+// engineRequest is req as the engine is told it.
+func (d *EngineDriver) engineRequest(req *Request) engine.Request {
+	er := engine.Request{
+		ID:              req.ID,
+		Prompt:          int32s(req.InputTokens),
+		Output:          int32s(req.OutputTokens),
+		MaxOutputTokens: req.MaxOutputLen,
+		ArrivalTime:     req.ArrivalTime,
+		Adapter:         req.Adapter,
+	}
+	if req.SLOClass != "" {
+		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
+		er.Tags = map[string]string{"slo_class": req.SLOClass}
+	}
+	return er
 }
 
 // stepAfterArrivals answers an Add: it asks the engine when to wake, and, when no batch is in
@@ -467,6 +490,7 @@ func (d *EngineDriver) kick(now int64) {
 			panic(fmt.Sprintf("engine driver: Schedule at %d: %v", now, err))
 		}
 		d.notePreempted(b)
+		d.startTransfers(b.TransfersStarted, now)
 		if b.Empty() {
 			break
 		}
@@ -476,6 +500,11 @@ func (d *EngineDriver) kick(now int64) {
 		d.stepIdx++
 		for _, s := range b.Reqs {
 			if r := d.reqs[s.ID]; r != nil && r.req.State != StateRunning {
+				if r.remote && r.emitted == 0 {
+					// A remote-prefilled request's first token is a decode step's: its gap runs
+					// from the step's start.
+					r.lastEnd = start
+				}
 				r.req.State = StateRunning
 				r.scheduledIdx = d.stepIdx
 				d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
@@ -532,6 +561,7 @@ func (d *EngineDriver) rearmWake(now int64) {
 // apply records what a completed batch made visible: first tokens, inter-token latencies and
 // finishes, in the host's report terms.
 func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
+	d.noteHandoffs(res.Handoffs)
 	if d.kvEventSink != nil && len(res.KVEvents) > 0 {
 		events := make([]KVEvent, len(res.KVEvents))
 		for i, e := range res.KVEvents {
@@ -555,7 +585,11 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			continue
 		}
 		n := res.Emitted[id]
-		if firsts[id] && r.emitted == 0 {
+		if firsts[id] && (r.emitted == 0 || r.remote && !r.req.TTFTSet) {
+			// A remote-prefilled request's decode steps emit before any first token; preempted, it
+			// prefills again here, and that prefill's token is its first, as the compatibility
+			// engine stamps it.
+			r.resumed = false
 			r.req.FirstTokenTime = tokenAt - r.req.ArrivalTime
 			r.req.TTFTSet = true
 			d.Metrics.RequestTTFTs[id] = float64(r.req.FirstTokenTime)
@@ -600,6 +634,7 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 func (d *EngineDriver) complete(r *driverReq, f engine.Finished, end int64) {
 	req := r.req
 	req.State = StateCompleted
+	req.DepartureTime = end
 	req.GeneratedTokens = f.OutputTokens
 	// The computed-token count the host's session manager reads for the output a turn actually
 	// produced (ProgressIndex - InputLen), as the compatibility engine leaves it: the prompt plus

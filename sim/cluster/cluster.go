@@ -98,6 +98,9 @@ type ClusterSimulator struct {
 	// they arrived. Which of them start, and in what order, is the decode engine's rule
 	// (sim.EngineCore.AdmitRemoteKV).
 	decodeKVWaiters map[string][]decodeKVWaiter
+	// remotePulls are the handoffs an engine driven through engine.Engine holds before it starts
+	// their pull, by decode sub-request ID (startPull).
+	remotePulls map[string]*ParentRequest
 
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
@@ -412,7 +415,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			if config.NewEngine != nil {
 				// A release the compatibility engine does not model: the instance's engine is
 				// built and driven through blis-schemas' engine.Engine contract.
-				drv, err := config.NewEngine(idx)
+				drv, err := config.NewEngine(idx, simCfg)
 				if err != nil {
 					panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", id, err))
 				}
@@ -529,6 +532,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		return nil // don't inject locally — route through cluster pipeline
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
+	inst.setPullStarted(cs.startPull)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)

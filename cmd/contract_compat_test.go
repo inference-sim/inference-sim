@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// contractCompatCases are the byte gate's colocated cases (WS/tools/bytegate.cases):
-// scenario directory, scenario and flags as the gate runs them. The two KV-pressure scenarios
-// are vendored under testdata/contract-compat/scenarios.
+// contractCompatCases are the byte gate's cases the contract path carries (WS/tools/bytegate.cases):
+// scenario directory, scenario and flags as the gate runs them. The two KV-pressure scenarios and
+// the tight-decode P/D scenario are vendored under testdata/contract-compat/scenarios.
 var contractCompatCases = []struct {
 	name, dir, scenario, flags string
 }{
@@ -28,6 +28,14 @@ var contractCompatCases = []struct {
 	{"kvpressure-chunk", "testdata/contract-compat/scenarios", "llama-70b-kvpressure-chunk.yaml", "--rate 40 --num-requests 300 --seed 32 " + kvPressureLengths},
 	{"kvpressure-priority", "testdata/contract-compat/scenarios", "llama-70b-kvpressure.yaml", "--rate 40 --num-requests 300 --seed 33 " + kvPressureLengths + " --scheduler priority-fcfs --preemption-policy priority"},
 	{"gptoss-4inst", "examplescenarios", "gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "--rate 20 --num-requests 200 --seed 13 --num-instances 4"},
+	// P/D: the prefill engine's KV hold and the decode engine's handoffs through the contract
+	// (Request.RemoteDecode and RemotePrefill, Result.Handoffs), with a CPU tier on both pools,
+	// three prefill pools, and a decode engine that preempts a remote-prefilled request.
+	{"td-dsv41-1p1d", "testdata/scenarios", "deepseek-v4.1-flash-h100-1p1d-dspark5.yaml", "--rate 2 --num-requests 40 --seed 1 --num-instances 2 --prefill-instances 1 --decode-instances 1 --speculative-acceptance-length 3.2"},
+	{"td-dsv41-1p1d-cpu", "testdata/scenarios", "deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml", "--rate 2 --num-requests 40 --seed 1 --num-instances 2 --prefill-instances 1 --decode-instances 1 --speculative-acceptance-length 3.2"},
+	{"glm5-3p1d", "examplescenarios", "glm-5-h200-3p1d-ib.yaml", "--rate 2 --num-requests 40 --seed 11 --num-instances 4 --prefill-instances 3 --decode-instances 1"},
+	{"pd-preempt-park", "testdata/contract-compat/scenarios", "glm-5-h200-3p1d-tightdecode.yaml", "--rate 1000 --num-requests 5 --seed 1 --num-instances 4 --prefill-instances 3 --decode-instances 1 " +
+		"--prompt-tokens 4287 --prompt-tokens-stdev 0 --prompt-tokens-max 4287 --output-tokens 200 --output-tokens-stdev 0 --output-tokens-max 200 --timeout -1"},
 }
 
 const kvPressureLengths = "--prompt-tokens 6000 --prompt-tokens-stdev 1500 --prompt-tokens-max 12000 " +
@@ -277,8 +285,7 @@ func TestContractCompatLoRAAffinityRoutingIsByteIdentical(t *testing.T) {
 }
 
 // The contract path is the default for the shapes it carries; ContractCompatEnv=0 keeps the
-// compatibility engine's own host loop, and a shape the contract does not carry yet (here
-// P/D pools) keeps it regardless.
+// compatibility engine's own host loop.
 func TestContractCompatIsTheDefaultPath(t *testing.T) {
 	run := func(env string, extra ...string) string {
 		t.Helper()

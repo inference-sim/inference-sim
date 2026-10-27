@@ -528,7 +528,9 @@ func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) (pulledTokens
 // CacheRemoteKV registers a decode sub-request's pulled blocks in this instance's prefix
 // cache once the pull has landed (sim.Simulator.CacheRemoteKV).
 func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) {
-	i.contract("a P/D handoff (CacheRemoteKV)")
+	if i.drv != nil {
+		return // the engine caches a pull's blocks when it lands (InjectDecodeOnline)
+	}
 	i.sim.CacheRemoteKV(req)
 }
 
@@ -536,8 +538,11 @@ func (i *InstanceSimulator) CacheRemoteKV(req *sim.Request) {
 // Used when a reservation must be undone (e.g., decode instance transitioned
 // to a non-routable state mid-transfer). Safe to call when the request holds
 // no blocks.
-func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
-	i.contract("a P/D handoff (ReleaseReservedKV)")
+func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request, now int64) {
+	if i.drv != nil {
+		i.drv.FailRemote(req, now)
+		return
+	}
 	i.sim.ReleaseKV(req)
 }
 
@@ -545,12 +550,15 @@ func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
 // (sim.Request.RetainKVOnFinish): a P/D prefill sub-request's, once the decode side has pulled
 // them (INV-PD-7). The blocks go back to the free list with their prefix hashes, as any
 // finished request's do.
-func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request) {
+func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request, now int64) {
 	if !req.RetainKVOnFinish || req.State != sim.StateCompleted {
 		panic(fmt.Sprintf("ReleaseHeldKV %s: request %s is not a finished request that retains its KV",
 			i.id, req.ID))
 	}
-	i.contract("a P/D handoff (ReleaseHeldKV)")
+	if i.drv != nil {
+		i.drv.ReleaseHandoff(req, now)
+		return
+	}
 	i.sim.ReleaseKV(req)
 }
 
@@ -564,7 +572,9 @@ func (i *InstanceSimulator) WakeIfParked(t int64) {
 
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
-	i.contract("a P/D handoff (KVBlocksOf)")
+	if i.drv != nil {
+		return i.drv.HandoffBlocks(req) // the KV its engine holds for the pull (Result.Handoffs)
+	}
 	blocks, ok := i.sim.RequestBlocks(req)
 	if !ok {
 		panic(fmt.Sprintf("instance %s: KV store %s does not report a request's blocks", i.id, i.sim.KVStoreKind()))
@@ -576,7 +586,10 @@ func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
 // now: its blocks are freed (their hashes were never registered, ReserveTransferredKV), and the
 // engine publishes its state after the abort.
 func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
-	i.contract("a P/D handoff (AbortReservedKV)")
+	if i.drv != nil {
+		i.drv.AbortRemote(req, now)
+		return
+	}
 	i.sim.ReleaseKV(req)
 	i.sim.NoteAbort(now) // also wakes a parked engine (scheduleStepAt)
 }
@@ -587,7 +600,12 @@ func (i *InstanceSimulator) AbortReservedKV(req *sim.Request, now int64) {
 // Registers request in metrics and directly enqueues into wait queue.
 // clusterTime is the cluster clock at the time of injection (from KVTransferCompletedEvent).
 func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
-	i.contract("a P/D decode sub-request (InjectDecodeOnline)")
+	if i.drv != nil {
+		// The pull has landed: the engine runs the request from its pulled KV.
+		i.drv.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+		i.drv.LandRemote(req, clusterTime)
+		return
+	}
 	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 	i.sim.EnqueueDecodeSubRequest(req, clusterTime)
 }
@@ -638,8 +656,29 @@ func (i *InstanceSimulator) AdmitRemoteKV(waiting []*sim.Request) []sim.RemoteKV
 // RemoteKVLanded tells the engine a handoff's pull has landed, or was dropped, so its first-step
 // blocks no longer count against new pulls.
 func (i *InstanceSimulator) RemoteKVLanded(req *sim.Request) {
-	i.contract("a P/D handoff (RemoteKVLanded)")
+	if i.drv != nil {
+		return // the engine ends the pull's reservation when it lands (InjectDecodeOnline)
+	}
 	i.sim.RemoteKVLanded(req)
+}
+
+// AddRemote hands an engine driven through engine.Engine a decode sub-request whose transfer may
+// start, at now (sim.EngineDriver.AddRemote). It reports false for the compatibility engine's own
+// host loop, whose handoffs the cluster holds (awaitDecodeKV).
+func (i *InstanceSimulator) AddRemote(req *sim.Request, now int64) bool {
+	if i.drv == nil {
+		return false
+	}
+	i.drv.AddRemote(req, now)
+	return true
+}
+
+// setPullStarted installs the cluster's pricing of a pull the instance's engine starts (an engine
+// driven through engine.Engine; the compatibility engine's host loop starts none itself).
+func (i *InstanceSimulator) setPullStarted(f func(req *sim.Request, pulledTokens, at int64)) {
+	if i.drv != nil {
+		i.drv.OnPullStarted = f
+	}
 }
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.

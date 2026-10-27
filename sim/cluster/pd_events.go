@@ -141,8 +141,32 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		e.dropAtStart(cs, sim.NIXLDecodeRejected)
 		return
 	}
+	if cs.remotePulls == nil {
+		cs.remotePulls = make(map[string]*ParentRequest)
+	}
+	cs.remotePulls[decodeSubReq.ID] = e.parentReq
+	if decodeInst.AddRemote(decodeSubReq, e.time) {
+		// An engine driven through engine.Engine holds its handoffs and starts each pull by its own
+		// admission rule (startPull).
+		return
+	}
+	delete(cs.remotePulls, decodeSubReq.ID)
 	cs.awaitDecodeKV(decodeInst, e.parentReq, decodeSubReq)
 	cs.admitDecodeKVIfIdle(decodeInst, e.time)
+}
+
+// startPull starts the transfer of a handoff whose pull an engine driven through engine.Engine
+// admitted at now, moving pulledTokens of its prompt, as serveDecodeKVWaiters does for the
+// compatibility engine's host loop.
+func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64) {
+	parent := cs.remotePulls[req.ID]
+	if parent == nil {
+		panic(fmt.Sprintf("startPull: %s is not a handoff waiting for its pull", req.ID))
+	}
+	delete(cs.remotePulls, req.ID)
+	parent.DecodeSubReq = req
+	parent.PulledKVBlocks = (pulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
+	scheduleTransferCompletion(cs, parent, now)
 }
 
 // decodeKVWaiter is a decode sub-request whose NIXL pull cannot start yet because its decode
@@ -436,7 +460,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		// terminated). Release reserved blocks and drop.
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
-		decodeInst.ReleaseReservedKV(decodeSubReq)
+		decodeInst.ReleaseReservedKV(decodeSubReq, e.time)
 		decodeInst.WakeIfParked(e.time)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)

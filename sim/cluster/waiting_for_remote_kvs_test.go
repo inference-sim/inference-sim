@@ -185,7 +185,7 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 	// Now release A. B's same reservation attempt must now succeed —
 	// confirming the prior failure was specifically because A held the
 	// blocks, not because the reservation path was broken.
-	inst.ReleaseReservedKV(reqA)
+	inst.ReleaseReservedKV(reqA, 0)
 	if used := inst.sim.KVCache.UsedBlocks(); used != 0 {
 		t.Fatalf("UsedBlocks after A release = %d, want 0", used)
 	}
@@ -222,7 +222,7 @@ func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 		t.Fatal("UsedBlocks = 0 after ReserveTransferredKV, want > 0")
 	}
 
-	inst.ReleaseReservedKV(req)
+	inst.ReleaseReservedKV(req, 0)
 	if used := inst.sim.KVCache.UsedBlocks(); used != 0 {
 		t.Errorf("UsedBlocks = %d after ReleaseReservedKV, want 0 (blocks not freed)",
 			used)

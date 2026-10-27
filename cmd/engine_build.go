@@ -673,11 +673,14 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 // compatibility engine behind engine.Engine (blis-vllm compat/contract), built from the run's
 // instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
 // unchanged.
-func compatContractFactory(version string, cfg sim.SimConfig, acceptance float64) func(int) (*sim.EngineDriver, error) {
+func compatContractFactory(version string, global sim.SimConfig, acceptance float64) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
 	if !compatThroughContract(version) {
 		return nil
 	}
-	build := func(index int) (*sim.EngineDriver, error) {
+	// Each instance's engine is built from its own configuration, resolved for its pool role (a
+	// P/D prefill or decode pool's overrides), as the compatibility engine's own host loop builds
+	// it (sim.NewEngine).
+	build := func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) {
 		eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 		if err != nil {
 			return nil, err
@@ -691,7 +694,7 @@ func compatContractFactory(version string, cfg sim.SimConfig, acceptance float64
 		}
 		return sim.NewEngineDriverWithFrontend(eng, dcfg, cfg.Frontend)
 	}
-	if _, err := build(0); err != nil {
+	if _, err := build(0, global); err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return build

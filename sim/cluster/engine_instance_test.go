@@ -14,7 +14,7 @@ import (
 func TestCluster_EngineDrivenInstancesCompleteEveryRequest(t *testing.T) {
 	cfg := newTestDeploymentConfig(2)
 	built := 0
-	cfg.NewEngine = func(int) (*sim.EngineDriver, error) {
+	cfg.NewEngine = func(int, sim.SimConfig) (*sim.EngineDriver, error) {
 		built++
 		eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 8, TokenBudget: 256, StepBaseUs: 1000, StepPerTokenUs: 2})
 		if err != nil {

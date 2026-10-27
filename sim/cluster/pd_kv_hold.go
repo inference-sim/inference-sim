@@ -67,7 +67,7 @@ func (c *ClusterSimulator) releasePrefillHold(parent *ParentRequest) {
 		}
 	}
 	inst := c.instanceByID(InstanceID(instID))
-	inst.ReleaseHeldKV(parent.PrefillSubReq)
+	inst.ReleaseHeldKV(parent.PrefillSubReq, c.clock)
 	inst.WakeIfParked(c.clock)
 }
 
