@@ -144,8 +144,10 @@ func (d *EngineDriver) HasPendingEvents() bool { return len(d.eventQueue) > 0 }
 // PeekNextEventTime is the earliest queued event's time. Callers check HasPendingEvents first.
 func (d *EngineDriver) PeekNextEventTime() int64 { return d.eventQueue[0].event.Timestamp() }
 
-// ProcessNextEvent pops the earliest event, advances the clock and runs it. A superseded wake is
-// returned without advancing the clock, as Simulator drops a superseded idle wake.
+// ProcessNextEvent pops the earliest event, advances the clock and runs it. A superseded wake, or
+// the timeout of a request that already completed, is returned without advancing the clock, as
+// Simulator drops a superseded idle wake and an orphaned timeout (lazy cancellation); Skipped
+// reports it.
 func (d *EngineDriver) ProcessNextEvent() Event {
 	entry := heap.Pop(&d.eventQueue).(eventEntry)
 	shim := entry.event.(*driverShim)
@@ -158,6 +160,19 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	d.Clock = shim.Timestamp()
 	shim.ev.run(d)
 	return entry.event
+}
+
+// Skipped reports whether ev, an event ProcessNextEvent returned, was dropped without running
+// (lazy cancellation), so a caller that advanced its own clock to ev's time restores it, as it
+// does for the compatibility engine's dropped events.
+func (s *driverShim) Skipped() bool {
+	switch e := s.ev.(type) {
+	case *driverWakeEvent:
+		return e.cancelled
+	case *driverTimeoutEvent:
+		return e.req.State == StateCompleted
+	}
+	return false
 }
 
 // Run runs the instance alone to its horizon or until no event remains.

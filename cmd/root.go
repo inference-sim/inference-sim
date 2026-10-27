@@ -1321,6 +1321,9 @@ var runCmd = &cobra.Command{
 			InstanceLifecycle:              bundleInstanceLifecycle,
 			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
+		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance); f != nil {
+			config.NewEngine = f
+		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
 		// The TraceV2 export (lines 1582-1601) remains gated on --trace-output, but the

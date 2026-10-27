@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/blis-vllm/compat/contract"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
@@ -663,6 +666,34 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 	}
 	return build.CheckHybridDPNodeLocal(dpLoadBalancing, plan.Replicas, numInstances,
 		func(rank int) int { return kernelOpened.PlacementOf(rank).Node })
+}
+
+// compatContractFactory is the cluster's engine constructor for a compatibility release run
+// through the engine contract under ContractCompatEnv (phase 2c's first stage): the
+// compatibility engine behind engine.Engine (blis-vllm compat/contract), built from the run's
+// instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
+// unchanged.
+func compatContractFactory(version string, cfg sim.SimConfig, acceptance float64) func(int) (*sim.EngineDriver, error) {
+	if !compatThroughContract(version) {
+		return nil
+	}
+	build := func(index int) (*sim.EngineDriver, error) {
+		eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
+		if err != nil {
+			return nil, err
+		}
+		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance}
+		if cfg.LatencyModel != nil {
+			dcfg.PostDecodeFixedOverhead = cfg.LatencyModel.PostDecodeFixedOverhead()
+			dcfg.OutputTokenProcessingTime = cfg.LatencyModel.OutputTokenProcessingTime()
+			dcfg.QueueingTime = cfg.LatencyModel.QueueingTime
+		}
+		return sim.NewEngineDriverWithFrontend(eng, dcfg, cfg.Frontend)
+	}
+	if _, err := build(0); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return build
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:

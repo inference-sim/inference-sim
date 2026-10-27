@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
@@ -26,6 +27,40 @@ var coreEngineVersions = map[string]bool{"0.32.0": true}
 // path builds.
 func runsThroughContract(version string) bool { return coreEngineVersions[version] }
 
+// ContractCompatEnv names the test-only switch of phase 2c's first stage: set to 1, a 0.29.0 or
+// 0.31.0 run whose shape the contract path carries (contractCompatShape) builds the
+// compatibility engine through the same factory as 0.32.0 and runs it through sim.EngineDriver,
+// so the two host paths can be compared byte for byte. Unset, nothing changes.
+const ContractCompatEnv = "BLIS_CONTRACT_COMPAT"
+
+// compatEngineVersions are the releases the compatibility engine models.
+var compatEngineVersions = map[string]bool{"0.29.0": true, "0.31.0": true}
+
+// compatThroughContract reports whether this run of a compatibility release goes through the
+// contract (ContractCompatEnv): only a single colocated instance, with no data parallelism, no
+// P/D, no KV offload tier and no LoRA, the shape the first stage's adapter carries.
+func compatThroughContract(version string) bool {
+	if os.Getenv(ContractCompatEnv) != "1" || !compatEngineVersions[version] {
+		return false
+	}
+	return contractCompatShape()
+}
+
+// contractCompatShape is the run shape the first stage carries: one colocated instance, dp 1, no
+// P/D pools, no offload tier, no adapters.
+func contractCompatShape() bool {
+	return numInstances == 1 && dataParallelism <= 1 &&
+		prefillInstances == 0 && decodeInstances == 0 && prefillDecodeInstances == 0 && encodeInstances == 0 &&
+		kvCPUBlocks == 0 && kvOffloadConfigPath == "" && scenarioOffload == nil && loraConfigPath == ""
+}
+
+// throughContract reports whether this run's engine is built by the registered factory and driven
+// through engine.Engine: a contract-built release, or a compatibility release under
+// ContractCompatEnv.
+func throughContract(version string) bool {
+	return runsThroughContract(version) || compatThroughContract(version)
+}
+
 // dpPlacementFor is the run's DP placement plan. A contract-built release places no rank
 // replicas: the engine behind the contract is the whole data-parallel group, one endpoint
 // whose ranks step in lockstep inside it, so the instance count stays the scenario's and each
@@ -43,7 +78,12 @@ func dpPlacementFor(version string, plan dpPlacementPlan) dpPlacementPlan {
 // per-token output processing, post-decode) are the latency model's, and the API-server front
 // end (--renderer-num-workers, --api-server-count) is the run's, as on the compatibility path.
 func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel, acceptance float64) func(int) (*sim.EngineDriver, error) {
+	if !throughContract(version) {
+		return nil
+	}
 	if !runsThroughContract(version) {
+		// A compatibility release under ContractCompatEnv: built by compatContractFactory, at
+		// the build site, from the run's own instance configuration.
 		return nil
 	}
 	// The contract path builds one engine per instance from the scenario's single colocated
