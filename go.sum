@@ -131,6 +131,8 @@ github.com/inference-sim/blis-latency-kernel v0.3.0 h1:6dw7S4WfbUqZ/F3p8EI6/KLtY
 github.com/inference-sim/blis-latency-kernel v0.3.0/go.mod h1:nZqyDI0T06W0sbQA5eHv5BTcjOy02DDsrlJYnYroKCw=
 github.com/inference-sim/blis-schemas v0.7.0 h1:/kuJwcDG8z7fkRWAxKrfRgf8jLQGbeHwJd28hHd13cI=
 github.com/inference-sim/blis-schemas v0.7.0/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/llm-d-router v1.0.0-blis.1 h1:0Y6ahFjM34IXq2eV2vwZKEF9lGYubBsn75Yn94umbKY=
+github.com/inference-sim/llm-d-router v1.0.0-blis.1/go.mod h1:Hd8U6VhaYTkgw7x1qTQKvurjS+buK/khvpJVoWbOiqk=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
@@ -153,8 +155,6 @@ github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFd
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/namasl/llm-d-router v0.0.0-20261026190615-ec087e98f357 h1:5UJNlQP5zvrylfbkHNxz+Qgfv3lg343kMEtwJp0A1+8=
-github.com/namasl/llm-d-router v0.0.0-20261026190615-ec087e98f357/go.mod h1:Hd8U6VhaYTkgw7x1qTQKvurjS+buK/khvpJVoWbOiqk=
 github.com/onsi/ginkgo/v2 v2.31.0 h1:GtuJos5DFUV9EerYJo8RhYxosYNGvOdDE5haKq6Grfs=
 github.com/onsi/ginkgo/v2 v2.31.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
