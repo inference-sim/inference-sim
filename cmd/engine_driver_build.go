@@ -95,6 +95,17 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 			return nil, fmt.Errorf("scenario %q: engine_version %s: %w", kernelScenario, version, err)
 		}
 		reportAssumptions(eng)
+		if iv := serverSeriesIntervalUs(); iv > 0 {
+			// --server-series-interval-s: the engine bins its own vllm:* series on the simulation
+			// clock (the driver's ServerSeriesSpan and ServerSeriesBlock queries read it). An
+			// engine that cannot record one is refused rather than leave the flag silently off.
+			s, ok := eng.(interface{ EnableServerSeries(intervalUs int64) })
+			if !ok {
+				return nil, fmt.Errorf("scenario %q: engine_version %s: the engine records no server time series, "+
+					"which --server-series-interval-s asks for", kernelScenario, version)
+			}
+			s.EnableServerSeries(iv)
+		}
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance}
 		hostOverheads(&cfg, latency)
 		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)

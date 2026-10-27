@@ -348,6 +348,55 @@ func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
 	}
 }
 
+// --server-series-interval-s writes a 0.32.0 run's server_series block, as it does a 0.29.0
+// run's: the engine bins its own vllm:* series, and the prompt tokens it counts across the bins
+// are the run's prompt tokens.
+func TestRunCmd_A032ScenarioWritesItsServerSeries(t *testing.T) {
+	series := func(version string) (bins int, prompt, hits float64) {
+		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+		path := filepath.Join(t.TempDir(), "metrics.json")
+		_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60",
+			"--server-series-interval-s", "1", "--metrics-path", path)
+		if err != nil {
+			t.Fatalf("%s: %v\nstderr:\n%s", version, err, lastLines(stderr, 5))
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			ServerSeries *struct {
+				Engines []struct {
+					Bins         int       `json:"bins"`
+					PromptTokens []float64 `json:"prompt_tokens"`
+					Hits         []float64 `json:"prefix_cache_hits"`
+				} `json:"engines"`
+			} `json:"server_series"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.ServerSeries == nil || len(out.ServerSeries.Engines) != 1 {
+			t.Fatalf("%s: want one engine's server_series, got %+v", version, out.ServerSeries)
+		}
+		e := out.ServerSeries.Engines[0]
+		for i := range e.PromptTokens {
+			prompt += e.PromptTokens[i]
+			hits += e.Hits[i]
+		}
+		return e.Bins, prompt, hits
+	}
+	bins, prompt, hits := series("0.32.0")
+	_, wantPrompt, _ := series("0.29.0")
+	if bins == 0 || hits == 0 {
+		t.Fatalf("0.32.0 server_series has %d bins and %v prefix-cache hits on a workload of shared prefixes", bins, hits)
+	}
+	if prompt != wantPrompt {
+		t.Errorf("0.32.0 server_series counts %v prompt tokens, 0.29.0 %v", prompt, wantPrompt)
+	}
+}
+
 // A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
 // queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
 // the engine, as on the 0.31.0 compatibility engine. The queue adds the same TTFT on both, and
