@@ -24,9 +24,11 @@ func Decode(b deployment.EngineBlock) (Engine, error) {
 // Encode is Decode's inverse: the engine block an Engine is written as, in the struct's field
 // order with its omitempty tags, as blis-schemas encoded the block before it held it
 // unopened. The zero Engine encodes as an empty mapping.
-func Encode(e Engine) (deployment.EngineBlock, error) {
+func Encode(e Engine) (deployment.EngineBlock, error) { return encodeBlock(e) }
+
+func encodeBlock(v any) (deployment.EngineBlock, error) {
 	var n yaml.Node
-	if err := n.Encode(e); err != nil {
+	if err := n.Encode(v); err != nil {
 		return deployment.EngineBlock{}, fmt.Errorf("engineconfig: %w", err)
 	}
 	return deployment.NewEngineBlock(&n), nil

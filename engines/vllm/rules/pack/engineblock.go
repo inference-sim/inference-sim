@@ -34,3 +34,19 @@ func (p *Pack) DraftTokens(b deployment.EngineBlock) int {
 	}
 	return e.Speculative.NumSpecTokens
 }
+
+// CheckConnectorOptions implements rules.EngineRules: it opens an offload's connector options
+// (engineconfig.DecodeConnectorOptions, strictly) and runs their checks
+// (engineconfig.ValidateConnectorOptions), at the paths and with the messages blis-schemas
+// reported before it held them unopened. Options that do not decode are one finding at
+// at + ".connector_options".
+func (p *Pack) CheckConnectorOptions(at string, b deployment.EngineBlock) *rules.Problems {
+	out := &rules.Problems{}
+	c, err := engineconfig.DecodeConnectorOptions(b)
+	if err != nil {
+		out.Field(at+".connector_options", "%v", err)
+		return out
+	}
+	engineconfig.ValidateConnectorOptions(out, at, c)
+	return out
+}
