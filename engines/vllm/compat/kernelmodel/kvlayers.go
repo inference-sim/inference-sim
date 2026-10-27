@@ -3,7 +3,8 @@
 // Derived from vllm/model_executor/models/gpt_oss.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
 // The KV cache spec each attention layer builds: gpt_oss.py:176 (per_layer_sliding_window),
 // vllm/models/minimax_m3/nvidia/model.py:562-571 (MiniMaxM3SparseAttention.get_kv_cache_spec)
-// and vllm/models/minimax_m3/common/indexer.py:145-154 (the indexer's); DeepSeek V4's and V4.1's
+// and vllm/models/minimax_m3/common/indexer.py:145-154 (the indexer's), whose dtype is
+// indexer.py:118-127 and nvidia/model.py:505-509; DeepSeek V4's and V4.1's
 // caches as their modules register them: vllm/models/deepseek_v4/attention.py:286-372 and :856-925,
 // vllm/models/deepseek_v4/compressor.py:139-193, vllm/models/deepseek_v41/attention.py:420-600 and
 // :1138-1240, vllm/models/deepseek_v41/compressor.py:136-167 and
@@ -99,7 +100,11 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 				case c.Kind == model.CacheKV:
 					shared = shared || !c.Owned
 				case c.Kind == model.CacheIndex && c.Owned && n.AttentionKind == model.AttentionGQA:
-					r.Spec, r.NumKVHeads = "indexer", 1
+					b, err := m3IndexerElemBytes(engine.IndexerKVDType, c, n.HeadDim)
+					if err != nil {
+						return nil, fmt.Errorf("layer kind %s: %w", id, err)
+					}
+					r.Spec, r.NumKVHeads, r.ElemBytes = "indexer", 1, b
 				default:
 					return nil, fmt.Errorf("layer kind %s: its %s cache is not mapped to a KV cache spec", id, c.Kind)
 				}
@@ -125,6 +130,32 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 		return nil, fmt.Errorf("a %s drafter's KV layers beside these KV cache specs are not mapped", sp.Method)
 	}
 	return runs, nil
+}
+
+// m3IndexerElemBytes is the element size of MiniMax-M3's indexer key cache, which has its own
+// dtype, attention_config.indexer_kv_dtype, not the cache dtype: "auto" (or unstated) is the
+// model's default, bf16 (vllm/models/minimax_m3/nvidia/model.py:505-509@5df63a72), and the
+// indexer refuses every dtype but bf16 and fp8/fp8_e4m3 (vllm/models/minimax_m3/common/indexer.py:
+// 118-127@5df63a72). The latency kernel prices the cache as the catalog graph states it, the
+// model's default entry (c.BytesPerEntry, one key of head_dim elements), so a stated dtype whose
+// entry differs from it is refused by name rather than sized one way and priced another.
+func m3IndexerElemBytes(dtype string, c model.Cache, headDim int) (int, error) {
+	elem := 0
+	switch dtype {
+	case "", "auto", "bf16":
+		elem = 2
+	case "fp8", "fp8_e4m3":
+		elem = 1
+	default:
+		return 0, fmt.Errorf("indexer_kv_dtype=%q is not supported by the MiniMax M3 indexer cache (only 'bf16' or "+
+			"'fp8'/'fp8_e4m3')", dtype)
+	}
+	if headDim <= 0 || elem*headDim != c.BytesPerEntry {
+		return 0, fmt.Errorf("indexer_kv_dtype %q stores %d bytes a key of %d elements, and the catalog graph's %s "+
+			"cache states %d; the latency kernel prices the graph's entry, so this indexer dtype is not modelled",
+			dtype, elem*headDim, headDim, c.Name, c.BytesPerEntry)
+	}
+	return elem, nil
 }
 
 // deepseekServing is what DeepSeek V4's caches turn on beside the graph and the pool: the model

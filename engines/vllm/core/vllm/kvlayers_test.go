@@ -75,6 +75,30 @@ func TestKVPoolBlocksAreTheMemoryOverTheWidestGroup(t *testing.T) {
 	}
 }
 
+// A layer that states its element size keeps it, and the others share what the memory model's
+// block leaves: MiniMax-M3's indexer keys at bf16, their own dtype, beside attention KV at fp8
+// (vllm/models/minimax_m3/nvidia/model.py:505-509@5df63a72). Its 60 attention layers of two
+// heads and 57 one-head indexer layers at 16 tokens are one uniform-type group of two page sizes,
+// whose pool vLLM sizes at 72893 blocks from 52846898709 bytes (oracle/scenarios/
+// dashboard-minimax-m3-fp8-kv-probe.json): 60 x 16 x 2x2x128 x 1 + 57 x 16 x 128 x 2 = 724992
+// bytes a block. Taking the indexer at the attention dtype instead, as one element size for every
+// layer, would refuse the memory model's block or size another pool.
+func TestKVPoolBlocksKeepAStatedElementSize(t *testing.T) {
+	runs := []KVLayerRun{
+		{Count: 60, Spec: "full", NumKVHeads: 2, HeadSize: 128},
+		{Count: 57, Spec: "indexer", NumKVHeads: 1, HeadSize: 128, ElemBytes: 2},
+	}
+	const perBlock = 60*16*2*2*128*1 + 57*16*128*2
+	got, err := KVPoolBlocks(runs, false, 16, perBlock, 52846898709)
+	if err != nil || got != 72893 {
+		t.Errorf("KVPoolBlocks = %d (%v), want vLLM's 72893", got, err)
+	}
+	// The remainder after the stated layers must be whole bytes an element for the others.
+	if _, err := KVPoolBlocks(runs, false, 16, perBlock+1, 52846898709); err == nil {
+		t.Error("KVPoolBlocks sized a pool from a fractional element size")
+	}
+}
+
 // A trailing drafter's group is flagged when the engine block resolves: vLLM locates the drafter's
 // layers by position when they register after the target's (_uses_trailing_mtp_layers,
 // vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72), which is MTP on any model and every

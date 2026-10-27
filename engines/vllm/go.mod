@@ -16,9 +16,9 @@ require (
 	// TEMPORARY: the rules packs, a separate module in this repository (rules/); compat/kernelmodel
 	// hands them to the kernel, and the v0.32 factory applies rules/v0_32; rules/engineconfig decodes
 	// a pool's engine block and an offload's connector options, and rules/pack is the pack type.
-	// Pinned at this repository's own commit 83a5874 (the connector options). A module requiring
+	// Pinned at this repository's own commit 9b5ec9d (attention_config.indexer_kv_dtype). A module requiring
 	// this one selects at least this pin. Moves to a rules/ release tag (blis-latency-kernel#88).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261027023042-83a5874cc19f
+	github.com/inference-sim/blis-vllm/rules v0.0.0-20261027143841-9b5ec9da1999
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1

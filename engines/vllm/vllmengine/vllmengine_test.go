@@ -367,6 +367,11 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / (b.PerBlockBytes / 2) }}, // gpt-oss-120b
 		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // minimax-m3
 		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // kimi-k2.5
+		// minimax-m3 with cache_dtype fp8: the attention layers' KV at fp8, the indexer's keys at
+		// bf16 (its own dtype), so the pool holds what vLLM sizes for one uniform-type group of
+		// two page sizes: 72893 blocks (oracle/scenarios/dashboard-minimax-m3-fp8-kv-probe, at
+		// d106's bytes, and dashboard-minimax-m3-fp8-kv-pool at the dashboard's b200 TP8).
+		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72893 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			b, err := openPool(t, c.scenario).model.KVBudget()

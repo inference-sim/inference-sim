@@ -62,32 +62,22 @@ func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Grou
 //
 // A layer that states no bytes of its own (no state_content_bytes, no element size) takes the
 // cache dtype's from the caller's memory model: kernelPerBlock is its bytes for one block of
-// every layer's page, block_size x the layers' elements a token x the dtype's bytes for these
-// specs. One group of every layer is then kernelPerBlock exactly, so it keeps the memory model's
-// count. A kernelPerBlock that is not a whole number of bytes for each of the layers' elements
-// is refused, naming both, rather than sized from a guessed dtype. Layers that state their bytes,
-// DeepSeek V4's, are sized as stated.
+// every layer's page, block_size x the layers' elements a token x each layer's dtype bytes. A
+// layer that states its element size keeps it -- MiniMax-M3's indexer key cache, whose dtype is
+// attention_config.indexer_kv_dtype rather than the cache dtype (bf16 unless stated,
+// vllm/models/minimax_m3/nvidia/model.py:505-509@5df63a72) -- and the others share what remains
+// of kernelPerBlock. One group of every layer is then kernelPerBlock exactly, so it keeps the
+// memory model's count. A remainder that is not a whole number of bytes for each of the other
+// layers' elements is refused, naming both, rather than sized from a guessed dtype. Layers that
+// state a packed state's bytes, DeepSeek V4's, are sized as stated.
 func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock, availableBytes int64) (int64, error) {
 	layers, err := KVLayers(runs)
 	if err != nil {
 		return 0, err
 	}
-	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 || l.ElemBytes > 0 }) {
-		elems := int64(0)
-		for _, l := range layers {
-			l.ElemBytes, l.BlockSize = 1, blockSize
-			one, err := kv.PoolBytesPerBlock([]kv.Layer{l}, kv.GroupOptions{}, blockSize)
-			if err != nil {
-				return 0, fmt.Errorf("vllm: kv_layers: %w", err)
-			}
-			elems += one
-		}
-		if kernelPerBlock <= 0 || kernelPerBlock%elems != 0 {
-			return 0, fmt.Errorf("vllm: kv_layers: the memory model's %d bytes a block are not a whole number of bytes "+
-				"for each of the layers' %d elements a block", kernelPerBlock, elems)
-		}
-		for i := range layers {
-			layers[i].ElemBytes = int(kernelPerBlock / elems)
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
+			return 0, err
 		}
 	}
 	per, err := kv.PoolBytesPerBlock(layers, kv.GroupOptions{DisableHybrid: disableHybrid}, blockSize)
@@ -95,6 +85,45 @@ func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPe
 		return 0, fmt.Errorf("vllm: kv_layers: %w", err)
 	}
 	return availableBytes / per, nil
+}
+
+// deriveElemBytes gives every layer that states no element size the bytes kernelPerBlock leaves
+// after the layers that state one, split evenly over their elements (KVPoolBlocks). With no
+// layer stating one, each layer takes kernelPerBlock over every layer's elements, as before.
+func deriveElemBytes(layers []kv.Layer, blockSize int, kernelPerBlock int64) error {
+	var stated, elems int64
+	for _, l := range layers {
+		bytes := l.ElemBytes
+		l.BlockSize, l.ElemBytes = blockSize, max(l.ElemBytes, 1)
+		one, err := kv.PoolBytesPerBlock([]kv.Layer{l}, kv.GroupOptions{}, blockSize)
+		if err != nil {
+			return fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+		if bytes > 0 {
+			stated += one
+		} else {
+			elems += one
+		}
+	}
+	if elems == 0 {
+		return nil
+	}
+	rest := kernelPerBlock - stated
+	if rest <= 0 || rest%elems != 0 {
+		if stated > 0 {
+			return fmt.Errorf("vllm: kv_layers: the memory model's %d bytes a block, less the %d the layers stating "+
+				"their dtype take, are not a whole number of bytes for each of the other layers' %d elements a block",
+				kernelPerBlock, stated, elems)
+		}
+		return fmt.Errorf("vllm: kv_layers: the memory model's %d bytes a block are not a whole number of bytes "+
+			"for each of the layers' %d elements a block", kernelPerBlock, elems)
+	}
+	for i := range layers {
+		if layers[i].ElemBytes == 0 {
+			layers[i].ElemBytes = int(rest / elems)
+		}
+	}
+	return nil
 }
 
 // KVLayers is the runs' layers, one per layer in model order.
