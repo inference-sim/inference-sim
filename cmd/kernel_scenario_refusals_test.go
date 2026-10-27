@@ -419,6 +419,26 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 	}
 }
 
+// A 0.32.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to its
+// ranks (core/vllm.DPGroup). Under the external balancer each rank is its own endpoint and the
+// router picks the rank (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the contract path
+// does not build: such a run is refused, naming the mode, rather than run as internal.
+func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
+	dir := dp032Variant(t, "")
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032-dp2.yaml",
+		"--dp-load-balancing", "external", "--rate", "4", "--num-requests", "4", "--seed", "1")
+	if err == nil {
+		t.Fatal("a 0.32.0 dp 2 deployment under the external DP balancer ran")
+	}
+	if !strings.Contains(stderr, "--dp-load-balancing external") {
+		t.Errorf("the refusal must name the balancing mode; stderr:\n%s", lastLines(stderr, 4))
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032-dp2.yaml",
+		"--dp-load-balancing", "internal", "--rate", "4", "--num-requests", "4", "--seed", "1"); err != nil {
+		t.Errorf("the internal balancer must still run: %v\nstderr:\n%s", err, lastLines(stderr, 4))
+	}
+}
+
 // A 0.32.0 data-parallel group's endpoint renders on vLLM's default API servers for the internal
 // balancer: one per rank (api_server_count = data_parallel_size, vllm/entrypoints/cli/serve.py:
 // 123-130@5df63a72), as the compatibility path's DP replica does (ReplicaAPIServers). With one

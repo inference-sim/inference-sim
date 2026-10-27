@@ -55,6 +55,15 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not "+
 			"drive a P/D topology yet (P/D disaggregation)", kernelScenario, version)
 	}
+	// The DP group is vLLM's internal balancer, one endpoint routing to its ranks. Under the
+	// external balancer each rank is its own endpoint and the router picks the rank
+	// (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the group does not model: refuse
+	// it, naming the mode, rather than run it as internal.
+	if dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal {
+		logrus.Fatalf("scenario %q: engine_version %s runs a data-parallel group through the engine contract "+
+			"behind vLLM's internal balancer, which does not drive --dp-load-balancing external yet "+
+			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
+	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
