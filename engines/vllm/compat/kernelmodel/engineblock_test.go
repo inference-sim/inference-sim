@@ -5,6 +5,8 @@ package kernelmodel
 import (
 	"testing"
 
+	latencykernel "github.com/inference-sim/blis-latency-kernel"
+
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -38,5 +40,22 @@ func TestEditPoolEngineReachesTheDecodedBlock(t *testing.T) {
 	if e.Speculative == nil || e.Speculative.Method != "mtp" || e.Speculative.NumSpecTokens != 2 ||
 		e.BlockSize != 64 || e.MaxNumSeqs != 8 || e.CacheDType != "fp8" {
 		t.Errorf("after the edit the block decodes as %+v", e)
+	}
+}
+
+// DraftForTest writes the drafter into the priced pool's block and changes nothing else in it.
+func TestDraftForTestWritesThePricedPoolsDrafter(t *testing.T) {
+	in := latencykernel.Inputs{PoolIndex: 1, Deployment: &deployment.Deployment{Pools: []deployment.Pool{
+		{Engine: deployment.Engine{BlockSize: 16}}, {Engine: deployment.Engine{BlockSize: 64, CacheDType: "fp8"}}}}}
+	if err := DraftForTest(&in, "dspark", 5); err != nil {
+		t.Fatal(err)
+	}
+	e := mustDecode(t, in.Deployment.Pools[1])
+	if e.Speculative == nil || e.Speculative.Method != "dspark" || e.Speculative.NumSpecTokens != 5 ||
+		e.BlockSize != 64 || e.CacheDType != "fp8" {
+		t.Errorf("the priced pool decodes as %+v", e)
+	}
+	if other := mustDecode(t, in.Deployment.Pools[0]); other.Speculative != nil || other.BlockSize != 16 {
+		t.Errorf("the other pool changed: %+v", other)
 	}
 }
