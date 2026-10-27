@@ -101,6 +101,16 @@ spend a turn out of `MAX_TOOL_TURNS`.
   it and the gateway's body, so the script still exits without a marker and the
   gate still reads `MISSING` ⇒ `needs-human`. Only the single-blip hair-trigger
   is gone; a sustained outage still stops for a human.
+- **An unusable reply is retried too (#1895).** A caller passes `validate`, which
+  rejects a parsed completion it cannot use: empty `content`, prose where JSON
+  was asked for, JSON of the wrong shape. That reply is an HTTP `200`, so the
+  rules above never saw it; on #1892 one empty completion crashed the questioner,
+  and a re-run cleared it. It now shares the same attempt and wait budget as a
+  transport error. On exhaustion `UnparseableReply` is raised, and each script
+  exits `1` with nothing on stdout and the stderr line `unparseable reply after N
+  attempts (input M bytes): <reason>`. The gate still reads `MISSING` (the workflow's
+  own skip reason stays generic), and the job log names the cause. The questioner validates its single reply; the answerer and
+  adjudicator validate each turn that is not a tool call (their final answer).
 
 ### questioner.py
 
@@ -114,6 +124,19 @@ Cross-vendor models routinely emit regex/shell fragments like `\s` inside JSON
 string values, which are invalid JSON escapes. `repair_json()` escapes any
 backslash that is not part of a valid JSON escape, leaving well-formed `\\`
 pairs untouched, so the payload parses.
+
+**Input cap (#1895).** Before the call, PR body + diff are capped at
+`QA_QUESTIONER_MAX_INPUT_BYTES` (default 256 KiB). Under the cap the input is
+unchanged. Over it, the body keeps at most 1/8 of the budget and the diff gets
+the rest; each is cut at a line boundary with a visible
+`[... N bytes omitted by the qa-review questioner input cap ...]` marker, and a
+stderr line names the original and capped sizes. The cut is deterministic. The
+questioner needs the shape of the change, not all of it, since the answerer reads
+the code itself. The cap bounds outliers. It is not the fix for the
+three-in-a-row trigger in #1895: that input was about 150 KB, under the cap, and
+the retry and the named exhaustion message cover it. 256 KiB leaves all but the
+two largest of the last 32 merged PRs here untouched. A configured value below
+4 KiB is raised to 4 KiB. The justification is kept next to `MAX_INPUT_BYTES`.
 
 ### answerer.py
 
@@ -139,6 +162,15 @@ answerer is told the PR number and the closing-issue number (`--pr` / `--issue`)
 so it knows which to query; the system prompt directs it to consult them for
 F1/F2/F3 but **not** to answer from the diff alone when the surrounding code
 decides the answer — verify against the real code. `QA_REPO` targets the calls.
+
+**Issues in another repository (#2041).** `gh_issue` takes `N` (or `#N`), read
+from `QA_REPO` as before, or `owner/repo#N`, read from that repository. Its
+comments then go through the trusted-comment filter with `GH_REPO` set to *that*
+repository, so they are filtered by its write access, not `QA_REPO`'s. The
+reference must match GitHub's name alphabet; anything else returns a labelled
+`gh_issue failed` without calling `gh`. `QA_ISSUE_REPO` qualifies the answerer's
+plain `--issue N` hint, for a PR whose closing issue lives elsewhere (for example,
+a repository with issues disabled).
 
 **Comments are read WRITE-ACCESS-FILTERED (#1806).** `gh_issue` fetches the issue
 HEAD (title/body) directly, but its **comments** — and the PR comments
@@ -234,10 +266,41 @@ Two limits on that tolerance, both load-bearing:
   again. A value that folds away to nothing (`[bot]`, or whitespace only) matches
   **no** login rather than every App.
 
+**Naming a non-writer's report (#2041).** The filter drops every comment by an
+author without write access, including a qa-review report they posted, so by
+default such a report cannot be adjudicated. An operator can name that author
+explicitly with `--report-author <login>` / `QA_REPORT_AUTHOR`. Then, and only
+when the filtered set holds no report from that login, the adjudicator reads the
+PR's conversation once *unfiltered*, takes that author's most recent comment that
+`is_report_comment()` accepts, and keeps **only** its `parse_items_to_fix()`
+output (finding id, status, one-line text capped at 500 characters). What is
+newly admitted, and what is not:
+
+- admitted: one named comment's parsed findings;
+- not admitted: the rest of that comment (banner, table, prose, evidence lines,
+  "Important to consider"), every other comment by that author, and every comment
+  by anyone else outside the filter. The author's defence is still only the later
+  comments of the *filtered* set.
+
+The finding text is still untrusted prompt text. It is bounded, and it is safe in
+the sense that matters for the gate. It can only ask the adjudicator to look at
+something: each finding is re-checked against the code with `STILL_OPEN` as the
+default. A non-writer may only **add** findings, never clear them. A named report
+with zero findings (which would otherwise end in a model-free `PASS`) is refused.
+So is a report edited after it was posted (`updated_at` differs from
+`created_at`), since it may no longer be the one the operator reviewed. Both exit
+**3** and say why. A login on the filter's
+automation allowlist (`github-actions`, `claude`, either spelling) is never
+admitted this way, so a human holding the bare stem cannot pose as the App.
+Without an explicit `--report-author` nothing changes. The admission is announced
+on stderr.
+
 Finding **no** report comment is **not** a `PASS`: `fetch_comments` returns
 `None` (distinct from `[]`, a real report with nothing blocking) and the tool
 exits **3** with no verdict line at all, so no consumer can derive a marker from
-a review that was never found. The pre-#1716 rule keyed off the last comment
+a review that was never found. The message says whether a report by a non-writer
+was filtered out (by login, never by quoting its text) and what to do: rerun
+with `--report-author <login>`, or run a fresh qa-review. The pre-#1716 rule keyed off the last comment
 *containing* the banner, so a self-review quoting it hijacked the selection and —
 having no Items-to-fix section of its own — produced zero findings and a vacuous
 `PASS` (observed on PR #1736).
@@ -287,8 +350,10 @@ selects it by the round counter.)
 | `QA_QUESTIONER_MODEL` | questioner model | `gcp/gemini-3.6-flash` |
 | `QA_ANSWERER_MODEL` | answerer model | `azure/gpt-5.6-sol` |
 | `QA_ADJUDICATOR_MODEL` | adjudicator model | `azure/gpt-5.6-sol` |
-| `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login (the App `[bot]` suffix is optional — #1834) | empty (any author) |
+| `QA_REPORT_AUTHOR` | adjudicator: only adjudicate a prior report posted by this comment author login (the App `[bot]` suffix is optional — #1834); naming a non-writer admits only that report's parsed findings (#2041) | empty (any author) |
 | `QA_REPO` | `owner/repo` for `gh` calls | `inference-sim/inference-sim` |
+| `QA_ISSUE_REPO` | answerer: `owner/repo` that qualifies a plain `--issue N` (#2041) | empty (`QA_REPO`) |
+| `QA_QUESTIONER_MAX_INPUT_BYTES` | questioner: cap on PR body + diff bytes (#1895) | `262144` |
 | `QA_REPO_DIR` | local clone the worktree is cut from | — |
 | `QA_HTTP_TIMEOUT` | `_http.py`: per-attempt request timeout, seconds | `600` |
 | `QA_HTTP_MAX_ATTEMPTS` | `_http.py`: total attempts including the first | `5` |
@@ -329,3 +394,13 @@ with the gateway's own body reaching stderr; the fail-closed re-raise and
 diagnostic on exhaustion (including a body that never parses); that all three
 agents share the one client; and that a mid-loop `504` resumes with its message
 history intact without spending a tool turn.
+
+`scripts/qa_review_reply_test.go` (#1895) drives each script's real `main()` or
+tool loop over a faked `_http.send`. It pins that an empty or unparseable reply
+is retried and then succeeds, that exhaustion fails closed with the named cause,
+and the questioner's input cap. `scripts/qa_review_crossrepo_test.go` (#2041) pins
+`gh_issue`'s `owner/repo#N` parsing and its per-repository filtering, end to end
+through the real filter with a stub `gh`, plus the `QA_ISSUE_REPO` hint and the
+named non-writer path. That last test checks that canary strings in the report's
+other text and in the author's other comments never reach a prompt, that without
+`--report-author` the report is still ignored, and the exit-3 message.

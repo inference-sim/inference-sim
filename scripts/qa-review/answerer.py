@@ -15,7 +15,8 @@ Tools:
   grep(pattern[, path])           ripgrep-style search of the worktree
   list_dir(path)                  list a worktree directory
   go(subcommand)                  run ``go build``/``go test`` (dropped by --no-exec)
-  gh_issue(number)                read a GitHub issue + comments (acceptance criteria)
+  gh_issue(number)                read a GitHub issue + comments (acceptance criteria);
+                                  number is N (QA_REPO) or owner/repo#N (#2041)
   pr_diff(number)                 read the PR base→head diff
 
 read_file/grep/list_dir/go are confined to ``--worktree``; gh_issue/pr_diff are
@@ -31,7 +32,13 @@ Env:
   OPENAI_API_KEY       proxy key; falls back to LITELLM_KEY
   QA_ANSWERER_MODEL    default azure/gpt-5.6-sol
   QA_REPO              owner/repo for gh_issue/pr_diff (default inference-sim/inference-sim)
+  QA_ISSUE_REPO        owner/repo the closing issue (--issue N) lives in, when it is not
+                       QA_REPO (#2041); gh_issue also accepts owner/repo#N directly
   QA_HTTP_*            transport timeout/retry knobs — see _http.py
+
+An empty or unparseable final reply is retried with _http.py's bounded backoff (#1895);
+when every attempt is unusable the script exits 1 with nothing on stdout and a stderr line
+"unparseable reply after N attempts (input M bytes)".
 
 stdout: [{id,status,answer,evidence,note}]
 """
@@ -39,6 +46,7 @@ stdout: [{id,status,answer,evidence,note}]
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -47,6 +55,7 @@ import sys
 # error no longer crashes a ~30-minute tool loop (#1833). Imported as a module
 # attribute so the existing tests can still monkeypatch post_chat_completion.
 from _http import post_chat_completion  # noqa: F401 — re-exported call target
+from _http import UnparseableReply
 
 DEFAULT_MODEL = "azure/gpt-5.6-sol"
 MAX_TOOL_TURNS = 24
@@ -211,13 +220,42 @@ def _trusted_comment_lines(repo, mode, number):
     )
 
 
+# An issue reference: `N`, `#N`, or `owner/repo#N` (#2041). A PR may implement an issue
+# tracked in ANOTHER repository (a repo with issues disabled closes issues filed elsewhere), so
+# gh_issue must be able to read it. Owner and repo are held to GitHub's own name alphabet, and
+# `.`/`..` are refused as repo names, so a model-supplied reference can never become a flag, a
+# path segment, or a URL that leaves `repos/<owner>/<repo>`.
+_ISSUE_REF_RE = re.compile(r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+)#|#)?(?P<number>[0-9]+)$")
+
+
+def parse_issue_ref(ref, default_repo):
+    """(repo, number) for an issue reference, or raise ValueError.
+
+    A plain `N` / `#N` resolves against `default_repo` (QA_REPO), unchanged from before
+    #2041; `owner/repo#N` names its own repository."""
+    m = _ISSUE_REF_RE.match(str(ref).strip())
+    if not m:
+        raise ValueError("not an issue reference (want N or owner/repo#N): %r" % (ref,))
+    repo = m.group("repo") or default_repo
+    if repo.split("/", 1)[1] in (".", ".."):
+        raise ValueError("not a repository name: %r" % (repo,))
+    return repo, m.group("number")
+
+
 def tool_gh_issue(worktree, number):
     """Read-only: a GitHub issue's acceptance criteria + WRITE-ACCESS-FILTERED comments
-    (#1792, #1806)."""
-    repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
+    (#1792, #1806). `number` is `N` (in QA_REPO) or `owner/repo#N` (#2041); the comments of
+    an issue in another repository are filtered by THAT repository's write access, since the
+    filter resolves permissions against the GH_REPO it is given."""
+    try:
+        repo, number = parse_issue_ref(
+            number, os.environ.get("QA_REPO", "inference-sim/inference-sim")
+        )
+    except ValueError as exc:
+        return "gh_issue failed: %s" % exc
     proc = subprocess.run(
         [
-            "gh", "issue", "view", str(number), "--repo", repo,
+            "gh", "issue", "view", number, "--repo", repo,
             "--json", "number,title,body", "-q", _GH_ISSUE_HEAD_JQ,
         ],
         capture_output=True,
@@ -315,7 +353,8 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "gh_issue",
-            "description": "Read a GitHub issue (acceptance criteria) with comments.",
+            "description": "Read a GitHub issue (acceptance criteria) with comments. "
+            "`number` is N for this repository or owner/repo#N for another one.",
             "parameters": {
                 "type": "object",
                 "properties": {"number": {"type": "string"}},
@@ -404,6 +443,24 @@ def exhausted_answers(questions):
     ]
 
 
+def qualify_issue(issue):
+    """The closing-issue reference to hand the model (#2041).
+
+    A plain number is qualified with QA_ISSUE_REPO when that is set, so a PR whose closing
+    issue lives in another repository gets `owner/repo#N`; an already-qualified reference, or
+    an unset QA_ISSUE_REPO, is returned unchanged."""
+    issue = (issue or "").strip()
+    repo = os.environ.get("QA_ISSUE_REPO", "").strip()
+    if issue and repo and "/" not in issue:
+        return "%s#%s" % (repo, issue.lstrip("#"))
+    return issue
+
+
+def _tool_arg(value):
+    """A gh tool argument as the model should write it: bare digits, else a JSON string."""
+    return value if str(value).isdigit() else json.dumps(value)
+
+
 def answerer_user_message(questions, pr="", issue=""):
     """Assemble the answerer's user turn: a short preamble naming the PR and the
     closing issue so the model knows which numbers to pass to the pr_diff /
@@ -418,9 +475,10 @@ def answerer_user_message(questions, pr="", issue=""):
             "the PR under review is #%s (use pr_diff(number=%s) to read the diff)" % (pr, pr)
         )
     if issue:
+        shown = issue if "/" in issue else "#" + issue
         hints.append(
-            "the issue it closes is #%s (use gh_issue(number=%s) for its acceptance criteria)"
-            % (issue, issue)
+            "the issue it closes is %s (use gh_issue(number=%s) for its acceptance criteria)"
+            % (shown, _tool_arg(issue))
         )
     parts = []
     if hints:
@@ -436,6 +494,22 @@ def answerer_user_message(questions, pr="", issue=""):
     return "\n\n".join(parts)
 
 
+def validate_turn(resp):
+    """Raise ValueError when a completion is neither a tool call nor a usable answer array.
+
+    Passed to post_chat_completion as `validate` (#1895): an empty or unparseable FINAL reply
+    is retried with the same history, like a gateway error, instead of crashing main() in
+    parse_answers after the whole tool loop has run."""
+    msg = resp["choices"][0]["message"]
+    if msg.get("tool_calls"):
+        return
+    content = msg.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("the final reply has no content")
+    if not isinstance(parse_answers(content), list):
+        raise ValueError("the final reply is JSON but not an answer array")
+
+
 def answer_loop(base_url, api_key, model, worktree, questions, no_exec, pr="", issue=""):
     impl, schema = tools_for(no_exec)
     messages = [
@@ -443,7 +517,9 @@ def answer_loop(base_url, api_key, model, worktree, questions, no_exec, pr="", i
         {"role": "user", "content": answerer_user_message(questions, pr, issue)},
     ]
     for _ in range(MAX_TOOL_TURNS):
-        resp = post_chat_completion(base_url, api_key, model, messages, schema)
+        resp = post_chat_completion(
+            base_url, api_key, model, messages, schema, validate=validate_turn
+        )
         msg = resp["choices"][0]["message"]
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
@@ -537,16 +613,21 @@ def main(argv=None):
     parsed = json.loads(raw)
     questions = parsed["questions"] if isinstance(parsed, dict) else parsed
 
-    content = answer_loop(
-        base_url,
-        api_key,
-        args.model,
-        args.worktree,
-        questions,
-        args.no_exec,
-        pr=args.pr,
-        issue=args.issue,
-    )
+    try:
+        content = answer_loop(
+            base_url,
+            api_key,
+            args.model,
+            args.worktree,
+            questions,
+            args.no_exec,
+            pr=args.pr,
+            issue=qualify_issue(args.issue),
+        )
+    except UnparseableReply as exc:
+        # Fail closed (no stdout, non-zero exit => the gate reads MISSING), but name why.
+        sys.stderr.write("qa-review answerer: %s\n" % exc)
+        return 1
     answers = parse_answers(content)
 
     json.dump(answers, sys.stdout)

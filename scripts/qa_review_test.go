@@ -385,7 +385,7 @@ import json, sys, importlib
 mod = importlib.import_module(sys.argv[1])
 final = sys.argv[2]           # assistant content to emit each turn ("" => none)
 turns = {"n": 0}
-def fake_post(base_url, api_key, model, messages, tools):
+def fake_post(base_url, api_key, model, messages, tools=None, **kw):
     turns["n"] += 1
     return {"choices": [{"message": {
         "role": "assistant",
@@ -592,7 +592,7 @@ else:
     cap = sys.argv[2]
     os.environ["OPENAI_BASE_URL"] = "http://x"
     os.environ["OPENAI_API_KEY"] = "k"
-    def fake_post(base_url, api_key, model, messages, tools):
+    def fake_post(base_url, api_key, model, messages, tools=None, **kw):
         with open(cap, "w", encoding="utf-8") as fh:
             fh.write(messages[1]["content"])   # the assembled user turn
         return {"choices": [{"message": {"role": "assistant",
