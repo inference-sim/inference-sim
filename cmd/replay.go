@@ -490,6 +490,12 @@ Example:
 			DecodeOverrides:          decodeOverrides,
 			InstanceLifecycle:        bundleInstanceLifecycle,
 			ScenarioEndpointTopology: cluster.StaticEndpointTopology(scenarioTopology),
+			// A contract-built release replays on the engine it ran on, built the same way as in
+			// run (INV-13); a compatibility release keeps the compatibility engine.
+			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+		}
+		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance); f != nil {
+			config.NewEngine = f
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode

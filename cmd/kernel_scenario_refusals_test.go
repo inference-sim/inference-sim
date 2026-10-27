@@ -292,6 +292,33 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	}
 }
 
+// INV-13 for a contract-built release: a 0.32.0 run's exported trace, replayed with the same
+// flags, reproduces the run byte for byte. blis replay must build the same engine through the
+// engine contract, not fall back to the compatibility engine.
+func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
+	dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`)
+	prefix := filepath.Join(t.TempDir(), "trace")
+	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--seed", "7", "--horizon", "600000000"}
+	runOut, runErr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "24", "--rate", "15",
+		"--trace-output", prefix}, common...)...)
+	if err != nil {
+		t.Fatalf("run: %v\nstderr:\n%s", err, lastLines(runErr, 5))
+	}
+	repOut, repErr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
+		"--trace-data", prefix + ".csv"}, common...)...)
+	if err != nil {
+		t.Fatalf("replay: %v\nstderr:\n%s", err, lastLines(repErr, 5))
+	}
+	if !strings.Contains(repErr, "engine assumption: engine_version = 0.31.0") {
+		t.Errorf("a 0.32.0 replay must run the engine built through the contract, which discloses the "+
+			"kernel's 0.31.0 tuning; stderr:\n%s", lastLines(repErr, 6))
+	}
+	if runOut != repOut {
+		t.Errorf("a 0.32.0 replay does not reproduce its run (INV-13):\nrun:\n%s\nreplay:\n%s",
+			lastLines(runOut, 30), lastLines(repOut, 30))
+	}
+}
+
 // A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
 // queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
 // the engine, as on the 0.31.0 compatibility engine. The queue adds the same TTFT on both, and
