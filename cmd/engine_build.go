@@ -674,9 +674,8 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 // instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
 // unchanged.
 func compatContractFactory(version string, cfg sim.SimConfig, acceptance float64) func(int) (*sim.EngineDriver, error) {
-	if !compatThroughContract(version) || cfg.Offload.IsEnabled() || cfg.HasAdapters() {
-		// The first stage's adapter carries neither an offload tier nor LoRA, however the run
-		// came by them (a replay takes its offload tier from its trace's header).
+	if !compatThroughContract(version) || cfg.HasAdapters() {
+		// The adapter does not carry LoRA yet, however the run came by its adapters.
 		return nil
 	}
 	build := func(index int) (*sim.EngineDriver, error) {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,6 +110,55 @@ func TestContractCompatRouterPathsAreByteIdentical(t *testing.T) {
 					lastLines(got, 40), lastLines(want, 40))
 			}
 		})
+	}
+}
+
+// A KV offload tier, run both ways: prefix groups whose shared prefixes outgrow the GPU prefix
+// cache, so a recurring prefix is found again on the CPU tier (--kv-cpu-blocks). The CPU tier's
+// part of the admissions' prefix-cache hits reaches the report (cpu_tier_hit_rate), as do the
+// offload store's thrash counts (KV Thrashing Rate on stdout).
+func TestContractCompatOffloadIsByteIdentical(t *testing.T) {
+	args := []string{"run", "--scenarios", filepath.Join("..", "testdata", "contract-compat", "scenarios"),
+		"--scenario", "llama-70b-kvpressure.yaml", "--workload-spec", writePrefixPressureSpec(t, 200, 400),
+		"--seed", "3", "--kv-cpu-blocks", "200000", "--log", "debug"}
+	run := func(env string) (stdout, metrics, stderr string) {
+		t.Helper()
+		t.Setenv(ContractCompatEnv, env)
+		path := filepath.Join(t.TempDir(), "metrics.json")
+		stdout, stderr, err := runKernelCLI(t, append(args, "--metrics-path", path)...)
+		if err != nil {
+			t.Fatalf("ContractCompatEnv=%q: %v\nstderr:\n%s", env, err, lastLines(stderr, 5))
+		}
+		return stdout, readFile(t, path), stderr
+	}
+	want, wantMetrics, wantErr := run("0")
+	if !strings.Contains(wantErr, "<< StepEvent") {
+		t.Fatal("with the opt-out the compatibility host loop logged no step events; the comparison is vacuous")
+	}
+	got, gotMetrics, gotErr := run("")
+	if strings.Contains(gotErr, "<< StepEvent") {
+		t.Fatal("by default the compatibility engine's own host loop ran; the comparison is vacuous")
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(wantMetrics), &m); err != nil {
+		t.Fatal(err)
+	}
+	if cpu, _ := m["cpu_tier_hit_rate"].(float64); cpu <= 0 {
+		t.Fatalf("no CPU-tier hit (cpu_tier_hit_rate %v); the comparison is vacuous", m["cpu_tier_hit_rate"])
+	}
+	if strings.Contains(want, "KV Thrashing Rate: 0.0000") {
+		t.Fatal("the offload store recorded no thrashing; the comparison is vacuous")
+	}
+	if got != want {
+		t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+			lastLines(got, 30), lastLines(want, 30))
+	}
+	var gm map[string]any
+	if err := json.Unmarshal([]byte(gotMetrics), &gm); err != nil {
+		t.Fatal(err)
+	}
+	if gm["cpu_tier_hit_rate"] != m["cpu_tier_hit_rate"] {
+		t.Errorf("cpu_tier_hit_rate: contract %v, host loop %v", gm["cpu_tier_hit_rate"], m["cpu_tier_hit_rate"])
 	}
 }
 

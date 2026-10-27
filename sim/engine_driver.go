@@ -216,6 +216,17 @@ func (d *EngineDriver) Finalize() {
 	}
 	d.Metrics.StillQueued = waiting
 	d.Metrics.StillRunning = running
+	if k, ok := d.eng.(interface {
+		KVThrashing() (rate float64, events, opportunities int64, counted bool)
+	}); ok {
+		// The KV store's thrash counts, which the cluster aggregates (the compatibility engine's
+		// offload stores count them).
+		rate, events, opportunities, counted := k.KVThrashing()
+		d.Metrics.KVThrashingRate = rate
+		if counted {
+			d.Metrics.KVThrashEvents, d.Metrics.KVThrashOpportunities = events, opportunities
+		}
+	}
 	d.Metrics.SimEndedTime = min(d.Clock, d.Horizon)
 	logrus.Infof("[tick %07d] Simulation ended", d.Clock)
 }
@@ -441,10 +452,16 @@ func (d *EngineDriver) kick(now int64) {
 				d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
 				if d.cfg.RecordPrefixLookups && !r.lookedUp {
 					// The admission's prefix-cache lookup, as the compatibility engine's report
-					// records it (RecordScheduled): the prompt, and what the cache supplied of it.
+					// records it (RecordScheduled): the prompt, and what the cache supplied of it,
+					// split into the device cache's part and the KV offload tier's (an engine with
+					// an offload tier says how much it supplied: OffloadCachedTokens).
 					r.lookedUp = true
+					var offload int
+					if o, ok := d.eng.(interface{ OffloadCachedTokens(id string) int }); ok {
+						offload = o.OffloadCachedTokens(s.ID)
+					}
 					d.Metrics.recordPrefixLookup(r.req, PrefixLookup{QueryTokens: r.req.InputLen(),
-						HitTokens: int64(s.CachedTokens)})
+						HitTokens: int64(s.CachedTokens - offload), CPUHitTokens: int64(offload)})
 				}
 			}
 		}

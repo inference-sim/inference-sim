@@ -48,11 +48,11 @@ func compatThroughContract(version string) bool {
 }
 
 // contractCompatShape is the run shape the contract path carries so far: colocated instances
-// behind the router, dp 1, no P/D pools, no offload tier, no adapters.
+// behind the router, dp 1, no P/D pools, no adapters.
 func contractCompatShape() bool {
 	return dataParallelism <= 1 &&
 		prefillInstances == 0 && decodeInstances == 0 && prefillDecodeInstances == 0 && encodeInstances == 0 &&
-		kvCPUBlocks == 0 && kvOffloadConfigPath == "" && scenarioOffload == nil && loraConfigPath == ""
+		loraConfigPath == ""
 }
 
 // throughContract reports whether this run's engine is built by the registered factory and driven
