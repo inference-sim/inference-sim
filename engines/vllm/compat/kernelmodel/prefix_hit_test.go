@@ -68,7 +68,7 @@ func TestPrefixHit_V1RunnerAndPCPTurnBoundedReplayOff(t *testing.T) {
 		{"prefill context parallelism", func(p *deployment.Pool) { p.Parallel.PCP = 2 }, "v2"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64}}
+			pool := poolWith(t, engineconfig.Engine{BlockSize: 64})
 			tt.edit(&pool)
 			m := &Model{k: fixedDeployment{pool: pool}, engine: mustDecode(t, pool), id: identity{prefix: prefixLayout{
 				known: true, v41: true, window: 128, windowBlock: 32, pcp: max(pool.Parallel.PCP, 1)}}}
@@ -111,7 +111,7 @@ func TestPrefixHit_ThePoolsStatedBoundedReplayIsTheCacheConfig(t *testing.T) {
 		{"the flag over a stated false", boolPtr(false), nil, boolPtr(true), true, "--swa-bounded-replay"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64, SWABoundedReplay: tt.stated}}
+			pool := poolWith(t, engineconfig.Engine{BlockSize: 64, SWABoundedReplay: tt.stated})
 			if tt.v1 != nil {
 				editPoolEngine(t, &pool, func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} })
 			}

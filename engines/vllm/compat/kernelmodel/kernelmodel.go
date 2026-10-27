@@ -583,8 +583,8 @@ func specTokensOf(k kernel.Kernel) int {
 		}
 		return 0
 	}
-	if sp := k.Deployment().Engine.Speculative; sp != nil && sp.NumSpecTokens > 0 {
-		return sp.NumSpecTokens
+	if e, err := decodeEngine(k.Deployment()); err == nil && e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
+		return e.Speculative.NumSpecTokens
 	}
 	return 0
 }

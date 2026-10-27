@@ -77,9 +77,16 @@ var harnessKeys = []string{
 }
 
 // harnessSchemaValue is inference-sim's schemaValue as it stood at 01bbf6bf (gaps.go:406-430), the
-// reflection PoolEngineValue replaced, kept here to compare against.
-func harnessSchemaValue(pool deployment.Pool, key string) (any, bool) {
-	for _, v := range []reflect.Value{reflect.ValueOf(pool.Engine), reflect.ValueOf(pool.Parallel)} {
+// reflection PoolEngineValue replaced, kept here to compare against. That reflection read the
+// engine block as blis-schemas then typed it, which is engineconfig.Engine's fields verbatim, so it
+// reflects over the block decoded.
+func harnessSchemaValue(t testing.TB, pool deployment.Pool, key string) (any, bool) {
+	t.Helper()
+	e, err := kernelmodel.DecodeEngine(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []reflect.Value{reflect.ValueOf(e), reflect.ValueOf(pool.Parallel)} {
 		t := v.Type()
 		for i := 0; i < t.NumField(); i++ {
 			tag := strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0]
@@ -128,7 +135,7 @@ func TestPoolEngineValueIsTheHarnessesLookup(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, key := range harnessKeys {
-					wantV, wantOK := harnessSchemaValue(variant, key)
+					wantV, wantOK := harnessSchemaValue(t, variant, key)
 					gotV, gotOK := PoolEngineValue(pool, &rs, key)
 					if gotOK != wantOK || !reflect.DeepEqual(gotV, wantV) {
 						t.Errorf("%s %s: PoolEngineValue = %v, %v; the harness's lookup = %v, %v",
@@ -165,7 +172,10 @@ func TestStatedRunSettingsAreTheScenarios(t *testing.T) {
 					continue
 				}
 				got, err := StatedRunSettings(m)
-				e := dep.Pools[pool].Engine
+				e, derr := kernelmodel.DecodeEngine(dep.Pools[pool])
+				if derr != nil {
+					t.Fatalf("%s pool %d: %v", path, pool, derr)
+				}
 				if e.BlockSize <= 0 || e.MaxNumSeqs <= 0 || e.MaxNumBatchedTokens <= 0 {
 					if err == nil {
 						t.Errorf("%s pool %d: no refusal for a block missing a required setting", path, pool)

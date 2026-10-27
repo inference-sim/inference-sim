@@ -20,12 +20,13 @@ import (
 
 	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/v0_32"
 )
 
 // Config is the engine block of one pool, as the simulator hands it over in engine.Spec.Config.
 //
-// The pool's engine settings are blis-schemas' deployment.Engine, inline, which is what a
+// The pool's engine settings are blis-vllm's engineconfig.Engine, inline, which is what a
 // scenario's engine: block holds. Two facts the scheduler needs are not engine settings and sit
 // beside them:
 //
@@ -48,7 +49,7 @@ import (
 // whether Triton is installed and which features are on, so it is a fact of the serving image
 // the caller states, here or as the env key; see resolveV2Runner.
 type Config struct {
-	deployment.Engine     `yaml:",inline"`
+	engineconfig.Engine   `yaml:",inline"`
 	NumGPUBlocks          int   `yaml:"num_gpu_blocks"`
 	PipelineParallelSize  *int  `yaml:"pipeline_parallel_size"`
 	UseV2ModelRunner      *bool `yaml:"use_v2_model_runner,omitempty"`
@@ -391,7 +392,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // refuseUnmodelled refuses engine settings whose effect on scheduling this engine does not
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
-func refuseUnmodelled(e deployment.Engine, dataParallel bool) error {
+func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 	if keys := unreadEnv(e.Env); len(keys) > 0 {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
@@ -452,7 +453,7 @@ func unreadEnv(env map[string]string) []string {
 // and _validate_adaptive_verification (:3001-3032@5df63a72) refuses it with LoRA, without full
 // CUDA graphs and with pipeline parallelism. The verify width it trims is step time, which is
 // the latency kernel's (docs/feature-matrix.md, "DSpark adaptive verification").
-func checkAdaptiveVerification(e deployment.Engine, pp int, v2 bool) error {
+func checkAdaptiveVerification(e engineconfig.Engine, pp int, v2 bool) error {
 	sp := e.Speculative
 	if sp == nil || sp.EnableAdaptiveVerification == nil || !*sp.EnableAdaptiveVerification {
 		return nil
@@ -497,21 +498,25 @@ func fullCUDAGraphs(mode string) bool {
 // requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
 // the whole document set, as is every rule that needs the model graph, which checks nothing
 // without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
-func checkRules(e deployment.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
+func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
 
 // blockShapes are the tensor and data parallel widths checkRules runs the pack under: each at 1
 // and at 2, so that a clause turning on either width, whichever way, is silent in one of them.
 var blockShapes = []struct{ tp, dp int }{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
 
 // checkRulesWith is checkRules for a given rules pack.
-func checkRulesWith(pack rules.EngineRules, e deployment.Engine, pp int) error {
+func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error {
+	block, err := engineconfig.Encode(e)
+	if err != nil {
+		return fmt.Errorf("vllm: encoding the engine block: %w", err)
+	}
 	var first []rules.Problem       // the first shape's errors, in the order the pack reports them
 	in := map[string]map[int]bool{} // an error's key: the shapes that reported it
 	for i, shape := range blockShapes {
 		doc := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
 			Role:     deployment.RoleColocated,
 			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp},
-			Engine:   e,
+			Engine:   block,
 		}}}}
 		for _, p := range pack.Check(doc).Errors() {
 			key := p.Rule + "\x00" + p.Message

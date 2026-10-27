@@ -12,6 +12,8 @@ import (
 	"github.com/inference-sim/blis-schemas/engine/enginetest"
 	"github.com/inference-sim/blis-schemas/rules"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/rules/pack"
 )
 
 // base is the engine block every test starts from.
@@ -341,7 +343,7 @@ func TestFactoryRulesRefuseOnlyWhatTheBlockStates(t *testing.T) {
 // A rule clause that turns on the tensor-parallel width, which the engine block does not state,
 // refuses nothing in the factory, whichever width it asks for; one the block decides refuses.
 func TestFactoryRulesIgnoreClausesOnUnstatedWidths(t *testing.T) {
-	var e deployment.Engine
+	var e engineconfig.Engine
 	for _, c := range []struct {
 		name   string
 		pp     int
@@ -362,12 +364,12 @@ func TestFactoryRulesIgnoreClausesOnUnstatedWidths(t *testing.T) {
 		{"refused at pp 1, stated 1", 1, func(pl deployment.Parallelism) bool { return pl.PP == 1 }, true},
 	} {
 		fires := c.fires
-		pack := &rules.Pack{Version: "0.32.0", Rules: []rules.Rule{{Name: "probe", Check: func(in rules.Input, out *rules.Problems) {
+		probe := &pack.Pack{Version: "0.32.0", Rules: []rules.Rule{{Name: "probe", Check: func(in rules.Input, out *rules.Problems) {
 			if fires(in.Deployment.Pools[0].Parallel) {
 				out.RuleErrorf("probe", "pools[0].engine: refused")
 			}
 		}}}}
-		if err := checkRulesWith(pack, e, c.pp); (err != nil) != c.refuse {
+		if err := checkRulesWith(probe, e, c.pp); (err != nil) != c.refuse {
 			t.Errorf("%s: err %v, want refused=%v", c.name, err, c.refuse)
 		}
 	}

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"gopkg.in/yaml.v3"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
 	"github.com/inference-sim/blis-latency-kernel/vllmsettings"
@@ -144,15 +143,8 @@ func must(s string, err error) string {
 	return s
 }
 
-// mustBlock is a pool's engine block as an opaque deployment.EngineBlock.
-//
-// TEMPORARY: until blis-schemas#102's switch makes Pool.Engine that block, the struct is encoded
-// into one.
+// mustBlock is a pool's engine block.
 func mustBlock(t testing.TB, pool deployment.Pool) deployment.EngineBlock {
 	t.Helper()
-	var n yaml.Node
-	if err := n.Encode(pool.Engine); err != nil {
-		t.Fatal(err)
-	}
-	return deployment.NewEngineBlock(&n)
+	return pool.Engine
 }

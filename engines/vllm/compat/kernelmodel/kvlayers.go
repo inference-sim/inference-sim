@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/rules/pack"
 )
 
 // KVLayerRun is a run of consecutive attention layers of one KV cache spec, in core/vllm's
@@ -251,7 +252,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 			// The compressor ring: drafts + bonus token + the previous row, as a power of two of at
 			// least 8 (deepseek_v41/compressor.py:150-153), float32 rows of 2 x head_dim.
 			add(KVLayerRun{Spec: "circular_buffer", NumKVHeads: 1, HeadSize: state.BytesPerEntry / 4,
-				BlockSize: rules.CompressorRingRows(k), ElemBytes: 4})
+				BlockSize: pack.CompressorRingRows(k), ElemBytes: 4})
 		case v41:
 		default:
 			add(v4CompressorState(state, ratio, swa.PageAlignment))

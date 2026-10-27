@@ -29,7 +29,7 @@ func editPoolEngine(t testing.TB, pool *deployment.Pool, edit func(*engineconfig
 
 // An edit reaches the block blis-vllm decodes, and nothing else in it changes.
 func TestEditPoolEngineReachesTheDecodedBlock(t *testing.T) {
-	pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64, MaxNumSeqs: 8, CacheDType: "fp8"}}
+	pool := poolWith(t, engineconfig.Engine{BlockSize: 64, MaxNumSeqs: 8, CacheDType: "fp8"})
 	editPoolEngine(t, &pool, func(e *engineconfig.Engine) {
 		e.Speculative = &engineconfig.Speculative{Method: "mtp", NumSpecTokens: 2}
 	})
@@ -46,7 +46,7 @@ func TestEditPoolEngineReachesTheDecodedBlock(t *testing.T) {
 // DraftForTest writes the drafter into the priced pool's block and changes nothing else in it.
 func TestDraftForTestWritesThePricedPoolsDrafter(t *testing.T) {
 	in := latencykernel.Inputs{PoolIndex: 1, Deployment: &deployment.Deployment{Pools: []deployment.Pool{
-		{Engine: deployment.Engine{BlockSize: 16}}, {Engine: deployment.Engine{BlockSize: 64, CacheDType: "fp8"}}}}}
+		{Engine: blockOf(t, engineconfig.Engine{BlockSize: 16})}, {Engine: blockOf(t, engineconfig.Engine{BlockSize: 64, CacheDType: "fp8"})}}}}
 	if err := DraftForTest(&in, "dspark", 5); err != nil {
 		t.Fatal(err)
 	}
@@ -58,4 +58,20 @@ func TestDraftForTestWritesThePricedPoolsDrafter(t *testing.T) {
 	if other := mustDecode(t, in.Deployment.Pools[0]); other.Speculative != nil || other.BlockSize != 16 {
 		t.Errorf("the other pool changed: %+v", other)
 	}
+}
+
+// poolWith is a colocated pool whose engine block states e.
+func poolWith(t testing.TB, e engineconfig.Engine) deployment.Pool {
+	t.Helper()
+	return deployment.Pool{Role: deployment.RoleColocated, Engine: blockOf(t, e)}
+}
+
+// blockOf is e encoded as an engine block.
+func blockOf(t testing.TB, e engineconfig.Engine) deployment.EngineBlock {
+	t.Helper()
+	b, err := engineconfig.Encode(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
