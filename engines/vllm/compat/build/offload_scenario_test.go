@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // The mapping: a cpu_dram tier of N bytes, with the OffloadingConnector, either of its specs
@@ -62,15 +63,15 @@ func TestKVOffloadFromDeployment_RefusesWhatTheModelDoesNotImplement(t *testing.
 		{"no CPU tier", deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: []deployment.Tier{{Device: "nvme_gen4", Bytes: 1 << 40}}}, "offload.tiers[0]"},
 		// The connector options came with the v0.32.0 engine (blis-schemas#102); a stated one
 		// would otherwise run at the model's default (blocks_per_chunk 1, eager stores).
-		{"blocks_per_chunk", deployment.Offload{Tiers: cpu, ConnectorOptions: &deployment.ConnectorOptions{BlocksPerChunk: 16}}, "offload.connector_options (blocks_per_chunk)"},
+		{"blocks_per_chunk", deployment.Offload{Tiers: cpu, ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{BlocksPerChunk: 16})}, "offload.connector_options (blocks_per_chunk)"},
 		{"lazy_offload on the simple connector", deployment.Offload{Tiers: cpu, Connector: SimpleConnector,
-			ConnectorOptions: &deployment.ConnectorOptions{LazyOffload: ptrBool(true)}}, "offload.connector_options (lazy_offload)"},
-		{"every option", deployment.Offload{Tiers: cpu, ConnectorOptions: &deployment.ConnectorOptions{
+			ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{LazyOffload: ptrBool(true)})}, "offload.connector_options (lazy_offload)"},
+		{"every option", deployment.Offload{Tiers: cpu, ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{
 			LoadAsync: ptrBool(true), LookupAsync: ptrBool(false), EnableOffload: ptrBool(true),
 			EnableCrossLayersBlocks: ptrBool(true), LazyOffload: ptrBool(false), BlocksPerChunk: 2,
-			KVLoadFailurePolicy: "recompute"}},
+			KVLoadFailurePolicy: "recompute"})},
 			"offload.connector_options (load_async, lookup_async, enable_offload, enable_cross_layers_blocks, lazy_offload, blocks_per_chunk, kv_load_failure_policy)"},
-		{"an empty block", deployment.Offload{Tiers: cpu, ConnectorOptions: &deployment.ConnectorOptions{}}, "offload.connector_options (an empty block)"},
+		{"an empty block", deployment.Offload{Tiers: cpu, ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{})}, "offload.connector_options (an empty block)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := KVOffloadBlockFromDeployment(&tc.o)
@@ -81,7 +82,7 @@ func TestKVOffloadFromDeployment_RefusesWhatTheModelDoesNotImplement(t *testing.
 	}
 	// The scenario's path to the engine refuses them too, naming the scenario.
 	if _, err := ResolveKVOffloadConfig("s.yaml", &deployment.Offload{Tiers: cpu,
-		ConnectorOptions: &deployment.ConnectorOptions{BlocksPerChunk: 16}}, "", 16, nil); err == nil ||
+		ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{BlocksPerChunk: 16})}, "", 16, nil); err == nil ||
 		!strings.Contains(err.Error(), `scenario "s.yaml"`) || !strings.Contains(err.Error(), "offload.connector_options") {
 		t.Errorf("ResolveKVOffloadConfig: err = %v, want the connector_options refusal naming the scenario", err)
 	}
@@ -136,4 +137,13 @@ func TestKVOffloadFromDeployment_ASecondaryTierIsTheFSTier(t *testing.T) {
 	if tier := got.Tiers[0]; tier.NReadThreads != 16 || tier.NWriteThreads != 16 || !tier.DirectIO || tier.CapacityBytes != 1<<40 {
 		t.Fatalf("fs tier %+v: want 16+16 threads, O_DIRECT, 1 TiB", tier)
 	}
+}
+
+// connectorOptions is an offload's connector options as a deployment holds them, unopened.
+func connectorOptions(c engineconfig.ConnectorOptions) deployment.EngineBlock {
+	b, err := engineconfig.EncodeConnectorOptions(&c)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

@@ -236,6 +236,14 @@ func TestLoadRefusesAnInvalidRegistry(t *testing.T) {
 	if _, err := decode([]byte("kind: ConnectorRegistry\nname: x\nconnectors: {}\n")); err == nil {
 		t.Fatal("a registry with no connectors loaded")
 	}
+	// An interface vLLM does not define is refused here, where the release's interfaces are
+	// known; blis-schemas checks only that an entry names one.
+	entry := "kind: ConnectorRegistry\nname: x\nconnectors:\n  NixlConnector:\n    upstream: KVConnectorBase_V2\n" +
+		"    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test @ vLLM v0.32.0\"\n"
+	if _, err := decode([]byte(entry)); err == nil ||
+		!strings.Contains(err.Error(), `connectors.NixlConnector.upstream: "KVConnectorBase_V2" is not a known connector interface (KVConnectorBase_V1)`) {
+		t.Errorf("an unknown upstream interface: %v", err)
+	}
 }
 
 // The evidence check refuses what is not a trace: each case plants one defect in a scratch copy

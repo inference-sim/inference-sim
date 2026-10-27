@@ -52,5 +52,20 @@ func decode(data []byte) (*connector.Registry, error) {
 	if p := r.Validate(); !p.OK() {
 		return nil, fmt.Errorf("connector registry: %s", p.Error())
 	}
+	for _, name := range r.Names() {
+		if u := r.Connectors[name].Upstream; !upstreams[u] {
+			return nil, fmt.Errorf("connector registry: connectors.%s.upstream: %q is not a known connector interface (%s)",
+				name, u, UpstreamKVConnectorBaseV1)
+		}
+	}
 	return &r, nil
 }
+
+// UpstreamKVConnectorBaseV1 is vLLM's connector interface, KVConnectorBase_V1
+// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:180@5df63a72), which every built-in
+// connector and every connector loaded through kv_connector_module_path implements. It moved
+// from blis-schemas' spec/connector at 2c38342, which now checks only that an entry names one.
+const UpstreamKVConnectorBaseV1 connector.Upstream = "KVConnectorBase_V1"
+
+// upstreams are the connector interfaces vLLM v0.32.0 defines.
+var upstreams = map[connector.Upstream]bool{UpstreamKVConnectorBaseV1: true}
