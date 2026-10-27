@@ -35,6 +35,11 @@ type EngineDriverConfig struct {
 	// compatibility engine's deterministic carry: a mean of α x drafts per step, no RNG
 	// (commitDecodeTokens). Zero accepts none.
 	Acceptance float64
+	// ResumeGapFromLastToken measures the gap before a preempted request's first token after it
+	// resumes from its last token's emission (its arrival plus its TTFT and ITL so far), as the
+	// compatibility engine's executeBatchStep does for a resumed prefill; off, from the end of
+	// the last step that emitted for it. Only the compatibility engine's contract build sets it.
+	ResumeGapFromLastToken bool
 }
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
@@ -78,6 +83,7 @@ type driverReq struct {
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
+	resumed      bool    // preempted after its first token, not yet emitting again
 }
 
 type driverBatch struct {
@@ -430,6 +436,7 @@ func (d *EngineDriver) notePreempted(b engine.Batch) {
 		d.Metrics.PreemptionCount++
 		if r := d.reqs[id]; r != nil {
 			r.req.State = StateQueued
+			r.resumed = r.emitted > 0
 		}
 	}
 }
@@ -487,7 +494,18 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			// executeBatchStep records it: the step's advance since the request's last emitting
 			// step plus n tokens of output processing (currStepAdvance + NumNewTokens x OTPT,
 			// blis-vllm compat/engine/engine.go:996). The first token's own OTPT is TTFT's.
-			r.req.ITL = append(r.req.ITL, end-r.lastEnd+int64(n)*d.cfg.OutputTokenProcessingTime)
+			gap := end - r.lastEnd + int64(n)*d.cfg.OutputTokenProcessingTime
+			if d.cfg.ResumeGapFromLastToken && r.resumed {
+				// A resumed prefill's sampled token: its gap runs from the last token emitted
+				// before the preemption (compat/engine/engine.go:969-976).
+				last := r.req.ArrivalTime + r.req.FirstTokenTime
+				for _, v := range r.req.ITL {
+					last += v
+				}
+				gap = max(end+d.cfg.OutputTokenProcessingTime-last, 0)
+			}
+			r.resumed = false
+			r.req.ITL = append(r.req.ITL, gap)
 			r.lastEnd = end
 		}
 		r.emitted += res.Emitted[id]

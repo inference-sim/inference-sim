@@ -1,0 +1,42 @@
+=== Simulation Metrics ===
+{
+  "instance_id": "cluster",
+  "completed_requests": 300,
+  "still_queued": 0,
+  "still_running": 0,
+  "injected_requests": 300,
+  "total_input_tokens": 1797729,
+  "total_output_tokens": 441018,
+  "vllm_estimated_duration_s": 229.784482,
+  "responses_per_sec": 1.3055711917047559,
+  "tokens_per_sec": 1919.2679860774933,
+  "e2e_mean_ms": 167562.02252,
+  "e2e_p90_ms": 210540.22619999998,
+  "e2e_p95_ms": 213354.85950000002,
+  "e2e_p99_ms": 219862.36147,
+  "ttft_mean_ms": 73605.88432333333,
+  "ttft_p90_ms": 150739.1011,
+  "ttft_p95_ms": 161386.45515,
+  "ttft_p99_ms": 167995.89129,
+  "itl_mean_ms": 63.95610880200037,
+  "itl_p90_ms": 38.07,
+  "itl_p95_ms": 400.233,
+  "itl_p99_ms": 483.687,
+  "scheduling_delay_p99_ms": 167622.10911000002,
+  "preemption_count": 40,
+  "dropped_unservable": 0,
+  "length_capped_requests": 0,
+  "timed_out_requests": 0
+}
+=== Anomaly Counters ===
+Priority Inversions: 147
+HOL Blocking Events: 0
+Rejected Requests (Admission): 0
+Rejected Requests (Routing): 0
+Dropped Unservable: 0
+Timed Out Requests: 0
+Length-Capped Requests: 0
+=== KV Cache Metrics ===
+Preemption Rate: 0.1333
+Cache Hit Rate: 0.0000
+KV Thrashing Rate: 0.0000
