@@ -66,6 +66,9 @@ type Engine struct {
 	dropped  bool
 	// ho is the engine's P/D handoffs (handoff.go).
 	ho handoffs
+	// group is the data-parallel group the engine is a rank of (DPGroup), nil for none: the group
+	// steps its ranks, so a rank's ask for a step is the group's.
+	group *DPGroup
 }
 
 type adapterLoad struct {
@@ -493,6 +496,10 @@ func (e *Engine) Snapshot() engine.State {
 }
 
 func (e *Engine) askWake(t int64) {
+	if e.group != nil {
+		e.group.ask(t)
+		return
+	}
 	if e.wake < 0 || t < e.wake {
 		e.wake = t
 	}
@@ -529,6 +536,9 @@ func (h host) ArmStep(t int64) {
 	h.e.askWake(t)
 }
 func (h host) StepArmed() bool {
+	if g := h.e.group; g != nil {
+		return g.armed >= 0 || g.flight != nil || g.stepping
+	}
 	return h.e.wake >= 0 || h.e.flight != nil || h.e.sleepUntil > 0
 }
 
