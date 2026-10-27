@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/engine"
@@ -33,7 +34,11 @@ func newGroup(t *testing.T, dp int) *DPGroup {
 		BatchConfig:   cengine.NewBatchConfig(16, 2048, 0),
 		LatencyModel:  tokenLatency{},
 	}
-	g, err := NewDPGroup("instance_0", dp, cfg)
+	ids := make([]string, dp)
+	for k := range ids {
+		ids[k] = fmt.Sprintf("instance_%d", k)
+	}
+	g, err := NewDPGroup(ids, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

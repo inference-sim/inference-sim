@@ -40,19 +40,22 @@ type DPGroup struct {
 	busyUntil int64
 	flight    *flight
 	nextID    engine.BatchID
-	// steps counts the group's lockstep steps, and dummy those in which no rank ran a request.
+	// steps counts the group's lockstep steps, and dummy those in which no rank ran a request;
+	// active is which ranks had work in the last one.
 	steps, dummy int
+	active       []bool
 }
 
-// NewDPGroup builds a replica of dp ranks, each from cfg as New builds one instance, named
-// id/rank<k>.
-func NewDPGroup(id string, dp int, cfg cengine.SimConfig) (*DPGroup, error) {
+// NewDPGroup builds a replica of one rank per id, each from cfg as New builds one instance under
+// that id.
+func NewDPGroup(ids []string, cfg cengine.SimConfig) (*DPGroup, error) {
+	dp := len(ids)
 	if dp < 2 {
-		return nil, fmt.Errorf("contract: %s: a data-parallel group needs >= 2 ranks, got %d", id, dp)
+		return nil, fmt.Errorf("contract: %v: a data-parallel group needs >= 2 ranks, got %d", ids, dp)
 	}
 	g := &DPGroup{lb: dplb.New(dp), rankOf: map[string]int{}, inflight: make([]int, dp), armed: -1}
 	for k := 0; k < dp; k++ {
-		e, err := New(fmt.Sprintf("%s/rank%d", id, k), cfg)
+		e, err := New(ids[k], cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -198,6 +201,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 		res.FirstTokens = append(res.FirstTokens, e.firsts...)
 		res.Finished = append(res.Finished, e.done...)
+		res.Handoffs = append(res.Handoffs, e.holdHandoffs(e.done)...)
 		res.KVEvents = append(res.KVEvents, e.kvEvents...)
 		e.kvEvents = nil
 		for id := range ran {
@@ -215,10 +219,15 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 	}
 	sortStrings(b.Preempted)
+	for _, e := range g.ranks {
+		// The pulls a rank's schedule admitted (its remote-KV admission, inside scheduleBatch).
+		b.TransfersStarted = append(b.TransfersStarted, e.ho.take()...)
+	}
 	g.steps++
 	if !ranAny {
 		g.dummy++
 	}
+	g.active = active
 	anyWork := false
 	for _, e := range g.ranks {
 		anyWork = anyWork || cengine.HasWorkOf(e.core)
@@ -227,12 +236,34 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		g.armed = now + advance
 	}
 	if len(b.Reqs) == 0 {
-		return engine.Batch{Preempted: b.Preempted}, nil
+		return engine.Batch{Preempted: b.Preempted, TransfersStarted: b.TransfersStarted}, nil
 	}
 	g.nextID++
 	b.ID = g.nextID
 	g.flight = &flight{id: b.ID, advance: advance, res: res}
 	return b, nil
+}
+
+// idleHandoffs admits rank k's waiting P/D handoffs at now when the rank has no other work and no
+// step is executing, as an idle decode engine does at once, and returns the pulls it started.
+func (g *DPGroup) idleHandoffs(k int, now engine.Time) []engine.Transfer {
+	e := g.ranks[k]
+	if len(e.ho.waiting) == 0 || e.core.HasWork() || now < g.busyUntil {
+		return nil
+	}
+	e.now = now
+	e.admitRemote()
+	return e.ho.take()
+}
+
+// handoffWake is when rank k's waiting handoffs can next be admitted while it has no other work:
+// the end of the step executing.
+func (g *DPGroup) handoffWake(k int, now engine.Time) (engine.Time, bool) {
+	e := g.ranks[k]
+	if len(e.ho.waiting) > 0 && !e.core.HasWork() && g.busyUntil > now {
+		return g.busyUntil, true
+	}
+	return 0, false
 }
 
 func (g *DPGroup) price(batches [][]*cengine.Request) []int64 {
@@ -343,6 +374,15 @@ func (g *DPGroup) RankSnapshot(k int) engine.State { return g.ranks[k].Snapshot(
 // batches.
 func (g *DPGroup) LockstepSteps() (steps, dummy int) { return g.steps, g.dummy }
 
+// LastActive is which ranks had work in the group's last lockstep step (a rank without runs a
+// dummy batch), nil before the first.
+func (g *DPGroup) LastActive() []bool { return append([]bool(nil), g.active...) }
+
+// StepDue reports whether the group's next lockstep step is due at now.
+func (g *DPGroup) StepDue(now engine.Time) bool {
+	return g.flight == nil && g.armed >= 0 && g.armed <= now
+}
+
 // RankView is rank k of a group as an engine.Engine of its own, for a host that keeps one
 // instance per rank: under vLLM's external DP load balancer every rank is its own endpoint the
 // router picks among, and a P/D pool's ranks stay individually routable. A request added through
@@ -362,12 +402,16 @@ var _ engine.Engine = (*RankView)(nil)
 
 func (v *RankView) Add(r engine.Request, now engine.Time) error { return v.g.AddToRank(v.k, r, now) }
 
-// Schedule runs the group's step on rank 0's view; every other view's schedule is empty.
+// Schedule admits the rank's waiting handoffs when it is idle, and on rank 0's view runs the
+// group's step; every other view's batch runs nothing.
 func (v *RankView) Schedule(now engine.Time) (engine.Batch, error) {
+	started := v.g.idleHandoffs(v.k, now)
 	if v.k != 0 {
-		return engine.Batch{}, nil
+		return engine.Batch{TransfersStarted: started}, nil
 	}
-	return v.g.Schedule(now)
+	b, err := v.g.Schedule(now)
+	b.TransfersStarted = append(started, b.TransfersStarted...)
+	return b, err
 }
 
 func (v *RankView) StepTime(b engine.Batch) engine.Duration { return v.g.StepTime(b) }
@@ -376,25 +420,40 @@ func (v *RankView) Complete(id engine.BatchID, o engine.Outcome, end engine.Time
 	return v.g.Complete(id, o, end)
 }
 
+// TransferDone ends one of the rank's transfers (a transfer's ID is its rank's).
 func (v *RankView) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
-	return v.g.TransferDone(id, ok, now)
+	return v.g.ranks[v.k].TransferDone(id, ok, now)
 }
 
 func (v *RankView) Finish(id string, why engine.FinishReason, now engine.Time) error {
 	return v.g.Finish(id, why, now)
 }
 
-// NextWake is the group's armed step, on rank 0's view.
+// NextWake is when the rank's waiting handoffs can be admitted, and on rank 0's view also the
+// group's armed step, whichever is first.
 func (v *RankView) NextWake(now engine.Time) (engine.Time, bool) {
+	at, ok := v.g.handoffWake(v.k, now)
 	if v.k != 0 {
-		return 0, false
+		return at, ok
 	}
-	return v.g.NextWake(now)
+	if gat, gok := v.g.NextWake(now); gok && (!ok || gat < at) {
+		return gat, true
+	}
+	return at, ok
 }
 
 func (v *RankView) InFlightLimit() int                     { return 1 }
 func (v *RankView) Metrics(now engine.Time) engine.Metrics { return v.g.RankMetrics(v.k, now) }
 func (v *RankView) Snapshot() engine.State                 { return v.g.RankSnapshot(v.k) }
+
+// AdmitIdle admits the rank's waiting P/D handoffs at now when it has no other work and no step is
+// executing, as an idle decode engine does at once, and returns the pulls it started.
+func (v *RankView) AdmitIdle(now engine.Time) []engine.Transfer { return v.g.idleHandoffs(v.k, now) }
+
+// LockstepSteps, LastActive and StepDue are the group's (DPGroup's).
+func (v *RankView) LockstepSteps() (steps, dummy int) { return v.g.LockstepSteps() }
+func (v *RankView) LastActive() []bool                { return v.g.LastActive() }
+func (v *RankView) StepDue(now engine.Time) bool      { return v.g.StepDue(now) }
 
 // Rank is the view's rank, and Group its group.
 func (v *RankView) Rank() int       { return v.k }
