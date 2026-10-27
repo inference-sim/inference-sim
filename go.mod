@@ -5,15 +5,15 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	// TEMPORARY: inference-sim/blis-latency-kernel#82 at 6c22823 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
+	// TEMPORARY: inference-sim/blis-latency-kernel#82 at f556c19 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027025153-6c22823d37a3
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027190648-f556c19c1b1b
 	// TEMPORARY: inference-sim/blis-schemas#102 at 6c207b4 (https://github.com/inference-sim/blis-schemas/pull/102; engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.7.1-0.20261027144933-6c207b46a5e7
-	// TEMPORARY: inference-sim/blis-vllm main at 66c8a3f (review PR https://github.com/inference-sim/blis-vllm/pull/20).
+	// TEMPORARY: inference-sim/blis-vllm main at b06f0c0 (review PR https://github.com/inference-sim/blis-vllm/pull/20).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261027183359-66c8a3f5bf73
+	github.com/inference-sim/blis-vllm v0.0.0-20261027191120-b06f0c02ea28
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
