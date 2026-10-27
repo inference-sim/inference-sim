@@ -3,8 +3,7 @@
 // Package contract puts the compatibility engine (compat/engine) behind blis-schemas'
 // engine.Engine, the contract blis-vllm's v0.32.0 engine (core/vllm) implements, so a
 // simulator drives every release through one driver (inference-sim GOAL.md phase 2c). This
-// first stage carries one colocated instance with no data parallelism or P/D; New refuses the
-// others, naming them.
+// adapter carries colocated instances and P/D pools (handoff.go), with no data parallelism.
 //
 // The engine executes a whole compatibility step when it is scheduled, as compat/engine's own
 // host loop does (inference-sim's Simulator.Step runs ExecuteStep, then FinishStep, at the
@@ -64,6 +63,8 @@ type Engine struct {
 	kvEvents []engine.KVEvent
 	inEnque  bool
 	dropped  bool
+	// ho is the engine's P/D handoffs (handoff.go).
+	ho handoffs
 }
 
 type adapterLoad struct {
@@ -116,10 +117,13 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("contract: request %s added twice", r.ID)
 	}
+	if r.RemotePrefill {
+		return e.addRemote(r, now)
+	}
 	e.now = now
 	req := &cengine.Request{ID: r.ID, InputTokens: tokens(r.Prompt), OutputTokens: tokens(r.Output),
 		MaxOutputLen: r.MaxOutputTokens, ArrivalTime: r.ArrivalTime, Adapter: r.Adapter, State: cengine.StateQueued,
-		SLOClass: r.Tags[TagSLOClass]}
+		SLOClass: r.Tags[TagSLOClass], RetainKVOnFinish: r.RemoteDecode}
 	e.sleepUntil = 0 // an arrival ends a deferral sleep (the host loop's scheduleStepBy)
 	e.inEnque, e.dropped = true, false
 	e.core.EnqueueRequest(req)
@@ -159,6 +163,11 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	if now < e.busyUntil {
 		return engine.Batch{}, nil
 	}
+	if len(e.ho.waiting) > 0 && !e.core.HasWork() {
+		// An engine with nothing else to do admits its waiting handoffs at once.
+		e.admitRemote()
+		return engine.Batch{TransfersStarted: e.ho.take()}, nil
+	}
 	if e.core.NothingToStep() {
 		e.core.IdleStep(now)
 		return engine.Batch{}, nil
@@ -186,6 +195,14 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 	}
 	sortStrings(b.Preempted)
+	for _, id := range b.Preempted {
+		if req := e.reqs[id]; req != nil && !req.TTFTSet {
+			// A request preempted before this engine sampled its first token -- a P/D decode
+			// sub-request, whose decode steps the compatibility engine counts without one --
+			// prefills again from nothing, and that prefill samples its first token here.
+			e.out[id] = 0
+		}
+	}
 	remaining := e.core.FinishStep(now, advance)
 	if len(remaining) > 0 {
 		e.core.KeepRunning(remaining)
@@ -204,6 +221,7 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 	res := engine.Result{Emitted: map[string]int{}, FirstTokens: append([]string(nil), e.firsts...),
 		Finished: append([]engine.Finished(nil), e.done...), KVEvents: e.kvEvents}
 	e.kvEvents = nil
+	res.Handoffs = e.holdHandoffs(res.Finished)
 	for id := range ran {
 		req := e.reqs[id]
 		if req == nil {
@@ -218,9 +236,10 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		delete(e.reqs, f.ID)
 		delete(e.out, f.ID)
 	}
+	b.TransfersStarted = e.ho.take()
 	if len(b.Reqs) == 0 {
 		// A step that ran nothing is not in flight, but held the GPU for its duration.
-		return engine.Batch{Preempted: b.Preempted}, nil
+		return engine.Batch{Preempted: b.Preempted, TransfersStarted: b.TransfersStarted}, nil
 	}
 	e.nextID++
 	b.ID = e.nextID
@@ -272,6 +291,13 @@ func (e *Engine) AdapterEvents() (loads, evictions map[string]int64) {
 	return maps.Clone(e.rec.loads), maps.Clone(e.rec.evictions)
 }
 
+// QueueSnapshots are the engine's waiting and running request counts at each step it executed,
+// in order, as its report records them (RecordQueueSnapshot): what a simulator's head-of-line
+// blocking detector averages.
+func (e *Engine) QueueSnapshots() (waiting, running []int) {
+	return append([]int(nil), e.rec.waiting...), append([]int(nil), e.rec.runningN...)
+}
+
 // OffloadCachedTokens is how much of id's Scheduled.CachedTokens, in the batch Schedule last
 // returned, the KV offload tier supplied (PrefixLookup.CPUHitTokens).
 func (e *Engine) OffloadCachedTokens(id string) int { return int(e.rec.lookups[id].CPUHitTokens) }
@@ -313,17 +339,13 @@ func (e *Engine) Complete(id engine.BatchID, _ engine.Outcome, end engine.Time) 
 	return res, nil
 }
 
-// TransferDone: the first stage starts no transfers.
-func (e *Engine) TransferDone(engine.TransferID, bool, engine.Time) error {
-	return engine.ErrUnknownTransfer
-}
-
 // Finish ends a request the engine did not finish. A timeout cancels it as the engine's
 // deadline does (CancelOnTimeout); an abort is a gateway eviction (Evict), whose freed state the
 // engine's next step publishes (NoteAbort).
 func (e *Engine) Finish(id string, why engine.FinishReason, now engine.Time) error {
 	req := e.reqs[id]
 	if req == nil {
+		e.finishRemote(id, now)
 		return nil
 	}
 	e.now = now
@@ -362,7 +384,8 @@ func (e *Engine) nextWake(now engine.Time) (engine.Time, bool) {
 	if e.flight == nil && e.sleepUntil > now {
 		return e.sleepUntil, true
 	}
-	if e.flight == nil && !e.loadIdle && (e.core.HasWaiting() || e.core.HasRunning()) && e.busyUntil > now {
+	if e.flight == nil && !e.loadIdle && (e.core.HasWaiting() || e.core.HasRunning() || len(e.ho.waiting) > 0) &&
+		e.busyUntil > now {
 		return e.busyUntil, true
 	}
 	if e.wake > now {
@@ -505,6 +528,8 @@ type recorder struct {
 	loads, evictions map[string]int64
 	// lookups are the prefix-cache lookups of the requests the step admitted, by ID.
 	lookups map[string]cengine.PrefixLookup
+	// waiting and runningN are the engine's queue lengths at each step (QueueSnapshots).
+	waiting, runningN []int
 }
 
 func (r *recorder) RecordArrival(*cengine.Request, float64) {}
@@ -518,8 +543,10 @@ func (r *recorder) RecordScheduled(req *cengine.Request, _ int64, l cengine.Pref
 		r.lookups[req.ID] = l
 	}
 }
-func (r *recorder) RecordFirstToken(*cengine.Request)   {}
-func (r *recorder) RecordQueueSnapshot(int, int)        {}
+func (r *recorder) RecordFirstToken(*cengine.Request) {}
+func (r *recorder) RecordQueueSnapshot(waiting, running int) {
+	r.waiting, r.runningN = append(r.waiting, waiting), append(r.runningN, running)
+}
 func (r *recorder) RecordKVUsage(int64, int64, bool)    {}
 func (r *recorder) RecordCompletion(cengine.Completion) {}
 func (r *recorder) RecordLengthCapped(*cengine.Request) {}

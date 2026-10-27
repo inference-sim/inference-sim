@@ -7,12 +7,12 @@ require (
 	// engine settings from the caller), which compat/kernelmodel builds against. Moves to a release
 	// tag before anything merges (blis-latency-kernel#88).
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027020405-625cd1de5208
-	// TEMPORARY: inference-sim/blis-schemas#102 at dd46797 (the engine-neutral contract: a pool's
+	// TEMPORARY: inference-sim/blis-schemas#102 at b29fe55 (the engine-neutral contract: a pool's
 	// engine block and an offload's connector options held unopened as deployment.EngineBlock, and
-	// the engine's rules from the caller).
+	// the engine's rules from the caller; the P/D handoff, Result.Handoffs).
 	// Moves to a blis-schemas release tag before anything merges (blis-latency-kernel#88, which gives
 	// the tags' order).
-	github.com/inference-sim/blis-schemas v0.7.1-0.20261027022131-dd4679743fde
+	github.com/inference-sim/blis-schemas v0.7.1-0.20261027124745-b29fe55134bd
 	// TEMPORARY: the rules packs, a separate module in this repository (rules/); compat/kernelmodel
 	// hands them to the kernel, and the v0.32 factory applies rules/v0_32; rules/engineconfig decodes
 	// a pool's engine block and an offload's connector options, and rules/pack is the pack type.
