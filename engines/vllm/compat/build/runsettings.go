@@ -1,5 +1,6 @@
-// Moved from inference-sim/sim/kernelmodel/harness/blisrun.go and gaps.go at
-// 01bbf6bf50c4b81bc91b0bfdb9b26f91e3155b60 (writeScenarioVariant, applyPointConfig, schemaValue).
+// Moved from inference-sim/sim/kernelmodel/harness/blisrun.go at 01bbf6bf50c4b81bc91b0bfdb9b26f91e3155b60.
+// Moved from inference-sim/sim/kernelmodel/harness/gaps.go at 01bbf6bf50c4b81bc91b0bfdb9b26f91e3155b60.
+// (writeScenarioVariant, applyPointConfig and schemaValue; StatedRunSettings is original.)
 
 package build
 
