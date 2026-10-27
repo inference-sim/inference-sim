@@ -6,6 +6,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-schemas/engine"
+
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -673,18 +675,14 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 // compatibility engine behind engine.Engine (blis-vllm compat/contract), built from the run's
 // instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
 // unchanged.
-func compatContractFactory(version string, global sim.SimConfig, acceptance float64) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
+func compatContractFactory(version string, global sim.SimConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
 	if !compatThroughContract(version) {
 		return nil
 	}
 	// Each instance's engine is built from its own configuration, resolved for its pool role (a
 	// P/D prefill or decode pool's overrides), as the compatibility engine's own host loop builds
 	// it (sim.NewEngine).
-	build := func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) {
-		eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
-		if err != nil {
-			return nil, err
-		}
+	driver := func(eng engine.Engine, cfg sim.SimConfig) (*sim.EngineDriver, error) {
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance, ResumeGapFromLastToken: true,
 			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
 		if cfg.LatencyModel != nil {
@@ -694,8 +692,49 @@ func compatContractFactory(version string, global sim.SimConfig, acceptance floa
 		}
 		return sim.NewEngineDriverWithFrontend(eng, dcfg, cfg.Frontend)
 	}
-	if _, err := build(0, global); err != nil {
-		logrus.Fatalf("%v", err)
+	// A data-parallel MoE replica (dpLockstepRanks consecutive instances, one per rank) is one
+	// engine, the compatibility engine's lockstep group (contract.DPGroup), which each rank's
+	// instance reaches through its rank's view; rank 0's driver steps the group.
+	ranks := dpPlan.LockstepRanks
+	var group *contract.DPGroup
+	var leader *sim.EngineDriver
+	build := func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) {
+		if ranks <= 1 {
+			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
+			if err != nil {
+				return nil, err
+			}
+			return driver(eng, cfg)
+		}
+		k := index % ranks
+		if k == 0 {
+			ids := make([]string, ranks)
+			for j := range ids {
+				ids[j] = fmt.Sprintf("instance_%d", index+j)
+			}
+			g, err := contract.NewDPGroup(ids, cfg)
+			if err != nil {
+				return nil, err
+			}
+			group = g
+		}
+		if group == nil {
+			return nil, fmt.Errorf("data-parallel rank %d of instance %d was built before its rank 0", k, index)
+		}
+		d, err := driver(group.View(k), cfg)
+		if err != nil {
+			return nil, err
+		}
+		if k == 0 {
+			leader = d
+		}
+		d.JoinGroup(leader, k)
+		return d, nil
+	}
+	if ranks <= 1 {
+		if _, err := build(0, global); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 	}
 	return build
 }

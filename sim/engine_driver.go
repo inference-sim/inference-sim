@@ -90,6 +90,9 @@ type EngineDriver struct {
 	OnFirstToken  func(req *Request, at int64)
 
 	stepIdx int
+	// preEventClock is the clock before the event running now (a group's dummy-only step restores
+	// it, kickGroup).
+	preEventClock int64
 	// kvEventSink receives the engine's prefix-cache changes (SetKVEventSink); nil when none.
 	kvEventSink func(at int64, events []KVEvent)
 
@@ -101,6 +104,12 @@ type EngineDriver struct {
 	pulls         map[string]engine.TransferID
 	holds         map[string]engine.Handoff
 	OnPullStarted func(req *Request, pulledTokens int64, at int64)
+
+	// A data-parallel group with one instance per rank (engine_driver_group.go): leader is rank
+	// 0's driver for a member, nil for the leader or an engine of its own; members are the
+	// leader's other ranks' drivers, in rank order.
+	leader  *EngineDriver
+	members []*EngineDriver
 }
 
 type driverReq struct {
@@ -191,6 +200,7 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.req.State == StateCompleted {
 		return entry.event
 	}
+	d.preEventClock = d.Clock
 	d.Clock = shim.Timestamp()
 	shim.ev.run(d)
 	return entry.event
@@ -376,6 +386,11 @@ func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 // requests that reach the engine together share its next batch. With a batch in flight, vLLM's
 // loop waits on that batch's output, and its Complete steps the engine.
 func (d *EngineDriver) stepAfterArrivals(now int64) {
+	if d.leader != nil {
+		// A member's step is its group's, which its leader runs.
+		d.kickMember(now)
+		return
+	}
 	d.rearmWake(now)
 	if len(d.inFlight) > 0 || d.stepPending {
 		return
@@ -493,6 +508,14 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 // free, then asks the engine when to wake. Batches are scheduled only when the GPU has a free
 // in-flight slot: Schedule returns ErrNoCapacity at the engine's limit.
 func (d *EngineDriver) kick(now int64) {
+	if d.leader != nil {
+		d.kickMember(now)
+		return
+	}
+	if len(d.members) > 0 {
+		d.kickGroup(now)
+		return
+	}
 	for {
 		b, err := d.eng.Schedule(now)
 		if errors.Is(err, engine.ErrNoCapacity) {
@@ -510,34 +533,7 @@ func (d *EngineDriver) kick(now int64) {
 		end := start + max(d.eng.StepTime(b), 1)
 		d.gpuFreeAt = end
 		d.stepIdx++
-		for _, s := range b.Reqs {
-			if r := d.reqs[s.ID]; r != nil && r.req.State != StateRunning {
-				if r.remote && r.emitted == 0 {
-					// A remote-prefilled request's first token is a decode step's: its gap runs
-					// from the step's start.
-					r.lastEnd = start
-				}
-				r.req.State = StateRunning
-				r.scheduledIdx = d.stepIdx
-				d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
-				if s.PrefixLookup && !r.lookedUp {
-					// The first admission's prefix-cache lookup, as the engine reports it
-					// (Scheduled.PrefixLookup): the prompt, and what the cache supplied of it, split
-					// into the device cache's part and the KV offload tier's (an engine with an
-					// offload tier says how much it supplied: OffloadCachedTokens). The report's
-					// hit rate is vLLM's prefix-cache stat over first admissions: a preempted
-					// request's lookup again is not counted (PrefixCacheStats.record,
-					// vllm/v1/metrics/stats.py:138-155@5df63a72).
-					r.lookedUp = true
-					var offload int
-					if o, ok := d.eng.(interface{ OffloadCachedTokens(id string) int }); ok {
-						offload = o.OffloadCachedTokens(s.ID)
-					}
-					d.Metrics.recordPrefixLookup(r.req, PrefixLookup{QueryTokens: r.req.InputLen(),
-						HitTokens: int64(s.CachedTokens - offload), CPUHitTokens: int64(offload)})
-				}
-			}
-		}
+		d.admit(b, now, start)
 		if d.cfg.ApplyAtStepStart {
 			res, err := d.eng.Complete(b.ID, d.outcome(b), end)
 			if err != nil {
@@ -551,6 +547,39 @@ func (d *EngineDriver) kick(now int64) {
 		d.schedule(&driverStepEnd{at: end})
 	}
 	d.rearmWake(now)
+}
+
+// admit records a batch scheduled at now whose step starts at start: each request's first
+// scheduling (its state, scheduling delay and admission prefix lookup), at the current step index.
+func (d *EngineDriver) admit(b engine.Batch, now, start int64) {
+	for _, s := range b.Reqs {
+		if r := d.reqs[s.ID]; r != nil && r.req.State != StateRunning {
+			if r.remote && r.emitted == 0 {
+				// A remote-prefilled request's first token is a decode step's: its gap runs
+				// from the step's start.
+				r.lastEnd = start
+			}
+			r.req.State = StateRunning
+			r.scheduledIdx = d.stepIdx
+			d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
+			if s.PrefixLookup && !r.lookedUp {
+				// The first admission's prefix-cache lookup, as the engine reports it
+				// (Scheduled.PrefixLookup): the prompt, and what the cache supplied of it, split
+				// into the device cache's part and the KV offload tier's (an engine with an
+				// offload tier says how much it supplied: OffloadCachedTokens). The report's
+				// hit rate is vLLM's prefix-cache stat over first admissions: a preempted
+				// request's lookup again is not counted (PrefixCacheStats.record,
+				// vllm/v1/metrics/stats.py:138-155@5df63a72).
+				r.lookedUp = true
+				var offload int
+				if o, ok := d.eng.(interface{ OffloadCachedTokens(id string) int }); ok {
+					offload = o.OffloadCachedTokens(s.ID)
+				}
+				d.Metrics.recordPrefixLookup(r.req, PrefixLookup{QueryTokens: r.req.InputLen(),
+					HitTokens: int64(s.CachedTokens - offload), CPUHitTokens: int64(offload)})
+			}
+		}
+	}
 }
 
 func (d *EngineDriver) notePreempted(b engine.Batch) {

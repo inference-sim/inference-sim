@@ -101,11 +101,14 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 			sims = append(sims, inst.engineCore())
 		}
 		rep.id = string(rep.ranks[0].ID())
-		g, err := sim.NewLockstepGroup(sims)
-		if err != nil {
-			return fmt.Errorf("replica %s: %w", rep.id, err)
+		if rep.ranks[0].drv == nil {
+			g, err := sim.NewLockstepGroup(sims)
+			if err != nil {
+				return fmt.Errorf("replica %s: %w", rep.id, err)
+			}
+			rep.group = g
 		}
-		rep.group = g
+		// An engine-driven replica's lockstep group is its engine, behind the contract.
 		replicas = append(replicas, rep)
 		for _, inst := range rep.ranks {
 			replicaOf[string(inst.ID())] = rep
@@ -117,7 +120,7 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 	// unstated). An external-balancer or P/D-pool rank keeps the render stage it was built
 	// with: its own endpoint's servers.
 	for _, rep := range replicas {
-		if cs.endpointReplica(rep.ranks[0]) == nil {
+		if cs.endpointReplica(rep.ranks[0]) == nil || rep.ranks[0].drv != nil {
 			continue
 		}
 		apiServers := sim.ReplicaAPIServers(config.Frontend.APIServerCount, dp)

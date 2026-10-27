@@ -494,7 +494,7 @@ Example:
 			// run (INV-13); a compatibility release keeps the compatibility engine.
 			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance); f != nil {
+		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance, dpPlan); f != nil {
 			config.NewEngine = f
 		}
 

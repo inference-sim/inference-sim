@@ -36,6 +36,11 @@ var contractCompatCases = []struct {
 	{"glm5-3p1d", "examplescenarios", "glm-5-h200-3p1d-ib.yaml", "--rate 2 --num-requests 40 --seed 11 --num-instances 4 --prefill-instances 3 --decode-instances 1"},
 	{"pd-preempt-park", "testdata/contract-compat/scenarios", "glm-5-h200-3p1d-tightdecode.yaml", "--rate 1000 --num-requests 5 --seed 1 --num-instances 4 --prefill-instances 3 --decode-instances 1 " +
 		"--prompt-tokens 4287 --prompt-tokens-stdev 0 --prompt-tokens-max 4287 --output-tokens 200 --output-tokens-stdev 0 --output-tokens-max 200 --timeout -1"},
+	// Data parallelism: a replica's ranks step as one compatibility lockstep group behind the
+	// contract (blis-vllm compat/contract.DPGroup), each rank its own instance: under vLLM's
+	// external DP load balancer (dep8), and as the ranks of P/D pools (dp2).
+	{"td-dsv41-dep8", "testdata/scenarios", "deepseek-v4.1-flash-h100-2n-dep8-dspark5.yaml", "--rate 2 --num-requests 40 --seed 2 --speculative-acceptance-length 3.2"},
+	{"td-minimax-dp2", "testdata/scenarios", "minimax-m2.5-gb200-1p1d-dp2.yaml", "--rate 2 --num-requests 40 --seed 10 --num-instances 2 --prefill-instances 1 --decode-instances 1"},
 }
 
 const kvPressureLengths = "--prompt-tokens 6000 --prompt-tokens-stdev 1500 --prompt-tokens-max 12000 " +

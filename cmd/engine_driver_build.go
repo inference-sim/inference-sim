@@ -48,10 +48,13 @@ func compatThroughContract(version string) bool {
 }
 
 // contractCompatShape is the run shape the contract path carries so far: colocated instances
-// behind the router and P/D prefill and decode pools, dp 1, with no shared prefill-decode or
-// encode pool.
+// behind the router, P/D prefill and decode pools, and data-parallel replicas whose ranks are
+// each an instance (vLLM's external DP load balancer, or a P/D pool's ranks), with no shared
+// prefill-decode or encode pool. A replica behind vLLM's internal or hybrid balancer, one
+// endpoint whose ranks the engine picks among, still runs the compatibility host loop.
 func contractCompatShape() bool {
-	return dataParallelism <= 1 && prefillDecodeInstances == 0 && encodeInstances == 0
+	return (dataParallelism <= 1 || sim.DPEachRankIsAnEndpoint(dpLoadBalancing) || prefillInstances > 0) &&
+		prefillDecodeInstances == 0 && encodeInstances == 0
 }
 
 // throughContract reports whether this run's engine is built by the registered factory and driven
