@@ -296,6 +296,22 @@ func (e *Engine) AdapterEvents() (loads, evictions map[string]int64) {
 	return maps.Clone(e.rec.loads), maps.Clone(e.rec.evictions)
 }
 
+// DrainWaiting removes every request waiting in the engine's queue (not yet scheduled, or
+// preempted back to it) and returns their IDs in queue order, as the compatibility engine's
+// DrainWaitQueue does for a drained instance whose host re-routes them: each leaves with its
+// deferral state cleared and holds no KV. The engine forgets them.
+func (e *Engine) DrainWaiting() []string {
+	drained := e.core.DrainWaitQueue()
+	ids := make([]string, len(drained))
+	for i, req := range drained {
+		ids[i] = req.ID
+		delete(e.reqs, req.ID)
+		delete(e.out, req.ID)
+		delete(e.running, req.ID)
+	}
+	return ids
+}
+
 // QueueSnapshots are the engine's waiting and running request counts at each step it executed,
 // in order, as its report records them (RecordQueueSnapshot): what a simulator's head-of-line
 // blocking detector averages.

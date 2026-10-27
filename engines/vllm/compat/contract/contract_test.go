@@ -180,3 +180,46 @@ func TestAnAdapterLoadIsAWakeAndCompletesBeforeTheStep(t *testing.T) {
 		t.Errorf("cold loads of a0 = %d, want 1", loads["a0"])
 	}
 }
+
+// A drained instance's waiting requests leave the engine, in queue order, holding no KV: the
+// engine forgets them, and the requests it is running stay (DrainWaiting, the compatibility
+// engine's DrainWaitQueue).
+func TestDrainWaitingReturnsTheQueueAndKeepsTheRunning(t *testing.T) {
+	cfg := cengine.SimConfig{
+		Horizon:       1 << 40,
+		KVCacheConfig: cengine.NewKVCacheConfig(64, 16, 0, 0, 0, 0),
+		BatchConfig:   cengine.NewBatchConfig(1, 2048, 0), // one running request at a time
+		LatencyModel:  fixedLatency{},
+	}
+	e, err := New("instance_0", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		r := req("p", 32, 4)
+		r.ID = id
+		if err := e.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := e.Schedule(0)
+	if err != nil || len(b.Reqs) != 1 || b.Reqs[0].ID != "a" {
+		t.Fatalf("the first step must run a alone: %+v %v", b, err)
+	}
+	if _, err := e.Complete(b.ID, engine.Outcome{}, 1000); err != nil {
+		t.Fatal(err)
+	}
+	got := e.DrainWaiting()
+	if len(got) != 2 || got[0] != "b" || got[1] != "c" {
+		t.Fatalf("DrainWaiting = %v, want [b c]", got)
+	}
+	if s := e.Snapshot(); s.Waiting != 0 || s.Running != 1 {
+		t.Errorf("after the drain: %d waiting, %d running; want 0 and 1", s.Waiting, s.Running)
+	}
+	if again := e.DrainWaiting(); len(again) != 0 {
+		t.Errorf("a second drain returned %v", again)
+	}
+	if err := e.Add(req("b", 32, 4), 2000); err != nil {
+		t.Errorf("a drained request re-added (re-routed back) is refused: %v", err)
+	}
+}

@@ -495,6 +495,17 @@ func (v *RankView) Group() *DPGroup { return v.g }
 func (v *RankView) EnableKVEvents()                          { v.g.ranks[v.k].EnableKVEvents() }
 func (v *RankView) QueueSnapshots() (waiting, running []int) { return v.g.ranks[v.k].QueueSnapshots() }
 func (v *RankView) OffloadCachedTokens(id string) int        { return v.g.ranks[v.k].OffloadCachedTokens(id) }
+
+// DrainWaiting drains rank k's waiting queue (Engine.DrainWaiting); the group forgets the
+// drained requests' rank.
+func (v *RankView) DrainWaiting() []string {
+	ids := v.g.ranks[v.k].DrainWaiting()
+	for _, id := range ids {
+		v.g.forget(id)
+	}
+	return ids
+}
+
 func (v *RankView) KVThrashing() (rate float64, events, opportunities int64, counted bool) {
 	return v.g.ranks[v.k].KVThrashing()
 }
