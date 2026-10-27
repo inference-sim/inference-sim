@@ -27,20 +27,21 @@ var coreEngineVersions = map[string]bool{"0.32.0": true}
 // path builds.
 func runsThroughContract(version string) bool { return coreEngineVersions[version] }
 
-// ContractCompatEnv names the test-only switch of phase 2c's first stage: set to 1, a 0.29.0 or
-// 0.31.0 run whose shape the contract path carries (contractCompatShape) builds the
-// compatibility engine through the same factory as 0.32.0 and runs it through sim.EngineDriver,
-// so the two host paths can be compared byte for byte. Unset, nothing changes.
+// ContractCompatEnv names the opt-out of phase 2c's one engine path: a 0.29.0 or 0.31.0 run
+// whose shape the contract path carries (contractCompatShape) builds the compatibility engine
+// behind engine.Engine (blis-vllm compat/contract) and runs it through sim.EngineDriver, as a
+// 0.32.0 run does. Set to 0, it runs on the compatibility engine's own host loop instead, the path
+// that goes away when every shape is carried.
 const ContractCompatEnv = "BLIS_CONTRACT_COMPAT"
 
 // compatEngineVersions are the releases the compatibility engine models.
 var compatEngineVersions = map[string]bool{"0.29.0": true, "0.31.0": true}
 
 // compatThroughContract reports whether this run of a compatibility release goes through the
-// contract (ContractCompatEnv): only a single colocated instance, with no data parallelism, no
-// P/D, no KV offload tier and no LoRA, the shape the first stage's adapter carries.
+// contract: by default (ContractCompatEnv unset or 1), for a single colocated instance with no
+// data parallelism, no P/D, no KV offload tier and no LoRA, the shapes the adapter carries.
 func compatThroughContract(version string) bool {
-	if os.Getenv(ContractCompatEnv) != "1" || !compatEngineVersions[version] {
+	if os.Getenv(ContractCompatEnv) == "0" || !compatEngineVersions[version] {
 		return false
 	}
 	return contractCompatShape()

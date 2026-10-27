@@ -268,6 +268,10 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 		ArrivalTime:     req.ArrivalTime,
 		Adapter:         req.Adapter,
 	}
+	if req.SLOClass != "" {
+		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
+		er.Tags = map[string]string{"slo_class": req.SLOClass}
+	}
 	if err := d.eng.Add(er, e.at); err != nil {
 		logrus.Warnf("dropping request %s: the engine refused it: %v", req.ID, err)
 		d.Metrics.DroppedUnservable++

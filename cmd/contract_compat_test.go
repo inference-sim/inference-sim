@@ -45,7 +45,7 @@ func TestContractCompatIsByteIdentical(t *testing.T) {
 			}
 			args := append([]string{"run", "--scenarios", filepath.Join("..", c.dir), "--scenario", c.scenario,
 				"--log", "debug"}, strings.Fields(c.flags)...)
-			t.Setenv(ContractCompatEnv, "1")
+			t.Setenv(ContractCompatEnv, "")
 			got, gotErr, err := runKernelCLI(t, args...)
 			if err != nil {
 				t.Fatalf("the contract path: %v\nstderr:\n%s", err, lastLines(gotErr, 5))
@@ -61,16 +61,29 @@ func TestContractCompatIsByteIdentical(t *testing.T) {
 	}
 }
 
-// Without the switch, the compatibility engine's own host loop runs, as before.
-func TestContractCompatIsOffByDefault(t *testing.T) {
-	t.Setenv(ContractCompatEnv, "")
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", filepath.Join("..", "examplescenarios"),
-		"--scenario", "gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "--rate", "8", "--num-requests", "8", "--seed", "3",
-		"--log", "debug")
-	if err != nil {
-		t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
+// The contract path is the default for the shapes it carries; ContractCompatEnv=0 keeps the
+// compatibility engine's own host loop, and a shape the contract does not carry yet (here four
+// instances behind the router) keeps it regardless.
+func TestContractCompatIsTheDefaultPath(t *testing.T) {
+	run := func(env string, extra ...string) string {
+		t.Helper()
+		t.Setenv(ContractCompatEnv, env)
+		args := append([]string{"run", "--scenarios", filepath.Join("..", "examplescenarios"),
+			"--scenario", "gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "--rate", "8", "--num-requests", "8", "--seed", "3",
+			"--log", "debug"}, extra...)
+		_, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
+		}
+		return stderr
 	}
-	if !strings.Contains(stderr, "<< StepEvent") {
-		t.Error("without the switch the compatibility engine's host loop must run")
+	if strings.Contains(run(""), "<< StepEvent") {
+		t.Error("by default a single-instance 0.29.0 run must go through the engine contract")
+	}
+	if !strings.Contains(run("0"), "<< StepEvent") {
+		t.Error("with the opt-out the compatibility engine's own host loop must run")
+	}
+	if !strings.Contains(run("", "--num-instances", "4"), "<< StepEvent") {
+		t.Error("a multi-instance run is not carried by the contract yet and must keep the host loop")
 	}
 }
