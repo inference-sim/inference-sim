@@ -20,8 +20,8 @@ Env:
 
 An empty or unparseable completion is retried with _http.py's bounded backoff
 (#1895). When every attempt is unusable the script exits 1 with nothing on
-stdout and a stderr line "unparseable reply after N attempts (input M bytes)",
-so the gate still reads MISSING, now with a named cause.
+stdout and a stderr line "unparseable reply after N attempts (input M bytes)":
+the gate still reads MISSING, and the job log names the cause.
 
 stdout: {"model", "questions":[{id,topic,question}]}
 """
@@ -93,16 +93,20 @@ Do not wrap it in markdown fences or add prose."""
 # Cap on the PR body + diff bytes sent to the questioner (#1895). Under the cap the
 # input is passed through byte-identical, so it only ever touches outliers.
 #
-# Why 256 KiB: at ~4 bytes/token that is ~64k tokens of input, well inside the
-# default model's context window, so the cap is not about fitting. It is about the
-# reply: the questioner only needs the shape of the change to ask good questions
-# (the answerer reads the actual code), while a very long input is where empty or
-# unparseable replies were observed (blis-schemas#100: three in a row on an input
-# padded with long reply comments, clean on the first try once trimmed). 256 KiB
-# still passes ~95% of recent merged PRs untouched (of the last 32 merged PRs here,
-# only the two largest diffs, at 274 KB and 446 KB, exceed it). The exhaustion
-# message reports the request size, so this can be retuned from evidence.
+# Why 256 KiB: at ~4 bytes/token that is ~64k tokens, well inside the default
+# model's context window. The cap is a bound on outliers, not a fix for any one
+# incident. The questioner only needs the shape of the change (the answerer reads
+# the code itself), and an input several times larger than usual is cut before it
+# can cost a call. It is NOT what stops the #1895 trigger on a ~150 KB input: that
+# input is under the cap, and it is covered by the retry and the named exhaustion
+# message (which reports the request size, so the threshold can be retuned from
+# evidence). The value sits above all but the largest recent diffs here (two of the
+# last 32 merged PRs, 274 KB and 446 KB, exceed it), so ordinary PRs are untouched.
 MAX_INPUT_BYTES = _env_number("QA_QUESTIONER_MAX_INPUT_BYTES", 256 * 1024, int)
+
+# Below this the cap would not leave room for its own markers, so a smaller
+# configured value is raised to it (and said so on stderr).
+MIN_INPUT_BYTES = 4096
 
 # When capping, the PR description gets at most this fraction of the budget. A
 # description is prose about the change; the diff IS the change, so when something
@@ -143,15 +147,21 @@ def cap_inputs(body, diff, limit=None):
     each cut by _cap_text. `notes` has one line per capped section for stderr.
     """
     limit = MAX_INPUT_BYTES if limit is None else limit
+    notes = []
+    if limit < MIN_INPUT_BYTES:
+        notes.append(
+            "qa-review questioner: input cap %d bytes is below the minimum, using %d"
+            % (limit, MIN_INPUT_BYTES)
+        )
+        limit = MIN_INPUT_BYTES
     body_bytes = len(body.encode("utf-8"))
     diff_bytes = len(diff.encode("utf-8"))
     if body_bytes + diff_bytes <= limit:
-        return body, diff, []
+        return body, diff, notes
     body_budget = min(body_bytes, int(limit * BODY_SHARE))
     new_body = _cap_text(body, body_budget)
     diff_budget = limit - len(new_body.encode("utf-8"))
     new_diff = _cap_text(diff, diff_budget)
-    notes = []
     for name, old, new in (("body", body, new_body), ("diff", diff, new_diff)):
         if new != old:
             notes.append(
@@ -170,8 +180,12 @@ def validate_completion(resp):
     if not isinstance(content, str) or not content.strip():
         raise ValueError("the completion has no content")
     generated = parse_generated(content)
-    if not isinstance(generated, dict) or not isinstance(generated.get("questions", []), list):
+    if not isinstance(generated, dict) or not isinstance(generated.get("questions"), list):
         raise ValueError("the completion is JSON but not a {\"questions\": [...]} object")
+    for item in generated["questions"]:
+        if not isinstance(item, dict) or not isinstance(item.get("question", ""), str) \
+                or not isinstance(item.get("topic", ""), str):
+            raise ValueError("a generated question is not a {topic, question} object of strings")
     return generated
 
 

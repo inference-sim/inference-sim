@@ -362,11 +362,14 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None, validat
 
     ``validate``, when given, is called with the parsed response and raises
     ``ValueError``/``KeyError``/``IndexError``/``TypeError`` when the reply is
-    unusable (#1895). Such a reply is retried with the same backoff and budget
+    unusable (#1895); ``AttributeError`` counts too, for a reply whose shape is
+    not what the hook expected. Keep hooks small: a coding bug in one that raises
+    these is indistinguishable from a bad reply. Such a reply is retried with the same backoff and budget
     as a transport error; when the budget runs out ``UnparseableReply`` is
     raised (fail-closed, with the attempt count and request size in its message).
 
-    Returns the parsed response. Raises the last transport error once the
+    Returns the parsed response. Raises ``UnparseableReply`` when the last
+    attempt was answered but rejected by ``validate``; otherwise raises the last transport error once the
     attempt budget is exhausted, after naming it on stderr — the fail-closed
     contract: no marker, gate reads MISSING, delivery stops for a human.
     """

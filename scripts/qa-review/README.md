@@ -108,8 +108,8 @@ spend a turn out of `MAX_TOOL_TURNS`.
   and a re-run cleared it. It now shares the same attempt and wait budget as a
   transport error. On exhaustion `UnparseableReply` is raised, and each script
   exits `1` with nothing on stdout and the stderr line `unparseable reply after N
-  attempts (input M bytes): <reason>`. The gate still reads `MISSING`, now with a
-  named cause. The questioner validates its single reply; the answerer and
+  attempts (input M bytes): <reason>`. The gate still reads `MISSING` (the workflow's
+  own skip reason stays generic), and the job log names the cause. The questioner validates its single reply; the answerer and
   adjudicator validate each turn that is not a tool call (their final answer).
 
 ### questioner.py
@@ -132,10 +132,11 @@ the rest; each is cut at a line boundary with a visible
 `[... N bytes omitted by the qa-review questioner input cap ...]` marker, and a
 stderr line names the original and capped sizes. The cut is deterministic. The
 questioner needs the shape of the change, not all of it, since the answerer reads
-the code itself. Empty or unparseable replies were seen on oversized inputs
-(three in a row on one PR whose input carried long reply comments). 256 KiB
-leaves all but the two largest of the last 32 merged PRs here untouched. The
-justification is kept next to `MAX_INPUT_BYTES`.
+the code itself. The cap bounds outliers. It is not the fix for the
+three-in-a-row trigger in #1895: that input was about 150 KB, under the cap, and
+the retry and the named exhaustion message cover it. 256 KiB leaves all but the
+two largest of the last 32 merged PRs here untouched. A configured value below
+4 KiB is raised to 4 KiB. The justification is kept next to `MAX_INPUT_BYTES`.
 
 ### answerer.py
 
@@ -272,8 +273,8 @@ explicitly with `--report-author <login>` / `QA_REPORT_AUTHOR`. Then, and only
 when the filtered set holds no report from that login, the adjudicator reads the
 PR's conversation once *unfiltered*, takes that author's most recent comment that
 `is_report_comment()` accepts, and keeps **only** its `parse_items_to_fix()`
-output (finding id, status, one-line text). What is newly admitted, and what is
-not:
+output (finding id, status, one-line text capped at 500 characters). What is
+newly admitted, and what is not:
 
 - admitted: one named comment's parsed findings;
 - not admitted: the rest of that comment (banner, table, prose, evidence lines,
@@ -281,9 +282,14 @@ not:
   by anyone else outside the filter. The author's defence is still only the later
   comments of the *filtered* set.
 
-This is safe for the same reason the findings were safe before: the adjudicator
-does not trust them. They only say what to check, and each one is re-checked
-against the code with `STILL_OPEN` as the default. A login on the filter's
+The finding text is still untrusted prompt text. It is bounded, and it is safe in
+the sense that matters for the gate. It can only ask the adjudicator to look at
+something: each finding is re-checked against the code with `STILL_OPEN` as the
+default. A non-writer may only **add** findings, never clear them. A named report
+with zero findings (which would otherwise end in a model-free `PASS`) is refused.
+So is a report edited after it was posted (`updated_at` differs from
+`created_at`), since it may no longer be the one the operator reviewed. Both exit
+**3** and say why. A login on the filter's
 automation allowlist (`github-actions`, `claude`, either spelling) is never
 admitted this way, so a human holding the bare stem cannot pose as the App.
 Without an explicit `--report-author` nothing changes. The admission is announced

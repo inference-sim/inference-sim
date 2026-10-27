@@ -126,6 +126,22 @@ func TestUnusableReplyIsRetriedThenSucceeds(t *testing.T) {
 		{"prose", "Sorry, I cannot help with that."},
 		{"wrong-json-type", `"just a string"`},
 	}
+	// Shapes that parse as the right container but carry malformed elements.
+	elementShape := map[string][]any{
+		"questioner": {`{"questions":["x"]}`, `{"questions":[{"question":5}]}`, `{}`},
+	}
+	for mod, shapes := range elementShape {
+		for i, c := range shapes {
+			unusable := c
+			t.Run(mod+"/element-shape-"+itoa(i), func(t *testing.T) {
+				got, stderr := runReplyProbe(t, mod, []any{unusable, validReply[mod]})
+				if got.RC != 0 || got.Attempts != 2 {
+					t.Errorf("%s reply %v: rc=%d attempts=%d, want a retry then success; stderr=%s",
+						mod, unusable, got.RC, got.Attempts, stderr)
+				}
+			})
+		}
+	}
 	for _, mod := range []string{"questioner", "answerer", "adjudicator"} {
 		for _, u := range unusable {
 			t.Run(mod+"/"+u.name, func(t *testing.T) {
@@ -258,7 +274,18 @@ func TestQuestionerCapsOversizedInput(t *testing.T) {
 		}
 	})
 
-	t.Run("a-small-body-leaves-its-share-to-the-diff", func(t *testing.T) {
+	t.Run("a-tiny-configured-cap-is-raised-to-the-minimum", func(t *testing.T) {
+		b, d, notes := run("body line\n", 2000, "+diff line\n", 2000, 10)
+		// Raised to the minimum, the cut still keeps real content, not just the two markers.
+		if total := len(b) + len(d); total > 4096 || total < 3000 {
+			t.Errorf("capped body+diff is %d bytes, want between 3000 and the 4096-byte minimum", total)
+		}
+		if len(notes) == 0 || !strings.Contains(notes[0], "below the minimum") {
+			t.Errorf("raising the cap was not reported: %v", notes)
+		}
+	})
+
+		t.Run("a-small-body-leaves-its-share-to-the-diff", func(t *testing.T) {
 		const limit = 4096
 		b, d, _ := run("b\n", 5, "+diff line\n", 2000, limit)
 		if b != strings.Repeat("b\n", 5) {

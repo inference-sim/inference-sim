@@ -194,8 +194,13 @@ def run(argv, **kw):
     if argv[0] == "bash" and "deliver-trusted-comments.sh" in argv[1]:
         return P(json.dumps({"comments": trusted}))
     if argv[0] == "gh" and argv[1] == "api":
+        # Pin the read's shape: real gh emits one array per page without --jq '.[]', which the
+        # line-per-object parser would not find, so a regression there must fail here.
+        assert argv[2] == "repos/o/r/issues/100/comments?per_page=100", argv
+        assert "--paginate" in argv and argv[argv.index("--jq") + 1] == ".[]", argv
         state["raw"] += 1
-        return P("\n".join(json.dumps(c) for c in raw) + "\n")
+        # json.dumps with ensure_ascii=False leaves U+0085/U+2028 raw, like gh's jq output.
+        return P("\n".join(json.dumps(c, ensure_ascii=False) for c in raw) + "\n")
     raise AssertionError("unexpected subprocess %r" % (argv,))
 adjudicator.subprocess.run = run
 prompts = []
@@ -317,7 +322,7 @@ func TestAdjudicatorNamedNonWriterReport(t *testing.T) {
 					"comments may", canary)
 			}
 		}
-		if !strings.Contains(stderr, "@reviewer") || !strings.Contains(stderr, "no write access") {
+		if !strings.Contains(stderr, "@reviewer") || !strings.Contains(stderr, "trusted filter withheld") {
 			t.Errorf("admitting a non-writer's report must be announced on stderr: %q", stderr)
 		}
 	})
@@ -360,6 +365,85 @@ func TestAdjudicatorNamedNonWriterReport(t *testing.T) {
 		if got.RC != 3 || len(got.Prompts) != 0 {
 			t.Fatalf("rc=%d prompts=%d: a non-writer holding an automation login must not be admitted; stderr=%s",
 				got.RC, len(got.Prompts), stderr)
+		}
+	})
+
+	t.Run("a-non-writer-cannot-clear-findings-with-a-zero-finding-report", func(t *testing.T) {
+		// A newer report by the same non-writer whose Items-to-fix is the "none" sentinel would
+		// end in a model-free PASS if admitted. It must be refused, not fall back to an older one.
+		passReport := strings.ReplaceAll(nonWriterReport,
+			"- **F1 · FLAW_FOUND** — The evidence line is never asserted.\n"+
+				"  _CANARY-EVIDENCE-CONTINUATION_\n"+
+				"- **G4 · CANNOT_ANSWER** — Could not reach the wiring.\n",
+			"- _None — no blocking findings._\n")
+		r := append(append([]map[string]any(nil), raw...),
+			rawComment(6, "reviewer", "2026-01-06T00:00:00Z", passReport))
+		got, stderr := runNonWriter(t, trusted, r, "reviewer")
+		if got.RC != 3 || len(got.Prompts) != 0 {
+			t.Fatalf("rc=%d prompts=%d, want 3 and none: a non-writer must not clear findings; stderr=%s",
+				got.RC, len(got.Prompts), stderr)
+		}
+		if strings.Contains(stderr, "[adjudication verdict:") {
+			t.Errorf("a verdict line was emitted: %q", stderr)
+		}
+		if !strings.Contains(stderr, "no blocking findings") || !strings.Contains(stderr, "not admitted") {
+			t.Errorf("the refusal does not say why: %q", stderr)
+		}
+	})
+
+	t.Run("an-edited-non-writer-report-is-refused", func(t *testing.T) {
+		r := append([]map[string]any(nil), raw...)
+		edited := rawComment(2, "reviewer", "2026-01-02T00:00:00Z", nonWriterReport)
+		edited["updated_at"] = "2026-01-09T00:00:00Z"
+		r[1] = edited
+		got, stderr := runNonWriter(t, trusted, r, "reviewer")
+		if got.RC != 3 || len(got.Prompts) != 0 {
+			t.Fatalf("rc=%d prompts=%d, want 3 and none for an edited report; stderr=%s", got.RC, len(got.Prompts), stderr)
+		}
+		if !strings.Contains(stderr, "edited") {
+			t.Errorf("the refusal does not say the report was edited: %q", stderr)
+		}
+	})
+
+	t.Run("a-non-writer-finding-text-is-length-capped", func(t *testing.T) {
+		long := strings.Repeat("A", 3000) + "CANARY-TAIL"
+		rep := strings.ReplaceAll(nonWriterReport, "The evidence line is never asserted.", long)
+		r := append([]map[string]any(nil), raw...)
+		r[1] = rawComment(2, "reviewer", "2026-01-02T00:00:00Z", rep)
+		got, stderr := runNonWriter(t, trusted, r, "reviewer")
+		if got.RC != 0 {
+			t.Fatalf("rc=%d stderr=%s", got.RC, stderr)
+		}
+		all := strings.Join(got.Prompts, "\n")
+		if strings.Contains(all, "CANARY-TAIL") || strings.Contains(all, strings.Repeat("A", 600)) {
+			t.Errorf("a non-writer's finding text reached the prompt uncapped")
+		}
+	})
+
+	t.Run("a-body-with-u0085-does-not-split-the-read", func(t *testing.T) {
+		// jq leaves U+0085 raw; splitting on it would cut the comment and drop the newer report.
+		newer := strings.ReplaceAll(nonWriterReport, "F1 · FLAW_FOUND", "H9 · FLAW_FOUND")
+		newer = strings.ReplaceAll(newer, "CANARY-PROSE", "prose\u0085more")
+		r := append(append([]map[string]any(nil), raw...),
+			rawComment(7, "reviewer", "2026-01-07T00:00:00Z", newer))
+		got, stderr := runNonWriter(t, trusted, r, "reviewer")
+		if got.RC != 0 {
+			t.Fatalf("rc=%d stderr=%s", got.RC, stderr)
+		}
+		if all := strings.Join(got.Prompts, "\n"); !strings.Contains(all, `"H9"`) {
+			t.Errorf("the newest report (with U+0085 in its body) was not the one adjudicated")
+		}
+	})
+
+	t.Run("exit-3-names-a-trusted-report-by-another-author", func(t *testing.T) {
+		tr := append([]map[string]any{trustedComment("maint", "write access", "2026-01-02T00:00:00Z",
+			strings.ReplaceAll(genuineReport, "PR #1736", "PR #100"))}, trusted...)
+		got, stderr := runNonWriter(t, tr, raw, "maintt")
+		if got.RC != 3 {
+			t.Fatalf("rc=%d, want 3", got.RC)
+		}
+		if !strings.Contains(stderr, "--report-author maint") {
+			t.Errorf("the exit-3 message does not point at the trusted report by @maint: %q", stderr)
 		}
 	})
 

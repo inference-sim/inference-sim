@@ -37,11 +37,14 @@ write-access filter, so by default a report posted by an author without write
 access is never seen. An operator may name that author with --report-author;
 then, and only then, ONE comment is admitted from outside the filter: that
 author's most recent report comment, and only its parsed Items-to-fix findings
-(id, status, one-line text). None of its other text, and no other comment of
-that author's, reaches a prompt; the defence is still only later TRUSTED
-comments, and every finding is still re-checked against the code. An
-automation login is never admitted this way: the App's own reports come through
-the filter's `automation` label or not at all.
+(id, status, one-line text capped at 500 characters). None of its other text,
+and no other comment of that author's, reaches a prompt; the defence is still
+only later TRUSTED comments. The finding text is still untrusted prompt text,
+but it can only ask the adjudicator to look at something; every finding is
+re-checked against the code with STILL_OPEN as the default. A non-writer may only
+ADD findings, never clear them: a report with no findings, or one edited after it
+was posted, is refused (exit 3). An automation login is never admitted this way:
+the App's own reports come through the filter's `automation` label or not at all.
 
 Exit codes: 0 a verdict was emitted, 1 the model's reply was unusable after
 every retry (#1895; stderr names the attempts and input size), 2 missing proxy
@@ -867,11 +870,16 @@ def _is_automation_login(login):
 def _read_unfiltered_conversation(repo, pr):
     """Every conversation comment of `pr`, UNFILTERED, as REST dicts; None on any failure.
 
-    The ONLY unfiltered read in qa-review. Its result is never put into a prompt: it is used
-    to (a) locate the single report comment an operator named with --report-author, whose
-    parsed findings are all that is kept, and (b) name, on stderr, the authors of report
-    comments the filter withheld, for the exit-3 diagnostic. A failure returns None, which
-    both callers treat as "nothing found" (fail closed)."""
+    The ONLY unfiltered read in qa-review. No comment body from it is put into a prompt. It is
+    used to (a) locate the single report comment an operator named with --report-author, of
+    which only the length-capped parse_items_to_fix() output is kept, and (b) name, on stderr,
+    the authors of report comments the filter withheld, for the exit-3 diagnostic. A failure
+    returns None, which both callers treat as "nothing found" (fail closed).
+
+    `--jq '.[]'` emits one compact JSON object per line across every page. The output is split
+    on "\n" only: str.splitlines() also splits on U+0085/U+2028, which jq leaves unescaped
+    inside strings, and would cut a comment in two. A line that still does not parse is
+    reported, never skipped silently (R1)."""
     try:
         proc = subprocess.run(
             ["gh", "api", "repos/%s/issues/%s/comments?per_page=100" % (repo, pr),
@@ -889,14 +897,27 @@ def _read_unfiltered_conversation(repo, pr):
         )
         return None
     comments = []
-    for line in (proc.stdout or "").splitlines():
+    for line in (proc.stdout or "").split("\n"):
+        if not line.strip():
+            continue
         try:
             c = json.loads(line)
         except json.JSONDecodeError:
-            continue
+            sys.stderr.write(
+                "qa-review adjudicator: unfiltered comment read returned a line that is not "
+                "JSON (%d bytes); treating the read as failed\n" % len(line)
+            )
+            return None
         if isinstance(c, dict) and isinstance(c.get("user"), dict) and isinstance(c.get("body"), str):
             comments.append(c)
     return comments
+
+
+# Per-finding cap on the one-line text taken from a NAMED NON-WRITER's report. `id` and `was`
+# are pinned by _ITEM_RE; `text` is `.*`, so without a cap one bullet line could carry a payload
+# of any length into the prompt. A rendered finding's summary line is a sentence or two, so 500
+# characters keeps every real one while bounding what an untrusted author can place there.
+NON_WRITER_FINDING_TEXT_LIMIT = 500
 
 
 def _named_non_writer_report(raw, report_author):
@@ -904,7 +925,8 @@ def _named_non_writer_report(raw, report_author):
 
     Exact (case-insensitive) login match only: no `[bot]`-suffix equivalence, since nothing
     here is positive evidence of App-ness. An automation login is refused (see
-    _AUTOMATION_LOGINS)."""
+    _AUTOMATION_LOGINS). Whether the chosen comment is ADMISSIBLE (unedited, with at least one
+    finding) is decided by the caller, so a refusal can say why."""
     chosen = None
     for c in raw or []:
         login = (c.get("user") or {}).get("login", "")
@@ -913,6 +935,25 @@ def _named_non_writer_report(raw, report_author):
         if is_report_comment(c.get("body") or ""):
             chosen = c
     return chosen
+
+
+def _non_writer_refusal(named):
+    """Why a named non-writer's report may not be adjudicated ("" when it may).
+
+    A non-writer could otherwise CLEAR findings, not just add them. (a) A report with zero
+    findings would end in a model-free PASS, so a newer "no blocking findings" report posted
+    after the operator chose to adjudicate would wipe out the real one. (b) An edited report
+    may no longer be the one the operator reviewed; its findings could have been swapped or
+    dropped after the fact. Both are refused, and the operator can run a fresh review. A writer's
+    report keeps the existing rules: this applies only to the non-writer path."""
+    if named is None:
+        return ""
+    if not parse_items_to_fix(named.get("body") or ""):
+        return "it has no blocking findings, and a non-writer's report may only add findings to re-check, never clear them"
+    created, updated = named.get("created_at") or "", named.get("updated_at") or ""
+    if updated and created and updated != created:
+        return "it was edited after it was posted (%s -> %s), so it may not be the report you reviewed" % (created, updated)
+    return ""
 
 
 def _withheld_report_authors(raw, trusted):
@@ -970,23 +1011,36 @@ def fetch_comments(repo, pr, report_author="", diagnostics=None):
     raw = _read_unfiltered_conversation(repo, pr)
     if report_author:
         named = _named_non_writer_report(raw, report_author)
-        if named is not None:
+        refusal = _non_writer_refusal(named)
+        if named is not None and refusal and isinstance(diagnostics, dict):
+            diagnostics["refused"] = refusal
+        if named is not None and not refusal:
             items = parse_items_to_fix(named.get("body") or "")
+            for item in items:
+                if len(item["text"]) > NON_WRITER_FINDING_TEXT_LIMIT:
+                    item["text"] = item["text"][:NON_WRITER_FINDING_TEXT_LIMIT] + " (truncated)"
             at = named.get("created_at") or ""
             later = [c for c in comments if (c.get("createdAt") or "") > at]
             sys.stderr.write(
-                "qa-review adjudicator: --report-author named @%s, whose comments the trusted "
-                "filter withheld (no write access on %s). Admitting ONLY the parsed findings "
-                "(%d) of their report comment %s; none of its other text and none of their "
-                "other comments reach the prompt, and each finding is re-checked against the "
-                "code.\n"
+                "qa-review adjudicator: --report-author named @%s, whose report the trusted "
+                "filter withheld on %s (its author is not a writer there, or their permission "
+                "could not be established). Admitting ONLY the parsed findings (%d, text capped "
+                "at %d chars each) of their report comment %s; none of its other text and none "
+                "of their other comments reach the prompt, and each finding is re-checked "
+                "against the code.\n"
                 % ((named.get("user") or {}).get("login", ""), repo, len(items),
-                   named.get("html_url") or named.get("id") or "")
+                   NON_WRITER_FINDING_TEXT_LIMIT, named.get("html_url") or named.get("id") or "")
             )
             return items, "\n\n".join(c.get("body", "") for c in later)
     if isinstance(diagnostics, dict):
         diagnostics["withheld"] = _withheld_report_authors(raw, comments)
         diagnostics["read"] = raw is not None
+        # Reports that DID pass the filter but were posted by someone other than the named
+        # author: the usual cause is a --report-author typo or the wrong login.
+        diagnostics["trusted_authors"] = sorted({
+            (c.get("author") or {}).get("login", "")
+            for c in comments if is_report_comment(c.get("body") or "")
+        } - {""})
     return None, ""
 
 
@@ -997,7 +1051,18 @@ def no_report_message(pr, report_author, diagnostics):
         "adjudicate; refusing to emit a verdict"
         % ((" from '%s'" % report_author) if report_author else "", pr)
     ]
-    withheld = (diagnostics or {}).get("withheld") or []
+    diagnostics = diagnostics or {}
+    withheld = diagnostics.get("withheld") or []
+    if diagnostics.get("refused"):
+        lines.append(
+            "  the most recent report by @%s was found but not admitted: %s"
+            % (report_author.strip(), diagnostics["refused"])
+        )
+    for login in diagnostics.get("trusted_authors") or []:
+        lines.append(
+            "  a trusted report comment by @%s exists; to adjudicate it, pass --report-author %s"
+            % (login, login)
+        )
     if withheld:
         for login in withheld:
             if _is_automation_login(login):
@@ -1007,10 +1072,11 @@ def no_report_message(pr, report_author, diagnostics):
                     "--report-author" % login
                 )
             elif report_author and same_login(login, report_author):
-                lines.append(
-                    "  a report comment by @%s was filtered out (no write access) and could not "
-                    "be admitted" % login
-                )
+                if not diagnostics.get("refused"):
+                    lines.append(
+                        "  a report comment by @%s was filtered out (no write access) and could "
+                        "not be admitted" % login
+                    )
             else:
                 lines.append(
                     "  a report comment by @%s was filtered out as a non-writer (no write access "
@@ -1018,7 +1084,7 @@ def no_report_message(pr, report_author, diagnostics):
                     "--report-author %s (only that report's parsed findings are used)"
                     % (login, login)
                 )
-    elif (diagnostics or {}).get("read") is False:
+    elif diagnostics.get("read") is False:
         lines.append(
             "  could not read the unfiltered thread, so it is unknown whether a report by a "
             "non-writer was filtered out"
