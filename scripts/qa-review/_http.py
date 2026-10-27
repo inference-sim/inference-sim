@@ -22,6 +22,16 @@ Retry policy:
   decode (a proxy blip can answer ``200`` with an HTML error page or a truncated
   read, which urllib reports as a perfectly clean response). These are the
   errors that self-heal.
+* **Retried, too: an unusable reply (#1895).** A caller may pass ``validate``,
+  which checks the parsed completion and raises ``ValueError`` (or a lookup
+  error) when the reply cannot be used — an empty ``content``, prose where JSON
+  was asked for, a JSON value of the wrong shape. That is an HTTP ``200``, so
+  nothing above would retry it, yet it self-heals like a gateway blip: on #1892
+  one empty completion crashed the questioner and a re-run cleared it. Such a
+  reply shares the SAME attempt and wait budget as a transport error (one loop,
+  not a nested one), and on exhaustion raises ``UnparseableReply`` naming the
+  attempt count and the request size, so the caller can fail closed with a
+  cause instead of a bare ``JSONDecodeError`` traceback.
 * **Not retried** — every other ``4xx``. ``400``/``401``/``403``/``404`` are
   deterministic configuration errors (bad payload, wrong key, unknown model);
   retrying them cannot succeed and only burns CI wall-clock. The gateway's own
@@ -124,6 +134,40 @@ BACKOFF = _env_number("QA_HTTP_BACKOFF", 2.0, float)
 # budget is not truncated — the client stops retrying and fails closed, which is
 # both honest about Retry-After and a firmer bound than a per-wait cap.
 MAX_TOTAL_WAIT = _env_number("QA_HTTP_MAX_TOTAL_WAIT", 900.0, float)
+
+
+class UnusableReply(ValueError):
+    """Raised by a ``validate`` hook: this completion cannot be used, try again."""
+
+
+class UnparseableReply(Exception):
+    """Every attempt returned a reply the caller's ``validate`` rejected (#1895).
+
+    ``str()`` is the operator-facing cause: "unparseable reply after N attempts
+    (input M bytes): <last reason>". Callers catch it, print it, and exit
+    non-zero without writing a result — still fail-closed, now with a reason.
+    """
+
+    def __init__(self, attempts, input_bytes, detail):
+        self.attempts = attempts
+        self.input_bytes = input_bytes
+        self.detail = detail
+        super().__init__(
+            "unparseable reply after %d attempts (input %d bytes): %s"
+            % (attempts, input_bytes, detail)
+        )
+
+
+# How much of a rejected reply's reason to show. The reason may quote model text,
+# which is diagnostic only (stderr), never fed back into a prompt.
+REPLY_DETAIL_LIMIT = 300
+
+
+def _reply_detail(exc):
+    text = " ".join(str(exc).split()) or type(exc).__name__
+    if len(text) > REPLY_DETAIL_LIMIT:
+        text = text[:REPLY_DETAIL_LIMIT] + "... (truncated)"
+    return text
 
 
 def sleep(seconds):
@@ -310,11 +354,17 @@ def describe_with_body(exc):
     return rendered
 
 
-def post_chat_completion(base_url, api_key, model, messages, tools=None):
+def post_chat_completion(base_url, api_key, model, messages, tools=None, validate=None):
     """POST one OpenAI-compatible chat completion, retrying transient failures.
 
     ``tools`` is omitted from the payload when falsy, so a tool-free caller (the
     questioner) sends exactly the payload it sent before this client existed.
+
+    ``validate``, when given, is called with the parsed response and raises
+    ``ValueError``/``KeyError``/``IndexError``/``TypeError`` when the reply is
+    unusable (#1895). Such a reply is retried with the same backoff and budget
+    as a transport error; when the budget runs out ``UnparseableReply`` is
+    raised (fail-closed, with the attempt count and request size in its message).
 
     Returns the parsed response. Raises the last transport error once the
     attempt budget is exhausted, after naming it on stderr — the fail-closed
@@ -332,6 +382,7 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None):
     # a TypeError about a None exception, hiding the real configuration mistake.
     attempts = max(1, MAX_ATTEMPTS)
     last = None
+    unusable = None  # the last validate() rejection, when that is why we are retrying
     made = 0
     waited = 0.0
     for attempt in range(1, attempts + 1):
@@ -342,11 +393,18 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None):
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", "Bearer " + api_key)
         try:
-            return json.loads(send(req, TIMEOUT))
+            resp = json.loads(send(req, TIMEOUT))
+            if validate is not None:
+                try:
+                    validate(resp)
+                except (ValueError, KeyError, IndexError, TypeError, AttributeError) as bad:
+                    raise UnusableReply(_reply_detail(bad)) from bad
+            return resp
         # Broad by design: every failure is classified on the next line, and a
         # deterministic one is re-raised untouched.
         except Exception as exc:
-            if not is_retryable(exc):
+            unusable = exc if isinstance(exc, UnusableReply) else None
+            if unusable is None and not is_retryable(exc):
                 # Deterministic failure (a 4xx). Re-raise untouched so the caller
                 # sees the same error it always did — but name the gateway's own
                 # body first, since the traceback shows only the status line.
@@ -368,19 +426,37 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None):
                     "fit the %.1fs retry-wait budget (%.1fs already spent) — retrying earlier "
                     "than asked would only earn the same error, so the client stops here (raise "
                     "QA_HTTP_MAX_TOTAL_WAIT to wait it out)\n"
-                    % (describe(exc), delay, attempt, attempts, MAX_TOTAL_WAIT, waited)
+                    % (_describe_attempt(exc), delay, attempt, attempts, MAX_TOTAL_WAIT, waited)
                 )
                 break
             sys.stderr.write(
                 "qa-review http: %s on attempt %d/%d, retrying in %.1fs\n"
-                % (describe(exc), attempt, attempts, delay)
+                % (_describe_attempt(exc), attempt, attempts, delay)
             )
             sleep(delay)
             waited += delay
 
+    if unusable is not None:
+        # The last attempt was answered, but not usably. Name that, with the request
+        # size (#1895: on blis-schemas#100 three empty replies in a row tracked an
+        # unusually large input), instead of re-raising a parse error that reads as
+        # a crash with no cause.
+        failure = UnparseableReply(made, len(data), str(unusable))
+        sys.stderr.write(
+            "qa-review http: giving up: %s — the script will exit without a verdict "
+            "marker, so the gate reads MISSING and stops for a human\n" % failure
+        )
+        raise failure
     sys.stderr.write(
         "qa-review http: giving up after %d attempts, last error %s — the script "
         "will exit without a verdict marker, so the gate reads MISSING and stops "
         "for a human\n" % (made, describe_with_body(last))
     )
     raise last
+
+
+def _describe_attempt(exc):
+    """``describe`` for the retry diagnostics, naming an unusable reply as such."""
+    if isinstance(exc, UnusableReply):
+        return "unparseable reply (%s)" % exc
+    return describe(exc)

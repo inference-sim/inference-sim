@@ -169,7 +169,11 @@ be read* matches *trusted to trigger* exactly. Bots are trusted by an explicit a
 - The **qa-review Python path** (`scripts/qa-review/answerer.py`, `adjudicator.py`, absorbing #1808)
   reads issue/PR comments through the same script (`--json` mode) instead of `gh … --json comments`,
   so a non-write author's comment never enters their LLM prompt. A read failure surfaces as an UNREAD
-  marker, never an empty thread.
+  marker, never an empty thread. One deliberate, operator-chosen exception (#2041): `adjudicator.py
+  --report-author <login>` naming an author without write access admits that author's most recent
+  report comment, but only its parsed findings (id, status, one-line text). None of its other text and
+  none of their other comments reach the prompt, and every finding is re-checked against the code.
+  `gh_issue owner/repo#N` filters that issue's comments by that repository's write access.
 
 All comment sources are read via REST (`issues/{n}/comments`, `pulls/{n}/reviews`,
 `pulls/{n}/comments`, all `--paginate`d): REST reports the **canonical** App login
