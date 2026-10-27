@@ -45,6 +45,10 @@ type EngineDriverConfig struct {
 	// num_preemptions), as the engine published them, rather than from its live state. Only the
 	// compatibility engine's contract build sets it.
 	ScrapeEngineMetrics bool
+	// RecordPrefixLookups records each request's first admission's prefix-cache lookup in the
+	// report (the prompt's tokens, and Scheduled.CachedTokens of them hit), as the compatibility
+	// engine's recorder does. Only the compatibility engine's contract build sets it.
+	RecordPrefixLookups bool
 }
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
@@ -80,6 +84,8 @@ type EngineDriver struct {
 	OnFirstToken  func(req *Request, at int64)
 
 	stepIdx int
+	// kvEventSink receives the engine's prefix-cache changes (SetKVEventSink); nil when none.
+	kvEventSink func(at int64, events []KVEvent)
 }
 
 type driverReq struct {
@@ -89,6 +95,7 @@ type driverReq struct {
 	emitted      int
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 	resumed      bool    // preempted after its first token, not yet emitting again
+	lookedUp     bool    // its admission's prefix-cache lookup is recorded
 }
 
 type driverBatch struct {
@@ -432,6 +439,13 @@ func (d *EngineDriver) kick(now int64) {
 				r.req.State = StateRunning
 				r.scheduledIdx = d.stepIdx
 				d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
+				if d.cfg.RecordPrefixLookups && !r.lookedUp {
+					// The admission's prefix-cache lookup, as the compatibility engine's report
+					// records it (RecordScheduled): the prompt, and what the cache supplied of it.
+					r.lookedUp = true
+					d.Metrics.recordPrefixLookup(r.req, PrefixLookup{QueryTokens: r.req.InputLen(),
+						HitTokens: int64(s.CachedTokens)})
+				}
 			}
 		}
 		d.inFlight = append(d.inFlight, driverBatch{b: b, end: end})
@@ -472,6 +486,13 @@ func (d *EngineDriver) rearmWake(now int64) {
 // apply records what a completed batch made visible: first tokens, inter-token latencies and
 // finishes, in the host's report terms.
 func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
+	if d.kvEventSink != nil && len(res.KVEvents) > 0 {
+		events := make([]KVEvent, len(res.KVEvents))
+		for i, e := range res.KVEvents {
+			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier}
+		}
+		d.kvEventSink(end, events)
+	}
 	tokenAt := end + d.cfg.OutputTokenProcessingTime
 	firsts := map[string]bool{}
 	for _, id := range res.FirstTokens {
@@ -569,6 +590,45 @@ func (d *EngineDriver) done(req *Request, at int64) {
 			d.InjectArrival(next)
 		}
 	}
+}
+
+// Evict ends a request the gateway evicts in flight, waiting or running, at now: the engine frees
+// it (Finish with FinishAbort), and it leaves the instance's books without a completion, as a
+// gateway-evicted request does on the compatibility path (counted by the cluster). It reports
+// whether the instance held req.
+func (d *EngineDriver) Evict(req *Request, now int64) bool {
+	r := d.reqs[req.ID]
+	if r == nil || req.State == StateCompleted || req.State == StateTimedOut {
+		return false
+	}
+	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
+		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
+	}
+	req.State = StateCompleted
+	delete(d.reqs, req.ID)
+	d.kick(now)
+	return true
+}
+
+// SetKVEventSink makes the engine publish its prefix-cache changes to sink, each batch's at the
+// instant its step ends, as the router's precise-prefix producer ingests them. The engine must be
+// able to publish them (an EnableKVEvents method); otherwise it is refused, naming it.
+func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) error {
+	p, ok := d.eng.(interface{ EnableKVEvents() })
+	if !ok {
+		return fmt.Errorf("engine driver: the engine %T does not publish KV events", d.eng)
+	}
+	p.EnableKVEvents()
+	d.kvEventSink = sink
+	return nil
+}
+
+func tokenIDs(in []int32) []TokenID {
+	out := make([]TokenID, len(in))
+	for i, v := range in {
+		out[i] = TokenID(v)
+	}
+	return out
 }
 
 // PostDecodeFixedOverhead is the host's fixed per-request work at completion.

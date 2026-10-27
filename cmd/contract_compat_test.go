@@ -1,16 +1,14 @@
 package cmd
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// contractCompatCases are the byte gate's single-instance cases (WS/tools/bytegate.cases):
+// contractCompatCases are the byte gate's colocated cases (WS/tools/bytegate.cases):
 // scenario directory, scenario and flags as the gate runs them. The two KV-pressure scenarios
-// are vendored under testdata/contract-compat/scenarios, and every case's reference stdout under
-// testdata/contract-compat, from the gate's reference (main 67f8017c).
+// are vendored under testdata/contract-compat/scenarios.
 var contractCompatCases = []struct {
 	name, dir, scenario, flags string
 }{
@@ -25,45 +23,98 @@ var contractCompatCases = []struct {
 	{"kvpressure", "testdata/contract-compat/scenarios", "llama-70b-kvpressure.yaml", "--rate 40 --num-requests 300 --seed 31 " + kvPressureLengths},
 	{"kvpressure-chunk", "testdata/contract-compat/scenarios", "llama-70b-kvpressure-chunk.yaml", "--rate 40 --num-requests 300 --seed 32 " + kvPressureLengths},
 	{"kvpressure-priority", "testdata/contract-compat/scenarios", "llama-70b-kvpressure.yaml", "--rate 40 --num-requests 300 --seed 33 " + kvPressureLengths + " --scheduler priority-fcfs --preemption-policy priority"},
+	{"gptoss-4inst", "examplescenarios", "gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "--rate 20 --num-requests 200 --seed 13 --num-instances 4"},
 }
 
 const kvPressureLengths = "--prompt-tokens 6000 --prompt-tokens-stdev 1500 --prompt-tokens-max 12000 " +
 	"--output-tokens 1500 --output-tokens-stdev 400 --output-tokens-max 3000"
 
-// Phase 2c's first stage: a 0.29.0 or 0.31.0 run of one colocated instance, built through
-// blis-vllm's compat/contract (the compatibility engine behind engine.Engine) and driven by
-// sim.EngineDriver under ContractCompatEnv, prints exactly what the compatibility engine's own
-// host loop prints: each of the byte gate's single-instance cases, stdout byte for byte against
-// the gate's reference. The switched run must not be the old loop in disguise, so it must log
-// none of the old loop's step events.
+// Phase 2c: a 0.29.0 or 0.31.0 run built through blis-vllm's compat/contract (the compatibility
+// engine behind engine.Engine) and driven by sim.EngineDriver prints exactly what the
+// compatibility engine's own host loop prints, for each of the byte gate's colocated cases:
+// stdout byte for byte, both paths run by this binary on this machine. The two paths are compared
+// with each other rather than with a stored file, because a stored reference is one machine's
+// floating point: an x86-64 build rounds some percentiles in the last bit differently from the
+// arm64 one the byte gate's reference was made on, on both paths alike. The byte gate (main
+// against this branch, on one machine) pins the outputs themselves. The switched run must not be
+// the old loop in disguise, so it must log none of the old loop's step events, and the old loop's
+// must.
 func TestContractCompatIsByteIdentical(t *testing.T) {
 	for _, c := range contractCompatCases {
 		t.Run(c.name, func(t *testing.T) {
-			ref, err := os.ReadFile(filepath.Join("..", "testdata", "contract-compat", c.name+".stdout"))
-			if err != nil {
-				t.Fatal(err)
-			}
 			args := append([]string{"run", "--scenarios", filepath.Join("..", c.dir), "--scenario", c.scenario,
 				"--log", "debug"}, strings.Fields(c.flags)...)
+			t.Setenv(ContractCompatEnv, "0")
+			want, wantErr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("the compatibility host loop: %v\nstderr:\n%s", err, lastLines(wantErr, 5))
+			}
+			if !strings.Contains(wantErr, "<< StepEvent") {
+				t.Fatal("with the opt-out the compatibility host loop logged no step events; the comparison is vacuous")
+			}
 			t.Setenv(ContractCompatEnv, "")
 			got, gotErr, err := runKernelCLI(t, args...)
 			if err != nil {
 				t.Fatalf("the contract path: %v\nstderr:\n%s", err, lastLines(gotErr, 5))
 			}
 			if strings.Contains(gotErr, "<< StepEvent") {
-				t.Fatal("under the switch the compatibility engine's own host loop ran; the comparison is vacuous")
+				t.Fatal("by default the compatibility engine's own host loop ran; the comparison is vacuous")
 			}
-			if got != string(ref) {
-				t.Errorf("the contract path's stdout differs from the byte gate's reference:\ncontract:\n%s\nreference:\n%s",
-					lastLines(got, 30), lastLines(string(ref), 30))
+			if got != want {
+				t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+					lastLines(got, 30), lastLines(want, 30))
+			}
+		})
+	}
+}
+
+// The router-driven paths the byte gate does not exercise, each run both ways: the precise-prefix
+// producer (with speculative indexing, and without it, when routing reads only the engines' KV
+// events), and in-flight eviction of a sheddable request.
+func TestContractCompatRouterPathsAreByteIdentical(t *testing.T) {
+	precise := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: precise.yaml\n", "",
+		map[string]string{"precise.yaml": "testdata/epp/precise.yaml"})
+	events := colocatedRouterVariant(t, "router:\n  endpoint_picker_config: precise-events.yaml\n", "",
+		map[string]string{"precise-events.yaml": "testdata/epp/precise-events.yaml"})
+	evict := colocatedRouterVariant(t, evictionRouter("eviction.yaml"), "      app: vllm\n", evictionFiles("eviction.yaml"))
+	for _, c := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"precise-prefix", []string{"run", "--scenarios", precise, "--scenario", "variant.yaml", "--num-instances", "4",
+			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--kv-event-delay", "3000"}, ""},
+		{"precise-prefix-from-kv-events", []string{"run", "--scenarios", events, "--scenario", "variant.yaml", "--num-instances", "4",
+			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--kv-event-delay", "3000"}, ""},
+		{"in-flight-eviction", []string{"run", "--scenarios", evict, "--scenario", "variant.yaml", "--num-instances", "2",
+			"--workload-spec", "testdata/eviction-workload.yaml", "--seed", "1", noRenderQueue[0], noRenderQueue[1]},
+			"Gateway Evicted (in-flight): "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(ContractCompatEnv, "0")
+			want, wantErr, err := runKernelCLI(t, c.args...)
+			if err != nil {
+				t.Fatalf("the compatibility host loop: %v\nstderr:\n%s", err, lastLines(wantErr, 5))
+			}
+			if c.want != "" && !strings.Contains(want, c.want) {
+				t.Fatalf("the run does not exercise the path (no %q)", c.want)
+			}
+			t.Setenv(ContractCompatEnv, "")
+			got, gotErr, err := runKernelCLI(t, c.args...)
+			if err != nil {
+				t.Fatalf("the contract path: %v\nstderr:\n%s", err, lastLines(gotErr, 5))
+			}
+			if got != want {
+				t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+					lastLines(got, 40), lastLines(want, 40))
 			}
 		})
 	}
 }
 
 // The contract path is the default for the shapes it carries; ContractCompatEnv=0 keeps the
-// compatibility engine's own host loop, and a shape the contract does not carry yet (here four
-// instances behind the router) keeps it regardless.
+// compatibility engine's own host loop, and a shape the contract does not carry yet (here
+// P/D pools) keeps it regardless.
 func TestContractCompatIsTheDefaultPath(t *testing.T) {
 	run := func(env string, extra ...string) string {
 		t.Helper()
@@ -83,7 +134,7 @@ func TestContractCompatIsTheDefaultPath(t *testing.T) {
 	if !strings.Contains(run("0"), "<< StepEvent") {
 		t.Error("with the opt-out the compatibility engine's own host loop must run")
 	}
-	if !strings.Contains(run("", "--num-instances", "4"), "<< StepEvent") {
-		t.Error("several instances behind the router are not carried by the contract yet and must keep the host loop")
+	if strings.Contains(run("", "--num-instances", "4"), "<< StepEvent") {
+		t.Error("colocated instances behind the router are carried by the contract")
 	}
 }

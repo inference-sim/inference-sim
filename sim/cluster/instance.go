@@ -609,6 +609,9 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 // does not describe this line; reading StateCompleted as "completed" here would
 // double-count an evicted request.
 func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
+	if i.drv != nil {
+		return i.drv.Evict(req, now)
+	}
 	if !i.evictRequest(req) {
 		return false
 	}
@@ -681,7 +684,12 @@ func (i *InstanceSimulator) TierBlockHashes(name string) []string {
 
 // SetKVEventSink makes the instance's engine publish its KV events (sim.Simulator.SetKVEventSink).
 func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEvent)) {
-	i.contract("KV events to the router (SetKVEventSink)")
+	if i.drv != nil {
+		if err := i.drv.SetKVEventSink(sink); err != nil {
+			panic(fmt.Sprintf("instance %s: %v", i.id, err))
+		}
+		return
+	}
 	i.sim.SetKVEventSink(sink)
 }
 

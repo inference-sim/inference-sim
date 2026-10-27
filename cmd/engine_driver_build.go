@@ -38,8 +38,8 @@ const ContractCompatEnv = "BLIS_CONTRACT_COMPAT"
 var compatEngineVersions = map[string]bool{"0.29.0": true, "0.31.0": true}
 
 // compatThroughContract reports whether this run of a compatibility release goes through the
-// contract: by default (ContractCompatEnv unset or 1), for a single colocated instance with no
-// data parallelism, no P/D, no KV offload tier and no LoRA, the shapes the adapter carries.
+// contract: by default (ContractCompatEnv unset or 1), for colocated instances with no data
+// parallelism, no P/D, no KV offload tier and no LoRA, the shapes the adapter carries.
 func compatThroughContract(version string) bool {
 	if os.Getenv(ContractCompatEnv) == "0" || !compatEngineVersions[version] {
 		return false
@@ -47,12 +47,10 @@ func compatThroughContract(version string) bool {
 	return contractCompatShape()
 }
 
-// contractCompatShape is the run shape the contract path carries so far: one colocated instance,
-// dp 1, no P/D pools, no offload tier, no adapters. Several instances behind the router wait for
-// the contract to carry what the router reads from an engine: its KV events (the precise-prefix
-// producer), in-flight eviction, and the prefix-cache hit counts the reports print.
+// contractCompatShape is the run shape the contract path carries so far: colocated instances
+// behind the router, dp 1, no P/D pools, no offload tier, no adapters.
 func contractCompatShape() bool {
-	return numInstances == 1 && dataParallelism <= 1 &&
+	return dataParallelism <= 1 &&
 		prefillInstances == 0 && decodeInstances == 0 && prefillDecodeInstances == 0 && encodeInstances == 0 &&
 		kvCPUBlocks == 0 && kvOffloadConfigPath == "" && scenarioOffload == nil && loraConfigPath == ""
 }
