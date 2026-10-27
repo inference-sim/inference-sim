@@ -273,32 +273,3 @@ func TestBuildMeasured_ATimeoutIsAFailureNotACancellation(t *testing.T) {
 		t.Errorf("cancelled %d failed %d, want 0 and 2 (c1 timed out)", out.CancelledRequests, out.FailedRequests)
 	}
 }
-
-// aiperf's request latency ends at the last streamed token, and vLLM emits that token before
-// the finish bookkeeping the latency model's completion overhead prices. So with a non-zero
-// overhead, E2E (stdout) carries it while the file's latency and request ITL do not:
-// request_itl is the sum of the step intervals over OSL - 1 (#1938, H1).
-func TestMeasured_LatencyEndsAtTheLastTokenNotAtTheCompletionOverhead(t *testing.T) {
-	const overhead = 50_000
-	cfg := newTestSimConfig()
-	s, err := NewSimulator(cfg, MustNewKVStoreFromConfig(cfg.KVCacheConfig), &fixedOverheadModel{overhead: overhead})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := &Request{ID: "r", InputTokens: make([]TokenID, 32), OutputTokens: make([]TokenID, 11), State: StateQueued}
-	injectRequests(s, []*Request{req})
-	s.Run()
-	m := s.Metrics
-	if m.CompletedRequests != 1 {
-		t.Fatalf("%d completed", m.CompletedRequests)
-	}
-	var steps int64
-	for _, v := range m.AllITLs {
-		steps += v
-	}
-	out, lat := m.buildMeasured()
-	near(t, "request_itl_mean_ms", out.RequestITLMeanMs, float64(steps)/10/1000)
-	lastToken := float64(req.FirstTokenTime + steps)
-	near(t, "file e2e mean", lat.e2eMean, lastToken/1000)
-	near(t, "stdout e2e mean", m.BuildOutput("cluster").E2EMeanMs, (lastToken+overhead)/1000)
-}

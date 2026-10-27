@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -11,10 +10,10 @@ import (
 // registerSimConfigFlags (INV-13 parity).
 var kvOffloadConfigPath string
 
-// simToHeaderOffload converts a resolved sim.KVOffloadConfig into its trace-header
+// simToHeaderOffload converts a resolved kvOffloadConfig into its trace-header
 // serialization (H5, #1587). Returns nil when inert, so a disabled run omits the
 // kv_offload header key entirely (BC-G5). Lossless inverse of headerToSimOffload.
-func simToHeaderOffload(c sim.KVOffloadConfig) *workload.TraceKVOffloadConfig {
+func simToHeaderOffload(c kvOffloadConfig) *workload.TraceKVOffloadConfig {
 	if !c.IsEnabled() {
 		return nil
 	}
@@ -67,7 +66,7 @@ func replayRecordsDeployment(h workload.TraceHeader, agentic bool) bool {
 // simToHeaderOffload, of which it is the lossless inverse. Returns the inert zero value when
 // the header carries no offload block. It neither validates nor reconciles the result: the
 // engine does that (reconcileReplayKVOffload at the build site).
-func headerToSimOffload(h *workload.TraceKVOffloadConfig) sim.KVOffloadConfig {
+func headerToSimOffload(h *workload.TraceKVOffloadConfig) kvOffloadConfig {
 	if h == nil {
 		return kvOffloadOfRecord(nil)
 	}

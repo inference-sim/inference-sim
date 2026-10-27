@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/sirupsen/logrus"
@@ -27,39 +26,12 @@ var coreEngineVersions = map[string]bool{"0.32.0": true}
 // path builds.
 func runsThroughContract(version string) bool { return coreEngineVersions[version] }
 
-// ContractCompatEnv names the opt-out of phase 2c's one engine path: a 0.29.0 or 0.31.0 run
-// whose shape the contract path carries (contractCompatShape) builds the compatibility engine
-// behind engine.Engine (blis-vllm compat/contract) and runs it through sim.EngineDriver, as a
-// 0.32.0 run does. Set to 0, it runs on the compatibility engine's own host loop instead, the path
-// that goes away when every shape is carried.
-const ContractCompatEnv = "BLIS_CONTRACT_COMPAT"
-
-// compatEngineVersions are the releases the compatibility engine models.
+// compatEngineVersions are the releases the compatibility engine models. Every run of one is
+// built by compatContractFactory: the compatibility engine behind engine.Engine (blis-vllm
+// compat/contract), driven by sim.EngineDriver, as a 0.32.0 run's engine is (GOAL.md phase 2c).
+// Shared prefill-decode and encode pools are refused before any engine is built
+// (compat/build.OpenPools), since no scenario describes the engine they would run.
 var compatEngineVersions = map[string]bool{"0.29.0": true, "0.31.0": true}
-
-// compatThroughContract reports whether this run of a compatibility release goes through the
-// contract: by default (ContractCompatEnv unset or 1), for colocated instances with no data
-// parallelism, no P/D, no KV offload tier and no LoRA, the shapes the adapter carries.
-func compatThroughContract(version string) bool {
-	if os.Getenv(ContractCompatEnv) == "0" || !compatEngineVersions[version] {
-		return false
-	}
-	return contractCompatShape()
-}
-
-// contractCompatShape is the run shape the contract path carries: every shape a 0.29/0.31 run can
-// take. Colocated instances behind the router, P/D prefill and decode pools, and data-parallel
-// replicas under each balancer all run through the engine contract. Shared prefill-decode and
-// encode pools are refused before any engine is built (compat/build.OpenPools), since no scenario
-// describes the engine they would run.
-func contractCompatShape() bool { return true }
-
-// throughContract reports whether this run's engine is built by the registered factory and driven
-// through engine.Engine: a contract-built release, or a compatibility release under
-// ContractCompatEnv.
-func throughContract(version string) bool {
-	return runsThroughContract(version) || compatThroughContract(version)
-}
 
 // dpPlacementFor is the run's DP placement plan. A contract-built release places no rank
 // replicas: the engine behind the contract is the whole data-parallel group, one endpoint
@@ -77,13 +49,10 @@ func dpPlacementFor(version string, plan dpPlacementPlan) dpPlacementPlan {
 // scenario's first pool and driven by a sim.EngineDriver; the host overheads (queueing,
 // per-token output processing, post-decode) are the latency model's, and the API-server front
 // end (--renderer-num-workers, --api-server-count) is the run's, as on the compatibility path.
-func engineDriverFactory(version string, horizon, seed int64, latency sim.LatencyModel, acceptance float64) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
-	if !throughContract(version) {
-		return nil
-	}
+func engineDriverFactory(version string, horizon, seed int64, latency latencyModel, acceptance float64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	if !runsThroughContract(version) {
-		// A compatibility release under ContractCompatEnv: built by compatContractFactory, at
-		// the build site, from the run's own instance configuration.
+		// A compatibility release: built by compatContractFactory, at the build site, from the
+		// run's own instance configuration.
 		return nil
 	}
 	// The contract path builds one engine per instance from the scenario's single colocated
@@ -127,11 +96,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 		}
 		reportAssumptions(eng)
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance}
-		if latency != nil {
-			cfg.PostDecodeFixedOverhead = latency.PostDecodeFixedOverhead()
-			cfg.OutputTokenProcessingTime = latency.OutputTokenProcessingTime()
-			cfg.QueueingTime = latency.QueueingTime
-		}
+		hostOverheads(&cfg, latency)
 		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
 	}
 	// Build the first instance's engine now: a deployment the engine refuses (one needing a
@@ -140,7 +105,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency sim.Latenc
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return func(index int, _ sim.SimConfig) (*sim.EngineDriver, error) {
+	return func(index int, _ sim.InstanceConfig) (*sim.EngineDriver, error) {
 		if index == 0 && first != nil {
 			d := first
 			first = nil

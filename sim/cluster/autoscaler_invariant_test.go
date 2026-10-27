@@ -55,7 +55,7 @@ func TestINV19_ZeroDeltaDecisionSkippedNotFatal(t *testing.T) {
 
 	applied := 0
 	engine := &zeroDeltaEngine{}
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 	cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
 
 	if err := cs.Run(); err != nil {
@@ -95,7 +95,7 @@ func TestINV19_ZeroDeltaDoesNotSustainStabilizationTimer(t *testing.T) {
 		cfg.ScaleUpStabilizationWindowUs = windowUs
 
 		applied := 0
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)

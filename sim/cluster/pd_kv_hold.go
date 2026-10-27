@@ -3,8 +3,6 @@ package cluster
 import (
 	"container/heap"
 	"fmt"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // Prefill-side KV hold (#1934 point 3, INV-PD-7).
@@ -12,14 +10,14 @@ import (
 // A prefill engine under a NIXL handoff keeps a finished request's KV blocks allocated until
 // the decode side pulls them, aborts the request, or vanishes and the lease runs out. When a
 // lease expires, and which release a handoff's outcome takes, are the connector's rules
-// (sim.NIXLLease, sim.NIXLReleaseOnDrop, sim.NIXLReleaseAt, from blis-vllm compat/nixl). The
+// (NIXLLease, NIXLReleaseOnDrop, NIXLReleaseAt, from blis-vllm compat/nixl). The
 // cluster keeps the holds, the
 // block reference counts and the lease event. It maps the handoff outcomes onto those rules: a
 // completed transfer frees at its completion; a drop at transfer start (the decode side never
 // took the request) frees at once; a decode instance that became unroutable mid-transfer is a
 // vanished decode side, so the blocks are freed when the lease runs out.
 
-func (c *ClusterSimulator) pdKVLeaseUs() int64 { return sim.NIXLLease(c.config.PDKVLeaseUs) }
+func (c *ClusterSimulator) pdKVLeaseUs() int64 { return NIXLLease(c.config.PDKVLeaseUs) }
 
 // startPrefillHold records that parent's prefill instance keeps its KV for the pull. Called
 // when the prefill completes, with the sub-request's blocks still allocated
@@ -68,7 +66,6 @@ func (c *ClusterSimulator) releasePrefillHold(parent *ParentRequest) {
 	}
 	inst := c.instanceByID(InstanceID(instID))
 	inst.ReleaseHeldKV(parent.PrefillSubReq, c.clock)
-	inst.WakeIfParked(c.clock)
 }
 
 // HeldPrefillKVTokens is the KV, in tokens, that prefill instance id holds right now for pulls
@@ -79,14 +76,14 @@ func (c *ClusterSimulator) HeldPrefillKVTokens(id string) int64 {
 
 // releasePrefillOnDrop frees parent's held prefill KV as the connector's rule says for a handoff
 // that ended without a pull (outcome, at now): at once, or at the lease expiry the rule names
-// (sim.NIXLReleaseOnDrop, sim.NIXLReleaseAt). The cluster keeps the hold and its event.
-func (c *ClusterSimulator) releasePrefillOnDrop(parent *ParentRequest, outcome sim.NIXLOutcome, now int64) {
-	release := sim.NIXLReleaseOnDrop(outcome)
-	if release == sim.NIXLFreeNow {
+// (NIXLReleaseOnDrop, NIXLReleaseAt). The cluster keeps the hold and its event.
+func (c *ClusterSimulator) releasePrefillOnDrop(parent *ParentRequest, outcome NIXLOutcome, now int64) {
+	release := NIXLReleaseOnDrop(outcome)
+	if release == NIXLFreeNow {
 		c.releasePrefillHold(parent)
 		return
 	}
-	c.expirePrefillLease(parent, sim.NIXLReleaseAt(release, parent.PrefillCompleteTime, now, c.pdKVLeaseUs()))
+	c.expirePrefillLease(parent, NIXLReleaseAt(release, parent.PrefillCompleteTime, now, c.pdKVLeaseUs()))
 }
 
 // expirePrefillLease schedules the release of parent's held prefill KV at expiry.

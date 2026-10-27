@@ -139,10 +139,10 @@ func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption
 func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.KernelPoolProvenance {
 	out := map[string]sim.KernelPoolProvenance{}
 	if pd != nil {
-		out[string(pd.prefill.Role())] = pd.prefill.Provenance()
-		out[string(pd.decode.Role())] = pd.decode.Provenance()
+		out[string(pd.prefill.Role())] = provenanceOf(pd.prefill.Provenance())
+		out[string(pd.decode.Role())] = provenanceOf(pd.decode.Provenance())
 	} else if colocated != nil {
-		out[string(colocated.Role())] = colocated.Provenance()
+		out[string(colocated.Role())] = provenanceOf(colocated.Provenance())
 	}
 	return out
 }

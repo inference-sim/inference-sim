@@ -573,7 +573,7 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	kernelOpened, kvCPUBlocks, blockSizeTokens = m, 100, 16
-	cfg := sim.KVOffloadConfig{Enabled: true, Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
+	cfg := kvOffloadConfig{Enabled: true, Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
 	legacy := applyKernelOffloadPricing(&cfg)
 
 	ns := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
@@ -980,9 +980,9 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	defer func() { kvCPUBlocks, blockSizeTokens = saved[0], saved[1] }()
 	kvCPUBlocks, blockSizeTokens = 100, 64
 
-	run := sim.KVOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
-		Tiers: []sim.KVOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
-	var pre, dec cluster.PoolOverrides
+	run := kvOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
+		Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
+	var pre, dec poolOverrides
 	pools.applyOffload(run, &pre, &dec)
 
 	if run.Tiers[0].ServiceTime != nil || run.PerBlockBytes != 1 {
@@ -995,7 +995,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		m    *kernelmodel.Model
-		o    cluster.PoolOverrides
+		o    poolOverrides
 	}{{"prefill", pools.prefill, pre}, {"decode", pools.decode, dec}} {
 		if c.o.KVOffload == nil || c.o.KVTransferTicksPerBlock == nil {
 			t.Fatalf("%s pool: no offload override", c.name)
@@ -1013,8 +1013,8 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 				t.Errorf("%s pool: %d-byte read priced %d ticks, not its kernel's %d ns rounded up", c.name, b, got, d)
 			}
 		}
-		if err := c.o.Validate(c.name); err != nil {
-			t.Errorf("%s pool overrides invalid: %v", c.name, err)
+		if !c.o.KVOffload.IsEnabled() || c.o.KVOffload.PerBlockBytes <= 0 {
+			t.Errorf("%s pool: an enabled offload must state its bytes per block, got %d", c.name, c.o.KVOffload.PerBlockBytes)
 		}
 	}
 	if bytesOf["prefill"] == bytesOf["decode"] {
@@ -1040,7 +1040,7 @@ func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t 
 		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath = saved[3].(string)
 		kernelOpened, _ = saved[4].(*kernelmodel.Model)
-		sequenceState, prefixHit = saved[5].(sim.KVSequenceState), saved[6].(sim.KVPrefixHit)
+		sequenceState, prefixHit = saved[5].(kvSequenceState), saved[6].(kvPrefixHit)
 		swaBoundedReplay.v, _ = saved[7].(*bool)
 		prefixCacheRecords, _ = saved[8].(map[string]sim.PrefixCacheRecord)
 	})

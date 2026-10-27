@@ -19,8 +19,8 @@ const testNICBytesPerSecond = 1e9
 
 // testDemand is a cross-node handoff: 1000 bytes per token over the sender's egress and the
 // receiver's ingress, with a 50 us floor.
-func testDemand(tokens int64, from, to InstanceID) sim.Flow {
-	return sim.Flow{Bytes: tokens * 1000, FloorNs: 50_000, Links: []sim.Link{
+func testDemand(tokens int64, from, to InstanceID) Flow {
+	return Flow{Bytes: tokens * 1000, FloorNs: 50_000, Links: []Link{
 		{ID: "nic/egress/" + string(from), BytesPerSecond: testNICBytesPerSecond},
 		{ID: "nic/ingress/" + string(to), BytesPerSecond: testNICBytesPerSecond},
 	}}
@@ -28,7 +28,7 @@ func testDemand(tokens int64, from, to InstanceID) sim.Flow {
 
 // testDemandPrice is PDTransferTime consistent with testDemand, as the kernel's law requires.
 func testDemandPrice(tokens int64, from, to InstanceID) int64 {
-	return sim.AloneTicks(testDemand(tokens, from, to))
+	return AloneTicks(testDemand(tokens, from, to))
 }
 
 func contentionConfig(numInstances, prefill, decode int, contention bool) DeploymentConfig {
@@ -199,12 +199,12 @@ func TestPDContention_RefusesMissingOrInconsistentDemand(t *testing.T) {
 	t.Run("no demand", func(t *testing.T) {
 		cfg := contentionConfig(2, 1, 1, true)
 		cfg.PDTransferDemand = nil
-		expectPanic(t, "PDTransferDemand", func() { NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil) })
+		expectPanic(t, "PDTransferDemand", func() { newTestCluster(cfg, NewSliceRequestSource(nil), nil) })
 	})
 	t.Run("demand disagrees with price", func(t *testing.T) {
 		cfg := contentionConfig(2, 1, 1, true)
 		cfg.PDTransferTime = func(tokens int64, f, g InstanceID) int64 { return testDemandPrice(tokens, f, g) + 1 }
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("a", 1, 0, 64, 2)}), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("a", 1, 0, 64, 2)}), nil)
 		expectPanic(t, "AloneTime law", func() { _ = cs.Run() })
 	})
 }

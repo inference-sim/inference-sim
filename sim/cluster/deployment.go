@@ -7,7 +7,9 @@ import (
 // DeploymentConfig describes a cluster where all instances share identical
 // hardware and model configuration. NumInstances must be >= 1.
 type DeploymentConfig struct {
-	sim.SimConfig // Embeds all instance-level config (horizon, seed, KV, batch, latency, policy)
+	// InstanceConfig is every instance's configuration (the host's settings and the engine's,
+	// unopened), before a P/D pool role's own (Roles).
+	sim.InstanceConfig
 
 	NumInstances int
 
@@ -17,7 +19,7 @@ type DeploymentConfig struct {
 	// cluster and its configuration, resolved for its pool role as the compatibility engine's is.
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
 	// implementation.
-	NewEngine func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
+	NewEngine func(index int, cfg sim.InstanceConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
 
 	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
 	// many consecutive instances is one replica whose ranks step in lockstep and share one
@@ -86,7 +88,7 @@ type DeploymentConfig struct {
 	PDTransferTime func(tokens int64, from, to InstanceID) int64
 
 	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
-	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a sim.LinkArbiter, which
+	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a LinkArbiter, which
 	// divides every link max-min fairly among the handoffs on it and re-rates them as handoffs
 	// start, drain and finish. A handoff alone still completes at exactly PDTransferTime. False
 	// (the default) prices every handoff as if alone, byte-identical to the behaviour before.
@@ -95,7 +97,7 @@ type DeploymentConfig struct {
 	// the floor, and the links crossed with their full rates (blis-schemas
 	// kernel.PDTransferDemand). Required when PDTransferContention is set; the simulator invents
 	// no rate, floor or link of its own.
-	PDTransferDemand func(tokens int64, from, to InstanceID) sim.Flow
+	PDTransferDemand func(tokens int64, from, to InstanceID) Flow
 
 	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
 	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:
@@ -108,13 +110,11 @@ type DeploymentConfig struct {
 	PDPrefillKVHold bool
 	// PDKVLeaseUs is the handoff's kv_lease_duration in microseconds: how long a prefill
 	// engine keeps a finished request's blocks for a decode side that neither pulls them nor
-	// renews the lease. 0 takes the engine's default (sim.NIXLLease).
+	// renews the lease. 0 takes the engine's default (NIXLLease).
 	PDKVLeaseUs int64
 
-	// Per-pool hardware overrides
-	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
-	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
-	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
+	// Roles are the P/D pools' own instance configurations; empty uses the global one (BC-P2-1).
+	Roles PoolRoleConfigs
 
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
@@ -128,35 +128,22 @@ type DeploymentConfig struct {
 	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
 }
 
-// ToSimConfig returns the embedded SimConfig for per-instance construction.
-// WorkloadConfig is an empty struct: cluster mode generates workload centrally
-// and injects requests via InjectRequestOnline.
-func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
-	return d.SimConfig
-}
-
-// resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.
-// For PoolRolePrefill: applies PrefillOverrides to the global SimConfig.
-// For PoolRoleDecode: applies DecodeOverrides to the global SimConfig.
-// For PoolRolePrefillDecode (shared-role): applies DecodeOverrides — "decode wins"
-// precedence per issue #1276 D-2 (matches the spirit of llm-d's allowsNoLabel=true
-// decode default; a shared pod is decode-capable in every deployment, and picking
-// decode avoids oversizing TP for pods that also do prefill).
-// For any other role (including 0/unset): returns the global SimConfig unchanged.
-// The global SimConfig is never mutated.
-func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
+// resolveConfigForRole returns the configuration an instance in the given pool role is built
+// with: a prefill pool's or a decode pool's own (Roles), or the global one. A shared-role
+// (prefill-decode) pod takes the decode pool's, "decode wins" per issue #1276 D-2 (matches the
+// spirit of llm-d's allowsNoLabel=true decode default; a shared pod is decode-capable in every
+// deployment, and picking decode avoids oversizing TP for pods that also do prefill). The
+// encode pool uses the global configuration (GAP-4 design doc D6).
+func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.InstanceConfig {
 	switch role {
-	case PoolRolePrefillDecode:
-		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
+	case PoolRolePrefillDecode, PoolRoleDecode:
+		if d.Roles.Decode != nil {
+			return *d.Roles.Decode
+		}
 	case PoolRolePrefill:
-		return ResolvePoolConfig(d.SimConfig, d.PrefillOverrides)
-	case PoolRoleDecode:
-		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
-	case PoolRoleEncode:
-		// Encode pool uses the global SimConfig in this PR; per-pool
-		// overrides are a follow-up (GAP-4 design doc D6).
-		return d.SimConfig
-	default:
-		return d.SimConfig
+		if d.Roles.Prefill != nil {
+			return *d.Roles.Prefill
+		}
 	}
+	return d.InstanceConfig
 }

@@ -157,6 +157,10 @@ func NewEngineDriverWithFrontend(eng engine.Engine, cfg EngineDriverConfig, f Fr
 // Engine returns the engine the driver holds.
 func (d *EngineDriver) Engine() engine.Engine { return d.eng }
 
+// Renderer is the host's API-server render stage requests reach the engine through (INV-R1), nil
+// when the front end is inert.
+func (d *EngineDriver) Renderer() *Renderer { return d.renderer }
+
 // DriverEvent is an event of an engine-driven instance.
 type DriverEvent interface {
 	Timestamp() int64
@@ -164,17 +168,17 @@ type DriverEvent interface {
 	run(d *EngineDriver)
 }
 
-// The driver's queue reuses EventQueue's ordering, (timestamp, priority, seqID), by wrapping
-// each driver event in an Event shim, which the cluster loop handles as any instance event; the
-// shim's Simulator argument is unused (a driver event runs on its driver).
+// The driver's queue orders its events by EventQueue's (timestamp, priority, seqID), by
+// wrapping each driver event in an Event shim, which the cluster loop handles as any instance
+// event: a driver event runs on its driver.
 type driverShim struct {
 	ev DriverEvent
 	d  *EngineDriver
 }
 
-func (s *driverShim) Timestamp() int64   { return s.ev.Timestamp() }
-func (s *driverShim) Priority() int      { return s.ev.Priority() }
-func (s *driverShim) Execute(*Simulator) { s.ev.run(s.d) }
+func (s *driverShim) Timestamp() int64 { return s.ev.Timestamp() }
+func (s *driverShim) Priority() int    { return s.ev.Priority() }
+func (s *driverShim) Execute()         { s.ev.run(s.d) }
 
 func (d *EngineDriver) schedule(ev DriverEvent) {
 	d.seqCounter++
@@ -289,6 +293,15 @@ func (d *EngineDriver) AdapterCapacity() int {
 		return a.AdapterCapacity()
 	}
 	return 0
+}
+
+// AdapterPins is how many of the engine's requests pin each LoRA adapter's resident slot, for an
+// engine that reports it (an AdapterPins query); nil otherwise.
+func (d *EngineDriver) AdapterPins() map[string]int {
+	if a, ok := d.eng.(interface{ AdapterPins() map[string]int }); ok {
+		return a.AdapterPins()
+	}
+	return nil
 }
 
 // InjectArrival schedules a request's arrival and registers it in the report.
@@ -749,6 +762,30 @@ func (d *EngineDriver) Evict(req *Request, now int64) bool {
 	delete(d.reqs, req.ID)
 	d.kick(now)
 	return true
+}
+
+// DrainWaiting removes the requests waiting in the engine's queue (not yet scheduled, or preempted
+// back to it), in queue order, for a drained instance whose cluster re-routes them: they leave the
+// engine and the driver's books, holding no KV, and keep their own records (ArrivalTime, any
+// first token already emitted). The engine must be able to drain (a DrainWaiting method);
+// otherwise it is refused, naming it.
+func (d *EngineDriver) DrainWaiting(now int64) []*Request {
+	q, ok := d.eng.(interface{ DrainWaiting() []string })
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine %T cannot drain its waiting queue", d.eng))
+	}
+	ids := q.DrainWaiting()
+	out := make([]*Request, 0, len(ids))
+	for _, id := range ids {
+		r := d.reqs[id]
+		if r == nil {
+			panic(fmt.Sprintf("engine driver: the engine drained %s, which the driver does not hold", id))
+		}
+		out = append(out, r.req)
+		delete(d.reqs, id)
+	}
+	d.rearmWake(now)
+	return out
 }
 
 // SetKVEventSink makes the engine publish its prefix-cache changes to sink, each batch's at the

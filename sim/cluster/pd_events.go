@@ -122,37 +122,32 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	if decodeInst == nil {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances — routing invariant violated; dropping request",
 			decodeInstID, e.parentReq.ID)
-		e.dropAtStart(cs, sim.NIXLDecodeNeverReceived)
+		e.dropAtStart(cs, NIXLDecodeNeverReceived)
 		return
 	}
 	if !decodeInst.IsRoutable() {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer start — request dropped",
 			decodeInstID, e.parentReq.ID)
-		// The decode engine never received the request (sim.NIXLReleaseOnDrop decides what that
+		// The decode engine never received the request (NIXLReleaseOnDrop decides what that
 		// means for the prefill side's held blocks).
-		e.dropAtStart(cs, sim.NIXLDecodeNeverReceived)
+		e.dropAtStart(cs, NIXLDecodeNeverReceived)
 		return
 	}
 	// Whether the decode engine can ever take the prompt is the connector's rule
-	// (sim.NIXLDecodeAccepts); one it cannot is rejected.
-	if !sim.NIXLDecodeAccepts(e.parentReq.NumKVBlocks, decodeInst.TotalKVBlocks()) {
+	// (NIXLDecodeAccepts); one it cannot is rejected.
+	if !NIXLDecodeAccepts(e.parentReq.NumKVBlocks, decodeInst.TotalKVBlocks()) {
 		logrus.Warnf("[cluster] decode instance %s: %s needs %d KV blocks, more than its %d — request dropped",
 			decodeInstID, decodeSubReq.ID, e.parentReq.NumKVBlocks, decodeInst.TotalKVBlocks())
-		e.dropAtStart(cs, sim.NIXLDecodeRejected)
+		e.dropAtStart(cs, NIXLDecodeRejected)
 		return
 	}
+	// The decode engine holds the handoff among its waiting handoffs and starts its pull by its
+	// own admission rule (INV-PD-9): startPull prices it when it starts.
 	if cs.remotePulls == nil {
 		cs.remotePulls = make(map[string]*ParentRequest)
 	}
 	cs.remotePulls[decodeSubReq.ID] = e.parentReq
-	if decodeInst.AddRemote(decodeSubReq, e.time) {
-		// An engine driven through engine.Engine holds its handoffs and starts each pull by its own
-		// admission rule (startPull).
-		return
-	}
-	delete(cs.remotePulls, decodeSubReq.ID)
-	cs.awaitDecodeKV(decodeInst, e.parentReq, decodeSubReq)
-	cs.admitDecodeKVIfIdle(decodeInst, e.time)
+	decodeInst.AddRemote(decodeSubReq, e.time)
 }
 
 // startPull starts the transfer of a handoff whose pull an engine driven through engine.Engine
@@ -164,92 +159,19 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 		panic(fmt.Sprintf("startPull: %s is not a handoff waiting for its pull", req.ID))
 	}
 	delete(cs.remotePulls, req.ID)
+	if inst := cs.instanceByID(parent.DecodeInstanceID); inst != nil && !inst.IsRoutable() {
+		// A decode instance that went unroutable (drained) while the handoff waited drops its
+		// waiters rather than starting their pulls: its engine had the request, so the prefill
+		// side frees when the lease, renewed until now, runs out (NIXLDecodeVanished), as the
+		// compatibility host loop's serveDecodeKVWaiters dropped them. The pull the engine just
+		// admitted is failed, freeing what it reserved.
+		inst.ReleaseReservedKV(req, now)
+		(&KVTransferStartedEvent{time: now, parentReq: parent}).dropAtStart(cs, NIXLDecodeVanished)
+		return
+	}
 	parent.DecodeSubReq = req
 	parent.PulledKVBlocks = (pulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
 	scheduleTransferCompletion(cs, parent, now)
-}
-
-// decodeKVWaiter is a decode sub-request whose NIXL pull cannot start yet because its decode
-// instance has no free KV for it. vLLM leaves such a request in the decode engine's waiting
-// queue -- the scheduler retries its allocation every step and stops at the first request that
-// does not fit (sched/scheduler.py) -- while the decode side heartbeats the prefill side's
-// lease, so the prefill KV stays held.
-type decodeKVWaiter struct {
-	parent *ParentRequest
-	req    *sim.Request
-}
-
-// awaitDecodeKV queues a handoff behind the decode instance's earlier waiters (FCFS), and makes
-// the instance's schedule admit them (INV-PD-9).
-func (cs *ClusterSimulator) awaitDecodeKV(inst *InstanceSimulator, parent *ParentRequest, req *sim.Request) {
-	id := string(inst.ID())
-	if _, armed := cs.decodeKVWaiters[id]; !armed {
-		inst.SetRemoteKVAdmission(func(now int64) { cs.serveDecodeKVWaiters(inst, now) })
-	}
-	cs.decodeKVWaiters[id] = append(cs.decodeKVWaiters[id], decodeKVWaiter{parent: parent, req: req})
-	inst.SetRemoteKVWaiting(len(cs.decodeKVWaiters[id]))
-}
-
-// serveDecodeKVWaiters starts the pulls of an instance's waiting handoffs. Which of them start,
-// and in what order, is the decode engine's rule (sim.EngineCore.AdmitRemoteKV: its admission
-// order, while the head fits, leaving free what its other admitted handoffs still need); the
-// cluster holds the handoffs in the order they arrived and starts the transfers the engine
-// admits, whichever they are. A waiter whose decode instance has become
-// unroutable is dropped: its decode engine had taken the request, so the prefill side frees
-// when the lease, last renewed now, runs out. Called when a handoff starts waiting and
-// whenever the instance may have freed KV.
-func (cs *ClusterSimulator) serveDecodeKVWaiters(inst *InstanceSimulator, now int64) {
-	id := string(inst.ID())
-	q := cs.decodeKVWaiters[id]
-	if !inst.IsRoutable() {
-		for _, w := range q {
-			(&KVTransferStartedEvent{time: now, parentReq: w.parent}).dropAtStart(cs, sim.NIXLDecodeVanished)
-		}
-		q = nil
-	}
-	if len(q) > 0 {
-		reqs := make([]*sim.Request, len(q))
-		for i, w := range q {
-			reqs[i] = w.req
-		}
-		byReq := make(map[*sim.Request]decodeKVWaiter, len(q))
-		for _, w := range q {
-			byReq[w.req] = w
-		}
-		started := make(map[*sim.Request]bool)
-		for _, a := range inst.AdmitRemoteKV(reqs) {
-			w, ok := byReq[a.Req]
-			if !ok || started[a.Req] {
-				panic(fmt.Sprintf("serveDecodeKVWaiters: the engine admitted %s, which is not a waiting handoff of %s", a.Req.ID, id))
-			}
-			started[a.Req] = true
-			w.parent.DecodeSubReq = w.req
-			w.parent.PulledKVBlocks = (a.PulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
-			scheduleTransferCompletion(cs, w.parent, now)
-		}
-		rest := q[:0:0]
-		for _, w := range q {
-			if !started[w.req] {
-				rest = append(rest, w)
-			}
-		}
-		q = rest
-	}
-	if len(q) == 0 {
-		delete(cs.decodeKVWaiters, id)
-	} else {
-		cs.decodeKVWaiters[id] = q
-	}
-	inst.SetRemoteKVWaiting(len(q))
-}
-
-// DecodeKVWaiting reports how many handoffs wait for decode KV right now.
-func (cs *ClusterSimulator) DecodeKVWaiting() int {
-	n := 0
-	for _, q := range cs.decodeKVWaiters {
-		n += len(q)
-	}
-	return n
 }
 
 // dropAtStart records a drop-at-transfer-start outcome: decode pod
@@ -269,9 +191,9 @@ func (cs *ClusterSimulator) DecodeKVWaiting() int {
 // (nothing was reserved) or promote state.
 //
 // How the handoff ended (outcome) decides when the prefill side frees its held KV: the
-// connector's rule (sim.NIXLReleaseOnDrop, INV-PD-7); the cluster releases the hold or
+// connector's rule (NIXLReleaseOnDrop, INV-PD-7); the cluster releases the hold or
 // schedules its lease expiry accordingly (releasePrefillOnDrop).
-func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome sim.NIXLOutcome) {
+func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome NIXLOutcome) {
 	cs.releasePrefillOnDrop(e.parentReq, outcome, e.time)
 	cs.droppedAtDecodeKV++
 	cs.recordUnserved(e.parentReq.OriginalRequest)
@@ -309,7 +231,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	parentReq.TransferAloneTicks = duration
 	if cs.pdLinks != nil {
 		flow := cs.config.PDTransferDemand(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID)
-		if alone := sim.AloneTicks(flow); alone != duration {
+		if alone := AloneTicks(flow); alone != duration {
 			// blis-schemas kernel.PDTransferDemand: alone, a demand costs exactly PDTransferTime.
 			panic(fmt.Sprintf("KV handoff of %s: its demand costs %d ticks alone but its price is %d; "+
 				"the latency backend breaks the PDTransferTime == PDTransferDemand.AloneTime law",
@@ -424,11 +346,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	e.parentReq.TransferCompleteTime = e.time
 
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decodeInstID {
-			inst.RemoteKVLanded(decodeSubReq)
-		}
-	}
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
 		e.parentReq.ID, decodeInstID)
 
@@ -452,7 +369,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
-		cs.releasePrefillOnDrop(e.parentReq, sim.NIXLDecodeVanished, e.time)
+		cs.releasePrefillOnDrop(e.parentReq, NIXLDecodeVanished, e.time)
 		return
 	}
 	if !decodeInst.IsRoutable() {
@@ -461,28 +378,21 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq, e.time)
-		decodeInst.WakeIfParked(e.time)
 		cs.droppedAtDecodeKV++
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil
-		// A decode side that went away mid-pull (sim.NIXLReleaseOnDrop decides the release).
-		cs.releasePrefillOnDrop(e.parentReq, sim.NIXLDecodeVanished, e.time)
-		cs.admitDecodeKVIfIdle(decodeInst, e.time)
+		// A decode side that went away mid-pull (NIXLReleaseOnDrop decides the release).
+		cs.releasePrefillOnDrop(e.parentReq, NIXLDecodeVanished, e.time)
 		return
 	}
 	// The pull is complete: what that does on each side is the connector's rule
-	// (sim.NIXLOnPullComplete). The cluster frees the hold it keeps and has the decode engine
-	// cache what it received.
-	done := sim.NIXLOnPullComplete()
-	if done.FreePrefillHold {
+	// (NIXLOnPullComplete). The cluster frees the hold it keeps; the decode engine caches what
+	// it received when the pull lands (InjectDecodeOnline, its TransferDone).
+	if NIXLOnPullComplete().FreePrefillHold {
 		cs.releasePrefillHold(e.parentReq)
 	}
-	if done.CacheReceivedBlock {
-		decodeInst.CacheRemoteKV(decodeSubReq)
-	}
-	decodeInst.WakeIfParked(e.time)
 
 	// Promote StateWaitingForRemoteKVs → StateQueued. KV blocks remain
 	// allocated; EnqueueDecodeSubRequest (via InjectDecodeOnline) does not
@@ -524,32 +434,3 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }
-
-// admitDecodeKVIfIdle admits an instance's waiting handoffs now when its engine has no
-// running or waiting request: vLLM's engine with nothing to do schedules a newly arrived
-// request at once, so the WAITING phase reaches the handoff with all its blocks free. An
-// engine with work admits them in its next schedule instead (sim.SetRemoteKVAdmission),
-// after its running requests have taken their slots (INV-PD-9).
-func (cs *ClusterSimulator) admitDecodeKVIfIdle(inst *InstanceSimulator, now int64) {
-	if len(cs.decodeKVWaiters[string(inst.ID())]) == 0 || inst.HasWork() {
-		return
-	}
-	// A step that finished its last request is still executing until it ends; the engine's
-	// next schedule runs then.
-	if end := inst.BusyUntil(); now < end {
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &decodeAdmitEvent{time: end, inst: inst}, seqID: cs.nextSeqID()})
-		return
-	}
-	cs.serveDecodeKVWaiters(inst, now)
-}
-
-// decodeAdmitEvent is an idle decode engine's next schedule, when its last step ends: it
-// admits the waiting handoffs then (admitDecodeKVIfIdle). Priority 5, a transfer start's.
-type decodeAdmitEvent struct {
-	time int64
-	inst *InstanceSimulator
-}
-
-func (e *decodeAdmitEvent) Timestamp() int64             { return e.time }
-func (e *decodeAdmitEvent) Priority() int                { return 5 }
-func (e *decodeAdmitEvent) Execute(cs *ClusterSimulator) { cs.admitDecodeKVIfIdle(e.inst, e.time) }

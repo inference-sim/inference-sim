@@ -38,7 +38,7 @@ func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
 		},
 	}
 
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	const numSeeded = 3
 	seeded := newTestRequests(numSeeded)
 
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{}), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{}), nil)
 	inst0 := cs.instances[0]
 
 	// Issue #1440 integration check: install an arrival hook and assert
@@ -164,13 +164,16 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 		hookCalls++
 	})
 
-	// Seed requests directly into inst0's WaitQ (bypassing admission/routing),
-	// mirroring what gateway dispatch does, so they are present at drain time.
-	// EnqueueRequest puts the request in WaitQ immediately (unlike InjectArrivalAt
-	// which schedules an ArrivalEvent that would only fire during Run()).
+	// Seed requests into inst0's engine (bypassing admission/routing), mirroring what gateway
+	// dispatch does, so they are present at drain time: each arrives and reaches the engine's
+	// waiting queue before any step runs (the instance's queued events, run before its first step).
 	for _, req := range seeded {
-		inst0.sim.EnqueueRequest(req)
+		req.ArrivalTime = 0
+		inst0.InjectRequestOnline(req, 0)
 		cs.inFlightRequests[string(inst0.ID())]++
+	}
+	for inst0.HasPendingEvents() && inst0.QueueDepth() < numSeeded {
+		inst0.ProcessNextEvent()
 	}
 
 	// Precondition: inst0 must have work to redirect.

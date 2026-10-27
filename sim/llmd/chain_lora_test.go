@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	_ "github.com/inference-sim/blis-vllm/compat/lora" // links the LoRA subsystem, as the CLI does
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -21,8 +22,8 @@ func TestINV5_FullChainThroughTheRouter(t *testing.T) {
 	for _, config := range []string{boundedQueueConfig, globalStrictConfig} {
 		reqs := testRequests(300, 5, 200, 0)
 		dep := testDeployment(2)
-		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		gw := New(Options{Model: "test-model", GatewayLatencyUs: 150, EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)})
 		cs.SetGateway(gw)
 		if err := cs.Run(); err != nil {
@@ -108,13 +109,15 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 		}
 		dep := testDeployment(4)
 		capacity, base, bw, fp := 2, 1000.0, 2.0e6, 2.0e6
-		specs := make([]sim.AdapterSpec, len(adapters))
+		specs := make([]cengine.AdapterSpec, len(adapters))
 		for i, id := range adapters {
-			specs[i] = sim.AdapterSpec{ID: id, Rank: 8}
+			specs[i] = cengine.AdapterSpec{ID: id, Rank: 8}
 		}
-		dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
-			LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: specs}
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) {
+			c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+				LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: specs}
+		})
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -143,8 +146,10 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 func TestPrecisePrefixRefusedOverLoRAEngines(t *testing.T) {
 	dep := testDeployment(2)
 	capacity, base, bw, fp := 2, 1000.0, 2.0e6, 2.0e6
-	dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
-		LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []sim.AdapterSpec{{ID: "a0", Rank: 8}}}
+	editEngine(&dep, func(c *cengine.SimConfig) {
+		c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+			LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []cengine.AdapterSpec{{ID: "a0", Rank: 8}}}
+	})
 	err := refusal(t, dep, preciseConfig(""), nil)
 	if err == nil || !strings.Contains(err.Error(), "precise-prefix-cache-producer") ||
 		!strings.Contains(err.Error(), "compatibility engine") {

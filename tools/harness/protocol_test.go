@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	kvcache "github.com/inference-sim/blis-vllm/compat/kv"
 	"github.com/inference-sim/inference-sim/sim"
@@ -346,7 +347,7 @@ func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
 	}
 	const block = 16
 	kv := kvcache.NewKVCacheState(4096, block)
-	copyOfZero := r0[0] // warm-up session 0's round 0
+	copyOfZero := engineRequestOf(r0[0]) // warm-up session 0's round 0
 	if !kv.AllocateKVBlocks(copyOfZero, 0, copyOfZero.InputLen(), nil) {
 		t.Fatal("could not allocate the copy's prompt")
 	}
@@ -355,11 +356,11 @@ func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
 		t.Errorf("%d blocks in use after the copy drained", kv.UsedBlocks())
 	}
 	main := r0[1:] // main requests 0..n-1, in order
-	if got, want := len(kv.GetCachedBlocks(main[0].InputTokens)), int(main[0].InputLen())/block; got != want {
+	if got, want := len(kv.GetCachedBlocks(engineTokens(main[0].InputTokens))), int(main[0].InputLen())/block; got != want {
 		t.Errorf("main request 0 finds %d cached blocks of its prompt, want all %d full blocks", got, want)
 	}
 	for i, r := range main[1:] {
-		if n := len(kv.GetCachedBlocks(r.InputTokens)); n != 0 {
+		if n := len(kv.GetCachedBlocks(engineTokens(r.InputTokens))); n != 0 {
 			t.Errorf("main request %d finds %d cached blocks; only request 0's prompt was cached", i+1, n)
 		}
 	}
@@ -453,4 +454,19 @@ func TestADataParallelPointPlacesLikeVLLMsBalancer(t *testing.T) {
 			t.Errorf("replica %s served %d of 80 requests; balancing by requests in flight keeps them near 40 (%v)", id, n, per)
 		}
 	}
+}
+
+// engineRequestOf is a host request as the compatibility engine's KV store takes it: its ID and
+// its prompt and output tokens.
+func engineRequestOf(r *sim.Request) *cengine.Request {
+	return &cengine.Request{ID: r.ID, InputTokens: engineTokens(r.InputTokens), OutputTokens: engineTokens(r.OutputTokens)}
+}
+
+// engineTokens is a host token sequence as the compatibility engine's.
+func engineTokens(in []sim.TokenID) []cengine.TokenID {
+	out := make([]cengine.TokenID, len(in))
+	for i, t := range in {
+		out[i] = cengine.TokenID(t)
+	}
+	return out
 }

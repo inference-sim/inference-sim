@@ -10,6 +10,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
@@ -30,7 +31,7 @@ import (
 // resolveKVOffloadConfig resolves the run's KV offload: the scenario's offload block (#1910)
 // and the --kv-offload-config file, which may only restate it (build.ResolveKVOffloadConfig).
 // Single construction site (R4), shared by run and replay for INV-13 parity.
-func resolveKVOffloadConfig(cmd *cobra.Command) sim.KVOffloadConfig {
+func resolveKVOffloadConfig(cmd *cobra.Command) kvOffloadConfig {
 	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, kvOffloadConfigPath,
 		blockSizeTokens, resolveCatalogRoot)
 	if err != nil {
@@ -195,20 +196,26 @@ func (p *kernelPools) holdsPrefillKV() bool {
 // it. Both nil for a colocated run, where contention is refused.
 func (p *kernelPools) handoffPricing(contention bool) (
 	func(int64, cluster.InstanceID, cluster.InstanceID) int64,
-	func(int64, cluster.InstanceID, cluster.InstanceID) sim.Flow,
+	func(int64, cluster.InstanceID, cluster.InstanceID) cluster.Flow,
 ) {
 	price, demand, err := p.pools().HandoffPricing(kernelScenario, contention, runTopology(), blockSizeTokens, fatalf)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	var priceFn func(int64, cluster.InstanceID, cluster.InstanceID) int64
-	var demandFn func(int64, cluster.InstanceID, cluster.InstanceID) sim.Flow
+	var demandFn func(int64, cluster.InstanceID, cluster.InstanceID) cluster.Flow
 	if price != nil {
 		priceFn = func(tokens int64, from, to cluster.InstanceID) int64 { return price(tokens, string(from), string(to)) }
 	}
 	if demand != nil {
-		demandFn = func(tokens int64, from, to cluster.InstanceID) sim.Flow {
-			return demand(tokens, string(from), string(to))
+		demandFn = func(tokens int64, from, to cluster.InstanceID) cluster.Flow {
+			// The kernel's demand, as the cluster's link arbiter takes it.
+			d := demand(tokens, string(from), string(to))
+			f := cluster.Flow{Bytes: d.Bytes, FloorNs: d.FloorNs}
+			for _, l := range d.Links {
+				f.Links = append(f.Links, cluster.Link{ID: l.ID, BytesPerSecond: l.BytesPerSecond})
+			}
+			return f
 		}
 	}
 	return priceFn, demandFn
@@ -285,7 +292,7 @@ func applyKernelLoRAReservation() {
 // prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), with the
 // run's --swa-bounded-replay override. It records the resolution for the results file and logs
 // when the model's layout is not one BLIS maps.
-func prefixHitOf(what string, m *engineModel) sim.KVPrefixHit {
+func prefixHitOf(what string, m *engineModel) kvPrefixHit {
 	r, warning := build.PrefixHitOf(what, m, swaBoundedReplay.v)
 	if warning != "" {
 		logrus.Warnf("%s", warning)
@@ -296,13 +303,13 @@ func prefixHitOf(what string, m *engineModel) sim.KVPrefixHit {
 	prefixCacheRecords[string(m.Role())] = sim.PrefixCacheRecord{
 		ModelRunner: r.Runner, ModelRunnerForcedBy: r.RunnerForcedBy,
 		SWABoundedReplay: r.BoundedReplay, SWABoundedReplayFrom: r.BoundedReplayFrom,
-		Layout: r.Hit, Note: r.Note,
+		Layout: sim.KVPrefixHit(r.Hit), Note: r.Note,
 	}
 	return r.Hit
 }
 
 // overrides is each P/D role's engine, from its own pool's kernel and scenario pool.
-func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
+func (p *kernelPools) overrides() (prefill, decode poolOverrides) {
 	return poolOverridesOf(p.prefill), poolOverridesOf(p.decode)
 }
 
@@ -310,7 +317,7 @@ func (p *kernelPools) overrides() (prefill, decode cluster.PoolOverrides) {
 // resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
 // The pool runs its own engine's scheduling policy unless a flag or policy bundle chose one for
 // the run, which then applies to every pool and is recorded where it departs.
-func poolOverridesOf(m *engineModel) cluster.PoolOverrides {
+func poolOverridesOf(m *engineModel) poolOverrides {
 	hit := prefixHitOf(string(m.Role())+" pool", m)
 	ps, err := build.PoolSettingsOf(kernelScenario, m, loraReservedBytesForKV, hit, engineKnobFlags())
 	if err != nil {
@@ -319,7 +326,7 @@ func poolOverridesOf(m *engineModel) cluster.PoolOverrides {
 	for _, note := range ps.Notes {
 		logrus.Infof("%s", note)
 	}
-	o := cluster.PoolOverrides{
+	o := poolOverrides{
 		TP: &ps.TP, GPU: ps.GPU, LatencyModel: m, TotalKVBlocks: &ps.TotalKVBlocks, MaxModelLen: &ps.MaxModelLen,
 		MaxNumSeqs: &ps.MaxNumSeqs, MaxNumBatchedTokens: &ps.MaxNumBatchedTokens,
 		PrefixCachingDisabled: &ps.PrefixCachingDisabled, SequenceState: &ps.SequenceState, PrefixHit: &ps.PrefixHit,
@@ -360,7 +367,7 @@ func offloadPricing() build.OffloadPricing {
 // sizeOffloadBlocks records the kernel's per-rank bytes of one GPU block on an enabled offload
 // config and refuses a CPU tier smaller than one chunk (build.SizeOffloadBlocks). keepStated
 // keeps the bytes a replayed trace header carries (INV-13).
-func sizeOffloadBlocks(cfg *sim.KVOffloadConfig, keepStated bool) {
+func sizeOffloadBlocks(cfg *kvOffloadConfig, keepStated bool) {
 	if err := build.SizeOffloadBlocks(kernelOpened, cfg, blockSizeTokens, keepStated); err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -369,7 +376,7 @@ func sizeOffloadBlocks(cfg *sim.KVOffloadConfig, keepStated bool) {
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
 // run (build.PriceColocatedOffload). It returns the legacy per-block charge. Shared by run and
 // replay.
-func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
+func applyKernelOffloadPricing(cfg *kvOffloadConfig) int64 {
 	ticks, err := build.PriceColocatedOffload(kernelOpened, cfg, offloadPricing(), fatalf)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -380,7 +387,7 @@ func applyKernelOffloadPricing(cfg *sim.KVOffloadConfig) int64 {
 // applyOffload prices the run's KV offload once per pool, each by that pool's own kernel
 // (build.Pools.PriceOffload), and records it on the pool's overrides. No-op when the run
 // offloads nothing.
-func (p *kernelPools) applyOffload(cfg sim.KVOffloadConfig, prefill, decode *cluster.PoolOverrides) {
+func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOverrides) {
 	pre, dec, ok, err := p.pools().PriceOffload(kernelScenario, cfg, offloadPricing(), runTopology(), fatalf)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -419,8 +426,8 @@ func openModel(catalogRoot string) (*kernelmodel.Model, error) {
 // expert geometry only (routed experts and experts per token, 0 for a dense model). Nothing
 // else of ModelConfig is populated: no HF config is parsed, and a half-filled struct read as
 // complete is how a dense model comes to be treated as MoE.
-func expertModelConfig() sim.ModelConfig {
-	var c sim.ModelConfig
+func expertModelConfig() modelConfig {
+	var c modelConfig
 	c.NumLocalExperts = kernelDeploymentExperts
 	c.NumExpertsPerTok = kernelDeploymentTopK
 	return c
@@ -433,11 +440,25 @@ func checkParallelism(moe bool) error {
 }
 
 // The engine's types that the rest of cmd names: the kernel for one pool, the scenario's
-// deployment shape, and the routing overrides handed to the pools.
+// deployment shape, and the routing overrides handed to the pools; and the compatibility
+// engine's configuration types, which only the build site opens (the host holds the engine's
+// configuration unopened, sim.InstanceConfig.Engine).
 type (
 	engineModel      = kernelmodel.Model
 	scenarioShapeT   = kernelmodel.Shape
 	routingOverrides = kernelmodel.RoutingOverrides
+
+	engineConfig      = cengine.SimConfig
+	kvOffloadConfig   = cengine.KVOffloadConfig
+	kvOffloadTier     = cengine.KVOffloadTier
+	kvSequenceState   = cengine.KVSequenceState
+	kvPrefixHit       = cengine.KVPrefixHit
+	modelConfig       = cengine.ModelConfig
+	loraConfig        = cengine.LoRAConfig
+	batchConfig       = cengine.BatchConfig
+	speculativeConfig = cengine.SpeculativeConfig
+	latencyModel      = cengine.LatencyModel
+	stepOverheadTier  = cengine.StepOverheadTier
 )
 
 // setRoutingOverrides hands the command line's routing layer to the pools about to open.
@@ -458,7 +479,7 @@ func checkPolicyNames(scheduler, preemption string) {
 // defaults.yaml's cost coefficients, the optional --lora-config file and the scalar --lora-*
 // flags (each only when Changed, R18), and validates it. The single LoRAConfig construction site
 // (R4), called by both run and replay (INV-13); fatal on an invalid config (Principle V).
-func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
+func resolveLoRAConfig(cmd *cobra.Command) loraConfig {
 	var defs *build.LoRADefaults
 	if d := loadRunDefaults(cmd.Flags().Changed("defaults-filepath")).LoRADefaults; d != nil {
 		defs = &build.LoRADefaults{
@@ -488,26 +509,26 @@ func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
 
 // batchConfigFromCLI is the run's batch configuration, the part of engineConfigFor's the
 // prefix-caching toggle reaches (build.BatchConfigOf).
-func batchConfigFromCLI() sim.BatchConfig {
-	return build.BatchConfigOf(engineSettings(sim.ModelConfig{}, 1, sim.KVOffloadConfig{}, 0, sim.LoRAConfig{},
-		sim.SpeculativeConfig{}))
+func batchConfigFromCLI() batchConfig {
+	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, 0, loraConfig{},
+		speculativeConfig{}))
 }
 
 // engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),
 // from the settings the scenario, the kernel and the command line resolved: the one place both
 // commands assemble it (INV-13). perRankDP is DP-as-placement's per-replica DP (#1531, #1556).
 // It resolves the speculative configuration, which records the acceptance for the results file.
-func engineConfigFor(cmd *cobra.Command, m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfig,
-	cpuTierTicks int64, lora sim.LoRAConfig) build.EngineConfig {
+func engineConfigFor(cmd *cobra.Command, m modelConfig, perRankDP int, offload kvOffloadConfig,
+	cpuTierTicks int64, lora loraConfig) build.EngineConfig {
 	return build.EngineConfigOf(engineSettings(m, perRankDP, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
 }
 
-// simConfigFor is the instance configuration both commands hand the cluster: the engine's
-// configuration (ec, from engineConfigFor) and its front end, beside the simulator's own settings
-// (the horizon, the seed, the latency model, the SLO priority overrides and the server series).
-// The one place cmd assembles it (INV-13).
-func simConfigFor(ec build.EngineConfig, horizon, seed int64, latency sim.LatencyModel, sloOverrides map[string]int) sim.SimConfig {
-	return sim.SimConfig{
+// engineConfigOfRun is the run's engine configuration both commands build every instance's
+// engine from: the engine's settings (ec, from engineConfigFor) and its front end, beside the
+// simulator's own settings the engine reads (the horizon, the seed, the latency model, the SLO
+// priority overrides and the server series). The one place cmd assembles it (INV-13).
+func engineConfigOfRun(ec build.EngineConfig, horizon, seed int64, latency latencyModel, sloOverrides map[string]int) engineConfig {
+	return engineConfig{
 		Horizon: horizon,
 		Seed:    seed,
 		// The engine's configuration comes from the build site (engineConfigFor), the same for
@@ -527,9 +548,90 @@ func simConfigFor(ec build.EngineConfig, horizon, seed int64, latency sim.Latenc
 	}
 }
 
+// instanceConfigOf is an engine configuration as the host holds it: the settings the host reads,
+// copied out, beside the engine's configuration itself, unopened (sim.InstanceConfig.Engine),
+// which the engine factory opens again (engineConfigIn).
+func instanceConfigOf(c engineConfig) sim.InstanceConfig {
+	return sim.InstanceConfig{Horizon: c.Horizon, Seed: c.Seed, GPU: c.GPU, TP: c.TP, MaxNumSeqs: c.MaxNumSeqs,
+		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens, Frontend: frontendOf(c.Frontend), Engine: c}
+}
+
+// engineConfigIn is the engine configuration an instance configuration holds, with the host's
+// settings the cluster may have changed for this instance applied: the GPU its node pool placed
+// it on, and the horizon a run that learns its end while running set.
+func engineConfigIn(c sim.InstanceConfig) engineConfig {
+	ec, ok := c.Engine.(engineConfig)
+	if !ok {
+		panic(fmt.Sprintf("engine build: an instance configuration holds %T, not the engine's configuration", c.Engine))
+	}
+	ec.GPU, ec.Horizon = c.GPU, c.Horizon
+	return ec
+}
+
+// hostOverheads sets a driver's host work from the latency model that prices the instance's
+// engine: the post-decode and per-token output overheads, and each request's queueing time,
+// which the kernel prices from the prompt's length alone (its admission overhead).
+func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
+	if m == nil {
+		return
+	}
+	dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
+	dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
+	dcfg.QueueingTime = func(req *sim.Request) int64 {
+		return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
+	}
+}
+
+// provenanceOf is a pool's kernel evidence as the host's report records it, field for field.
+func provenanceOf(p cengine.KernelPoolProvenance) sim.KernelPoolProvenance {
+	out := sim.KernelPoolProvenance{MethodCounts: p.MethodCounts, Evidenced: p.Evidenced, Total: p.Total,
+		EvidenceSource: p.EvidenceSource, NotEvidenced: p.NotEvidenced, Assumptions: p.Assumptions,
+		SkippedRules: p.SkippedRules}
+	if p.SkippedRuleFindings != nil {
+		out.SkippedRuleFindings = make([]sim.RuleFinding, len(p.SkippedRuleFindings))
+		for i, f := range p.SkippedRuleFindings {
+			out.SkippedRuleFindings[i] = sim.RuleFinding(f)
+		}
+	}
+	if p.Routing != nil {
+		r := sim.RoutingRecord(*p.Routing)
+		out.Routing = &r
+	}
+	return out
+}
+
+// frontendOf is the engine's front-end configuration as the host's render stage takes it.
+func frontendOf(f cengine.FrontendConfig) sim.FrontendConfig {
+	return sim.FrontendConfig{APIServerCount: f.APIServerCount, RendererNumWorkers: f.RendererNumWorkers}
+}
+
+// rolesOf is a disaggregated deployment's per-role instance configurations: each P/D pool's own
+// engine settings (prefill, decode) applied to the run's engine configuration (resolvePoolConfig).
+// Empty for a colocated run.
+func rolesOf(global engineConfig, prefill, decode poolOverrides) cluster.PoolRoleConfigs {
+	for _, o := range []struct {
+		name string
+		o    poolOverrides
+	}{{"prefill pool", prefill}, {"decode pool", decode}} {
+		if err := o.o.Validate(o.name); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+	}
+	var r cluster.PoolRoleConfigs
+	if !prefill.IsEmpty() {
+		c := instanceConfigOf(resolvePoolConfig(global, prefill))
+		r.Prefill = &c
+	}
+	if !decode.IsEmpty() {
+		c := instanceConfigOf(resolvePoolConfig(global, decode))
+		r.Decode = &c
+	}
+	return r
+}
+
 // engineSettings gathers the run's resolved engine settings, unread, for build.EngineConfigOf.
-func engineSettings(m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfig, cpuTierTicks int64,
-	lora sim.LoRAConfig, spec sim.SpeculativeConfig) build.EngineSettings {
+func engineSettings(m modelConfig, perRankDP int, offload kvOffloadConfig, cpuTierTicks int64,
+	lora loraConfig, spec speculativeConfig) build.EngineSettings {
 	return build.EngineSettings{
 		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
 		KVOffloadThreshold: kvOffloadThreshold, KVTransferBandwidth: kvTransferBandwidth,
@@ -546,7 +648,7 @@ func engineSettings(m sim.ModelConfig, perRankDP int, offload sim.KVOffloadConfi
 
 // speculativeConfigOf is the engine's speculative-decoding configuration
 // (build.SpeculativeConfigOf), fatal on an invalid combination (CLI boundary, R6).
-func speculativeConfigOf(k int, acceptance float64, method string) sim.SpeculativeConfig {
+func speculativeConfigOf(k int, acceptance float64, method string) speculativeConfig {
 	c, err := build.SpeculativeConfigOf(k, acceptance, method)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -558,7 +660,7 @@ func speculativeConfigOf(k int, acceptance float64, method string) sim.Speculati
 // sets aside for a resolved config (build.AdapterReservedBytes): 0 when the subsystem is inert
 // (INV-6), fatal on a malformed cost config (Principle V). Both run and replay set
 // loraReservedBytesForKV from it.
-func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
+func adapterReservedBytesFor(cfg loraConfig) int64 {
 	n, err := build.AdapterReservedBytes(cfg)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -568,7 +670,7 @@ func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
 
 // adapterRegistryOf is the declared adapters' registry (build.AdapterRegistryOf), nil when none
 // are declared, for checking the workload's adapter references; fatal on an invalid registry.
-func adapterRegistryOf(cfg sim.LoRAConfig) sim.AdapterRegistry {
+func adapterRegistryOf(cfg loraConfig) workload.AdapterRegistry {
 	r, err := build.AdapterRegistryOf(cfg)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -585,18 +687,18 @@ type (
 
 // kvOffloadOfRecord is the engine's offload config rebuilt from a trace's record of it
 // (build.KVOffloadOfRecord); nil is the inert config.
-func kvOffloadOfRecord(r *offloadRecord) sim.KVOffloadConfig { return build.KVOffloadOfRecord(r) }
+func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloadOfRecord(r) }
 
 // reconcileReplayKVOffload is replay's KV-offload config: the trace header's, authoritative
 // (BC-G6), reconciled with the scenario's offload block and --kv-offload-config, which may
 // only restate it (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible
 // record. allowFlagAdd is for an observe trace or an agentic replay, which record no BLIS
 // deployment (replayRecordsDeployment).
-func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) sim.KVOffloadConfig {
+func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) kvOffloadConfig {
 	// The scenario's offload block is a source on replay as on run: it and the flag resolve
 	// together (resolveKVOffloadConfig), and the result must match the header.
 	flagChanged := cmd.Flags().Changed("kv-offload-config") || scenarioOffload != nil
-	var flagCfg sim.KVOffloadConfig
+	var flagCfg kvOffloadConfig
 	if flagChanged {
 		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
 		flagCfg = resolveKVOffloadConfig(cmd)
@@ -610,7 +712,7 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 
 // resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace
 // header's record (build.ReconcileReplayKVOffload).
-func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg sim.KVOffloadConfig, allowFlagAdd bool) (sim.KVOffloadConfig, error) {
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg kvOffloadConfig, allowFlagAdd bool) (kvOffloadConfig, error) {
 	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
 }
 
@@ -635,7 +737,7 @@ func requireOneOffloadModel(offloadEnabled bool, onReplay bool) {
 // frontendConfigFromCLI is the engine's front-end config from --renderer-num-workers and
 // --api-server-count (build.FrontendConfigOf), the single run/replay seam (INV-13); fatal on
 // a negative count.
-func frontendConfigFromCLI() sim.FrontendConfig {
+func frontendConfigFromCLI() cengine.FrontendConfig {
 	c, err := build.FrontendConfigOf(rendererNumWorkers, apiServerCount)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -649,7 +751,7 @@ func frontendConfigFromCLI() sim.FrontendConfig {
 // vllm/entrypoints/cli/serve.py:123-130@5df63a72), as the compatibility path's DP replica
 // renders (sim.ReplicaAPIServers). A stated --api-server-count is kept.
 func groupFrontendConfigFromCLI(dp int) sim.FrontendConfig {
-	c := frontendConfigFromCLI()
+	c := frontendOf(frontendConfigFromCLI())
 	c.APIServerCount = sim.ReplicaAPIServers(c.APIServerCount, max(dp, 1))
 	return c
 }
@@ -670,27 +772,36 @@ func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
 		func(rank int) int { return kernelOpened.PlacementOf(rank).Node })
 }
 
-// compatContractFactory is the cluster's engine constructor for a compatibility release run
-// through the engine contract under ContractCompatEnv (phase 2c's first stage): the
-// compatibility engine behind engine.Engine (blis-vllm compat/contract), built from the run's
-// instance configuration and driven by a sim.EngineDriver. nil otherwise, so the run is
-// unchanged.
-func compatContractFactory(version string, global sim.SimConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.SimConfig) (*sim.EngineDriver, error) {
-	if !compatThroughContract(version) {
+// compatContractFactory is the cluster's engine constructor for a compatibility release (0.29.0,
+// 0.31.0): the compatibility engine behind engine.Engine (blis-vllm compat/contract), built from
+// the run's instance configuration and driven by a sim.EngineDriver. nil for another release.
+func compatContractFactory(version string, global engineConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	if !compatEngineVersions[version] {
 		return nil
 	}
+	build := compatEngineFactory(global, acceptance, dpPlan)
+	if dpPlan.LockstepRanks <= 1 {
+		// Build the first instance's engine now: a configuration the engine refuses is a CLI
+		// refusal, named, before the cluster is assembled.
+		if _, err := build(0, instanceConfigOf(global)); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+	}
+	return build
+}
+
+// compatEngineFactory builds each instance's compatibility engine behind engine.Engine (blis-vllm
+// compat/contract) from its configuration, driven by a sim.EngineDriver: the factory a 0.29/0.31
+// run's cluster builds its instances with (compatContractFactory), and a library-level test's.
+func compatEngineFactory(global engineConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	// Each instance's engine is built from its own configuration, resolved for its pool role (a
 	// P/D prefill or decode pool's overrides), as the compatibility engine's own host loop builds
 	// it (sim.NewEngine).
-	driver := func(eng engine.Engine, cfg sim.SimConfig) (*sim.EngineDriver, error) {
+	driver := func(eng engine.Engine, cfg engineConfig) (*sim.EngineDriver, error) {
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance, ResumeGapFromLastToken: true,
 			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
-		if cfg.LatencyModel != nil {
-			dcfg.PostDecodeFixedOverhead = cfg.LatencyModel.PostDecodeFixedOverhead()
-			dcfg.OutputTokenProcessingTime = cfg.LatencyModel.OutputTokenProcessingTime()
-			dcfg.QueueingTime = cfg.LatencyModel.QueueingTime
-		}
-		return sim.NewEngineDriverWithFrontend(eng, dcfg, cfg.Frontend)
+		hostOverheads(&dcfg, cfg.LatencyModel)
+		return sim.NewEngineDriverWithFrontend(eng, dcfg, frontendOf(cfg.Frontend))
 	}
 	// A data-parallel MoE replica (dpLockstepRanks consecutive instances, one per rank) is one
 	// engine, the compatibility engine's lockstep group (contract.DPGroup), which each rank's
@@ -698,7 +809,8 @@ func compatContractFactory(version string, global sim.SimConfig, acceptance floa
 	ranks := dpPlan.LockstepRanks
 	var group *contract.DPGroup
 	var leader *sim.EngineDriver
-	build := func(index int, cfg sim.SimConfig) (*sim.EngineDriver, error) {
+	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+		cfg := engineConfigIn(ic)
 		if ranks <= 1 {
 			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 			if err != nil {
@@ -731,11 +843,6 @@ func compatContractFactory(version string, global sim.SimConfig, acceptance floa
 		d.JoinGroup(leader, k)
 		return d, nil
 	}
-	if ranks <= 1 {
-		if _, err := build(0, global); err != nil {
-			logrus.Fatalf("%v", err)
-		}
-	}
 	return build
 }
 
@@ -750,4 +857,166 @@ func registerContractEngines() { coreengine.Register() }
 func contractRoots(catalog, registry, scenarioPath string) map[string]string {
 	return map[string]string{coreengine.RootCatalog: catalog, coreengine.RootRegistry: registry,
 		coreengine.RootScenario: scenarioPath}
+}
+
+// Moved from sim/cluster/resolve.go at 739a519b, when the engine's configuration left the host
+// (phase 2c): a P/D pool's engine settings are applied to the run's engine configuration here,
+// at the build site, and the cluster receives each pool role's finished instance configuration
+// (cluster.PoolRoleConfigs, rolesOf).
+
+// poolOverrides holds optional per-pool hardware overrides for PD disaggregation.
+// Nil pointer / empty string means "use global config" for that field.
+// Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
+// global) from an explicit value. The CLI fills them from each P/D pool's kernel
+// (TotalKVBlocks is the kernel's per-rank budget).
+//
+// Contract for library callers constructing poolOverrides directly (bypassing CLI):
+// - *TP must be > 0 when non-nil
+// - *MaxModelLen must be > 0 when non-nil
+type poolOverrides struct {
+	TP            *int   // tensor parallelism (nil = use global)
+	GPU           string // GPU type ("" = use global)
+	MaxModelLen   *int64 // max sequence length (nil = use global)
+	TotalKVBlocks *int64 // KV blocks (nil = use global; set by the CLI from the kernel)
+
+	// LatencyModel prices this pool's steps (nil = use global). A disaggregated deployment
+	// runs a different engine per role -- its own parallelism, token budget and graph mode
+	// -- so each role is priced by the kernel for its own pool rather than by one copied to
+	// every pool.
+	LatencyModel latencyModel
+	// MaxNumSeqs, MaxNumBatchedTokens and PrefixCachingDisabled are the pool's own engine
+	// admission settings (nil = use global), for the same reason.
+	MaxNumSeqs            *int64
+	MaxNumBatchedTokens   *int64
+	PrefixCachingDisabled *bool
+
+	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
+	// the run's one tier description, sized by the pool's bytes per block and priced by its
+	// own kernel, since pools of different widths hold different bytes per block.
+	KVOffload               *kvOffloadConfig
+	KVTransferTicksPerBlock *int64
+	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
+	// different widths hold different state per sequence and per block (#1941).
+	SequenceState *kvSequenceState
+	// PrefixHit is how the pool's KV cache groups cut a prefix hit (nil = use global).
+	PrefixHit *kvPrefixHit
+
+	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
+	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
+	// its queue order and its preemption victim.
+	Scheduler        string
+	PreemptionPolicy string
+
+	// LongPrefillTokenThreshold is the pool engine's long_prefill_token_threshold (nil = use
+	// global; blis-schemas#75), and DPLoadBalancing its data_parallel_load_balancing mode
+	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
+	LongPrefillTokenThreshold *int64
+	DPLoadBalancing           string
+}
+
+// Validate checks that non-nil pointer fields satisfy their constraints (R3).
+// name is used in error messages (e.g., "prefill pool" or "decode pool").
+// Library callers that construct poolOverrides directly (bypassing CLI validation)
+// should call Validate before passing overrides to DeploymentConfig.
+func (o poolOverrides) Validate(name string) error {
+	if o.TP != nil && *o.TP <= 0 {
+		return fmt.Errorf("%s: poolOverrides.TP must be > 0 when set, got %d", name, *o.TP)
+	}
+	if o.MaxModelLen != nil && *o.MaxModelLen <= 0 {
+		return fmt.Errorf("%s: poolOverrides.MaxModelLen must be > 0 when set, got %d", name, *o.MaxModelLen)
+	}
+	if o.TotalKVBlocks != nil && *o.TotalKVBlocks <= 0 {
+		return fmt.Errorf("%s: poolOverrides.TotalKVBlocks must be > 0 when set, got %d", name, *o.TotalKVBlocks)
+	}
+	if o.MaxNumSeqs != nil && *o.MaxNumSeqs <= 0 {
+		return fmt.Errorf("%s: poolOverrides.MaxNumSeqs must be > 0 when set, got %d", name, *o.MaxNumSeqs)
+	}
+	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
+		return fmt.Errorf("%s: poolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
+	}
+	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
+		return fmt.Errorf("%s: poolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
+	}
+	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
+		return fmt.Errorf("%s: poolOverrides.SequenceState needs both Hold and Gate, or neither", name)
+	}
+	if o.LongPrefillTokenThreshold != nil && *o.LongPrefillTokenThreshold < 0 {
+		return fmt.Errorf("%s: poolOverrides.LongPrefillTokenThreshold must be >= 0 when set, got %d", name, *o.LongPrefillTokenThreshold)
+	}
+	if !cluster.IsValidDPLoadBalancing(o.DPLoadBalancing) {
+		return fmt.Errorf("%s: poolOverrides.DPLoadBalancing %q is not internal, hybrid or external", name, o.DPLoadBalancing)
+	}
+	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
+		return fmt.Errorf("%s: poolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
+	}
+	return nil
+}
+
+// IsEmpty returns true when no overrides are set.
+func (o poolOverrides) IsEmpty() bool {
+	return o.TP == nil && o.GPU == "" &&
+		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
+		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
+		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
+		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
+}
+
+// resolvePoolConfig applies per-pool overrides to a global SimConfig.
+// Returns a new SimConfig with overridden fields; the global config is not mutated.
+//
+// Struct-copy safety: ModelConfig is a pure value type (safe to copy).
+// SLOPriorityOverrides is a map[string]int that shares its backing map across copies.
+// Safe because NewSLOPriorityMap only reads the map (for range), never mutates. The
+// per-pool LatencyModel is shared by reference: the kernel adapter is read-only once built.
+func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfig {
+	resolved := global // struct copy
+
+	if overrides.TP != nil {
+		resolved.TP = *overrides.TP
+	}
+	if overrides.GPU != "" {
+		resolved.GPU = overrides.GPU
+	}
+	if overrides.MaxModelLen != nil {
+		resolved.MaxModelLen = *overrides.MaxModelLen
+	}
+	if overrides.TotalKVBlocks != nil {
+		resolved.TotalKVBlocks = *overrides.TotalKVBlocks
+	}
+	if overrides.LatencyModel != nil {
+		resolved.LatencyModel = overrides.LatencyModel
+	}
+	if overrides.MaxNumSeqs != nil {
+		resolved.MaxNumSeqs = *overrides.MaxNumSeqs
+	}
+	if overrides.MaxNumBatchedTokens != nil {
+		resolved.MaxNumBatchedTokens = *overrides.MaxNumBatchedTokens
+	}
+	if overrides.PrefixCachingDisabled != nil {
+		resolved.PrefixCachingDisabled = *overrides.PrefixCachingDisabled
+	}
+	if overrides.KVOffload != nil {
+		resolved.Offload = *overrides.KVOffload
+	}
+	if overrides.KVTransferTicksPerBlock != nil {
+		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
+	}
+	if overrides.SequenceState != nil {
+		resolved.SequenceState = *overrides.SequenceState
+	}
+	if overrides.PrefixHit != nil {
+		resolved.PrefixHit = *overrides.PrefixHit
+	}
+	if overrides.Scheduler != "" {
+		resolved.Scheduler = overrides.Scheduler
+	}
+	if overrides.PreemptionPolicy != "" {
+		resolved.PreemptionPolicy = overrides.PreemptionPolicy
+	}
+	if overrides.LongPrefillTokenThreshold != nil {
+		resolved.LongPrefillTokenThreshold = *overrides.LongPrefillTokenThreshold
+	}
+
+	return resolved
 }

@@ -419,7 +419,7 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 		t.Fatal("scanned no test files — the directory walk is broken, so this test proves nothing")
 	}
 	// Non-vacuity: with no call sites at all the inner pass iterates nothing, and a
-	// broken matcher is indistinguishable from a clean tree. instance_test.go calls the
+	// broken matcher is indistinguishable from a clean tree. instance_golden_test.go calls the
 	// helper, so at least one call must be seen.
 	if callsFound == 0 {
 		t.Fatal("found no assertInstanceINV1Conservation call anywhere — either the helper is unused (then delete it) or the matcher is broken, and either way this guard proves nothing")

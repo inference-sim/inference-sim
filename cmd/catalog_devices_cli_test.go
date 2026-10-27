@@ -17,7 +17,7 @@ import (
 //	BC-7  INV-6 — an offload run naming a device_class is unchanged by the cutover: two
 //	      catalogs holding the same device table produce byte-identical stdout, and the
 //	      numbers that reach the simulation are the catalog's (observable in the exported
-//	      trace header, which is written from the resolved sim.KVOffloadConfig).
+//	      trace header, which is written from the resolved kvOffloadConfig).
 //	BC-8  INV-13 — run and replay share resolveKVOffloadConfig, so replaying a trace with
 //	      the same --kv-offload-config succeeds: on replay the header is authoritative and
 //	      a flag that resolves to different numbers is refused, so a PASS here can only
@@ -183,7 +183,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 
 	// The resolved numbers reach the simulation: the exported header is written from the
-	// resolved sim.KVOffloadConfig.
+	// resolved kvOffloadConfig.
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
 		t.Fatalf("export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)

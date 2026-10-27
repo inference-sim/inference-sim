@@ -433,7 +433,7 @@ Example:
 			logrus.Fatalf("%v", dpErr)
 		}
 		// Per-pool hardware override construction (same as runCmd).
-		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		var prefillOverrides, decodeOverrides poolOverrides
 
 		// Same as runCmd: each P/D role's engine is its own pool's.
 		kernelPD := openKernelPools(resolvedCatalogRoot)
@@ -471,8 +471,9 @@ Example:
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
-			SimConfig:                simConfigFor(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides),
+			InstanceConfig:           instanceConfigOf(runEngine),
 			NumInstances:             numInstances,
 			DPLockstepRanks:          dpPlan.LockstepRanks,
 			DPLoadBalancing:          dpLoadBalancing,
@@ -486,15 +487,14 @@ Example:
 			PDTransferContention:     pdTransferContention,
 			PDTransferDemand:         pdTransferDemand,
 			PDPrefillKVHold:          kernelPD.holdsPrefillKV(),
-			PrefillOverrides:         prefillOverrides,
-			DecodeOverrides:          decodeOverrides,
+			Roles:                    rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:        bundleInstanceLifecycle,
 			ScenarioEndpointTopology: cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
 			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance, dpPlan); f != nil {
+		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
 			config.NewEngine = f
 		}
 

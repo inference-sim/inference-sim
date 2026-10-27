@@ -5,8 +5,6 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
 // Each role's overrides are its own pool's engine, answered by its own pool's kernel: the
@@ -48,7 +46,7 @@ func TestKernelPools_Overrides_AreEachPoolsOwnEngine(t *testing.T) {
 		for _, c := range []struct {
 			role deployment.Role
 			m    *kernelmodel.Model
-			o    cluster.PoolOverrides
+			o    poolOverrides
 		}{{deployment.RolePrefill, pools.prefill, pre}, {deployment.RoleDecode, pools.decode, dec}} {
 			// The oracle opens the role's pool afresh rather than trusting the model the pools hold.
 			own, err := kernelmodel.OpenRole("variant.yaml", repos, c.role)
@@ -63,7 +61,7 @@ func TestKernelPools_Overrides_AreEachPoolsOwnEngine(t *testing.T) {
 			if c.m.Role() != c.role {
 				t.Errorf("the %s pool's model prices the %s pool", c.role, c.m.Role())
 			}
-			if c.o.LatencyModel != sim.LatencyModel(c.m) {
+			if c.o.LatencyModel != latencyModel(c.m) {
 				t.Errorf("reserve %d: the %s overrides price with another pool's model", reserve, c.role)
 			}
 			if c.o.TP == nil || c.o.TotalKVBlocks == nil || c.o.MaxNumSeqs == nil || c.o.MaxNumBatchedTokens == nil {

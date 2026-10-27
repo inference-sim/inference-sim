@@ -19,8 +19,7 @@ import (
 
 // cmd builds the engine's configuration in one place, the build site (#2021 B2): no
 // production file in package cmd but cmd/engine_build.go calls the engine's configuration
-// constructors or validators (blis-vllm compat/engine, which cmd reaches as sim's names for
-// them, sim/engine_aliases.go). The build site hands the values to blis-vllm compat/build,
+// constructors or validators (blis-vllm compat/engine, which only the build site imports). The build site hands the values to blis-vllm compat/build,
 // which parses, validates and assembles them, so cmd parses and validates no engine
 // configuration itself.
 func TestOnlyTheBuildSiteBuildsTheEngineConfiguration(t *testing.T) {
@@ -47,8 +46,8 @@ func TestOnlyTheBuildSiteBuildsTheEngineConfiguration(t *testing.T) {
 	}
 }
 
-// engineConfigNames are the engine's configuration constructors and validators, as sim
-// re-exports them (sim/engine_aliases.go, sim/bundle.go) and as compat/engine declares them.
+// engineConfigNames are the engine's configuration constructors and validators, as compat/engine
+// declares them, and as sim's policy names (sim/bundle.go) re-export the name tables.
 var engineConfigNames = map[string]bool{
 	"NewKVCacheConfig": true, "NewBatchConfig": true, "NewPolicyConfig": true,
 	"NewModelHardwareConfig": true, "NewSpeculativeConfig": true,
@@ -119,15 +118,15 @@ func engineConfigCallsIn(t *testing.T, dir string) ([]string, int) {
 // and another package that happens to be named sim, are clean.
 func TestEngineConfigCheckCatchesEachForm(t *testing.T) {
 	cases := map[string]string{
-		"a constructor through sim": `package probe
-import "github.com/inference-sim/inference-sim/sim"
-func f() sim.BatchConfig { return sim.NewBatchConfig(1, 1, 0) }`,
+		"a constructor through compat/engine": `package probe
+import cengine "github.com/inference-sim/blis-vllm/compat/engine"
+func f() cengine.BatchConfig { return cengine.NewBatchConfig(1, 1, 0) }`,
 		"an option through a renamed import": `package probe
 import s "github.com/inference-sim/inference-sim/sim"
 func f() s.BatchOption { return s.WithPrefixCachingDisabled(true) }`,
 		"a function value": `package probe
-import "github.com/inference-sim/inference-sim/sim"
-var g = sim.NewKVCacheConfig`,
+import cengine "github.com/inference-sim/blis-vllm/compat/engine"
+var g = cengine.NewKVCacheConfig`,
 		"a name check": `package probe
 import "github.com/inference-sim/inference-sim/sim"
 func f() bool { return sim.IsValidPreemptionPolicy("fcfs") }`,
@@ -155,7 +154,7 @@ func f() any { return engine.AdapterRegistryConstructor() }`,
 	}
 	if got := run(`package probe
 import "github.com/inference-sim/inference-sim/sim"
-func clean(c sim.LoRAConfig) bool { return c.HasAdapters() }`); len(got) != 0 {
+func clean(c loraConfig) bool { return c.HasAdapters() }`); len(got) != 0 {
 		t.Errorf("a file with no configuration call: %v, want none", got)
 	}
 	if got := run(`package probe
@@ -169,8 +168,7 @@ func f() any { return sim.NewBatchConfig }`); len(got) != 0 {
 // as a composite literal, nor writes one of its fields, nor validates or checks one: such a value
 // comes from blis-vllm compat/build, which cmd/engine_build.go calls. Nor does it ask the kernel
 // model to resolve the engine or reach its kernel, or call the kernel's pricing. The check is
-// type-checked, so it sees the types under any name: sim's aliases (sim/engine_aliases.go),
-// compat/engine's own, or a local alias. The engine's types are the struct types compat/engine
+// type-checked, so it sees the types under any name: compat/engine's own, or a local alias. The engine's types are the struct types compat/engine
 // declares whose names end in Config or Tier.
 func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 	findings, scanned := engineConfigValuesIn(t, ".", "github.com/inference-sim/inference-sim/cmd")
@@ -197,16 +195,16 @@ func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 
 const (
 	compatEnginePath = "github.com/inference-sim/blis-vllm/compat/engine"
-	clusterPath      = "github.com/inference-sim/inference-sim/sim/cluster"
+	cmdPath          = "github.com/inference-sim/inference-sim/cmd"
 )
 
 // isEngineConfigType reports whether typ is a struct type compat/engine declares whose name ends
-// in Config or Tier (KVOffloadConfig, KVOffloadTier, FrontendConfig, SimConfig, ...), or the
-// cluster's per-pool engine settings (cluster.PoolOverrides), which the build site fills from
-// blis-vllm's resolution of each pool (build.PoolSettingsOf).
+// in Config or Tier (KVOffloadConfig, KVOffloadTier, SimConfig, ...), or the build site's per-pool
+// engine settings (cmd's poolOverrides), which it fills from blis-vllm's resolution of each pool
+// (build.PoolSettingsOf).
 func isEngineConfigType(typ types.Type) bool {
 	n, ok := types.Unalias(typ).(*types.Named)
-	if ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == clusterPath && n.Obj().Name() == "PoolOverrides" {
+	if ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == cmdPath && n.Obj().Name() == "poolOverrides" {
 		return true
 	}
 	if !ok || n.Obj().Pkg() == nil || n.Obj().Pkg().Path() != compatEnginePath {
@@ -382,34 +380,34 @@ func exportImporter(t *testing.T, fset *token.FileSet, dir string) types.Importe
 func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
-		"a literal through sim":           `func f() sim.FrontendConfig { return sim.FrontendConfig{RendererNumWorkers: 1} }`,
+		"a literal of the engine's":       `func f() engine.FrontendConfig { return engine.FrontendConfig{RendererNumWorkers: 1} }`,
 		"a literal through compat/engine": `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{Enabled: true} }`,
-		"a nested tier literal":           `func f() []sim.KVOffloadTier { return []sim.KVOffloadTier{{Type: "fs"}} }`,
-		"a pointer literal":               `func f() *sim.FrontendConfig { return &sim.FrontendConfig{APIServerCount: 2} }`,
-		"a Validate through a local alias": `type fc = sim.FrontendConfig
+		"a nested tier literal":           `func f() []engine.KVOffloadTier { return []engine.KVOffloadTier{{Type: "fs"}} }`,
+		"a pointer literal":               `func f() *engine.FrontendConfig { return &engine.FrontendConfig{APIServerCount: 2} }`,
+		"a Validate through a local alias": `type fc = engine.FrontendConfig
 func f(c fc) error { return c.Validate() }`,
-		"a pool overrides literal":        `func f() cluster.PoolOverrides { return cluster.PoolOverrides{GPU: "h100"} }`,
 		"a kernel model's settings":       `func f(m *kernelmodel.Model) error { _, err := m.Settings(); return err }`,
 		"a kernel model's prefix hit":     `func f(m *kernelmodel.Model) bool { return m.PrefixHit(nil).Note == "" }`,
 		"a settings field read":           `func f(s kernelmodel.Settings) int64 { return s.KVBlocks }`,
 		"a kernel model's kernel":         `func f(m *kernelmodel.Model) any { return m.Kernel() }`,
 		"a kernel pricing call":           `func f(k kernel.Kernel) int64 { return k.SequenceFixedBytes() }`,
-		"a config field write":            `func f(c *sim.KVOffloadConfig) { c.PerBlockBytes = 64 }`,
-		"a chunk check through a pointer": `func f(c *sim.KVOffloadConfig) error { return c.CheckFitsOneChunk() }`,
+		"a config field write":            `func f(c *engine.KVOffloadConfig) { c.PerBlockBytes = 64 }`,
+		"a chunk check through a pointer": `func f(c *engine.KVOffloadConfig) error { return c.CheckFitsOneChunk() }`,
 	}
 	clean := map[string]string{
 		"another package's FrontendConfig": `type FrontendConfig struct{ N int }
 func f() FrontendConfig { return FrontendConfig{N: 1} }`,
-		"an empty literal":      `func f() sim.KVOffloadConfig { return sim.KVOffloadConfig{} }`,
-		"another method":        `func f(c sim.FrontendConfig) bool { return c.Enabled() }`,
-		"a kernel model's role": `func f(m *kernelmodel.Model) string { return string(m.Role()) }`,
+		"an empty literal":         `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{} }`,
+		"another method":           `func f(c engine.FrontendConfig) bool { return c.Enabled() }`,
+		"the host's own front end": `func f() sim.FrontendConfig { return sim.FrontendConfig{RendererNumWorkers: 1} }`,
+		"a kernel model's role":    `func f(m *kernelmodel.Model) string { return string(m.Role()) }`,
 	}
 	run := func(body string) []string {
 		pkgDir := filepath.Join(dir, fmt.Sprintf("p%d", len(body)))
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-schemas/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.ResolvePoolConfig\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-schemas/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -481,6 +479,13 @@ func engineSettingComparisonsIn(t *testing.T, dir string) ([]string, int) {
 			default:
 				return true
 			}
+			// A comparison with nil asks whether an optional setting is present, as the build site's
+			// per-pool settings do (poolOverrides): it checks no value.
+			for _, side := range []ast.Expr{b.X, b.Y} {
+				if id, ok := side.(*ast.Ident); ok && id.Name == "nil" {
+					return true
+				}
+			}
 			for _, side := range []ast.Expr{b.X, b.Y} {
 				name := ""
 				switch x := side.(type) {
@@ -547,6 +552,9 @@ func TestEngineSettingComparisonCheckCatchesEachForm(t *testing.T) {
 	}
 	if got := run(`func f() int64 { maxNumSeqs = 4; return maxNumSeqs + maxModelLen }`); len(got) != 0 {
 		t.Errorf("assignments and reads: %v, want none", got)
+	}
+	if got := run(`func f(o struct{ MaxNumSeqs *int64 }) bool { return o.MaxNumSeqs != nil }`); len(got) != 0 {
+		t.Errorf("an optional setting's presence: %v, want none", got)
 	}
 }
 

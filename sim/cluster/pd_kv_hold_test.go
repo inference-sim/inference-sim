@@ -43,7 +43,7 @@ func runHold(t interface {
 	Fatalf(string, ...any)
 }, cfg DeploymentConfig, reqs ...*sim.Request) *ClusterSimulator {
 	t.Helper()
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 	return cs
 }
@@ -91,7 +91,7 @@ func TestPrefillKVHold_HeldBlocksGateTheNextPrefill(t *testing.T) {
 	for _, hold := range []bool{true, false} {
 		cfg := holdConfig(hold, transfer)
 		blocks := int64(15) // one 10-block request fits, two do not
-		cfg.PrefillOverrides.TotalKVBlocks = &blocks
+		editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 		cs := runHold(t, cfg, holdTestRequest("a", 1, 0, 160, 4), holdTestRequest("b", 2, 1, 160, 4))
 		byID := map[string]*ParentRequest{}
 		for _, p := range cs.ParentRequests() {
@@ -114,7 +114,7 @@ func TestPrefillKVHold_HeldBlocksGateTheNextPrefill(t *testing.T) {
 func TestPrefillKVHold_DropAtTransferStartFreesAtOnce(t *testing.T) {
 	cfg := holdConfig(true, 1000)
 	tiny := int64(2)
-	cfg.DecodeOverrides.TotalKVBlocks = &tiny
+	editDecode(&cfg, func(c *simConfig) { c.TotalKVBlocks = tiny })
 	full := runHold(t, cfg, holdTestRequest("r", 1, 0, 160, 4))
 	p := full.ParentRequests()[0]
 	if p.DecodeSubReq != nil || p.TransferStartTime == 0 {
@@ -152,7 +152,7 @@ func TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry(t *testing.T) {
 			cfg := holdConfig(true, transfer)
 			cfg.PDKVLeaseUs = lease
 			cfg.Horizon = horizon
-			cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+			cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 			heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 500_000, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
 			mustRun(t, cs)
 			return cs
@@ -179,7 +179,7 @@ func TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry(t *testing.T) {
 // freed exactly when the first lease from the prefill's completion runs out
 // (nixl/base_worker.py:3056-3082), neither at once nor later.
 //
-// Using the vanished-decode rule (sim.NIXLExpiryAfterVanish) at this drop instead would be an
+// Using the vanished-decode rule (NIXLExpiryAfterVanish) at this drop instead would be an
 // equivalent mutant, not a missed one: the transfer-start event runs at the prefill's completion
 // (detectPrefillCompletions), so its expiry, max(end+lease, end+2/3 lease), is end+lease.
 func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T) {
@@ -188,7 +188,7 @@ func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T
 		cfg := holdConfig(true, 1000)
 		cfg.PDKVLeaseUs = lease
 		cfg.Horizon = horizon
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 		// The decode instance drains after routing (at arrival) and before the prefill ends.
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 1, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
 		mustRun(t, cs)
@@ -217,7 +217,7 @@ func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T
 type pdHandoffDropAt struct {
 	time      int64
 	parent    string
-	outcome   sim.NIXLOutcome
+	outcome   NIXLOutcome
 	heldAfter *int
 }
 
@@ -256,11 +256,11 @@ func TestPrefillKVHold_DropReleasesAsTheConnectorRuleSays(t *testing.T) {
 	drop := prefillEnd + dropLag
 	// run returns the cluster stopped at horizon, and the holds left the moment the drop's
 	// release call returned (-1 if the drop had not run by horizon).
-	run := func(outcome sim.NIXLOutcome, horizon int64) (*ClusterSimulator, int) {
+	run := func(outcome NIXLOutcome, horizon int64) (*ClusterSimulator, int) {
 		cfg := holdConfig(true, transfer)
 		cfg.PDKVLeaseUs = lease
 		cfg.Horizon = horizon
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 		heldAfter := -1
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
 			event: &pdHandoffDropAt{time: drop, parent: "r", outcome: outcome, heldAfter: &heldAfter}, seqID: cs.nextSeqID()})
@@ -270,12 +270,12 @@ func TestPrefillKVHold_DropReleasesAsTheConnectorRuleSays(t *testing.T) {
 	held := func(cs *ClusterSimulator, _ int) bool { return cs.PrefillKVHeld() == 1 }
 	for _, tc := range []struct {
 		name    string
-		outcome sim.NIXLOutcome
+		outcome NIXLOutcome
 		frees   int64
 	}{
-		{"never received: the first lease", sim.NIXLDecodeNeverReceived, prefillEnd + lease},
-		{"vanished: the renewed lease", sim.NIXLDecodeVanished, drop + lease*2/3},
-		{"rejected: at once", sim.NIXLDecodeRejected, drop},
+		{"never received: the first lease", NIXLDecodeNeverReceived, prefillEnd + lease},
+		{"vanished: the renewed lease", NIXLDecodeVanished, drop + lease*2/3},
+		{"rejected: at once", NIXLDecodeRejected, drop},
 	} {
 		if !held(run(tc.outcome, drop-1)) {
 			t.Fatalf("%s: the prefill KV must still be held just before the drop at %d", tc.name, drop)
@@ -342,7 +342,7 @@ func TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity(t *testing.T) {
 		n := rapid.IntRange(1, 12).Draw(rt, "n")
 		cfg := holdConfig(true, rapid.Int64Range(1, 400_000).Draw(rt, "transfer"))
 		blocks := rapid.Int64Range(13, 60).Draw(rt, "prefillBlocks")
-		cfg.PrefillOverrides.TotalKVBlocks = &blocks
+		editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 		reqs := make([]*sim.Request, n)
 		var at int64
 		for i := range reqs {

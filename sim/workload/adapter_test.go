@@ -3,8 +3,8 @@ package workload
 import (
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/lora"
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // adapterTestSpec builds a minimal single-client spec with the given adapter id.
@@ -106,8 +106,8 @@ func TestSpecHasAdapterFields(t *testing.T) {
 	}
 }
 
-// mustRegistry builds a lora.Registry (a sim.AdapterRegistry) for validation tests.
-func mustRegistry(t *testing.T, specs ...sim.AdapterSpec) sim.AdapterRegistry {
+// mustRegistry builds a lora.Registry (an AdapterRegistry) for validation tests.
+func mustRegistry(t *testing.T, specs ...cengine.AdapterSpec) AdapterRegistry {
 	t.Helper()
 	reg, err := lora.NewRegistry(specs)
 	if err != nil {
@@ -122,8 +122,8 @@ func mustRegistry(t *testing.T, specs ...sim.AdapterSpec) sim.AdapterRegistry {
 //   - an omitted adapter is always valid (base-model-only, no-op)
 func TestValidateAdapterReferences(t *testing.T) {
 	reg := mustRegistry(t,
-		sim.AdapterSpec{ID: "adapter_0", Rank: 8, BaseModel: "llama-3.1-8b"},
-		sim.AdapterSpec{ID: "adapter_1", Rank: 16}, // no base model declared => any model
+		cengine.AdapterSpec{ID: "adapter_0", Rank: 8, BaseModel: "llama-3.1-8b"},
+		cengine.AdapterSpec{ID: "adapter_1", Rank: 16}, // no base model declared => any model
 	)
 
 	t.Run("known id, matching base model", func(t *testing.T) {

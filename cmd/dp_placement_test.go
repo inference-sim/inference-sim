@@ -3,12 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"pgregory.net/rapid"
 )
 
@@ -238,7 +238,7 @@ func TestApplyDPPlacement(t *testing.T) {
 // active MoE plan, and leaves DP=1 for the dp=1 no-op. Refactor-safe (asserts observable
 // config behavior, not source text).
 func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
-	moe := sim.ModelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
+	moe := modelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
 	const tp = 2
 
 	// Active plan (MoE, dp=4): PerRankDP=1 ⇒ each replica's config is DP=1.
@@ -246,7 +246,7 @@ func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDPPlacement(active): %v", err)
 	}
-	mhcActive := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planActive.PerRankDP, false, 0)
+	mhcActive := cengine.NewModelHardwareConfig(moe, "m", "H100", tp, planActive.PerRankDP, false, 0)
 	if mhcActive.EffectiveDP() != 1 {
 		t.Errorf("active plan: EffectiveDP got %d, want 1 (per-rank)", mhcActive.EffectiveDP())
 	}
@@ -256,7 +256,7 @@ func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDPPlacement(noop): %v", err)
 	}
-	mhcNoop := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planNoop.PerRankDP, false, 0)
+	mhcNoop := cengine.NewModelHardwareConfig(moe, "m", "H100", tp, planNoop.PerRankDP, false, 0)
 	if mhcNoop.EffectiveDP() != 1 {
 		t.Errorf("dp=1 no-op: EffectiveDP got %d, want 1", mhcNoop.EffectiveDP())
 	}
@@ -511,7 +511,7 @@ func TestResolveDPPlacement_IsAPerRankExpansion(t *testing.T) {
 		if moe {
 			experts = 8
 		}
-		lr := latencyResolution{ModelConfig: sim.ModelConfig{NumLocalExperts: experts}}
+		lr := latencyResolution{ModelConfig: modelConfig{NumLocalExperts: experts}}
 		plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dp, epOn, inPrefill > 0, autoscaler, false)
 		if err == nil {
 			plan, err = resolveDPPlacement(lr, plan)

@@ -121,7 +121,7 @@ func TestCITestPatternCoverage(t *testing.T) {
 		{"./tools/...", "./toolsx", false},
 		{".", ".", true},
 		{".", "./cmd", false},
-		{"./sim/internal/...", "./sim/internal/testutil/fakelatency", true},
+		{"./sim/internal/...", "./sim/internal/testutil", true},
 	} {
 		if got := coveredBy(c.pattern, c.pkg); got != c.want {
 			t.Errorf("coveredBy(%q, %q) = %v, want %v", c.pattern, c.pkg, got, c.want)

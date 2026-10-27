@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -26,7 +25,7 @@ func TestKVOffloadHeaderConversion_RoundTrip(t *testing.T) {
 		t.Errorf("sim→header→sim not identity:\n got  %+v\n want %+v", back, cfg)
 	}
 	// inert converts to nil header and back to inert.
-	if simToHeaderOffload(sim.KVOffloadConfig{}) != nil {
+	if simToHeaderOffload(kvOffloadConfig{}) != nil {
 		t.Error("inert config must convert to a nil header block")
 	}
 	if headerToSimOffload(nil).IsEnabled() {
@@ -95,7 +94,7 @@ func TestResolveReplayKVOffload(t *testing.T) {
 	validSim := headerToSimOffload(validHeader)
 
 	t.Run("header authoritative, no flag", func(t *testing.T) {
-		got, err := resolveReplayKVOffload(validHeader, false, sim.KVOffloadConfig{}, false)
+		got, err := resolveReplayKVOffload(validHeader, false, kvOffloadConfig{}, false)
 		if err != nil || !reflect.DeepEqual(got, validSim) {
 			t.Fatalf("header should be used verbatim: got %+v err %v", got, err)
 		}
@@ -121,13 +120,13 @@ func TestResolveReplayKVOffload(t *testing.T) {
 			EvictionPolicy: "lru",
 			Tiers:          []workload.TraceKVOffloadTier{{Type: "p2p", RootDir: "/x"}},
 		}
-		_, err := resolveReplayKVOffload(bad, false, sim.KVOffloadConfig{}, false)
+		_, err := resolveReplayKVOffload(bad, false, kvOffloadConfig{}, false)
 		if err == nil || !strings.Contains(err.Error(), "cannot reproduce") {
 			t.Fatalf("unreproducible header must fail loudly, got %v", err)
 		}
 	})
 	t.Run("no header, no flag -> inert", func(t *testing.T) {
-		got, err := resolveReplayKVOffload(nil, false, sim.KVOffloadConfig{}, false)
+		got, err := resolveReplayKVOffload(nil, false, kvOffloadConfig{}, false)
 		if err != nil || got.IsEnabled() {
 			t.Fatalf("nil header + no flag must be inert, got %+v err %v", got, err)
 		}

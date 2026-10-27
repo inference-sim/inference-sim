@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	sim "github.com/inference-sim/inference-sim/sim"
 )
 
@@ -15,7 +17,7 @@ import (
 // the waiters' pulls start in the order their prefills finished (FCFS).
 func TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	editEngine(&config, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(3, 16, 0, 0, 0, 0) })
 	config.PDPrefillKVHold = true
 	cs := runHold(t, config, newShortRequests(4)...)
 	if cs.droppedAtDecodeKV != 0 {
@@ -24,9 +26,9 @@ func TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops(t *testing.T) {
 	if l := newClusterLedger(cs); l.accounted() != 4 || cs.AggregatedMetrics().CompletedRequests != 4 {
 		t.Fatalf("want all 4 completed; ledger %s", l)
 	}
-	if cs.DecodeKVWaiting() != 0 || cs.PrefillKVHeld() != 0 || cs.transfersInitiated != cs.transfersCompleted {
-		t.Fatalf("after the run: %d waiting, %d held, initiated %d completed %d",
-			cs.DecodeKVWaiting(), cs.PrefillKVHeld(), cs.transfersInitiated, cs.transfersCompleted)
+	if cs.PrefillKVHeld() != 0 || cs.transfersInitiated != cs.transfersCompleted {
+		t.Fatalf("after the run: %d held, initiated %d completed %d",
+			cs.PrefillKVHeld(), cs.transfersInitiated, cs.transfersCompleted)
 	}
 	ps := cs.ParentRequests()
 	sort.Slice(ps, func(i, j int) bool {
@@ -57,7 +59,7 @@ func TestPDDecodeKVWait_DecodeThatNeverHadTheRequestLeavesTheLease(t *testing.T)
 		cfg := holdConfig(true, 1000)
 		cfg.PDKVLeaseUs = lease
 		cfg.Horizon = horizon
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 1, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
 		mustRun(t, cs)
 		return cs
@@ -84,13 +86,13 @@ func TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters(t *testing.T) {
 	// 40 decode blocks: "long" reserves 10 and grows to 35 over its 400-token decode, so the
 	// waiter's 31-block prompt never fits beside it.
 	blocks := int64(40)
-	config.DecodeOverrides.TotalKVBlocks = &blocks
+	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = blocks })
 	long := holdTestRequest("long", 1, 0, 160, 400)
 	waiter := holdTestRequest("waiter", 2, 1000, 496, 4)
 	run := func(horizon int64) *ClusterSimulator {
 		cfg := config
 		cfg.Horizon = horizon
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{long, waiter}), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{long, waiter}), nil)
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 300_000, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
 		mustRun(t, cs)
 		return cs
@@ -116,9 +118,9 @@ func TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters(t *testing.T) {
 	if l := newClusterLedger(cs); l.accounted() != 2 {
 		t.Fatalf("INV-1: accounted %d of 2 [%s]", l.accounted(), l)
 	}
-	if cs.transfersInitiated != cs.transfersCompleted || cs.PrefillKVHeld() != 0 || cs.DecodeKVWaiting() != 0 {
-		t.Fatalf("initiated %d completed %d, held %d, waiting %d", cs.transfersInitiated, cs.transfersCompleted,
-			cs.PrefillKVHeld(), cs.DecodeKVWaiting())
+	if cs.transfersInitiated != cs.transfersCompleted || cs.PrefillKVHeld() != 0 {
+		t.Fatalf("initiated %d completed %d, held %d", cs.transfersInitiated, cs.transfersCompleted,
+			cs.PrefillKVHeld())
 	}
 }
 
@@ -128,7 +130,7 @@ func TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters(t *testing.T) {
 func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 	config := holdConfig(false, 1000)
 	blocks := int64(40)
-	config.DecodeOverrides.TotalKVBlocks = &blocks
+	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = blocks })
 	long := holdTestRequest("long", 1, 0, 160, 400)      // 10 blocks, grows to 35
 	big := holdTestRequest("big", 2, 1000, 496, 4)       // 31 blocks: waits for long
 	small := holdTestRequest("small", 3, 200_000, 32, 4) // 2 blocks: would fit beside long
@@ -143,7 +145,7 @@ func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 }
 
 // The cluster starts exactly the handoffs the decode engine admits, and moves the KV the engine
-// says each pull must move (sim.EngineCore.AdmitRemoteKV). While long's decode holds the decode
+// says each pull must move (cengine.EngineCore.AdmitRemoteKV). While long's decode holds the decode
 // pool, a and b queue behind it; when long finishes, both fit at once, so the engine admits
 // both at that one schedule and both pulls start at the same tick, each priced for its whole
 // prompt. A cluster that started fewer than the engine admitted would leave b for a later
@@ -152,7 +154,7 @@ func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
 	config := holdConfig(false, 1000)
 	config.PDTransferTime = func(tokens int64, _, _ InstanceID) int64 { return 1 + tokens }
 	blocks := int64(40)
-	config.DecodeOverrides.TotalKVBlocks = &blocks
+	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = blocks })
 	long := holdTestRequest("long", 1, 0, 160, 400) // 10 blocks, grows to 35 while it decodes
 	a := holdTestRequest("a", 2, 100_000, 96, 4)    // 6 blocks: does not fit beside long's 35
 	b := holdTestRequest("b", 3, 100_000, 96, 4)

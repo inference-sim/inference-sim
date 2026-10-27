@@ -14,35 +14,36 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // msClusterLatency is the default fake with no post-decode overhead (see file header).
-func msClusterLatency() sim.LatencyModel {
+func msClusterLatency() cengine.LatencyModel {
 	c := testutil.DefaultFakeLatency()
 	c.PostDecodeOverheadTicks = 0
-	return fakelatency.WithCoeffs(c)
+	return fakeLatencyWithCoeffs(c)
 }
 
 // msClusterConfig returns a DeploymentConfig for metrics substrate cluster tests.
 func msClusterConfig(numInstances int) DeploymentConfig {
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	return func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 100000, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(256, 100000, 0),
 			LatencyModel:        msClusterLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
-			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
-		},
-		NumInstances: numInstances,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "test-gpu", 1, 1, false, 0),
+			PolicyConfig:        cengine.NewPolicyConfig("fcfs", ""),
+		}, 0)
+		d.NumInstances = numInstances
+		return d
+	}()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -52,7 +53,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 func TestClusterMetrics_E2E_Identity_AcrossInstances(t *testing.T) {
 	cfg := msClusterConfig(4)
 	requests := newTestRequests(20)
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestClusterMetrics_E2E_Identity_AcrossInstances(t *testing.T) {
 func TestClusterMetrics_AllITLs_Sum_Consistency(t *testing.T) {
 	cfg := msClusterConfig(2)
 	requests := newTestRequests(15)
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestClusterMetrics_AllITLs_Sum_Consistency(t *testing.T) {
 func TestClusterMetrics_CacheHitRate_Bounded(t *testing.T) {
 	cfg := msClusterConfig(2)
 	requests := newTestRequests(10)
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -154,9 +155,9 @@ func TestClusterMetrics_CacheHitRate_Bounded(t *testing.T) {
 	// BC-MS-10c: per-instance peak bounded
 	for i, inst := range cs.Instances() {
 		m := inst.Metrics()
-		if m.PeakKVBlocksUsed < 0 || m.PeakKVBlocksUsed > cfg.TotalKVBlocks {
+		if m.PeakKVBlocksUsed < 0 || m.PeakKVBlocksUsed > engineConfigOf(cfg).TotalKVBlocks {
 			t.Errorf("BC-MS-10c violated for instance %d: PeakKVBlocksUsed=%d, capacity=%d",
-				i, m.PeakKVBlocksUsed, cfg.TotalKVBlocks)
+				i, m.PeakKVBlocksUsed, engineConfigOf(cfg).TotalKVBlocks)
 		}
 	}
 }
@@ -186,7 +187,7 @@ func TestClusterMetrics_ZeroOutput_NoPollution(t *testing.T) {
 		{ID: "n4", InputTokens: makeTokens(32), OutputTokens: makeTokens(5), ArrivalTime: 400000, State: sim.StateQueued},
 		{ID: "z5", InputTokens: makeTokens(16), OutputTokens: []sim.TokenID{}, ArrivalTime: 500000, State: sim.StateQueued},
 	}
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
 
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)

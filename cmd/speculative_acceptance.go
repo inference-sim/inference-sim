@@ -59,7 +59,7 @@ func registerAcceptanceFlags(cmd *cobra.Command) {
 
 // acceptanceRecordOf is the results-file record of a resolution as the run simulates it: the
 // length and rate are the config's own, so the record is what advanced requests.
-func acceptanceRecordOf(r acceptance.Resolution, c sim.SpeculativeConfig) *sim.AcceptanceRecord {
+func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.AcceptanceRecord {
 	rec := &sim.AcceptanceRecord{
 		Length:      c.EffectiveTokensPerStep(),
 		Rate:        c.Acceptance,

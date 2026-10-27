@@ -53,12 +53,12 @@ var (
 	simulationHorizon         int64                  // Total simulation time (in ticks)
 	logLevel                  string                 // Log verbosity level
 	totalKVBlocks             int64                  // KV blocks per rank, sized by the kernel
-	sequenceState             sim.KVSequenceState    // each resident sequence's bounded state in pool blocks, from the kernel (#1941)
+	sequenceState             kvSequenceState        // each resident sequence's bounded state in pool blocks, from the kernel (#1941)
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
 	swaBoundedReplay          optionalBool           // --swa-bounded-replay: overrides the resolved DeepSeek-V4.1 SWA bounded replay
-	prefixHit                 sim.KVPrefixHit        // how the KV cache groups cut a prefix hit, from the kernel's model
+	prefixHit                 kvPrefixHit            // how the KV cache groups cut a prefix hit, from the kernel's model
 	blockSizeTokens           int64                  // Number of tokens per KV block
 	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
 	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
@@ -235,10 +235,10 @@ func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, prom
 type latencyResolution struct {
 	// KernelModel is the blis-latency-kernel adapter for the scenario's first pool; the caller
 	// puts it on SimConfig.LatencyModel.
-	KernelModel sim.LatencyModel
+	KernelModel latencyModel
 	// ModelConfig carries only the model graph's expert geometry, for the MoE gates and the
 	// ModelHardwareConfig boundary.
-	ModelConfig sim.ModelConfig
+	ModelConfig modelConfig
 }
 
 // dpPlacementPlan describes how an MoE deployment whose scenario states dp N expands
@@ -781,7 +781,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 // resolveAcceptance), which it records for the results file (acceptanceRecord). Shared by run
 // and replay, so a trace round-trips under identical flags (INV-13). Fatal on an invalid or
 // unresolvable config (CLI boundary, R6).
-func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
+func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
 	acceptanceRecord = nil
 	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
 	alpha := 0.0
@@ -894,7 +894,7 @@ var runCmd = &cobra.Command{
 		// Per-pool engine overrides, filled from each P/D pool's own kernel
 		// (openKernelPools, below) after PD validation. Empty when disaggregation is
 		// disabled (prefillInstances == 0).
-		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		var prefillOverrides, decodeOverrides poolOverrides
 
 		// R3: Validate workload generation flags (before any synthesis path consumes them)
 		if numRequests < 0 {
@@ -1294,8 +1294,9 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		runEngine := engineConfigOfRun(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
-			SimConfig:                      simConfigFor(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides),
+			InstanceConfig:                 instanceConfigOf(runEngine),
 			NumInstances:                   numInstances,
 			DPLockstepRanks:                dpPlan.LockstepRanks,
 			DPLoadBalancing:                dpLoadBalancing,
@@ -1309,8 +1310,7 @@ var runCmd = &cobra.Command{
 			PDTransferContention:           pdTransferContention,
 			PDTransferDemand:               pdTransferDemand,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
-			PrefillOverrides:               prefillOverrides,
-			DecodeOverrides:                decodeOverrides,
+			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
@@ -1321,7 +1321,7 @@ var runCmd = &cobra.Command{
 			InstanceLifecycle:              bundleInstanceLifecycle,
 			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, config.SimConfig, ec.Speculative.Acceptance, dpPlan); f != nil {
+		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
 			config.NewEngine = f
 		}
 		// Session callback installation (Constraint 3 fix):

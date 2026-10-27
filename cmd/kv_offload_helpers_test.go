@@ -8,7 +8,6 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // The KV offload configuration is resolved by blis-vllm's compat/build (#2021 E3), and its unit
@@ -106,7 +105,7 @@ func writeCatalogStorageDevices(t *testing.T, body string) string {
 }
 
 // resolveKVOffload resolves a parsed block with the engine's resolver.
-func resolveKVOffload(block *build.KVOffloadBlock, devices map[string]build.KVOffloadDevice, gpuBlockSizeTokens int64) (sim.KVOffloadConfig, error) {
+func resolveKVOffload(block *build.KVOffloadBlock, devices map[string]build.KVOffloadDevice, gpuBlockSizeTokens int64) (kvOffloadConfig, error) {
 	return build.ResolveKVOffload(block, devices, gpuBlockSizeTokens)
 }
 

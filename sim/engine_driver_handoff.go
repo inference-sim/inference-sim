@@ -113,7 +113,10 @@ func (d *EngineDriver) ReleaseHandoff(req *Request, now int64) {
 	if err := d.eng.TransferDone(h.Transfer, true, now); err != nil {
 		panic(fmt.Sprintf("engine driver: TransferDone(%d) for %s: %v", h.Transfer, req.ID, err))
 	}
-	d.rearmWake(now)
+	// The freed blocks may admit a request waiting for KV, so the engine is stepped now, as for
+	// any other call that frees KV (Evict, AbortRemote): the host loop woke a parked engine when
+	// a hold released (WakeIfParked).
+	d.kick(now)
 }
 
 // noteHandoffs keeps the KV holds a completed batch reported.

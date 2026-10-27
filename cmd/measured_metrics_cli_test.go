@@ -238,7 +238,7 @@ func TestMetricsPath_PrefixCacheIsTheModelsResolution(t *testing.T) {
 			t.Fatalf("flags %v: no colocated prefix_cache record in %s", c.flags, data)
 		}
 		want := m.PrefixHit(c.override)
-		if got.Layout != want.Hit || got.ModelRunner != want.Runner || got.SWABoundedReplayFrom != c.from ||
+		if got.Layout != sim.KVPrefixHit(want.Hit) || got.ModelRunner != want.Runner || got.SWABoundedReplayFrom != c.from ||
 			got.SWABoundedReplay == nil || want.BoundedReplay == nil || *got.SWABoundedReplay != *want.BoundedReplay {
 			t.Errorf("flags %v: recorded %+v, want the model's %+v from %q", c.flags, got, want, c.from)
 		}

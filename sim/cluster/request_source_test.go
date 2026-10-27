@@ -103,7 +103,7 @@ func TestNewClusterSimulator_PanicsOnNilRequestSource(t *testing.T) {
 			t.Errorf("panic message is empty")
 		}
 	}()
-	NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+	newTestCluster(newTestDeploymentConfig(1), nil, nil)
 }
 
 // nilTrueRequestSource violates the RequestSource contract by returning
@@ -122,7 +122,7 @@ func (n *nilTrueRequestSource) Next() (*sim.Request, bool) {
 }
 
 func TestClusterSimulator_PanicsOnNilTrueFromSource(t *testing.T) {
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), &nilTrueRequestSource{}, nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), &nilTrueRequestSource{}, nil)
 	defer func() {
 		r := recover()
 		if r == nil {
