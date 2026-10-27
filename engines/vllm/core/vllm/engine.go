@@ -75,6 +75,8 @@ type Engine struct {
 	nextID  engine.BatchID
 	// sched holds each in-flight batch's schedule decisions until its metrics step.
 	sched map[int]scheduled
+	// series is the server time series, nil when off (EnableServerSeries).
+	series *serverSeries
 	// adapters numbers LoRA adapters in order of first use (lora_int_id).
 	adapters map[string]int
 	// maxLoRAs is max_loras, 0 when LoRA is off; specTokens is num_speculative_tokens.
@@ -305,7 +307,7 @@ func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
 	}
 	if block {
 		if oldest, ok := e.core.Oldest(); ok && len(e.queuedEmpty) > 0 && oldest.ID == e.queuedEmpty[0] {
-			e.drainEmpty()
+			e.drainEmpty(now)
 		} else {
 			e.blocked = true
 		}
@@ -321,7 +323,7 @@ func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
 
 // drainEmpty applies the outputs of queued schedules that ran no tokens, oldest first, while the
 // oldest queued batch is one: vLLM's step pops them in turn, each at once.
-func (e *Engine) drainEmpty() {
+func (e *Engine) drainEmpty(at engine.Time) {
 	for len(e.queuedEmpty) > 0 {
 		oldest, ok := e.core.Oldest()
 		if !ok || oldest.ID != e.queuedEmpty[0] {
@@ -329,7 +331,7 @@ func (e *Engine) drainEmpty() {
 		}
 		e.queuedEmpty = e.queuedEmpty[1:]
 		res := e.core.StepEnd(core.StepResult{})
-		e.finishStep(*res.Processed, nil, res.Finished)
+		e.finishStep(*res.Processed, nil, res.Finished, at)
 	}
 }
 
@@ -344,7 +346,7 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 		// A batch that runs nothing is not in flight (the contract), and vLLM's step() makes no
 		// output for it: update_from_output with nothing scheduled changes no request.
 		e.core.Drop(cb)
-		e.finishStep(cb, nil, nil)
+		e.finishStep(cb, nil, nil, now)
 		e.idleWake = 0
 		if e.s.HasRequests() && len(e.pending) == 0 {
 			e.idleWake = now + idlePollUs
@@ -398,13 +400,13 @@ func (e *Engine) Assumptions() []string {
 
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
-	res, _, err := e.complete(id, outcome)
+	res, _, err := e.complete(id, outcome, end)
 	return res, err
 }
 
 // complete is Complete, also returning the scheduler's finish records, which a data-parallel
 // group's wave step reads (DPGroup).
-func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Result, []sched.Finished, error) {
+func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, []sched.Finished, error) {
 	idx := -1
 	for i, p := range e.pending {
 		if p.id == id {
@@ -420,12 +422,12 @@ func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Res
 	}
 	pb := e.pending[0]
 	e.pending = e.pending[1:]
-	res, fins := e.apply(pb.b, outcome, func() []sched.Finished {
+	res, fins := e.apply(pb.b, outcome, end, func() []sched.Finished {
 		if e.core.QueueSize > 1 {
 			// The step that blocked on this batch, or a later one, takes it off the queue
 			// (core.py:760-783): it is the oldest queued batch once the empty schedules queued
 			// ahead of it are applied.
-			e.drainEmpty()
+			e.drainEmpty(end)
 			res := e.core.StepEnd(core.StepResult{})
 			e.blocked = false
 			return res.Finished
@@ -438,7 +440,7 @@ func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome) (engine.Res
 // apply is update_from_output of one batch that ran tokens: the GPU's sampled tokens for it,
 // then take, which takes the batch off the queue and applies them, then the result, the
 // metrics step and post_step. A data-parallel rank's batch is applied the same way (DPGroup).
-func (e *Engine) apply(b core.Batch, outcome engine.Outcome, take func() []sched.Finished) (engine.Result, []sched.Finished) {
+func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, take func() []sched.Finished) (engine.Result, []sched.Finished) {
 	pb := pendingBatch{b: b}
 	// The GPU's answer: each sampling request's next assigned token, plus the drafts the
 	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
@@ -528,7 +530,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, take func() []sched
 		res.Finished = append(res.Finished, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
 	}
 	res.KVEvents = kvEvents(e.s.TakeKVEvents())
-	e.finishStep(pb.b, emitted, fins)
+	e.finishStep(pb.b, emitted, fins, end)
 	if e.specTokens > 0 && !e.async && len(pb.b.Out.Scheduled) > 0 {
 		// EngineCore.post_step (vllm/v1/engine/core.py:689-696@5df63a72): without async
 		// scheduling, after a step that ran, the drafter proposes num_speculative_tokens drafts

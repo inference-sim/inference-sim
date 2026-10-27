@@ -47,9 +47,9 @@ func (e *Engine) recordSchedule(b core.Batch) {
 	e.sched[b.ID] = sc
 }
 
-// finishStep records one update_from_output: the batch's schedule, its outputs and finishes,
-// and the scheduler gauges after it.
-func (e *Engine) finishStep(b core.Batch, emitted map[string]int, fins []sched.Finished) {
+// finishStep records one update_from_output, which ends at at: the batch's schedule, its outputs
+// and finishes, and the scheduler gauges after it.
+func (e *Engine) finishStep(b core.Batch, emitted map[string]int, fins []sched.Finished, at engine.Time) {
 	sc := e.sched[b.ID]
 	delete(e.sched, b.ID)
 	st := metrics.Step{Scheduled: sc.tokens, Preempted: sc.preempted, Admitted: sc.admitted,
@@ -79,7 +79,9 @@ func (e *Engine) finishStep(b core.Batch, emitted map[string]int, fins []sched.F
 	nr, nw := e.s.Counts()
 	st.Running, st.Waiting, st.Deferred = nr, nw, e.s.Deferred()
 	st.KVUsage = e.s.KV.Pool.Usage()
+	before := e.series.counts(e.metrics)
 	e.metrics.Step(st)
+	e.series.record(int64(at), before, e.metrics)
 }
 
 // prefixCaching reports whether the scheduler's prefix-cache lookups run.

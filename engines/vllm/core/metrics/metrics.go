@@ -235,6 +235,15 @@ func (m *Model) Step(s Step) {
 	}
 }
 
+// Value is a gauge's or a counter's current value by its series key, as Series names it; 0 for
+// a key the model does not keep.
+func (m *Model) Value(key string) float64 {
+	if v, ok := m.gauges[key]; ok {
+		return v
+	}
+	return m.counters[key]
+}
+
 func (m *Model) observe(family string, v float64) {
 	h, ok := m.hists[family]
 	if !ok {

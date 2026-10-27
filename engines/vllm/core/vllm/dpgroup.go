@@ -194,7 +194,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 		res := e.core.StepEnd(st.Step)
 		steps[i].Step = res
-		e.finishStep(*res.Processed, nil, res.Finished)
+		e.finishStep(*res.Processed, nil, res.Finished, now)
 	}
 	if !it.batch.Empty() {
 		g.nextID++
@@ -307,7 +307,7 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 		if waited {
 			base = g.open.steps[i].Step
 		}
-		rr, _ := e.apply(cb, outcome, func() []sched.Finished {
+		rr, _ := e.apply(cb, outcome, end, func() []sched.Finished {
 			step = e.core.StepEnd(base)
 			return step.Finished
 		})
