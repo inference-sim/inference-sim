@@ -374,3 +374,64 @@ func TestContractCompatIsTheDefaultPath(t *testing.T) {
 		t.Error("colocated instances behind the router are carried by the contract")
 	}
 }
+
+// A data-parallel replica behind vLLM's internal or hybrid balancer is one endpoint whose
+// group picks each request's rank (the engine's PickRank, from the ranks' counts and the front
+// end's in-flight count on each) and whose ranks render on one shared stage. Each mode runs both
+// ways, byte for byte, and the pick spreads requests over both ranks of each replica. A third run
+// routes on the replicas' load: the router scores each replica endpoint by its ranks' waiting
+// requests and KV usage, summed and maxed over the ranks' published gauges.
+func TestContractCompatInternalDPBalancerIsByteIdentical(t *testing.T) {
+	scenarios, _, _ := kernelRepos(t)
+	loadRouted := routerVariant(t, filepath.Join(scenarios, dpScenario),
+		"router:\n  endpoint_picker_config: load-only.yaml\n", map[string]string{"load-only.yaml": "../examples/llm-d/load-only.yaml"})
+	for _, c := range []struct{ name, mode, dir, scenario string }{
+		{"internal", "internal", "", dpScenario},
+		{"hybrid", "hybrid", "", dpScenario},
+		{"internal-load-routed", "internal", loadRouted, "variant.yaml"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// Two logical instances of the dp=2 scenario: two replicas of two ranks each, under a
+			// load whose requests queue for the replica's shared render stage, so the stage and the
+			// pick's in-flight counts both shape the run.
+			args := []string{"run", "--scenario", c.scenario, "--num-instances", "2", "--rate", "400",
+				"--num-requests", "160", "--seed", "42", "--dp-load-balancing", c.mode, "--log", "debug"}
+			if c.dir != "" {
+				args = append(args, "--scenarios", c.dir)
+			}
+			t.Setenv(ContractCompatEnv, "0")
+			want, wantErr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("the compatibility host loop: %v\nstderr:\n%s", err, lastLines(wantErr, 5))
+			}
+			if !strings.Contains(wantErr, "<< StepEvent") {
+				t.Fatal("with the opt-out the compatibility host loop logged no step events; the comparison is vacuous")
+			}
+			t.Setenv(ContractCompatEnv, "")
+			got, gotErr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("the contract path: %v\nstderr:\n%s", err, lastLines(gotErr, 5))
+			}
+			if strings.Contains(gotErr, "<< StepEvent") {
+				t.Fatal("by default the compatibility engine's own host loop ran; the comparison is vacuous")
+			}
+			if got != want {
+				t.Errorf("the contract path's stdout differs from the compatibility host loop's:\ncontract:\n%s\nhost loop:\n%s",
+					lastLines(got, 40), lastLines(want, 40))
+			}
+			served := 0
+			for _, raw := range extractJSONObjects(got) {
+				var obj map[string]any
+				if json.Unmarshal([]byte(raw), &obj) != nil || obj["instance_id"] == "cluster" {
+					continue
+				}
+				if n, ok := obj["completed_requests"].(float64); ok && n > 0 {
+					served++
+				}
+			}
+			if served < 4 {
+				t.Errorf("%d of the 4 ranks completed requests; the replica's pick must spread them", served)
+			}
+		})
+	}
+}

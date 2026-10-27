@@ -29,6 +29,42 @@ func (d *EngineDriver) JoinGroup(leader *EngineDriver, k int) {
 	}
 }
 
+// ShareRenderStage makes the drivers of one endpoint's ranks render on one stage of apiServers
+// servers of workers threads each: the replica behind vLLM's internal DP balancer, whose API
+// servers render every request before the balancer picks a rank (INV-R1). A no-op when the
+// drivers' front end is inert (each rendered alone, with the run's --renderer-num-workers).
+func ShareRenderStage(drivers []*EngineDriver, apiServers, workers int) error {
+	if len(drivers) == 0 || drivers[0].renderer == nil {
+		return nil
+	}
+	r, err := NewRenderer(apiServers, workers)
+	if err != nil {
+		return err
+	}
+	for _, d := range drivers {
+		if d.renderer == nil {
+			return fmt.Errorf("ShareRenderStage: the ranks of one endpoint must all render")
+		}
+		d.renderer = r
+	}
+	return nil
+}
+
+// PickRank is the rank the engine's data-parallel balancer sends a request reaching the replica's
+// endpoint at now to: an engine whose group picks the rank (a PickRank query), given the front
+// end's count of its unfinished requests on each rank. It reports false for an engine that picks
+// none.
+func (d *EngineDriver) PickRank(now int64, inFlight []int) (int, bool, error) {
+	p, ok := d.eng.(interface {
+		PickRank(engine.Time, []int) (int, error)
+	})
+	if !ok {
+		return 0, false, nil
+	}
+	k, err := p.PickRank(now, inFlight)
+	return k, true, err
+}
+
 // groupOf is the driver whose request id is, among the leader and its members.
 func (d *EngineDriver) groupOf(id string) *EngineDriver {
 	if _, ok := d.reqs[id]; ok {

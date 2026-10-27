@@ -120,10 +120,21 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 	// unstated). An external-balancer or P/D-pool rank keeps the render stage it was built
 	// with: its own endpoint's servers.
 	for _, rep := range replicas {
-		if cs.endpointReplica(rep.ranks[0]) == nil || rep.ranks[0].drv != nil {
+		if cs.endpointReplica(rep.ranks[0]) == nil {
 			continue
 		}
 		apiServers := sim.ReplicaAPIServers(config.Frontend.APIServerCount, dp)
+		if rep.ranks[0].drv != nil {
+			// An engine-driven replica's ranks share the host's render stage the same way.
+			drivers := make([]*sim.EngineDriver, len(rep.ranks))
+			for k, inst := range rep.ranks {
+				drivers[k] = inst.drv
+			}
+			if err := sim.ShareRenderStage(drivers, apiServers, config.Frontend.RendererNumWorkers); err != nil {
+				return fmt.Errorf("replica %s: %w", rep.id, err)
+			}
+			continue
+		}
 		sims := make([]*sim.Simulator, len(rep.ranks))
 		for k, inst := range rep.ranks {
 			sims[k] = inst.engineCore()
@@ -199,5 +210,18 @@ func (cs *ClusterSimulator) rankFor(inst *InstanceSimulator) *InstanceSimulator 
 // pickRank assigns a request that reached the replica's endpoint at now to a rank: the engine's
 // load balancer (sim.DPBalancer) decides.
 func (cs *ClusterSimulator) pickRank(rep *dpReplica, now int64) *InstanceSimulator {
+	if lead := rep.ranks[0]; lead.drv != nil {
+		// An engine-driven replica's group picks the rank (its engine's PickRank), from the ranks'
+		// own counts and the front end's in-flight count on each, the cluster's.
+		inFlight := make([]int, len(rep.ranks))
+		for k, inst := range rep.ranks {
+			inFlight[k] = cs.inFlightRequests[string(inst.ID())]
+		}
+		k, ok, err := lead.drv.PickRank(now, inFlight)
+		if err != nil || !ok {
+			panic(fmt.Sprintf("replica %s: its engine picks no rank: %v", rep.id, err))
+		}
+		return rep.ranks[k]
+	}
 	return rep.ranks[rep.lb.Pick(rep.lbRanks, now)]
 }
