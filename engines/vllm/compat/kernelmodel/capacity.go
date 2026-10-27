@@ -99,7 +99,7 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 	// From the kernel, which resolved this pool. Reading the Deployment document instead
 	// would mean holding it alongside and indexing back in -- a second answer to "which
 	// pool is this", which can disagree with the one the pricing used.
-	e := m.k.Deployment().Engine
+	e := m.engine
 	util := e.GPUMemoryUtilization
 	if util <= 0 || util > 1 {
 		return KVBudget{}, fmt.Errorf(

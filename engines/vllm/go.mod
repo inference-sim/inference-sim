@@ -6,7 +6,7 @@ require (
 	// TEMPORARY: the head of inference-sim/blis-latency-kernel#82 (the kernel takes its rules
 	// from the caller), which compat/kernelmodel builds against. Moves to a release tag before
 	// anything merges (blis-latency-kernel#88).
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261025124457-4f8110fb2dba
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027001045-141c652a34f2
 	// TEMPORARY: inference-sim/blis-schemas#102 at 630937e (the engine contract and
 	// rules.EngineRules; #102's later commits change only comments). Moves to a blis-schemas release tag before anything merges
 	// (blis-latency-kernel#88, which gives the tags' order).

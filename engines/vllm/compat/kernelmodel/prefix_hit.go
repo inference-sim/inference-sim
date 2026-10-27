@@ -113,7 +113,7 @@ var v1OnlySpecMethods = []string{"ngram", "ngram_gpu", "suffix", "medusa", "mlp_
 // variable, hisparse and watermarking (:702-720), and ROCm's per-architecture V1 default
 // (:722-743) are outside what a deployment states (BLIS's chips are CUDA parts).
 func (m *Model) ModelRunner() (runner string, forcedBy []string) {
-	e := m.k.Deployment().Engine
+	e := m.engine
 	if sp := e.Speculative; sp != nil && slices.Contains(v1OnlySpecMethods, sp.Method) {
 		forcedBy = append(forcedBy, "speculative method "+sp.Method)
 	}
@@ -162,14 +162,14 @@ func (m *Model) PrefixHit(override *bool) PrefixHitResolution {
 		r.Hit = sim.KVPrefixHit{FullEagle: l.eagle}
 		return r
 	}
-	block := m.k.Deployment().Engine.BlockSize
+	block := m.engine.BlockSize
 	if block <= 0 || block%l.windowBlock != 0 {
 		r.Note = fmt.Sprintf("engine block %d is not the scheduler block (the LCM with the "+
 			"%d-token window page)", block, l.windowBlock)
 		return r
 	}
 	bounded, from := true, "v0.31.0 default"
-	if stated := m.k.Deployment().Engine.SWABoundedReplay; stated != nil {
+	if stated := m.engine.SWABoundedReplay; stated != nil {
 		bounded, from = *stated, "engine.swa_bounded_replay"
 	}
 	switch {

@@ -70,11 +70,11 @@ func openWithGraphMode(t *testing.T, mode string) (*Model, error) {
 		t.Fatal(err)
 	}
 	in.Deployment.Pools[0].Engine.CUDAGraphMode = mode
-	k, err := latencykernel.New(in)
+	m, err := fromInputs(in)
 	if err != nil {
 		t.Fatalf("New with cudagraph_mode %q: %v", mode, err)
 	}
-	return newModel(k, identityOf(in))
+	return m, nil
 }
 
 // Every catalogued scenario resolves a capture ceiling exactly when the kernel runs CUDA

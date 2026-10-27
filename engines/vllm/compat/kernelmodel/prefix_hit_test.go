@@ -62,7 +62,7 @@ func TestPrefixHit_V1RunnerAndPCPTurnBoundedReplayOff(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := deployment.Pool{Engine: deployment.Engine{BlockSize: 64}}
 			tt.edit(&pool)
-			m := &Model{k: fixedDeployment{pool: pool}, id: identity{prefix: prefixLayout{
+			m := &Model{k: fixedDeployment{pool: pool}, engine: pool.Engine, id: identity{prefix: prefixLayout{
 				known: true, v41: true, window: 128, windowBlock: 32, pcp: max(pool.Parallel.PCP, 1)}}}
 			got := m.PrefixHit(nil)
 			if got.Runner != tt.runner {
@@ -107,7 +107,7 @@ func TestPrefixHit_ThePoolsStatedBoundedReplayIsTheCacheConfig(t *testing.T) {
 			if tt.v1 != nil {
 				pool.Engine.DBO = &deployment.DBO{Enabled: true}
 			}
-			m := &Model{k: fixedDeployment{pool: pool}, id: identity{prefix: prefixLayout{
+			m := &Model{k: fixedDeployment{pool: pool}, engine: pool.Engine, id: identity{prefix: prefixLayout{
 				known: true, v41: true, window: 128, windowBlock: 32, pcp: 1}}}
 			got := m.PrefixHit(tt.override)
 			if got.BoundedReplay == nil || *got.BoundedReplay != tt.bounded || got.BoundedReplayFrom != tt.from {

@@ -61,6 +61,8 @@ import (
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	"github.com/inference-sim/blis-latency-kernel/enginesettings"
+	"github.com/inference-sim/blis-latency-kernel/vllmsettings"
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
@@ -89,6 +91,11 @@ func withEngineRules(r Repos) Repos {
 		r.Rules = latencykernel.RulesFrom(vllmrules.Lookup)
 		r.RulesVersions = vllmrules.Versions
 	}
+	if r.EngineSettings == nil {
+		// The kernel prices the engine settings its caller decodes, as it takes its rules from
+		// its caller: vLLM's engine block, read by the kernel module's one conversion.
+		r.EngineSettings = vllmsettings.OfPool
+	}
 	return r
 }
 
@@ -100,6 +107,10 @@ func withEngineRules(r Repos) Repos {
 type Model struct {
 	k  kernel.Kernel
 	id identity
+	// engine is the pool's engine block as this package decodes it, once at open: the kernel
+	// prices the settings converted from it (Inputs.Engine), and the simulator's settings and
+	// sizing read the rest (Engine).
+	engine deployment.Engine
 
 	decodeThreshold int
 	smBudget        int
@@ -291,6 +302,11 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err := checkDPLocal(pool.Parallel, in.Scenario.Cluster.GPUsPerNode); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
+	// One decoding of the pool's engine block: this package keeps it (Model.engine), and the
+	// kernel prices the settings converted from that same copy, never from a second read.
+	engine := pool.Engine
+	settings := vllmsettings.Of(engine)
+	in.Engine = &settings
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
@@ -299,6 +315,7 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.engine = engine
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	m.graph = in.Model
@@ -472,7 +489,7 @@ func (m *Model) V032Pieces() []string {
 // vLLM reserves (use_multi_module_mtp, vllm/config/speculative.py:1982-1988@5df63a72), as
 // prefillBackoffOf reads it.
 func (m *Model) MTPDraftLayers() int {
-	return mtpDraftLayersOf(m.graph, m.k.Deployment().Engine.Speculative)
+	return mtpDraftLayersOf(m.graph, m.engine.Speculative)
 }
 
 func mtpDraftLayersOf(g *model.Graph, sp *deployment.Speculative) int {
@@ -540,8 +557,17 @@ func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
 	return b
 }
 
-// specTokensOf is the draft length of the pool a kernel prices.
+// specTokensOf is the draft length of the pool a kernel prices, from the engine settings it
+// prices with.
 func specTokensOf(k kernel.Kernel) int {
+	if e, ok := k.(interface {
+		Engine() enginesettings.Settings
+	}); ok {
+		if sp := e.Engine().Speculative; sp != nil && sp.NumSpecTokens > 0 {
+			return sp.NumSpecTokens
+		}
+		return 0
+	}
 	if sp := k.Deployment().Engine.Speculative; sp != nil && sp.NumSpecTokens > 0 {
 		return sp.NumSpecTokens
 	}
@@ -611,7 +637,7 @@ func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 }
 
 func (m *Model) Engine() (deployment.Engine, error) {
-	e := m.k.Deployment().Engine
+	e := m.engine
 	if e.BlockSize <= 0 {
 		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
 	}
@@ -654,7 +680,7 @@ func (m *Model) Deployment() Deployment {
 	// exactly the v0.2.0 split: what traffic runs on which hardware is the problem, how
 	// it is laid out is the choice. Both are the pair this model was opened from, so the
 	// arms cannot describe different deployments.
-	e := m.k.Deployment().Engine
+	e := m.engine
 	r := m.k.Resolved()
 	return Deployment{
 		Model:    m.id.model,

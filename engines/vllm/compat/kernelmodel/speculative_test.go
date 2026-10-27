@@ -26,13 +26,9 @@ func openSpeculative(t *testing.T, scenario string, k int) *Model {
 	if k > 0 {
 		in.Deployment.Pools[0].Engine.Speculative = &deployment.Speculative{Method: "mtp", NumSpecTokens: k}
 	}
-	kn, err := latencykernel.New(in)
+	m, err := fromInputs(in)
 	if err != nil {
 		t.Fatalf("New with %d draft tokens: %v", k, err)
-	}
-	m, err := newModel(kn, identityOf(in))
-	if err != nil {
-		t.Fatal(err)
 	}
 	return m
 }
