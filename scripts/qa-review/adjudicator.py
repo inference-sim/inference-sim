@@ -32,9 +32,25 @@ Aggregate verdict: BLOCK iff ANY finding is STILL_OPEN or left un-adjudicated;
 emitted on STDERR as "[adjudication verdict: PASS|BLOCK]" (not a PR marker —
 #1716 derives the gate marker from that line).
 
-Exit codes: 0 a verdict was emitted, 2 missing proxy configuration, 3 no prior
-qa-review report comment to adjudicate (deliberately NOT a PASS: there is
-nothing to re-check, so a verdict would be vacuous).
+Naming a non-writer's report (#2041). Comments are read through the
+write-access filter, so by default a report posted by an author without write
+access is never seen. An operator may name that author with --report-author;
+then, and only then, ONE comment is admitted from outside the filter: that
+author's most recent report comment, and only its parsed Items-to-fix findings
+(id, status, one-line text capped at 500 characters). None of its other text,
+and no other comment of that author's, reaches a prompt; the defence is still
+only later TRUSTED comments. The finding text is still untrusted prompt text,
+but it can only ask the adjudicator to look at something; every finding is
+re-checked against the code with STILL_OPEN as the default. A non-writer may only
+ADD findings, never clear them: a report with no findings, or one edited after it
+was posted, is refused (exit 3). An automation login is never admitted this way:
+the App's own reports come through the filter's `automation` label or not at all.
+
+Exit codes: 0 a verdict was emitted, 1 the model's reply was unusable after
+every retry (#1895; stderr names the attempts and input size), 2 missing proxy
+configuration, 3 no prior qa-review report comment to adjudicate (deliberately
+NOT a PASS: there is nothing to re-check, so a verdict would be vacuous; stderr
+says whether a report by a non-writer was filtered out, and what to do).
 
 Env:
   OPENAI_BASE_URL       LiteLLM proxy base URL (required)
@@ -44,6 +60,8 @@ Env:
                         author login (empty = any author). Either spelling of a
                         GitHub App actor is accepted -- "github-actions" and
                         "github-actions[bot]" name the same poster (#1834).
+                        Naming a non-writer admits that author's report
+                        findings only (see above, #2041).
   QA_HTTP_*             transport timeout/retry knobs — see _http.py
 """
 
@@ -59,6 +77,7 @@ import sys
 # error no longer crashes a ~30-minute tool loop (#1833). Imported as a module
 # attribute so the existing tests can still monkeypatch post_chat_completion.
 from _http import post_chat_completion  # noqa: F401 — re-exported call target
+from _http import UnparseableReply
 
 DEFAULT_MODEL = "azure/gpt-5.6-sol"
 MAX_TOOL_TURNS = 24
@@ -241,13 +260,42 @@ def _trusted_comment_lines(repo, mode, number):
     )
 
 
+# An issue reference: `N`, `#N`, or `owner/repo#N` (#2041). A PR may implement an issue
+# tracked in ANOTHER repository (a repo with issues disabled closes issues filed elsewhere), so
+# gh_issue must be able to read it. Owner and repo are held to GitHub's own name alphabet, and
+# `.`/`..` are refused as repo names, so a model-supplied reference can never become a flag, a
+# path segment, or a URL that leaves `repos/<owner>/<repo>`.
+_ISSUE_REF_RE = re.compile(r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+)#|#)?(?P<number>[0-9]+)$")
+
+
+def parse_issue_ref(ref, default_repo):
+    """(repo, number) for an issue reference, or raise ValueError.
+
+    A plain `N` / `#N` resolves against `default_repo` (QA_REPO), unchanged from before
+    #2041; `owner/repo#N` names its own repository."""
+    m = _ISSUE_REF_RE.match(str(ref).strip())
+    if not m:
+        raise ValueError("not an issue reference (want N or owner/repo#N): %r" % (ref,))
+    repo = m.group("repo") or default_repo
+    if repo.split("/", 1)[1] in (".", ".."):
+        raise ValueError("not a repository name: %r" % (repo,))
+    return repo, m.group("number")
+
+
 def tool_gh_issue(worktree, number):
     """Read-only: a GitHub issue's acceptance criteria + WRITE-ACCESS-FILTERED comments
-    (#1792, #1806)."""
-    repo = os.environ.get("QA_REPO", "inference-sim/inference-sim")
+    (#1792, #1806). `number` is `N` (in QA_REPO) or `owner/repo#N` (#2041); the comments of
+    an issue in another repository are filtered by THAT repository's write access, since the
+    filter resolves permissions against the GH_REPO it is given."""
+    try:
+        repo, number = parse_issue_ref(
+            number, os.environ.get("QA_REPO", "inference-sim/inference-sim")
+        )
+    except ValueError as exc:
+        return "gh_issue failed: %s" % exc
     proc = subprocess.run(
         [
-            "gh", "issue", "view", str(number), "--repo", repo,
+            "gh", "issue", "view", number, "--repo", repo,
             "--json", "number,title,body", "-q", _GH_ISSUE_HEAD_JQ,
         ],
         capture_output=True,
@@ -338,7 +386,8 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "gh_issue",
-            "description": "Read a GitHub issue (acceptance criteria) with comments.",
+            "description": "Read a GitHub issue (acceptance criteria) with comments. "
+            "`number` is N for this repository or owner/repo#N for another one.",
             "parameters": {
                 "type": "object",
                 "properties": {"number": {"type": "string"}},
@@ -421,6 +470,21 @@ def exhausted_verdicts(items):
     ]
 
 
+def validate_turn(resp):
+    """Raise ValueError when a completion is neither a tool call nor a usable verdict array.
+
+    Passed to post_chat_completion as `validate` (#1895), so an empty or unparseable FINAL
+    reply is retried with the same history instead of crashing main() in parse_verdicts."""
+    msg = resp["choices"][0]["message"]
+    if msg.get("tool_calls"):
+        return
+    content = msg.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("the final reply has no content")
+    if not isinstance(parse_verdicts(content), list):
+        raise ValueError("the final reply is JSON but not a verdict array")
+
+
 def adjudicate_loop(base_url, api_key, model, worktree, items, responses, no_exec):
     impl, schema = tools_for(no_exec)
     messages = [
@@ -434,7 +498,9 @@ def adjudicate_loop(base_url, api_key, model, worktree, items, responses, no_exe
         },
     ]
     for _ in range(MAX_TOOL_TURNS):
-        resp = post_chat_completion(base_url, api_key, model, messages, schema)
+        resp = post_chat_completion(
+            base_url, api_key, model, messages, schema, validate=validate_turn
+        )
         msg = resp["choices"][0]["message"]
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
@@ -786,7 +852,122 @@ def select_report_comment(comments, report_author=""):
     return chosen
 
 
-def fetch_comments(repo, pr, report_author=""):
+# deliver-trusted-comments.sh's AUTOMATION_LOGINS, as stems. A login on this list never takes
+# the named-non-writer path below: the App's own reports reach the adjudicator through the
+# filter's `automation` label, and a human account holding the bare stem (`github-actions`)
+# must not be able to stand in for the App by being named. Kept equal to the shell list by
+# TestAdjudicatorAutomationStemsMatchTheFilterAllowlist.
+_AUTOMATION_LOGINS = frozenset(("github-actions[bot]", "claude[bot]"))
+
+
+def _is_automation_login(login):
+    folded = _fold_login(login)
+    if folded.endswith(_BOT_LOGIN_SUFFIX):
+        folded = folded[: -len(_BOT_LOGIN_SUFFIX)]
+    return any(folded == a[: -len(_BOT_LOGIN_SUFFIX)] for a in _AUTOMATION_LOGINS)
+
+
+def _read_unfiltered_conversation(repo, pr):
+    """Every conversation comment of `pr`, UNFILTERED, as REST dicts; None on any failure.
+
+    The ONLY unfiltered read in qa-review. No comment body from it is put into a prompt. It is
+    used to (a) locate the single report comment an operator named with --report-author, of
+    which only the length-capped parse_items_to_fix() output is kept, and (b) name, on stderr,
+    the authors of report comments the filter withheld, for the exit-3 diagnostic. A failure
+    returns None, which both callers treat as "nothing found" (fail closed).
+
+    `--jq '.[]'` emits one compact JSON object per line across every page. The output is split
+    on "\n" only: str.splitlines() also splits on U+0085/U+2028, which jq leaves unescaped
+    inside strings, and would cut a comment in two. A line that still does not parse is
+    reported, never skipped silently (R1)."""
+    try:
+        proc = subprocess.run(
+            ["gh", "api", "repos/%s/issues/%s/comments?per_page=100" % (repo, pr),
+             "--paginate", "--jq", ".[]"],
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # a diagnostic read must never replace the real outcome
+        sys.stderr.write("qa-review adjudicator: unfiltered comment read failed: %s\n" % exc)
+        return None
+    if proc.returncode != 0:
+        sys.stderr.write(
+            "qa-review adjudicator: unfiltered comment read failed (exit %d): %s\n"
+            % (proc.returncode, (proc.stderr or "").strip()[:500])
+        )
+        return None
+    comments = []
+    for line in (proc.stdout or "").split("\n"):
+        if not line.strip():
+            continue
+        try:
+            c = json.loads(line)
+        except json.JSONDecodeError:
+            sys.stderr.write(
+                "qa-review adjudicator: unfiltered comment read returned a line that is not "
+                "JSON (%d bytes); treating the read as failed\n" % len(line)
+            )
+            return None
+        if isinstance(c, dict) and isinstance(c.get("user"), dict) and isinstance(c.get("body"), str):
+            comments.append(c)
+    return comments
+
+
+# Per-finding cap on the one-line text taken from a NAMED NON-WRITER's report. `id` and `was`
+# are pinned by _ITEM_RE; `text` is `.*`, so without a cap one bullet line could carry a payload
+# of any length into the prompt. A rendered finding's summary line is a sentence or two, so 500
+# characters keeps every real one while bounding what an untrusted author can place there.
+NON_WRITER_FINDING_TEXT_LIMIT = 500
+
+
+def _named_non_writer_report(raw, report_author):
+    """The most recent report comment in `raw` posted by exactly `report_author`, or None.
+
+    Exact (case-insensitive) login match only: no `[bot]`-suffix equivalence, since nothing
+    here is positive evidence of App-ness. An automation login is refused (see
+    _AUTOMATION_LOGINS). Whether the chosen comment is ADMISSIBLE (unedited, with at least one
+    finding) is decided by the caller, so a refusal can say why."""
+    chosen = None
+    for c in raw or []:
+        login = (c.get("user") or {}).get("login", "")
+        if not same_login(login, report_author) or _is_automation_login(login):
+            continue
+        if is_report_comment(c.get("body") or ""):
+            chosen = c
+    return chosen
+
+
+def _non_writer_refusal(named):
+    """Why a named non-writer's report may not be adjudicated ("" when it may).
+
+    A non-writer could otherwise CLEAR findings, not just add them. (a) A report with zero
+    findings would end in a model-free PASS, so a newer "no blocking findings" report posted
+    after the operator chose to adjudicate would wipe out the real one. (b) An edited report
+    may no longer be the one the operator reviewed; its findings could have been swapped or
+    dropped after the fact. Both are refused, and the operator can run a fresh review. A writer's
+    report keeps the existing rules: this applies only to the non-writer path."""
+    if named is None:
+        return ""
+    if not parse_items_to_fix(named.get("body") or ""):
+        return "it has no blocking findings, and a non-writer's report may only add findings to re-check, never clear them"
+    created, updated = named.get("created_at") or "", named.get("updated_at") or ""
+    if updated and created and updated != created:
+        return "it was edited after it was posted (%s -> %s), so it may not be the report you reviewed" % (created, updated)
+    return ""
+
+
+def _withheld_report_authors(raw, trusted):
+    """Logins (sorted, unique) of report comments in `raw` that the trusted filter withheld."""
+    seen = {_fold_login((c.get("author") or {}).get("login", "")) for c in trusted}
+    out = set()
+    for c in raw or []:
+        login = (c.get("user") or {}).get("login", "")
+        if login and _fold_login(login) not in seen and is_report_comment(c.get("body") or ""):
+            out.add(login)
+    return sorted(out)
+
+
+def fetch_comments(repo, pr, report_author="", diagnostics=None):
     """Return (items_to_fix, later_author_responses) from the PR's comments.
 
     The most recent genuine qa-review REPORT comment supplies the prior
@@ -800,7 +981,16 @@ def fetch_comments(repo, pr, report_author=""):
     PR reviews and inline review comments; only CONVERSATION comments carry the qa-review
     report and the author's later defence, so the others are ignored here — preserving this
     selection's pre-#1806 behaviour. A read failure exits non-zero (check=True), which the
-    caller already treats as 'no adjudicable evidence' rather than a clean pass."""
+    caller already treats as 'no adjudicable evidence' rather than a clean pass.
+
+    Named non-writer (#2041): when `report_author` is set and the filtered set holds no
+    report from that author, the author's most recent report comment is looked up in an
+    unfiltered read and, if found, ONLY its parse_items_to_fix() output is used. The defence
+    is still the later comments of the FILTERED set, so nothing else that author wrote — not
+    the report's prose, not their other comments — reaches the prompt.
+
+    `diagnostics`, when a dict, receives `withheld`: the logins of report comments the
+    filter withheld, for main()'s exit-3 message (only filled when no report was found)."""
     proc = subprocess.run(
         ["bash", _TRUSTED_COMMENTS_SH, "--json", "--pr", str(pr)],
         capture_output=True,
@@ -813,11 +1003,94 @@ def fetch_comments(repo, pr, report_author=""):
         if c.get("source") == "conversation"
     ]
     last_qa = select_report_comment(comments, report_author)
-    if last_qa < 0:
-        return None, ""
-    items = parse_items_to_fix(comments[last_qa].get("body") or "")
-    responses = "\n\n".join(c.get("body", "") for c in comments[last_qa + 1 :])
-    return items, responses
+    if last_qa >= 0:
+        items = parse_items_to_fix(comments[last_qa].get("body") or "")
+        responses = "\n\n".join(c.get("body", "") for c in comments[last_qa + 1 :])
+        return items, responses
+
+    raw = _read_unfiltered_conversation(repo, pr)
+    if report_author:
+        named = _named_non_writer_report(raw, report_author)
+        refusal = _non_writer_refusal(named)
+        if named is not None and refusal and isinstance(diagnostics, dict):
+            diagnostics["refused"] = refusal
+        if named is not None and not refusal:
+            items = parse_items_to_fix(named.get("body") or "")
+            for item in items:
+                if len(item["text"]) > NON_WRITER_FINDING_TEXT_LIMIT:
+                    item["text"] = item["text"][:NON_WRITER_FINDING_TEXT_LIMIT] + " (truncated)"
+            at = named.get("created_at") or ""
+            later = [c for c in comments if (c.get("createdAt") or "") > at]
+            sys.stderr.write(
+                "qa-review adjudicator: --report-author named @%s, whose report the trusted "
+                "filter withheld on %s (its author is not a writer there, or their permission "
+                "could not be established). Admitting ONLY the parsed findings (%d, text capped "
+                "at %d chars each) of their report comment %s; none of its other text and none "
+                "of their other comments reach the prompt, and each finding is re-checked "
+                "against the code.\n"
+                % ((named.get("user") or {}).get("login", ""), repo, len(items),
+                   NON_WRITER_FINDING_TEXT_LIMIT, named.get("html_url") or named.get("id") or "")
+            )
+            return items, "\n\n".join(c.get("body", "") for c in later)
+    if isinstance(diagnostics, dict):
+        diagnostics["withheld"] = _withheld_report_authors(raw, comments)
+        diagnostics["read"] = raw is not None
+        # Reports that DID pass the filter but were posted by someone other than the named
+        # author: the usual cause is a --report-author typo or the wrong login.
+        diagnostics["trusted_authors"] = sorted({
+            (c.get("author") or {}).get("login", "")
+            for c in comments if is_report_comment(c.get("body") or "")
+        } - {""})
+    return None, ""
+
+
+def no_report_message(pr, report_author, diagnostics):
+    """The exit-3 explanation: what was looked for, what was withheld, and what to do."""
+    lines = [
+        "no qa-review report comment%s was found on #%s, so there are no prior findings to "
+        "adjudicate; refusing to emit a verdict"
+        % ((" from '%s'" % report_author) if report_author else "", pr)
+    ]
+    diagnostics = diagnostics or {}
+    withheld = diagnostics.get("withheld") or []
+    if diagnostics.get("refused"):
+        lines.append(
+            "  the most recent report by @%s was found but not admitted: %s"
+            % (report_author.strip(), diagnostics["refused"])
+        )
+    for login in diagnostics.get("trusted_authors") or []:
+        lines.append(
+            "  a trusted report comment by @%s exists; to adjudicate it, pass --report-author %s"
+            % (login, login)
+        )
+    if withheld:
+        for login in withheld:
+            if _is_automation_login(login):
+                lines.append(
+                    "  a report-shaped comment by @%s was filtered out: it is not this "
+                    "repository's automation App, and an automation login cannot be named with "
+                    "--report-author" % login
+                )
+            elif report_author and same_login(login, report_author):
+                if not diagnostics.get("refused"):
+                    lines.append(
+                        "  a report comment by @%s was filtered out (no write access) and could "
+                        "not be admitted" % login
+                    )
+            else:
+                lines.append(
+                    "  a report comment by @%s was filtered out as a non-writer (no write access "
+                    "on this repository); to adjudicate it, name them explicitly: "
+                    "--report-author %s (only that report's parsed findings are used)"
+                    % (login, login)
+                )
+    elif diagnostics.get("read") is False:
+        lines.append(
+            "  could not read the unfiltered thread, so it is unknown whether a report by a "
+            "non-writer was filtered out"
+        )
+    lines.append("  otherwise run a fresh qa-review (round 0) on the current head")
+    return "\n".join(lines) + "\n"
 
 
 def main(argv=None):
@@ -835,7 +1108,8 @@ def main(argv=None):
         "--report-author",
         default=os.environ.get("QA_REPORT_AUTHOR", ""),
         help="only adjudicate a prior report posted by this comment author login "
-        "(empty = any author; the App '[bot]' suffix is optional; see select_report_comment)",
+        "(empty = any author; the App '[bot]' suffix is optional; see select_report_comment). "
+        "Naming an author without write access admits only that author's report findings (#2041)",
     )
     parser.add_argument("--out", default="", help="write the report here (else stdout)")
     parser.add_argument("--post-to-pr", action="store_true", help="post as a PR comment")
@@ -855,17 +1129,14 @@ def main(argv=None):
         sys.stderr.write("OPENAI_API_KEY (or LITELLM_KEY) is required\n")
         return 2
 
-    items, responses = fetch_comments(args.repo, args.pr, args.report_author)
+    diagnostics = {}
+    items, responses = fetch_comments(args.repo, args.pr, args.report_author, diagnostics)
     if items is None:
         # NOT a PASS. There is no prior report to re-check, so any verdict would
         # be vacuous — and the consumer that turns this into a gate signal reads
         # the verdict line, so emitting one here would clear the qa dimension
         # without anything having been reviewed.
-        sys.stderr.write(
-            "no qa-review report comment%s was found on #%s, so there are no prior "
-            "findings to adjudicate; refusing to emit a verdict\n"
-            % ((" from '%s'" % args.report_author) if args.report_author else "", args.pr)
-        )
+        sys.stderr.write(no_report_message(args.pr, args.report_author, diagnostics))
         return 3
     if not items:
         # A real report whose Items-to-fix section is empty: it found nothing
@@ -881,9 +1152,14 @@ def main(argv=None):
             sys.stdout.write(report)
         return 0
 
-    content = adjudicate_loop(
-        base_url, api_key, args.model, args.worktree, items, responses, args.no_exec
-    )
+    try:
+        content = adjudicate_loop(
+            base_url, api_key, args.model, args.worktree, items, responses, args.no_exec
+        )
+    except UnparseableReply as exc:
+        # Fail closed (no report, no verdict line => the gate reads MISSING), but name why.
+        sys.stderr.write("qa-review adjudicator: %s\n" % exc)
+        return 1
     verdicts = parse_verdicts(content)
 
     banner = default_banner(args.model)

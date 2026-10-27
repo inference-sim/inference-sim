@@ -210,6 +210,9 @@ as Step 5).
 > login that posted the report, so a stranger cannot supply a report-shaped comment
 > that clears every finding. The gate pins this to `github-actions[bot]`; for an
 > interactive run it is whoever posted the report (e.g. you, via `--post`).
+> A report posted by someone **without write access** is filtered out unless you name
+> them with `--report-author <login>`; then only that report's parsed findings are
+> used (#2041). If the adjudicator exits 3, its message says which case applies.
 
 ---
 
