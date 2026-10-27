@@ -317,6 +317,16 @@ func resolve(c Config) (settings, error) {
 		return settings{}, fmt.Errorf("vllm: data parallelism with pipeline parallelism (dp %d, pp %d) is not built "+
 			"yet: the DP group is diff-tested on one pipeline stage per rank (oracle/run_dp.py)", s.dp.ranks, pp)
 	}
+	if pp > 1 && !async {
+		// Synchronous pipeline parallelism runs vLLM's batch queue at max_concurrent_batches = pp
+		// without the async scheduler (vllm/config/vllm.py:577-588@5df63a72). The adapter's loop
+		// matches step_with_batch_queue (core.py:698-810@5df63a72) with async scheduling on the V2
+		// runner (TestBatchQueueAgainstVLLM: t3-async-v2-pp2, t3-v2-pp2-async-stagger), but not
+		// without it (t3-pp2-concurrent and t3-pp4-sync diverge), so it is refused rather than run.
+		return settings{}, fmt.Errorf("vllm: synchronous pipeline parallelism (pp %d, async_scheduling off) is not "+
+			"built yet: the adapter's batch queue matches vLLM's step_with_batch_queue only with async scheduling "+
+			"on the V2 runner (https://github.com/inference-sim/blis-vllm/issues/21)", pp)
+	}
 	// The release's own accepted values and refusals, for what the checks above do not cover.
 	if err := checkRules(e, pp); err != nil {
 		return settings{}, err

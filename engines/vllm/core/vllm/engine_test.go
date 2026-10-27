@@ -158,8 +158,8 @@ func TestProtocolErrors(t *testing.T) {
 
 // An unstated async_scheduling resolves as VllmConfig resolves it
 // (vllm/config/vllm.py:1585-1644@5df63a72): on, so the batch queue holds two batches, unless the
-// draft method is not one async scheduling supports or PP runs on the V1 runner (whose PP batch
-// queue holds one batch per stage); a stated value stands.
+// draft method is not one async scheduling supports or PP runs on the V1 runner; a stated value
+// stands.
 func TestUnstatedAsyncSchedulingResolvesAsVLLMDoes(t *testing.T) {
 	unstated := func(extra string) engine.Spec {
 		s := spec(t, extra)
@@ -178,7 +178,7 @@ func TestUnstatedAsyncSchedulingResolvesAsVLLMDoes(t *testing.T) {
 	}{
 		{"unstated", unstated(""), 2},
 		{"unstated with an EAGLE drafter", unstated("speculative: {method: eagle, num_spec_tokens: 2}\n"), 2},
-		{"unstated with PP on the V1 runner", unstated("pipeline_parallel_size: 2\n"), 2},
+		{"unstated with PP on the V2 runner", unstated("use_v2_model_runner: true\npipeline_parallel_size: 2\n"), 3},
 		{"stated off", spec(t, ""), 1},
 		{"stated on", spec(t, "async_scheduling: true\n"), 2},
 	} {
@@ -189,6 +189,12 @@ func TestUnstatedAsyncSchedulingResolvesAsVLLMDoes(t *testing.T) {
 		if got := e.InFlightLimit(); got != c.limit {
 			t.Errorf("%s: InFlightLimit %d, want %d", c.name, got, c.limit)
 		}
+	}
+	// With PP on the V1 runner it resolves off, so the engine would run synchronous PP, which the
+	// factory refuses by name (not as async scheduling on the V1 runner, which vLLM refuses).
+	_, err := Factory{Pricer: fixed}.New(unstated("pipeline_parallel_size: 2\n"))
+	if err == nil || !strings.Contains(err.Error(), "synchronous pipeline parallelism") {
+		t.Errorf("unstated with PP on the V1 runner: err %v, want the synchronous-PP refusal", err)
 	}
 }
 
@@ -203,8 +209,8 @@ func TestBuildsThroughTheRegistry(t *testing.T) {
 }
 
 // InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72): 1 for a
-// synchronous engine on one pipeline stage, 2 with async scheduling on the V1 runner, pp + 1 with
-// it on the V2 runner, and pp without it.
+// synchronous engine on one pipeline stage, 2 with async scheduling on the V1 runner, and pp + 1
+// with it on the V2 runner. Synchronous PP, pp batches, is refused (TestFactoryRefuses).
 func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
 	for _, c := range []struct {
 		extra string
@@ -212,7 +218,6 @@ func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
 	}{
 		{"", 1},
 		{"async_scheduling: true\n", 2},
-		{"pipeline_parallel_size: 2\n", 2},
 		{"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", 3},
 	} {
 		e, err := build(t, c.extra)()
@@ -270,6 +275,8 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
 		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},
+		// The adapter's batch queue diverges from vLLM's without async scheduling under PP.
+		{"synchronous pipeline parallelism", Version, "pipeline_parallel_size: 2\n", "synchronous pipeline parallelism"},
 		// An env key the engine does not read is refused, naming it (blis-schemas' Env rule).
 		{"an env key the engine does not read", Version, "env: {VLLM_MARLIN_USE_ATOMIC_ADD: \"1\"}\n", "VLLM_MARLIN_USE_ATOMIC_ADD"},
 		{"env keys are named in order", Version, "env: {VLLM_B: \"1\", VLLM_A: \"1\"}\n", "VLLM_A, VLLM_B"},
@@ -645,7 +652,7 @@ func TestAcceptanceIsTheOutcomes(t *testing.T) {
 // The batch queue keeps the contract's laws (enginetest): with async scheduling two batches may
 // be in flight, each completes in order, and every request finishes.
 func TestBatchQueueKeepsTheContract(t *testing.T) {
-	for _, extra := range []string{"async_scheduling: true\n", "pipeline_parallel_size: 2\n",
+	for _, extra := range []string{"async_scheduling: true\n",
 		"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n"} {
 		enginetest.TestEngine(t, build(t, extra),
 			arrivals(req("a", 40, 6), req("b", 70, 3), req("c", 300, 9), req("d", 12, 1)), enginetest.Options{})

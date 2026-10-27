@@ -59,6 +59,8 @@ MUTANTS = [    ("A1 wake after an empty schedule that left work", "core/vllm/eng
     "\tif seqs == 0 || budget == 0 {", "\tif false {"),
     ("A23 DP with pipeline parallelism refused", "core/vllm/config.go",
     "\tif s.dp.ranks > 1 && pp > 1 {", "\tif false {"),
+    ("A24 synchronous PP refused", "core/vllm/config.go",
+    "\tif pp > 1 && !async {", "\tif false {"),
 ]
 
 

@@ -83,7 +83,7 @@ type t3Golden struct {
 // The async-draft scenarios run MTP (one and four nextn layers) and DSpark through the
 // AsyncScheduler's placeholder drafts, accepting each verify step's drafts as the scenario plans.
 var batchQueueGoldens = []string{"t3-async", "t3-async-maxtokens", "t3-async-mtp", "t3-async-mtp-multi",
-	"t3-async-dspark"}
+	"t3-async-dspark", "t3-async-v2-pp2", "t3-v2-pp2-async-stagger"}
 
 func TestBatchQueueAgainstVLLM(t *testing.T) {
 	for _, name := range batchQueueGoldens {
