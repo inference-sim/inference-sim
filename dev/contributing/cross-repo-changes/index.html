@@ -3236,8 +3236,11 @@ page adds the cross-repository steps around them.</p>
 <h2 id="repinning">Repinning<a class="headerlink" href="#repinning" title="Permanent link">&para;</a></h2>
 <ol>
 <li><code>go.mod</code>: the kernel and blis-schemas at their pushed heads' pseudo-versions (release tags
-   before merge). Never commit a <code>replace</code> for a blis-* module (the llm-d router's <code>replace</code> to
-   the inference-sim fork is the one exception); run <code>go mod tidy</code>.</li>
+   before merge), then the llm-d router fork's <code>replace</code> at its <code>vX.Y.Z-blis.N</code> tag, after
+   blis-schemas because the fork implements blis-schemas <code>embed</code>
+   (<a href="../llm-d-router-fork/">The llm-d Router Fork</a>). Never commit a <code>replace</code> for a blis-* module
+   (the llm-d router's <code>replace</code> to the inference-sim fork is the one exception); run
+   <code>go mod tidy</code>.</li>
 <li><code>testdata/registry</code> and <code>testdata/catalog</code>: re-vendor from the registry and catalog heads,
    updating each <code>.upstream-commit</code> stamp.</li>
 <li><code>testdata/upstream-prerelease.lock</code>: the same two heads (TEMPORARY). Empty it once the

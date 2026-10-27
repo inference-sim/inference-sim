@@ -3602,8 +3602,9 @@ deployment (INV-7). Instances are pods of the pool, ready while routable and not
 loading, draining or terminating.</p>
 <h2 id="the-des-hosting-runtime">The DES Hosting Runtime<a class="headerlink" href="#the-des-hosting-runtime" title="Permanent link">&para;</a></h2>
 <p>The router is written for wall-clock time and goroutines. The fork routes every clock read,
-background loop, blocking wait, random draw and outbound HTTP call through a <code>hosting.Runtime</code>;
-<code>sim/llmd/runtime.go</code> implements it on the cluster's event loop:</p>
+background loop, blocking wait, random draw and outbound HTTP call through the runtime of the
+router contract (blis-schemas <code>embed.Runtime</code>); <code>sim/llmd/runtime.go</code> implements it on the
+cluster's event loop:</p>
 <ul>
 <li><strong>Virtual clock.</strong> <code>Now()</code> is a fixed epoch plus the simulation clock; tickers, timers and
   deadlines are cluster events.</li>

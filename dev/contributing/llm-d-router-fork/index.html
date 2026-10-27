@@ -1998,6 +1998,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#the-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The contract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-the-fork-changes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3217,6 +3228,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#the-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The contract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-the-fork-changes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3295,13 +3317,34 @@
 <p>BLIS routes with the real llm-d router (see <a href="../../guide/routing/">Routing</a>). It imports the
 router from the <a href="https://github.com/inference-sim/llm-d-router">inference-sim fork of llm-d-router</a>,
 branch <code>llm-d-r</code>, through a <code>replace</code> directive in <code>go.mod</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>replace github.com/llm-d/llm-d-router =&gt; github.com/inference-sim/llm-d-router &lt;pseudo-version&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>replace github.com/llm-d/llm-d-router =&gt; github.com/inference-sim/llm-d-router vX.Y.Z-blis.N
 </code></pre></div>
-<p>While a fork change is under review, the <code>replace</code> names the PR's head in its author's fork
-(<code>github.com/&lt;author&gt;/llm-d-router &lt;pseudo-version&gt;</code>), because a commit that is only on a pull
-request is not fetchable from <code>inference-sim/llm-d-router</code> directly. Once the fork PR merges
-with a merge commit (which keeps its commits' hashes), the <code>replace</code> moves to
-<code>inference-sim/llm-d-router</code> at the same hash.</p>
+<p>This is the one <code>replace</code> that merges into BLIS: the fork keeps upstream's module path so that
+upstream releases merge into it, so a <code>replace</code> is the only way to substitute it.</p>
+<p>While a fork change is under review, the BLIS pull request that needs it names the fork PR's head
+in its author's fork (<code>github.com/&lt;author&gt;/llm-d-router &lt;pseudo-version&gt;</code>), because a commit that
+is only on a pull request is not fetchable from <code>inference-sim/llm-d-router</code> directly. Such a
+<code>replace</code>, and any review-only <code>replace</code> of a blis-* module it needs, is marked TEMPORARY and keeps
+the BLIS PR in draft. Once the fork PR merges with a merge commit and is tagged, the <code>replace</code>
+moves to <code>inference-sim/llm-d-router</code> at the tag, and the PR can leave draft.</p>
+<h2 id="the-contract">The contract<a class="headerlink" href="#the-contract" title="Permanent link">&para;</a></h2>
+<p>BLIS programs against one API: package <code>embed</code> of
+<a href="https://github.com/inference-sim/blis-schemas">blis-schemas</a> (introduced in
+inference-sim/blis-schemas#99), versioned by blis-schemas' own tags. <code>embed.Runtime</code> (with the
+optional <code>embed.RoundTripper</code>) is what BLIS implements; <code>embed.Router</code> and <code>embed.Flight</code> are
+what the router implements; the rest is plain data (<code>Request</code>, <code>Decision</code>, <code>Rejection</code>,
+<code>KVBatch</code>, <code>Requirements</code>, ...). The fork implements the contract with one constructor,
+<code>pkg/embed.New</code> (an <code>embed.Constructor</code>), which is the only identifier BLIS takes from the
+fork. <code>sim/llmd/imports_test.go</code> fails on any other llm-d-router import or identifier.</p>
+<p>The contract is defined in blis-schemas and changes there, never in the fork alone.</p>
+<p><strong>Tags.</strong> The fork tags <code>vX.Y.Z-blis.N</code>: <code>X.Y.Z</code> is the upstream release merged into
+<code>llm-d-r</code>, and <code>N</code> counts fork releases on that upstream release, from 1. Tags never move.</p>
+<p><strong>Compatibility.</strong> Between two <code>-blis</code> tags with the same upstream major, <code>pkg/embed.New</code> and
+the blis-schemas <code>embed</code> package it implements change only compatibly. The fork's
+<code>hosting-lint.yml</code> enforces this with <code>apidiff</code> on <code>pkg/embed</code> against the latest <code>v*-blis*</code>
+tag, and on blis-schemas <code>embed</code> between the version that tag pinned and the one now pinned; it
+fails on an incompatible change unless the upstream major changed. A same-major upstream
+release, or a fork-only fix, therefore reaches BLIS as a <code>go.mod</code>/<code>go.sum</code> change only.</p>
 <p>This page is for whoever maintains that fork and the BLIS side that hosts it.</p>
 <h2 id="what-the-fork-changes">What the fork changes<a class="headerlink" href="#what-the-fork-changes" title="Permanent link">&para;</a></h2>
 <p>The fork changes <strong>how the router is hosted, never what it decides</strong>. Every change is a seam
@@ -3358,8 +3401,8 @@ decisions under a hosted runtime are the same decisions over the same inputs.</p
 </tr>
 <tr>
 <td>Embedding</td>
-<td><code>cmd/epp/runner/embed.go</code> (new), <code>assembleDirector</code> (extracted)</td>
-<td><code>runner.Embed</code> builds the Director through the runner's own file-discovery assembly path, so config semantics (defaults, feature gates, DAG ordering) are the runner's by construction. <code>EmbedOptions.AfterRegister</code> runs before any plugin is instantiated; BLIS uses it to replace the factory of every unsupported plugin type with one that refuses it, so an unsupported plugin's constructor never runs.</td>
+<td><code>pkg/embed</code> (new), over <code>cmd/epp/runner/embed.go</code> (new) and <code>assembleDirector</code> (extracted)</td>
+<td><code>pkg/embed.New</code> implements blis-schemas <code>embed</code>: it parses the EPP flags, configuration and manifests, builds the Director through the runner's own file-discovery assembly path (so config semantics are the runner's by construction), adapts <code>embed.Runtime</code> to <code>hosting.Runtime</code>, and answers in the contract's vocabulary (<code>Decision</code>, <code>Rejection.Kind</code>, <code>Requirements</code>, <code>KVBatch</code>). Before any plugin is instantiated it refuses every type the fork has not audited for hosting, or that the host's <code>Config.Allow</code> refuses, so an unsupported plugin's constructor never runs.</td>
 </tr>
 <tr>
 <td>Guard</td>
@@ -3369,10 +3412,12 @@ decisions under a hosted runtime are the same decisions over the same inputs.</p
 </tbody>
 </table>
 <p>Everything simulator-specific lives in BLIS (<code>sim/llmd</code>): the discrete-event runtime, the
-coroutine scheduler, the simulated model servers' HTTP surface, request translation and
-outcome mapping.</p>
+coroutine scheduler, pod labels from the simulated placement, prompt canonicalization, the
+simulated model servers' HTTP surface, the OpenAI request and response bodies, the mapping of
+<code>Rejection.Kind</code> onto INV-1 buckets, and BLIS's signal policy (<code>Config.Allow</code>).</p>
 <h2 id="the-hosted-runtime-in-blis">The hosted runtime in BLIS<a class="headerlink" href="#the-hosted-runtime-in-blis" title="Permanent link">&para;</a></h2>
-<p><code>sim/llmd/runtime.go</code> implements <code>hosting.Runtime</code> on the cluster's event loop:</p>
+<p><code>sim/llmd/runtime.go</code> implements blis-schemas <code>embed.Runtime</code> (and <code>embed.RoundTripper</code>) on the
+cluster's event loop:</p>
 <ul>
 <li><code>Now()</code> is a fixed epoch (2000-01-01 UTC) plus the simulation clock; time does not pass
   inside the router.</li>
@@ -3382,6 +3427,8 @@ outcome mapping.</p>
   Exactly one of the simulation goroutine and the router's coroutines runs at a time; a parked
   coroutine resumes, in spawn order, once its <code>ready</code> predicate holds. A coroutine that blocks
   on something it did not <code>Park</code> for trips a watchdog with an explanation instead of hanging.</li>
+<li><code>NewTimer</code> and <code>NewTicker</code> are cluster events delivering on buffered channels
+  (<code>sim/llmd/clock.go</code>).</li>
 <li><code>WithTimeout</code> never fires (router work takes zero simulated time); <code>WithDeadlineCause</code> fires
   as an event at its deadline.</li>
 <li><code>Rand(stream)</code> streams are seeded from the run seed and the stream name.</li>
@@ -3390,25 +3437,25 @@ outcome mapping.</p>
 </ul>
 <h2 id="updating-to-a-new-llm-d-release">Updating to a new llm-d release<a class="headerlink" href="#updating-to-a-new-llm-d-release" title="Permanent link">&para;</a></h2>
 <p>The fork is a permanent patch set on llm-d-router release tags; nothing is upstreamed. A
-release is <strong>merged</strong> into <code>llm-d-r</code>, never rebased: BLIS pins a commit on <code>llm-d-r</code>, and a
-rebase would rewrite the hashes and orphan that pin.</p>
+release is <strong>merged</strong> into <code>llm-d-r</code>, never rebased: BLIS pins a tag on <code>llm-d-r</code>, and a
+rebase would rewrite the hashes and orphan it.</p>
 <ol>
-<li>Bring the fork's <code>main</code> to the release tag (a fast-forward):
-   <code>git fetch upstream --tags &amp;&amp; git push &lt;org-remote&gt; 'vX.Y.Z^{commit}:refs/heads/main'</code>.</li>
-<li>On a branch from <code>llm-d-r</code>, merge the tag: <code>git merge --no-ff vX.Y.Z</code>. Resolve conflicts.
-   Most patches are a few lines per file; most of the seam is in new files that do not
-   conflict.</li>
+<li>On a branch from <code>llm-d-r</code>, merge the tag: <code>git fetch upstream --tags &amp;&amp; git merge --no-ff vX.Y.Z</code>.
+   Resolve conflicts. Most patches are a few lines per file; most of the seam is in new files
+   that do not conflict.</li>
 <li>Run <code>go run ./hack/hosting-lint</code>. A failure names each file where the release added a
    direct clock read, timer, deadline, goroutine or random draw. Route each one through the
    runtime, or, if it cannot affect a routing decision (a metric, a log), annotate the line
    <code>//blis:wallclock-ok &lt;reason&gt;</code> or regenerate the baseline (<code>-update</code>) on review.</li>
 <li>Update <code>upstream_base</code> in <code>hack/hosting-lint/budget.txt</code> to the release and run
-   <code>go run ./hack/hosting-lint -budget</code>.</li>
+   <code>go run ./hack/hosting-lint -budget</code>. Fix <code>pkg/embed</code> where the release moved an internal it
+   uses; its tests, the blis-schemas <code>embedtest</code> conformance run and the <code>apidiff</code> gate catch
+   what the release broke.</li>
 <li>Run the fork's tests, and BLIS's against the branch (a local <code>replace</code>). Open a PR into
-   <code>llm-d-r</code> and merge it with <strong>a merge commit</strong>. Then, in BLIS, point the <code>replace</code> at that
-   merge commit's pseudo-version and run <code>go test ./sim/llmd/...</code>. New plugin types in the
-   release are refused by BLIS until they are audited and added to <code>sim/llmd/support.go</code>'s
-   supported list.</li>
+   <code>llm-d-r</code>, merge it with <strong>a merge commit</strong>, and tag the merge <code>vX.Y.Z-blis.1</code>.</li>
+<li>In BLIS, move the <code>replace</code> to the tag and run <code>go mod tidy</code> and <code>go test ./...</code>. For a
+   same-major release this <code>go.mod</code>/<code>go.sum</code> change is the only BLIS change. New plugin types
+   in the release stay refused until the fork audits them and BLIS allows them (below).</li>
 </ol>
 <h2 id="keeping-each-update-cheap">Keeping each update cheap<a class="headerlink" href="#keeping-each-update-cheap" title="Permanent link">&para;</a></h2>
 <ul>
@@ -3423,11 +3470,13 @@ rebase would rewrite the hashes and orphan that pin.</p>
   lint cannot see shows up there.</li>
 </ul>
 <h2 id="supporting-another-plugin">Supporting another plugin<a class="headerlink" href="#supporting-another-plugin" title="Permanent link">&para;</a></h2>
-<p>A plugin type runs in BLIS only once it is in <code>sim/llmd/support.go</code>'s supported list (<code>llmd.IsSupported</code>). To add
-one: read every clock read, goroutine, blocking wait, random draw and map iteration it makes,
-convert the decision-relevant ones in the fork, check that every signal it consumes is produced
-by the simulated engines, and add a test in <code>sim/llmd</code>. Until then it stays refused with the
-reason in the unsupported list (<code>llmd.UnsupportedReason</code>).</p>
+<p>A plugin type runs in BLIS only when the fork has audited it for hosting <strong>and</strong> BLIS's signal
+policy allows it (<code>sim/llmd/support.go</code>, passed to the router as <code>embed.Config.Allow</code>;
+<code>llmd.IsSupported</code>; <code>TestSupportedTypesAreHostedByTheFork</code> holds every allowed type within what the fork can host). To add one: in the fork, read every clock read,
+goroutine, blocking wait, random draw and map iteration it makes, convert the
+decision-relevant ones and add it to the audited set; in BLIS, check that every signal it
+consumes is produced by the simulated engines, allow it, and add a test in <code>sim/llmd</code>. Until
+then it stays refused with its reason (<code>llmd.UnsupportedReason</code>).</p>
 
 
 
