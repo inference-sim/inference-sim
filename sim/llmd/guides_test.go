@@ -19,14 +19,10 @@ import (
 // outcome of every guide is pinned, so a router bump that changes one is seen.
 func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 	want := map[string]string{ // guide -> "" (runs) or a substring of its startup refusal
-		"flow-control.yaml": "",
-		// prefix-cache-affinity-filter reads the external latency predictor's sidecar, which a
-		// simulation has no stand-in for (sim/llmd/support.go).
-		"optimized-baseline.yaml": `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
-		"pd-disaggregation.yaml":  `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
-		// Past the block-size check (run on 64-token engines below), it is refused for its
-		// prefix-cache-affinity-filter too.
-		"precise-prefix-cache-routing.yaml": `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
+		"flow-control.yaml":                 "",
+		"optimized-baseline.yaml":           "",
+		"pd-disaggregation.yaml":            "",
+		"precise-prefix-cache-routing.yaml": "",
 		"tiered-prefix-cache-cpu.yaml":      "",
 		// Its revision split draws from process-wide randomness, which would break INV-6.
 		"wide-ep.yaml": `"disaggregatedset-rollout-screener" (type disaggregatedset-rollout-screener): its revision split draws from process-wide randomness`,
@@ -85,6 +81,12 @@ func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 			}
 			res := runResult{cs: cs, gw: gw, reqs: reqs, metrics: cs.AggregatedMetrics()}
 			assertConservation(t, res, len(reqs))
+			switch name {
+			case "optimized-baseline.yaml", "pd-disaggregation.yaml", "precise-prefix-cache-routing.yaml":
+				if res.metrics.CompletedRequests != len(reqs) {
+					t.Fatalf("affinity guide completed %d/%d requests", res.metrics.CompletedRequests, len(reqs))
+				}
+			}
 			if res.metrics.CompletedRequests == 0 {
 				t.Fatal("no request completed")
 			}

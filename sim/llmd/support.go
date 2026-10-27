@@ -88,8 +88,8 @@ func topologyConfig(raw []byte) (bool, error) {
 }
 
 // supported lists the router plugin types a simulation runs faithfully. Each one was audited in
-// the fork: every clock read, background loop, blocking wait and random draw it makes goes
-// through the hosting runtime, and every signal it consumes is produced by the simulated
+// the fork: decision-relevant clocks, background work, waits and randomness go
+// through the hosting runtime (or are disabled by configuration checks), and every signal is produced by the simulated
 // engines. A configuration that instantiates any other type is refused at startup with the
 // reason from unsupported (or a generic one): the simulation never runs a plugin it cannot run
 // as llm-d does.
@@ -106,6 +106,7 @@ var supported = map[string]bool{
 	"encode-filter":                    true,
 	"always-disagg-multimodal-decider": true,
 	"label-selector-filter":            true,
+	"prefix-cache-affinity-filter":     true,
 	"topology-affinity-filter":         true,
 	"topology-stamp-handler":           true,
 	// scorers
@@ -171,7 +172,6 @@ var unsupported = map[string]string{
 	"latency-scorer":                            "it consumes the external latency predictor",
 	"latency-slo-admitter":                      "it consumes the external latency predictor",
 	"slo-headroom-tier-filter":                  "it consumes the external latency predictor",
-	"prefix-cache-affinity-filter":              "it consumes the external latency predictor",
 	"latency-observer-producer-hub":             "its clock reads have not been moved onto the hosting runtime",
 	"latency-observation-scorer-hub":            "its exploration draws from process-wide randomness",
 	"session-state-producer":                    "its clock reads have not been moved onto the hosting runtime",
@@ -467,6 +467,36 @@ func checkExtractor(name string, params map[string]any, podLabels []map[string]s
 // external work. Runs as runner.EmbedOptions.AfterRegister, under embedMu.
 func refuseUnsupportedFactories() error {
 	for typ := range fwkplugin.Registry {
+		if typ == "prefix-cache-affinity-filter" {
+			factory := fwkplugin.Registry[typ]
+			fwkplugin.Registry[typ] = func(name string, params *json.Decoder, handle fwkplugin.Handle) (fwkplugin.Plugin, error) {
+				if params == nil {
+					return factory(name, params, handle)
+				}
+				// Preserve the decoder's original field order: encoding/json accepts
+				// case-insensitive aliases and applies the last matching key.
+				var raw json.RawMessage
+				if err := params.Decode(&raw); err != nil {
+					return nil, err
+				}
+				var mode struct {
+					TTFTSource             string  `json:"ttftSource"`
+					ExplorationProbability float64 `json:"explorationProbability"`
+				}
+				if err := json.Unmarshal(raw, &mode); err != nil {
+					return nil, err
+				}
+				if mode.TTFTSource == "latencyPredictor" {
+					return nil, fmt.Errorf("plugin %q consumes the external latency predictor (ttftSource: latencyPredictor)", name)
+				}
+				if mode.ExplorationProbability > 0 {
+					return nil, fmt.Errorf("plugin %q draws from process-wide randomness (explorationProbability > 0); set explorationProbability to 0", name)
+				}
+				// The real factory still owns defaults, validation and strict parsing.
+				return factory(name, fwkplugin.StrictDecoder(raw), handle)
+			}
+			continue
+		}
 		if supported[typ] {
 			continue
 		}

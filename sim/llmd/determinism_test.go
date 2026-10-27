@@ -21,7 +21,7 @@ const determinismChildEnv = "LLMD_DETERMINISM_CHILD"
 // dispatch time and latency.
 func routingDigest(t *testing.T) string {
 	h := sha256.New()
-	for _, cfg := range []string{"", softCeilingConfig, boundedQueueConfig} {
+	for _, cfg := range []string{"", softCeilingConfig, boundedQueueConfig, affinityGuide(t)} {
 		reqs := testRequests(150, 9, 300, 32)
 		dep := testDeployment(3)
 		dep.BatchConfig = sim.NewBatchConfig(8, 2048, 0)
