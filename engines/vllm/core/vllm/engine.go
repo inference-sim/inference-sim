@@ -71,8 +71,8 @@ type Engine struct {
 	metrics *metrics.Model
 
 	reqs map[string]*reqState
-	// aborted are the requests Finish aborted while a batch in flight scheduled them: their
-	// entries in reqs go once no batch in flight does.
+	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
+	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
 	// queued reports whether a batch in flight scheduled a request: the adapter's own batches,
 	// or a data-parallel group's iterations when the engine is one of its ranks (DPGroup).
@@ -538,9 +538,15 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	res.KVEvents = kvEvents(e.s.TakeKVEvents())
 	e.finishStep(pb.b, emitted, fins, end)
 	// A request that finished here has had its final step consumed: its result and its metrics
-	// step are recorded, so its entry goes (the scheduler freed its own at the finish).
+	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
+	// batch queue a later batch in flight may still name it: then it stays, finished, and its ID
+	// is refused, until that batch completes, as an aborted request does (inFlight).
 	for _, f := range fins {
-		delete(e.reqs, f.ID)
+		if e.inFlight(f.ID) {
+			e.aborted[f.ID] = true
+		} else {
+			delete(e.reqs, f.ID)
+		}
 	}
 	// An aborted request stayed for the batches it was in flight with; one is gone once none is.
 	for id := range e.aborted {

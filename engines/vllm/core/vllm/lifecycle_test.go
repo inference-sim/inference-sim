@@ -161,3 +161,137 @@ func TestADataParallelRequestIsFreed(t *testing.T) {
 		t.Errorf("after the aborts: %d entries held, want none", n)
 	}
 }
+
+// Under async scheduling a request can finish while a later batch in flight still names it. Its
+// ID is refused until that batch completes, and completing the stale batch does not touch a new
+// request that then reuses the ID (blis-vllm#38).
+func TestAFinishedIDIsNotReusedWhileAQueuedBatchNamesIt(t *testing.T) {
+	e, err := build(t, "async_scheduling: true\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := e.(*Engine)
+	if err := e.Add(req("a", 8, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	b1, err := e.Schedule(0)
+	if err != nil || b1.Empty() {
+		t.Fatalf("first batch: %v %v", b1, err)
+	}
+	b2, err := e.Schedule(1)
+	if err != nil || b2.Empty() {
+		t.Fatalf("second batch, queued behind the first: %v %v", b2, err)
+	}
+	res, err := e.Complete(b1.ID, engine.Outcome{}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Finished) != 1 || res.Finished[0].ID != "a" {
+		t.Fatalf("a should finish with its first batch: %+v", res.Finished)
+	}
+	if err := e.Add(req("a", 8, 4), 11); err == nil {
+		t.Fatal("reusing a finished request's ID while a queued batch names it was accepted")
+	}
+	if _, err := e.Complete(b2.ID, engine.Outcome{}, 20); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.reqs) != 0 || len(eng.aborted) != 0 {
+		t.Fatalf("after the stale batch: %d entries, %d deferred, want none", len(eng.reqs), len(eng.aborted))
+	}
+	// Freed now, the ID is a new request, untouched by the batches before it.
+	if err := e.Add(req("a", 8, 4), 21); err != nil {
+		t.Fatalf("reusing the freed ID: %v", err)
+	}
+	if st := eng.reqs["a"]; st == nil || st.emitted != 0 || st.sampled != 0 || st.finished {
+		t.Fatalf("the reused ID's request starts with state %+v", st)
+	}
+	tr := 21
+	got := 0
+	for range 100 {
+		b, err := e.Schedule(engine.Time(tr))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Empty() {
+			if w, ok := e.NextWake(engine.Time(tr)); ok {
+				tr = int(max(w, engine.Time(tr+1)))
+				continue
+			}
+			break
+		}
+		tr += 10
+		r, err := e.Complete(b.ID, engine.Outcome{}, engine.Time(tr))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got += r.Emitted["a"]
+		for _, f := range r.Finished {
+			if f.ID == "a" && f.OutputTokens != 4 {
+				t.Errorf("the reused ID's request finished with %d tokens, want 4", f.OutputTokens)
+			}
+		}
+	}
+	if got != 4 {
+		t.Errorf("the reused ID's request emitted %d tokens, want 4", got)
+	}
+}
+
+// A data-parallel group keeps a finished request's rank entry, and refuses its ID, while an
+// iteration in flight names it.
+func TestADataParallelFinishedIDIsNotReusedWhileAQueuedIterationNamesIt(t *testing.T) {
+	src := "block_size: 4\nmax_num_seqs: 4\nmax_num_batched_tokens: 32\nmax_model_len: 256\nnum_gpu_blocks: 80\n" +
+		"use_v2_model_runner: false\nasync_scheduling: true\npipeline_parallel_size: 1\ndata_parallel_size: 2\n"
+	e, err := build(t, src)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := e.(*DPGroup)
+	if err := e.Add(req("a", 8, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	var its []engine.Batch
+	now := engine.Time(0)
+	for len(its) < 2 {
+		b, err := e.Schedule(now)
+		if err != nil {
+			if err == engine.ErrNoCapacity {
+				break
+			}
+			t.Fatal(err)
+		}
+		if !b.Empty() {
+			its = append(its, b)
+		} else if w, ok := e.NextWake(now); ok {
+			now = max(w, now+1)
+			continue
+		} else {
+			break
+		}
+		now++
+	}
+	if len(its) < 2 {
+		t.Skipf("the group queued %d iteration(s) naming the request; this case needs two", len(its))
+	}
+	res, err := e.Complete(its[0].ID, engine.Outcome{}, now+10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Finished) != 1 || res.Finished[0].ID != "a" {
+		t.Fatalf("a should finish with its first iteration: %+v", res.Finished)
+	}
+	if _, ok := g.rankOf["a"]; !ok {
+		t.Fatal("a finished request's rank entry went while an iteration in flight names it")
+	}
+	if err := e.Add(req("a", 8, 4), now+11); err == nil {
+		t.Fatal("reusing a finished request's ID while a queued iteration names it was accepted")
+	}
+	if _, err := e.Complete(its[1].ID, engine.Outcome{}, now+20); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.rankOf) != 0 || len(g.abortedOn) != 0 {
+		t.Errorf("after the stale iteration: %d rank entries, %d deferred, want none", len(g.rankOf), len(g.abortedOn))
+	}
+	if err := e.Add(req("a", 8, 4), now+21); err != nil {
+		t.Errorf("reusing the freed ID: %v", err)
+	}
+}
