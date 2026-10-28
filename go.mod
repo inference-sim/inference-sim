@@ -11,9 +11,9 @@ require (
 	// TEMPORARY: inference-sim/blis-schemas#102 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/102, with #106 merged in; the kernel's engine settings, kernel/enginesettings; #102: engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01
-	// TEMPORARY: inference-sim/blis-vllm main at c08c168 (review PR https://github.com/inference-sim/blis-vllm/pull/20; #36, one module with rules/ folded in, and #37, finished requests freed).
+	// TEMPORARY: inference-sim/blis-vllm#39 at e65f2de (https://github.com/inference-sim/blis-vllm/pull/39, on main c08c168: a finished request's ID stays refused while a batch in flight names it).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261028180825-c08c16800cf8
+	github.com/inference-sim/blis-vllm v0.0.0-20261028193559-e65f2de8fdb2
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
