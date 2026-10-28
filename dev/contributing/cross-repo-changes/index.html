@@ -3226,26 +3226,29 @@
 
 
 <h1 id="changes-across-the-blis-repositories">Changes across the BLIS repositories<a class="headerlink" href="#changes-across-the-blis-repositories" title="Permanent link">&para;</a></h1>
-<p>The process for a change that spans blis-schemas, blis-catalog, blis-registry,
+<p>The process for a change that spans blis-schemas, blis-catalog, blis-registry, blis-vllm,
 blis-latency-kernel and inference-sim is described once, in blis-schemas:
 <a href="https://github.com/inference-sim/blis-schemas/blob/main/docs/contributing/cross-repo-changes.md">Changes across the repositories</a>. This page lists only what is specific to inference-sim,
-which is the last repository in the dependency order: it is pushed and merged after the other four.
+which is the last repository in the dependency order: it is pushed and merged after the others
+(blis-schemas, then blis-vllm, then blis-latency-kernel, #2021).
 The per-PR workflow (<a href="../pr-workflow/">PR Workflow</a>) and the standards
 (<a href="../standards/rules/">rules</a>, <a href="../standards/invariants/">invariants</a>) apply unchanged; the canonical
 page adds the cross-repository steps around them.</p>
 <h2 id="repinning">Repinning<a class="headerlink" href="#repinning" title="Permanent link">&para;</a></h2>
 <ol>
-<li><code>go.mod</code>: the kernel and blis-schemas at their pushed heads' pseudo-versions (release tags
-   before merge), then the llm-d router fork's <code>replace</code> at its <code>vX.Y.Z-blis.N</code> tag, after
-   blis-schemas because the fork implements blis-schemas <code>embed</code>
-   (<a href="../llm-d-router-fork/">The llm-d Router Fork</a>). Never commit a <code>replace</code> for a blis-* module
-   (the llm-d router's <code>replace</code> to the inference-sim fork is the one exception); run
-   <code>go mod tidy</code>.</li>
+<li><code>go.mod</code>: the kernel, blis-schemas and the two blis-vllm modules (<code>blis-vllm</code> and
+   <code>blis-vllm/rules</code>) at their pushed heads' pseudo-versions (release tags before merge), then
+   the llm-d router fork's <code>replace</code> at its <code>vX.Y.Z-blis.N</code> tag, after blis-schemas because the
+   fork implements blis-schemas <code>embed</code> (<a href="../llm-d-router-fork/">The llm-d Router Fork</a>). Never
+   commit a <code>replace</code> for a blis-* module (the llm-d router's <code>replace</code> to the inference-sim fork
+   is the one exception); run <code>go mod tidy</code>.</li>
 <li><code>testdata/registry</code> and <code>testdata/catalog</code>: re-vendor from the registry and catalog heads,
    updating each <code>.upstream-commit</code> stamp.</li>
 <li><code>testdata/upstream-prerelease.lock</code>: the same two heads (TEMPORARY). Empty it once the
    kernel's <code>testdata/upstream.lock</code> names their releases;
-   <code>TestTheVendoredCatalogAndRegistryAreTheLockedReleases</code> then holds the vendored copies to it.</li>
+   <code>TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases</code> (<code>sim/vendored</code>) holds this
+   repository's vendored copies to it, as <code>TestTheVendoredCatalogAndRegistryAreTheLockedReleases</code>
+   (blis-vllm <code>compat/kernelmodel</code>, moved from <code>sim/kernelmodel</code> by #2021) holds blis-vllm's own.</li>
 <li>Documentation that pins a catalog release (<code>docs/getting-started/installation.md</code>) moves with
    it; <code>TestDocExamplesPinTheCatalogVersion</code> checks it.</li>
 <li><code>go test ./...</code> and <code>golangci-lint run ./...</code>.</li>

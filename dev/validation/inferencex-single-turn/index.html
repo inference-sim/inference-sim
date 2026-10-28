@@ -3303,7 +3303,7 @@
 <li><code>(devel)+9e3c509c8788fe0743605a8f06e0bf5c1c39ac1f</code>, binary sha256 <code>29fb09054a10ee51dc104f491cb09337e0ba527055b85653d281f23230451dff</code></li>
 </ul>
 </div>
-<p><code>cmd/metricscore</code> scores BLIS against InferenceX's single-turn sweeps (random fixed ISL/OSL, closed loop at concurrency <code>CONC</code>, <code>10*CONC</code> requests) from the <a href="https://github.com/SemiAnalysisAI/InferenceX">InferenceX</a> database dump of 2026-09-28. It replays the exact seed-0 length vectors the client drew; see <a href="../../guide/latency-models/#the-published-accuracy-figures">The published accuracy figures</a> for the method.</p>
+<p><code>tools/metricscore</code> scores BLIS against InferenceX's single-turn sweeps (random fixed ISL/OSL, closed loop at concurrency <code>CONC</code>, <code>10*CONC</code> requests) from the <a href="https://github.com/SemiAnalysisAI/InferenceX">InferenceX</a> database dump of 2026-09-28. It replays the exact seed-0 length vectors the client drew; see <a href="../../guide/latency-models/#the-published-accuracy-figures">The published accuracy figures</a> for the method.</p>
 <p>Signed error <code>100 * (BLIS / measured - 1)</code>: positive means BLIS predicts higher latency (pessimistic).</p>
 <h2 id="provenance-verdict">Provenance verdict<a class="headerlink" href="#provenance-verdict" title="Permanent link">&para;</a></h2>
 <table>

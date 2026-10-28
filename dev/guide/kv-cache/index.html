@@ -3650,15 +3650,13 @@ matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budge
 </div>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
 <p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a long prefill occupies a whole step, blocking shorter requests from starting.</p>
-<p>Chunked prefill splits long prefills into smaller chunks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>&lt;dir<span class="w"> </span>of<span class="w"> </span>scenario<span class="w"> </span>files&gt;<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--long-prefill-token-threshold<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<p>Chunked prefill splits long prefills into smaller chunks. The threshold is the scenario's, stated in a pool's <code>engine</code> block (an engine setting has no flag, inference-sim#2021 B6):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="w">    </span><span class="nt">engine</span><span class="p">:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">      </span><span class="nt">long_prefill_token_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Chunked prefill benefits TTFT, not ITL</p>
-<p>With <code>--long-prefill-token-threshold=256</code>, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (&lt;0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.</p>
+<p>With <code>long_prefill_token_threshold: 256</code>, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (&lt;0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">A lone request is not chunked</p>

@@ -3105,161 +3105,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="What you need">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#the-measurement-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The measurement data
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#which-revision-each-figure-was-scored-at" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Which revision each figure was scored at
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-headline-comparison" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The headline comparison
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#earlier-comparisons-historical" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Earlier comparisons (historical)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-kernels-own-scores-without-the-simulator" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The kernel's own scores, without the simulator
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reproducing-the-calibration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reproducing the calibration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Reproducing the calibration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#the-checks-that-make-a-fit-trustworthy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The checks that make a fit trustworthy
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-prefill-attention-axis-probe" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The prefill-attention axis probe
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reproducing-the-error-definition" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reproducing the error definition
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reproducing-the-workload-and-protocol-claims" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reproducing the workload and protocol claims
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-test-suites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The test suites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-design-documents" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The design documents
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sensitivity-what-the-figures-do-not-depend-on" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sensitivity: what the figures do not depend on
-      
-    </span>
-  </a>
-  
 </li>
       
     </ul>
@@ -3321,9 +3166,11 @@ tagged release and reaches you without a separate checkout:</p>
 </tbody>
 </table>
 <p>The catalog and registry releases are the ones blis-latency-kernel <code>v0.3.0</code> pins in its own
-<code>testdata/upstream.lock</code>; <code>TestTheVendoredCatalogAndRegistryAreTheLockedReleases</code> fails if the
-vendored copies drift from that lock. To score against live upstream checkouts instead, clone the
-tags and point the variables at them:</p>
+<code>testdata/upstream.lock</code>; <code>TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases</code>
+(<code>sim/vendored</code>) fails if this repository's vendored copies drift from that lock, as
+<code>TestTheVendoredCatalogAndRegistryAreTheLockedReleases</code> (blis-vllm <code>compat/kernelmodel</code>, since</p>
+<h1 id="2021-does-for-blis-vllms-to-score-against-live-upstream-checkouts-instead-clone-the">2021) does for blis-vllm's. To score against live upstream checkouts instead, clone the<a class="headerlink" href="#2021-does-for-blis-vllms-to-score-against-live-upstream-checkouts-instead-clone-the" title="Permanent link">&para;</a></h1>
+<p>tags and point the variables at them:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git clone --branch 0.3.0  --depth 1 https://github.com/inference-sim/blis-catalog.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>export BLIS_CATALOG=$PWD/blis-catalog BLIS_REGISTRY=$PWD/blis-registry
@@ -3338,7 +3185,7 @@ neither this repository nor blis-latency-kernel redistributes. blis-latency-kern
 <code>testdata/README.md</code> names each source, and its <code>scripts/extract_*</code> tools produce the files. A
 command run without them refuses, naming the flags it needs.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_MEASUREMENTS</span><span class="o">=</span>/path/to/corpora
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-tags<span class="w"> </span>scoring<span class="w"> </span>./sim/kernelmodel/...<span class="w">   </span><span class="c1"># the tests that read the corpora</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-tags<span class="w"> </span>scoring<span class="w"> </span>./tools/...<span class="w">   </span><span class="c1"># the tests that read the corpora</span>
 </code></pre></div>
 <p>On a laptop this takes about 35 s of wall time (34.6 s measured on a clean checkout of <code>e4d76827</code>),
 well inside <code>go test</code>'s default 10-minute timeout. Its slowest test,
@@ -3359,9 +3206,9 @@ the earlier protocol, and are kept as the record of what was measured then.</p>
 main phase, exactly as a user replays a trace -- so build it once and pass it with <code>-blis</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>go<span class="w"> </span>run<span class="w"> </span>./cmd/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-gaps<span class="w"> </span>gaps.txt
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>go<span class="w"> </span>run<span class="w"> </span>./cmd/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-config-tier<span class="w"> </span>measured<span class="w"> </span>-gaps<span class="w"> </span>gaps-measured.txt
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>go<span class="w"> </span>run<span class="w"> </span>./cmd/kernelscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-verbose
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>go<span class="w"> </span>run<span class="w"> </span>./tools/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-gaps<span class="w"> </span>gaps.txt
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>go<span class="w"> </span>run<span class="w"> </span>./tools/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-config-tier<span class="w"> </span>measured<span class="w"> </span>-gaps<span class="w"> </span>gaps-measured.txt
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>go<span class="w"> </span>run<span class="w"> </span>./tools/kernelscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm<span class="w"> </span>-verbose
 </code></pre></div>
 <p><code>metricscore</code> prints every arm (BLIS, AISimulate, AIC) on three tiers: STRICT,
 MEASURED-OR-RESOLVED and ALL (approximate). <code>APPLES-TO-APPLES.md</code> defines them. For each tier the
@@ -3508,12 +3355,12 @@ floor 26.5, scale 0.48). The second prints signed residuals by batch, which is w
 single scalar key removes the trend.</p>
 <p>The step-frequency figures that make the defect irrelevant here (98.33% of steps carry no prefill
 request) came from temporary instrumentation in <code>Model.StepTime</code>, counting prefill requests per
-step over a full <code>cmd/kernelscore -framework vllm</code> run. The instrumentation was removed; to
+step over a full <code>tools/kernelscore -framework vllm</code> run. The instrumentation was removed; to
 re-derive, count <code>Reqs[i].Scheduled &gt; DecodeThreshold</code> per batch in a histogram.</p>
 <h2 id="reproducing-the-error-definition">Reproducing the error definition<a class="headerlink" href="#reproducing-the-error-definition" title="Permanent link">&para;</a></h2>
 <p>The one check that decides whether this comparison measures what it claims:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/kernelmodel/harness/<span class="w"> </span>-run<span class="w"> </span>TestAISimulatesPublishedShapeErrorIsReproducible<span class="w"> </span>-v
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./tools/harness/<span class="w"> </span>-run<span class="w"> </span>TestAISimulatesPublishedShapeErrorIsReproducible<span class="w"> </span>-v
 </code></pre></div>
 <p>It recomputes AISimulate's shape error from AISimulate's own per-point data, under AISimulate's
 own definition -- anchor excluded, each side normalised to its own anchor -- over the whole
@@ -3532,8 +3379,8 @@ to check the committed files against a fresh generation:</p>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="k">done</span>
 </code></pre></div>
 <p><code>--check</code> prints <code>29 points match</code>. The same vectors are recomputed in Go, without Python:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/kernelmodel/harness/<span class="w"> </span>-run<span class="w"> </span><span class="s1">'TestTheGoGenerator|TestTheFixtures|TestTheLoaderRefuses'</span><span class="w"> </span>-v
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/kernelmodel/harness/<span class="w"> </span>-run<span class="w"> </span><span class="s1">'TestThePoolIsTheClientsSemaphore|TestAReplayedPoint|TestSummarize'</span><span class="w"> </span>-v
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./tools/harness/<span class="w"> </span>-run<span class="w"> </span><span class="s1">'TestTheGoGenerator|TestTheFixtures|TestTheLoaderRefuses'</span><span class="w"> </span>-v
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./tools/harness/<span class="w"> </span>-run<span class="w"> </span><span class="s1">'TestThePoolIsTheClientsSemaphore|TestAReplayedPoint|TestSummarize'</span><span class="w"> </span>-v
 </code></pre></div>
 <p>The first line checks an independent MT19937 and numpy-legacy <code>randint</code> against numpy's own
 output, then every vector of every fixture against it. The second checks the concurrency gate on
@@ -3562,7 +3409,7 @@ leaves the generator untouched:</p>
 <h2 id="the-test-suites">The test suites<a class="headerlink" href="#the-test-suites" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">cd</span><span class="w"> </span>blis-schemas<span class="w">         </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">cd</span><span class="w"> </span>blis-latency-kernel<span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nb">cd</span><span class="w"> </span>inference-sim<span class="w">        </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/...<span class="w"> </span>./cmd/...
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nb">cd</span><span class="w"> </span>inference-sim<span class="w">        </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./sim/...<span class="w"> </span>./cmd/...<span class="w"> </span>./tools/...
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nb">cd</span><span class="w"> </span>blis-catalog<span class="w">         </span><span class="o">&amp;&amp;</span><span class="w"> </span>python<span class="w"> </span>scripts/validate_catalog.py<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">                        </span><span class="o">&amp;&amp;</span><span class="w"> </span>python<span class="w"> </span>scripts/derive_graph.py<span class="w"> </span>--check<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">                        </span><span class="o">&amp;&amp;</span><span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>-q
@@ -3592,7 +3439,7 @@ runs <code>cmd/shape</code> and <code>cmd/score</code> and diffs their output ag
 fails the build. <code>SKIP_GO=1</code> skips those and says so rather than passing silently.</p>
 <h2 id="sensitivity-what-the-figures-do-not-depend-on">Sensitivity: what the figures do not depend on<a class="headerlink" href="#sensitivity-what-the-figures-do-not-depend-on" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nb">cd</span><span class="w"> </span>inference-sim
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>go<span class="w"> </span>run<span class="w"> </span>./cmd/sensitivity<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>go<span class="w"> </span>run<span class="w"> </span>./tools/sensitivity<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm
 </code></pre></div>
 <p>Scores the monotone vLLM sweeps (TPOT shape, anchor excluded) under the scored configuration,
 then varies one engine setting at a time -- <code>max_num_seqs</code> x2, x4 and /2, the token budget x2 and

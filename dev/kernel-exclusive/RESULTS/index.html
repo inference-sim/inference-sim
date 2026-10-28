@@ -3492,7 +3492,7 @@ moved the point count from 238 to 192 and AISimulate's own re-anchored figure fr
 <li>scored with the client's own <code>mean_ttft</code> and <code>mean_tpot</code> definitions.</li>
 </ul>
 <p>What that does and does not reproduce is in <code>APPLES-TO-APPLES.md</code>, and the commands are in
-<code>REPRODUCE.md</code>. The figures below are printed by <code>cmd/metricscore -framework vllm</code> at
+<code>REPRODUCE.md</code>. The figures below are printed by <code>tools/metricscore -framework vllm</code> at
 <code>e4d76827</code>, as mean absolute error, BLIS / AISimulate / AIC on the same points:</p>
 <table>
 <thead>
@@ -3697,7 +3697,7 @@ MEASURED-OR-RESOLVED.</p>
   logged point, including every MEASURED-OR-RESOLVED point. The Llama points are unverified (no
   log, gated tokenizer) and stay in ALL.</li>
 <li><strong>The draw.</strong> The 425 monotone vLLM points were re-scored with the vectors numpy draws at seeds
-  1 to 4 from the same intervals (<code>cmd/sensitivity</code>'s draw rows, at <code>e4d76827</code>). Those are other
+  1 to 4 from the same intervals (<code>tools/sensitivity</code>'s draw rows, at <code>e4d76827</code>). Those are other
   workloads, not repeated observations of the benchmark's seed 0. BLIS's TPOT shape error spans
   8.56% to 8.60% across the five draws, a range of 0.04 points. Its TTFT shape error spans 17.64%
   to 18.01%, a range of 0.38 points. A figure scored against any draw other than the benchmark's
@@ -4023,7 +4023,7 @@ prefix-caching flags. The scenario files default them.</p>
 <p>A first draft of this document argued that this bounds what the comparison can show, because
 the defaults were justified for a step-time ratio ("a constant cancels") and that
 justification fails with a scheduler in the loop. The first half is right; the conclusion was
-not, and <code>cmd/sensitivity</code> settles it by measurement on the 213 monotone vLLM points:</p>
+not, and <code>tools/sensitivity</code> settles it by measurement on the 213 monotone vLLM points:</p>
 <table>
 <thead>
 <tr>
@@ -4486,7 +4486,7 @@ they are on.</p>
 <p>The last step moved the figure by 0.02 points. It showed that the earlier convergence criterion
 had converged. It did not reproduce the benchmark's two phases, which <code>Current standing</code> now does.</p>
 <h3 id="what-remains">What remains<a class="headerlink" href="#what-remains" title="Permanent link">&para;</a></h3>
-<p>About 1.5 points, and it is not closable by recalibration. <code>cmd/kernelscore</code> reports the
+<p>About 1.5 points, and it is not closable by recalibration. <code>tools/kernelscore</code> reports the
 decomposition directly (<code>harness.Logs</code>), in log space, where a ratio's bias and scatter separate:</p>
 <table>
 <thead>
@@ -4545,7 +4545,7 @@ for dense GEMM. A change justified on MoE tables should not have made Nemotron w
 it cannot answer which way, and the two imply different fixes. A consistent sign is a
 miscalibrated coefficient and is removable by rescaling. A sign that turns with batch size is a
 missing mechanism and is not.</p>
-<p><code>cmd/kernelscore</code> now reports both. Errors are kept SIGNED at the point of computation and
+<p><code>tools/kernelscore</code> now reports both. Errors are kept SIGNED at the point of computation and
 absoluted only at each aggregation (<code>harness.Abs</code>), so every previously published absolute figure
 is unchanged by construction -- the headline reproduces at 10.41% against 8.87% on 192 points.</p>
 <table>

@@ -4026,7 +4026,7 @@
 <h3 id="two-phase-algorithm">Two-Phase Algorithm<a class="headerlink" href="#two-phase-algorithm" title="Permanent link">&para;</a></h3>
 <p><strong>Phase 1: Continuing Requests</strong>
 Process requests already in the running batch:
-- Apply chunked prefill limits (<code>--long-prefill-token-threshold</code>)
+- Apply chunked prefill limits (the scenario's <code>engine.long_prefill_token_threshold</code>)
 - Allocate token budget for decode tokens
 - If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks</p>
 <p><strong>Phase 2: New Requests</strong>
@@ -4056,7 +4056,7 @@ Dequeue requests from the wait queue:
 </tr>
 <tr>
 <td>Chunked prefill</td>
-<td><code>--long-prefill-token-threshold</code></td>
+<td>scenario <code>engine.long_prefill_token_threshold</code></td>
 <td>Splits long prefills across multiple steps</td>
 </tr>
 </tbody>
@@ -4092,7 +4092,7 @@ Dequeue requests from the wait queue:
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
 <p>Step time and host overheads come from <strong>blis-latency-kernel</strong>, through the
-<code>sim.LatencyModel</code> interface (adapter: <code>sim/kernelmodel</code>). The simulator decides when a step
+<code>sim.LatencyModel</code> interface (adapter: blis-vllm <code>compat/kernelmodel</code>). The simulator decides when a step
 runs and which requests it holds; the kernel prices that batch from the model graph, chip and
 coefficients the scenario names. See the <a href="../../guide/latency-models/">Latency Models guide</a>.</p>
 <p>Host overheads are charged around the GPU step, never on it:</p>

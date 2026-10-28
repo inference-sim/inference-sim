@@ -3407,31 +3407,31 @@
 <p>BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process (<a href="../../guide/routing/">Routing</a>). New routing, admission or flow-control behavior belongs in <a href="https://github.com/llm-d/llm-d-router">llm-d-router</a>, as a plugin or configuration, not in this repository.</p>
 <p>A new llm-d plugin type becomes usable in BLIS once the fork has audited it for hosting and BLIS's signal policy allows it (the supported list in <code>sim/llmd/support.go</code>, passed to the router as <code>embed.Config.Allow</code>): in the fork, read every clock read, goroutine, blocking wait, random draw and map iteration it makes and route the decision-relevant ones through the hosting runtime; in BLIS, check that every signal it consumes is produced by the simulated engines, allow it, and add a test in <code>sim/llmd</code>. Until then it is refused at startup with its reason. See <a href="../llm-d-router-fork/">The llm-d router fork</a>.</p>
 <h2 id="adding-new-instance-schedulers">Adding New Instance Schedulers<a class="headerlink" href="#adding-new-instance-schedulers" title="Permanent link">&para;</a></h2>
-<p>To add a new instance-level scheduler (wait-queue ordering):</p>
+<p>The instance schedulers live in blis-vllm's compatibility engine (<code>compat/engine</code>, moved from <code>sim/</code> by #2021); package <code>sim</code> re-exports their names (<code>sim/engine_aliases.go</code>). A new scheduler is a blis-vllm change, released and repinned in <code>go.mod</code> (<a href="../cross-repo-changes/">cross-repo changes</a>). To add a new instance-level scheduler (wait-queue ordering):</p>
 <ol>
-<li><strong>Implement the <code>InstanceScheduler</code> interface</strong> in <code>sim/scheduler.go</code> (receives <code>requests</code> + <code>clock</code> only).</li>
-<li><strong>Register in two places</strong> (both required): add the name to <code>validSchedulers</code> in <code>sim/bundle.go</code>, and add a <code>case</code> to <code>NewScheduler</code> in <code>sim/scheduler.go</code>. CLI error messages derive from <code>ValidSchedulerNames()</code>.</li>
+<li><strong>Implement the <code>InstanceScheduler</code> interface</strong> in blis-vllm <code>compat/engine/scheduler.go</code> (receives <code>requests</code> + <code>clock</code> only).</li>
+<li><strong>Register in two places</strong> (both required): add the name to <code>ValidSchedulers</code> and a <code>case</code> to <code>NewScheduler</code>, both in blis-vllm <code>compat/engine/scheduler.go</code>; <code>sim/bundle.go</code> validates against that table. CLI error messages derive from <code>ValidSchedulerNames()</code>.</li>
 <li><strong>Add tests</strong> following BDD naming: <code>TestMyScheduler_Scenario_Behavior</code>. Test observable behavior, not internal structure.</li>
 <li><strong>Update documentation</strong>: the relevant <code>docs/</code> guide. Touch <code>CLAUDE.md</code> only if you are adding an operating rule an agent needs every session (see the charter at the top of CLAUDE.md) — it holds pointers, not per-feature detail.</li>
 </ol>
 <p>Examples:
-- See <code>PriorityFCFSScheduler</code> and <code>SJFScheduler</code> in <code>sim/scheduler.go</code>.</p>
+- See <code>PriorityFCFSScheduler</code> and <code>SJFScheduler</code> in blis-vllm <code>compat/engine/scheduler.go</code>.</p>
 <h2 id="extending-kv-cache-tiers">Extending KV Cache Tiers<a class="headerlink" href="#extending-kv-cache-tiers" title="Permanent link">&para;</a></h2>
-<p>To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):</p>
+<p>The KV store lives in blis-vllm's compatibility engine: its interface in <code>compat/engine/kv_store.go</code>, its implementations in <code>compat/kv</code> (moved from <code>sim/kv</code> by #2021). A new tier is a blis-vllm change, released and repinned in <code>go.mod</code> (<a href="../cross-repo-changes/">cross-repo changes</a>). To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):</p>
 <ol>
-<li><strong>Implement the <code>KVStore</code> interface</strong> in <code>sim/kv/</code> (11 methods: allocate, get cached, release, capacity queries, metrics, <code>SetClock</code>, <code>ConsumePendingTransferLatency</code>)</li>
+<li><strong>Implement the <code>KVStore</code> interface</strong> in blis-vllm <code>compat/kv</code> (11 methods: allocate, get cached, release, capacity queries, metrics, <code>SetClock</code>, <code>ConsumePendingTransferLatency</code>)</li>
 <li><strong>Compose existing tiers</strong> — e.g., wrap <code>TieredKVCache</code> (GPU+CPU) with NVMe logic, following the same delegation pattern</li>
-<li><strong>Update <code>NewKVStore</code> factory</strong> in <code>sim/kv/register.go</code> to instantiate your tier based on <code>KVCacheConfig</code> fields (add new fields to <code>KVCacheConfig</code> in <code>sim/config.go</code>)</li>
+<li><strong>Update <code>NewKVStore</code> factory</strong> in blis-vllm <code>compat/kv/register.go</code> to instantiate your tier based on <code>KVCacheConfig</code> fields (add new fields to <code>KVCacheConfig</code> in blis-vllm <code>compat/engine/config.go</code>)</li>
 <li><strong>Add CLI flags</strong> in <code>cmd/root.go</code> for new parameters (e.g., <code>--kv-nvme-blocks</code>) and wire them into the <code>KVCacheConfig</code> sub-config
    Tier transfer <em>time</em> is not computed here: each tier names a catalog <code>device_class</code>, and <code>blis-latency-kernel</code> prices the transfer (<code>TierTime</code>). A new device class is added to <code>blis-catalog</code>.</li>
 <li><strong>Aggregate metrics</strong> — combine hit/miss/thrashing counters from all tiers; see <code>TieredKVCache.CacheHitRate()</code> for the 2-tier pattern</li>
-<li><strong>Add behavioral tests</strong> in <code>sim/kv/*_test.go</code></li>
+<li><strong>Add behavioral tests</strong> in blis-vllm <code>compat/kv/*_test.go</code></li>
 <li><strong>Check-then-act allocation (no rollback)</strong> — <code>KVCacheState.AllocateKVBlocks</code> uses a pre-check gate: it computes the total blocks needed (new blocks + cached blocks leaving the free list) and compares against <code>countFreeBlocks()</code> before any state mutation. If insufficient, it returns <code>false</code> immediately with zero side effects. Post-pre-check <code>popFreeBlock() == nil</code> is a <code>panic</code> (INV-4 violation, structurally unreachable in single-threaded DES). This mirrors vLLM's <code>kv_cache_manager.py:334-336</code> universal pre-check. If your tier adds mutations before delegating to <code>gpu.AllocateKVBlocks()</code>, ensure the inner pre-check sees the updated <code>FreeBlockCnt</code> (e.g., <code>commitCachedBlocks</code> calls <code>removeFromFreeList</code> which decrements <code>FreeBlockCnt</code> before the inner call).</li>
 <li><strong><code>GetCachedBlocks</code> is a pure query</strong> — it returns cached block IDs without side effects. <code>CacheHits</code> are counted by <code>AllocateKVBlocks</code> when cached blocks are committed to an allocation. The pre-check accounts for cached blocks with <code>!InUse</code> (on the free list) via the <code>cachedFromFreeList</code> budget, mirroring vLLM's <code>num_evictable_blocks</code>.</li>
 </ol>
 <p>Examples:
-- See <code>TieredKVCache</code> in <code>sim/kv/tiered.go</code> for 2-tier GPU+CPU composition
-- See <code>KVCacheState</code> in <code>sim/kv/cache.go</code> for single-tier baseline (also implements <code>KVStore</code>)
+- See <code>TieredKVCache</code> in blis-vllm <code>compat/kv/tiered.go</code> for 2-tier GPU+CPU composition
+- See <code>KVCacheState</code> in blis-vllm <code>compat/kv/cache.go</code> for single-tier baseline (also implements <code>KVStore</code>)
 - See <code>docs/plans/archive/pr12-architectural-predesign.md</code> for the design decisions behind the tiered architecture</p>
 <h2 id="adding-new-trace-record-types">Adding New Trace Record Types<a class="headerlink" href="#adding-new-trace-record-types" title="Permanent link">&para;</a></h2>
 <p>To add a new trace record type (e.g., <code>ScaleRecord</code> for autoscaling events):</p>
@@ -3472,30 +3472,30 @@
 - See <code>FinishReason</code>/<code>ErrorMessage</code> fields — always-present optional strings (empty when not set)
 - See <code>ServerInputTokens</code> field — observability metadata that differs from <code>InputTokens</code></p>
 <h2 id="extending-latency-pricing">Extending Latency Pricing<a class="headerlink" href="#extending-latency-pricing" title="Permanent link">&para;</a></h2>
-<p>Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from <code>blis-latency-kernel</code> (adapter <code>sim/kernelmodel</code>); there is no <code>LatencyModel</code> factory or backend flag to add a case to.</p>
+<p>Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from <code>blis-latency-kernel</code> (adapter blis-vllm <code>compat/kernelmodel</code>); there is no <code>LatencyModel</code> factory or backend flag to add a case to.</p>
 <ul>
 <li><strong>A new pricing term, engine feature or model shape</strong> → change <code>blis-latency-kernel</code>, release it, and bump the pinned module version in <code>go.mod</code>.</li>
 <li><strong>New or refitted coefficients</strong> → publish them in <code>blis-registry</code> and name the coefficient sets in the scenario's <code>coefficients:</code> list.</li>
 <li><strong>A new model, chip, fabric or storage device</strong> → add it to <code>blis-catalog</code>.</li>
 <li><strong>A new scenario or engine-setting field</strong> → change the format in <code>blis-schemas</code> first.</li>
 </ul>
-<p>On the BLIS side, a new kernel capability usually needs only the adapter in <code>sim/kernelmodel</code> and the scenario-to-<code>SimConfig</code> wiring in <code>cmd/</code>. See <a href="../../guide/latency-models/">Latency models</a>.</p>
+<p>On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm <code>compat/kernelmodel</code> and the scenario-to-<code>SimConfig</code> wiring (blis-vllm <code>compat/build</code>, called from <code>cmd/engine_build.go</code>). See <a href="../../guide/latency-models/">Latency models</a>.</p>
 <h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
-<p>To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>
+<p>Batch formation lives in blis-vllm's compatibility engine (<code>compat/engine</code>, moved from <code>sim/</code> by #2021), so a new strategy is a blis-vllm change, released and repinned in <code>go.mod</code>. To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>
 <ol>
-<li><strong>Implement the <code>BatchFormation</code> interface</strong> in <code>sim/batch_formation.go</code> (or a new file for complex strategies) — 1 method:</li>
+<li><strong>Implement the <code>BatchFormation</code> interface</strong> in blis-vllm <code>compat/engine/batch_formation.go</code> (or a new file for complex strategies) — 1 method:</li>
 <li><code>FormBatch(ctx BatchContext) BatchResult</code> — compose the running batch for the next step</li>
 <li>The implementation receives <code>BatchContext</code> with: RunningBatch, WaitQ, KVCache, token budget, batch size limit, chunked prefill threshold, MaxModelLen (0 = unlimited; implementations should clamp token scheduling to <code>maxModelLen-1-ProgressIndex</code> when &gt; 0), simulation time, step count, and ComputedTokens map</li>
 <li>The implementation MUST update <code>ctx.ComputedTokens[req.ID]</code> for each request that receives new tokens (Phase 2 of <code>Step()</code> reads this map to advance <code>ProgressIndex</code>)</li>
 <li>The implementation may mutate <code>WaitQ</code> (dequeue/prepend) and <code>KVCache</code> (allocate/release) during batch formation</li>
 <li>The implementation MUST NOT schedule events or record metrics — return decisions in <code>BatchResult</code>, the Simulator applies them</li>
-<li><strong>Register in <code>NewBatchFormation</code> factory</strong> in <code>sim/batch_formation.go</code>: add a selection branch. The factory signature is <code>NewBatchFormation(preemptionPolicy string)</code>. For a new batch formation <em>strategy</em> (not just a preemption variant), add a <code>BatchFormation string</code> field to <code>PolicyConfig</code> and a selection branch in <code>NewBatchFormation</code></li>
+<li><strong>Register in <code>NewBatchFormation</code> factory</strong> in blis-vllm <code>compat/engine/batch_formation.go</code>: add a selection branch. The factory signature is <code>NewBatchFormation(preemptionPolicy string)</code>. For a new batch formation <em>strategy</em> (not just a preemption variant), add a <code>BatchFormation string</code> field to <code>PolicyConfig</code> and a selection branch in <code>NewBatchFormation</code></li>
 <li><strong>Add behavioral tests</strong> — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering</li>
 <li>Extension friction: <strong>2 touch points</strong> (implementation + factory registration)</li>
 </ol>
-<p><strong>Note:</strong> Currently only <code>VLLMBatchFormation</code> exists (with configurable preemption via <code>--preemption-policy fcfs|priority</code>). Adding a second batch formation strategy will also require: (a) a <code>BatchFormation string</code> field in <code>PolicyConfig</code> or <code>BatchConfig</code> (in <code>sim/config.go</code>), (b) a CLI flag in <code>cmd/root.go</code>, (c) validation in <code>sim/bundle.go</code>, (d) selection logic in <code>NewBatchFormation</code>. For adding a new <em>preemption</em> variant (not a new strategy), add a constant to <code>batch_formation.go</code>, a case to the <code>switch</code> in <code>preemptForTokens</code>, and an entry in <code>validPreemptionPolicies</code> in <code>bundle.go</code>.</p>
+<p><strong>Note:</strong> Currently only <code>VLLMBatchFormation</code> exists (with configurable preemption via <code>--preemption-policy fcfs|priority</code>). Adding a second batch formation strategy will also require: (a) a <code>BatchFormation string</code> field in <code>PolicyConfig</code> or <code>BatchConfig</code> (in blis-vllm <code>compat/engine/config.go</code>), (b) a CLI flag in <code>cmd/root.go</code>, (c) validation in <code>sim/bundle.go</code>, (d) selection logic in <code>NewBatchFormation</code>. For adding a new <em>preemption</em> variant (not a new strategy), add a constant to blis-vllm <code>compat/engine/batch_formation.go</code>, a case to the <code>switch</code> in <code>preemptForTokens</code>, and an entry in <code>ValidPreemptionPolicies</code> in blis-vllm <code>compat/engine/scheduler.go</code>.</p>
 <p>Examples:
-- See <code>VLLMBatchFormation</code> in <code>sim/batch_formation.go</code> for the vLLM FCFS + chunked-prefill + preemption strategy
+- See <code>VLLMBatchFormation</code> in blis-vllm <code>compat/engine/batch_formation.go</code> for the vLLM FCFS + chunked-prefill + preemption strategy
 - See <code>preemptForTokens</code> for the KV allocation + eviction loop pattern</p>
 <h2 id="adding-new-quantization-formats">Adding New Quantization Formats<a class="headerlink" href="#adding-new-quantization-formats" title="Permanent link">&para;</a></h2>
 <p>Quantization is stated per pool in the scenario (<code>engine.quantization</code>, <code>engine.cache_dtype</code>) and priced by <code>blis-latency-kernel</code>. A new format is added there (and to <code>blis-schemas</code> if the field's allowed values change), not in this repository.</p>
@@ -3540,7 +3540,7 @@
 <h2 id="adding-new-per-request-metric-fields">Adding New Per-Request Metric Fields<a class="headerlink" href="#adding-new-per-request-metric-fields" title="Permanent link">&para;</a></h2>
 <p>To add a new field to per-request JSON output (appears in <code>--metrics-path</code> output):</p>
 <ol>
-<li><strong>Add field to <code>Request</code></strong> in <code>sim/request.go</code> (runtime state, zero-value safe). When constructing <code>Request</code> structs, use <code>RequestState</code> typed constants (<code>StateQueued</code>, <code>StateRunning</code>, <code>StateCompleted</code>) — never bare strings.</li>
+<li><strong>Add field to <code>Request</code></strong> in blis-vllm <code>compat/engine/request.go</code> (runtime state, zero-value safe; <code>sim.Request</code> is an alias of it). When constructing <code>Request</code> structs, use <code>RequestState</code> typed constants (<code>StateQueued</code>, <code>StateRunning</code>, <code>StateCompleted</code>) — never bare strings.</li>
 <li><strong>Add field to <code>RequestMetrics</code></strong> in <code>sim/metrics_utils.go</code> (JSON output struct, use <code>omitempty</code> for backward compatibility)</li>
 <li><strong>Update <code>NewRequestMetrics()</code> constructor</strong> in <code>sim/metrics_utils.go</code> to propagate the new field from <code>Request</code> to <code>RequestMetrics</code></li>
 <li><strong>Set the field</strong> at the appropriate point (e.g., dispatch in <code>sim/cluster/gateway.go</code> for cluster-level, or completion for computed metrics)</li>

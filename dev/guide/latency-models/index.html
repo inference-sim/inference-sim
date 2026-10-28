@@ -3572,8 +3572,8 @@
 
 <h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
 <p>BLIS takes its latency model from one source: <strong>blis-latency-kernel</strong>
-(Go module <code>github.com/inference-sim/blis-latency-kernel</code>, pinned at <code>v0.3.0</code>). The adapter
-in <code>sim/kernelmodel</code> translates a BLIS batch into the kernel's request shapes and converts
+(Go module <code>github.com/inference-sim/blis-latency-kernel</code>, at the version <code>go.mod</code> pins). The adapter
+in blis-vllm <code>compat/kernelmodel</code> (moved from <code>sim/kernelmodel</code> by #2021) translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no <code>--latency-model</code> flag: the roofline and trained-physics backends, the
 alpha/beta coefficients, <code>hardware_config.json</code> calibration, and the
@@ -3625,7 +3625,7 @@ chips, fabrics and storage devices from <strong>blis-catalog</strong> and fitted
 </table>
 <p>A scenario directory can be any directory of scenario YAMLs. The kernel module ships the
 scenarios it was scored on, at
-<code>$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate</code>
+<code>$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-latency-kernel)/testdata/aisimulate</code>
 (after <code>go mod download</code>). This repo's own fixtures are in <code>testdata/scenarios/</code>:
 <code>glm-5-h200-3p1d-ib.yaml</code> (P/D) and <code>glm-5-h200-tp8-mtp3.yaml</code> (MTP speculation).</p>
 <h3 id="scenario-structure">Scenario structure<a class="headerlink" href="#scenario-structure" title="Permanent link">&para;</a></h3>
@@ -3697,6 +3697,12 @@ the <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 <p>A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.</p>
+<p>The scenario's <code>engine_version</code> must be a release the engine models. Today that is <code>0.29.0</code>
+or <code>0.31.0</code>: the simulator runs blis-vllm's compatibility engine, which reproduces how those
+releases ran before blis-vllm existed. A scenario stating any other release, <code>0.32.0</code>
+included, is refused before anything runs, naming the release, even though blis-vllm carries
+a 0.32.0 rules pack. The v0.32.0 engine is wired in when the scenarios are re-baselined
+(inference-sim#2027).</p>
 <h2 id="prefilldecode-disaggregation">Prefill/decode disaggregation<a class="headerlink" href="#prefilldecode-disaggregation" title="Permanent link">&para;</a></h2>
 <p>A scenario with a <code>prefill</code> pool and a <code>decode</code> pool, run with <code>--prefill-instances</code> and
 <code>--decode-instances</code>. BLIS builds one kernel per pool, so each pool is priced at its own
@@ -3896,7 +3902,7 @@ minimum-variance schedule when the source states none). A run that does not spec
 none.</p>
 <ul>
 <li><strong>Method: the engine release's list.</strong> <code>method</code> is checked against the rules pack of the
-  scenario's <code>engine_version</code> (blis-schemas <code>rules.Pack.SpeculativeMethods</code>), not a list in
+  scenario's <code>engine_version</code> (blis-vllm's packs, read through blis-schemas <code>rules.EngineRules</code>), not a list in
   BLIS, so vLLM 0.31.0 accepts <code>dspark</code> (DeepSeek-V4.1's DSpark), <code>dflash</code>, <code>eagle3</code>,
   <code>suffix</code> and the rest of that release's methods. A method the model graph's speculator
   does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
@@ -3999,7 +4005,7 @@ The LoRA cost coefficients come from <code>--defaults-filepath</code> (the <code
   registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.</li>
 </ul>
 <h2 id="the-published-accuracy-figures">The published accuracy figures<a class="headerlink" href="#the-published-accuracy-figures" title="Permanent link">&para;</a></h2>
-<p><code>cmd/metricscore</code> is the scorer behind the evaluation tables. It simulates nothing itself. For
+<p><code>tools/metricscore</code> is the scorer behind the evaluation tables. It simulates nothing itself. For
 every measured point it writes two files and runs <code>blis replay</code> on them, exactly as a user replays
 a trace:</p>
 <ul>
@@ -4018,7 +4024,7 @@ claim, is in <a href="../../kernel-exclusive/APPLES-TO-APPLES/">What the accurac
 <p>At the tagged releases above, with the vendored catalog and registry and the measurement corpora in
 <code>BLIS_MEASUREMENTS</code> (see <a href="../../kernel-exclusive/REPRODUCE/#the-measurement-data">Reproducing</a>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>blis<span class="w"> </span>main.go
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span>run<span class="w"> </span>./cmd/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span>run<span class="w"> </span>./tools/metricscore<span class="w"> </span>-blis<span class="w"> </span>./blis<span class="w"> </span>-framework<span class="w"> </span>vllm
 </code></pre></div>
 <p>Its flags are <code>-blis</code>, <code>-gaps</code>, <code>-corpus</code>, <code>-scenarios</code>, <code>-catalog</code>, <code>-registry</code>,
 <code>-engine-settings</code>, <code>-absolutes</code>, <code>-framework</code>, <code>-config-tier</code>, <code>-simulated-only</code> and <code>-seed</code>.
@@ -4052,9 +4058,9 @@ anchor is EXACT.</p>
 or without an engine log) changes the ALL row as well.</p>
 <h2 id="the-interface">The interface<a class="headerlink" href="#the-interface" title="Permanent link">&para;</a></h2>
 <p>The simulator consumes latency through the <code>sim.LatencyModel</code> interface
-(<code>sim/latency_model.go</code>): <code>StepTime(batch)</code>, <code>QueueingTime(req)</code>,
+(blis-vllm <code>compat/engine/latency_model.go</code>, aliased in <code>sim/engine_aliases.go</code>): <code>StepTime(batch)</code>, <code>QueueingTime(req)</code>,
 <code>OutputTokenProcessingTime()</code> and <code>PostDecodeFixedOverhead()</code>, all in microseconds (ticks).
-<code>sim/kernelmodel</code> is its only production implementation. Improving or extending latency
+blis-vllm <code>compat/kernelmodel</code> is its only production implementation. Improving or extending latency
 pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
 coefficients), not here; see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>

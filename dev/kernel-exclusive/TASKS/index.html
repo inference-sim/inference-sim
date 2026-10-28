@@ -3257,7 +3257,7 @@ this session -- decode attention at 1.294 on h200 GQA in the corpus regime, and 
 grouped-GEMM at 0.625 on b200 against the min-latency lane. A gate that cannot reproduce a
 known result cannot be trusted on a new one.</p>
 <h2 id="t6-re-baseline-and-audit-worktree">T6. Re-baseline and audit (worktree)<a class="headerlink" href="#t6-re-baseline-and-audit-worktree" title="Permanent link">&para;</a></h2>
-<p>Re-run <code>cmd/kernelscore</code> on the vLLM subset under the apples-to-apples criterion already in
+<p>Re-run <code>tools/kernelscore</code> on the vLLM subset under the apples-to-apples criterion already in
 place. Report the before and after. State plainly whether SOTA was reached.</p>
 <p>CORRECTNESS: the parity tests must still pass, including the reproduction of AISimulate's
 published 10.05% from its own data. Any figure that moves must be explained by a specific

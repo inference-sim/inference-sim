@@ -4104,7 +4104,7 @@
 <li>The scenario's engine settings, then the default <code>fcfs</code></li>
 </ol>
 <p><strong>Routing, admission and flow control</strong> are the embedded llm-d router's, configured by the scenario's <code>router:</code> block and pool labels (<a href="#router">Router</a>). See <a href="../../guide/routing/">Routing</a>.</p>
-<p><strong>Batch formation</strong> — <code>max_num_seqs</code> and <code>max_num_batched_tokens</code> come from the scenario's pool <code>engine</code> block. <code>long_prefill_token_threshold</code> comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. <code>--long-prefill-token-threshold</code> is a run-wide override: it applies to every pool and must agree with every value a pool states, or the run is refused. <code>--preemption-policy</code> remains on the CLI.</p>
+<p><strong>Batch formation</strong> — <code>max_num_seqs</code> and <code>max_num_batched_tokens</code> come from the scenario's pool <code>engine</code> block. <code>long_prefill_token_threshold</code> comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6). <code>--preemption-policy</code> remains on the CLI.</p>
 <h3 id="known-unit-gotchas">Known Unit Gotchas<a class="headerlink" href="#known-unit-gotchas" title="Permanent link">&para;</a></h3>
 <p>All internal timestamps in the DES (arrival time, schedule time, completion time, clock) use <strong>ticks</strong>, where <strong>1 tick = 1 microsecond (μs)</strong>. Output metrics convert to milliseconds for human readability, but several fields and flags use different units:</p>
 <table>
@@ -4206,7 +4206,7 @@
 <h3 id="scenario-and-deployment">Scenario and Deployment<a class="headerlink" href="#scenario-and-deployment" title="Permanent link">&para;</a></h3>
 <p>A scenario file holds two YAML documents in the blis-schemas format:</p>
 <ul>
-<li><strong>Scenario</strong> — <code>name</code>, <code>engine_version</code>, <code>model</code> (a catalog model), <code>coefficients</code> (the registry coefficient sets that price it), and <code>cluster</code> (<code>hardware</code>, <code>fabric</code>, <code>nodes</code>, <code>gpus_per_node</code>).</li>
+<li><strong>Scenario</strong> — <code>name</code>, <code>engine_version</code>, <code>model</code> (a catalog model), <code>coefficients</code> (the registry coefficient sets that price it), and <code>cluster</code> (<code>hardware</code>, <code>fabric</code>, <code>nodes</code>, <code>gpus_per_node</code>). <code>engine_version</code> must be a release the engine models, <code>0.29.0</code> or <code>0.31.0</code> today; any other is refused (see <a href="../../guide/latency-models/">latency models</a>).</li>
 <li><strong>Deployment</strong> — <code>pools</code>, each with a <code>role</code> (<code>colocated</code>, <code>prefill</code> or <code>decode</code>), <code>nodes</code>, a <code>parallel</code> block (<code>tp</code>, <code>pp</code>, <code>dp</code>, <code>enable_expert_parallel</code>) and an <code>engine</code> block (<code>block_size</code>, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code>, <code>quantization</code>, <code>cache_dtype</code>, <code>cudagraph_mode</code>, <code>gpu_memory_utilization</code>, <code>enable_prefix_caching</code>, <code>speculative: {method, num_spec_tokens}</code>); plus optional <code>offload</code> and <code>pd_transfer</code>.</li>
 </ul>
 <p>These settings come from the scenario (and the kernel), and no CLI flag sets them:</p>
@@ -4353,12 +4353,6 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--long-prefill-token-threshold</code></td>
-<td>int64</td>
-<td>0</td>
-<td>Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step).</td>
-</tr>
-<tr>
 <td><code>--renderer-num-workers</code></td>
 <td>int</td>
 <td>1</td>
@@ -4379,7 +4373,7 @@
 </tbody>
 </table>
 <h2 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h2>
-<p>BLIS prices every step with <a href="https://github.com/inference-sim/blis-latency-kernel">blis-latency-kernel</a> (<code>v0.3.0</code>, adapter <code>sim/kernelmodel</code>). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and <code>--registry</code> locates them. See <a href="../../guide/latency-models/">Latency Models</a>.</p>
+<p>BLIS prices every step with <a href="https://github.com/inference-sim/blis-latency-kernel">blis-latency-kernel</a> (<code>v0.3.0</code>, adapter blis-vllm <code>compat/kernelmodel</code>). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and <code>--registry</code> locates them. See <a href="../../guide/latency-models/">Latency Models</a>.</p>
 <table>
 <thead>
 <tr>
@@ -4568,7 +4562,7 @@
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">       </span><span class="c1"># batch is no longer sheddable for engine scheduling</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 </code></pre></div>
-<p>The mapping lives in <code>sim/slo_priority.go</code> (<code>SLOPriorityMap</code>); <code>InvertForVLLM</code> converts it to the instance convention (lower = more urgent) when a request is enqueued.</p>
+<p>The mapping lives in blis-vllm <code>compat/engine/slo_priority.go</code> (<code>SLOPriorityMap</code>, aliased as <code>sim.SLOPriorityMap</code>); <code>InvertForVLLM</code> converts it to the instance convention (lower = more urgent) when a request is enqueued.</p>
 <h2 id="scheduling-and-priority">Scheduling and Priority<a class="headerlink" href="#scheduling-and-priority" title="Permanent link">&para;</a></h2>
 <p>Per-instance policies that control request ordering within the wait queue. Maps to <code>PolicyConfig</code>.</p>
 <table>
@@ -4912,7 +4906,7 @@
 </tr>
 <tr>
 <td><strong>BatchConfig</strong></td>
-<td><code>--long-prefill-token-threshold</code> (<code>max_num_seqs</code>, <code>max_num_batched_tokens</code>: scenario)</td>
+<td>scenario (<code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>long_prefill_token_threshold</code>)</td>
 </tr>
 <tr>
 <td><strong>Latency</strong></td>
