@@ -8,8 +8,10 @@ import (
 	"testing"
 )
 
-// docGoRunCommand matches a documented `go run ./cmd/<name>` invocation.
-var docGoRunCommand = regexp.MustCompile(`go run \./cmd/([A-Za-z0-9_-]+)(.*)`)
+// docGoRunCommand matches a documented `go run ./tools/<name>` invocation, or one of the old
+// `go run ./cmd/<name>`: the scoring tools moved to tools/, outside the simulator's sim/ and
+// cmd/ (phase 2c of #2021), so a page still naming cmd/ documents a command that is gone.
+var docGoRunCommand = regexp.MustCompile(`go run \./(cmd|tools)/([A-Za-z0-9_-]+)(.*)`)
 
 // docCdLine matches a shell `cd <dir>` line inside a code block.
 var docCdLine = regexp.MustCompile(`^\s*cd\s+(\S+)`)
@@ -61,7 +63,7 @@ func documentedFlags(args string) []string {
 	return out
 }
 
-// Every documented scorer command -- `go run ./cmd/<name> ...` -- names a command this
+// Every documented scorer command -- `go run ./tools/<name> ...` -- names a command this
 // repository has and passes only flags that command defines, so a reader can run it as
 // written. A command in a code block that first `cd`s into another repository (the latency
 // kernel, vLLM) belongs to that repository and is not checked here. Behavioural: a removed
@@ -98,16 +100,17 @@ func TestDocScorerCommandsUseCommandsAndFlagsThatExist(t *testing.T) {
 			}
 			m = docGoRunCommand.FindStringSubmatch(command)
 			checked++
-			dir := filepath.Join("..", "cmd", m[1])
+			name := m[1] + "/" + m[2]
+			dir := filepath.Join("..", m[1], m[2])
 			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				t.Errorf("%s:%d: documents `go run ./cmd/%s`, which this repository does not have", file, i+1, m[1])
+				t.Errorf("%s:%d: documents `go run ./%s`, which this repository does not have", file, i+1, name)
 				continue
 			}
 			defined := definedGoFlags(t, dir)
-			for _, f := range documentedFlags(strings.ReplaceAll(m[2], `\`, " ")) {
+			for _, f := range documentedFlags(strings.ReplaceAll(m[3], `\`, " ")) {
 				if !defined[f] {
-					t.Errorf("%s:%d: `go run ./cmd/%s` passes -%s, which it does not define, so it aborts "+
-						"with \"flag provided but not defined\"", file, i+1, m[1], f)
+					t.Errorf("%s:%d: `go run ./%s` passes -%s, which it does not define, so it aborts "+
+						"with \"flag provided but not defined\"", file, i+1, name, f)
 				}
 			}
 		}

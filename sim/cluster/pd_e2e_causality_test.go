@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"reflect"
 	"testing"
@@ -10,7 +11,6 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // Issue #1513: the PD-disaggregated parent (client-visible) E2E under-counted
@@ -72,7 +72,7 @@ func runShortOutputPD(t *testing.T, outTokens, numReqs int) (*sim.Metrics, *Clus
 			ArrivalTime:  int64(i * 100),
 		}
 	}
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 	return cs.AggregatedMetrics(), cs
 }
@@ -255,17 +255,18 @@ func TestPDParentE2E_CompletionTimeMetricConsistency(t *testing.T) {
 // co-located, because PD adds a real KV-transfer cost on top of the same
 // prefill+decode work.
 func newTestColocatedConfig() DeploymentConfig {
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	return func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(256, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances: 1,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 1
+		return d
+	}()
 }
 
 // TestPDParentE2E_GeqNonPDBaseline_OneToken asserts PD/non-PD E2E parity for the
@@ -288,7 +289,7 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 	// step's prefill/decode mix: a constant-cost model hid #1903, where the handoff began
 	// at the START of the prefill step, so PD won whenever prefill cost more than decode.
 	rapid.Check(t, func(rt *rapid.T) {
-		stepModel := fakelatency.WithCoeffs(testutil.FakeLatency{
+		stepModel := fakeLatencyWithCoeffs(testutil.FakeLatency{
 			BaseTicks:                  rapid.Int64Range(1, 5000).Draw(rt, "base"),
 			PerScheduledTokenTicks:     rapid.Int64Range(0, 200).Draw(rt, "perToken"),
 			PerDecodeRequestTicks:      rapid.Int64Range(0, 200).Draw(rt, "perDecode"),
@@ -303,21 +304,21 @@ func TestPDParentE2E_GeqNonPDBaseline_OneToken(t *testing.T) {
 
 // pdE2EGeqColocated runs one 1-output request through a P/D cluster and a colocated one,
 // both priced by stepModel, and checks PD never under-reports and pays at least its handoff.
-func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
+func pdE2EGeqColocated(rt *rapid.T, stepModel cengine.LatencyModel, inputLen int) {
 	// Guard the parity premise: the PD and co-located configs must use identical
 	// latency parameters, otherwise a PD-vs-non-PD E2E comparison is meaningless.
 	// This enforces the "same latency model/model/hardware" claim in
 	// newTestColocatedConfig's doc comment rather than trusting it,
 	// so the two helpers cannot silently drift apart.
 	pdCfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	pdCfg.LatencyModel = stepModel
+	editEngine(&pdCfg, func(c *simConfig) { c.LatencyModel = stepModel })
 	coloCfg := newTestColocatedConfig()
-	coloCfg.LatencyModel = stepModel
-	if !reflect.DeepEqual(pdCfg.LatencyModel, coloCfg.LatencyModel) {
+	editEngine(&coloCfg, func(c *simConfig) { c.LatencyModel = stepModel })
+	if !reflect.DeepEqual(engineConfigOf(pdCfg).LatencyModel, engineConfigOf(coloCfg).LatencyModel) {
 		rt.Fatalf("PD and co-located configs have diverging latency models (%+v vs %+v) — parity comparison invalid",
-			pdCfg.LatencyModel, coloCfg.LatencyModel)
+			engineConfigOf(pdCfg).LatencyModel, engineConfigOf(coloCfg).LatencyModel)
 	}
-	if !reflect.DeepEqual(pdCfg.ModelHardwareConfig, coloCfg.ModelHardwareConfig) {
+	if !reflect.DeepEqual(engineConfigOf(pdCfg).ModelHardwareConfig, engineConfigOf(coloCfg).ModelHardwareConfig) {
 		rt.Fatalf("PD and co-located configs have diverging model/hardware config — parity comparison invalid")
 	}
 
@@ -326,7 +327,7 @@ func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
 		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
-	csPD := NewClusterSimulator(pdCfg, NewSliceRequestSource([]*sim.Request{pdReq}), nil)
+	csPD := newTestCluster(pdCfg, NewSliceRequestSource([]*sim.Request{pdReq}), nil)
 	mustRun(rt, csPD)
 	mPD := csPD.AggregatedMetrics()
 	var pdE2E, transferCost float64
@@ -348,7 +349,7 @@ func pdE2EGeqColocated(rt *rapid.T, stepModel sim.LatencyModel, inputLen int) {
 		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued, ArrivalTime: 0,
 	}
-	ncs := NewClusterSimulator(coloCfg, NewSliceRequestSource([]*sim.Request{nreq}), nil)
+	ncs := newTestCluster(coloCfg, NewSliceRequestSource([]*sim.Request{nreq}), nil)
 	mustRun(rt, ncs)
 	nonPDE2E, ok := ncs.AggregatedMetrics().RequestE2Es["request_0"]
 	if !ok {

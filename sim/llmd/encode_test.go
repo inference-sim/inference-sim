@@ -41,7 +41,7 @@ func runEncode(t *testing.T, file string, render bool, encoders int) (runResult,
 	dep.EncodeInstances, dep.PrefillInstances, dep.DecodeInstances = encoders, 1, 2
 	dep.TraceLevel = "decisions"
 	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", PodLabels: roleLabels, EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)})
 	encoded := map[string]string{}
 	rendered := 0

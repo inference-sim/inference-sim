@@ -567,7 +567,7 @@ func makeMetricsWithQueueDepth(depths []int) *sim.Metrics {
 func TestPathological_RejectAll_AllRejected(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(newTestRequests(20)), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(newTestRequests(20)), nil)
 	cs.SetGateway(&fakeGateway{reject: func(*sim.Request) bool { return true }})
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
@@ -617,7 +617,7 @@ func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
 		}
 		phases[r.ID] = r.Phase
 	}
-	cs := NewClusterSimulator(baseDeploymentConfig(2), NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(baseDeploymentConfig(2), NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}

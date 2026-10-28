@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by `blis-latency-kernel` (the only latency backend; adapter `sim/kernelmodel`).
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by `blis-latency-kernel` (the only latency backend; adapter blis-vllm `compat/kernelmodel`).
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
@@ -62,7 +62,7 @@ go build -o blis main.go
 ```bash
 go test ./...                      # all tests
 go test ./sim/...                  # a package tree
-go test ./sim/... -run TestKVCache # a single test
+go test ./sim/... -run TestSimulator_GoldenDataset # a single test
 go test -cover ./...               # with coverage
 golangci-lint run ./...            # lint (v2.14.0); run before pushing
 ```
@@ -149,7 +149,7 @@ Pick the template that matches your situation, reproduce its structure, and appl
 
 ## Latency Estimation
 
-`blis-latency-kernel` (Go module `github.com/inference-sim/blis-latency-kernel`, adapter `sim/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from `blis-registry`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
+`blis-latency-kernel` (Go module `github.com/inference-sim/blis-latency-kernel`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from `blis-registry`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
 
 ## Post-Hoc Saturation Detection
 

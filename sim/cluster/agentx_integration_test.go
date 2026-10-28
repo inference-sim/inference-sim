@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"encoding/json"
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"sort"
 	"strings"
 	"testing"
@@ -63,14 +64,14 @@ func runAgentXOn(t *testing.T, cfg DeploymentConfig, conc int, extra func(*Clust
 	x, err := workload.NewAgentXReplay(agxTestCorpus(t), workload.AgentXReplayConfig{
 		Concurrency: conc, Seed: 42, DurationUs: 60_000_000, GraceUs: 5_000_000, IdleCapUs: 10_000_000,
 		MinRatio: 0.3, MaxRatio: 0.3, RequestTimeoutUs: workload.AgentXRequestTimeoutUs,
-		MaxModelLen: cfg.MaxModelLen,
+		MaxModelLen: engineConfigOf(cfg).MaxModelLen,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := &agxRun{x: x}
 	initial := x.Start()
-	r.cs = NewClusterSimulator(cfg, NewSliceRequestSource(initial), x.OnComplete)
+	r.cs = newTestCluster(cfg, NewSliceRequestSource(initial), x.OnComplete)
 	r.cs.SetArrivalGate(x.Gate)
 	r.cs.SetUnservedHook(x.OnUnserved)
 	r.cs.SetArrivalHook(func(req *sim.Request) { r.sent = append(r.sent, req) })
@@ -221,7 +222,7 @@ func (e *drainAt) Execute(cs *ClusterSimulator) {
 func TestAgentXThroughRedirectDrain(t *testing.T) {
 	cfg := newTestDeploymentConfig(2)
 	cfg.InstanceLifecycle = InstanceLifecycleConfig{DrainPolicy: string(DrainPolicyRedirect)}
-	cfg.BatchConfig = sim.NewBatchConfig(1, 2048, 0) // one running request: the rest queue
+	editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) }) // one running request: the rest queue
 	redirected := 0
 	r := runAgentXOn(t, cfg, 8, func(cs *ClusterSimulator) {
 		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &drainAt{at: 0, inst: 0}, seqID: cs.nextSeqID()})
@@ -248,7 +249,7 @@ func TestAgentXThroughRedirectDrain(t *testing.T) {
 // handle_credit_return), and a root's tree drains and its lane recycles.
 func TestAgentXContextOverflowEndsTheStream(t *testing.T) {
 	cfg := newTestDeploymentConfig(1)
-	cfg.MaxModelLen = 260 // trace A's 192- and 256-token turns overflow with the template
+	editEngine(&cfg, func(c *simConfig) { c.MaxModelLen = 260 }) // trace A's 192- and 256-token turns overflow with the template
 	r := runAgentXOn(t, cfg, 2, nil)
 	out := r.checkConservation(t)
 	if out[sim.AgenticContextOverflow] == 0 {

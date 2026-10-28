@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -59,28 +59,29 @@ func TestParentRequest_ZeroInputTokens(t *testing.T) {
 // when overhead > 0 (issue #846).
 func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfig {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	c := testutil.DefaultFakeLatency()
-	c.PostDecodeOverheadTicks = int64(overhead)
-	cfg.LatencyModel = fakelatency.WithCoeffs(c)
+	coeffs := testutil.DefaultFakeLatency()
+	coeffs.PostDecodeOverheadTicks = int64(overhead)
+	editEngine(&cfg, func(c *simConfig) { c.LatencyModel = fakeLatencyWithCoeffs(coeffs) })
 	return cfg
 }
 
 func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
 	// Step times come from the fake latency model and KV handoffs from the fake pricer.
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	return func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(256, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances:     numInstances,
-		PrefillInstances: prefill,
-		DecodeInstances:  decode,
-		PDTransferTime:   testPDTransferTime,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = numInstances
+		d.PrefillInstances = prefill
+		d.DecodeInstances = decode
+		d.PDTransferTime = testPDTransferTime
+		return d
+	}()
 }
 
 // A PD deployment without a transfer pricer is refused at construction: the simulator has no
@@ -97,7 +98,7 @@ func TestNewClusterSimulator_PDWithoutTransferPricer_Panics(t *testing.T) {
 			t.Errorf("panic must name the missing PDTransferTime; got %v", r)
 		}
 	}()
-	NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 }
 
 // Verifies INV-PD-2 (pool exclusivity): a prefill sub-request routes only to a
@@ -106,7 +107,7 @@ func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// BC-PD-7: Prefill sub-requests must be routed to prefill instances
@@ -131,7 +132,7 @@ func TestDisaggregation_DecodeRoutedToDecodePool(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// BC-PD-7: Decode sub-requests must be routed to decode instances
@@ -158,7 +159,7 @@ func TestDisaggregation_RequestCompletesFullPath(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	metrics := cs.AggregatedMetrics()
@@ -183,7 +184,7 @@ func TestDisaggregation_TransferConservation(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.transfersInitiated != cs.transfersCompleted {
@@ -201,7 +202,7 @@ func TestDisaggregation_INV1Conservation(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	metrics := cs.AggregatedMetrics()
@@ -221,7 +222,7 @@ func TestDisaggregation_INV1Conservation_BoundedHorizon(t *testing.T) {
 	config.Horizon = 5000000 // 5 seconds — all requests arrive, most but maybe not all complete
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// All 10 requests should have arrived within the horizon (last arrives at ~900000 μs).
@@ -240,10 +241,10 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 	// when KV cache is nearly full, the decode-only path breaks (does not crash)
 	// and the request stays in the wait queue.
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	config.KVCacheConfig = sim.NewKVCacheConfig(50, 16, 0, 0, 0, 0) // small KV cache
+	editEngine(&config, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(50, 16, 0, 0, 0, 0) }) // small KV cache
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// Under tight KV pressure, some requests may be dropped — conservation must hold
@@ -256,9 +257,9 @@ func TestDisaggregation_DecodeOnlyBatchKVPressure(t *testing.T) {
 // 4-block prompts, which it can never hold and so drops at transfer start.
 func decodeDropFixture(n int) (DeploymentConfig, []*sim.Request) {
 	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	editEngine(&config, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(3, 16, 0, 0, 0, 0) })
 	prefillBlocks := int64(100)
-	config.PrefillOverrides.TotalKVBlocks = &prefillBlocks
+	editPrefill(&config, func(c *simConfig) { c.TotalKVBlocks = prefillBlocks })
 	requests := newShortRequests(n)
 	for i := 1; i < n; i += 2 {
 		requests[i].InputTokens = make([]sim.TokenID, 60) // 4 blocks: more than the decode KV
@@ -292,7 +293,7 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	// 4-block prompts against 3 decode blocks). A prompt that merely finds the decode KV
 	// full waits instead (TestPDDecodeKVWait_FullDecodeKVWaitsRatherThanDrops).
 	config, requests := decodeDropFixture(4)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.droppedAtDecodeKV == 0 {
@@ -314,7 +315,7 @@ func TestDisaggregation_DroppedParent_NotInLatencyMaps(t *testing.T) {
 	// Prompts the decode instance can never hold force decode-side drops beside served
 	// parents (decodeDropFixture, as TestDisaggregation_DroppedAtDecodeKV).
 	config, requests := decodeDropFixture(4)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.droppedAtDecodeKV == 0 {
@@ -374,7 +375,7 @@ func TestDisaggregation_PhaseCausality(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	for _, parent := range cs.parentRequests {
@@ -410,7 +411,7 @@ func TestDisaggregation_PoolStability(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	membershipBefore := cs.PoolMembership()
 
 	mustRun(t, cs)
@@ -437,7 +438,7 @@ func TestDisaggregation_Determinism(t *testing.T) {
 
 	run := func() *sim.Metrics {
 		requests := newTestRequests(10)
-		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 		return cs.AggregatedMetrics()
 	}
@@ -458,20 +459,21 @@ func TestDisaggregation_Determinism(t *testing.T) {
 
 func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 	// BC-PD-13: When pools not configured, behavior is identical
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             math.MaxInt64,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(256, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances: 4,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 4
+		return d
+	}()
 
 	requests := newTestRequests(10)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// No parent requests when pools not configured
@@ -486,58 +488,6 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 
 	// INV-1: Conservation
 	assertClusterINV1Conservation(t, cs, 10, noRejections, "non-disaggregated backward compat")
-}
-
-func TestReserveTransferredKV_Success(t *testing.T) {
-	cfg := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyModel:        testFakeLatency(),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
-	}
-	inst := NewInstanceSimulator("decode_0", cfg)
-
-	req := &sim.Request{
-		ID:          "decode_sub_0",
-		InputTokens: make([]sim.TokenID, 100),
-		State:       sim.StateWaitingForRemoteKVs,
-	}
-
-	_, ok := inst.ReserveTransferredKV(req)
-	if !ok {
-		t.Fatal("ReserveTransferredKV returned false, want true")
-	}
-	if req.ProgressIndex != 100 {
-		t.Errorf("ProgressIndex = %d, want 100", req.ProgressIndex)
-	}
-	if inst.sim.KVCache.UsedBlocks() == 0 {
-		t.Error("UsedBlocks = 0 after ReserveTransferredKV, want > 0")
-	}
-}
-
-func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
-	cfg := sim.SimConfig{
-		Horizon:             1000000,
-		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
-		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-		LatencyModel:        testFakeLatency(),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, 0),
-	}
-	inst := NewInstanceSimulator("decode_0", cfg)
-
-	req := &sim.Request{
-		ID:          "decode_sub_0",
-		InputTokens: make([]sim.TokenID, 100), // Needs 7 blocks but only 2 available
-		State:       sim.StateWaitingForRemoteKVs,
-	}
-
-	_, ok := inst.ReserveTransferredKV(req)
-	if ok {
-		t.Error("ReserveTransferredKV returned true with insufficient capacity, want false")
-	}
 }
 
 // TestPDDisagg_OneOutputToken_CompletesWith1Token is a regression test for two edge-case
@@ -569,7 +519,7 @@ func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
 		},
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("ClusterSimulator.Run: %v", err)
 	}
@@ -602,7 +552,7 @@ func TestDisaggregation_MetricProjection_NoOp(t *testing.T) {
 	config := newTestDeploymentConfig(2) // standard cluster, no PD roles
 	requests := newTestRequests(3)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if len(cs.parentRequests) != 0 {
@@ -646,7 +596,7 @@ func TestDisaggregation_MetricProjection_NoSubRequestKeys(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -674,7 +624,7 @@ func TestDisaggregation_MetricProjection_E2ECount(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -701,7 +651,7 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -763,12 +713,12 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	// OTPT is the per-output-token processing overhead; the old formula carried a
 	// second, phantom copy. Require it positive so the low-load "reported < old"
 	// differential below is non-trivially caused by removing that phantom OTPT.
-	if otpt := config.LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
+	if otpt := engineConfigOf(config).LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
 		t.Fatalf("test precondition: OTPT must be positive to distinguish the two-OTPT bug, got %d", otpt)
 	}
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -901,11 +851,11 @@ func TestDisaggregation_TTFT_IncludesDecodeQueueWait(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
 	// maxNumSeqs=1: the single decode instance runs one sub-request at a time, so
 	// sub-requests transferred while an earlier decode is still running must queue.
-	config.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
-	otpt := float64(config.LatencyModel.OutputTokenProcessingTime()) // OTPT; the differential threshold below
-	requests := newShortRequests(6)                                  // ~2000µs decode each, arriving 100µs apart → overlap
+	editEngine(&config, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) })
+	otpt := float64(engineConfigOf(config).LatencyModel.OutputTokenProcessingTime()) // OTPT; the differential threshold below
+	requests := newShortRequests(6)                                                  // ~2000µs decode each, arriving 100µs apart → overlap
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -987,7 +937,7 @@ func TestDisaggregation_TTFT_NoSilentDrops(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1205,7 +1155,7 @@ func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1242,7 +1192,7 @@ func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1271,7 +1221,7 @@ func TestDisaggregation_MetricProjection_RequestsMap(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1306,10 +1256,10 @@ func TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys(t *testi
 	// 1 decode instance with 3 blocks (48 tokens); each short request needs 2 blocks.
 	// First request fills 2/3, second request tries 2 more with only 1 free → dropped.
 	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	editEngine(&config, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(3, 16, 0, 0, 0, 0) })
 
 	requests := newShortRequests(4)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.droppedAtDecodeKV == 0 {
@@ -1345,7 +1295,7 @@ func TestDisaggregation_MetricProjection_ITL(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(10)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1422,12 +1372,12 @@ func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
 
 	requests := newTestRequests(3)
 	// Run 1: overhead = 0 (baseline)
-	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	cs0 := newTestCluster(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
 	mustRun(t, cs0)
 	m0 := cs0.AggregatedMetrics()
 
 	// Run 2: overhead = wantOverheadUs
-	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	cs1 := newTestCluster(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
 	mustRun(t, cs1)
 	m1 := cs1.AggregatedMetrics()
 
@@ -1469,9 +1419,9 @@ func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testin
 	const wantOverheadUs = int64(1000) // 1ms, clearly distinguishable
 
 	requests := newTestRequests(3)
-	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
+	cs0 := newTestCluster(newTestDisaggDeploymentConfigWithOverhead(0), NewSliceRequestSource(requests), nil)
 	mustRun(t, cs0)
-	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
+	cs1 := newTestCluster(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), NewSliceRequestSource(requests), nil)
 	mustRun(t, cs1)
 
 	// Index run-1 parents by ID for matching.
@@ -1508,7 +1458,7 @@ func TestDisaggregation_CompletionTime_LifecycleField_IncludesOverhead(t *testin
 func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	for _, parent := range cs.parentRequests {
@@ -1536,7 +1486,7 @@ func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) 
 func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
@@ -1609,7 +1559,7 @@ func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
 		return nil // no follow-ups — just capture
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	cs := newTestCluster(config, NewSliceRequestSource(reqs), callback)
 	mustRun(t, cs)
 
 	// Filter calls with non-empty SessionID (sub-request callbacks have empty SessionID)
@@ -1679,7 +1629,7 @@ func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
 		}}
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	cs := newTestCluster(config, NewSliceRequestSource(reqs), callback)
 	mustRun(t, cs)
 
 	// Follow-ups should have been disaggregated too — more parentRequests than initial
@@ -1719,7 +1669,7 @@ func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
 		return nil
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	cs := newTestCluster(config, NewSliceRequestSource(reqs), callback)
 	mustRun(t, cs)
 
 	// In aggregate mode, ALL completed requests should trigger callback with SessionID
@@ -1809,7 +1759,7 @@ func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
 		}
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	cs := newTestCluster(config, NewSliceRequestSource(reqs), callback)
 	mustRun(t, cs)
 
 	metrics := cs.AggregatedMetrics()
@@ -1894,7 +1844,7 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 		},
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), callback)
+	cs := newTestCluster(config, NewSliceRequestSource(reqs), callback)
 	mustRun(t, cs)
 
 	metrics := cs.AggregatedMetrics()
@@ -1957,7 +1907,7 @@ func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	const numRequests = 8
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	cs.SetGateway(&fakeGateway{}) // never disaggregates
 
 	// WHEN: simulation runs
@@ -1991,7 +1941,7 @@ func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	const numRequests = 5
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN: simulation runs
 	mustRun(t, cs)
@@ -2029,7 +1979,7 @@ func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 	config.TraceLevel = "decisions"
 	const numRequests = 4
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN: simulation runs
 	mustRun(t, cs)
@@ -2068,7 +2018,7 @@ func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
 		r.ArrivalTime = int64(i) * 200_000 // 200ms apart
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	parents := cs.ParentRequests()

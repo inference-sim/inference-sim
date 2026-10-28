@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )
 
 // countingModel is a stateless latency model that counts how often it priced a step, so a
@@ -13,10 +13,10 @@ type countingModel struct {
 	calls *int
 }
 
-func (m countingModel) StepTime([]*sim.Request) int64    { *m.calls++; return m.step }
-func (m countingModel) QueueingTime(*sim.Request) int64  { return 1 }
-func (m countingModel) OutputTokenProcessingTime() int64 { return 0 }
-func (m countingModel) PostDecodeFixedOverhead() int64   { return 0 }
+func (m countingModel) StepTime([]*cengine.Request) int64   { *m.calls++; return m.step }
+func (m countingModel) QueueingTime(*cengine.Request) int64 { return 1 }
+func (m countingModel) OutputTokenProcessingTime() int64    { return 0 }
+func (m countingModel) PostDecodeFixedOverhead() int64      { return 0 }
 
 // An injected transfer price replaces the formula: every completed handoff takes exactly what
 // the pricer returned, for the blocks' token capacity, priced from the prefill instance the
@@ -33,7 +33,7 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 		calls = append(calls, call{tokens, from, to})
 		return 1000 + tokens // a price no formula in this package would produce
 	}
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(newTestRequests(12)), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(newTestRequests(12)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ type observingModel struct {
 	largestBatch          *int
 }
 
-func (m observingModel) StepTime(batch []*sim.Request) int64 {
+func (m observingModel) StepTime(batch []*cengine.Request) int64 {
 	for _, r := range batch {
 		if r.ProgressIndex < r.InputLen() {
 			*m.sawPrefill = true
@@ -91,9 +91,9 @@ func (m observingModel) StepTime(batch []*sim.Request) int64 {
 	*m.largestBatch = max(*m.largestBatch, len(batch))
 	return m.step
 }
-func (m observingModel) QueueingTime(*sim.Request) int64  { return 1 }
-func (m observingModel) OutputTokenProcessingTime() int64 { return 0 }
-func (m observingModel) PostDecodeFixedOverhead() int64   { return 0 }
+func (m observingModel) QueueingTime(*cengine.Request) int64 { return 1 }
+func (m observingModel) OutputTokenProcessingTime() int64    { return 0 }
+func (m observingModel) PostDecodeFixedOverhead() int64      { return 0 }
 
 func newObservingModel(step int64) (observingModel, *bool, *bool, *int) {
 	var p, d bool
@@ -108,15 +108,15 @@ func newObservingModel(step int64) (observingModel, *bool, *bool, *int) {
 func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	var global int
-	cfg.LatencyModel = countingModel{step: 50, calls: &global}
+	editEngine(&cfg, func(c *simConfig) { c.LatencyModel = countingModel{step: 50, calls: &global} })
 	prefill, pPrefill, pDecode, _ := newObservingModel(70)
 	decode, dPrefill, dDecode, dLargest := newObservingModel(30)
 	one := int64(1)
-	cfg.PrefillOverrides.LatencyModel = prefill
-	cfg.DecodeOverrides.LatencyModel = decode
-	cfg.DecodeOverrides.MaxNumSeqs = &one
+	editPrefill(&cfg, func(c *simConfig) { c.LatencyModel = prefill })
+	editDecode(&cfg, func(c *simConfig) { c.LatencyModel = decode })
+	editDecode(&cfg, func(c *simConfig) { c.MaxNumSeqs = one })
 	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 10 }
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(newTestRequests(8)), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(newTestRequests(8)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}

@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,13 +12,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
-	_ "github.com/inference-sim/inference-sim/sim/lora" // registers sim.NewAdapterRegistryFunc via init()
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -58,18 +53,18 @@ var (
 	simulationHorizon         int64                  // Total simulation time (in ticks)
 	logLevel                  string                 // Log verbosity level
 	totalKVBlocks             int64                  // KV blocks per rank, sized by the kernel
-	sequenceState             sim.KVSequenceState    // each resident sequence's bounded state in pool blocks, from the kernel (#1941)
+	sequenceState             kvSequenceState        // each resident sequence's bounded state in pool blocks, from the kernel (#1941)
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
 	swaBoundedReplay          optionalBool           // --swa-bounded-replay: overrides the resolved DeepSeek-V4.1 SWA bounded replay
-	prefixHit                 sim.KVPrefixHit        // how the KV cache groups cut a prefix hit, from the kernel's model
+	prefixHit                 kvPrefixHit            // how the KV cache groups cut a prefix hit, from the kernel's model
 	blockSizeTokens           int64                  // Number of tokens per KV block
 	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
 	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
 	resolvedCatalogRoot       string                 // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
 	workloadType              string                 // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
-	longPrefillTokenThreshold int64                  // Max length of prefill beyond which chunked prefill is triggered
+	longPrefillTokenThreshold int64                  // the scenario's engine.long_prefill_token_threshold (colocated run)
 	rate                      float64                // Requests arrival per second
 	numRequests               int                    // Number of requests
 	concurrency               int                    // Number of concurrent virtual users (closed-loop)
@@ -88,7 +83,7 @@ var (
 	kernelRegistry            string                 // CLI --registry: blis-registry clone root (required)
 	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
-	kernelOpened              *kernelmodel.Model     // the kernel adoptKernelDeployment opened; nil until it runs
+	kernelOpened              *engineModel           // the kernel adoptKernelDeployment opened; nil until it runs
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
 	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
@@ -240,10 +235,10 @@ func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, prom
 type latencyResolution struct {
 	// KernelModel is the blis-latency-kernel adapter for the scenario's first pool; the caller
 	// puts it on SimConfig.LatencyModel.
-	KernelModel sim.LatencyModel
+	KernelModel latencyModel
 	// ModelConfig carries only the model graph's expert geometry, for the MoE gates and the
 	// ModelHardwareConfig boundary.
-	ModelConfig sim.ModelConfig
+	ModelConfig modelConfig
 }
 
 // dpPlacementPlan describes how an MoE deployment whose scenario states dp N expands
@@ -305,8 +300,9 @@ const dpPlacementInstanceWarnThreshold = 512
 // Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
 // is simply a no-op.
 func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
-	if !isMoE || dp <= 1 {
-		// No expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
+	if dpLockstepRanks(isMoE, dp) == 0 {
+		// No lockstep group (the engine's rule: an MoE model at dp > 1 forms one) ⇒ no
+		// expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
 		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
 	}
 	if autoscalerActive {
@@ -322,11 +318,9 @@ func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodeP
 	_ = nodePoolsActive
 	// Expert parallelism reserves no extra GPUs, so the plan is identical either way.
 	_ = epOn
-	// The dp replicas of one logical instance are one vLLM DP group: an MoE model at dp > 1
-	// runs as DPEngineCoreProc ranks that step in lockstep (vllm/v1/engine/core.py:1386-1395
-	// at v0.31.0), with or without expert parallelism (use_all2all is true at dp > 1,
-	// vllm/config/parallel.py:738-743), behind one API endpoint (#1909).
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dp}, nil
+	// The dp replicas of one logical instance are one vLLM DP group behind one API endpoint
+	// (#1909); how many step in lockstep is the engine's rule (dpLockstepRanks).
+	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dpLockstepRanks(isMoE, dp)}, nil
 }
 
 // dpPlacementDeployment carries the deployment quantities DP-as-real-placement
@@ -360,7 +354,7 @@ type dpPlacementDeployment struct {
 //
 // The kernel sizes KV blocks and max_model_len per rank, so both pass through unchanged. A
 // non-Active plan is the identity.
-func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
+func applyDPPlacement(plan dpPlacementPlan, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
 	if !plan.Active {
 		return dep, nil
 	}
@@ -373,14 +367,9 @@ func applyDPPlacement(plan dpPlacementPlan, dp int, dep dpPlacementDeployment) (
 	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
 	out.SharedInstances = dep.SharedInstances * plan.Replicas
 	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
-	// A replica with no KV blocks would panic NewSimulator, so it is reported as a clean
-	// error instead (R1). The kernel refuses a non-positive per-rank budget, so this is
-	// defense in depth.
-	if out.TotalKVBlocks <= 0 {
-		return dep, fmt.Errorf("dp %d leaves %d KV blocks on each of %d engine replicas; "+
-			"the scenario's per-rank KV budget must be positive",
-			dp, out.TotalKVBlocks, plan.Replicas)
-	}
+	// TotalKVBlocks is the engine's per-rank budget, passed through unchanged: blis-vllm
+	// refuses a budget with no blocks when it sizes it (compat/kernelmodel KVBudget, vLLM's
+	// "No available memory for the cache blocks"), before this runs.
 	return out, nil
 }
 
@@ -418,7 +407,7 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 		return plan, nil
 	}
 	logicalInstances := numInstances
-	dep, err := applyDPPlacement(plan, dataParallelism, dpPlacementDeployment{
+	dep, err := applyDPPlacement(plan, dpPlacementDeployment{
 		NumInstances:     numInstances,
 		TotalKVBlocks:    totalKVBlocks,
 		MaxModelLen:      maxModelLen,
@@ -466,48 +455,13 @@ func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacement
 	return plan, nil
 }
 
-// checkHybridDPNodeLocal refuses --dp-load-balancing hybrid for a colocated replica whose
-// ranks span nodes. vLLM's hybrid balancer runs one front-end per node over that node's
-// ranks (DPLBAsyncMPClient over engine_ranks_managed, vllm/v1/engine/core_client.py:1500-1520;
-// api_server_count defaults to data_parallel_size_local, vllm/entrypoints/cli/serve.py:
-// 112-120), so a replica across nodes is several endpoints, which BLIS does not model. On one
-// node hybrid is the internal balancer.
-func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
-	if dpLoadBalancing != cluster.DPLoadBalancingHybrid || !plan.Active || kernelOpened == nil ||
-		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0 {
-		return nil
-	}
-	dp := plan.Replicas
-	for first := 0; first+dp <= numInstances; first += dp {
-		if a, b := kernelOpened.PlacementOf(first), kernelOpened.PlacementOf(first+dp-1); a.Node != b.Node {
-			return fmt.Errorf("--dp-load-balancing hybrid: the replica of ranks %d-%d spans nodes %d-%d, and a "+
-				"hybrid front-end balances only its own node's ranks (one endpoint per node), which BLIS does "+
-				"not model; use internal or external", first, first+dp-1, a.Node, b.Node)
-		}
-	}
-	return nil
-}
-
-// offloadPerBlockBytes is the per-rank KV bytes of one block of blockSize tokens, which sizes
-// the offload tiers and their transfer jobs: the kernel's own answer (SequenceVariableBytes:
-// page-quantized, sharded by the layout and the cache dtype). Fatal when it is not positive:
-// a zero-byte block would make every offload transfer free.
-func offloadPerBlockBytes(lr latencyResolution, blockSize int64) int64 {
-	b := kernelOpened.Kernel().SequenceVariableBytes(int(blockSize))
-	if b <= 0 {
-		logrus.Fatalf("kv_offload: the kernel prices a %d-token block at %d bytes; per_block_bytes must be > 0",
-			blockSize, b)
-	}
-	return b
-}
-
 // adoptSchedulingPolicy takes the instance scheduler from the scenario's
 // engine.scheduling_policy, vLLM's own setting: fcfs, or priority (served lowest priority value
 // first, then by arrival -- BLIS's priority-fcfs). Precedence is an explicit --scheduler, then a
 // --policy-config bundle (applied later, when --scheduler is unset), then the scenario, then
 // the default. An explicit --scheduler that differs is a deliberate policy experiment and is
 // kept, with a warning that the simulated engine no longer matches the scenario.
-func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
+func adoptSchedulingPolicy(cmd *cobra.Command, m *engineModel) {
 	stated := enginePolicyOf(m)
 	scenarioScheduler, scenarioPreemption = stated.scheduler, stated.preemption
 	if cmd.Flags().Changed("scheduler") {
@@ -524,36 +478,18 @@ func adoptSchedulingPolicy(cmd *cobra.Command, m *kernelmodel.Model) {
 	}
 }
 
-// enginePolicy is a vLLM scheduling_policy in BLIS's terms: it decides both the waiting
-// queue's order and which running request is preempted under KV pressure (vLLM v0.31.0
-// v1/core/sched/scheduler.py: the preemption victim is chosen by priority when the policy is
-// PRIORITY, else the last-scheduled request).
-type enginePolicy struct{ scheduler, preemption string }
-
-// enginePolicyOf resolves a pool's engine.scheduling_policy: fcfs is FCFS queueing and
-// tail-of-batch preemption; priority is priority-fcfs queueing (lowest priority value first,
-// then arrival) and priority preemption. Each pool resolves on its own, and an unstated
-// policy is vLLM's default, fcfs (v0.31.0 vllm/config/scheduler.py:160) -- never another
-// pool's. Any other value is refused.
-func enginePolicyOf(m *kernelmodel.Model) enginePolicy {
-	eng, err := m.Engine()
+// enginePolicyOf resolves a pool's engine.scheduling_policy (build.EnginePolicyOf); a policy
+// BLIS does not simulate is fatal.
+func enginePolicyOf(m *engineModel) enginePolicy {
+	p, err := enginePolicyFor(m)
 	if err != nil {
-		logrus.Fatalf("scenario %q: reading the %s pool's engine: %v", kernelScenario, m.Role(), err)
+		logrus.Fatalf("%v", err)
 	}
-	policy := eng.SchedulingPolicy
-	if policy == "" {
-		policy = "fcfs"
-	}
-	p, ok := map[string]enginePolicy{
-		"fcfs":     {scheduler: "fcfs", preemption: "fcfs"},
-		"priority": {scheduler: "priority-fcfs", preemption: "priority"},
-	}[policy]
-	if !ok {
-		logrus.Fatalf("scenario %q states engine.scheduling_policy %q; BLIS simulates vLLM's "+
-			"fcfs and priority", kernelScenario, eng.SchedulingPolicy)
-	}
-	return p
+	return enginePolicy{scheduler: p.Scheduler, preemption: p.Preemption}
 }
+
+// enginePolicy is a pool's resolved queue order and preemption policy.
+type enginePolicy struct{ scheduler, preemption string }
 
 // recordPolicyOverride notes, when the policy a run simulates for setting differs from the one
 // its scenario states (scope names a pool, "" = the run), that source chose it: warned on
@@ -593,33 +529,12 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	scenarioScheduler, scenarioPreemption, scenarioOverrides = "", "", nil
 	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
-	missing := []string{}
-	if kernelScenario == "" {
-		missing = append(missing, "--scenario")
-	}
-	if kernelScenarioDir == "" {
-		missing = append(missing, "--scenarios")
-	}
-	if kernelRegistry == "" {
-		missing = append(missing, "--registry")
-	}
-	if len(missing) > 0 {
-		logrus.Fatalf("blis run requires %s: the kernel prices a step from a "+
-			"committed scenario plus the catalog and registry it names",
-			strings.Join(missing, ", "))
-	}
-	// The scenario's roles and the CLI topology describe one deployment. A disaggregated
-	// scenario run without a P/D topology would serve every request on its first pool's
-	// engine, as though colocated; the opposite mismatch is refused when the pools open.
-	shape, err := kernelmodel.ShapeOf(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir})
+	in := adoptInputs(cmd)
+	a, err := adoptScenario(in)
 	if err != nil {
-		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+		logrus.Fatalf("%v", err)
 	}
-	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
-	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
-		logrus.Fatalf("scenario %q states %d colocated pools; a run simulates one colocated "+
-			"engine, so state one pool and scale it with --num-instances", kernelScenario, len(shape.Roles))
-	}
+	shape := a.Shape
 	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
 	// may only restate it (resolveKVOffloadConfig).
 	scenarioOffload = shape.Offload
@@ -627,34 +542,16 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	scenarioShape = shape
 	acceptanceRecord = nil
 	prefixCacheRecords = nil
-	scenarioDisaggregated = slices.Contains(shape.Roles, deployment.RolePrefill)
+	scenarioDisaggregated = a.Disaggregated
 	// The router's inputs are the deployment's too: its router block and pool labels.
 	adoptScenarioRouter(shape)
-	if slices.Contains(shape.Roles, deployment.RolePrefill) && prefillInstances == 0 && decodeInstances == 0 {
-		logrus.Fatalf("scenario %q is disaggregated (it states prefill and decode "+
-			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
-			kernelScenario)
-	}
-	catalogRoot, err := resolveCatalogRoot()
-	if err != nil {
+	if err := openFirstPool(in, &a); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	applyRoutingOverrides(cmd)
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{
-		Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
-	})
-	if err != nil {
-		// Fatal rather than fallen back on: there is no other latency model to serve the run.
-		logrus.Fatalf("scenario %q: %v",
-			kernelScenario, err)
-	}
-	settings, err := m.Settings()
-	if err != nil {
-		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
-	}
+	m, settings := a.Model, a.Settings
 	kernelOpened = m
 	adoptSchedulingPolicy(cmd, m)
-	dep := m.Deployment()
+	dep := a.Deployment
 	model = strings.ToLower(dep.Model)
 	gpu = dep.Hardware
 	tensorParallelism = dep.TP
@@ -669,28 +566,8 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	kernelDeploymentExperts = dep.Experts
 	kernelDeploymentTopK = dep.ExpertsPerTok
 	// The engine the kernel priced, so the simulated scheduler admits against the same caps,
-	// pages and pool. Per data-parallel RANK: a dp>1 MoE deployment runs one replica per rank
-	// (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
-	totalKVBlocks = settings.KVBlocks
-	sequenceState = settings.SequenceState
-	prefixHit = prefixHitOf("first pool", m)
-	blockSizeTokens = int64(settings.BlockSize)
-	maxNumSeqs = int64(settings.MaxNumSeqs)
-	maxNumBatchedTokens = int64(settings.MaxNumBatchedTokens)
-	maxModelLen = int64(settings.MaxModelLen)
-	requireWindowFits("first pool", settings)
-	noEnablePrefixCaching = settings.PrefixCachingDisabled
-	numSpeculativeTokens = settings.SpeculativeTokens
-	speculativeMethod = settings.SpeculativeMethod
-	logrus.Infof("deployment from scenario %s -- model %s, hardware %s, "+
-		"tp %d, dp %d, expert-parallel %t; engine from the kernel -- %d KV blocks/rank of %d "+
-		"tokens, max_num_seqs %d, max_num_batched_tokens %d, max_model_len %d (%s), prefix caching %t, "+
-		"speculative tokens %d",
-		kernelScenario, model, gpu,
-		tensorParallelism, dataParallelism, enableExpertParallel,
-		totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen, settings.MaxModelLenFrom,
-		!noEnablePrefixCaching, numSpeculativeTokens)
-	logSequenceFixedCharge("first pool", settings)
+	// pages and pool (the build site, adoptFirstPoolEngine).
+	adoptFirstPoolEngine(m, settings)
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel
@@ -717,36 +594,14 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	if m == nil {
 		// adoptKernelDeployment has not run (a caller that resolves the latency model
 		// alone): open the scenario's first pool exactly as adoption would.
-		m, err = kernelmodel.Open(kernelScenario, kernelmodel.Repos{
-			Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry,
-		})
+		m, err = openModel(catalogRoot)
 		if err != nil {
-			logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+			logrus.Fatalf("%v", err)
 		}
 	}
-	// The expert geometry the graph stated. Nothing else of ModelConfig is populated: no HF
-	// config is parsed, and a half-filled struct read as complete is how a dense model comes
-	// to be treated as MoE.
-	var modelConfig sim.ModelConfig
-	modelConfig.NumLocalExperts = kernelDeploymentExperts
-	modelConfig.NumExpertsPerTok = kernelDeploymentTopK
-
-	if dataParallelism < 1 {
-		logrus.Fatalf("scenario %q states dp %d; it must be >= 1", kernelScenario, dataParallelism)
-	}
-	if dataParallelism > 1 && !modelConfig.IsMoE() {
-		// Dense DP is the router-replica mechanism, not a latency divisor: vLLM's
-		// --data-parallel-size on a dense model runs N independent engines behind an
-		// internal load balancer, which BLIS expresses as N instances.
-		logrus.Fatalf("scenario %q states dp %d for a dense model; DP placement is modelled for MoE "+
-			"models only. Express N independent dense engines as --num-instances N with dp 1.",
-			kernelScenario, dataParallelism)
-	}
-	if enableExpertParallel && !modelConfig.IsMoE() {
-		// vLLM fatally rejects --enable-expert-parallel on dense models
-		// (config/model.py:_verify_with_expert_parallelism).
-		logrus.Fatalf("scenario %q enables expert parallelism for dense model %q, which vLLM refuses",
-			kernelScenario, model)
+	modelConfig := expertModelConfig()
+	if err := checkParallelism(modelConfig.IsMoE()); err != nil {
+		logrus.Fatalf("%v", err)
 	}
 	return latencyResolution{
 		KernelModel: m,
@@ -802,12 +657,7 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 		}
 	}
 
-	if !sim.IsValidScheduler(scheduler) {
-		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
-	}
-	if !sim.IsValidPreemptionPolicy(preemptionPolicy) {
-		logrus.Fatalf("Unknown preemption policy %q. Valid: %s", preemptionPolicy, strings.Join(sim.ValidPreemptionPolicyNames(), ", "))
-	}
+	checkPolicyNames(scheduler, preemptionPolicy)
 	if !trace.IsValidTraceLevel(traceLevel) {
 		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
 	}
@@ -829,21 +679,10 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
 		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
 	}
-	if !cluster.IsValidDPLoadBalancing(dpLoadBalancing) {
-		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", cluster.DPLoadBalancingInternal,
-			cluster.DPLoadBalancingHybrid, cluster.DPLoadBalancingExternal, dpLoadBalancing)
-	}
+	requireDPLoadBalancingMode(dpLoadBalancing)
 
 	logrus.Infof("Policy config: scheduler=%s, preemption=%s", scheduler, preemptionPolicy)
 	return loadedBundle
-}
-
-// batchConfigFromCLI is the single run/replay wiring seam for vLLM batch settings.
-// Keeping both commands on this helper makes the prefix-caching toggle structurally
-// symmetric for INV-13 rather than relying on two call sites to stay in sync.
-func batchConfigFromCLI() sim.BatchConfig {
-	return sim.NewBatchConfig(maxNumSeqs, maxNumBatchedTokens, longPrefillTokenThreshold,
-		sim.WithPrefixCachingDisabled(noEnablePrefixCaching))
 }
 
 // registerSimConfigFlags registers all simulation-engine configuration flags
@@ -856,10 +695,9 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", defaultDefaultsPath, "Path to default constants: the LoRA cost coefficients (the copy compiled into the binary is used when this is unset and no defaults.yaml is in the working directory)")
 	registerCatalogFlag(cmd)
 
-	// Engine scheduling knobs the deployment schema does not state. Every other engine
-	// setting -- block size, sequence and token caps, max_model_len, prefix caching, cache
-	// dtype, speculation -- is the scenario's, and the KV budget is the kernel's.
-	cmd.Flags().Int64Var(&longPrefillTokenThreshold, "long-prefill-token-threshold", 0, "Max length of prefill beyond which chunked prefill is triggered")
+	// Engine settings are the scenario's (#2021 B6): block size, sequence and token caps,
+	// max_model_len, long_prefill_token_threshold, prefix caching, cache dtype, speculation; the
+	// KV budget is the kernel's. The flags below override the scenario only where stated.
 	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false), over the scenario's engine.swa_bounded_replay. Unset, the pool states it or it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
 	registerFrontendFlags(cmd)
 	cmd.Flags().Float64Var(&serverSeriesIntervalS, "server-series-interval-s", 0, "Bin width in seconds of the per-engine vLLM /metrics time series (KV usage, running/waiting, prefix-cache and prompt-token-by-source counters, generation tokens) written as server_series to the --metrics-path file only; 0 disables it")
@@ -894,7 +732,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Tiered KV cache (PR12)
 	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of the kernel's per-rank GPU KV blocks")
 	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", cluster.DPLoadBalancingInternal,
+	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", defaultDPLoadBalancing,
 		"How a dp>1 MoE replica's requests reach its ranks, as vLLM's serve flags choose: "+
 			"internal (default; one endpoint per replica, vLLM's DP balancer picks the rank), "+
 			"hybrid (--data-parallel-hybrid-lb; the same for a replica on one node), or "+
@@ -938,119 +776,26 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. When the scenario states an offload block, that block is the configuration and this file may only restate it (a file resolving differently is refused). Absent, with no scenario block => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
-// loraConfigFile is the on-disk shape of a --lora-config YAML file: a single
-// top-level lora: block matching contracts/config-schema.md. Strict-parsed (R10).
-type loraConfigFile struct {
-	LoRA sim.LoRAConfig `yaml:"lora"`
-}
-
-// loadLoRAConfigFile parses a --lora-config YAML file's lora: block into a
-// sim.LoRAConfig. Strict field checking (R10). CLI boundary => logrus.Fatalf on any
-// read/parse error so a typo never silently no-ops.
-func loadLoRAConfigFile(path string) sim.LoRAConfig {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		logrus.Fatalf("Failed to read --lora-config file %q: %v", path, err)
-	}
-	var f loraConfigFile
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&f); err != nil {
-		logrus.Fatalf("Failed to parse --lora-config file %q: %v", path, err)
-	}
-	return f.LoRA
-}
-
-// resolveLoRAConfig assembles the final sim.LoRAConfig from three composable sources,
-// in increasing precedence: defaults.yaml (cost-coefficient fallback), the optional
-// --lora-config file (adapter registry + any coefficients it sets), and the scalar
-// --lora-* flags (applied only when Changed, R18). It is the single LoRAConfig
-// construction site (R4), called by BOTH runCmd and replayCmd (INV-13 parity).
-//
-// The resolved config is validated at the CLI boundary; an invalid config aborts with
-// logrus.Fatalf (Principle V) — e.g. adapters declared with adapter_capacity 0.
-//
-// With no --lora-config and no --lora-* flags set, the returned config still carries
-// the defaults.yaml cost coefficients but declares no adapters, so HasAdapters() is
-// false and the subsystem is inert (INV-6 no-op default; coefficients are unused
-// until adapters exist).
-func resolveLoRAConfig(cmd *cobra.Command) sim.LoRAConfig {
-	var cfg sim.LoRAConfig
-	if loraConfigPath != "" {
-		cfg = loadLoRAConfigFile(loraConfigPath)
-	}
-
-	// defaults.yaml cost-coefficient fallback: fill only fields the file did not set,
-	// so an unset flag defers to the file/defaults rather than clobbering it (R18).
-	if defs := loadRunDefaults(cmd.Flags().Changed("defaults-filepath")).LoRADefaults; defs != nil {
-		if cfg.LoadBaseLatencyUs == nil {
-			v := defs.LoadBaseLatencyUs
-			cfg.LoadBaseLatencyUs = &v
-		}
-		if cfg.LoadBandwidthBytesUs == nil {
-			v := defs.LoadBandwidthBytesUs
-			cfg.LoadBandwidthBytesUs = &v
-		}
-		if cfg.FootprintBytesPerRank == nil {
-			v := defs.FootprintBytesPerRank
-			cfg.FootprintBytesPerRank = &v
-		}
-		if len(cfg.StepOverheadTiers) == 0 && len(defs.StepOverheadTiers) > 0 {
-			cfg.StepOverheadTiers = make(map[int]sim.StepOverheadTier, len(defs.StepOverheadTiers))
-			for rank, t := range defs.StepOverheadTiers {
-				k6, k7 := t.K6, t.K7
-				cfg.StepOverheadTiers[rank] = sim.StepOverheadTier{K6: &k6, K7: &k7}
-			}
-		}
-	}
-
-	// Scalar flag overrides (R18: only when explicitly set).
-	if cmd.Flags().Changed("lora-adapter-capacity") {
-		v := loraAdapterCapacity
-		cfg.AdapterCapacity = &v
-	}
-	if cmd.Flags().Changed("lora-load-base-latency-us") {
-		v := loraLoadBaseLatencyUs
-		cfg.LoadBaseLatencyUs = &v
-	}
-	if cmd.Flags().Changed("lora-load-bandwidth-bytes-us") {
-		v := loraLoadBandwidthBytesUs
-		cfg.LoadBandwidthBytesUs = &v
-	}
-	if cmd.Flags().Changed("lora-footprint-bytes-per-rank") {
-		v := loraFootprintBytesPerRank
-		cfg.FootprintBytesPerRank = &v
-	}
-
-	if err := cfg.Validate(); err != nil {
-		logrus.Fatalf("Invalid LoRA configuration: %v", err)
-	}
-	return cfg
-}
-
 // resolveSpeculativeConfig builds the speculative-decoding / MTP config (#1528): K and the
 // method from the scenario, and the acceptance resolved by blis-schemas' precedence (#1939,
 // resolveAcceptance), which it records for the results file (acceptanceRecord). Shared by run
 // and replay, so a trace round-trips under identical flags (INV-13). Fatal on an invalid or
 // unresolvable config (CLI boundary, R6).
-func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
+func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
 	acceptanceRecord = nil
 	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
 	alpha := 0.0
 	if speculating {
-		alpha = ar.res.AcceptanceRate()
-		if ar.cliRate != nil {
-			alpha = *ar.cliRate
+		alpha = ar.Res.AcceptanceRate()
+		if ar.CLIRate != nil {
+			alpha = *ar.CLIRate
 		}
 	} else if cmd.Flags().Changed(acceptanceRateFlag) {
 		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
 	}
-	c, err := sim.NewSpeculativeConfig(numSpeculativeTokens, alpha, speculativeMethod)
-	if err != nil {
-		logrus.Fatalf("%v", err)
-	}
+	c := speculativeConfigOf(numSpeculativeTokens, alpha, speculativeMethod)
 	if c.IsEnabled() {
-		acceptanceRecord = acceptanceRecordOf(ar.res, c)
+		acceptanceRecord = acceptanceRecordOf(ar.Res, c)
 		logAcceptance(acceptanceRecord, c.K)
 		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
 			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())
@@ -1059,52 +804,6 @@ func resolveSpeculativeConfig(cmd *cobra.Command) sim.SpeculativeConfig {
 		}
 	}
 	return c
-}
-
-// adapterReservedBytesFor returns the static LoRA HBM reservation (bytes) to carve
-// out of the KV budget for a resolved config, obtained through the sim/lora cost
-// model's pure AdapterReservedBytes() query (design boundary #4 — the memory path
-// never reaches into sim/lora internals). It routes through sim.BuildAdapterCost so
-// the activation condition matches NewSimulator's resident-set/cost wiring exactly
-// (R4): 0 when the subsystem is inert (no adapters, no capacity, or sim/lora not
-// linked), leaving KV capacity byte-identical to today (INV-6). A malformed cost
-// config aborts at the CLI boundary (Principle V), the same check NewSimulator makes.
-//
-// This deliberately builds an adapter-cost model that sim.NewSimulator (the
-// cold-load gate) and sim/cluster.NewInstanceSimulator (the latency-model overhead
-// wrapper, #1467) each also build from the same config via sim.BuildAdapterCost. The model
-// is a pure, stateless value object, so independent builds from one config are
-// behaviorally identical — the extra one-time O(adapters) construction at startup is
-// the established BuildAdapterCost pattern, not a caching bug.
-func adapterReservedBytesFor(cfg sim.LoRAConfig) int64 {
-	ac, err := sim.BuildAdapterCost(sim.SimConfig{LoRAConfig: cfg})
-	if err != nil {
-		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v", err)
-	}
-	if ac == nil {
-		return 0
-	}
-	// Defense in depth: NewCostModel already rejects a non-finite reservation and
-	// caps it below maxReservedBytes (< math.MaxInt64), so this conversion is exact
-	// and non-negative for any model built through it. Guard the CLI boundary
-	// explicitly anyway — so a future construction path that bypasses that check can
-	// never silently truncate a huge/±Inf float64 to a garbage int64 (Go's
-	// out-of-range float→int conversion is implementation-defined). Principle V:
-	// fail at the CLI boundary, not deep in the KV-capacity library.
-	//
-	// int64(x) is well-defined and exact for every representable float64 strictly
-	// below 2^63. The trap is float64(math.MaxInt64): MaxInt64 (2^63-1) is not
-	// representable in float64 and rounds UP to 2^63, so it must NOT be used as the
-	// bound (int64(2^63) overflows). We reject at the comfortably-conservative,
-	// exactly-representable 2^62 (≈4.6e18) — far above any real reservation (the cost
-	// model caps at 1e18) — so the cast is provably safe without relying on the exact
-	// 2^63 edge.
-	const maxSafeReservedBytes = float64(int64(1) << 62)
-	reserved := ac.AdapterReservedBytes()
-	if math.IsNaN(reserved) || math.IsInf(reserved, 0) || reserved < 0 || reserved >= maxSafeReservedBytes {
-		logrus.Fatalf("Invalid LoRA configuration (HBM reservation): %v bytes is outside the representable range", reserved)
-	}
-	return int64(reserved)
 }
 
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
@@ -1187,9 +886,7 @@ var runCmd = &cobra.Command{
 		kvOffloadCfg := resolveKVOffloadConfig(cmd)
 		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
 		// single CPU tier) are distinct offload models; setting both is ambiguous.
-		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
-			logrus.Fatalf("--kv-offload-config and --kv-cpu-blocks are mutually exclusive (distinct KV-offload models); set only one")
-		}
+		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), false)
 
 		// Resolve the latency model (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -1197,7 +894,7 @@ var runCmd = &cobra.Command{
 		// Per-pool engine overrides, filled from each P/D pool's own kernel
 		// (openKernelPools, below) after PD validation. Empty when disaggregation is
 		// disabled (prefillInstances == 0).
-		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		var prefillOverrides, decodeOverrides poolOverrides
 
 		// R3: Validate workload generation flags (before any synthesis path consumes them)
 		if numRequests < 0 {
@@ -1425,18 +1122,6 @@ var runCmd = &cobra.Command{
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
 		}
-		if totalKVBlocks <= 0 {
-			logrus.Fatalf("scenario %q: the kernel sized %d KV blocks per rank; it must be > 0", kernelScenario, totalKVBlocks)
-		}
-		if maxNumSeqs <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_seqs must be > 0, got %d", kernelScenario, maxNumSeqs)
-		}
-		if maxNumBatchedTokens <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
-		}
-		if longPrefillTokenThreshold < 0 {
-			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
-		}
 		// Changed() guard: unlike peer flags (default always positive), --horizon defaults
 		// to math.MaxInt64 which would fail <= 0. Only validate when user explicitly sets it.
 		if cmd.Flags().Changed("horizon") && simulationHorizon <= 0 {
@@ -1544,15 +1229,7 @@ var runCmd = &cobra.Command{
 		// reference against the declared registry (unknown id / base-model mismatch =>
 		// Fatalf, never a silent no-op). With no adapters and no workload adapter
 		// references this is inert (INV-6).
-		var loraRegistry sim.AdapterRegistry
-		if loraCfg.HasAdapters() {
-			r, regErr := sim.NewAdapterRegistryFunc(loraCfg.Adapters)
-			if regErr != nil {
-				logrus.Fatalf("Invalid LoRA adapter registry: %v", regErr)
-			}
-			loraRegistry = r
-		}
-		if err := workload.ValidateAdapterReferences(spec, loraRegistry); err != nil {
+		if err := workload.ValidateAdapterReferences(spec, adapterRegistryOf(loraCfg)); err != nil {
 			logrus.Fatalf("LoRA workload validation: %v", err)
 		}
 
@@ -1578,7 +1255,7 @@ var runCmd = &cobra.Command{
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
@@ -1594,12 +1271,7 @@ var runCmd = &cobra.Command{
 		// per-rank KV byte size of one GPU block -- and record it on the resolved offload
 		// config. It feeds the CPU-tier block capacity and transfer-job sizing, and
 		// round-trips through the trace header (INV-13). Only when offload is enabled.
-		if kvOffloadCfg.IsEnabled() {
-			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
-			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-		}
+		sizeOffloadBlocks(&kvOffloadCfg, false)
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge. Shared with replayCmd
@@ -1621,31 +1293,10 @@ var runCmd = &cobra.Command{
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
+		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		runEngine := engineConfigOfRun(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon: simulationHorizon,
-				Seed:    seed,
-				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
-					sim.WithSequenceState(sequenceState), sim.WithPrefixHit(prefixHit)),
-				BatchConfig: batchConfigFromCLI(),
-				// DP-as-placement (#1531): dpPlan.PerRankDP is the per-replica DP — 1 when
-				// the plan is active (each replica is one rank), else the CLI dataParallelism
-				// unchanged. Passing it through the canonical constructor (R4) keeps the config
-				// authoritative from the start (no construct-then-override). Since #1556 replay
-				// wires the SAME dpPlan.PerRankDP from the SAME resolveDPPlacement, so the two
-				// paths agree for every config both support (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, maxModelLen),
-				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
-				LoRAConfig:           loraCfg,
-				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
-				Frontend:             frontendConfigFromCLI(),
-				SLOPriorityOverrides: sloPriorityOverrides,
-				// The kernel prices every step.
-				LatencyModel:           lr.KernelModel,
-				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
-			},
+			InstanceConfig:                 instanceConfigOf(runEngine),
 			NumInstances:                   numInstances,
 			DPLockstepRanks:                dpPlan.LockstepRanks,
 			DPLoadBalancing:                dpLoadBalancing,
@@ -1659,8 +1310,7 @@ var runCmd = &cobra.Command{
 			PDTransferContention:           pdTransferContention,
 			PDTransferDemand:               pdTransferDemand,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
-			PrefillOverrides:               prefillOverrides,
-			DecodeOverrides:                decodeOverrides,
+			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
@@ -1669,6 +1319,10 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
+			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+		}
+		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
+			config.NewEngine = f
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
@@ -2179,24 +1833,6 @@ func init() {
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
-}
-
-// prefixHitOf is how the pool's KV cache groups cut a prefix hit. It records the resolution
-// for the results file and logs when the model's layout is not one BLIS maps.
-func prefixHitOf(what string, m *kernelmodel.Model) sim.KVPrefixHit {
-	r := m.PrefixHit(swaBoundedReplay.v)
-	if r.Note != "" {
-		logrus.Warnf("prefix cache (%s): the hit is the full-attention prefix alone: %s", what, r.Note)
-	}
-	if prefixCacheRecords == nil {
-		prefixCacheRecords = map[string]sim.PrefixCacheRecord{}
-	}
-	prefixCacheRecords[string(m.Role())] = sim.PrefixCacheRecord{
-		ModelRunner: r.Runner, ModelRunnerForcedBy: r.RunnerForcedBy,
-		SWABoundedReplay: r.BoundedReplay, SWABoundedReplayFrom: r.BoundedReplayFrom,
-		Layout: r.Hit, Note: r.Note,
-	}
-	return r.Hit
 }
 
 // prefixCacheRecords are each opened pool's prefix-hit resolution, keyed by role, for the

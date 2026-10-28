@@ -17,8 +17,10 @@ tagged release and reaches you without a separate checkout:
 | blis-registry | `v0.2.0` | vendored coefficient sets at `testdata/registry` |
 
 The catalog and registry releases are the ones blis-latency-kernel `v0.3.0` pins in its own
-`testdata/upstream.lock`; `TestTheVendoredCatalogAndRegistryAreTheLockedReleases` fails if the
-vendored copies drift from that lock. To score against live upstream checkouts instead, clone the
+`testdata/upstream.lock`; `TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases`
+(`sim/vendored`) fails if this repository's vendored copies drift from that lock, as
+`TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (blis-vllm `compat/kernelmodel`, since
+#2021) does for blis-vllm's. To score against live upstream checkouts instead, clone the
 tags and point the variables at them:
 
 ```
@@ -41,7 +43,7 @@ command run without them refuses, naming the flags it needs.
 
 ```bash
 export BLIS_MEASUREMENTS=/path/to/corpora
-go test -tags scoring ./sim/kernelmodel/...   # the tests that read the corpora
+go test -tags scoring ./tools/...   # the tests that read the corpora
 ```
 
 On a laptop this takes about 35 s of wall time (34.6 s measured on a clean checkout of `e4d76827`),
@@ -70,9 +72,9 @@ main phase, exactly as a user replays a trace -- so build it once and pass it wi
 ```bash
 cd inference-sim
 go build -o blis main.go
-go run ./cmd/metricscore -blis ./blis -framework vllm -gaps gaps.txt
-go run ./cmd/metricscore -blis ./blis -framework vllm -config-tier measured -gaps gaps-measured.txt
-go run ./cmd/kernelscore -blis ./blis -framework vllm -verbose
+go run ./tools/metricscore -blis ./blis -framework vllm -gaps gaps.txt
+go run ./tools/metricscore -blis ./blis -framework vllm -config-tier measured -gaps gaps-measured.txt
+go run ./tools/kernelscore -blis ./blis -framework vllm -verbose
 ```
 
 `metricscore` prints every arm (BLIS, AISimulate, AIC) on three tiers: STRICT,
@@ -191,7 +193,7 @@ single scalar key removes the trend.
 
 The step-frequency figures that make the defect irrelevant here (98.33% of steps carry no prefill
 request) came from temporary instrumentation in `Model.StepTime`, counting prefill requests per
-step over a full `cmd/kernelscore -framework vllm` run. The instrumentation was removed; to
+step over a full `tools/kernelscore -framework vllm` run. The instrumentation was removed; to
 re-derive, count `Reqs[i].Scheduled > DecodeThreshold` per batch in a histogram.
 
 ## Reproducing the error definition
@@ -200,7 +202,7 @@ The one check that decides whether this comparison measures what it claims:
 
 ```bash
 cd inference-sim
-go test ./sim/kernelmodel/harness/ -run TestAISimulatesPublishedShapeErrorIsReproducible -v
+go test ./tools/harness/ -run TestAISimulatesPublishedShapeErrorIsReproducible -v
 ```
 
 It recomputes AISimulate's shape error from AISimulate's own per-point data, under AISimulate's
@@ -227,8 +229,8 @@ done
 `--check` prints `29 points match`. The same vectors are recomputed in Go, without Python:
 
 ```bash
-go test ./sim/kernelmodel/harness/ -run 'TestTheGoGenerator|TestTheFixtures|TestTheLoaderRefuses' -v
-go test ./sim/kernelmodel/harness/ -run 'TestThePoolIsTheClientsSemaphore|TestAReplayedPoint|TestSummarize' -v
+go test ./tools/harness/ -run 'TestTheGoGenerator|TestTheFixtures|TestTheLoaderRefuses' -v
+go test ./tools/harness/ -run 'TestThePoolIsTheClientsSemaphore|TestAReplayedPoint|TestSummarize' -v
 ```
 
 The first line checks an independent MT19937 and numpy-legacy `randint` against numpy's own
@@ -268,7 +270,7 @@ python -I -c "import numpy as np; np.random.seed(0); print(np.random.randint(819
 ```bash
 cd blis-schemas         && go test ./...
 cd blis-latency-kernel  && go test ./...
-cd inference-sim        && go test ./sim/... ./cmd/...
+cd inference-sim        && go test ./sim/... ./cmd/... ./tools/...
 cd blis-catalog         && python scripts/validate_catalog.py \
                         && python scripts/derive_graph.py --check \
                         && python -m pytest tests/ -q
@@ -307,7 +309,7 @@ fails the build. `SKIP_GO=1` skips those and says so rather than passing silentl
 
 ```bash
 cd inference-sim
-go run ./cmd/sensitivity -blis ./blis -framework vllm
+go run ./tools/sensitivity -blis ./blis -framework vllm
 ```
 
 Scores the monotone vLLM sweeps (TPOT shape, anchor excluded) under the scored configuration,

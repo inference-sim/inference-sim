@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"testing"
 
@@ -31,7 +32,10 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 			}
 		}},
 		{"decode", 6_000_000, func(t *testing.T, p *ParentRequest) {
-			if p.DecodeEnqueueTime == 0 || p.DecodeSubReq == nil || p.DecodeSubReq.ProgressIndex <= p.DecodeSubReq.InputLen() {
+			// Decoding: the decode engine had emitted tokens for it (its inter-token record) when
+			// the eviction took it. The host's request record keeps what the engine emitted, not
+			// the engine's own progress, which stays behind the contract.
+			if p.DecodeEnqueueTime == 0 || p.DecodeSubReq == nil || len(p.DecodeSubReq.ITL) == 0 {
 				t.Errorf("decode enqueued at %d; want evicted while decoding", p.DecodeEnqueueTime)
 			}
 		}},
@@ -41,7 +45,7 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 			cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 5_000_000 } // a long transfer
 			reqs := newTestRequests(4)
 			if tc.stage == "prefill" {
-				cfg.BatchConfig = sim.NewBatchConfig(1, 2048, 0)
+				editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) })
 				for _, r := range reqs {
 					r.ArrivalTime = 0
 				}
@@ -51,7 +55,7 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 				r.MaxOutputLen = len(r.OutputTokens)
 			}
 			gw := &fakeGateway{disaggregate: true, evictAfterUs: tc.after}
-			cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+			cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
 			cs.SetGateway(gw)
 			mustRun(t, cs)
 			for _, r := range reqs {

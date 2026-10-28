@@ -36,7 +36,7 @@ func TestClusterSimulator_AllRejected_WarnsAfterRun(t *testing.T) {
 	config.Horizon = 100000
 	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(workload), nil)
 	cs.SetGateway(&fakeGateway{reject: func(*sim.Request) bool { return true }})
 
 	// WHEN the simulation runs to completion
@@ -58,7 +58,7 @@ func TestClusterSimulator_ZeroCompletions_WarnsAfterRun(t *testing.T) {
 	config.Horizon = 1 // 1 tick — admits but can't finish
 	workload := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(workload), nil)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {
@@ -79,7 +79,7 @@ func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 	config.Horizon = 1000000
 	workload := newTestRequests(2)
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(workload), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(workload), nil)
 
 	// WHEN the simulation runs to completion
 	output := captureLogOutput(func() {

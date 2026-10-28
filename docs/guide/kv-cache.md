@@ -220,17 +220,15 @@ sampled `input_distribution` length, not carved out of it.
 
 Long prefill sequences can cause **head-of-line (HOL) blocking** — a long prefill occupies a whole step, blocking shorter requests from starting.
 
-Chunked prefill splits long prefills into smaller chunks:
+Chunked prefill splits long prefills into smaller chunks. The threshold is the scenario's, stated in a pool's `engine` block (an engine setting has no flag, inference-sim#2021 B6):
 
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
-  --long-prefill-token-threshold 256 \
-  --rate 100 --num-requests 500
+```yaml
+    engine:
+      long_prefill_token_threshold: 256
 ```
 
 !!! info "Chunked prefill benefits TTFT, not ITL"
-    With `--long-prefill-token-threshold=256`, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (<0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.
+    With `long_prefill_token_threshold: 256`, short-request TTFT p99 improves by ~52% in bimodal workloads. But ITL is unaffected (<0.5%) because ~255 of ~256 ITL samples per request are decode-only steps. The benefit is in scheduling new requests, not in token generation speed.
 
 !!! note "A lone request is not chunked"
     As in vLLM v0.31.0 (#57951), the threshold applies only when the engine's scheduler holds another request, running or waiting. A request alone takes the whole `max_num_batched_tokens` budget, since there is nobody for it to starve.

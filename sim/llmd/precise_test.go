@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"sigs.k8s.io/yaml"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -59,7 +61,7 @@ type preciseRun struct {
 
 func runPrecise(t *testing.T, dep cluster.DeploymentConfig, reqs []*sim.Request, config string, opts Options) preciseRun {
 	t.Helper()
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	opts.Model = "test-model"
 	if opts.EPPFlags == nil {
 		opts.EPPFlags = append(DefaultEPPFlags(), "--config-text="+config)
@@ -147,7 +149,7 @@ schedulingProfiles:
 		// A few prompts' worth per instance. 160, not 120: under #1946's engine admission (#1943,
 		// #1948) a 120-block engine thrashes and records no prefix hit at all, even on main with
 		// one instance, so no prefix index could be compared there.
-		dep.KVCacheConfig = sim.NewKVCacheConfig(160, 16, 0, 0, 0, 0)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(160, 16, 0, 0, 0, 0) })
 		run := runPrecise(t, dep, prefixGroups(12, 6, 512, 20000), config, Options{})
 		m := run.cs.AggregatedMetrics()
 		var sum float64
@@ -167,7 +169,7 @@ schedulingProfiles:
 // run with no event delay is in the router's index for that pod, and nothing else is.
 func TestPrecisePrefix_IndexFollowsTheEnginesCache(t *testing.T) {
 	dep := testDeployment(2)
-	dep.KVCacheConfig = sim.NewKVCacheConfig(200, 16, 0, 0, 0, 0)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(200, 16, 0, 0, 0, 0) })
 	run := runPrecise(t, dep, prefixGroups(6, 5, 128, 15000), preciseConfig(""), Options{})
 	for _, inst := range run.cs.Instances() {
 		got := kvBlocks(t, run.gw, inst.ID(), "")
@@ -210,8 +212,10 @@ func TestPrecisePrefix_SampleConfigs(t *testing.T) {
 			config := strings.NewReplacer("${MODEL_NAME}", "test-model", "${VLLM_RENDER_URL}", "http://render.blis.local:8000",
 				"hf-repo/model-name", "test-model", "http://localhost:8000", "http://render.blis.local:8000").Replace(string(raw))
 			dep := testDeployment(2)
-			dep.KVCacheConfig = sim.NewKVCacheConfig(10000, tc.blockSize, 0, 0, 0, 0)
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(prefixGroups(2, 5, 128, 20000)), nil)
+			editEngine(&dep, func(c *cengine.SimConfig) {
+				c.KVCacheConfig = cengine.NewKVCacheConfig(10000, tc.blockSize, 0, 0, 0, 0)
+			})
+			cs := newCluster(dep, cluster.NewSliceRequestSource(prefixGroups(2, 5, 128, 20000)), nil)
 			cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 			err = cs.Run()
 			switch {
@@ -245,7 +249,7 @@ func TestPrecisePrefix_ClearIsOrderedWithDelayedBatches(t *testing.T) {
 	after := testRequests(1, 98, 0, 0)[0] // keeps the run going past the clear (deliveries are daemon events)
 	after.ID, after.ArrivalTime = "after", 6_000_000
 	reqs = append(reqs, late, after)
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", KVEventDelayUs: 1_900_000, EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
 	var victim cluster.InstanceID
 	var events []string
@@ -325,17 +329,17 @@ func TestPrecisePrefix_PerfHelmConfig(t *testing.T) {
 // offload chain), the router's index holds, per pod and per tier, exactly the blocks the engine
 // holds there: its GPU prefix cache, and the blocks ready on its CPU tier.
 func TestPrecisePrefix_IndexFollowsEveryTier(t *testing.T) {
-	offload := sim.KVOffloadConfig{
+	offload := cengine.KVOffloadConfig{
 		Enabled: true, CPUBytesToUse: 300 * 1000, PerBlockBytes: 1000,
 		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
 	}
-	for name, kv := range map[string]sim.KVCacheConfig{
-		"tiered":  sim.NewKVCacheConfig(120, 16, 300, 0.5, 1e6, 0),
-		"offload": sim.NewKVCacheConfig(120, 16, 0, 0, 0, 0, sim.WithKVOffload(offload)),
+	for name, kv := range map[string]cengine.KVCacheConfig{
+		"tiered":  cengine.NewKVCacheConfig(120, 16, 300, 0.5, 1e6, 0),
+		"offload": cengine.NewKVCacheConfig(120, 16, 0, 0, 0, 0, cengine.WithKVOffload(offload)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			dep := testDeployment(2)
-			dep.KVCacheConfig = kv
+			editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = kv })
 			run := runPrecise(t, dep, prefixGroups(10, 4, 256, 15000), preciseConfig(""), Options{})
 			cpuBlocks := 0
 			for _, inst := range run.cs.Instances() {
@@ -379,7 +383,7 @@ func TestPrecisePrefix_CachedBlockSurvivesCanonicalizerChurn(t *testing.T) {
 	again.ID, again.ArrivalTime = "again", 2_000_000
 	reqs = append(reqs, again)
 
-	cs := cluster.NewClusterSimulator(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
 	gw.canonCapacity = 40 // far below the chains the unique prompts introduce
 	var score string
@@ -420,8 +424,8 @@ func TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey(t *testing.T) {
 	reqs = append(reqs, probe("before", 2_500_000), probe("after", 4_500_000))
 
 	dep := testDeployment(1)
-	dep.KVCacheConfig = sim.NewKVCacheConfig(40, 16, 0, 0, 0, 0)
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(40, 16, 0, 0, 0, 0) })
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", KVEventDelayUs: delay, EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
 	gw.canonCapacity = 20
 	var prefixBlocks []string
@@ -475,18 +479,20 @@ func TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey(t *testing.T) {
 func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
 	for _, events := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enable_kv_events=%v", events), func(t *testing.T) {
-			off := sim.KVOffloadConfig{
+			off := cengine.KVOffloadConfig{
 				Enabled: true, CPUBytesToUse: 24 * 4096, PerBlockBytes: 4096,
 				BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
-				Tiers: []sim.KVOffloadTier{{
+				Tiers: []cengine.KVOffloadTier{{
 					Type: "fs", RootDir: "/mnt", NReadThreads: 4, NWriteThreads: 4, EnableKVEvents: events,
 					DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 				}},
 			}
 			dep := testDeployment(2)
-			dep.KVCacheConfig = sim.NewKVCacheConfig(64, 16, 0, 0, 0, 0, sim.WithKVOffload(off)) // small GPU
-			reqs := prefixGroups(16, 4, 48, 2000)                                                // 16 three-block prefixes, cycled 4 times
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+			editEngine(&dep, func(c *cengine.SimConfig) {
+				c.KVCacheConfig = cengine.NewKVCacheConfig(64, 16, 0, 0, 0, 0, cengine.WithKVOffload(off))
+			}) // small GPU
+			reqs := prefixGroups(16, 4, 48, 2000) // 16 three-block prefixes, cycled 4 times
+			cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 			gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
 			cpuGone := map[string]bool{} // instance+hash whose CPU copy the router saw removed
 			promoted := 0
@@ -577,8 +583,10 @@ func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
 // and no request is scored for a hit the engine would not take.
 func TestPrecisePrefix_NoEventsWithPrefixCachingDisabled(t *testing.T) {
 	dep := testDeployment(2)
-	dep.BatchConfig = sim.NewBatchConfig(256, 2048, 0, sim.WithPrefixCachingDisabled(true))
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(prefixGroups(2, 8, 256, 20000)), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) {
+		c.BatchConfig = cengine.NewBatchConfig(256, 2048, 0, cengine.WithPrefixCachingDisabled(true))
+	})
+	cs := newCluster(dep, cluster.NewSliceRequestSource(prefixGroups(2, 8, 256, 20000)), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+preciseConfig(""))})
 	delivered := 0
 	gw.observe = func(kind, detail string) {

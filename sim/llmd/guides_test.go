@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -52,7 +53,7 @@ func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 			if strings.Contains(config, "blockSizeTokens: 64") {
 				// The guide's engines use 64-token KV blocks; the router refuses a producer that
 				// cuts block keys at another size than the engines'.
-				dep.KVCacheConfig = sim.NewKVCacheConfig(10000, 64, 0, 0, 0, 0)
+				editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(10000, 64, 0, 0, 0, 0) })
 			}
 			labels := func(cluster.InstanceID, cluster.PoolRole) map[string]string { return nil }
 			if pd {
@@ -65,7 +66,7 @@ func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 			for _, r := range reqs {
 				r.Model = "test-model"
 			}
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 			gw := New(Options{Model: "test-model", PodLabels: labels,
 				EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)})
 			cs.SetGateway(gw)

@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"pgregory.net/rapid"
 )
 

@@ -2,8 +2,6 @@ package workload
 
 import (
 	"fmt"
-
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // SpecHasAdapterFields reports whether any client or cohort in the spec declares a
@@ -28,6 +26,17 @@ func SpecHasAdapterFields(spec *WorkloadSpec) bool {
 	return false
 }
 
+// AdapterRegistry is what the workload checks of a run's declared LoRA adapters: whether an id
+// is declared, and its declared base model. The run's adapter registry, which the engine owns,
+// satisfies it.
+type AdapterRegistry interface {
+	// Has reports whether an adapter id is registered.
+	Has(id string) bool
+	// BaseModelOf returns the declared base model of an adapter id (may be ""), and whether
+	// the id is registered.
+	BaseModelOf(id string) (string, bool)
+}
+
 // ValidateAdapterReferences cross-checks every adapter id referenced by the workload
 // spec (clients and cohorts) against the declared adapter registry (#1464, US1):
 //
@@ -42,7 +51,7 @@ func SpecHasAdapterFields(spec *WorkloadSpec) bool {
 //
 // This is a pure validation query (no mutation). The CLI boundary decides fatality
 // (cmd/ -> logrus.Fatalf); the library returns an error.
-func ValidateAdapterReferences(spec *WorkloadSpec, reg sim.AdapterRegistry) error {
+func ValidateAdapterReferences(spec *WorkloadSpec, reg AdapterRegistry) error {
 	if spec == nil {
 		return nil
 	}

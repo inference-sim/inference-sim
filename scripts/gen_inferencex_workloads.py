@@ -23,7 +23,7 @@ re-encodes it up to ten times to land on the target, and records the length it a
 tokenizer residual ("mismatch") is not in the measurements and is not modelled by this generator.
 It is instead reconstructed offline by scripts/inferencex_prompt_lengths.py at the point's pinned
 tokenizer revisions and verified: for every verified point the residual is zero, so the sent length
-equals the target this script emits. See sim/kernelmodel/harness/promptlengths.go and
+equals the target this script emits. See tools/harness/promptlengths.go and
 docs/kernel-exclusive/APPLES-TO-APPLES.md "The sent prompt lengths".
 
 Usage (numpy required; any version -- legacy RandomState streams are frozen by NEP 19):

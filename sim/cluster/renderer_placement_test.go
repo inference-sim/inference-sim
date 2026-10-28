@@ -1,23 +1,23 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // renderStages builds the cluster and returns each instance's render stage.
 func renderStages(t *testing.T, build func() DeploymentConfig) (*ClusterSimulator, []*sim.Renderer) {
 	t.Helper()
-	cs := NewClusterSimulator(build(), NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(build(), NewSliceRequestSource(nil), nil)
 	if cs.startupErr != nil {
 		t.Fatal(cs.startupErr)
 	}
 	out := make([]*sim.Renderer, len(cs.instances))
 	for i, inst := range cs.instances {
-		out[i] = inst.sim.Renderer()
+		out[i] = inst.drv.Renderer()
 	}
 	return cs, out
 }
@@ -74,9 +74,9 @@ func TestRenderStage_AReplicaRendersOnItsDPServers(t *testing.T) {
 		cfg := newTestDeploymentConfig(2)
 		cfg.DPLockstepRanks = 2
 		cfg.Frontend = sim.FrontendConfig{RendererNumWorkers: 1, APIServerCount: apiServers}
-		cfg.LatencyModel = queueingFake(render)
+		editEngine(&cfg, func(c *simConfig) { c.LatencyModel = queueingFake(render) })
 		reqs := []*sim.Request{dpReq("a", 0, 64, 4), dpReq("b", 0, 64, 4)}
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
+		cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
 		mustRun(t, cs)
 		var out []float64
 		for _, inst := range cs.instances {
@@ -102,8 +102,8 @@ func TestRenderStage_AReplicaRendersOnItsDPServers(t *testing.T) {
 }
 
 // queueingFake is testFakeLatency with an admission overhead of ticks per request.
-func queueingFake(ticks int64) sim.LatencyModel {
+func queueingFake(ticks int64) cengine.LatencyModel {
 	c := testutil.DefaultFakeLatency()
 	c.QueueingTicks = ticks
-	return fakelatency.WithCoeffs(c)
+	return fakeLatencyWithCoeffs(c)
 }

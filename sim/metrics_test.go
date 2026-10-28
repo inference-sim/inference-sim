@@ -312,9 +312,9 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 		&Request{ID: "r1", InputTokens: make([]TokenID, 5), OutputTokens: make([]TokenID, 10)},
 		0,
 	)
-	m.RequestTTFTs["r1"] = 10000.0  // 10000 ticks = 10 ms
-	m.RequestE2Es["r1"] = 50000.0   // 50000 ticks = 50 ms
-	m.RequestITLs["r1"] = 5000.0    // 5000 ticks = should be 5 ms
+	m.RequestTTFTs["r1"] = 10000.0         // 10000 ticks = 10 ms
+	m.RequestE2Es["r1"] = 50000.0          // 50000 ticks = 50 ms
+	m.RequestITLs["r1"] = 5000.0           // 5000 ticks = should be 5 ms
 	m.RequestSchedulingDelays["r1"] = 2000 // 2000 ticks = should be 2 ms
 	m.AllITLs = []int64{5000}
 

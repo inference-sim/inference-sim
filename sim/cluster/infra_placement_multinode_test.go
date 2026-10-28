@@ -8,6 +8,7 @@ package cluster
 import (
 	"bytes"
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"sort"
 	"strings"
 	"testing"
@@ -153,8 +154,8 @@ func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	prefillTP := 4
-	cfg.PrefillOverrides = PoolOverrides{TP: &prefillTP} // diverges from global TP=8
-	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	editPrefill(&cfg, func(c *simConfig) { c.TP = prefillTP }) // diverges from global TP=8
+	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 }
 
 // TestNewClusterSimulator_RejectsDecodeTPWithNodePools (round-5 IMP-1, decode path):
@@ -175,8 +176,8 @@ func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	decodeTP := 16
-	cfg.DecodeOverrides = PoolOverrides{TP: &decodeTP} // diverges from global TP=8
-	_ = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	editDecode(&cfg, func(c *simConfig) { c.TP = decodeTP }) // diverges from global TP=8
+	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 }
 
 // TestNewClusterSimulator_PerRoleTPEqualToGlobalOK (round-8 M-5): the per-role-TP guard
@@ -190,8 +191,8 @@ func TestNewClusterSimulator_PerRoleTPEqualToGlobalOK(t *testing.T) {
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 8
 	sameTP := 8
-	cfg.PrefillOverrides = PoolOverrides{TP: &sameTP}               // equal to global — must be accepted
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil) // must not panic
+	editPrefill(&cfg, func(c *simConfig) { c.TP = sameTP })    // equal to global — must be accepted
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil) // must not panic
 	if len(cs.instances) != 1 {
 		t.Fatalf("expected 1 placed instance, got %d", len(cs.instances))
 	}
@@ -644,7 +645,7 @@ func TestStartupPlacement_SpanningInstanceCost(t *testing.T) {
 	// TP=16 forces the single startup instance to span both 8-GPU nodes.
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 16
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 
 	if len(cs.instances) != 1 {
 		t.Fatalf("expected 1 placed instance, got %d", len(cs.instances))
@@ -671,7 +672,7 @@ func TestStartupPlacement_UnplacedEmitsOneSummaryWarning(t *testing.T) {
 	cfg.TP = 12 // 12 > 8 and 12 % 8 != 0 → structurally unsatisfiable on this pool
 	var cs *ClusterSimulator
 	out := captureLogWarn(t, func() {
-		cs = NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		cs = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 	})
 	if len(cs.instances) != 0 {
 		t.Fatalf("expected 0 placed instances (tp=12 unsatisfiable), got %d", len(cs.instances))
@@ -701,7 +702,7 @@ func TestDeferredPlacement_SpanningInstanceCost(t *testing.T) {
 	}
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.TP = 16
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 	if len(cs.instances) != 0 {
 		t.Fatalf("precondition: expected 0 instances before nodes ready (InitialNodes=0), got %d", len(cs.instances))
 	}
@@ -734,7 +735,7 @@ func TestAutoscalerScaleUp_SpanningInstanceCost(t *testing.T) {
 	cfg := deploymentForPlacement(1, pools, 9999)
 	cfg.Model = "test-model"
 	cfg.TP = 16
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 	for _, inst := range cs.instances {
 		if err := cs.placement.ReleaseInstance(inst.ID()); err != nil {
 			t.Fatalf("release startup instance: %v", err)
@@ -767,7 +768,7 @@ func TestRetryPendingInstances_SpanningPlacement(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{
 		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 0, MinNodes: 0, MaxNodes: 2, GPUMemoryGiB: 80},
 	})
-	pm.AddPending("inst-0", "model-a", "H100", 16, sim.SimConfig{})
+	pm.AddPending("inst-0", "model-a", "H100", 16, sim.InstanceConfig{})
 
 	// First node ready: still cannot span (needs 2 whole nodes).
 	n0, _ := pm.ProvisionNode("h100", 0)
@@ -829,16 +830,17 @@ func TestReleaseInstance_SingleNodeStillFires(t *testing.T) {
 // KV capacity, for exercising the placement paths. numInstances instances are placed by
 // first-fit.
 func deploymentForPlacement(numInstances int, pools []NodePoolConfig, globalBlocks int64) DeploymentConfig {
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	return func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             1_000_000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(globalBlocks, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(globalBlocks, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(8, 2048, 0),
 			LatencyModel:        testFakeZeroQueueing(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances: numInstances,
-		NodePools:    pools,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = numInstances
+		d.NodePools = pools
+		return d
+	}()
 }

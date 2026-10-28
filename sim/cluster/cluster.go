@@ -4,11 +4,9 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"reflect"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kvtransfer"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -85,21 +83,19 @@ type ClusterSimulator struct {
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
-	pdLinks       *kvtransfer.LinkArbiter
-	pdLinkFlows   map[kvtransfer.FlowID]*ParentRequest
+	pdLinks       *LinkArbiter
+	pdLinkFlows   map[FlowID]*ParentRequest
 	pdLinkWakeGen int64
 	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
 	// heldKVPeakTokens is each instance's peak of distinct held tokens.
-	prefillHolds map[string][]int64
-	// decodeKVWaiters are, per decode instance, the handoffs waiting for decode KV (FCFS).
-	decodeKVWaiters map[string][]decodeKVWaiter
-	// pullFirstStepBlocks are, per decode instance, the first-step blocks of its pulls in flight
-	// (sim.Simulator.FirstDecodeStepBlocks): part of the reservation new pulls leave free.
-	pullFirstStepBlocks map[string]int64
-	heldBlockRefs       map[string]map[int64]int
-	heldKVPeakTokens    map[string]int64
+	prefillHolds     map[string][]int64
+	heldBlockRefs    map[string]map[int64]int
+	heldKVPeakTokens map[string]int64
+	// remotePulls are the handoffs an engine driven through engine.Engine holds before it starts
+	// their pull, by decode sub-request ID (startPull).
+	remotePulls map[string]*ParentRequest
 
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
@@ -120,6 +116,10 @@ type ClusterSimulator struct {
 	// its replica; both nil when every instance is an independent engine.
 	dpReplicas []*dpReplica
 	replicaOf  map[string]*dpReplica
+
+	// liveBuilt counts the instances built while the cluster runs (addLiveInstance), which take
+	// engine-factory indices past the deployment's NumInstances.
+	liveBuilt int
 	// Scratch for the event loop's per-event bookkeeping, reused to avoid an allocation
 	// per event.
 	memberScratch  [1]*InstanceSimulator
@@ -204,12 +204,6 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.EncodeInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
-		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: %v", err))
-		}
-		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: %v", err))
-		}
 	}
 
 	// A KV handoff is priced by the latency backend (DeploymentConfig.PDTransferTime); the
@@ -280,11 +274,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
-		cs.decodeKVWaiters = make(map[string][]decodeKVWaiter)
-		cs.pullFirstStepBlocks = make(map[string]int64)
 		if config.PDTransferContention {
-			cs.pdLinks = kvtransfer.NewLinkArbiter()
-			cs.pdLinkFlows = make(map[kvtransfer.FlowID]*ParentRequest)
+			cs.pdLinks = NewLinkArbiter()
+			cs.pdLinkFlows = make(map[FlowID]*ParentRequest)
 		}
 		cs.heldBlockRefs = make(map[string]map[int64]int)
 		cs.heldKVPeakTokens = make(map[string]int64)
@@ -293,9 +285,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
 
 		// Issue #1276 D-2: shared-role pods resolve config via decode-wins precedence.
-		// Warn when PrefillOverrides would have been applicable but is silently discarded.
-		if config.SharedInstances > 0 && !reflect.DeepEqual(config.PrefillOverrides, config.DecodeOverrides) {
-			logrus.Infof("[cluster] shared-role pods use DecodeOverrides (PrefillOverrides ignored per PR1276 decode-wins rule)")
+		// Note when the prefill pool's own configuration would have applied but is discarded.
+		if config.SharedInstances > 0 && config.Roles.Prefill != nil && config.Roles.Prefill != config.Roles.Decode {
+			logrus.Infof("[cluster] shared-role pods use the decode pool's configuration (the prefill pool's is ignored per PR1276 decode-wins rule)")
 		}
 	}
 
@@ -304,7 +296,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	if len(config.NodePools) > 0 {
 		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
 		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
-		// override (PoolOverrides.TP, from a P/D scenario's per-pool parallelism) would make the simulated TP diverge
+		// (a P/D pool's own, from its scenario pool's parallelism) would make the simulated TP diverge
 		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
 		// capacity. Per-role placement does not exist yet, so reject the combination
 		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
@@ -312,13 +304,13 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		// placement path) is tracked by #1543.
 		for _, ov := range []struct {
 			name string
-			po   PoolOverrides
-		}{{"prefill", config.PrefillOverrides}, {"decode", config.DecodeOverrides}} {
-			if ov.po.TP != nil && *ov.po.TP != config.TP {
+			cfg  *sim.InstanceConfig
+		}{{"prefill", config.Roles.Prefill}, {"decode", config.Roles.Decode}} {
+			if ov.cfg != nil && ov.cfg.TP != config.TP {
 				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
 					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
 					"TP would be simulated at one degree but placed/billed at another. Use a uniform TP across pools, or drop node_pools.",
-					ov.name, *ov.po.TP, config.TP))
+					ov.name, ov.cfg.TP, config.TP))
 			}
 		}
 		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
@@ -379,7 +371,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			}
 			// Record how many nodes this instance spans, for the trace header (#1530).
 			cs.recordNodeSpan(gpuIDs)
-			inst := NewInstanceSimulator(id, simCfg)
+			inst := cs.buildInstance(idx, id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
@@ -407,11 +399,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		} else {
-			// No NodePools: the CLI --gpu flag (config.ModelHardwareConfig.GPU, accessed via
-			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
-			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
-			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
-			inst := NewInstanceSimulator(id, simCfg)
+			// No NodePools: the CLI --gpu flag (config.GPU) is the authoritative source
+			// (backward-compat); resolveConfigForRole keeps it for the default role.
+			inst := cs.buildInstance(idx, id, simCfg)
 			inst.Model = config.Model
 			if config.ScenarioEndpointTopology != nil {
 				inst.endpointTopology = config.ScenarioEndpointTopology(id)
@@ -489,10 +479,26 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	return cs
 }
 
+// buildInstance builds instance id's engine through the deployment's engine factory
+// (DeploymentConfig.NewEngine), from its configuration resolved for its pool role, and wraps it
+// in the cluster's instance. Every instance's engine is built this way, at startup and when the
+// autoscaler or a node coming up adds one; index is its position among the deployment's
+// instances, which the factory may group by (a data-parallel replica's ranks).
+func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.InstanceConfig) *InstanceSimulator {
+	if cs.config.NewEngine == nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: DeploymentConfig.NewEngine is nil, and every instance's engine is built through it", id))
+	}
+	drv, err := cs.config.NewEngine(index, cfg)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", id, err))
+	}
+	return NewEngineInstance(id, cfg, drv)
+}
+
 // wireInstance connects an instance's request lifecycle to the gateway and to session
 // follow-ups. Follow-ups route through the cluster pipeline, never injected locally (BC-9).
 func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
-	inst.sim.OnFirstToken = func(req *sim.Request, at int64) {
+	onFirstToken := func(req *sim.Request, at int64) {
 		if parent := cs.parentOf(req); parent != nil {
 			// A disaggregated response streams from the decode instance.
 			if req.IsDecodeSubRequest && parent.OriginalRequest != nil {
@@ -502,7 +508,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		}
 		cs.gateway.OnFirstToken(req, at)
 	}
-	inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+	onRequestDone := func(req *sim.Request, tick int64) []*sim.Request {
 		if parent := cs.parentOf(req); parent != nil {
 			// Decode completions report in detectDecodeCompletions, at parent granularity; a
 			// prefill that does not complete ends its parent here.
@@ -520,6 +526,8 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		}
 		return nil // don't inject locally — route through cluster pipeline
 	}
+	inst.SetCallbacks(onFirstToken, onRequestDone)
+	inst.setPullStarted(cs.startPull)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)
@@ -769,13 +777,11 @@ func (c *ClusterSimulator) Run() error {
 
 			ev := inst.ProcessNextEvent()
 
-			// If ProcessNextEvent() skipped a cancelled TimeoutEvent or a superseded
-			// idle-wake StepEvent (lazy cancellation — inst.Clock was not advanced),
-			// restore c.clock. A no-op event must not advance the cluster clock.
-			if te, ok := ev.(*sim.TimeoutEvent); ok && te.Request.State == sim.StateCompleted {
-				c.clock = prevClusterClock
-			}
-			if se, ok := ev.(*sim.StepEvent); ok && se.Cancelled() {
+			// If ProcessNextEvent() skipped a superseded wake or the timeout of a request that
+			// already completed (lazy cancellation: the instance clock was not advanced), restore
+			// c.clock. A no-op event must not advance the cluster clock (sim.EngineDriver reports
+			// its own dropped events).
+			if sk, ok := ev.(interface{ Skipped() bool }); ok && sk.Skipped() {
 				c.clock = prevClusterClock
 			}
 
@@ -958,7 +964,6 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 		}
 		if role.Has(PoolRoleDecode) {
 			c.detectDecodeCompletions(inst)
-			c.admitDecodeKVIfIdle(inst, c.clock)
 		}
 	}
 }
@@ -1153,13 +1158,16 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 func (cs *ClusterSimulator) addLiveInstance(
 	id InstanceID,
 	model string,
-	simCfg sim.SimConfig,
+	simCfg sim.InstanceConfig,
 	nodeID string,
 	gpuIDs []string,
 	tpDegree int,
 	costPerHour float64,
 ) bool {
-	inst := NewInstanceSimulator(id, simCfg)
+	// A live instance's engine is built as a startup one's is, at the next index past every
+	// instance the cluster has built.
+	cs.liveBuilt++
+	inst := cs.buildInstance(cs.config.NumInstances+cs.liveBuilt-1, id, simCfg)
 	inst.Model = model
 	inst.nodeID = nodeID
 	inst.allocatedGPUIDs = gpuIDs
@@ -2042,14 +2050,41 @@ func pdParentTerminal(parent *ParentRequest) bool {
 // ServerSeries is the per-engine server time series of every instance, one engine per
 // instance as vLLM labels one per EngineCore; nil when the feature is off.
 func (c *ClusterSimulator) ServerSeries() *sim.ServerSeriesOutput {
-	ids := make([]string, 0, len(c.instances))
-	sims := make([]*sim.Simulator, 0, len(c.instances))
+	driven := make([]*InstanceSimulator, 0, len(c.instances))
 	for _, inst := range c.instances {
-		if inst.sim == nil {
+		if inst.drv != nil {
+			driven = append(driven, inst)
+		}
+	}
+	return serverSeriesOfEngines(driven)
+}
+
+// serverSeriesOfEngines joins the server time series of engine-driven instances into one block,
+// every engine binned to the latest instant any of them recorded or reached (each instance's
+// clock), as the compatibility engine's own report bins them; nil when none records one.
+func serverSeriesOfEngines(insts []*InstanceSimulator) *sim.ServerSeriesOutput {
+	var interval, end int64
+	for _, inst := range insts {
+		if iv, e := inst.drv.ServerSeriesSpan(); iv > 0 {
+			interval, end = iv, max(end, e, inst.drv.Clock)
+		}
+	}
+	if interval <= 0 {
+		return nil
+	}
+	var out *sim.ServerSeriesOutput
+	for _, inst := range insts {
+		block, err := inst.drv.ServerSeriesBlock(string(inst.ID()), end)
+		if err != nil {
+			panic(fmt.Sprintf("instance %s: %v", inst.ID(), err))
+		}
+		if block == nil {
 			continue
 		}
-		ids = append(ids, string(inst.ID()))
-		sims = append(sims, inst.sim)
+		if out == nil {
+			out = &sim.ServerSeriesOutput{IntervalS: block.IntervalS, Origin: block.Origin}
+		}
+		out.Engines = append(out.Engines, block.Engines...)
 	}
-	return sim.BuildServerSeries(ids, sims)
+	return out
 }

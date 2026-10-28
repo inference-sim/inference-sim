@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -30,8 +32,8 @@ func TestFastForwardIdle_IsExact(t *testing.T) {
 			run := func(neverSkip bool) (map[string]string, map[string]float64, map[string]float64) {
 				reqs := burstsWithGaps()
 				dep := testDeployment(3)
-				dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-				cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+				editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+				cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 				flags := DefaultEPPFlags()
 				if cfg != "" {
 					flags = append(flags, "--allow-experimental-plugins", "--config-text="+cfg)
@@ -90,8 +92,8 @@ func checkStatefulUsageLimitExact(t *testing.T, extraFlags []string) {
 			}
 		}
 		dep := testDeployment(2)
-		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		gw := New(Options{
 			Model:        "test-model",
 			EPPFlags:     append([]string{"--pool-name=vllm", "--allow-experimental-plugins", "--config-text=" + softCeilingConfig}, extraFlags...),

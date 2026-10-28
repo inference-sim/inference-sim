@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // CLI-level contracts for #1770: a real `blis run` / `blis replay` resolves a
@@ -17,7 +17,7 @@ import (
 //	BC-7  INV-6 — an offload run naming a device_class is unchanged by the cutover: two
 //	      catalogs holding the same device table produce byte-identical stdout, and the
 //	      numbers that reach the simulation are the catalog's (observable in the exported
-//	      trace header, which is written from the resolved sim.KVOffloadConfig).
+//	      trace header, which is written from the resolved kvOffloadConfig).
 //	BC-8  INV-13 — run and replay share resolveKVOffloadConfig, so replaying a trace with
 //	      the same --kv-offload-config succeeds: on replay the header is authoritative and
 //	      a flag that resolves to different numbers is refused, so a PASS here can only
@@ -183,7 +183,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 
 	// The resolved numbers reach the simulation: the exported header is written from the
-	// resolved sim.KVOffloadConfig.
+	// resolved kvOffloadConfig.
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
 		t.Fatalf("export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
@@ -312,5 +312,61 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	if out, errOut, err := runDevicesCLILeg(t, name, "run", restored, offload, ""); err != nil {
 		t.Errorf("negative control: the same run with a device table present must succeed: %v\nstdout:\n%s\nstderr:\n%s",
 			err, out, errOut)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The engine's offload resolution reaches the CLI's fatal exit with its message
+// ---------------------------------------------------------------------------
+
+// TestRunCmd_KVOffloadRefusalsReachTheCLI: the KV offload configuration is resolved by the
+// engine (blis-vllm compat/build, called from cmd/engine_build.go), and each kind of refusal
+// ends `blis run` with it on stderr, naming what to fix: a malformed storage-device table (the
+// kernel reads the catalog first, so its decoding error names the file), a device_class the
+// table does not define, an invalid kv_offload block, and a tier stating its own physics. A
+// refusal is never a silent fallback. The messages are the ones the CLI gave before the move.
+func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
+	if devicesCLISubprocess() {
+		return
+	}
+	const name = "TestRunCmd_KVOffloadRefusalsReachTheCLI"
+	good := "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n"
+	write := func(body string) string {
+		p := filepath.Join(t.TempDir(), "offload.yaml")
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	malformed := newDeviceCatalog(t, good)
+	if err := os.WriteFile(catalogStorageDevicesPath(malformed), []byte("nvme_gen4: {read_bandwidth_mb_s: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, catalog, offload string
+		want                   []string
+	}{
+		{"a malformed device table", malformed, writeOffloadConfigWithClass(t, "nvme_gen4"),
+			[]string{"decoding " + catalogStorageDevicesPath(malformed), "did not find expected node content"}},
+		{"an unknown device class", newDeviceCatalog(t, good), writeOffloadConfigWithClass(t, "floppy"),
+			[]string{`device_class=\"floppy\" is not defined in the catalog storage-device table`, "known: cpu_dram, nvme_gen4"}},
+		{"an invalid kv_offload block", newDeviceCatalog(t, good),
+			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  store_threshold: 3\n"),
+			[]string{"--kv-offload-config", "store_threshold=3"}},
+		{"explicit tier physics", newDeviceCatalog(t, good),
+			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n    - type: fs\n      root_dir: /mnt/kv\n      direct_io: true\n      device_class: nvme_gen4\n      read_bandwidth: 1.0\n"),
+			[]string{"states read_bandwidth, write_bandwidth or base_latency", "drop the explicit physics"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stdout, stderr, err := runDevicesCLILeg(t, name, "run", c.catalog, c.offload, "")
+			if err == nil {
+				t.Fatalf("the run must be refused:\n%s", stdout)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(stderr, w) {
+					t.Errorf("stderr must contain %q:\n%s", w, lastLines(stderr, 3))
+				}
+			}
+		})
 	}
 }

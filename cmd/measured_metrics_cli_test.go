@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -194,5 +195,55 @@ func TestLoadSimCacheHitRate_AddsTheCPUTierForATieredObservation(t *testing.T) {
 		if err != nil || got == nil || math.Abs(*got-want) > 1e-12 {
 			t.Errorf("source %s: %v (err %v), want %v", source, got, err, want)
 		}
+	}
+}
+
+// The results file's prefix_cache block is each pool's prefix-hit resolution as the engine model
+// gives it (build.PrefixHitOf), --swa-bounded-replay included: DeepSeek-V4.1's bounded replay on
+// by vLLM v0.31.0's default (a replay window), and off by the flag (the window group instead).
+func TestMetricsPath_PrefixCacheIsTheModelsResolution(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	m, err := kernelmodel.Open(dsparkScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	for _, c := range []struct {
+		flags    []string
+		override *bool
+		from     string
+	}{
+		{nil, nil, "v0.31.0 default"},
+		{[]string{"--swa-bounded-replay", "false"}, &off, "--swa-bounded-replay"},
+	} {
+		path := filepath.Join(t.TempDir(), "metrics.json")
+		args := append([]string{"run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
+			"--num-requests", "5", "--rate", "2", "--seed", "4", "--speculative-acceptance-length", "3.2",
+			"--metrics-path", path}, c.flags...)
+		if _, stderr, err := runKernelCLI(t, args...); err != nil {
+			t.Fatalf("run %v: %v\n%s", c.flags, err, lastLines(stderr, 5))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var file struct {
+			PrefixCache map[string]sim.PrefixCacheRecord `json:"prefix_cache"`
+		}
+		if err := json.Unmarshal(data, &file); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := file.PrefixCache["colocated"]
+		if !ok {
+			t.Fatalf("flags %v: no colocated prefix_cache record in %s", c.flags, data)
+		}
+		want := m.PrefixHit(c.override)
+		if got.Layout != sim.KVPrefixHit(want.Hit) || got.ModelRunner != want.Runner || got.SWABoundedReplayFrom != c.from ||
+			got.SWABoundedReplay == nil || want.BoundedReplay == nil || *got.SWABoundedReplay != *want.BoundedReplay {
+			t.Errorf("flags %v: recorded %+v, want the model's %+v from %q", c.flags, got, want, c.from)
+		}
+	}
+	if def, offR := m.PrefixHit(nil), m.PrefixHit(&off); def.Hit == offR.Hit {
+		t.Fatal("non-vacuity: the bounded replay must change DeepSeek-V4.1's layout")
 	}
 }

@@ -1,164 +1,18 @@
 package cluster
 
 import (
-	"fmt"
-
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.
-// Nil pointer / empty string means "use global config" for that field.
-// Pointer types for TP, MaxModelLen, TotalKVBlocks to distinguish "not set" (nil = use
-// global) from an explicit value. The CLI fills them from each P/D pool's kernel
-// (TotalKVBlocks is the kernel's per-rank budget).
-//
-// Contract for library callers constructing PoolOverrides directly (bypassing CLI):
-// - *TP must be > 0 when non-nil
-// - *MaxModelLen must be > 0 when non-nil
-type PoolOverrides struct {
-	TP            *int   // tensor parallelism (nil = use global)
-	GPU           string // GPU type ("" = use global)
-	MaxModelLen   *int64 // max sequence length (nil = use global)
-	TotalKVBlocks *int64 // KV blocks (nil = use global; set by the CLI from the kernel)
-
-	// LatencyModel prices this pool's steps (nil = use global). A disaggregated deployment
-	// runs a different engine per role -- its own parallelism, token budget and graph mode
-	// -- so each role is priced by the kernel for its own pool rather than by one copied to
-	// every pool.
-	LatencyModel sim.LatencyModel
-	// MaxNumSeqs, MaxNumBatchedTokens and PrefixCachingDisabled are the pool's own engine
-	// admission settings (nil = use global), for the same reason.
-	MaxNumSeqs            *int64
-	MaxNumBatchedTokens   *int64
-	PrefixCachingDisabled *bool
-
-	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
-	// the run's one tier description, sized by the pool's bytes per block and priced by its
-	// own kernel, since pools of different widths hold different bytes per block.
-	KVOffload               *sim.KVOffloadConfig
-	KVTransferTicksPerBlock *int64
-	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
-	// different widths hold different state per sequence and per block (#1941).
-	SequenceState *sim.KVSequenceState
-	// PrefixHit is how the pool's KV cache groups cut a prefix hit (nil = use global).
-	PrefixHit *sim.KVPrefixHit
-
-	// Scheduler and PreemptionPolicy are the pool's own engine scheduling policy ("" = use
-	// global): each P/D pool's engine states its own vLLM scheduling_policy, which decides both
-	// its queue order and its preemption victim.
-	Scheduler        string
-	PreemptionPolicy string
-
-	// LongPrefillTokenThreshold is the pool engine's long_prefill_token_threshold (nil = use
-	// global; blis-schemas#75), and DPLoadBalancing its data_parallel_load_balancing mode
-	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
-	LongPrefillTokenThreshold *int64
-	DPLoadBalancing           string
+// PoolRoleConfigs are a disaggregated deployment's per-role instance configurations: the
+// engine configuration each P/D pool's instances are built with (its own parallelism, KV pool,
+// token budget, scheduling policy and latency model) beside the host settings the cluster reads
+// (GPU, TP, MaxNumSeqs). The build site resolves them from each pool's own engine; nil uses the
+// deployment's global configuration for that role (BC-P2-1).
+type PoolRoleConfigs struct {
+	Prefill *sim.InstanceConfig
+	Decode  *sim.InstanceConfig
 }
 
-// Validate checks that non-nil pointer fields satisfy their constraints (R3).
-// name is used in error messages (e.g., "prefill pool" or "decode pool").
-// Library callers that construct PoolOverrides directly (bypassing CLI validation)
-// should call Validate before passing overrides to DeploymentConfig.
-func (o PoolOverrides) Validate(name string) error {
-	if o.TP != nil && *o.TP <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.TP must be > 0 when set, got %d", name, *o.TP)
-	}
-	if o.MaxModelLen != nil && *o.MaxModelLen <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.MaxModelLen must be > 0 when set, got %d", name, *o.MaxModelLen)
-	}
-	if o.TotalKVBlocks != nil && *o.TotalKVBlocks <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.TotalKVBlocks must be > 0 when set, got %d", name, *o.TotalKVBlocks)
-	}
-	if o.MaxNumSeqs != nil && *o.MaxNumSeqs <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.MaxNumSeqs must be > 0 when set, got %d", name, *o.MaxNumSeqs)
-	}
-	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
-	}
-	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
-		return fmt.Errorf("%s: PoolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
-	}
-	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
-		return fmt.Errorf("%s: PoolOverrides.SequenceState needs both Hold and Gate, or neither", name)
-	}
-	if o.LongPrefillTokenThreshold != nil && *o.LongPrefillTokenThreshold < 0 {
-		return fmt.Errorf("%s: PoolOverrides.LongPrefillTokenThreshold must be >= 0 when set, got %d", name, *o.LongPrefillTokenThreshold)
-	}
-	if !IsValidDPLoadBalancing(o.DPLoadBalancing) {
-		return fmt.Errorf("%s: PoolOverrides.DPLoadBalancing %q is not internal, hybrid or external", name, o.DPLoadBalancing)
-	}
-	if o.KVOffload != nil && o.KVOffload.IsEnabled() && o.KVOffload.PerBlockBytes <= 0 {
-		return fmt.Errorf("%s: PoolOverrides.KVOffload must state PerBlockBytes > 0 when enabled, got %d", name, o.KVOffload.PerBlockBytes)
-	}
-	return nil
-}
-
-// IsEmpty returns true when no overrides are set.
-func (o PoolOverrides) IsEmpty() bool {
-	return o.TP == nil && o.GPU == "" &&
-		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
-		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
-		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
-		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
-		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
-}
-
-// ResolvePoolConfig applies per-pool overrides to a global SimConfig.
-// Returns a new SimConfig with overridden fields; the global config is not mutated.
-//
-// Struct-copy safety: ModelConfig is a pure value type (safe to copy).
-// SLOPriorityOverrides is a map[string]int that shares its backing map across copies.
-// Safe because NewSLOPriorityMap only reads the map (for range), never mutates. The
-// per-pool LatencyModel is shared by reference: the kernel adapter is read-only once built.
-func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimConfig {
-	resolved := global // struct copy
-
-	if overrides.TP != nil {
-		resolved.TP = *overrides.TP
-	}
-	if overrides.GPU != "" {
-		resolved.GPU = overrides.GPU
-	}
-	if overrides.MaxModelLen != nil {
-		resolved.MaxModelLen = *overrides.MaxModelLen
-	}
-	if overrides.TotalKVBlocks != nil {
-		resolved.TotalKVBlocks = *overrides.TotalKVBlocks
-	}
-	if overrides.LatencyModel != nil {
-		resolved.LatencyModel = overrides.LatencyModel
-	}
-	if overrides.MaxNumSeqs != nil {
-		resolved.MaxNumSeqs = *overrides.MaxNumSeqs
-	}
-	if overrides.MaxNumBatchedTokens != nil {
-		resolved.MaxNumBatchedTokens = *overrides.MaxNumBatchedTokens
-	}
-	if overrides.PrefixCachingDisabled != nil {
-		resolved.PrefixCachingDisabled = *overrides.PrefixCachingDisabled
-	}
-	if overrides.KVOffload != nil {
-		resolved.Offload = *overrides.KVOffload
-	}
-	if overrides.KVTransferTicksPerBlock != nil {
-		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
-	}
-	if overrides.SequenceState != nil {
-		resolved.SequenceState = *overrides.SequenceState
-	}
-	if overrides.PrefixHit != nil {
-		resolved.PrefixHit = *overrides.PrefixHit
-	}
-	if overrides.Scheduler != "" {
-		resolved.Scheduler = overrides.Scheduler
-	}
-	if overrides.PreemptionPolicy != "" {
-		resolved.PreemptionPolicy = overrides.PreemptionPolicy
-	}
-	if overrides.LongPrefillTokenThreshold != nil {
-		resolved.LongPrefillTokenThreshold = *overrides.LongPrefillTokenThreshold
-	}
-
-	return resolved
-}
+// IsEmpty reports whether no role has a configuration of its own.
+func (p PoolRoleConfigs) IsEmpty() bool { return p.Prefill == nil && p.Decode == nil }

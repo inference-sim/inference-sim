@@ -26,7 +26,7 @@ func TestGateway_TopologyStampSelectedPrefiller(t *testing.T) {
 				"instance_0": {Hostname: "prefill-a", Rack: "rack-a", NodeCount: 1},
 				"instance_1": {Hostname: "decode-b", Rack: "rack-b", NodeCount: 1},
 			})
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
 			gw := New(Options{Model: "test-model", PodLabels: roleLabels,
 				Manifests: []byte(declaredNode("prefill-a", "zone-a", "region-a") + declaredNode("decode-b", "zone-b", "region-b")),
 				EPPFlags:  append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+stampPDConfig(tc.skipPrefill))})

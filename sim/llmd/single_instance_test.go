@@ -14,7 +14,7 @@ import (
 func TestSingleInstance_RouterDoesNotChangeLatency(t *testing.T) {
 	direct := func() (map[string]float64, map[string]float64) {
 		reqs := testRequests(200, 21, 700, 48)
-		inst := cluster.NewInstanceSimulator("instance_0", testDeployment(1).SimConfig)
+		inst := newCompatInstance("instance_0", testDeployment(1).InstanceConfig)
 		for _, r := range reqs {
 			inst.InjectRequest(r)
 		}
@@ -26,7 +26,7 @@ func TestSingleInstance_RouterDoesNotChangeLatency(t *testing.T) {
 	for name, cfg := range map[string]string{"default": "", "scorers": pdSingleProfileConfig, "random-picker": randomPickerConfig} {
 		t.Run(name, func(t *testing.T) {
 			reqs := testRequests(200, 21, 700, 48)
-			cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+			cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
 			flags := DefaultEPPFlags()
 			if cfg != "" {
 				flags = append(flags, "--config-text="+cfg)

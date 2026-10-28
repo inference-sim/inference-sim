@@ -23,9 +23,9 @@ import "fmt"
 // QueueingTicks + QueueingPerInputTokenTicks * InputLen; the other two hooks are the
 // constants OutputTokenProcessingTicks and PostDecodeOverheadTicks.
 //
-// This package cannot import sim (sim's own internal tests import it), so the
-// sim.LatencyModel adapters live in sim/internal/testutil/fakelatency (for every
-// package other than sim) and in sim's test files (for package sim).
+// This package cannot import sim (sim's own internal tests import it), so the latency-model
+// adapters live in each test package's own files (fake_latency_engine_test.go), which may name
+// the engine's LatencyModel.
 type FakeLatency struct {
 	BaseTicks                  int64 // fixed per-step cost
 	PerScheduledTokenTicks     int64 // per token scheduled this step (prefill chunk or decode)

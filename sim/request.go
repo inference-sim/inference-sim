@@ -1,22 +1,32 @@
+// Moved from blis-vllm/compat/engine/request.go at 6b1d026, the host's own: the 0.29/0.31
+// compatibility engine now runs behind engine.Engine (blis-vllm compat/contract), and these are
+// the host's records, not the engine's (phase 2c).
+
 // Defines the Request struct that models an individual inference request in the simulation.
 // Tracks arrival time, input/output tokens, progress, and timestamps for TTFT/TPOT.
-
 package sim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
-
-	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
 )
 
-// TokenID is the simulator's compact representation of a tokenizer ID.
-// Re-exported from sim/internal/tokenid as an alias at the package boundary,
-// so callers write sim.TokenID. The underlying type (tokenid.TokenID) is a
-// defined type (NOT a Go type alias of int32), so assignments from int still
-// require an explicit conversion — the compile-time mixed-arithmetic check
-// is the point.
-type TokenID = tokenid.TokenID
+// TokenID is the simulator's compact representation of a tokenizer ID. It is a defined type
+// (NOT a Go type alias of int32), so assignments from int still require an explicit
+// conversion — the compile-time mixed-arithmetic check is the point. The engine sees token
+// IDs as int32 (engine.Request.Prompt); the driver converts at its edge.
+type TokenID int32
+
+// MaxTokenID is the largest token ID a generated request carries (exclusive).
+const MaxTokenID = 128000
+
+// Compile-time guard: MaxTokenID must fit in TokenID's underlying int32 range.
+// If MaxTokenID is ever raised above math.MaxInt32 (~2.1B), the int→TokenID
+// cast in GenerateRandomTokenIDs would silently truncate. This expression
+// evaluates to a negative integer constant when MaxTokenID > MaxInt32, which
+// is not representable as uint and fails to compile.
+const _ = uint(math.MaxInt32 - MaxTokenID)
 
 // Request models a single request's lifecycle in the simulation.
 // Each request has:
@@ -96,12 +106,12 @@ type Request struct {
 	// Agentic identifies a request of an agentic session-tree replay (#1937); nil otherwise.
 	Agentic *AgenticTag
 
-	// Cluster routing metadata. Set when the cluster dispatches the request to the instance
-	// the router chose; zero-value outside the cluster (e.g., direct sim.Simulator tests).
+	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
+	// Request is used outside the cluster routing pipeline (e.g., direct sim.Simulator tests).
 	AssignedInstance string // Instance ID this request was routed to
 
-	// Model tag (empty = default model). Keys the per-model metrics block
-	// (cluster.ComputePerModelMetrics); the router never reads it.
+	// Model tag for multi-model routing (empty = default model).
+	// Phase 0: carried through the pipeline but not read by any routing policy.
 	Model string
 
 	// Adapter is the LoRA adapter id serving this request (registry key; #1464).
@@ -110,14 +120,6 @@ type Request struct {
 	// MUST resolve to a declared adapter in the registry (validated at workload
 	// generation). Set from the owning client/cohort's Adapter during generation.
 	Adapter string
-
-	// adapterPinned tracks whether this request currently holds a pin on its
-	// adapter's resident slot (cold-load gate, #1466). Set once when the request
-	// enters the running batch and cleared once at a terminal state, so a
-	// preempted-then-re-admitted request pins exactly once (the pin persists
-	// through preemption, INV-L5) rather than double-counting. Zero value (false)
-	// is correct for base-model requests and adapter-blind runs.
-	adapterPinned bool
 
 	// Client timeout: absolute tick by which request must complete (0 = no timeout).
 	// Computed during workload generation as ArrivalTime + timeout.
@@ -157,35 +159,9 @@ type Request struct {
 	// whole. A replay with a warm-up sets PhaseWarmup on the requests the measured
 	// aggregates of the --metrics-path file must exclude.
 	Phase Phase
-
-	// specDecodeCarry accumulates the fractional part of the mean accepted-token
-	// count (1+α·K) across decode steps for speculative decoding / MTP (#1528).
-	// Unexported: owned and mutated only by Simulator.commitDecodeTokens; the zero
-	// value is correct (and the only value ever seen) when the feature is off, so no
-	// Request construction site needs updating. Reset to 0 on preemption (alongside
-	// ProgressIndex) and at completion.
-	specDecodeCarry float64
-
-	// preemptions counts how often batch formation preempted this request; a re-admission
-	// after preemption is not a new prefix-cache query (PrefixLookup).
-	preemptions int
-	// resumeEnd is where the prefill of a request preempted while decoding ends: its prompt and
-	// every output token it had emitted (0 otherwise). vLLM keeps a preempted request's output
-	// and resumes it as one prefill of prompt and output (sched/scheduler.py:1538-1580 at
-	// v0.31.0: num_computed_tokens = 0, output_token_ids kept; :1080-1084 schedules
-	// num_tokens - num_computed_tokens), whose step samples the next token.
-	resumeEnd int64
-	// scheduledTokens is what this step debited from the batched-token budget for the
-	// request: NumNewTokens, except for a speculating decode, which schedules its whole
-	// verify width however many drafts are later accepted (#1627). Set by FormBatch; read
-	// when a preemption returns the debit.
-	scheduledTokens int64
 }
 
-// AdapterPinned reports whether the request holds a pin on its LoRA adapter's resident slot.
-func (req *Request) AdapterPinned() bool { return req.adapterPinned }
-
-// This method returns a human-readable string representation of a Request.
+// String returns a human-readable representation of the request.
 func (req Request) String() string {
 	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
 }
@@ -196,18 +172,13 @@ func (req Request) String() string {
 // and synthesis). Using a derived method instead of a new boolean field keeps
 // a single source of truth and avoids a TraceV2 schema change.
 //
-// Read by the llm-d gateway (sim/llmd) to send the request as a multimodal chat message.
+// GAP-4 (issue #1264): consumed by MultimodalEncodeDecider.ShouldEncode.
 func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }
 
-// PrefillEnd is the ProgressIndex at which the request's prefill ends: its prompt, or, for a
-// request resumed after a preemption, its prompt and the output it had emitted (resumeEnd).
-// Tokens before it are scheduled as prefill; one at or past it decodes.
-func (req *Request) PrefillEnd() int64 { return max(req.InputLen(), req.resumeEnd) }
-
 // SequenceTokenSlice is the request's tokens [start, end) over its prompt followed by its
-// output. A resumed prefill (PrefillEnd) reaches into the output.
+// output.
 func (req *Request) SequenceTokenSlice(start, end int64) []TokenID {
 	n := req.InputLen()
 	if end <= n {
@@ -229,26 +200,6 @@ func (req *Request) SequenceTokenSlice(start, end int64) []TokenID {
 // at call sites that need only the length (#1445).
 func (req *Request) InputLen() int64 {
 	return int64(len(req.InputTokens))
-}
-
-// completionProgressIndex returns the ProgressIndex at which this request is finished:
-// InputLen + max(len(OutputTokens), 1) - 1. BLIS charges output token #1 to prefill
-// completion and every later token to a decode step, so a request that generated its
-// full assigned output sits exactly `len(OutputTokens) - 1` decode tokens past its
-// input (hence the -1); the max(...,1) covers a zero-output request, which finishes at
-// the end of prefill.
-//
-// Single source of truth for the boundary (R23): processCompletions tests
-// ProgressIndex against it, and batch formation caps a multi-token speculative-decode
-// grant by the distance to it (#1657) so a step lands exactly ON it rather than past
-// it. Were the two to disagree, a step could overshoot and inflate the request's
-// apparent output.
-//
-// Unexported deliberately: both callers live in package sim (the execution engine), and
-// the value is oracle-derived from len(OutputTokens), so keeping it package-private also
-// keeps it out of reach of any out-of-package control-plane code (INV-9).
-func (req *Request) completionProgressIndex() int64 {
-	return req.InputLen() + max(int64(len(req.OutputTokens)), 1) - 1
 }
 
 // FullInputTokens returns the full input-token sequence as a flat slice. The slice

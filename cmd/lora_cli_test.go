@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"errors"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/spf13/cobra"
 	"pgregory.net/rapid"
 )
@@ -169,20 +169,20 @@ func TestLoRAConfig_ZeroCapacityWithAdaptersRejected(t *testing.T) {
 func TestAdapterReservedBytesFor(t *testing.T) {
 	// Inert config (no adapters / no capacity): BuildAdapterCost returns nil ⇒ 0,
 	// leaving KV byte-identical (INV-6).
-	if got := adapterReservedBytesFor(sim.LoRAConfig{}); got != 0 {
+	if got := adapterReservedBytesFor(loraConfig{}); got != 0 {
 		t.Errorf("inert config: adapterReservedBytesFor = %d, want 0", got)
 	}
 
 	// Populated config: equals the cost model's capacity × maxRank × footprint.
 	fp := func(v float64) *float64 { return &v }
 	capacity := 4
-	cfg := sim.LoRAConfig{
+	cfg := loraConfig{
 		AdapterCapacity:       &capacity,
 		LoadBaseLatencyUs:     fp(1000.0),
 		LoadBandwidthBytesUs:  fp(2.0e6),
 		FootprintBytesPerRank: fp(2.0e6),
-		StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K6: fp(0.02), K7: fp(1.0)}},
-		Adapters: []sim.AdapterSpec{
+		StepOverheadTiers:     map[int]stepOverheadTier{8: {K6: fp(0.02), K7: fp(1.0)}},
+		Adapters: []cengine.AdapterSpec{
 			{ID: "a8", Rank: 8},
 			{ID: "a16", Rank: 16},
 			{ID: "a32", Rank: 32}, // max rank sizes the per-slot footprint

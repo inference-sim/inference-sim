@@ -4,28 +4,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T) {
 	// GIVEN a simulation with tracing enabled
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             5000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
-		},
-		NumInstances:    2,
-		TraceLevel:      "decisions",
-		CounterfactualK: 2,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 2
+		d.TraceLevel = "decisions"
+		d.CounterfactualK = 2
+		return d
+	}()
 	requests := testGenerateRequests(42, 5000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}

@@ -49,7 +49,7 @@ func TestGateway_TopologyExtractorChangesDecodeChoice(t *testing.T) {
 			}
 			placement[matchingDecode] = cluster.EndpointTopology{Hostname: "host-a", NodeCount: 1}
 			dep.ScenarioEndpointTopology = cluster.StaticEndpointTopology(placement)
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(6, 11, 50_000, 0)), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(6, 11, 50_000, 0)), nil)
 			gw := New(Options{Model: "test-model", PodLabels: roleLabels,
 				EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+topologyPDConfig)})
 			cs.SetGateway(gw)
@@ -124,7 +124,7 @@ func TestGateway_TopologyPlacementRefusals(t *testing.T) {
 			opts := tc.setup(&dep)
 			opts.Model = "test-model"
 			opts.EPPFlags = append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+topologyExtractorOnly)
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 9, 500, 0)), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 9, 500, 0)), nil)
 			cs.SetGateway(New(opts))
 			if err := cs.Run(); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("run error = %v, want %q", err, tc.want)
@@ -191,7 +191,7 @@ func TestGateway_GroupedEndpointHasNoSingleHostTopology(t *testing.T) {
 				flags = append(flags, "--allow-experimental-plugins", "--config-text="+topologyExtractorOnly)
 			}
 			gw := New(Options{Model: "test-model", EPPFlags: flags})
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 9, 500, 0)), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 9, 500, 0)), nil)
 			cs.SetGateway(gw)
 			err := cs.Run()
 			if topologyEnabled {

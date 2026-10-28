@@ -64,9 +64,10 @@ tag clone still carries the revision, so that provenance is unaffected.)
 
 BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
 clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.2.0`**, the release blis-latency-kernel `v0.3.0` (the version `go.mod` pins, with
-blis-schemas `v0.5.0`, whose deployment `router:` block configures the llm-d router) is tested
-against; that pair is recorded in the kernel's own `testdata/upstream.lock`, and this
+`v0.2.0`**, the release blis-latency-kernel is tested against (`go.mod` pins the kernel and
+blis-schemas, whose deployment `router:` block configures the llm-d router; while #2021's
+changes are unmerged these are TEMPORARY pushed-head pins, released before merge); that pair is
+recorded in the kernel's own `testdata/upstream.lock`, and this
 repository's test suite holds its vendored catalog and registry to it.
 
 ```bash

@@ -16,7 +16,7 @@ import (
 // router indexes them (embed.Router.IngestKVEvents), exactly as it would vLLM's events over ZMQ.
 //
 //   - An engine records a stored block when a block hash enters its prefix cache and a removed
-//     block when one leaves (sim/kv), so the router's index holds the engine's own set of cached
+//     block when one leaves (blis-vllm compat/kv), so the router's index holds the engine's own set of cached
 //     blocks, full prefill and decode blocks alike.
 //   - It publishes them at the end of each step, as vLLM does; the router receives them
 //     Options.KVEventDelayUs later, in order, per engine.

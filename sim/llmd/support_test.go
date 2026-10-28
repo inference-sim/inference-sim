@@ -106,7 +106,7 @@ schedulingProfiles:
         weight: 1.0
       - pluginRef: max-score-picker
 `
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
 	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 	// It cuts block keys every 64 tokens; the test engines' blocks are 16 tokens, so the KV events
 	// they publish could never match a request's keys.
@@ -119,7 +119,7 @@ schedulingProfiles:
 // refusal starts a router over dep with config and returns the startup error.
 func refusal(t *testing.T, dep cluster.DeploymentConfig, config string, labels func(cluster.InstanceID, cluster.PoolRole) map[string]string, extraFlags ...string) error {
 	t.Helper()
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(4, 1, 1000, 0)), nil)
 	flags := append(DefaultEPPFlags(), extraFlags...)
 	if config != "" {
 		flags = append(flags, "--config-text="+config)
@@ -250,7 +250,7 @@ func TestCheckEngineSignals(t *testing.T) {
 // TestMultipleTargetPortsAreRefused: a pool whose pods each serve several data-parallel ranks on
 // several ports is refused; BLIS simulates each rank as its own pod.
 func TestMultipleTargetPortsAreRefused(t *testing.T) {
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
 	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: []string{"--endpoint-selector=llm-d.ai/inference-serving=true", "--endpoint-target-ports=8000,8001"}}))
 	if err := cs.Run(); err == nil || !strings.Contains(err.Error(), "target ports") {
 		t.Fatalf("want two target ports refused, got %v", err)
@@ -303,7 +303,7 @@ func TestAllow(t *testing.T) {
 // startup checks: an engine label selecting an unpublished mapping is an error.
 func TestLatePodIsChecked(t *testing.T) {
 	engine := "vllm"
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
 	gw := New(Options{Model: "test-model", PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string {
 		return map[string]string{"llm-d.ai/engine-type": engine}
 	}})

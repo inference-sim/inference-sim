@@ -43,7 +43,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 
 **Routing, admission and flow control** are the embedded llm-d router's, configured by the scenario's `router:` block and pool labels ([Router](#router)). See [Routing](../guide/routing.md).
 
-**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. `--long-prefill-token-threshold` is a run-wide override: it applies to every pool and must agree with every value a pool states, or the run is refused. `--preemption-policy` remains on the CLI.
+**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6). `--preemption-policy` remains on the CLI.
 
 ### Known Unit Gotchas
 
@@ -93,7 +93,7 @@ export BLIS_CATALOG=$PWD/blis-catalog
 
 A scenario file holds two YAML documents in the blis-schemas format:
 
-- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`).
+- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). `engine_version` must be a release the engine models, `0.29.0` or `0.31.0` today; any other is refused (see [latency models](../guide/latency-models.md)).
 - **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `cache_dtype`, `cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
@@ -144,14 +144,13 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
 | `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
 | `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
 | `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
 ## Latency Model
 
-BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.3.0`, adapter `sim/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.3.0`, adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -222,7 +221,7 @@ priority:
     critical: 10
 ```
 
-The mapping lives in `sim/slo_priority.go` (`SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
+The mapping lives in blis-vllm `compat/engine/slo_priority.go` (`SLOPriorityMap`, aliased as `sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
 ## Scheduling and Priority
 
@@ -418,7 +417,7 @@ lora:
 |------------|-------|
 | **Deployment (required)** | `--scenario`, `--scenarios`, `--registry`, `--catalog` (or `BLIS_CATALOG`) |
 | **KVCacheConfig** | `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-offload-config` (block budget and block size: scenario + kernel) |
-| **BatchConfig** | `--long-prefill-token-threshold` (`max_num_seqs`, `max_num_batched_tokens`: scenario) |
+| **BatchConfig** | scenario (`max_num_seqs`, `max_num_batched_tokens`, `long_prefill_token_threshold`) |
 | **Latency** | `--speculative-acceptance-rate` / `--speculative-acceptance-length` and the acceptance selectors (everything else: scenario + registry, priced by blis-latency-kernel) |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |

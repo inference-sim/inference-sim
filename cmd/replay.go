@@ -347,13 +347,11 @@ Example:
 		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
 		// are distinct offload models; refuse both with a clean CLI error rather than
 		// the library-level panic in NewKVStore.
-		if kvOffloadCfg.IsEnabled() && kvCPUBlocks > 0 {
-			logrus.Fatalf("--kv-cpu-blocks conflicts with the trace's kv_offload config (distinct KV-offload models); set only one")
-		}
+		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), true)
 		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
 		// into a comparable sim number if this replay reproduces a tiered offload
 		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
-		if err := validateObservedKVReplayable(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
+		if err := requireOffloadForTieredObservation(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
 			logrus.Fatalf("%v", err)
 		}
 
@@ -365,12 +363,7 @@ Example:
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
-		if kvOffloadCfg.IsEnabled() && kvOffloadCfg.PerBlockBytes == 0 {
-			kvOffloadCfg.PerBlockBytes = offloadPerBlockBytes(lr, blockSizeTokens)
-			if err := kvOffloadCfg.CheckFitsOneChunk(); err != nil {
-				logrus.Fatalf("%v", err)
-			}
-		}
+		sizeOffloadBlocks(&kvOffloadCfg, true)
 
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge, through the SAME helper
@@ -380,18 +373,6 @@ Example:
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
-		}
-		if totalKVBlocks <= 0 {
-			logrus.Fatalf("scenario %q: the kernel sized %d KV blocks per rank; it must be > 0", kernelScenario, totalKVBlocks)
-		}
-		if maxNumSeqs <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_seqs must be > 0, got %d", kernelScenario, maxNumSeqs)
-		}
-		if maxNumBatchedTokens <= 0 {
-			logrus.Fatalf("scenario %q: engine max_num_batched_tokens must be > 0, got %d", kernelScenario, maxNumBatchedTokens)
-		}
-		if longPrefillTokenThreshold < 0 {
-			logrus.Fatalf("--long-prefill-token-threshold must be >= 0, got %d", longPrefillTokenThreshold)
 		}
 		if cmd.Flags().Changed("horizon") && replayHorizon <= 0 {
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
@@ -452,7 +433,7 @@ Example:
 			logrus.Fatalf("%v", dpErr)
 		}
 		// Per-pool hardware override construction (same as runCmd).
-		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		var prefillOverrides, decodeOverrides poolOverrides
 
 		// Same as runCmd: each P/D role's engine is its own pool's.
 		kernelPD := openKernelPools(resolvedCatalogRoot)
@@ -471,7 +452,7 @@ Example:
 		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
 		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
 		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlan)
+		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
 		if dpErr != nil {
 			logrus.Fatalf("%v", dpErr)
 		}
@@ -489,29 +470,10 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
+		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon: replayHorizon,
-				Seed:    seed,
-				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
-					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency,
-					sim.WithKVOffload(kvOffloadCfg), sim.WithKVTransferTicksPerBlock(kernelCPUTierTicks),
-					sim.WithSequenceState(sequenceState), sim.WithPrefixHit(prefixHit)),
-				BatchConfig: batchConfigFromCLI(),
-				// DP-as-placement (#1531 run / #1556 replay): dpPlan.PerRankDP is the
-				// per-replica DP — 1 when the plan is active (each replica is one rank),
-				// else the CLI dataParallelism unchanged. Identical to the run wiring
-				// (cmd/root.go), from the same shared resolveDPPlacement (INV-13).
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, model, gpu, tensorParallelism, dpPlan.PerRankDP, enableExpertParallel, maxModelLen),
-				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
-				LoRAConfig:           loraCfg,
-				SpeculativeConfig:    resolveSpeculativeConfig(cmd),
-				Frontend:             frontendConfigFromCLI(),
-				SLOPriorityOverrides: sloPriorityOverrides,
-				// The kernel prices every step.
-				LatencyModel:           lr.KernelModel,
-				ServerSeriesIntervalUs: serverSeriesIntervalUs(),
-			},
+			InstanceConfig:           instanceConfigOf(runEngine),
 			NumInstances:             numInstances,
 			DPLockstepRanks:          dpPlan.LockstepRanks,
 			DPLoadBalancing:          dpLoadBalancing,
@@ -525,10 +487,15 @@ Example:
 			PDTransferContention:     pdTransferContention,
 			PDTransferDemand:         pdTransferDemand,
 			PDPrefillKVHold:          kernelPD.holdsPrefillKV(),
-			PrefillOverrides:         prefillOverrides,
-			DecodeOverrides:          decodeOverrides,
+			Roles:                    rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:        bundleInstanceLifecycle,
 			ScenarioEndpointTopology: cluster.StaticEndpointTopology(scenarioTopology),
+			// A contract-built release replays on the engine it ran on, built the same way as in
+			// run (INV-13); a compatibility release keeps the compatibility engine.
+			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+		}
+		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
+			config.NewEngine = f
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode

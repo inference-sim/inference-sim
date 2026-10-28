@@ -1,23 +1,23 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"testing"
 
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // slowPrefill prices every step that still prefills some request extra ticks above its base
 // model, and leaves every other step untouched.
 type slowPrefill struct {
-	sim.LatencyModel
+	cengine.LatencyModel
 	extra int64
 }
 
-func (m slowPrefill) StepTime(batch []*sim.Request) int64 {
+func (m slowPrefill) StepTime(batch []*cengine.Request) int64 {
 	t := m.LatencyModel.StepTime(batch)
 	for _, r := range batch {
 		if r.ProgressIndex < r.InputLen() {
@@ -30,12 +30,12 @@ func (m slowPrefill) StepTime(batch []*sim.Request) int64 {
 // slowDecode prices every step that prefills no request extra ticks above its base model, and
 // counts those steps in *steps when steps is non-nil.
 type slowDecode struct {
-	sim.LatencyModel
+	cengine.LatencyModel
 	extra int64
 	steps *int64
 }
 
-func (m slowDecode) StepTime(batch []*sim.Request) int64 {
+func (m slowDecode) StepTime(batch []*cengine.Request) int64 {
 	t := m.LatencyModel.StepTime(batch)
 	for _, r := range batch {
 		if r.ProgressIndex < r.InputLen() {
@@ -51,15 +51,17 @@ func (m slowDecode) StepTime(batch []*sim.Request) int64 {
 // pdSingleRequestCapped runs one request through a 1P1D cluster priced by model, on engines
 // whose window is maxModelLen tokens (0 = unlimited; a request whose input and output exceed
 // it is length-capped at decode), and returns its parent and client-visible TTFT.
-func pdSingleRequestCapped(rt *rapid.T, model sim.LatencyModel, inputLen, outputLen int, maxModelLen int64) (*ParentRequest, float64) {
+func pdSingleRequestCapped(rt *rapid.T, model cengine.LatencyModel, inputLen, outputLen int, maxModelLen int64) (*ParentRequest, float64) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	cfg.LatencyModel = model
-	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, maxModelLen)
+	editEngine(&cfg, func(c *simConfig) { c.LatencyModel = model })
+	editEngine(&cfg, func(c *simConfig) {
+		c.ModelHardwareConfig = cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, maxModelLen)
+	})
 	req := &sim.Request{
 		ID: "request_0", InputTokens: make([]sim.TokenID, inputLen),
 		OutputTokens: make([]sim.TokenID, outputLen), State: sim.StateQueued,
 	}
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{req}), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{req}), nil)
 	mustRun(rt, cs)
 	for _, p := range cs.ParentRequests() {
 		if p.CompletionTime > 0 && p.DecodeInstanceID != "" {
@@ -85,7 +87,7 @@ func pdSingleRequestCapped(rt *rapid.T, model sim.LatencyModel, inputLen, output
 //     prefill step's cost never reached TTFT and the difference was zero.
 func TestPD_HandoffWaitsForThePrefillStep(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
-		base := fakelatency.WithCoeffs(testutil.FakeLatency{
+		base := fakeLatencyWithCoeffs(testutil.FakeLatency{
 			BaseTicks:                  rapid.Int64Range(1, 5000).Draw(rt, "base"),
 			PerScheduledTokenTicks:     rapid.Int64Range(0, 200).Draw(rt, "perToken"),
 			PerDecodeRequestTicks:      rapid.Int64Range(0, 200).Draw(rt, "perDecode"),

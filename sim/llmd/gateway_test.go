@@ -7,23 +7,21 @@ import (
 	"runtime"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 func testDeployment(n int) cluster.DeploymentConfig {
-	return cluster.DeploymentConfig{
-		SimConfig: sim.SimConfig{
-			Horizon:             math.MaxInt64,
-			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
-			LatencyModel:        fakelatency.New(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances: n,
-	}
+	return deploymentOf(cengine.SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         cengine.NewBatchConfig(256, 2048, 0),
+		LatencyModel:        newFakeLatencyModel(),
+		ModelHardwareConfig: cengine.NewModelHardwareConfig(cengine.ModelConfig{}, "test-model", "H100", 1, 1, false, 0),
+	}, n)
 }
 
 func testRequests(n int, seed int64, gapUs int64, prefixLen int) []*sim.Request {
@@ -54,7 +52,7 @@ type runResult struct {
 func runCluster(t *testing.T, n, numReqs int, opts Options) runResult {
 	t.Helper()
 	reqs := testRequests(numReqs, 7, 500, 0)
-	cs := cluster.NewClusterSimulator(testDeployment(n), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(n), cluster.NewSliceRequestSource(reqs), nil)
 	if opts.Model == "" {
 		opts.Model = "test-model"
 	}

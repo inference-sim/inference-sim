@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // startingKVBlocks is the per-replica KV block count a run logs at info level, after

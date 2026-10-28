@@ -133,7 +133,7 @@ implementation; `sim/cluster` unit tests use a small round-robin fake.
 ## What the Router Observes
 
 Each engine publishes vLLM's Prometheus series at the end of every step
-(`sim/engine_metrics.go`): `vllm:num_requests_waiting`, `vllm:num_requests_running`,
+(blis-vllm `compat/engine/engine_metrics.go`): `vllm:num_requests_waiting`, `vllm:num_requests_running`,
 `vllm:kv_cache_usage_perc`, `vllm:num_preemptions_total`, `vllm:cache_config_info` and, with
 LoRA, `vllm:lora_requests_info`. The router scrapes them through its own metrics data source
 on its own schedule (the EPP flag `--refresh-metrics-interval`), with each endpoint's phase

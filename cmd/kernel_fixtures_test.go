@@ -1,14 +1,15 @@
 package cmd
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 )
 
@@ -77,13 +78,14 @@ func copyKernelCatalog(t *testing.T) string {
 // max-model-len -- the way `blis run` builds one, for library-level tests that drive
 // cluster.NewClusterSimulator directly. batchOpts are applied to the batch config.
 type kernelDeployment struct {
-	Config     cluster.DeploymentConfig
+	// Config is the instance's engine configuration; deploymentOf wraps it into a cluster's.
+	Config     engineConfig
 	Model      *kernelmodel.Model
 	BlockSize  int64
 	BlockBytes int64 // the kernel's per-rank bytes for one KV block
 }
 
-func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, batchOpts ...sim.BatchOption) kernelDeployment {
+func newKernelDeployment(t *testing.T, seed int64, kvOpts []cengine.KVCacheOption, batchOpts ...cengine.BatchOption) kernelDeployment {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
 	m, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
@@ -95,21 +97,18 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, b
 		t.Fatal(err)
 	}
 	dep := m.Deployment()
-	mc := sim.ModelConfig{NumLocalExperts: dep.Experts, NumExpertsPerTok: dep.ExpertsPerTok}
+	mc := modelConfig{NumLocalExperts: dep.Experts, NumExpertsPerTok: dep.ExpertsPerTok}
 	block := int64(st.BlockSize)
 	return kernelDeployment{
-		Config: cluster.DeploymentConfig{
-			SimConfig: sim.SimConfig{
-				Horizon:       10_000_000,
-				Seed:          seed,
-				KVCacheConfig: sim.NewKVCacheConfig(st.KVBlocks, block, 0, 0.9, 0, 0, kvOpts...),
-				BatchConfig:   sim.NewBatchConfig(int64(st.MaxNumSeqs), int64(st.MaxNumBatchedTokens), 0, batchOpts...),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(mc, strings.ToLower(dep.Model),
-					dep.Hardware, dep.TP, 1, dep.ExpertParallel, int64(st.MaxModelLen)),
-				PolicyConfig: sim.NewPolicyConfig("fcfs", ""),
-				LatencyModel: m,
-			},
-			NumInstances: 1,
+		Config: engineConfig{
+			Horizon:       10_000_000,
+			Seed:          seed,
+			KVCacheConfig: cengine.NewKVCacheConfig(st.KVBlocks, block, 0, 0.9, 0, 0, kvOpts...),
+			BatchConfig:   cengine.NewBatchConfig(int64(st.MaxNumSeqs), int64(st.MaxNumBatchedTokens), 0, batchOpts...),
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(mc, strings.ToLower(dep.Model),
+				dep.Hardware, dep.TP, 1, dep.ExpertParallel, int64(st.MaxModelLen)),
+			PolicyConfig: cengine.NewPolicyConfig("fcfs", ""),
+			LatencyModel: m,
 		},
 		Model:      m,
 		BlockSize:  block,
@@ -117,10 +116,20 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []sim.KVCacheOption, b
 	}
 }
 
-// newRoutedCluster builds a cluster over reqs routed the way `blis run` routes one with no
-// router flags: the embedded llm-d router with its default configuration. Every cluster run
-// needs a gateway (ClusterSimulator.Run refuses to start without one).
-func newRoutedCluster(cfg cluster.DeploymentConfig, reqs []*sim.Request) *cluster.ClusterSimulator {
+// deploymentOf is a one-instance cluster configuration whose engine is the compatibility engine
+// behind the contract, built from ec as `blis run` builds a 0.29/0.31 instance's
+// (compatContractFactory).
+func deploymentOf(ec engineConfig) cluster.DeploymentConfig {
+	return cluster.DeploymentConfig{InstanceConfig: instanceConfigOf(ec), NumInstances: 1,
+		NewEngine: compatEngineFactory(ec, 0, dpPlacementPlan{})}
+}
+
+// newRoutedCluster builds a cluster over reqs, with the instance engine configuration ec, routed
+// the way `blis run` routes one with no router flags: the embedded llm-d router with its default
+// configuration. Every cluster run needs a gateway (ClusterSimulator.Run refuses to start without
+// one).
+func newRoutedCluster(ec engineConfig, reqs []*sim.Request) *cluster.ClusterSimulator {
+	cfg := deploymentOf(ec)
 	cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(newGateway(routerInputs{EPPFlags: append([]string(nil), llmd.DefaultEPPFlags()...)}, cfg.Model))
 	return cs

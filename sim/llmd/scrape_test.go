@@ -16,7 +16,7 @@ type observed struct {
 func observeRun(t *testing.T, n int, opts Options, reqGapUs int64, numReqs int) []observed {
 	t.Helper()
 	reqs := testRequests(numReqs, 5, reqGapUs, 0)
-	cs := cluster.NewClusterSimulator(testDeployment(n), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(n), cluster.NewSliceRequestSource(reqs), nil)
 	opts.Model = "test-model"
 	gw := New(opts)
 	var log []observed

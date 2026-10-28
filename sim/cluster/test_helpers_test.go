@@ -2,12 +2,12 @@ package cluster
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil/fakelatency"
 )
 
 // testGenerateRequests replicates the exact algorithm from the old
@@ -70,23 +70,23 @@ func generateLengthGauss(rng *rand.Rand, mean, std, min, max int) int {
 	return int(math.Round(clampedVal))
 }
 
-// testModelConfig returns a dense sim.ModelConfig for tests that need one. Step time comes
+// testModelConfig returns a dense cengine.ModelConfig for tests that need one. Step time comes
 // from the fake latency model (testFakeLatency).
-func testModelConfig() sim.ModelConfig {
-	return sim.ModelConfig{}
+func testModelConfig() cengine.ModelConfig {
+	return cengine.ModelConfig{}
 }
 
 // testFakeLatency is the latency model every cluster behavior test prices steps with:
 // the deterministic, stateless fake from sim/internal/testutil (default coefficients).
 // Set it as SimConfig.LatencyModel so instances never build a pricing backend.
-func testFakeLatency() sim.LatencyModel { return fakelatency.New() }
+func testFakeLatency() cengine.LatencyModel { return newFakeLatencyModel() }
 
 // testFakeZeroQueueing is testFakeLatency with no arrival-to-queue delay, for tests that
 // need a request to enter the wait queue at its arrival tick.
-func testFakeZeroQueueing() sim.LatencyModel {
+func testFakeZeroQueueing() cengine.LatencyModel {
 	c := testutil.DefaultFakeLatency()
 	c.QueueingTicks = 0
-	return fakelatency.WithCoeffs(c)
+	return fakeLatencyWithCoeffs(c)
 }
 
 // testPDTransferTime is the KV-handoff price every PD behavior test injects as

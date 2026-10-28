@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/spf13/cobra"
 )
 

@@ -15,7 +15,7 @@ func TestRun_StuckGatewayIsAnError(t *testing.T) {
 		tickUs int64
 	}{{"no events left", 0}, {"only daemon timers", 60_000_000}} {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(newTestRequests(3)), nil)
+			cs := newTestCluster(newTestDeploymentConfig(2), NewSliceRequestSource(newTestRequests(3)), nil)
 			cs.SetGateway(&fakeGateway{swallow: true, tickUs: tc.tickUs})
 			err := cs.Run()
 			if err == nil || !strings.Contains(err.Error(), "gateway holds 3 request(s)") {
@@ -30,7 +30,7 @@ func TestRun_StuckGatewayIsAnError(t *testing.T) {
 // happening is not declared stuck after the one-hour limit; past that time it is.
 func TestRun_StallWaitsForTheGatewaysOwnTimers(t *testing.T) {
 	const until = 2 * 3600 * 1_000_000 // two hours
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(newTestRequests(1)), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(newTestRequests(1)), nil)
 	cs.SetGateway(&fakeGateway{swallow: true, tickUs: 60_000_000, heldUntil: until})
 	err := cs.Run()
 	if err == nil || !strings.Contains(err.Error(), "gateway holds 1 request(s)") {
@@ -45,7 +45,7 @@ func TestRun_StallWaitsForTheGatewaysOwnTimers(t *testing.T) {
 // that error.
 func TestRun_GatewayAbortEndsTheRun(t *testing.T) {
 	boom := errors.New("unclassifiable router outcome")
-	cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(newTestRequests(3)), nil)
+	cs := newTestCluster(newTestDeploymentConfig(2), NewSliceRequestSource(newTestRequests(3)), nil)
 	cs.SetGateway(&fakeGateway{abortWith: boom})
 	if err := cs.Run(); !errors.Is(err, boom) {
 		t.Fatalf("Run() = %v, want %v", err, boom)
@@ -59,7 +59,7 @@ func TestDisaggregation_SubRequestsKeepTheAdapter(t *testing.T) {
 	for _, r := range reqs {
 		r.Adapter = "adapter-a"
 	}
-	cs := NewClusterSimulator(newTestDisaggDeploymentConfig(4, 2, 2), NewSliceRequestSource(reqs), nil)
+	cs := newTestCluster(newTestDisaggDeploymentConfig(4, 2, 2), NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 	if len(cs.parentRequests) != 3 {
 		t.Fatalf("%d parents, want 3", len(cs.parentRequests))

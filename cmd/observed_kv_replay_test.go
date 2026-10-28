@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,22 +11,22 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// TestValidateObservedKVReplayable enforces BC-10 (#1583): a tiered observed hit-rate
+// TestValidateObservedKVReplayable enforces BC-10 through the build site (requireOffloadForTieredObservation) (#1583): a tiered observed hit-rate
 // requires a reproducible offload config on replay; all other cases pass.
 func TestValidateObservedKVReplayable(t *testing.T) {
 	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered, HitRate: 0.5}
 	gpu := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceGPUCache, HitRate: 0.5}
 
-	if err := validateObservedKVReplayable(tiered, false); err == nil {
+	if err := requireOffloadForTieredObservation(tiered, false); err == nil {
 		t.Error("tiered observation with offload DISABLED must error (BC-10)")
 	}
-	if err := validateObservedKVReplayable(tiered, true); err != nil {
+	if err := requireOffloadForTieredObservation(tiered, true); err != nil {
 		t.Errorf("tiered observation with offload ENABLED must pass, got %v", err)
 	}
-	if err := validateObservedKVReplayable(gpu, false); err != nil {
+	if err := requireOffloadForTieredObservation(gpu, false); err != nil {
 		t.Errorf("gpu-fallback observation must pass regardless of offload, got %v", err)
 	}
-	if err := validateObservedKVReplayable(nil, false); err != nil {
+	if err := requireOffloadForTieredObservation(nil, false); err != nil {
 		t.Errorf("nil observation must pass, got %v", err)
 	}
 }
@@ -34,7 +35,7 @@ func TestValidateObservedKVReplayable(t *testing.T) {
 // actionable (names the missing config), not a bare failure.
 func TestValidateObservedKVReplayable_ErrorMentionsConfig(t *testing.T) {
 	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered}
-	err := validateObservedKVReplayable(tiered, false)
+	err := requireOffloadForTieredObservation(tiered, false)
 	if err == nil || !strings.Contains(err.Error(), "--kv-offload-config") {
 		t.Errorf("BC-10 error must point at --kv-offload-config, got %v", err)
 	}
@@ -79,7 +80,7 @@ func makeSharedPrefixGroupRequests() []*sim.Request {
 // offload config accepts a --kv-offload-config-supplied config to model the observed
 // deployment; a sim-generated trace (allowFlagAdd=false) still rejects it (INV-13).
 func TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd(t *testing.T) {
-	flagCfg := sim.KVOffloadConfig{
+	flagCfg := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, BlockSize: 16, BlocksPerChunk: 1,
 		TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
 	}
@@ -106,17 +107,17 @@ func TestINV13_RunReplayParity_CacheHitRate(t *testing.T) {
 
 	dir := t.TempDir()
 	d := newKernelDeployment(t, fixedSeed, nil)
-	offload := sim.KVOffloadConfig{
+	offload := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: d.BlockBytes,
 		BlockSize: d.BlockSize, BlocksPerChunk: 1, TokensPerHash: d.BlockSize,
 		EvictionPolicy: "lru", OffloadPromptOnly: true,
-		Tiers: []sim.KVOffloadTier{{
+		Tiers: []kvOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 16, NWriteThreads: 16,
 			DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 		}},
 	}
 	cfg := d.Config
-	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, sim.WithKVOffload(offload))
+	cfg.KVCacheConfig = cengine.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, cengine.WithKVOffload(offload))
 
 	cs1 := newRoutedCluster(cfg, requests)
 	if err := cs1.Run(); err != nil {

@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )
 
 // TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E drives a real
@@ -19,20 +19,22 @@ func TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E(t *testin
 	// Cost coefficients are required once the cold-load gate consumes them (#1466);
 	// production fills them from defaults.yaml when adapters are configured.
 	base, bw, fp := 1000.0, 2.0e6, 2.0e6
-	config.LoRAConfig = sim.LoRAConfig{
-		AdapterCapacity:       &capVal,
-		LoadBaseLatencyUs:     &base,
-		LoadBandwidthBytesUs:  &bw,
-		FootprintBytesPerRank: &fp,
-		Adapters:              []sim.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
-	}
+	editEngine(&config, func(c *simConfig) {
+		c.LoRAConfig = cengine.LoRAConfig{
+			AdapterCapacity:       &capVal,
+			LoadBaseLatencyUs:     &base,
+			LoadBandwidthBytesUs:  &bw,
+			FootprintBytesPerRank: &fp,
+			Adapters:              []cengine.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
+		}
+	})
 
 	requests := newTestRequests(6)
 	for _, r := range requests {
 		r.Adapter = "adapter_shared"
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	agg := cs.AggregatedMetrics()
@@ -54,7 +56,7 @@ func TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E(t *testin
 // the new adapter maps were initially not merged.
 func TestAggregateMetrics_AdapterCountsSummedAcrossInstances(t *testing.T) {
 	config := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(newTestRequests(1)), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(newTestRequests(1)), nil)
 
 	instances := cs.Instances()
 	if len(instances) != 2 {

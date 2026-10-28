@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // evictionConfig is flow control with in-flight eviction (enableEviction): when higher-priority
@@ -60,10 +61,14 @@ var pdPreciseEvictionConfig = strings.Replace(pdEvictionConfig, `- type: approx-
 
 // victim is what an evicted request held on its engine just before and just after its eviction.
 type victim struct {
-	running              bool  // it had computed tokens
-	blocksBefore, after  int64 // the engine's used KV blocks
-	pinnedBefore, pinned bool  // its adapter pin
-	revoked              int
+	// running is set when its engine held KV for it: it was scheduled (running), its decode pull
+	// had started (the engine reserved its blocks; engine() reaches a decode sub-request only once
+	// its pull starts), or it is a finished prefill whose KV is held for the pull. scheduled is
+	// the first alone, the state in which it pins its LoRA adapter.
+	running, scheduled  bool
+	blocksBefore, after int64 // the engine's used KV blocks
+	pinsBefore, pins    int   // its engine's pins on its adapter
+	revoked             int
 	// pending is set for a decode reservation still waiting for its KV transfer; held* report
 	// whether its decode engine's cache and the router's index for that pod held the shared
 	// prefix's first block before and after the eviction.
@@ -134,17 +139,19 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			return l
 		}
 	}
-	dep.BatchConfig = sim.NewBatchConfig(8, 2048, 0)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(8, 2048, 0) })
 	if s.kvBound {
-		dep.BatchConfig = sim.NewBatchConfig(64, 8192, 0)
-		dep.KVCacheConfig = sim.NewKVCacheConfig(800, 16, 0, 0, 0, 0)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(64, 8192, 0) })
+		editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(800, 16, 0, 0, 0, 0) })
 	}
 	if s.adapter != "" {
 		capacity, base, bw, fp := s.capacity, 1000.0, 2.0e6, 2.0e6
-		dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
-			LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []sim.AdapterSpec{{ID: s.adapter, Rank: 8}}}
+		editEngine(&dep, func(c *cengine.SimConfig) {
+			c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+				LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []cengine.AdapterSpec{{ID: s.adapter, Rank: 8}}}
+		})
 	}
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{
 		Model:     "test-model",
 		EPPFlags:  []string{"--pool-name=vllm", "--config-text=" + s.config},
@@ -181,7 +188,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 		if s.sharedPrefix < 16 {
 			return false, false, false
 		}
-		first := hash.HashBlock("", reqs[0].InputTokens[:16])
+		first := hashBlock("", reqs[0].InputTokens[:16])
 		for _, p := range cs.ParentRequests() {
 			if p.ID != r.ID || p.DecodeSubReq == nil || p.DecodeSubReq.State != sim.StateWaitingForRemoteKVs {
 				continue
@@ -210,9 +217,12 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 				victims[id] = v
 			}
 			r, inst := engine(byID[id])
-			v.running, v.pinnedBefore = r.ProgressIndex > 0, r.AdapterPinned()
+			v.scheduled = r.State == sim.StateRunning
+			v.running = v.scheduled || r.State == sim.StateWaitingForRemoteKVs ||
+				r.State == sim.StateCompleted && r.RetainKVOnFinish
 			if inst != nil {
 				v.blocksBefore = inst.UsedKVBlocks()
+				v.pinsBefore = inst.AdapterPins()[r.Adapter]
 			}
 			v.pending, v.heldEngine, v.heldRouter = prefixHeld(byID[id])
 			if v.pending {
@@ -226,13 +236,13 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			v := victims[id]
 			v.revoked++
 			r, inst := engine(byID[id])
-			v.pinned = r.AdapterPinned()
 			if inst != nil {
 				v.after = inst.UsedKVBlocks()
+				v.pins = inst.AdapterPins()[r.Adapter]
 			}
 			if p := pendingVictims[id]; p != nil && s.sharedPrefix >= 16 {
 				// Its reservation is released: look at its decode engine directly.
-				first := hash.HashBlock("", reqs[0].InputTokens[:16])
+				first := hashBlock("", reqs[0].InputTokens[:16])
 				for _, inst := range cs.Instances() {
 					if inst.ID() != p.DecodeInstanceID {
 						continue
@@ -286,8 +296,10 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 				t.Errorf("%s: running victim's engine holds %d KV blocks after its eviction, %d before", r.ID, v.after, v.blocksBefore)
 			}
 		}
-		if v.pinned || (s.adapter != "" && v.running && !v.pinnedBefore) {
-			t.Errorf("%s: adapter pin before eviction %v, after %v; want a running victim's pin released", r.ID, v.pinnedBefore, v.pinned)
+		// A scheduled victim pinned its adapter, and its eviction releases exactly that pin.
+		if s.adapter != "" && v.scheduled && (v.pinsBefore == 0 || v.pins != v.pinsBefore-1) {
+			t.Errorf("%s: its engine's pins on %s were %d before its eviction and %d after; want its own pin released",
+				r.ID, s.adapter, v.pinsBefore, v.pins)
 		}
 	}
 	if running == 0 {

@@ -49,7 +49,7 @@ Build: **9e3c509c**.
 Details:
 
 - [InferenceX DSV4.1 agentic](inferencex-agentic.md): request-level pairs on Hopper.
-- [InferenceX single-turn](inferencex-single-turn.md): `cmd/metricscore` over the snapshot, with the published estimators for comparison.
+- [InferenceX single-turn](inferencex-single-turn.md): `tools/metricscore` over the snapshot, with the published estimators for comparison.
 - [Internal llm-d deployments](internal-deployments.md): DSV4.1 on H200.
 - [llm-d Prism](llm-d-prism.md): Llama-3.x on H100.
 

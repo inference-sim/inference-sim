@@ -122,7 +122,9 @@ func TestReplayCmd_BuildsItsLatencyModelOnlyThroughResolveLatencyConfig(t *testi
 
 	assert.Contains(t, content, "resolveLatencyConfig(cmd)",
 		"replay.go must resolve its latency model through resolveLatencyConfig(cmd)")
-	assert.Regexp(t, `LatencyModel:\s+lr\.KernelModel`, content,
+	// The run's engine configuration is assembled at the build site (engineConfigOfRun,
+	// cmd/engine_build.go), which replay hands the model resolveLatencyConfig returned.
+	assert.Regexp(t, `engineConfigOfRun\([^)]*lr\.KernelModel`, content,
 		"replay.go must price its steps with the model resolveLatencyConfig returned")
 	for _, open := range []string{"kernelmodel.Open(", "kernelmodel.OpenPool(", "latencykernel.New("} {
 		assert.NotContainsf(t, content, open,
@@ -150,7 +152,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"scheduler", "preemption-policy",
 		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
-		"num-instances", "long-prefill-token-threshold", "dp-load-balancing",
+		"num-instances", "dp-load-balancing",
 		// llm-d router environment flags (cmd/router.go): replay must accept the same router
 		// configuration run does (INV-13).
 		"gateway-latency", "epp-scrape-jitter", "kv-event-delay",

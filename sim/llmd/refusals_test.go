@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
+	_ "github.com/inference-sim/blis-vllm/compat/lora" // registers the adapter registry the engine builds
+
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	_ "github.com/inference-sim/inference-sim/sim/lora"
 )
 
 // TestStartupRefusalMessages pins the full startup error a user sees for each of a fixed set of
@@ -32,7 +34,7 @@ func TestStartupRefusalMessages(t *testing.T) {
 		if o.Model == "" {
 			o.Model = "test-model"
 		}
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
+		cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
 		cs.SetGateway(New(o))
 		return cs.Run()
 	}
@@ -136,8 +138,10 @@ func TestStartupRefusalMessages(t *testing.T) {
 		"precise-lora": func() error {
 			dep := testDeployment(2)
 			capacity, base, bw, fp := 2, 1000.0, 2.0e6, 2.0e6
-			dep.LoRAConfig = sim.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
-				LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []sim.AdapterSpec{{ID: "a", Rank: 8}}}
+			editEngine(&dep, func(c *cengine.SimConfig) {
+				c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
+					LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []cengine.AdapterSpec{{ID: "a", Rank: 8}}}
+			})
 			return run(dep, Options{EPPFlags: cfg("apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: precise-prefix-cache-producer\n- type: queue-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: queue-scorer\n  - pluginRef: max-score-picker\n")})
 		},
 	}

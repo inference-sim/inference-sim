@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -68,8 +69,8 @@ func runPool(t *testing.T, manifests string, labels map[string]string) runResult
 		r.SLOClass = map[bool]string{true: "critical", false: "sheddable"}[i%2 == 0]
 	}
 	dep := testDeployment(2)
-	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{
 		Model:     "test-model",
 		EPPFlags:  []string{"--pool-name=vllm"},
@@ -164,7 +165,7 @@ spec:
 // ignored.
 func TestManifests_UnservedRouterVersionRefused(t *testing.T) {
 	run := func(manifests string) error {
-		cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(testRequests(1, 1, 1000, 0)), nil)
+		cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(testRequests(1, 1, 1000, 0)), nil)
 		cs.SetGateway(New(Options{Model: "test-model", Manifests: []byte(manifests)}))
 		return cs.Run()
 	}

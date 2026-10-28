@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.

@@ -1,3 +1,7 @@
+// Moved from blis-vllm/compat/engine/agentic.go at 6b1d026, the host's own: the 0.29/0.31
+// compatibility engine now runs behind engine.Engine (blis-vllm compat/contract), and these are
+// the host's records, not the engine's (phase 2c).
+
 package sim
 
 // AgenticTag identifies a request of an agentic session-tree replay (blis replay
@@ -38,9 +42,3 @@ const (
 	AgenticContextOverflow = "context_overflow"
 	AgenticCancelled       = "cancelled"
 )
-
-// WithAgentic records an agentic replay's summary block in the --metrics-path file only
-// (stdout is unchanged, INV-6). Nil leaves the block absent.
-func WithAgentic(summary any) EmitOption {
-	return func(o *emitOptions) { o.agentic = summary }
-}

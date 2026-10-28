@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )
 
 // TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E is the PR4 (#1467)
@@ -21,7 +21,7 @@ import (
 //
 // It holds whatever model prices the steps: the test fake latency model, and a model that
 // knows nothing of adapters (as blis-latency-kernel does), which gets the factor from
-// sim.WithAdapterOverhead.
+// cengine.WithAdapterOverhead.
 func TestClusterSimulator_AdapterStepOverhead_InflatesLatency_E2E(t *testing.T) {
 	for _, injected := range []bool{false, true} {
 		name := "fake latency model"
@@ -37,26 +37,28 @@ func adapterStepOverheadInflatesLatency(t *testing.T, injected bool) {
 		config := newTestDeploymentConfig(2)
 		if injected {
 			var calls int
-			config.LatencyModel = countingModel{step: 500, calls: &calls}
+			editEngine(&config, func(c *simConfig) { c.LatencyModel = countingModel{step: 500, calls: &calls} })
 		}
 		capVal := 8
 		base, bw, fp := 1000.0, 2.0e6, 2.0e6
 		k7 := 1.0
-		config.LoRAConfig = sim.LoRAConfig{
-			AdapterCapacity:       &capVal,
-			LoadBaseLatencyUs:     &base,
-			LoadBandwidthBytesUs:  &bw,
-			FootprintBytesPerRank: &fp,
-			StepOverheadTiers:     map[int]sim.StepOverheadTier{8: {K6: &k6, K7: &k7}},
-			Adapters:              []sim.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
-		}
+		editEngine(&config, func(c *simConfig) {
+			c.LoRAConfig = cengine.LoRAConfig{
+				AdapterCapacity:       &capVal,
+				LoadBaseLatencyUs:     &base,
+				LoadBandwidthBytesUs:  &bw,
+				FootprintBytesPerRank: &fp,
+				StepOverheadTiers:     map[int]cengine.StepOverheadTier{8: {K6: &k6, K7: &k7}},
+				Adapters:              []cengine.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
+			}
+		})
 
 		requests := newTestRequests(6)
 		for _, r := range requests {
 			r.Adapter = "adapter_shared"
 		}
 
-		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+		cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 
 		var total float64

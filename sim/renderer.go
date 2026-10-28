@@ -1,3 +1,7 @@
+// Moved from blis-vllm/compat/engine/renderer.go at 6b1d026, the host's own: the 0.29/0.31
+// compatibility engine now runs behind engine.Engine (blis-vllm compat/contract), and these are
+// the host's records, not the engine's (phase 2c).
+
 package sim
 
 import "fmt"
@@ -97,26 +101,14 @@ func (r *Renderer) Rendered() int64 { return r.rendered }
 // WaitTicks is the summed time requests waited for a render thread.
 func (r *Renderer) WaitTicks() int64 { return r.waitTicks }
 
-// ShareRenderer gives the ranks of one endpoint a single render stage of apiServers servers:
-// the replica behind vLLM's internal DP balancer, whose API servers render every request
-// before the balancer picks a rank. A no-op when the ranks' front end is inert.
-func ShareRenderer(ranks []*Simulator, apiServers int) error {
-	if len(ranks) == 0 || ranks[0].renderer == nil {
-		return nil
+// ReplicaAPIServers is how many API servers render a data-parallel replica's requests before
+// its balancer picks a rank: the stated --api-server-count, else vLLM's default for a replica
+// endpoint behind the internal or hybrid balancer, its data-parallel size
+// (vllm/entrypoints/cli/serve.py:107-129@5df63a72). Moved from inference-sim's cluster
+// (sim/cluster/dp_replica.go at 972b4abebc9d84130692e349b75da66c51781e16).
+func ReplicaAPIServers(stated, dp int) int {
+	if stated == 0 {
+		return dp
 	}
-	workers := len(ranks[0].renderer.freeAt[0])
-	r, err := NewRenderer(apiServers, workers)
-	if err != nil {
-		return err
-	}
-	for _, s := range ranks {
-		if s.renderer == nil || len(s.renderer.freeAt[0]) != workers {
-			return fmt.Errorf("ShareRenderer: the ranks of one endpoint must all render, with the same thread count")
-		}
-		s.renderer = r
-	}
-	return nil
+	return stated
 }
-
-// Renderer is the simulator's render stage, nil when its front end is inert.
-func (sim *Simulator) Renderer() *Renderer { return sim.renderer }

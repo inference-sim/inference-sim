@@ -47,7 +47,7 @@ func TestGateway_DeclaredZoneAndRegionChangeDecodeChoice(t *testing.T) {
 			}
 			gw := New(Options{Model: "test-model", PodLabels: roleLabels, Manifests: []byte(manifests),
 				EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)})
-			cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(6, 11, 50_000, 0)), nil)
+			cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(6, 11, 50_000, 0)), nil)
 			cs.SetGateway(gw)
 			if err := cs.Run(); err != nil {
 				t.Fatalf("topology-aware run: %v", err)
@@ -87,7 +87,7 @@ func TestGateway_DeclaredGeographyMustMatchKernelRack(t *testing.T) {
 	gw := New(Options{Model: "test-model",
 		Manifests: []byte(declaredNode("blis-node-0", "zone-a", "region-a") + declaredNode("blis-node-1", "zone-b", "region-a")),
 		EPPFlags:  append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+topologyExtractorOnly)})
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
 	cs.SetGateway(gw)
 	if err := cs.Run(); err == nil || !strings.Contains(err.Error(), "rack \"blis-rack-0\" spans zones") {
 		t.Fatalf("rack/zone mismatch error = %v", err)
@@ -102,7 +102,7 @@ func TestGateway_OrdinaryNodeManifestWithoutTopology(t *testing.T) {
 		"instance_0": {Hostname: "blis-node-0", NodeCount: 1},
 	})
 	gw := New(Options{Model: "test-model", Manifests: []byte("apiVersion: v1\nkind: Node\nmetadata:\n  name: blis-node-0\n")})
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("ordinary router with unlabeled Node: %v", err)
@@ -114,7 +114,7 @@ func TestGateway_OrdinaryPodGeographyWithoutTopology(t *testing.T) {
 	gw := New(Options{Model: "test-model", PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string {
 		return map[string]string{"topology.kubernetes.io/zone": "zone-a"}
 	}})
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("ordinary router with partial Pod geography: %v", err)
@@ -127,7 +127,7 @@ func TestGateway_NodeManifestDoesNotReachObjectiveReconciler(t *testing.T) {
 		Manifests: []byte(poolManifests + "---\napiVersion: v1\nkind: Node\nmetadata:\n  name: blis-node-0\n"),
 		PodLabels: func(cluster.InstanceID, cluster.PoolRole) map[string]string { return map[string]string{"app": "vllm"} },
 	})
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(testRequests(1, 11, 0, 0)), nil)
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("pool-mode router with simulated Node: %v", err)

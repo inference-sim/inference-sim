@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"path/filepath"
 	"testing"
 
@@ -33,16 +34,16 @@ func TestBatchConfigFromCLI_PrefixCachingDisabled(t *testing.T) {
 	}
 }
 
-func prefixCachingTestDeployment(t *testing.T, batch sim.BatchConfig) cluster.DeploymentConfig {
+func prefixCachingTestDeployment(t *testing.T, batch batchConfig) engineConfig {
 	t.Helper()
 	d := newKernelDeployment(t, 99, nil)
 	cfg := d.Config
-	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0)
+	cfg.KVCacheConfig = cengine.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0)
 	cfg.BatchConfig = batch
 	return cfg
 }
 
-func runPrefixCachingConfig(t *testing.T, cfg cluster.DeploymentConfig, reqs []*sim.Request) (*cluster.ClusterSimulator, map[string]float64, map[string]float64) {
+func runPrefixCachingConfig(t *testing.T, cfg engineConfig, reqs []*sim.Request) (*cluster.ClusterSimulator, map[string]float64, map[string]float64) {
 	t.Helper()
 	cs := newRoutedCluster(cfg, reqs)
 	if err := cs.Run(); err != nil {

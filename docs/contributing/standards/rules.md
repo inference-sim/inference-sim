@@ -217,7 +217,7 @@ Configuration parameters must be grouped by module — not added to a monolithic
 
 **Evidence:** `SimConfig` previously combined hardware identity, model parameters, simulation parameters, and policy choices in 23 flat fields. Resolved in #350: `SimConfig` now embeds 6 module-scoped sub-configs (`KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`, `PolicyConfig`, `WorkloadConfig`). Factory signatures accept the narrowest sub-config (e.g., `NewKVStore(KVCacheConfig)`).
 
-**Check:** New config parameters go into the appropriate sub-config in `sim/config.go`, not directly into `SimConfig`.
+**Check:** New config parameters go into the appropriate sub-config in blis-vllm `compat/engine/config.go` (moved from `sim/config.go` by #2021), not directly into `SimConfig`.
 
 **Enforced:** Micro-plan Phase 8.
 
@@ -227,13 +227,13 @@ Configuration parameters must be grouped by module — not added to a monolithic
 
 ### R17: Document signal freshness for routing inputs
 
-Routing signals have different freshness. The embedded llm-d router reads two kinds: the vLLM Prometheus series each engine publishes at the end of every step (`sim/engine_metrics.go`), which the router scrapes on its own cadence (EPP flag `--refresh-metrics-interval`, phase-offset by `--epp-scrape-jitter`), and the router's own in-flight bookkeeping (for example `inflight-load-producer`), which is updated synchronously on each dispatch and response. A scrape that lands mid-step sees the previous step's values.
+Routing signals have different freshness. The embedded llm-d router reads two kinds: the vLLM Prometheus series each engine publishes at the end of every step (blis-vllm `compat/engine/engine_metrics.go`), which the router scrapes on its own cadence (EPP flag `--refresh-metrics-interval`, phase-offset by `--epp-scrape-jitter`), and the router's own in-flight bookkeeping (for example `inflight-load-producer`), which is updated synchronously on each dispatch and response. A scrape that lands mid-step sees the previous step's values.
 
 **Evidence:** H3 hypothesis experiment (#279) — a KV-utilization scorer produced 200x worse distribution uniformity than a queue-depth scorer at rate=5000, because its signal was stale. See issues #282, #283.
 
 **Check:** When adding an engine signal the router consumes, publish it with vLLM's semantics and at vLLM's update point (step end), and document its freshness: scraped (as stale as the scrape interval) or router-local (synchronous). When an experiment depends on a router signal, state which kind it is and the scrape interval used.
 
-**Enforced:** Design review, review of `sim/engine_metrics.go` and `sim/llmd` changes.
+**Enforced:** Design review, review of blis-vllm `compat/engine/engine_metrics.go` and `sim/llmd` changes.
 
 ---
 

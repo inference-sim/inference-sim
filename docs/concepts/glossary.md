@@ -26,7 +26,7 @@ The JSON output of `blis calibrate` comparing real observed latencies against si
 
 ### Chunked Prefill
 
-A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-batched-tokens`). Controlled by `--long-prefill-token-threshold`. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
+A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-batched-tokens`). Controlled by the scenario's `engine.long_prefill_token_threshold`. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
 
 ### Cohort
 
@@ -78,7 +78,7 @@ The Kubernetes Gateway API extension that defines the `InferencePool` and `Infer
 
 ### HOL Blocking (Head-of-Line Blocking)
 
-A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step, blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (`--long-prefill-token-threshold`), which splits long prefills so decode requests can be interleaved. See [KV Cache: Chunked Prefill](../guide/kv-cache.md#chunked-prefill) and [Chunked Prefill](#chunked-prefill).
+A scheduling pathology where one long prefill monopolizes the GPU for an entire step, preventing shorter requests from entering decode until it completes. In BLIS, a 2,048-token prompt can occupy an entire step, blocking all decode-phase requests during that step. Detected and counted as "HOL Blocking Events" in the anomaly counters. The mitigation is chunked prefill (the scenario's `engine.long_prefill_token_threshold`), which splits long prefills so decode requests can be interleaved. See [KV Cache: Chunked Prefill](../guide/kv-cache.md#chunked-prefill) and [Chunked Prefill](#chunked-prefill).
 
 ### Horizon
 
@@ -106,7 +106,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: [blis-latency-kernel](#blis-latency-kernel), adapted to the `sim.LatencyModel` interface by `sim/kernelmodel`. See [Core Engine: Latency Models](core-engine.md#latency-models) and [Latency Models Guide](../guide/latency-models.md).
+The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: [blis-latency-kernel](#blis-latency-kernel), adapted to the `sim.LatencyModel` interface by blis-vllm `compat/kernelmodel`. See [Core Engine: Latency Models](core-engine.md#latency-models) and [Latency Models Guide](../guide/latency-models.md).
 
 ### llm-d
 

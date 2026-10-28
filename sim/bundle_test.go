@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func float64Ptr(v float64) *float64 { return &v }
-
 func TestLoadPolicyBundle_ValidYAML(t *testing.T) {
 	yaml := `
 priority:

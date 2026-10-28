@@ -29,48 +29,6 @@ func inv1Accounted(m *Metrics) int {
 		m.DroppedUnservable + m.TimedOutRequests
 }
 
-// assertINV1Conservation asserts INV-1's five-term single-instance specialisation:
-// every injected request ends in exactly one of completed, still-queued,
-// still-running, dropped-unservable or timed-out.
-//
-// Valid only for a single-instance simulation, which has no cluster router, gateway
-// queue or encode pool — the seven cluster-only buckets are identically zero there.
-// Cluster-level assertions must use assertClusterINV1Conservation in sim/cluster.
-//
-// injected must come from a source independent of the metrics under test — normally
-// the number of requests the test enqueued. Passing a value derived from the same
-// Metrics (for example MetricsOutput.InjectedRequests, which is itself defined as
-// this sum) makes the assertion a tautology.
-func assertINV1Conservation(t *testing.T, m *Metrics, injected int, label string) {
-	t.Helper()
-	if got := inv1Accounted(m); got != injected {
-		t.Errorf("INV-1 conservation violated (%s): injected=%d != accounted=%d "+
-			"(completed=%d still_queued=%d still_running=%d dropped_unservable=%d timed_out=%d)",
-			label, injected, got, m.CompletedRequests, m.StillQueued, m.StillRunning,
-			m.DroppedUnservable, m.TimedOutRequests)
-	}
-}
-
-// assertMetricsSnapshotMatchesLiveState checks that Finalize's StillQueued and
-// StillRunning snapshot agrees with the live containers. Several tests used to
-// hand-roll their conservation sum from WaitQ.Len() and len(RunningBatch.Requests)
-// rather than from Metrics, which made them independent of the snapshot. Asserting
-// the two agree keeps that independence while letting the sum itself go through the
-// shared helper.
-func assertMetricsSnapshotMatchesLiveState(t *testing.T, sim *Simulator) {
-	t.Helper()
-	if got, want := sim.Metrics.StillQueued, sim.WaitQ.Len(); got != want {
-		t.Errorf("Metrics.StillQueued = %d but WaitQ holds %d — Finalize's snapshot is stale", got, want)
-	}
-	running := 0
-	if sim.RunningBatch != nil {
-		running = len(sim.RunningBatch.Requests)
-	}
-	if got := sim.Metrics.StillRunning; got != running {
-		t.Errorf("Metrics.StillRunning = %d but RunningBatch holds %d — Finalize's snapshot is stale", got, running)
-	}
-}
-
 // TestINV1_InstanceHelperMatchesRegistry asserts this package's five-term list is
 // the one the registry states as the single-instance specialisation. The cluster
 // package runs the eleven-term half of the same check; between them the two copies

@@ -51,7 +51,7 @@ func TestReplay_EpochSendDeadline_AllComplete(t *testing.T) {
 		t.Fatalf("built %d requests, want %d", len(reqs), n)
 	}
 
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(reqs), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 	m := cs.AggregatedMetrics()
 
@@ -98,7 +98,7 @@ func TestReplay_EpochSendDeadlineZero_RelativeOrigin(t *testing.T) {
 		t.Errorf("BC-7 (#1606): max injected ArrivalTime = %d is epoch-scale; injection was not re-based to the relative origin", maxArrival)
 	}
 
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(reqs), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 	m := cs.AggregatedMetrics()
 	if m.CompletedRequests != n {

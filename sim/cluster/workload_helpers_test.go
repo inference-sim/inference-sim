@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -52,18 +53,19 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 // baseDeploymentConfig returns a cluster config with realistic processing times.
 // Steps are priced by the shared fake latency model (testFakeLatency).
 func baseDeploymentConfig(numInstances int) DeploymentConfig {
-	return DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	return func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             50000000, // 50 seconds
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(64, 65536, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "", 1, 1, false, 0),
-		},
-		NumInstances: numInstances,
-		TraceLevel:   "decisions",
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = numInstances
+		d.TraceLevel = "decisions"
+		return d
+	}()
 }
 
 func copyRequests(reqs []*sim.Request) []*sim.Request {

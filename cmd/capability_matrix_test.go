@@ -290,14 +290,26 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		// (vllm/v1/core/sched/scheduler.py:611-626 at v0.31.0, vLLM #57951).
 		var prev, lone float64
 		for i, threshold := range []string{"0", "2048", "512"} {
-			o := capRun(t, runArgs(colocated(1), with(burst(2, 1000, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
+			// The threshold is the scenario's engine.long_prefill_token_threshold (#2021 B6).
+			body := strings.Replace(readFile(t, filepath.Join(pdScenarios, capScenario)), "      max_num_seqs: 256\n",
+				"      max_num_seqs: 256\n      long_prefill_token_threshold: "+threshold+"\n", 1)
+			if !strings.Contains(body, "long_prefill_token_threshold: "+threshold) {
+				t.Fatalf("%s has no engine block to state the threshold in", capScenario)
+			}
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			stated := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "1",
+				"--seed", "11", "--horizon", "900000000"}
+			o := capRun(t, runArgs(stated, burst(2, 1000, 20000, 8)...)...)
 			o.conserves(t, 2)
 			if ttft := o.num("ttft_mean_ms"); i > 0 && ttft <= prev {
 				t.Errorf("chunk threshold %s gave TTFT %.1f ms, no more than %.1f at the previous threshold", threshold, ttft, prev)
 			} else {
 				prev = ttft
 			}
-			alone := capRun(t, runArgs(colocated(1), with(burst(1, 1, 20000, 8), "--long-prefill-token-threshold", threshold)...)...)
+			alone := capRun(t, runArgs(stated, burst(1, 1, 20000, 8)...)...)
 			alone.conserves(t, 1)
 			if ttft := alone.num("ttft_mean_ms"); i == 0 {
 				lone = ttft

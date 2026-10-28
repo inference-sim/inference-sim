@@ -10,24 +10,21 @@ import (
 	"path/filepath"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
-// The scenario is the source of engine.long_prefill_token_threshold (blis-schemas#75) and
-// parallel.data_parallel_load_balancing (#76), as it is of the offload tiers (#1910): a
-// scenario stating a value runs byte-identically to the unstated scenario with the flag set
-// to it, an agreeing flag changes nothing, and a disagreeing flag is refused naming both.
+// The scenario is the source of parallel.data_parallel_load_balancing (#76), as it is of the
+// offload tiers (#1910): a scenario stating a value runs byte-identically to the unstated
+// scenario with the flag set to it, an agreeing flag changes nothing, and a disagreeing flag is
+// refused naming both. engine.long_prefill_token_threshold has no flag at all (#2021 B6):
+// TestRunCmd_LongPrefillThresholdHasNoFlag.
 func TestRunCmd_ScenarioEngineKnobsAreTheSourceAndFlagsOnlyRestate(t *testing.T) {
 	for _, tc := range []struct {
 		name, scenario, marker, stated, flag, value, other string
 		args                                               []string
 	}{
-		{"long_prefill_token_threshold", colocatedFixture, "      max_num_seqs: 256\n",
-			"      max_num_seqs: 256\n      long_prefill_token_threshold: 256\n",
-			"--long-prefill-token-threshold", "256", "512",
-			[]string{"--num-requests", "20", "--rate", "8", "--prompt-tokens", "1500", "--seed", "5"}},
 		{"data_parallel_load_balancing", dpScenario, "      dp: 2\n",
 			"      dp: 2\n      data_parallel_load_balancing: external\n",
 			"--dp-load-balancing", "external", "internal",
@@ -90,10 +87,8 @@ func pdKnobVariant(t *testing.T, prefillEng, decodeEng, prefillPar, decodePar st
 }
 
 // Each P/D pool runs its own engine.long_prefill_token_threshold (blis-schemas#75), as vLLM
-// sets it per engine: a threshold stated on the prefill pool alone chunks the prefills
-// exactly as the run-wide flag does, one stated on the decode pool alone reaches no
-// prefill, pools may state different values, and the flag must agree with every stated
-// pool value or the run is refused naming the pool. The prompts are long enough to overlap in the
+// sets it per engine: a threshold stated on the prefill pool alone chunks the prefills, one
+// stated on the decode pool alone reaches no prefill, and pools may state different values. The prompts are long enough to overlap in the
 // prefill scheduler: vLLM applies the threshold only when another request is there (#57951).
 func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	const threshold = "      long_prefill_token_threshold: 256\n"
@@ -116,9 +111,6 @@ func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	if prefillOnly == unstated {
 		t.Fatal("non-vacuous: a 256-token prefill threshold changed nothing on concurrent 16000-token prompts")
 	}
-	if flag := must(run(pdKnobVariant(t, "", "", "", ""), "--long-prefill-token-threshold", "256")); flag != prefillOnly {
-		t.Error("the prefill pool's stated threshold and the run-wide flag differ")
-	}
 	if decodeOnly := must(run(pdKnobVariant(t, "", threshold, "", ""))); decodeOnly != unstated {
 		t.Error("a threshold stated on the decode pool alone changed the prefills")
 	}
@@ -126,9 +118,20 @@ func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	if out := must(run(differing)); out != prefillOnly {
 		t.Error("the prefill pool's 256 must decide the prefills whatever the decode pool states")
 	}
-	if _, stderr, err := run(differing, "--long-prefill-token-threshold", "256"); err == nil ||
-		!strings.Contains(stderr, "decode pool's engine.long_prefill_token_threshold 512") {
-		t.Errorf("a flag disagreeing with one pool must be refused naming it: %v\n%s", err, lastLines(stderr, 3))
+}
+
+// engine.long_prefill_token_threshold comes from the scenario only (#2021 B6): run and replay
+// have no flag for it, so the CLI cannot run an engine its scenario does not describe.
+func TestRunCmd_LongPrefillThresholdHasNoFlag(t *testing.T) {
+	for _, c := range []*cobra.Command{runCmd, replayCmd} {
+		if f := c.Flags().Lookup("long-prefill-token-threshold"); f != nil {
+			t.Errorf("%s still registers --long-prefill-token-threshold", c.Name())
+		}
+	}
+	_, stderr, err := runKernelCLI(t, "run", "--scenario", colocatedFixture, "--num-requests", "4", "--rate", "4",
+		"--long-prefill-token-threshold", "256")
+	if err == nil || !strings.Contains(stderr, "unknown flag: --long-prefill-token-threshold") {
+		t.Errorf("the flag must be unknown: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
@@ -157,9 +160,7 @@ func TestPDPoolsResolveTheirOwnDPLoadBalancing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var o cluster.PoolOverrides
-			poolEngineKnobs(m, &o)
-			got[role] = o.DPLoadBalancing
+			got[role] = poolOverridesOf(m).DPLoadBalancing
 		}
 		if got[deployment.RolePrefill] != tc.wantPrefill || got[deployment.RoleDecode] != tc.wantDec {
 			t.Errorf("flag %v %q: pools resolved %v, want prefill %s decode %s", tc.fromFlag, tc.flag, got,

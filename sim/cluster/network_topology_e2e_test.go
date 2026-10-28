@@ -7,6 +7,7 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"testing"
 
@@ -17,14 +18,14 @@ import (
 )
 
 // netTestSimConfig is a fake-priced instance config at the given TP.
-func netTestSimConfig(tp int) sim.SimConfig {
-	return sim.SimConfig{
+func netTestSimConfig(tp int) cengine.SimConfig {
+	return cengine.SimConfig{
 		Horizon:             math.MaxInt64,
 		Seed:                42,
-		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         sim.NewBatchConfig(256, 8192, 0),
+		KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         cengine.NewBatchConfig(256, 8192, 0),
 		LatencyModel:        testFakeLatency(),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "m", "H100", tp, 1, false, 0),
+		ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "m", "H100", tp, 1, false, 0),
 	}
 }
 
@@ -36,24 +37,25 @@ func netTestSimConfig(tp int) sim.SimConfig {
 // step moves — so its change proves that step ran at that site.
 func TestNodeSpan_RecordedAtAllThreePlacementSites(t *testing.T) {
 	t.Run("startup", func(t *testing.T) {
-		cfg := DeploymentConfig{
-			SimConfig:    netTestSimConfig(16),
-			NumInstances: 1,
-			NodePools:    []NodePoolConfig{newTestPool("p", "H100", 8, 2)}, // tp=16 must span
-		}
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		cfg := func() DeploymentConfig {
+			d := compatDeployment(netTestSimConfig(16), 0)
+			d.NumInstances = 1
+			d.NodePools = []NodePoolConfig{newTestPool("p", "H100", 8, 2)}
+			return d
+		}()
+		cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 		require.Len(t, cs.instances, 1, "startup must place the instance")
 		assert.Equal(t, 2, cs.MaxNodesSpanned(), "the startup placement site must record the span")
 	})
 
 	t.Run("deferred_node_ready", func(t *testing.T) {
-		cfg := DeploymentConfig{
-			SimConfig:    netTestSimConfig(16),
-			NumInstances: 1,
-			// InitialNodes=0 → the instance is pending until a node becomes Ready.
-			NodePools: []NodePoolConfig{{Name: "p", GPUType: "H100", GPUsPerNode: 8, GPUMemoryGiB: 80, InitialNodes: 0, MaxNodes: 4}},
-		}
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		cfg := func() DeploymentConfig {
+			d := compatDeployment(netTestSimConfig(16), 0)
+			d.NumInstances = 1
+			d.NodePools = []NodePoolConfig{{Name: "p", GPUType: "H100", GPUsPerNode: 8, GPUMemoryGiB: 80, InitialNodes: 0, MaxNodes: 4}}
+			return d
+		}()
+		cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 		require.Empty(t, cs.instances, "precondition: no instance before a node is Ready")
 		require.Equal(t, 0, cs.MaxNodesSpanned(), "precondition: nothing placed, nothing recorded")
 
@@ -69,13 +71,14 @@ func TestNodeSpan_RecordedAtAllThreePlacementSites(t *testing.T) {
 	})
 
 	t.Run("autoscaler_scale_up", func(t *testing.T) {
-		cfg := DeploymentConfig{
-			SimConfig:    netTestSimConfig(8),
-			NumInstances: 1,
+		cfg := func() DeploymentConfig {
+			d := compatDeployment(netTestSimConfig(8), 0)
+			d.NumInstances = 1
 			// 3 nodes: the startup instance fits on one, the scaled-up tp=16 one spans two.
-			NodePools: []NodePoolConfig{newTestPool("p", "H100", 8, 3)},
-		}
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+			d.NodePools = []NodePoolConfig{newTestPool("p", "H100", 8, 3)}
+			return d
+		}()
+		cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 		require.Len(t, cs.instances, 1)
 		require.Equal(t, 1, cs.MaxNodesSpanned(), "precondition: the startup instance is single-node")
 
@@ -110,12 +113,13 @@ func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
 		return reqs
 	}
 	runOnce := func() string {
-		cfg := DeploymentConfig{
-			SimConfig:    netTestSimConfig(16),
-			NumInstances: 1,
-			NodePools:    []NodePoolConfig{newTestPool("p", "H100", 8, 2)}, // tp=16 must span
-		}
-		cs := NewClusterSimulator(cfg, NewSliceRequestSource(makeReqs()), nil)
+		cfg := func() DeploymentConfig {
+			d := compatDeployment(netTestSimConfig(16), 0)
+			d.NumInstances = 1
+			d.NodePools = []NodePoolConfig{newTestPool("p", "H100", 8, 2)}
+			return d
+		}()
+		cs := newTestCluster(cfg, NewSliceRequestSource(makeReqs()), nil)
 		require.Equal(t, 2, cs.MaxNodesSpanned(), "precondition: the instance must span two nodes")
 		mustRun(t, cs)
 		payload, err := json.Marshal(cs.AggregatedMetrics().BuildOutput("cluster"))
@@ -134,12 +138,13 @@ func TestPlacementTopology_SpanningRunIsByteIdenticalAcrossRuns(t *testing.T) {
 // without multi-node placement.
 func TestPlacementTopology_MaxNodesSpannedReportsWidestSpan(t *testing.T) {
 	newCluster := func(pools []NodePoolConfig, tp, instances int) *ClusterSimulator {
-		cfg := DeploymentConfig{
-			SimConfig:    netTestSimConfig(tp),
-			NumInstances: instances,
-			NodePools:    pools,
-		}
-		return NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
+		cfg := func() DeploymentConfig {
+			d := compatDeployment(netTestSimConfig(tp), 0)
+			d.NumInstances = instances
+			d.NodePools = pools
+			return d
+		}()
+		return newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 	}
 
 	t.Run("no node pools reports nothing", func(t *testing.T) {

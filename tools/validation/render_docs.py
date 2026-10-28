@@ -557,7 +557,7 @@ def page_inferencex_single_turn(before: Build, after: Build) -> str:
     two = (lambda b, a: a) if same else ba
     L = [GENERATED, "", "# InferenceX single-turn (metricscore)", "", *build_stamp(before, after)]
     L += [
-        "`cmd/metricscore` scores BLIS against InferenceX's single-turn sweeps (random "
+        "`tools/metricscore` scores BLIS against InferenceX's single-turn sweeps (random "
         "fixed ISL/OSL, closed loop at concurrency `CONC`, `10*CONC` requests) from the "
         f"[InferenceX]({IX_URL}) database dump of 2026-09-28. It replays the exact seed-0 "
         "length vectors the client drew; see [The published accuracy figures]"
@@ -1261,7 +1261,7 @@ def page_index(before: Build, after: Build, prism: dict, prism_root: pathlib.Pat
         else f"Single values were scored on one build only ({'; '.join(single)}). Details:",
         "",
         "- [InferenceX DSV4.1 agentic](inferencex-agentic.md): request-level pairs on Hopper.",
-        "- [InferenceX single-turn](inferencex-single-turn.md): `cmd/metricscore` over the "
+        "- [InferenceX single-turn](inferencex-single-turn.md): `tools/metricscore` over the "
         "snapshot, with the published estimators for comparison.",
         "- [Internal llm-d deployments](internal-deployments.md): DSV4.1 on H200.",
         "- [llm-d Prism](llm-d-prism.md): Llama-3.x on H100.",

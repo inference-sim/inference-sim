@@ -3,12 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"pgregory.net/rapid"
 )
 
@@ -177,7 +177,6 @@ func TestApplyDPPlacement(t *testing.T) {
 	tests := []struct {
 		name            string
 		plan            dpPlacementPlan
-		dp              int
 		in              dpPlacementDeployment
 		wantErrContains string
 		want            dpPlacementDeployment
@@ -186,7 +185,6 @@ func TestApplyDPPlacement(t *testing.T) {
 			// The no-op law that makes the feature byte-identical when unused (INV-6).
 			name: "inactive plan is the identity",
 			plan: inactive,
-			dp:   1,
 			in:   dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
 			want: dpPlacementDeployment{NumInstances: 3, TotalKVBlocks: 5000, MaxModelLen: 1_000_000},
 		},
@@ -195,7 +193,6 @@ func TestApplyDPPlacement(t *testing.T) {
 			// or re-caps the window.
 			name: "active plan multiplies replicas and keeps the per-rank KV and window",
 			plan: active4,
-			dp:   4,
 			in:   dpPlacementDeployment{NumInstances: 2, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 			want: dpPlacementDeployment{NumInstances: 8, TotalKVBlocks: 12345, MaxModelLen: 1_000_000},
 		},
@@ -204,33 +201,20 @@ func TestApplyDPPlacement(t *testing.T) {
 			// NumInstances, so P·N+D·N+S·N+E·N ≤ total·N is preserved.
 			name: "active plan scales every PD pool count by Replicas",
 			plan: active4,
-			dp:   4,
 			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 			want: dpPlacementDeployment{NumInstances: 40, TotalKVBlocks: 40000, MaxModelLen: 4096, PrefillInstances: 12, DecodeInstances: 16, SharedInstances: 8, EncodeInstances: 4},
 		},
 		{
 			name: "inactive plan leaves PD pool counts untouched",
 			plan: inactive,
-			dp:   1,
 			in:   dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
 			want: dpPlacementDeployment{NumInstances: 10, TotalKVBlocks: 5000, MaxModelLen: 4096, PrefillInstances: 3, DecodeInstances: 4, SharedInstances: 2, EncodeInstances: 1},
-		},
-		{
-			// Defense in depth against a non-positive per-rank budget, which would panic
-			// NewSimulator: it errors and leaves the deployment untouched, so a caller that
-			// ignored the error cannot run a half-applied plan.
-			name:            "a non-positive per-rank KV budget errors instead of panicking downstream",
-			plan:            dpPlacementPlan{Active: true, Replicas: 8, PerRankDP: 1},
-			dp:              8,
-			in:              dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
-			wantErrContains: "per-rank KV budget must be positive",
-			want:            dpPlacementDeployment{NumInstances: 1, TotalKVBlocks: 0, MaxModelLen: 4096},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := applyDPPlacement(tc.plan, tc.dp, tc.in)
+			got, err := applyDPPlacement(tc.plan, tc.in)
 			if tc.wantErrContains != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got nil", tc.wantErrContains)
@@ -254,7 +238,7 @@ func TestApplyDPPlacement(t *testing.T) {
 // active MoE plan, and leaves DP=1 for the dp=1 no-op. Refactor-safe (asserts observable
 // config behavior, not source text).
 func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
-	moe := sim.ModelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
+	moe := modelConfig{NumLocalExperts: 8} // >= MoEMinExperts ⇒ IsMoE
 	const tp = 2
 
 	// Active plan (MoE, dp=4): PerRankDP=1 ⇒ each replica's config is DP=1.
@@ -262,7 +246,7 @@ func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDPPlacement(active): %v", err)
 	}
-	mhcActive := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planActive.PerRankDP, false, 0)
+	mhcActive := cengine.NewModelHardwareConfig(moe, "m", "H100", tp, planActive.PerRankDP, false, 0)
 	if mhcActive.EffectiveDP() != 1 {
 		t.Errorf("active plan: EffectiveDP got %d, want 1 (per-rank)", mhcActive.EffectiveDP())
 	}
@@ -272,7 +256,7 @@ func TestDPPlacement_PerRankDP_ConfiguresConstructor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDPPlacement(noop): %v", err)
 	}
-	mhcNoop := sim.NewModelHardwareConfig(moe, "m", "H100", tp, planNoop.PerRankDP, false, 0)
+	mhcNoop := cengine.NewModelHardwareConfig(moe, "m", "H100", tp, planNoop.PerRankDP, false, 0)
 	if mhcNoop.EffectiveDP() != 1 {
 		t.Errorf("dp=1 no-op: EffectiveDP got %d, want 1", mhcNoop.EffectiveDP())
 	}
@@ -527,7 +511,7 @@ func TestResolveDPPlacement_IsAPerRankExpansion(t *testing.T) {
 		if moe {
 			experts = 8
 		}
-		lr := latencyResolution{ModelConfig: sim.ModelConfig{NumLocalExperts: experts}}
+		lr := latencyResolution{ModelConfig: modelConfig{NumLocalExperts: experts}}
 		plan, err := planDPPlacement(lr.ModelConfig.IsMoE(), dp, epOn, inPrefill > 0, autoscaler, false)
 		if err == nil {
 			plan, err = resolveDPPlacement(lr, plan)

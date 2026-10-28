@@ -3,7 +3,8 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -11,20 +12,21 @@ import (
 // when disaggregation is not configured, no PD-specific trace records are emitted.
 func TestPDTrace_NonDisaggMode_NoDisaggRecords(t *testing.T) {
 	// GIVEN non-disaggregated simulation with trace enabled
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             10000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
-		},
-		NumInstances: 4,
-		TraceLevel:   "decisions",
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 4
+		d.TraceLevel = "decisions"
+		return d
+	}()
 	requests := newTestRequests(5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -62,7 +64,7 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.TraceLevel = "decisions"
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	mustRun(t, cs)
 
@@ -144,7 +146,7 @@ func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.TraceLevel = "decisions"
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -182,7 +184,7 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.TraceLevel = "decisions"
 	requests := newTestRequests(3)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -223,7 +225,7 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	// and subsequent AllocateTransferredKV calls fail → droppedAtDecodeKV > 0.
 	config, requests := decodeDropFixture(4) // prompts the decode instance can never hold
 	config.TraceLevel = "decisions"
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -265,7 +267,7 @@ func TestPDTrace_NonDisaggregated_WithPools_NoPDRecords(t *testing.T) {
 	config.TraceLevel = "decisions"
 	const numRequests = 4
 	requests := newTestRequests(numRequests)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	cs.SetGateway(&fakeGateway{})
 
 	// WHEN run
@@ -304,7 +306,7 @@ func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.TraceLevel = "decisions"
 	requests := newTestRequests(5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
