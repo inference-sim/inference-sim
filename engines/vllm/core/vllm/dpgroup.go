@@ -43,6 +43,9 @@ type DPGroup struct {
 	ranks  []*rankState
 	pricer Pricer
 	rankOf map[string]int
+	// abortedOn are the requests Finish aborted while an iteration in flight scheduled them, by
+	// rank: their rankOf entries go once no iteration in flight does.
+	abortedOn map[string]int
 	// inflight are the lockstep iterations whose batches run tokens and have not completed,
 	// oldest first: at most the ranks' batch queue size (InFlightLimit).
 	inflight []*dpIter
@@ -98,13 +101,15 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
 	}
 	n := st.dp.ranks
-	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{},
+	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	for i := 0; i < n; i++ {
 		e, err := newEngine(st, pricer)
 		if err != nil {
 			return nil, err
 		}
+		rank := i
+		e.queued = func(id string) bool { return g.inFlight(rank, id) }
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
 		g.dp.Waves = append(g.dp.Waves, &core.Wave{PrefillScheduleInterval: st.dp.prefillInterval,
@@ -263,6 +268,18 @@ func (g *DPGroup) StepTime(b engine.Batch) engine.Duration {
 	return max(worst, 1)
 }
 
+// inFlight reports whether an iteration in flight scheduled the request on rank r.
+func (g *DPGroup) inFlight(r int, id string) bool {
+	for _, it := range g.inflight {
+		if cb, ok := it.rank[r]; ok {
+			if _, sched := cb.Out.Scheduled[id]; sched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // rankBatches splits an iteration's batch into the ranks' own batches.
 func (g *DPGroup) rankBatches(b engine.Batch) []engine.Batch {
 	per := make([]engine.Batch, len(g.ranks))
@@ -328,6 +345,13 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 	}
 	for _, f := range res.Finished {
 		g.dp.LB.Finished(f.ID)
+		delete(g.rankOf, f.ID)
+	}
+	for id, r := range g.abortedOn {
+		if !g.inFlight(r, id) {
+			delete(g.rankOf, id)
+			delete(g.abortedOn, id)
+		}
 	}
 	sort.Strings(res.FirstTokens)
 	sort.Slice(res.Finished, func(i, j int) bool { return res.Finished[i].ID < res.Finished[j].ID })
@@ -346,7 +370,15 @@ func (g *DPGroup) Finish(id string, why engine.FinishReason, now engine.Time) er
 		return nil
 	}
 	g.dp.LB.Finished(id)
-	return g.ranks[r].e.Finish(id, why, now)
+	err := g.ranks[r].e.Finish(id, why, now)
+	if !g.inFlight(r, id) {
+		// No iteration in flight names it any more; one that does still maps it to its rank
+		// (rankBatches) until it completes, when its rank engine forgets it too.
+		delete(g.rankOf, id)
+	} else {
+		g.abortedOn[id] = r
+	}
+	return err
 }
 
 // NextWake implements engine.Engine: with no batch in flight, a group with work steps again when

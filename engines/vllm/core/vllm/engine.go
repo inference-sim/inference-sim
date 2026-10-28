@@ -70,7 +70,13 @@ type Engine struct {
 	pricer  Pricer
 	metrics *metrics.Model
 
-	reqs    map[string]*reqState
+	reqs map[string]*reqState
+	// aborted are the requests Finish aborted while a batch in flight scheduled them: their
+	// entries in reqs go once no batch in flight does.
+	aborted map[string]bool
+	// queued reports whether a batch in flight scheduled a request: the adapter's own batches,
+	// or a data-parallel group's iterations when the engine is one of its ranks (DPGroup).
+	queued  func(id string) bool
 	pending []pendingBatch
 	nextID  engine.BatchID
 	// sched holds each in-flight batch's schedule decisions until its metrics step.
@@ -133,7 +139,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	e := &Engine{
-		s: s, pricer: pricer, reqs: map[string]*reqState{},
+		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
 	}
@@ -531,6 +537,18 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	}
 	res.KVEvents = kvEvents(e.s.TakeKVEvents())
 	e.finishStep(pb.b, emitted, fins, end)
+	// A request that finished here has had its final step consumed: its result and its metrics
+	// step are recorded, so its entry goes (the scheduler freed its own at the finish).
+	for _, f := range fins {
+		delete(e.reqs, f.ID)
+	}
+	// An aborted request stayed for the batches it was in flight with; one is gone once none is.
+	for id := range e.aborted {
+		if !e.inFlight(id) {
+			delete(e.reqs, id)
+			delete(e.aborted, id)
+		}
+	}
 	if e.specTokens > 0 && !e.async && len(pb.b.Out.Scheduled) > 0 {
 		// EngineCore.post_step (vllm/v1/engine/core.py:689-696@5df63a72): without async
 		// scheduling, after a step that ran, the drafter proposes num_speculative_tokens drafts
@@ -561,7 +579,26 @@ func (e *Engine) Finish(id string, _ engine.FinishReason, _ engine.Time) error {
 	}
 	st.finished = true
 	e.s.Abort([]string{id})
+	if e.inFlight(id) {
+		// A batch in flight still names it: its entry goes once that batch completes (apply).
+		e.aborted[id] = true
+	} else {
+		delete(e.reqs, id)
+	}
 	return nil
+}
+
+// inFlight reports whether a batch in flight scheduled the request.
+func (e *Engine) inFlight(id string) bool {
+	if e.queued != nil {
+		return e.queued(id)
+	}
+	for _, p := range e.pending {
+		if _, ok := p.b.Out.Scheduled[id]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // NextWake implements engine.Engine. vLLM v0.32.0's scheduler, without a connector, makes no
