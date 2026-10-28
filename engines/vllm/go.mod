@@ -3,11 +3,11 @@ module github.com/inference-sim/blis-vllm
 go 1.27.2
 
 require (
-	// TEMPORARY: inference-sim/blis-latency-kernel#96 at 7ff4556 (https://github.com/inference-sim/blis-latency-kernel/pull/96,
+	// TEMPORARY: inference-sim/blis-latency-kernel#96 at 9857e68 (https://github.com/inference-sim/blis-latency-kernel/pull/96,
 	// stacked on #82: the kernel takes its rules and its engine settings from the caller, and imports
 	// nothing from this module), which compat/kernelmodel builds against. Moves to a release tag before anything merges
 	// (blis-latency-kernel#88).
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028171753-7ff45569c04e
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093
 	// TEMPORARY: inference-sim/blis-schemas#106 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/106,
 	// stacked on #102: the engine-neutral contract, a pool's engine block and an offload's connector
 	// options held unopened as deployment.EngineBlock, the engine's rules from the caller, the P/D
