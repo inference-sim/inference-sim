@@ -1,0 +1,69 @@
+# A single-node expert-parallel deployment: the root package's primary fixture.
+#
+# WHY THIS FILE EXISTS. The tests in this package need a kernel built from committed
+# artifacts on a model the catalog ships, with expert parallelism ON so that expert
+# sharding, the routed-term split and the all-to-all path are all reachable. Thirty-one
+# of them need nothing more specific than that.
+#
+# It is EP=8 rather than EP=16 because 8 is a width the registry carries an alltoall
+# sweep for on h200 and 16 is not, on any part. A fixture at an unmeasured width cannot
+# build a kernel at all -- groupWidth refuses rather than borrowing a narrower width's
+# floor, which would understate the collective by up to 1.9x -- so every test using one
+# fails for a reason that has nothing to do with what it asserts. The two tests that
+# genuinely need a 16-wide group spanning two nodes keep minimax-m25-h200-ep16.yaml and
+# are skipped against inference-sim/blis-registry#27 until the coefficient exists.
+#
+# tp=8 with dp=1 and expert parallelism enabled is a real deployment shape, not a
+# contrivance to reach a measured width: the InferenceX corpus measures it directly
+# (testdata/direct/minimax-m3-*-tp8-ep8-*.yaml), so this fixture prices a deployment
+# this project evaluates.
+#
+# MiniMax-M2.5 is used because it matches what those tests actually assert, not merely
+# because it is available:
+#   * hidden_size 3072 and an expert intermediate of 1536, so the dense and expert byte
+#     arithmetic the tests restate keeps the shape those assertions were written for;
+#   * 8 KV heads over tp=8, so each rank holds exactly one and the KV-sharding test's
+#     premise survives (GLM-5 carries n_kv=1 and cannot shard eight ways, which is why
+#     it is not used here);
+#   * MoE at 256 experts, top_k 8, with an expert_parallel All2All and an AllReduce, so
+#     expert sharding, the routed-term split and the collective path are all reachable.
+#
+# Committed rather than generated, because it is the reference the implementation is
+# checked against. Every name here resolves into the pinned catalog and registry under
+# testdata; a rename in either breaks this file, which is the intent.
+kind: Scenario
+name: minimax-m25-h200-ep8
+engine_version: "0.29.0"
+
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  # No fabric: one node, so no collective crosses a node boundary and nothing resolves
+  # against an inter-node rate. The cross-node case is ep16's, deliberately.
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: minimax-m25-h200-ep8
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: true
+    engine:
+      # The checkpoint is fp8; serving fp8 puts the step on the fp8 efficiency
+      # envelope rather than the bf16 one.
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

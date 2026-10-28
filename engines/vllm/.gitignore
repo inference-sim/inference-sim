@@ -2,3 +2,9 @@
 /oracle/out/
 __pycache__/
 *.pyc
+
+# The kernel tests' upstream catalog and registry, fetched by kerneltests/scripts/fetch-testdata.sh
+# at the commits kerneltests/testdata/upstream.lock pins, and their measurement corpora.
+/kerneltests/testdata/catalog/
+/kerneltests/testdata/registry/
+/kerneltests/testdata/measurements/

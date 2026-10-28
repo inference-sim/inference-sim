@@ -1,0 +1,42 @@
+# Mirrors the FPM cell MiniMaxAI--MiniMax-M2.7 / h200-sxm / pure_tp tp=4 exactly:
+# tp=4, dp=1, no expert parallelism, fp8_block weights.
+#
+# Chosen as the validation cell because pure tensor parallelism makes the weight bytes
+# and the GEMM shapes per rank unambiguous -- there is no expert placement to assume.
+# It carries 8,911 mixed prefill+decode rows, which is the out-of-sample set for a
+# shape-aware GEMM term: the ramp was fitted on AISimulate operator sweeps and has never
+# seen a whole-forward measurement.
+#
+# Used only to validate. Not a registry artifact and not an evaluation corpus.
+kind: Scenario
+name: m27-h200-puretp4-fpm
+engine_version: "0.29.0"
+
+model: minimax-m2.7
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 4
+---
+kind: Deployment
+name: m27-h200-puretp4-fpm
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 4
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

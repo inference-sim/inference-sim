@@ -1,0 +1,65 @@
+# The aggregated (non-disaggregated) arm of the published Nemotron-3-Ultra sweep.
+#
+# Chosen from that report's six arms because it is the one a step-time model can be held
+# to: no prefill/decode split, so every step this scenario prices is a step the engine
+# actually ran, and the report records `preempt: 0` and near-zero `waiting` at every level,
+# so nothing is queueing.
+#
+# The report states TP=8 on H100 across 24 GPUs, NVFP4 weights, and MTP depth 1. It does
+# NOT state input or output lengths, max_num_seqs, max_model_len, gpu_memory_utilization or
+# the cudagraph or recurrent cache modes. They are set here, and they are NOT all vLLM's
+# defaults: v0.31.0 would run 1,024 sequences on an H100, 0.92 utilization,
+# FULL_AND_PIECEWISE and, for this hybrid model with prefix caching on, the "align"
+# recurrent mode, against the 256, 0.9, PIECEWISE and "none" below. They are held fixed so
+# committed scores stay comparable, and the scorer says which of its inputs came from the
+# report and which did not.
+kind: Scenario
+name: nemotron3-ultra-h100-agg
+engine_version: "0.29.0"
+
+model: nemotron-3-ultra-550b-a55b-nvfp4
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  # Declared because a three-node cluster must name one, though no collective in this
+  # deployment crosses a node: the 24 GPUs run as three independent 8-GPU tensor-parallel
+  # replicas, so every group fits inside one node. The report states no fabric, and this is
+  # the common H100 choice.
+  fabric: ib-400g
+  nodes: 3
+  gpus_per_node: 8
+---
+kind: Deployment
+name: nemotron3-ultra-h100-agg
+
+pools:
+  - role: colocated
+    # 24 GPUs as three 8-GPU tensor-parallel replicas, which is what "AGG x3" names: three
+    # engines in one pool, each tp=8, dp=1. Not one engine at dp=3, which in vLLM would
+    # share every expert across all 24 GPUs and gather every rank's tokens to it
+    # (vllm/model_executor/layers/fused_moe/all2all_utils.py:202-214 at v0.31.0) -- a
+    # different deployment from three independent replicas. An earlier form stated dp=3.
+    nodes: 3
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      cache_dtype: fp8
+      # A hybrid stack's recurrent state. The report does not state the mode. "none" sizes
+      # state per sequence rather than per position; it is the config default, but the
+      # engine runs "align" for a hybrid model whenever prefix caching is on
+      # (vllm/model_executor/models/config.py:640-642 at v0.31.0), so this is a choice held
+      # fixed, not the engine's effective default.
+      mamba_cache_mode: none
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 131072
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9
+      speculative:
+        method: mtp
+        num_spec_tokens: 1

@@ -1,0 +1,36 @@
+<figure class="diagram" markdown="0">
+<svg viewBox="0 0 800 330" role="img" aria-labelledby="fig-repos-title fig-repos-desc">
+<title id="fig-repos-title">The BLIS repositories, seen from blis-latency-kernel</title>
+<desc id="fig-repos-desc">blis-latency-kernel imports blis-schemas for document types, loaders, validators and the Kernel interface. It reads model graphs, chips, fabrics and storage tiers from blis-catalog, and coefficient sets from blis-registry, as files. inference-sim, in pull request 1851, imports the kernel and calls it once per simulated step. Nothing imports in the other direction.</desc>
+<defs>
+<marker id="repos-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,1 L9,5 L0,9 z"/></marker>
+<marker id="repos-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-accent" d="M0,1 L9,5 L0,9 z"/></marker>
+</defs>
+<rect class="box" x="300" y="14" width="200" height="62" rx="5"/>
+<text class="title" x="316" y="39">blis-schemas</text>
+<text class="small" x="316" y="58">the formats · Go</text>
+<rect class="box" x="20" y="132" width="180" height="62" rx="5"/>
+<text class="title" x="36" y="157">blis-catalog</text>
+<text class="small" x="36" y="176">declared facts · YAML, JSON</text>
+<rect class="box" x="600" y="132" width="180" height="62" rx="5"/>
+<text class="title" x="616" y="157">blis-registry</text>
+<text class="small" x="616" y="176">learned numbers · YAML</text>
+<rect class="box-accent" x="300" y="132" width="200" height="62" rx="5"/>
+<text class="title accent-text" x="316" y="157">blis-latency-kernel</text>
+<text class="small" x="316" y="176">pricing · Go</text>
+<rect class="box" x="300" y="250" width="200" height="62" rx="5"/>
+<text class="title" x="316" y="275">inference-sim</text>
+<text class="small" x="316" y="294">simulation · Go (PR #1851)</text>
+<path class="edge" d="M400,132 L400,78" marker-end="url(#repos-ah)"/>
+<text class="small" x="408" y="110">types, loaders, the Kernel interface</text>
+<path class="edge dotted" d="M300,163 L202,163" marker-end="url(#repos-ah)"/>
+<text class="small" x="250" y="140" text-anchor="middle">graphs, chips,</text>
+<text class="small" x="250" y="155" text-anchor="middle">fabrics, storage</text>
+<path class="edge dotted" d="M500,163 L598,163" marker-end="url(#repos-ah)"/>
+<text class="small" x="550" y="155" text-anchor="middle">coefficients</text>
+<path class="edge-accent" d="M400,250 L400,196" marker-end="url(#repos-ah-accent)"/>
+<text class="small accent-text" x="408" y="228">StepTime, once per simulated step</text>
+<text class="small" x="20" y="322">Solid: a Go import, pointing at what is imported. Dotted: files the kernel reads, pointing at where they come from.</text>
+</svg>
+<figcaption>Where the kernel sits. It imports one BLIS module, blis-schemas, and reads the catalog's and the registry's files through that module's loaders. The simulator imports the kernel; the kernel imports nothing from the simulator.</figcaption>
+</figure>

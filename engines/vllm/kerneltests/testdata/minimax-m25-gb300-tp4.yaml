@@ -1,0 +1,51 @@
+# A Grace-Blackwell tray deployment, whose collective coefficients are ASSUMED.
+#
+# WHY THIS FILE EXISTS. `assumed` is one of six methods in blis-schemas' vocabulary, and
+# the registry uses it for terms no sweep covers yet: host overheads throughout, and
+# gb300's collective entries, whose comm sweeps have not landed. Nothing in this kernel
+# reads Method to accept or reject a coefficient -- it reads it only to COUNT evidence --
+# so such a deployment must price, with its footing reported rather than hidden.
+#
+# That was untested. Every other fixture here resolves against a part whose collectives
+# are measured, so the one assertion that touched this (every assumed coefficient is a
+# host term) held by luck and broke as soon as the registry gained eighteen assumed
+# collective entries for gb300. The rule was a true observation about one snapshot
+# written as a permanent constraint; this fixture is what keeps the real contract honest.
+#
+# TP=4 because a Grace-Blackwell tray is four GPUs, so this is the ordinary shape on the
+# part rather than a width chosen to dodge a gap. Expert parallelism is off: the point
+# here is the evidence axis, and leaving EP out keeps the fixture reaching exactly the
+# collective entries that are assumed.
+kind: Scenario
+name: minimax-m25-gb300-tp4
+engine_version: "0.29.0"
+
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: gb300
+  # One tray, so nothing crosses a node boundary and no fabric is named.
+  nodes: 1
+  gpus_per_node: 4
+---
+kind: Deployment
+name: minimax-m25-gb300-tp4
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 4
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

@@ -12,18 +12,14 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: [".", "rules"]
-    defaults:
-      run:
-        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version-file: go.mod
+      # The kernel tests read the catalog and registry at the commits kerneltests/testdata/upstream.lock pins.
+      - name: fetch the kernel tests' catalog and registry
+        run: kerneltests/scripts/fetch-testdata.sh
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -34,20 +30,24 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build ./...
+      # The kernel tests' scoring suite needs measurement corpora this repository does not
+      # distribute, so it is vetted rather than run, as it was in blis-latency-kernel.
+      - name: go vet (the kernel tests' scoring suite)
+        run: go vet -tags scoring ./kerneltests/...
       - name: go test
         run: go test -race ./...
+      # The kernel tests that read the kernel's unexported state run inside the kernel package
+      # this module pins (kerneltests/_inpackage).
+      - name: kernel tests in the kernel package
+        run: kerneltests/scripts/run-inpackage.sh
 
   lint:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: [".", "rules"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version-file: go.mod
       # The module targets Go 1.27; golangci-lint refuses a module newer than the Go that built
       # it, so it is built from source with the module's Go (as inference-sim's CI does).
       - name: golangci-lint
@@ -55,7 +55,6 @@ jobs:
         with:
           version: v2.14.0
           install-mode: goinstall
-          working-directory: ${{ matrix.module }}
 
   # Each rules pack transcribes one vLLM release by hand; these tests re-derive its constants
   # from that release's own source and fail on any difference in either direction. Each pack is
@@ -81,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: rules/go.mod
+          go-version-file: go.mod
       - name: check out vLLM at the pack's release
         uses: actions/checkout@v4
         with:

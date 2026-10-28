@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-latency-kernel/vllmsettings"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )

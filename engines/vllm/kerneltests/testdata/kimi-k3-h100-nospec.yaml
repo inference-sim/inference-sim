@@ -1,0 +1,53 @@
+# The "no spec, 256k context, fixed build" arm of the published Kimi-K3 agentic sweep.
+#
+# Chosen from that report's eleven arms because it is the least confounded: speculation off,
+# so a step is one token per resident request; and the arm's own label states the context
+# bound, which the report does not state anywhere else.
+#
+# The report states 32 GPUs on H100. It does NOT state the tensor-parallel width per
+# replica, the input or output lengths, or the memory settings. The layout below is the one
+# the GPU count and a 1T-class MXFP4 model together imply — four 8-GPU replicas — and the
+# scorer reports that this is inferred rather than stated.
+kind: Scenario
+name: kimi-k3-h100-nospec
+engine_version: "0.29.0"
+
+model: kimi-k3
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h100
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: kimi-k3-h100-nospec
+
+pools:
+  - role: colocated
+    # Four 8-GPU replicas, as the header infers: four engines in one pool, each tp=8, dp=1.
+    # Not one engine at dp=4, which in vLLM would share every expert across all 32 GPUs and
+    # gather every rank's tokens to it (vllm/model_executor/layers/fused_moe/
+    # all2all_utils.py:202-214 at v0.31.0). An earlier form stated dp=4.
+    nodes: 4
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      cache_dtype: fp8
+      # KDA layers carry recurrent state. The mode is not stated. "none" sizes state per
+      # sequence rather than per position; it is the config default, but the engine runs
+      # "align" for a hybrid model whenever prefix caching is on
+      # (vllm/model_executor/models/config.py:640-642 at v0.31.0), so this is a choice held
+      # fixed, not the engine's effective default.
+      mamba_cache_mode: none
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      # 256k, which this arm's label states explicitly.
+      max_model_len: 262144
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

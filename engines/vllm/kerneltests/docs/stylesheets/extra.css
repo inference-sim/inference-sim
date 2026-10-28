@@ -1,0 +1,242 @@
+/* Restrained typography: a readable measure, quiet headings, and figures that take their
+   colors from the page so they read the same in light and dark schemes. */
+
+/* Declared on the element that carries the color scheme, so each var() resolves against
+   that scheme's Material colors rather than the light defaults on :root. */
+[data-md-color-scheme] {
+  --fig-ink: var(--md-default-fg-color);
+  --fig-muted: var(--md-default-fg-color--light);
+  --fig-faint: var(--md-default-fg-color--lightest);
+  --fig-accent: #3f51b5;
+  --fig-fill: #f3f4f8;
+  --fig-accent-fill: #eceffb;
+}
+
+[data-md-color-scheme="slate"] {
+  --fig-faint: rgba(226, 228, 233, 0.22);
+  --fig-accent: #8c9eff;
+  --fig-fill: #2c2f3b;
+  --fig-accent-fill: #2b3150;
+}
+
+.md-typeset {
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+/* About 80 characters a line for prose. Tables, code and figures may use the full width. */
+.md-typeset > p,
+.md-typeset > ul,
+.md-typeset > ol,
+.md-typeset > dl,
+.md-typeset > .admonition {
+  max-width: 38em;
+}
+
+.md-typeset h1 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset h2 {
+  font-weight: 600;
+  margin-top: 2.2em;
+}
+
+.md-typeset h3,
+.md-typeset h4 {
+  font-weight: 600;
+}
+
+/* The lede: the first paragraph of a page, set slightly larger so the gist reads first. */
+.md-typeset .lede {
+  font-size: 1.05em;
+  color: var(--md-default-fg-color);
+  max-width: 36em;
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: 0.74rem;
+}
+
+.md-typeset dt {
+  font-weight: 600;
+  margin-top: 1.1em;
+}
+
+.md-typeset dd {
+  margin-top: 0.25em;
+}
+
+/* Tables */
+
+.md-typeset table:not([class]) {
+  font-size: 0.74rem;
+  display: table;
+  width: 100%;
+}
+
+/* Keep an identifier or a path whole; let prose and messages wrap at spaces. */
+.md-typeset table:not([class]) td code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* Code and program output */
+
+/* Program output is read, not copied character by character: wrap long lines rather than
+   hide the end of a message behind a horizontal scroll. */
+.md-typeset .language-text pre > code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Leave room for the copy button at the end of the first line. */
+.md-typeset pre > code {
+  padding-right: 2.4em;
+}
+
+/* Figures */
+
+.md-typeset figure.diagram {
+  /* Material sizes a figure to fit its content, which would let the caption set the
+     drawing's width. A diagram takes the column instead. */
+  display: block;
+  width: 100%;
+  margin: 2em 0;
+  max-width: 100%;
+}
+
+.md-typeset figure.diagram svg {
+  width: 100%;
+  height: auto;
+  max-width: 46rem;
+  display: block;
+  margin: 0 auto;
+}
+
+.md-typeset figure.diagram figcaption {
+  max-width: 46rem;
+  margin: 0.8em auto 0;
+  font-size: 0.72rem;
+  font-style: normal;
+  color: var(--fig-muted);
+  text-align: left;
+}
+
+.diagram svg text {
+  font-family: var(--md-text-font-family);
+  fill: var(--fig-ink);
+  font-size: 13.5px;
+}
+
+.diagram svg .small { font-size: 12px; fill: var(--fig-muted); }
+.diagram svg .title { font-weight: 600; }
+.diagram svg .mono  { font-family: var(--md-code-font-family); font-size: 11.5px; }
+
+.diagram svg .box        { fill: var(--fig-fill); stroke: var(--fig-faint); stroke-width: 1; }
+.diagram svg .box-accent { fill: var(--fig-accent-fill); stroke: var(--fig-accent); stroke-width: 1.25; }
+.diagram svg .box-plain  { fill: none; stroke: var(--fig-faint); stroke-width: 1; }
+.diagram svg .box-plain.dashed { stroke: var(--fig-muted); }
+
+.diagram svg .edge        { fill: none; stroke: var(--fig-muted); stroke-width: 1.25; }
+.diagram svg .edge-accent { fill: none; stroke: var(--fig-accent); stroke-width: 1.5; }
+.diagram svg .dashed      { stroke-dasharray: 5 4; }
+.diagram svg .dotted      { stroke-dasharray: 1.5 3.5; stroke-linecap: round; }
+.diagram svg .dot         { fill: var(--fig-muted); }
+
+.diagram svg .arrowhead        { fill: var(--fig-muted); }
+.diagram svg .arrowhead-accent { fill: var(--fig-accent); }
+.diagram svg .accent-text      { fill: var(--fig-accent); }
+
+/* Phones: keep figures and key tables at a readable size and let them scroll sideways,
+   rather than shrinking them until nothing can be read. */
+@media screen and (max-width: 44.9375em) {
+  .md-typeset figure.diagram {
+    overflow-x: auto;
+  }
+
+  .md-typeset figure.diagram svg {
+    min-width: 720px;
+  }
+
+  .md-typeset table:not([class]) th,
+  .md-typeset table:not([class]) td {
+    padding: 0.5em 0.6em;
+  }
+
+  .md-typeset table:not([class]) td:last-child {
+    min-width: 11rem;
+  }
+
+  .md-typeset .headerlink {
+    display: none;
+  }
+}
+
+/* Charts: the data figures in docs/generated/, drawn by internal/docgen.
+
+   Each resource keeps one color in every figure, so a reader who has learned that HBM is
+   the teal line does not relearn it. The palette is muted and distinguishable without
+   relying on hue alone: lines are also labeled directly at their ends. */
+
+[data-md-color-scheme] {
+  --fig-sm: #3f51b5;
+  --fig-hbm: #00897b;
+  --fig-nvlink: #c0662b;
+  --fig-nic: #8e6aa8;
+  --fig-host: #7a7f8c;
+  --fig-band: rgba(63, 81, 181, 0.12);
+}
+
+[data-md-color-scheme="slate"] {
+  --fig-sm: #8c9eff;
+  --fig-hbm: #4db6ac;
+  --fig-nvlink: #e8955c;
+  --fig-nic: #b39ddb;
+  --fig-host: #a7acb8;
+  --fig-band: rgba(140, 158, 255, 0.16);
+}
+
+.md-typeset figure.chart svg {
+  max-width: 48rem;
+}
+
+.diagram svg .grid       { stroke: var(--fig-faint); stroke-width: 1; }
+.diagram svg .tick-mark  { stroke: var(--fig-muted); stroke-width: 1; }
+.diagram svg .tick        { font-size: 12px; fill: var(--fig-muted); font-variant-numeric: tabular-nums; }
+.diagram svg .axis-title  { font-size: 12.5px; fill: var(--fig-muted); }
+.diagram svg .panel-title { font-size: 13.5px; font-weight: 600; fill: var(--fig-ink); }
+.diagram svg .label       { font-size: 13px; font-weight: 600; }
+.diagram svg .note        { font-size: 12px; fill: var(--fig-muted); }
+.diagram svg .rule       { stroke: var(--fig-muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.diagram svg .band       { fill: var(--fig-band); stroke: none; }
+
+.diagram svg .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.diagram svg .point  { stroke: none; }
+
+.diagram svg .s-sm     { stroke: var(--fig-sm); }
+.diagram svg .s-hbm    { stroke: var(--fig-hbm); }
+.diagram svg .s-nvlink { stroke: var(--fig-nvlink); }
+.diagram svg .s-nic    { stroke: var(--fig-nic); }
+.diagram svg .s-host   { stroke: var(--fig-host); stroke-dasharray: 4 3; }
+.diagram svg .s-overlap   { stroke: var(--fig-accent); stroke-dasharray: 5 3; stroke-opacity: 0.7; }
+.diagram svg .s-nooverlap { stroke: var(--fig-accent); }
+
+.diagram svg circle.s-sm     { fill: var(--fig-sm); }
+.diagram svg circle.s-hbm    { fill: var(--fig-hbm); }
+.diagram svg circle.s-nvlink { fill: var(--fig-nvlink); }
+.diagram svg circle.s-nic    { fill: var(--fig-nic); }
+.diagram svg circle.s-host   { fill: var(--fig-host); }
+.diagram svg circle.s-overlap,
+.diagram svg circle.s-nooverlap { fill: var(--fig-accent); }
+
+.diagram svg text.s-sm     { fill: var(--fig-sm); }
+.diagram svg text.s-hbm    { fill: var(--fig-hbm); }
+.diagram svg text.s-nvlink { fill: var(--fig-nvlink); }
+.diagram svg text.s-nic    { fill: var(--fig-nic); }
+.diagram svg text.s-host   { fill: var(--fig-host); }
+.diagram svg text.s-overlap,
+.diagram svg text.s-nooverlap { fill: var(--fig-accent); }

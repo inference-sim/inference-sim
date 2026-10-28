@@ -1,0 +1,57 @@
+# A two-node expert-parallel deployment: the root package's primary fixture.
+#
+# WHY THIS FILE EXISTS. These tests were written against a fixture whose model is not in
+# blis-catalog. `fixture()` SKIPS when a scenario's model is missing, so 37 of 45 tests in
+# this package were passing by not running — a mutation that breaks expert sharding went
+# undetected. This scenario restores them on a model the catalog ships.
+#
+# MiniMax-M2.5 is used because it matches what those tests actually assert, not merely
+# because it is available:
+#   * hidden_size 3072 and an expert intermediate of 1536, so the dense and expert byte
+#     arithmetic the tests restate keeps the shape those assertions were written for;
+#   * 8 KV heads over tp=8, so each rank holds exactly one and the KV-sharding test's
+#     premise survives (GLM-5 carries n_kv=1 and cannot shard eight ways, which is why
+#     it is not used here);
+#   * MoE at 256 experts, top_k 8, with an expert_parallel All2All and an AllReduce, so
+#     expert sharding, the routed-term split and the collective path are all reachable.
+# It is also a model the InferenceX corpus measures, so the fixture prices a deployment
+# this project evaluates rather than a hypothetical one.
+#
+# Committed rather than generated, because it is the reference the implementation is
+# checked against. Every name here resolves into blis-catalog and blis-registry; a
+# rename in either breaks this file, which is the intent.
+kind: Scenario
+name: minimax-m25-h200-ep16
+engine_version: "0.29.0"
+
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: minimax-m25-h200-ep16
+
+pools:
+  - role: colocated
+    nodes: 2
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 2
+      enable_expert_parallel: true
+    engine:
+      # The checkpoint is fp8; serving fp8 puts the step on the fp8 efficiency
+      # envelope rather than the bf16 one, as the previous fixture did.
+      quantization: fp8
+      cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      cudagraph_mode: PIECEWISE
+      gpu_memory_utilization: 0.9

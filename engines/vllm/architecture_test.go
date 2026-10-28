@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// goFiles returns every non-test Go file in this module and its nested modules, by path
+// goFiles returns every non-test Go file in this module, by path
 // relative to the repository root, skipping tools that are not engine code.
 func goFiles(t *testing.T, skipDirs ...string) []string {
 	t.Helper()
@@ -49,7 +49,7 @@ func goFiles(t *testing.T, skipDirs ...string) []string {
 
 var (
 	derivedFrom = regexp.MustCompile(`^// Derived from vllm/\S+ at vLLM v\d+\.\d+\.\d+ \([0-9a-f]{40}\)`)
-	movedFrom   = regexp.MustCompile(`^// Moved from inference-sim/\S+ at [0-9a-f]{40}`)
+	movedFrom   = regexp.MustCompile(`^// Moved from (inference-sim|blis-latency-kernel)/\S+ at [0-9a-f]{40}`)
 	original    = "// Original to blis-vllm."
 	spdx        = []string{
 		"// SPDX-License-Identifier: Apache-2.0",
@@ -60,7 +60,7 @@ var (
 // TestEveryFileStatesItsProvenance: each Go file says where its logic comes from, in its
 // first comment block. A file translated from vLLM names the upstream file and commit and
 // keeps vLLM's licence (#2021 attribution rule), so the next vLLM release can be diffed
-// function by function; a file moved from inference-sim names the commit it was taken from;
+// function by function; a file moved from inference-sim or blis-latency-kernel names the commit it was taken from;
 // anything else says it is original. A file that says nothing fails, which is what keeps the
 // rule from decaying as files are added.
 func TestEveryFileStatesItsProvenance(t *testing.T) {
