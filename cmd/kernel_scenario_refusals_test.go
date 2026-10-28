@@ -485,8 +485,8 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	}
 }
 
-// The host does not carry request priority across the engine contract yet (every request
-// reaches the v0.32.0 engine at priority 0), so a priority policy would silently run as FCFS. A
+// The host does not carry request priority across the engine contract yet (it sends every
+// request to the v0.32.0 engine at priority 0), so a priority policy would silently run as FCFS. A
 // 0.32.0 scenario stating engine.scheduling_policy priority is refused at the build site, naming
 // the policy; the same scenario at 0.31.0, whose compatibility engine orders by priority, runs.
 func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
@@ -540,8 +540,8 @@ func TestRunCmd_A032ScenarioRefusesAPrioritySchedulerFlag(t *testing.T) {
 				"--rate", "4", "--num-requests", "4", "--seed", "1"}, flags...)
 		}
 		_, stderr, err := runKernelCLI(t, run("0.32.0")...)
-		if err == nil || !strings.Contains(stderr, "does not carry request priority yet, so scheduler") ||
-			!strings.Contains(stderr, flags[1]) {
+		if err == nil || !strings.Contains(stderr, "does not carry request priority across it yet") ||
+			!strings.Contains(stderr, "so scheduler") || !strings.Contains(stderr, flags[1]) {
 			t.Errorf("a 0.32.0 run with %v: want a refusal naming it, got err=%v\n%s", flags, err, lastLines(stderr, 3))
 		}
 		if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {

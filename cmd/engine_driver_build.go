@@ -73,26 +73,26 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 			"behind vLLM's internal balancer, which does not drive --dp-load-balancing external yet "+
 			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
 	}
-	// The host does not carry request priority across the engine contract yet: every request
-	// reaches the engine at priority 0, so a priority policy would order by arrival alone and
-	// silently run as FCFS. Refuse the scenario's stated policy (vLLM's priority, BLIS's
-	// priority-fcfs: enginePolicyOf), any SLO priority override, and a priority scheduler or
-	// preemption policy the run asks for (--scheduler, --preemption-policy or a --policy-config
-	// bundle, none of which reaches the engine), naming the setting, rather than run any as FCFS.
+	// The host does not carry request priority across the engine contract yet: the driver sends
+	// every engine.Request at priority 0 (sim.EngineDriver, the SLO class only as a tag the engine
+	// does not read), so a priority policy would order by arrival alone and silently run as FCFS.
+	// Refuse the scenario's stated policy (vLLM's priority, BLIS's priority-fcfs: enginePolicyOf),
+	// any SLO priority override, and a priority scheduler or preemption policy the run asks for
+	// (--scheduler, --preemption-policy or a --policy-config bundle, none of which reaches the
+	// engine), naming the setting, rather than run any as FCFS.
+	refusePriority := func(setting string) {
+		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, and the host does not "+
+			"carry request priority across it yet (every request reaches the engine at priority 0), so %s",
+			kernelScenario, version, setting)
+	}
 	if scenarioScheduler == "priority-fcfs" {
-		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not carry "+
-			"request priority yet, so engine.scheduling_policy priority would run as FCFS (every request at "+
-			"priority 0)", kernelScenario, version)
+		refusePriority("engine.scheduling_policy priority would run as FCFS")
 	}
 	if len(sloPriorityOverrides) > 0 {
-		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not carry "+
-			"request priority yet, so the --policy-config priority.slo_priorities override would be ignored "+
-			"(every request at priority 0)", kernelScenario, version)
+		refusePriority("the --policy-config priority.slo_priorities override would be ignored")
 	}
 	if scheduler == "priority-fcfs" || scheduler == "reverse-priority" || preemptionPolicy == "priority" {
-		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not carry "+
-			"request priority yet, so scheduler %s with preemption policy %s would run as FCFS (every request "+
-			"at priority 0)", kernelScenario, version, scheduler, preemptionPolicy)
+		refusePriority(fmt.Sprintf("scheduler %s with preemption policy %s would run as FCFS", scheduler, preemptionPolicy))
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
