@@ -5,15 +5,15 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	// TEMPORARY: inference-sim/blis-latency-kernel#96 at 9857e68 (https://github.com/inference-sim/blis-latency-kernel/pull/96, stacked on #82; the kernel imports nothing from blis-vllm).
+	// TEMPORARY: inference-sim/blis-latency-kernel#82 at 9857e68 (https://github.com/inference-sim/blis-latency-kernel/pull/82, with #96 merged in: the kernel imports nothing from blis-vllm).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093
-	// TEMPORARY: inference-sim/blis-schemas#106 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/106, stacked on #102; the kernel's engine settings, kernel/enginesettings; #102: engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
+	// TEMPORARY: inference-sim/blis-schemas#102 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/102, with #106 merged in; the kernel's engine settings, kernel/enginesettings; #102: engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
 	github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01
-	// TEMPORARY: inference-sim/blis-vllm#36 at 153eb48 (https://github.com/inference-sim/blis-vllm/pull/36, on main at 0732ccd; one module, rules/ folded in).
+	// TEMPORARY: inference-sim/blis-vllm main at c08c168 (review PR https://github.com/inference-sim/blis-vllm/pull/20; #36, one module with rules/ folded in, and #37, finished requests freed).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261028173245-153eb485433d
+	github.com/inference-sim/blis-vllm v0.0.0-20261028180825-c08c16800cf8
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
