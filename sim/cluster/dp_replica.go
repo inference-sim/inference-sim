@@ -2,31 +2,22 @@ package cluster
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// DPStatsIntervalUs is how often vLLM's DP coordinator publishes the engines' request
-// counts to the front-end's load balancer: min_stats_update_interval_ms = 100
-// (vllm/v1/engine/coordinator.py:154-162, :267-269 at v0.31.0).
-const DPStatsIntervalUs int64 = 100_000
-
-// The DP load-balancing modes (DeploymentConfig.DPLoadBalancing).
+// The DP load-balancing modes (DeploymentConfig.DPLoadBalancing) are vLLM's serve flags
+// (sim.DPLoadBalancing*, sim.ValidDPLoadBalancing, sim.DPEachRankIsAnEndpoint). The cluster
+// builds the endpoints they name and routes; the rank pick behind one endpoint is the engine's.
 const (
-	DPLoadBalancingInternal = "internal"
-	DPLoadBalancingHybrid   = "hybrid"
-	DPLoadBalancingExternal = "external"
+	DPLoadBalancingInternal = sim.DPLoadBalancingInternal
+	DPLoadBalancingHybrid   = sim.DPLoadBalancingHybrid
+	DPLoadBalancingExternal = sim.DPLoadBalancingExternal
 )
 
-// IsValidDPLoadBalancing reports whether mode names a DP load-balancing mode ("" is internal).
-func IsValidDPLoadBalancing(mode string) bool {
-	switch mode {
-	case "", DPLoadBalancingInternal, DPLoadBalancingHybrid, DPLoadBalancingExternal:
-		return true
-	}
-	return false
-}
+// IsValidDPLoadBalancing reports whether mode names a DP load-balancing mode ("" is internal):
+// the engine's rule (sim.ValidDPLoadBalancing).
+func IsValidDPLoadBalancing(mode string) bool { return sim.ValidDPLoadBalancing(mode) }
 
 // dpReplica is one data-parallel MoE replica (#1909): dp engine ranks that step in
 // lockstep and sit behind one API endpoint, the pod the router sees.
@@ -40,24 +31,6 @@ type dpReplica struct {
 	// id is the endpoint the router sees: rank 0's instance ID.
 	id    string
 	ranks []*InstanceSimulator
-	group *sim.LockstepGroup
-
-	// vLLM's internal DP load balancer state (DPLBAsyncMPClient,
-	// vllm/v1/engine/core_client.py:1550-1640 at v0.31.0).
-	//
-	// counts is the coordinator's latest [waiting, running, kv_cache_usage] per rank, which
-	// the front-end bumps locally on each assignment until the next publish overwrites it
-	// (:1626-1628).
-	counts []dpRankCounts
-	// epoch is the DPStatsIntervalUs period counts was published in; -1 before the first.
-	epoch int64
-	// start is the balancer's rotating scan start (eng_start_index, :1629-1634).
-	start int
-}
-
-type dpRankCounts struct {
-	waiting, running int
-	kvUsage          float64
 }
 
 // buildDPReplicas groups each run of config.DPLockstepRanks consecutive instances into a
@@ -89,8 +62,7 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 	replicaOf := make(map[string]*dpReplica, config.NumInstances)
 	var replicas []*dpReplica
 	for r := 0; r < config.NumInstances/dp; r++ {
-		rep := &dpReplica{epoch: -1, counts: make([]dpRankCounts, dp)}
-		sims := make([]*sim.Simulator, 0, dp)
+		rep := &dpReplica{}
 		for k := 0; k < dp; k++ {
 			id := InstanceID(fmt.Sprintf("instance_%d", r*dp+k))
 			inst, ok := instanceMap[id]
@@ -100,37 +72,29 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 					id, r, config.NumInstances, max(config.TP, 1))
 			}
 			rep.ranks = append(rep.ranks, inst)
-			sims = append(sims, inst.sim)
 		}
 		rep.id = string(rep.ranks[0].ID())
-		g, err := sim.NewLockstepGroup(sims)
-		if err != nil {
-			return fmt.Errorf("replica %s: %w", rep.id, err)
-		}
-		rep.group = g
+		// The replica's lockstep group is its engine, behind the contract (a DP group's ranks).
 		replicas = append(replicas, rep)
 		for _, inst := range rep.ranks {
 			replicaOf[string(inst.ID())] = rep
 		}
 	}
 	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
-	// A replica endpoint renders on its own API servers, dp of them unless stated
-	// (vllm/entrypoints/cli/serve.py:105-127), before the balancer picks a rank (INV-R1).
-	// An external-balancer or P/D-pool rank keeps the render stage it was built with: its
-	// own endpoint's servers.
+	// A replica endpoint renders on its own API servers before the balancer picks a rank
+	// (INV-R1): how many is the engine's rule (sim.ReplicaAPIServers, vLLM's default when
+	// unstated), and its ranks share the host's one render stage. An external-balancer or
+	// P/D-pool rank keeps the render stage it was built with: its own endpoint's servers.
 	for _, rep := range replicas {
 		if cs.endpointReplica(rep.ranks[0]) == nil {
 			continue
 		}
-		apiServers := config.Frontend.APIServerCount
-		if apiServers == 0 {
-			apiServers = dp
-		}
-		sims := make([]*sim.Simulator, len(rep.ranks))
+		apiServers := sim.ReplicaAPIServers(config.Frontend.APIServerCount, dp)
+		drivers := make([]*sim.EngineDriver, len(rep.ranks))
 		for k, inst := range rep.ranks {
-			sims[k] = inst.sim
+			drivers[k] = inst.drv
 		}
-		if err := sim.ShareRenderer(sims, apiServers); err != nil {
+		if err := sim.ShareRenderStage(drivers, apiServers, config.Frontend.RendererNumWorkers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)
 		}
 	}
@@ -151,7 +115,7 @@ func (cs *ClusterSimulator) eventMembers(inst *InstanceSimulator) []*InstanceSim
 // is its own endpoint: under external DP load balancing every rank is, and a P/D pool's
 // ranks stay individually routable (a documented limitation).
 func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica {
-	if cs.replicaOf == nil || cs.poolsConfigured() || cs.config.DPLoadBalancing == DPLoadBalancingExternal {
+	if cs.replicaOf == nil || cs.poolsConfigured() || sim.DPEachRankIsAnEndpoint(cs.config.DPLoadBalancing) {
 		return nil
 	}
 	return cs.replicaOf[string(inst.ID())]
@@ -198,55 +162,17 @@ func (cs *ClusterSimulator) rankFor(inst *InstanceSimulator) *InstanceSimulator 
 // endpoint of rank index 0, so only rank 0's events reach the index. Ranks 1..dp-1 cache
 // prefixes the router never sees.
 
-// dpClientCount is the number of front-ends one balancer stands for. vLLM starts
-// api_server_count front-ends, dp by default under the internal balancer
-// (vllm/entrypoints/cli/serve.py:105-127), each scaling its own in-flight count by the
-// client count to estimate the total. BLIS models one front-end that sees every in-flight
-// request, which is the quantity that scaling estimates, so the count is 1.
-const dpClientCount = 1
-
-// pickRank assigns a request that reached the replica's endpoint to a rank, as vLLM
-// v0.31.0's internal DP load balancer does (DPLBAsyncMPClient.get_core_engine_for_request,
-// vllm/v1/engine/core_client.py:1589-1640):
-//
-//	score = max(client_count x in_flight, waiting + running)
-//	        + waiting x 6 x max(0, kv_cache_usage - 0.5)      (only when waiting > 0)
-//
-// over the coordinator's last published [waiting, running, kv_cache_usage], scanning from a
-// rotating start and keeping the first minimum. The chosen rank's waiting count is bumped
-// by client_count until the next publish. in_flight is the front-end's exact count of its
-// unfinished requests on the rank (engine_inflight, :1569-1570, :1639, :1655-1660), which is
-// the cluster's per-rank in-flight counter: raised at dispatch, lowered at completion,
-// drop or timeout.
-//
-// The coordinator publishes at most every DPStatsIntervalUs; BLIS samples the ranks at the
-// first assignment of each period rather than at the publish instant.
+// pickRank assigns a request that reached the replica's endpoint at now to a rank. The replica's
+// engine, its data-parallel group, picks it (the engine's PickRank), from the ranks' own counts
+// and the front end's in-flight count on each, the cluster's.
 func (cs *ClusterSimulator) pickRank(rep *dpReplica, now int64) *InstanceSimulator {
-	if epoch := now / DPStatsIntervalUs; epoch != rep.epoch {
-		rep.epoch = epoch
-		for k, inst := range rep.ranks {
-			rep.counts[k] = dpRankCounts{
-				waiting: inst.QueueDepth(),
-				running: inst.BatchSize(),
-				kvUsage: inst.KVUtilization(),
-			}
-		}
+	inFlight := make([]int, len(rep.ranks))
+	for k, inst := range rep.ranks {
+		inFlight[k] = cs.inFlightRequests[string(inst.ID())]
 	}
-	n := len(rep.ranks)
-	best, bestScore := 0, math.Inf(1)
-	for i := 0; i < n; i++ {
-		k := (rep.start + i) % n
-		c := rep.counts[k]
-		inflight := cs.inFlightRequests[string(rep.ranks[k].ID())]
-		score := float64(max(dpClientCount*inflight, c.waiting+c.running))
-		if c.waiting > 0 {
-			score += float64(c.waiting) * 6.0 * math.Max(0, c.kvUsage-0.5)
-		}
-		if score < bestScore {
-			best, bestScore = k, score
-		}
+	k, ok, err := rep.ranks[0].drv.PickRank(now, inFlight)
+	if err != nil || !ok {
+		panic(fmt.Sprintf("replica %s: its engine picks no rank: %v", rep.id, err))
 	}
-	rep.counts[best].waiting += dpClientCount
-	rep.start = (rep.start + 1) % n
-	return rep.ranks[best]
+	return rep.ranks[k]
 }

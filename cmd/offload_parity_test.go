@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"path/filepath"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestINV13_RunReplayParity_Offload(t *testing.T) {
 
 // INV-13 for the decode-KV offload path (offload_prompt_only=false, BC-6): longer outputs
 // form full decode blocks that the false policy mirrors to the tiers. Run and replay are
-// driven by the same in-process resolved config through the sim/kv kernel, so the
+// driven by the same in-process resolved config through the blis-vllm compat/kv kernel, so the
 // decode-offload path is deterministic across run/replay exactly as prompt-only is. (The
 // kv_offload trace-header round-trip itself — including OffloadPromptOnly — is covered
 // separately by TestKVOffload_EndToEnd_RunReplayRoundTrip.)
@@ -70,11 +71,11 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 
 	dir := t.TempDir()
 	d := newKernelDeployment(t, fixedSeed, nil)
-	offload := sim.KVOffloadConfig{
+	offload := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: d.BlockBytes,
 		BlockSize: d.BlockSize, BlocksPerChunk: 1, TokensPerHash: d.BlockSize,
 		EvictionPolicy: "lru", OffloadPromptOnly: offloadPromptOnly,
-		Tiers: []sim.KVOffloadTier{{
+		Tiers: []kvOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 16, NWriteThreads: 16,
 			DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 		}},
@@ -84,7 +85,7 @@ func assertOffloadRunReplayParity(t *testing.T, offloadPromptOnly bool, outputLe
 	}
 	cfg := d.Config
 	// A small GPU pool, so the offload chain sees eviction pressure.
-	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, sim.WithKVOffload(offload))
+	cfg.KVCacheConfig = cengine.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, cengine.WithKVOffload(offload))
 
 	// Direct run.
 	cs1 := newRoutedCluster(cfg, requests)

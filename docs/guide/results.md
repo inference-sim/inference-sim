@@ -238,7 +238,7 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | Counter | What It Means | Action |
 |---------|--------------|--------|
 | **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
-| **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: `--long-prefill-token-threshold 256` |
+| **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: state `long_prefill_token_threshold: 256` in the scenario's pool `engine` block |
 | **Rejected Requests (Admission)** | The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | Check the `InferenceObjective` priorities and the saturation detector's parameters; see [Admission Control](admission.md) |
 | **Shed (tier)** | Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission) | Raise the class's `InferenceObjective` priority, or the detector's thresholds |
 | **Rejected Requests (Routing)** | No endpoint could serve the request: no ready candidates (all instances `Loading` or `Draining`), or every filter eliminated all | Increase `initial_nodes`, reduce `loading_delay.mean`, stagger drain operations, or check the router configuration's filters |

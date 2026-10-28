@@ -116,8 +116,8 @@ func TestNewRequestMetrics_SessionFields(t *testing.T) {
 		ID:               "req-1",
 		SessionID:        "sess-abc",
 		RoundIndex:       2,
-		InputTokens:  []TokenID{1, 2, 3},
-		OutputTokens: []TokenID{4, 5},
+		InputTokens:      []TokenID{1, 2, 3},
+		OutputTokens:     []TokenID{4, 5},
 		SLOClass:         "standard",
 		TenantID:         "tenant-x",
 		AssignedInstance: "inst-0",
@@ -132,7 +132,7 @@ func TestNewRequestMetrics_SessionFields(t *testing.T) {
 	}
 
 	// GIVEN a non-session request
-	req2 := &Request{ID: "req-2", InputTokens:  []TokenID{1}, OutputTokens: []TokenID{2}}
+	req2 := &Request{ID: "req-2", InputTokens: []TokenID{1}, OutputTokens: []TokenID{2}}
 	rm2 := NewRequestMetrics(req2, 500.0)
 	if rm2.SessionID != "" {
 		t.Errorf("non-session SessionID: got %q, want empty", rm2.SessionID)

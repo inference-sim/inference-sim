@@ -34,7 +34,7 @@ func TestRejectionBucket_AllowList(t *testing.T) {
 // TestUnclassifiableOutcomeAbortsTheRunThroughTheRouter: an outcome BLIS does not know, arriving
 // through the embedded router's reject path, ends the run with an error that names it.
 func TestUnclassifiableOutcomeAbortsTheRunThroughTheRouter(t *testing.T) {
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(5, 1, 1000, 0)), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(5, 1, 1000, 0)), nil)
 	gw := New(Options{Model: "test-model"})
 	injected := false
 	gw.observe = func(kind, detail string) {
@@ -73,7 +73,7 @@ func kvBlocks(t *testing.T, gw *Gateway, inst cluster.InstanceID, tier string) m
 // identity, the same string for both pool forms as before the router contract (a different scope
 // would move every random draw, INV-6).
 func TestRandomStreamScopeIsThePoolIdentity(t *testing.T) {
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(2, 1, 1000, 0)), nil)
 	gw := New(Options{Model: "test-model"})
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {

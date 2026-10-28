@@ -71,7 +71,7 @@ known result cannot be trusted on a new one.
 
 ## T6. Re-baseline and audit (worktree)
 
-Re-run `cmd/kernelscore` on the vLLM subset under the apples-to-apples criterion already in
+Re-run `tools/kernelscore` on the vLLM subset under the apples-to-apples criterion already in
 place. Report the before and after. State plainly whether SOTA was reached.
 
 CORRECTNESS: the parity tests must still pass, including the reproduction of AISimulate's

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -12,8 +13,8 @@ import (
 // at v0.31.0, reached through MultiConnector.get_num_new_matched_tokens since a prefill
 // request has no remote KV for NIXL to claim, multi_connector.py:429-448).
 
-func cpuTier() *sim.KVOffloadConfig {
-	return &sim.KVOffloadConfig{
+func cpuTier() *cengine.KVOffloadConfig {
+	return &cengine.KVOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1000 * 4096, PerBlockBytes: 4096, BlockSize: 16,
 		BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
 	}
@@ -32,9 +33,9 @@ func TestPDOffload_PrefillTierServesALaterTurnsPrefix(t *testing.T) {
 	run := func(tier bool) *ClusterSimulator {
 		cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 		blocks := int64(24)
-		cfg.PrefillOverrides.TotalKVBlocks = &blocks
+		editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 		if tier {
-			cfg.PrefillOverrides.KVOffload = cpuTier()
+			editPrefill(&cfg, func(c *simConfig) { c.Offload = *cpuTier() })
 		}
 		return runHold(t, cfg, cloneRequests(reqs)...)
 	}

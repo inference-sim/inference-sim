@@ -209,7 +209,7 @@ func TestAddPending_StoresSimCfg(t *testing.T) {
 		},
 	})
 
-	sentinel := sim.SimConfig{}
+	sentinel := sim.InstanceConfig{}
 	sentinel.MaxNumSeqs = 7 // recognizable sentinel value
 
 	pm.AddPending("inst-0", "model-a", "H100", 4, sentinel)
@@ -248,7 +248,7 @@ func TestRetryPendingInstances_PlacedInstanceHasGPUType(t *testing.T) {
 	})
 
 	// Add pending instance before any node is ready
-	pm.AddPending("inst-0", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-0", "model-a", "H100", 4, sim.InstanceConfig{})
 
 	// Provision and ready a node
 	node, _ := pm.ProvisionNode("h100-prov", 0)
@@ -331,7 +331,7 @@ func TestPlacement_RetryPendingAfterNodeReady(t *testing.T) {
 	})
 
 	// Add an instance to pending
-	pm.AddPending("inst-0", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-0", "model-a", "H100", 4, sim.InstanceConfig{})
 	if len(pm.pendingInsts) != 1 {
 		t.Fatalf("expected 1 pending instance, got %d", len(pm.pendingInsts))
 	}
@@ -377,10 +377,10 @@ func TestRetryPendingInstances_SegmentedByPool(t *testing.T) {
 	})
 
 	// AND: 2 pending instances per pool (4 total).
-	pm.AddPending("inst-h100-0", "model-a", "H100", 4, sim.SimConfig{})
-	pm.AddPending("inst-h100-1", "model-a", "H100", 4, sim.SimConfig{})
-	pm.AddPending("inst-a100-0", "model-b", "A100", 2, sim.SimConfig{})
-	pm.AddPending("inst-a100-1", "model-b", "A100", 2, sim.SimConfig{})
+	pm.AddPending("inst-h100-0", "model-a", "H100", 4, sim.InstanceConfig{})
+	pm.AddPending("inst-h100-1", "model-a", "H100", 4, sim.InstanceConfig{})
+	pm.AddPending("inst-a100-0", "model-b", "A100", 2, sim.InstanceConfig{})
+	pm.AddPending("inst-a100-1", "model-b", "A100", 2, sim.InstanceConfig{})
 	if len(pm.pendingInsts) != 4 {
 		t.Fatalf("precondition: expected 4 pending instances, got %d", len(pm.pendingInsts))
 	}

@@ -51,7 +51,7 @@ output_lens = np.random.randint(int(OSL*0.8), OSL+1, size=10*CONC)
 `scripts/gen_inferencex_workloads.py` makes exactly these calls for every scored
 `(ISL, OSL, CONC)` and writes the vectors, in request order, to
 `testdata/inferencex-workloads/seed0.json`; its `--check` flag regenerates and diffs.
-`sim/kernelmodel/harness/fixture_test.go` recomputes every vector of every fixture with an
+`tools/harness/fixture_test.go` recomputes every vector of every fixture with an
 independent Go implementation of MT19937 and numpy's legacy bounded `randint` (masked rejection on
 32-bit outputs). That implementation is itself checked against numpy over five ranges and three
 seeds, so the fixture is verified in CI without Python. The legacy `RandomState` stream is frozen
@@ -131,7 +131,7 @@ two line up with the client's as follows:
   when its task acquires the semaphore.
 - `ttft_ms` runs to the emission of the first token.
 - `itl_ms` is the sum of the request's inter-token intervals divided by `output_len - 1`
-  (`sim/simulator.go`, `recordRequestCompletion`). That is the client's
+  (blis-vllm `compat/engine/engine.go`, `recordRequestCompletion`). That is the client's
   `(latency - ttft) / (output_len - 1)`, because the client's `latency` stops at the last content
   chunk.
 - BLIS's `e2e_ms` also includes `PostDecodeFixedOverhead` after the last token, so TPOT is not
@@ -146,13 +146,13 @@ warm-up leaves in the simulator. From the code paths every point runs (single-ti
 placement by requests in flight through the embedded llm-d router, FCFS, the router's default
 admission, no offload tier):
 
-- **KV cache.** It keeps released blocks' hashes (`sim/kv/cache.go`, `ReleaseKVBlocks`).
-  Cross-request reuse reads them only in `sim/batch_formation.go`, which skips `GetCachedBlocks`
+- **KV cache.** It keeps released blocks' hashes (blis-vllm `compat/kv/cache.go`, `ReleaseKVBlocks`).
+  Cross-request reuse reads them only in blis-vllm `compat/engine/batch_formation.go`, which skips `GetCachedBlocks`
   when prefix caching is disabled. The other readers are the offload tiers and a router
   configuration with a prefix-cache producer, and these runs use neither. Request 0's prompt is the only main-phase
   prompt the warm-up cached, because no other main prompt shares a block with it.
 - **Router.** Nothing: every warm-up copy has completed, so every replica has zero requests in
-  flight when the main phase starts (`sim/kernelmodel/harness/vllm-dp-lb.epp.yaml`).
+  flight when the main phase starts (`tools/harness/vllm-dp-lb.epp.yaml`).
 - **Everything else.** The FCFS scheduler, batch formation and the kernel adapter hold no
   per-request state, no step price reads the clock, and a drained engine holds no KV block.
 
@@ -204,7 +204,7 @@ A setting the run did not pass takes vLLM's own default, and the coverage report
   engine version the log reports. An engine that was not passed them ran exactly these values, so
   this is no gap.
 - `max_num_seqs`, `max_num_batched_tokens` and `block_size` resolve by rules this harness restates
-  (`vllm_defaults.go`, block size 16). These are reported as **resolved**.
+  (blis-vllm `compat/kernelmodel/vllm_defaults.go`, block size 16). These are reported as **resolved**.
 
 `max_cudagraph_capture_size`, passed on 298 of the 360 logged points, has no field in the
 blis-schemas deployment, so it cannot be simulated as passed. It is a gap on every such point.
@@ -257,11 +257,11 @@ the errors are pooled over sweeps. Applied to AISimulate's own per-point data ov
 anchor-inclusive variant does not (`TestAISimulatesPublishedShapeErrorIsReproducible`, in
 `parity_test.go`). mape compares absolute latency at every point against
 `inferencex_absolutes.json`. Both errors are computed from the same scored observation per point
-(`TestThePrimedObservationEntersBothErrors`, in `cmd/metricscore`).
+(`TestThePrimedObservationEntersBothErrors`, in `tools/metricscore`).
 
 ## The draw
 
-`cmd/sensitivity` re-scores the sweeps with the vectors numpy draws at seeds 1 to 4 from the same
+`tools/sensitivity` re-scores the sweeps with the vectors numpy draws at seeds 1 to 4 from the same
 intervals. Those are other workloads, not repeated observations of the benchmark's seed 0. Their
 spread shows how far a figure scored against some other draw could move for that reason alone,
 which is the uncertainty that replaying the exact seed-0 vectors removes. They relax nothing.

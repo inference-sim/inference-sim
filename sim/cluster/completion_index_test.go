@@ -23,8 +23,8 @@ func recordCompletions(cs *ClusterSimulator) *[]completionEvent {
 	var seen []completionEvent
 	for _, inst := range cs.instances {
 		inst := inst
-		prev := inst.sim.OnRequestDone
-		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+		prev := inst.drv.OnRequestDone
+		inst.drv.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 			if req.State == sim.StateCompleted {
 				seen = append(seen, completionEvent{req.ID, string(inst.ID()), tick})
 			}
@@ -95,7 +95,7 @@ func sameShapeRequests(n int) []*sim.Request {
 // some same-clock completions on different instances complete in an order other than ID order.
 func TestCompletionIndex_IsTheClustersCompletionOrder(t *testing.T) {
 	cfg := newTestDeploymentConfig(3)
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(sameShapeRequests(12)), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(sameShapeRequests(12)), nil)
 	seen := recordCompletions(cs)
 	mustRun(t, cs)
 	idx := completionIndexOf(t, cs)
@@ -133,7 +133,7 @@ func TestCompletionIndex_IsTheClustersCompletionOrder(t *testing.T) {
 // instance completed the decode sub-requests in.
 func TestCompletionIndex_ADisaggregatedParentIsOrderedByItsDecode(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(sameShapeRequests(9)), nil)
+	cs := newTestCluster(cfg, NewSliceRequestSource(sameShapeRequests(9)), nil)
 	seen := recordCompletions(cs)
 	mustRun(t, cs)
 	idx := completionIndexOf(t, cs)
@@ -187,7 +187,7 @@ func TestCompletionIndex_ATimeoutMidGenerationIsNotACompletion(t *testing.T) {
 		{"prefill/decode", newTestDisaggDeploymentConfig(2, 1, 1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := NewClusterSimulator(tc.cfg, NewSliceRequestSource(requests()), nil)
+			cs := newTestCluster(tc.cfg, NewSliceRequestSource(requests()), nil)
 			mustRun(t, cs)
 			m := cs.AggregatedMetrics()
 			var indices []int

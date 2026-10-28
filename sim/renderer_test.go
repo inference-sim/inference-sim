@@ -1,14 +1,10 @@
 package sim
 
 import (
-	"math"
-	"reflect"
 	"sort"
 	"testing"
 
 	"pgregory.net/rapid"
-
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // renderJob is one request offered to a Renderer.
@@ -124,73 +120,4 @@ func TestNewRenderer_RefusesAnEmptyStage(t *testing.T) {
 	if err := (FrontendConfig{APIServerCount: -1}).Validate(); err == nil {
 		t.Error("a negative api_server_count was accepted")
 	}
-}
-
-func renderTestSimulator(t *testing.T, frontend FrontendConfig, queueing int64) *Simulator {
-	t.Helper()
-	cfg := newTestSimConfig()
-	c := testutil.DefaultFakeLatency()
-	c.QueueingTicks = queueing
-	cfg.LatencyModel = newFakeLatencyWith(c)
-	cfg.Frontend = frontend
-	return mustNewSimulator(t, cfg)
-}
-
-// TestRenderQueue_ABurstWaitsForTheRenderThread: three requests arriving together at a
-// one-thread API server render one after another, so the k-th enters the wait queue k render
-// times after arrival and its TTFT grows by the render time per request ahead of it. Without
-// the render stage each enters one render time after arrival.
-func TestRenderQueue_ABurstWaitsForTheRenderThread(t *testing.T) {
-	const render = 50_000
-	burst := func(s *Simulator) map[string]float64 {
-		for i := 0; i < 3; i++ {
-			s.InjectArrival(&Request{ID: string(rune('a' + i)), ArrivalTime: 0,
-				InputTokens: make([]TokenID, 32), OutputTokens: make([]TokenID, 4), State: StateQueued})
-		}
-		s.Run()
-		return s.Metrics.RequestTTFTs
-	}
-	queued := burst(renderTestSimulator(t, FrontendConfig{RendererNumWorkers: 1}, render))
-	inert := burst(renderTestSimulator(t, FrontendConfig{}, render))
-	for k, id := range []string{"a", "b", "c"} {
-		if got, want := queued[id]-inert[id], float64(k*render); math.Abs(got-want) > float64(render)/2 {
-			t.Errorf("request %s: render queueing adds %.0f ticks of TTFT, want ~%.0f (%d renders ahead)", id, got, want, k)
-		}
-	}
-	two := burst(renderTestSimulator(t, FrontendConfig{RendererNumWorkers: 1, APIServerCount: 3}, render))
-	for _, id := range []string{"a", "b", "c"} {
-		if two[id] != inert[id] {
-			t.Errorf("request %s with one API server per request: TTFT %.0f, want the uncontended %.0f", id, two[id], inert[id])
-		}
-	}
-}
-
-// TestRenderQueue_FreeRenderIsByteIdenticalToNoRenderStage: with a zero admission overhead the
-// render stage changes nothing (INV-R1, INV-6): the whole metrics record is identical.
-func TestRenderQueue_FreeRenderIsByteIdenticalToNoRenderStage(t *testing.T) {
-	run := func(f FrontendConfig) *Metrics {
-		s := renderTestSimulator(t, f, 0)
-		injectRequests(s, testGenerateRequests(7, math.MaxInt64, 400.0/1e6, 60, 0, 300, 100, 10, 900, 40, 10, 1, 120))
-		s.Run()
-		return s.Metrics
-	}
-	if a, b := run(FrontendConfig{}), run(FrontendConfig{RendererNumWorkers: 1}); !reflect.DeepEqual(a, b) {
-		t.Error("a free render stage changed the run's metrics")
-	}
-}
-
-// TestRenderQueue_EveryArrivalIsRenderedOnce is INV-R1's conservation: every request that
-// arrives is admitted to a render thread exactly once, and INV-1 still closes.
-func TestRenderQueue_EveryArrivalIsRenderedOnce(t *testing.T) {
-	s := renderTestSimulator(t, FrontendConfig{RendererNumWorkers: 1}, 20_000)
-	reqs := testGenerateRequests(11, math.MaxInt64, 200.0/1e6, 40, 0, 200, 50, 10, 600, 20, 5, 1, 60)
-	injectRequests(s, reqs)
-	s.Run()
-	if got := s.Renderer().Rendered(); got != int64(len(reqs)) {
-		t.Errorf("rendered %d requests, want every arrival (%d)", got, len(reqs))
-	}
-	if s.Renderer().WaitTicks() == 0 {
-		t.Error("no request waited for the render thread; the workload no longer exercises the queue")
-	}
-	assertINV1Conservation(t, s.Metrics, len(reqs), "render queue")
 }

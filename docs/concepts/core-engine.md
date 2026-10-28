@@ -184,7 +184,7 @@ BLIS models vLLM's continuous batching algorithm through the `VLLMBatchFormation
 
 **Phase 1: Continuing Requests**
 Process requests already in the running batch:
-- Apply chunked prefill limits (`--long-prefill-token-threshold`)
+- Apply chunked prefill limits (the scenario's `engine.long_prefill_token_threshold`)
 - Allocate token budget for decode tokens
 - If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks
 
@@ -200,7 +200,7 @@ Dequeue requests from the wait queue:
 |------------|------|--------|
 | Max batch size | scenario `max_num_seqs` | Limits number of concurrent requests in the running batch |
 | Token budget | scenario `max_num_batched_tokens` | Limits total new tokens across all running requests per step |
-| Chunked prefill | `--long-prefill-token-threshold` | Splits long prefills across multiple steps |
+| Chunked prefill | scenario `engine.long_prefill_token_threshold` | Splits long prefills across multiple steps |
 
 ### Preemption Strategy
 
@@ -241,7 +241,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 ## Latency Models
 
 Step time and host overheads come from **blis-latency-kernel**, through the
-`sim.LatencyModel` interface (adapter: `sim/kernelmodel`). The simulator decides when a step
+`sim.LatencyModel` interface (adapter: blis-vllm `compat/kernelmodel`). The simulator decides when a step
 runs and which requests it holds; the kernel prices that batch from the model graph, chip and
 coefficients the scenario names. See the [Latency Models guide](../guide/latency-models.md).
 

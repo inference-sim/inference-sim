@@ -1,8 +1,8 @@
 # Latency Models
 
 BLIS takes its latency model from one source: **blis-latency-kernel**
-(Go module `github.com/inference-sim/blis-latency-kernel`, pinned at `v0.3.0`). The adapter
-in `sim/kernelmodel` translates a BLIS batch into the kernel's request shapes and converts
+(Go module `github.com/inference-sim/blis-latency-kernel`, at the version `go.mod` pins). The adapter
+in blis-vllm `compat/kernelmodel` (moved from `sim/kernelmodel` by #2021) translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no `--latency-model` flag: the roofline and trained-physics backends, the
 alpha/beta coefficients, `hardware_config.json` calibration, and the
@@ -44,7 +44,7 @@ Four roots, all required on `blis run` and `blis replay`:
 
 A scenario directory can be any directory of scenario YAMLs. The kernel module ships the
 scenarios it was scored on, at
-`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`
+`$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-latency-kernel)/testdata/aisimulate`
 (after `go mod download`). This repo's own fixtures are in `testdata/scenarios/`:
 `glm-5-h200-3p1d-ib.yaml` (P/D) and `glm-5-h200-tp8-mtp3.yaml` (MTP speculation).
 
@@ -124,6 +124,13 @@ the [Configuration Reference](../reference/configuration.md).
 A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
+
+The scenario's `engine_version` must be a release the engine models. Today that is `0.29.0`
+or `0.31.0`: the simulator runs blis-vllm's compatibility engine, which reproduces how those
+releases ran before blis-vllm existed. A scenario stating any other release, `0.32.0`
+included, is refused before anything runs, naming the release, even though blis-vllm carries
+a 0.32.0 rules pack. The v0.32.0 engine is wired in when the scenarios are re-baselined
+(inference-sim#2027).
 
 ## Prefill/decode disaggregation
 
@@ -298,7 +305,7 @@ minimum-variance schedule when the source states none). A run that does not spec
 none.
 
 - **Method: the engine release's list.** `method` is checked against the rules pack of the
-  scenario's `engine_version` (blis-schemas `rules.Pack.SpeculativeMethods`), not a list in
+  scenario's `engine_version` (blis-vllm's packs, read through blis-schemas `rules.EngineRules`), not a list in
   BLIS, so vLLM 0.31.0 accepts `dspark` (DeepSeek-V4.1's DSpark), `dflash`, `eagle3`,
   `suffix` and the rest of that release's methods. A method the model graph's speculator
   does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
@@ -410,7 +417,7 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 
 ## The published accuracy figures
 
-`cmd/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself. For
+`tools/metricscore` is the scorer behind the evaluation tables. It simulates nothing itself. For
 every measured point it writes two files and runs `blis replay` on them, exactly as a user replays
 a trace:
 
@@ -433,7 +440,7 @@ At the tagged releases above, with the vendored catalog and registry and the mea
 
 ```bash
 go build -o blis main.go
-go run ./cmd/metricscore -blis ./blis -framework vllm
+go run ./tools/metricscore -blis ./blis -framework vllm
 ```
 
 Its flags are `-blis`, `-gaps`, `-corpus`, `-scenarios`, `-catalog`, `-registry`,
@@ -472,9 +479,9 @@ or without an engine log) changes the ALL row as well.
 ## The interface
 
 The simulator consumes latency through the `sim.LatencyModel` interface
-(`sim/latency_model.go`): `StepTime(batch)`, `QueueingTime(req)`,
+(blis-vllm `compat/engine/latency_model.go`, aliased in `sim/engine_aliases.go`): `StepTime(batch)`, `QueueingTime(req)`,
 `OutputTokenProcessingTime()` and `PostDecodeFixedOverhead()`, all in microseconds (ticks).
-`sim/kernelmodel` is its only production implementation. Improving or extending latency
+blis-vllm `compat/kernelmodel` is its only production implementation. Improving or extending latency
 pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
 coefficients), not here; see [Extension Recipes](../contributing/extension-recipes.md).
 

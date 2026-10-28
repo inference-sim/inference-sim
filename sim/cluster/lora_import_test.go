@@ -4,4 +4,4 @@ package cluster_test
 // per-instance Simulators in cluster tests build a real resident-adapter set. sim/lora
 // imports sim (not sim/cluster), so there is no import cycle. Mirrors the sim package's
 // lora_import_test.go.
-import _ "github.com/inference-sim/inference-sim/sim/lora"
+import _ "github.com/inference-sim/blis-vllm/compat/lora"

@@ -19,7 +19,7 @@ use, and deepseek-v4.1-flash for `testdata/scenarios/deepseek-v4.1-flash-h100-tp
 
 The release is not chosen here. blis-latency-kernel's `testdata/upstream.lock` pins the catalog
 and registry its fixtures resolve against, and
-`TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/kernelmodel`) fails when this
+`TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/vendored`) fails when this
 copy's `.upstream-commit` differs from it. While a pinned kernel pre-release lags the unreleased catalog it was developed against,
 `testdata/upstream-prerelease.lock` names that commit instead (none now: the file is absent);
 the test refuses a line there that restates the kernel's lock. `TestCatalogStrictLoad_CommittedFixtureCatalog`

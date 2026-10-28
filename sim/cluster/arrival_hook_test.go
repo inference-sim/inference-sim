@@ -13,7 +13,7 @@ import (
 // order (issue #1440 — trace-export hook contract).
 func TestArrivalHook_FiresOncePerInitialRequest(t *testing.T) {
 	requests := newTestRequests(20)
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
 
 	seen := make([]*sim.Request, 0, len(requests))
 	cs.SetArrivalHook(func(req *sim.Request) {
@@ -51,7 +51,7 @@ func TestArrivalHook_FiresOncePerInitialRequest(t *testing.T) {
 // recorded on its original arrival.
 func TestArrivalHook_NoDuplicateFiresForRedirectedRequests(t *testing.T) {
 	requests := newTestRequests(5)
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
 
 	calls := 0
 	cs.SetArrivalHook(func(req *sim.Request) {
@@ -77,7 +77,7 @@ func TestArrivalHook_NoDuplicateFiresForRedirectedRequests(t *testing.T) {
 // completes normally.
 func TestArrivalHook_DisabledWhenNotSet(t *testing.T) {
 	requests := newTestRequests(10)
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(requests), nil)
 	mustRun(t, cs) // no hook installed; should not panic, should not record anything
 }
 
@@ -92,7 +92,7 @@ func TestArrivalHook_PanicsOnNonMonotonicArrival(t *testing.T) {
 			t.Fatal("expected panic on non-monotonic arrival, got none")
 		}
 	}()
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 	cs.SetArrivalHook(func(req *sim.Request) {})
 
 	req1 := &sim.Request{ID: "r1", ArrivalTime: 100}
@@ -110,7 +110,7 @@ func TestSetArrivalHook_AfterRun_Panics(t *testing.T) {
 			t.Fatal("expected panic when SetArrivalHook is called after Run")
 		}
 	}()
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 	mustRun(t, cs)
 	cs.SetArrivalHook(func(req *sim.Request) {})
 }
@@ -143,7 +143,7 @@ func TestArrivalHook_FiresForSessionFollowUps(t *testing.T) {
 		}}
 	}
 
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(initial), onRequestDone)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(initial), onRequestDone)
 
 	calls := 0
 	cs.SetArrivalHook(func(req *sim.Request) {
@@ -194,7 +194,7 @@ func TestArrivalHook_BeyondHorizonFollowUpsExcluded(t *testing.T) {
 		}}
 	}
 
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource(initial), onRequestDone)
+	cs := newTestCluster(cfg, NewSliceRequestSource(initial), onRequestDone)
 
 	seenIDs := make(map[string]int)
 	cs.SetArrivalHook(func(req *sim.Request) {
@@ -228,7 +228,7 @@ func TestINV13_ArrivalHookRunReplayParity(t *testing.T) {
 	cfg.Seed = fixedSeed
 
 	// WHEN: direct run captures records via the arrival hook (the new path).
-	csRun := NewClusterSimulator(cfg, NewSliceRequestSource(initial), nil)
+	csRun := newTestCluster(cfg, NewSliceRequestSource(initial), nil)
 	var traceArrivals []*sim.Request
 	csRun.SetArrivalHook(func(req *sim.Request) {
 		traceArrivals = append(traceArrivals, req)
@@ -263,7 +263,7 @@ func TestINV13_ArrivalHookRunReplayParity(t *testing.T) {
 	}
 
 	// WHEN: replay the trace through a fresh ClusterSimulator with the same config.
-	csReplay := NewClusterSimulator(cfg, NewSliceRequestSource(replayReqs), nil)
+	csReplay := newTestCluster(cfg, NewSliceRequestSource(replayReqs), nil)
 	mustRun(t, csReplay)
 	replayTTFTs := csReplay.AggregatedMetrics().RequestTTFTs
 	replayE2Es := csReplay.AggregatedMetrics().RequestE2Es
@@ -300,7 +300,7 @@ func TestINV13_ArrivalHookRunReplayParity(t *testing.T) {
 // callers re-using a ClusterSimulator instance to set up scenarios
 // would see spurious panics from the monotonicity guard.
 func TestSetArrivalHook_NilClearResetsMonotonicityFloor(t *testing.T) {
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
+	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 
 	// First hook sees a high timestamp, then is cleared.
 	cs.SetArrivalHook(func(req *sim.Request) {})

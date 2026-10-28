@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
 	"testing"
@@ -101,7 +102,7 @@ func runAccumulateSession(t *testing.T, cfg DeploymentConfig, outLen, maxRounds 
 		return sm.OnComplete(req, tick)
 	}
 
-	cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{seed}), onDone)
+	cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{seed}), onDone)
 	mustRun(t, cs)
 	out.completed = cs.AggregatedMetrics().CompletedRequests
 	return out
@@ -150,7 +151,9 @@ func TestSpecDecode_AccumulateSession_AccountingMatchesBaseline(t *testing.T) {
 		for _, sc := range specConfigs {
 			t.Run(fmt.Sprintf("outLen%d/%s", outLen, sc.name), func(t *testing.T) {
 				cfg := newTestDeploymentConfig(1)
-				cfg.SpeculativeConfig = sim.SpeculativeConfig{K: sc.k, Acceptance: sc.acc, Method: "mtp"}
+				editEngine(&cfg, func(c *simConfig) {
+					c.SpeculativeConfig = cengine.SpeculativeConfig{K: sc.k, Acceptance: sc.acc, Method: "mtp"}
+				})
 				got := runAccumulateSession(t, cfg, outLen, maxRounds)
 
 				// #1657 / INV-11: the session completes every round; it is never cancelled.
@@ -201,7 +204,9 @@ func TestSpecDecode_PDAccumulateSession_AccountingMatchesBaseline(t *testing.T) 
 		for _, k := range []int{2, 5} {
 			t.Run(fmt.Sprintf("outLen%d/k%d", outLen, k), func(t *testing.T) {
 				cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-				cfg.SpeculativeConfig = sim.SpeculativeConfig{K: k, Acceptance: 0.755, Method: "mtp"}
+				editEngine(&cfg, func(c *simConfig) {
+					c.SpeculativeConfig = cengine.SpeculativeConfig{K: k, Acceptance: 0.755, Method: "mtp"}
+				})
 				got := runAccumulateSession(t, cfg, outLen, maxRounds)
 
 				if got.rounds != maxRounds {

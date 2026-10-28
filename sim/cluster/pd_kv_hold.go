@@ -7,36 +7,17 @@ import (
 
 // Prefill-side KV hold (#1934 point 3, INV-PD-7).
 //
-// A NIXL prefill engine does not free a finished request's KV blocks: request_finished
-// returns delay_free_blocks and records a lease deadline (vllm/distributed/kv_transfer/
-// kv_connector/v1/nixl/pull_scheduler.py:247-266 at v0.31.0). The blocks stay allocated, so
-// they count against the prefill engine's KV capacity, until one of three things happens:
-//
-//   - the decode side's pull completes and it notifies the prefill side, which reports the
-//     request in finished_sending and the scheduler frees the blocks (nixl/base_worker.py:
-//     2902-3031, get_finished);
-//   - the decode side aborts the request before pulling: its request_finished still sees
-//     do_remote_prefill and queues an empty read "so our worker side will notify and free
-//     blocks in the prefill instance" (pull_scheduler.py:219-232);
-//   - the lease expires (nixl/base_worker.py:3056-3082, _reap_expired_send_leases). A live
-//     decode side heartbeats every lease/6 and each heartbeat extends the lease to 2/3 of a
-//     lease from then (nixl/base_scheduler.py:81-87, base_worker.py:563-567 and 3084-3096),
-//     so the lease expires only after the decode side has gone.
-//
-// BLIS maps these onto its handoff outcomes: a completed transfer frees at its completion; a
-// drop at transfer start (the decode side never took the request) frees at once; a decode
-// instance that became unroutable mid-transfer is a vanished decode side, so the blocks are
-// freed when the lease runs out.
+// A prefill engine under a NIXL handoff keeps a finished request's KV blocks allocated until
+// the decode side pulls them, aborts the request, or vanishes and the lease runs out. When a
+// lease expires, and which release a handoff's outcome takes, are the connector's rules
+// (NIXLLease, NIXLReleaseOnDrop, NIXLReleaseAt, from blis-vllm compat/nixl). The
+// cluster keeps the holds, the
+// block reference counts and the lease event. It maps the handoff outcomes onto those rules: a
+// completed transfer frees at its completion; a drop at transfer start (the decode side never
+// took the request) frees at once; a decode instance that became unroutable mid-transfer is a
+// vanished decode side, so the blocks are freed when the lease runs out.
 
-// defaultPDKVLeaseUs is vLLM's default kv_lease_duration, 30 s (nixl/base_scheduler.py:81-85).
-const defaultPDKVLeaseUs int64 = 30_000_000
-
-func (c *ClusterSimulator) pdKVLeaseUs() int64 {
-	if c.config.PDKVLeaseUs > 0 {
-		return c.config.PDKVLeaseUs
-	}
-	return defaultPDKVLeaseUs
-}
+func (c *ClusterSimulator) pdKVLeaseUs() int64 { return NIXLLease(c.config.PDKVLeaseUs) }
 
 // startPrefillHold records that parent's prefill instance keeps its KV for the pull. Called
 // when the prefill completes, with the sub-request's blocks still allocated
@@ -84,8 +65,7 @@ func (c *ClusterSimulator) releasePrefillHold(parent *ParentRequest) {
 		}
 	}
 	inst := c.instanceByID(InstanceID(instID))
-	inst.ReleaseHeldKV(parent.PrefillSubReq)
-	inst.WakeIfParked(c.clock)
+	inst.ReleaseHeldKV(parent.PrefillSubReq, c.clock)
 }
 
 // HeldPrefillKVTokens is the KV, in tokens, that prefill instance id holds right now for pulls
@@ -94,17 +74,16 @@ func (c *ClusterSimulator) HeldPrefillKVTokens(id string) int64 {
 	return int64(len(c.heldBlockRefs[id])) * c.config.BlockSizeTokens
 }
 
-// expireLeaseOfVanishedDecode schedules the release of parent's held KV for when NIXL's lease
-// runs out after a decode engine that had the request vanished at now: the later of the
-// request's first deadline (prefill completion + lease) and the extension its last heartbeat
-// granted. Heartbeats go out every lease/6 and extend to 2/3 of a lease from then
-// (nixl/base_scheduler.py:87, base_worker.py:563-567, 3084-3096), so the last one came at most
-// lease/6 before now and the true expiry lies in [now + lease/2, now + 2/3 lease] -- 15 s to
-// 20 s after the vanish at the default 30 s lease. BLIS takes the upper end, a heartbeat at the
-// vanish itself.
-func (c *ClusterSimulator) expireLeaseOfVanishedDecode(parent *ParentRequest, now int64) {
-	lease := c.pdKVLeaseUs()
-	c.expirePrefillLease(parent, max(parent.PrefillCompleteTime+lease, now+lease*2/3))
+// releasePrefillOnDrop frees parent's held prefill KV as the connector's rule says for a handoff
+// that ended without a pull (outcome, at now): at once, or at the lease expiry the rule names
+// (NIXLReleaseOnDrop, NIXLReleaseAt). The cluster keeps the hold and its event.
+func (c *ClusterSimulator) releasePrefillOnDrop(parent *ParentRequest, outcome NIXLOutcome, now int64) {
+	release := NIXLReleaseOnDrop(outcome)
+	if release == NIXLFreeNow {
+		c.releasePrefillHold(parent)
+		return
+	}
+	c.expirePrefillLease(parent, NIXLReleaseAt(release, parent.PrefillCompleteTime, now, c.pdKVLeaseUs()))
 }
 
 // expirePrefillLease schedules the release of parent's held prefill KV at expiry.
@@ -118,8 +97,8 @@ func (c *ClusterSimulator) expirePrefillLease(parent *ParentRequest, expiry int6
 	})
 }
 
-// PrefillKVLeaseExpiredEvent frees a prefill instance's held KV when NIXL's lease on it runs
-// out (_reap_expired_send_leases). Priority 6, beside KVTransferCompletedEvent.
+// PrefillKVLeaseExpiredEvent frees a prefill instance's held KV when its lease runs out.
+// Priority 6, beside KVTransferCompletedEvent.
 type PrefillKVLeaseExpiredEvent struct {
 	time      int64
 	parentReq *ParentRequest
