@@ -395,13 +395,21 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		// as vLLM's decode engine resumes it (sched/scheduler.py:1538-1580, 1084 at v0.31.0).
 		if next.IsDecodeSubRequest && next.preemptions == 0 {
 			decodeTokens := int64(1)
+			// A zero-output request is already at its completion boundary once its
+			// transferred KV is reserved (ProgressIndex == InputLen) and has no token
+			// to allocate. Admit it with zero decode work and let processCompletions
+			// finish it, as the non-PD path does (#1665).
+			zeroOutput := len(next.OutputTokens) == 0
+			if zeroOutput {
+				decodeTokens = 0
+			}
 			// Speculative decoding / MTP (#1528): a PD decode sub-request advances by
 			// g accepted tokens per step, same as a non-PD decode request. This whole
 			// block is byte-identity-gated (I-4): unlike Phase 1, the pre-feature PD
 			// path applied NO MaxModelLen/budget cap, so caps fire ONLY when the
 			// feature is on (DecodeTokensPerStep != nil). Feature off ⇒ decodeTokens
 			// stays 1 and every line below is unchanged (BC-1/INV-6).
-			if ctx.DecodeTokensPerStep != nil {
+			if ctx.DecodeTokensPerStep != nil && !zeroOutput {
 				decodeTokens = ctx.DecodeTokensPerStep(next)
 				// Output-budget cap (#1657): land exactly ON the completion boundary.
 				// Floored at 1 for the same reason the MaxModelLen cap below is: a
@@ -444,7 +452,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			// A speculating decode schedules its verify width (#1627), within the budget and
 			// never below the advance.
 			scheduled := decodeTokens
-			if ctx.SpecVerifyWidth > 0 {
+			if ctx.SpecVerifyWidth > 0 && !zeroOutput {
 				w := min(ctx.SpecVerifyWidth, bud.room())
 				if ctx.MaxModelLen > 0 {
 					// As Phase 1: num_new_tokens <= max_model_len - num_computed - 1
@@ -453,8 +461,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				}
 				scheduled = max(decodeTokens, w)
 			}
-			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+scheduled, nil); !ok {
-				break
+			if scheduled > 0 {
+				if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+scheduled, nil); !ok {
+					break
+				}
 			}
 			dequeueAdmitted(ctx.WaitQ, next, skipped)
 			result.RunningBatch.Requests = append(result.RunningBatch.Requests, next)

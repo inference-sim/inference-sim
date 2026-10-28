@@ -583,6 +583,33 @@ func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
 	}
 }
 
+func TestPDDisagg_ZeroOutputToken_CompletesAtPrefillEnd(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	requests := []*sim.Request{
+		{
+			ID:           "req-0output",
+			ArrivalTime:  0,
+			InputTokens:  make([]sim.TokenID, 20),
+			OutputTokens: nil, // zero output tokens
+			State:        sim.StateQueued,
+		},
+	}
+
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("ClusterSimulator.Run: %v", err)
+	}
+
+	metrics := cs.AggregatedMetrics()
+	// INV-1: all requests accounted for.
+	assertClusterINV1Conservation(t, cs, 1, noRejections, "0-output PD request")
+	// The request must complete at the end of prefill with no decode token.
+	if metrics.TotalOutputTokens != 0 {
+		t.Errorf("TotalOutputTokens = %d, want 0", metrics.TotalOutputTokens)
+	}
+}
+
 // --- PrefixThresholdDecider cluster integration tests ---
 
 // --- Metric projection tests (INV-PD-6, Issue #821) ---
