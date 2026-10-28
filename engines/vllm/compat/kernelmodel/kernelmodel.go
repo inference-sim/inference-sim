@@ -61,13 +61,13 @@ import (
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/model"
 	"github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
