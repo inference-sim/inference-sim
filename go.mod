@@ -5,15 +5,15 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	// TEMPORARY: inference-sim/blis-latency-kernel#82 at f556c19 (https://github.com/inference-sim/blis-latency-kernel/pull/82).
+	// TEMPORARY: inference-sim/blis-latency-kernel#96 at 9857e68 (https://github.com/inference-sim/blis-latency-kernel/pull/96, stacked on #82; the kernel imports nothing from blis-vllm).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261027190648-f556c19c1b1b
-	// TEMPORARY: inference-sim/blis-schemas#102 at 6c207b4 (https://github.com/inference-sim/blis-schemas/pull/102; engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
+	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093
+	// TEMPORARY: inference-sim/blis-schemas#106 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/106, stacked on #102; the kernel's engine settings, kernel/enginesettings; #102: engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-schemas v0.7.1-0.20261027144933-6c207b46a5e7
-	// TEMPORARY: inference-sim/blis-vllm main at ad5d47b (review PR https://github.com/inference-sim/blis-vllm/pull/20).
+	github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01
+	// TEMPORARY: inference-sim/blis-vllm#36 at 153eb48 (https://github.com/inference-sim/blis-vllm/pull/36, on main at 0732ccd; one module, rules/ folded in).
 	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261027214005-ad5d47b7c582
+	github.com/inference-sim/blis-vllm v0.0.0-20261028173245-153eb485433d
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -69,8 +69,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	// TEMPORARY: inference-sim/blis-vllm main's rules module at 9b5ec9d (https://github.com/inference-sim/blis-vllm/pull/20); moves to a release tag with blis-vllm (#2038).
-	github.com/inference-sim/blis-vllm/rules v0.0.0-20261027143841-9b5ec9da1999 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
