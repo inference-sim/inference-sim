@@ -43,8 +43,8 @@ type DPGroup struct {
 	ranks  []*rankState
 	pricer Pricer
 	rankOf map[string]int
-	// abortedOn are the requests Finish aborted while an iteration in flight scheduled them, by
-	// rank: their rankOf entries go once no iteration in flight does.
+	// abortedOn are the requests Finish aborted, or that finished, while an iteration in flight
+	// scheduled them, by rank: their rankOf entries go once no iteration in flight does.
 	abortedOn map[string]int
 	// inflight are the lockstep iterations whose batches run tokens and have not completed,
 	// oldest first: at most the ranks' batch queue size (InFlightLimit).
@@ -345,7 +345,13 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 	}
 	for _, f := range res.Finished {
 		g.dp.LB.Finished(f.ID)
-		delete(g.rankOf, f.ID)
+		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
+			// A later iteration in flight still names it: its rank entry stays, and its ID is
+			// refused, until that iteration completes, as an aborted request's does.
+			g.abortedOn[f.ID] = r
+		} else {
+			delete(g.rankOf, f.ID)
+		}
 	}
 	for id, r := range g.abortedOn {
 		if !g.inFlight(r, id) {
