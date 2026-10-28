@@ -485,6 +485,50 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	}
 }
 
+// The host does not carry request priority across the engine contract yet (every request
+// reaches the v0.32.0 engine at priority 0), so a priority policy would silently run as FCFS. A
+// 0.32.0 scenario stating engine.scheduling_policy priority is refused at the build site, naming
+// the policy; the same scenario at 0.31.0, whose compatibility engine orders by priority, runs.
+func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
+	priority := func(version string) []string {
+		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`,
+			"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
+		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--rate", "4", "--num-requests", "4", "--seed", "1"}
+	}
+	_, stderr, err := runKernelCLI(t, priority("0.32.0")...)
+	if err == nil || !strings.Contains(stderr, "engine.scheduling_policy priority would run as FCFS") {
+		t.Errorf("a 0.32.0 scenario stating priority scheduling: want a refusal naming the policy, got err=%v\n%s",
+			err, lastLines(stderr, 3))
+	}
+	if stdout, stderr, err := runKernelCLI(t, priority("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+		t.Errorf("the same priority scenario at 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
+// An SLO priority override (--policy-config priority.slo_priorities) re-ranks the SLO classes a
+// priority policy orders by, which reaches the v0.32.0 engine as nothing: a 0.32.0 run stating one
+// is refused at the build site, naming the setting. The same bundle on 0.31.0 runs.
+func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(bundle, []byte("priority:\n  slo_priorities:\n    critical: 9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(version string) []string {
+		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--policy-config", bundle,
+			"--rate", "4", "--num-requests", "4", "--seed", "1"}
+	}
+	_, stderr, err := runKernelCLI(t, run("0.32.0")...)
+	if err == nil || !strings.Contains(stderr, "priority.slo_priorities override would be ignored") {
+		t.Errorf("a 0.32.0 run with an SLO priority override: want a refusal naming the override, got err=%v\n%s",
+			err, lastLines(stderr, 3))
+	}
+	if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+		t.Errorf("the same override on 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
 // dp032Variant writes the vendored dp 2 MoE scenario (dpScenario: minimax-m2.5 on B200, TP2 x
 // DP2 with expert parallelism) at engine_version 0.32.0, with extra engine lines, into a fresh
 // scenario directory as v032-dp2.yaml.

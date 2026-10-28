@@ -73,6 +73,21 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 			"behind vLLM's internal balancer, which does not drive --dp-load-balancing external yet "+
 			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
 	}
+	// The host does not carry request priority across the engine contract yet: every request
+	// reaches the engine at priority 0, so a priority policy would order by arrival alone and
+	// silently run as FCFS. Refuse the scenario's stated policy (vLLM's priority, BLIS's
+	// priority-fcfs: enginePolicyOf) and any SLO priority override, naming the setting, rather
+	// than run either as FCFS.
+	if scenarioScheduler == "priority-fcfs" {
+		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not carry "+
+			"request priority yet, so engine.scheduling_policy priority would run as FCFS (every request at "+
+			"priority 0)", kernelScenario, version)
+	}
+	if len(sloPriorityOverrides) > 0 {
+		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not carry "+
+			"request priority yet, so the --policy-config priority.slo_priorities override would be ignored "+
+			"(every request at priority 0)", kernelScenario, version)
+	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
