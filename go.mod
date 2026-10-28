@@ -5,15 +5,9 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	// TEMPORARY: inference-sim/blis-latency-kernel#82 at 9857e68 (https://github.com/inference-sim/blis-latency-kernel/pull/82, with #96 merged in: the kernel imports nothing from blis-vllm).
-	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093
-	// TEMPORARY: inference-sim/blis-schemas#102 at bd0c5d0 (https://github.com/inference-sim/blis-schemas/pull/102, with #106 merged in; the kernel's engine settings, kernel/enginesettings; #102: engine-level only, the engine block and connector options held unopened; the P/D handoff; Scheduled.PrefixLookup).
-	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01
-	// TEMPORARY: inference-sim/blis-vllm#39 at e65f2de (https://github.com/inference-sim/blis-vllm/pull/39, on main c08c168: a finished request's ID stays refused while a batch in flight names it).
-	// Moves to a release tag before this merges: https://github.com/inference-sim/inference-sim/issues/2038.
-	github.com/inference-sim/blis-vllm v0.0.0-20261028193559-e65f2de8fdb2
+	github.com/inference-sim/blis-latency-kernel v0.4.0
+	github.com/inference-sim/blis-schemas v0.8.0
+	github.com/inference-sim/blis-vllm v0.32.0
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
