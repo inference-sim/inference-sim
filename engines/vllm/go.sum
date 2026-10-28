@@ -1,11 +1,7 @@
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028170927-549af8fd2474 h1:ddli2u/VBBAk3vAyeZf6olb9IHF9dGOUjJPe2Ajmalw=
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028170927-549af8fd2474/go.mod h1:spyenty2zvakntJea8uBVspN67EGAG5NNzn9Ly5uhX0=
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028171753-7ff45569c04e h1:+KA2OVaCXMtmHwAxFitUlZtrYBU4/DcpvTwGkyFjFvo=
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028171753-7ff45569c04e/go.mod h1:spyenty2zvakntJea8uBVspN67EGAG5NNzn9Ly5uhX0=
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093 h1:s47YmQ39aeEdjIQIee0kwFDKDOs0MgALXcRnMFKX8l4=
-github.com/inference-sim/blis-latency-kernel v0.3.1-0.20261028173202-9857e687f093/go.mod h1:spyenty2zvakntJea8uBVspN67EGAG5NNzn9Ly5uhX0=
-github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01 h1:qSKFMMH6sJ2hM9uLxS1q1EGftLM4Sxvr9FyHhHP3ku8=
-github.com/inference-sim/blis-schemas v0.7.1-0.20261028162459-bd0c5d015b01/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/blis-latency-kernel v0.4.0 h1:xTWvaWaqRMCIhlKGk7gSfO9CCkGjfUhZkHU6xEQHug4=
+github.com/inference-sim/blis-latency-kernel v0.4.0/go.mod h1:PijgT4tqAG8Epx0+reqm2M4hZpbvkgemqKjKsFsCje4=
+github.com/inference-sim/blis-schemas v0.8.0 h1:MfNOFbmEmst31RB6AvdPkGxuwH3JvKclSxfmPtJDd5I=
+github.com/inference-sim/blis-schemas v0.8.0/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
