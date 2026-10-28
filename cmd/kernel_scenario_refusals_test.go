@@ -529,6 +529,27 @@ func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
 	}
 }
 
+// The v0.32.0 engine schedules by its scenario's engine block alone: a priority scheduler or
+// preemption policy the run asks for on the command line reaches it as nothing, so a 0.32.0 run
+// asking for one is refused, naming it. The same flags on 0.31.0 run.
+func TestRunCmd_A032ScenarioRefusesAPrioritySchedulerFlag(t *testing.T) {
+	for _, flags := range [][]string{{"--scheduler", "priority-fcfs"}, {"--preemption-policy", "priority"}} {
+		run := func(version string) []string {
+			dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+			return append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
+				"--rate", "4", "--num-requests", "4", "--seed", "1"}, flags...)
+		}
+		_, stderr, err := runKernelCLI(t, run("0.32.0")...)
+		if err == nil || !strings.Contains(stderr, "does not carry request priority yet, so scheduler") ||
+			!strings.Contains(stderr, flags[1]) {
+			t.Errorf("a 0.32.0 run with %v: want a refusal naming it, got err=%v\n%s", flags, err, lastLines(stderr, 3))
+		}
+		if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+			t.Errorf("%v on 0.31.0 must run: %v\n%s", flags, err, lastLines(stderr, 3))
+		}
+	}
+}
+
 // dp032Variant writes the vendored dp 2 MoE scenario (dpScenario: minimax-m2.5 on B200, TP2 x
 // DP2 with expert parallelism) at engine_version 0.32.0, with extra engine lines, into a fresh
 // scenario directory as v032-dp2.yaml.
