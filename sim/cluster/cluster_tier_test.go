@@ -15,11 +15,11 @@ func TestCluster_IdenticalRunsProduceIdenticalMetrics(t *testing.T) {
 	requests2 := newTestRequests(50)
 
 	cfg1 := newTestDeploymentConfig(2)
-	cs1 := NewClusterSimulator(cfg1, NewSliceRequestSource(requests1), nil)
+	cs1 := newTestCluster(cfg1, NewSliceRequestSource(requests1), nil)
 	mustRun(t, cs1)
 
 	cfg2 := newTestDeploymentConfig(2)
-	cs2 := NewClusterSimulator(cfg2, NewSliceRequestSource(requests2), nil)
+	cs2 := newTestCluster(cfg2, NewSliceRequestSource(requests2), nil)
 	mustRun(t, cs2)
 
 	m1, err1 := json.Marshal(cs1.AggregatedMetrics())
@@ -40,7 +40,7 @@ func TestShedByTier_AdmissionRejections_PopulateTierCounts(t *testing.T) {
 		{ID: "r2", ArrivalTime: 10, SLOClass: "standard", InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 		{ID: "r3", ArrivalTime: 20, SLOClass: "batch", InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 	}
-	cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(newTestDeploymentConfig(2), NewSliceRequestSource(requests), nil)
 	cs.SetGateway(&fakeGateway{reject: func(*sim.Request) bool { return true }})
 	mustRun(t, cs)
 

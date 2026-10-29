@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -24,8 +25,8 @@ func routingDigest(t *testing.T) string {
 	for _, cfg := range []string{"", softCeilingConfig, boundedQueueConfig} {
 		reqs := testRequests(150, 9, 300, 32)
 		dep := testDeployment(3)
-		dep.BatchConfig = sim.NewBatchConfig(8, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(8, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		flags := DefaultEPPFlags()
 		if cfg != "" {
 			flags = append(flags, "--allow-experimental-plugins", "--config-text="+cfg)
@@ -58,8 +59,8 @@ func digestTiedTenants(t *testing.T, h io.Writer) {
 		r.SLOClass = map[bool]string{true: "critical", false: "sheddable"}[i%3 == 0]
 	}
 	dep := testDeployment(2)
-	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(New(Options{
 		Model:     "test-model",
 		EPPFlags:  []string{"--pool-name=vllm", "--config-text=" + globalStrictConfig},
@@ -87,7 +88,7 @@ func digestPD(t *testing.T, h io.Writer) {
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
 	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(New(Options{Model: "test-model", PodLabels: roleLabels,
 		EPPFlags: append(DefaultEPPFlags(), "--config-text="+pdConfig)}))
 	if err := cs.Run(); err != nil {
@@ -153,7 +154,7 @@ func TestDeterminism_SameProcessRepeat(t *testing.T) {
 // digestPrecise digests a run routed by the precise prefix cache, fed by the engines' KV events.
 func digestPrecise(t *testing.T, h io.Writer) {
 	dep := testDeployment(3)
-	dep.KVCacheConfig = sim.NewKVCacheConfig(150, 16, 0, 0, 0, 0)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(150, 16, 0, 0, 0, 0) })
 	run := runPrecise(t, dep, prefixGroups(5, 8, 256, 10000), preciseConfig("    speculativeIndexing: true\n"), Options{KVEventDelayUs: 2000})
 	m := run.cs.AggregatedMetrics()
 	for _, r := range run.reqs {

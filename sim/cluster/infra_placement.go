@@ -45,7 +45,7 @@ type pendingInstance struct {
 	model    string
 	gpuType  string
 	tpDegree int
-	simCfg   sim.SimConfig // per-instance simulator configuration
+	simCfg   sim.InstanceConfig // per-instance simulator configuration
 }
 
 // placedInstance records a successfully placed instance with its node and GPU assignments.
@@ -53,9 +53,9 @@ type placedInstance struct {
 	id       InstanceID
 	nodeID   string
 	gpuIDs   []string
-	gpuType  string        // gpu_type from the matched pool config
-	tpDegree int           // tensor-parallel degree from the pending instance request
-	simCfg   sim.SimConfig // per-instance simulator configuration
+	gpuType  string             // gpu_type from the matched pool config
+	tpDegree int                // tensor-parallel degree from the pending instance request
+	simCfg   sim.InstanceConfig // per-instance simulator configuration
 }
 
 // NewPlacementManager creates a PlacementManager from the given node pool configs.
@@ -614,7 +614,7 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 }
 
 // AddPending registers an instance as pending (placement deferred until a node is ready).
-func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.SimConfig) {
+func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.InstanceConfig) {
 	pm.pendingInsts = append(pm.pendingInsts, pendingInstance{
 		id:       id,
 		model:    model,

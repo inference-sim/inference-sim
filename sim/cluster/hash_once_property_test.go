@@ -7,8 +7,8 @@ import (
 
 	"pgregory.net/rapid"
 
+	hash "github.com/inference-sim/blis-vllm/compat/prefix"
 	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
 )
 
 // INV-K11: each distinct prompt block is hashed at most once per engine, whatever the
@@ -39,18 +39,18 @@ func TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine(t *testing.T) {
 			if pd {
 				cfg = newTestDisaggDeploymentConfig(2, 1, 1)
 				cfg.PDPrefillKVHold = true
-				cfg.PrefillOverrides.TotalKVBlocks = &blocks
+				editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 				if tier {
-					cfg.PrefillOverrides.KVOffload = cpuTier()
+					editPrefill(&cfg, func(c *simConfig) { c.Offload = *cpuTier() })
 				}
 			} else {
-				cfg.TotalKVBlocks = blocks
+				editEngine(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 				if tier {
-					cfg.Offload = *cpuTier()
+					editEngine(&cfg, func(c *simConfig) { c.Offload = *cpuTier() })
 				}
 			}
 			before := hash.PromptBlockHashes()
-			cs := NewClusterSimulator(cfg, NewSliceRequestSource(cloneRequests(reqs)), nil)
+			cs := newTestCluster(cfg, NewSliceRequestSource(cloneRequests(reqs)), nil)
 			if err := cs.Run(); err != nil {
 				rt.Fatalf("run: %v", err)
 			}
@@ -65,7 +65,7 @@ func TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine(t *testing.T) {
 		}
 		distinct := map[string]bool{}
 		for _, r := range reqs {
-			for _, h := range hash.ComputeBlockHashes(16, r.InputTokens) {
+			for _, h := range hash.ComputeBlockHashes(16, tokenIDsOf(r.InputTokens)) {
 				distinct[h] = true
 			}
 		}

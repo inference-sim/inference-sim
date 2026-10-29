@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"reflect"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks(t *testing.T) {
 	}{{"decode prefix cache on", false, 6}, {"decode prefix cache off", true, 16}} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-			cfg.DecodeOverrides.PrefixCachingDisabled = &tc.noCache
+			editDecode(&cfg, func(c *simConfig) { c.PrefixCachingDisabled = tc.noCache })
 			cfg.TraceLevel = "decisions"
 			cs := runHold(t, cfg, cloneRequests([]*sim.Request{turn1, turn2})...)
 			ps := parentsByID(cs)
@@ -80,12 +81,14 @@ func TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff(t *testing.T) {
 	run := func(decodeTier bool) *ClusterSimulator {
 		cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 		blocks := int64(24)
-		cfg.DecodeOverrides.TotalKVBlocks = &blocks
+		editDecode(&cfg, func(c *simConfig) { c.TotalKVBlocks = blocks })
 		if decodeTier {
-			cfg.DecodeOverrides.KVOffload = &sim.KVOffloadConfig{
-				Enabled: true, CPUBytesToUse: 1000 * 4096, PerBlockBytes: 4096, BlockSize: 16,
-				BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
-			}
+			editDecode(&cfg, func(c *simConfig) {
+				c.Offload = cengine.KVOffloadConfig{
+					Enabled: true, CPUBytesToUse: 1000 * 4096, PerBlockBytes: 4096, BlockSize: 16,
+					BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
+				}
+			})
 		}
 		return runHold(t, cfg, cloneRequests(reqs)...)
 	}

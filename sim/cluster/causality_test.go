@@ -40,7 +40,7 @@ func assertINV5DispatchChain(t *testing.T, holdUs int64) {
 		req.ArrivalTime = int64(i)*100 + 100
 	}
 
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	cs.SetGateway(&fakeGateway{holdUs: holdUs})
 	mustRun(t, cs)
 

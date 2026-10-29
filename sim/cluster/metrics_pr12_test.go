@@ -60,7 +60,7 @@ func TestCollectRawMetrics_IncludesCacheHitRate(t *testing.T) {
 func TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt(t *testing.T) {
 	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 100_000)
 	run := func(n int) (*ClusterSimulator, *sim.Metrics) {
-		cs := NewClusterSimulator(baseDeploymentConfig(n), NewSliceRequestSource(copyRequests(requests)), nil)
+		cs := newTestCluster(baseDeploymentConfig(n), NewSliceRequestSource(copyRequests(requests)), nil)
 		cs.SetGateway(pinnedGateway())
 		if err := cs.Run(); err != nil {
 			t.Fatal(err)
@@ -89,7 +89,7 @@ func TestAggregateCacheHitRate_IdleInstancesDoNotDiluteIt(t *testing.T) {
 // The cluster rate is the instances' summed hit tokens over their summed lookup tokens.
 func TestAggregateCacheHitRate_IsTokenWeighted(t *testing.T) {
 	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 100_000)
-	cs := NewClusterSimulator(baseDeploymentConfig(2), NewSliceRequestSource(copyRequests(requests)), nil)
+	cs := newTestCluster(baseDeploymentConfig(2), NewSliceRequestSource(copyRequests(requests)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestAggregateCacheHitRate_IsTokenWeighted(t *testing.T) {
 func TestAggregateCacheHitRate_TheDecodePoolDoesNotDiluteIt(t *testing.T) {
 	requests := makeSharedPrefixRequests(30, 1.0, 256, 64, 16, 20_000)
 	run := func(decode int) (*ClusterSimulator, float64) {
-		cs := NewClusterSimulator(newTestDisaggDeploymentConfig(2+decode, 2, decode),
+		cs := newTestCluster(newTestDisaggDeploymentConfig(2+decode, 2, decode),
 			NewSliceRequestSource(copyRequests(requests)), nil)
 		mustRun(t, cs)
 		return cs, cs.AggregatedMetrics().CacheHitRate

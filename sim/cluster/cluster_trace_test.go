@@ -3,27 +3,29 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 	// GIVEN trace level none (default)
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             1000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
-		},
-		NumInstances: 2,
-		TraceLevel:   "none",
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 2
+		d.TraceLevel = "none"
+		return d
+	}()
 	requests := testGenerateRequests(42, 1000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -36,22 +38,23 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 
 func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 	// GIVEN trace level decisions with 5 requests and 2 instances
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             10000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
-		},
-		NumInstances:    2,
-		TraceLevel:      "decisions",
-		CounterfactualK: 0,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 2
+		d.TraceLevel = "decisions"
+		d.CounterfactualK = 0
+		return d
+	}()
 	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 5,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 
 	// WHEN run
 	mustRun(t, cs)
@@ -78,22 +81,23 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 
 func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	// GIVEN trace with counterfactual k=2 and a gateway that scores both instances
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             10000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
-		},
-		NumInstances:    2,
-		TraceLevel:      "decisions",
-		CounterfactualK: 2,
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 2
+		d.TraceLevel = "decisions"
+		d.CounterfactualK = 2
+		return d
+	}()
 	requests := testGenerateRequests(42, 10000000, 1.0/1e6, 3,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	cs.SetGateway(&fakeGateway{scores: map[string]float64{"instance_0": 1, "instance_1": 0.5}})
 
 	// WHEN run
@@ -123,21 +127,22 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 
 func TestClusterSimulator_TraceWithAdmissionRejections_RecordsRejections(t *testing.T) {
 	// GIVEN a gateway that rejects every other request at admission
-	config := DeploymentConfig{
-		SimConfig: sim.SimConfig{
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
 			Horizon:             5000000,
 			Seed:                42,
-			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			KVCacheConfig:       cengine.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(10, 2048, 0),
 			LatencyModel:        testFakeLatency(),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
-		},
-		NumInstances: 1,
-		TraceLevel:   "decisions",
-	}
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "", "", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 1
+		d.TraceLevel = "decisions"
+		return d
+	}()
 	requests := testGenerateRequests(42, 5000000, 5.0/1e6, 10,
 		0, 10, 0, 10, 10, 5, 0, 5, 5)
-	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	cs.SetGateway(rejectEveryOtherGateway())
 
 	// WHEN run

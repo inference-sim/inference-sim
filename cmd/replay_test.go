@@ -29,7 +29,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 
 		// registerSimConfigFlags: the kernel scenario (the deployment and its engine)
 		"scenario", "scenarios", "registry",
-		"long-prefill-token-threshold",
 
 		// registerSimConfigFlags: cluster config
 		"num-instances",

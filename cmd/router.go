@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -75,7 +74,7 @@ func validateRouterFlags() {
 // adoptScenarioRouter reads the router half of the scenario's deployment, refusing a router block
 // whose files cannot be read before any simulation state is built (R3). adoptKernelDeployment
 // calls it with the scenario's Shape.
-func adoptScenarioRouter(shape kernelmodel.Shape) {
+func adoptScenarioRouter(shape scenarioShapeT) {
 	in, err := scenarioRouterInputs(shape)
 	if err != nil {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
@@ -98,7 +97,7 @@ func resolveRouterInputs() routerInputs {
 
 // statesRouter reports whether a scenario states any router input: a router block, or a pool
 // with labels.
-func statesRouter(sh kernelmodel.Shape) bool {
+func statesRouter(sh scenarioShapeT) bool {
 	if sh.Router != nil {
 		return true
 	}
@@ -122,7 +121,7 @@ func statesRouter(sh kernelmodel.Shape) bool {
 //   - pools[].labels label the pods of each pool (poolPodLabels).
 //
 // Paths, in the block and in a --config-file flag, are relative to the scenario file's directory.
-func scenarioRouterInputs(sh kernelmodel.Shape) (routerInputs, error) {
+func scenarioRouterInputs(sh scenarioShapeT) (routerInputs, error) {
 	var in routerInputs
 	r := sh.Router
 	if r == nil {
@@ -177,7 +176,7 @@ func scenarioRouterInputs(sh kernelmodel.Shape) (routerInputs, error) {
 // refuses a value that contradicts it, so restating it adds nothing and is skipped. A colocated
 // pool's pods carry no role label of their own, so its labels -- llm-d.ai/role included, should
 // the pool state it -- label every pod.
-func poolPodLabels(sh kernelmodel.Shape) map[string]string {
+func poolPodLabels(sh scenarioShapeT) map[string]string {
 	out := map[string]string{}
 	everyPool := func(k, v string) bool {
 		for _, l := range sh.Labels {

@@ -64,7 +64,7 @@ func TestPD_DisaggProfileHandlerPlacesPrefillAndDecode(t *testing.T) {
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
 	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", PodLabels: roleLabels,
 		EPPFlags: append(DefaultEPPFlags(), "--config-text="+pdConfig)})
 	usage := map[string]int{}

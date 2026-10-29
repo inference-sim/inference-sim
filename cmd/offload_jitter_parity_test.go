@@ -1,11 +1,10 @@
 package cmd
 
 import (
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -13,14 +12,14 @@ import (
 // whose single fs tier has BOTH a queue-depth bandwidth ramp AND latency jitter
 // enabled (#1581). The jitter draws from the seed-derived kv-offload RNG partition,
 // so run and replay under the same seed must draw identically (BC-D6/INV-13).
-func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
+func jitterRampOffloadCfg(t *testing.T, seed int64) engineConfig {
 	t.Helper()
 	d := newKernelDeployment(t, seed, nil)
-	offload := sim.KVOffloadConfig{
+	offload := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, PerBlockBytes: d.BlockBytes,
 		BlockSize: d.BlockSize, BlocksPerChunk: 1, TokensPerHash: d.BlockSize,
 		EvictionPolicy: "lru", OffloadPromptOnly: true,
-		Tiers: []sim.KVOffloadTier{{
+		Tiers: []kvOffloadTier{{
 			Type: "fs", RootDir: "/mnt", NReadThreads: 16, NWriteThreads: 16,
 			DirectIO: true, ReadBandwidth: 7000, WriteBandwidth: 5000, BaseLatency: 80,
 			SaturationQueueDepth: 8, SingleTransferFraction: 0.4, // active ramp (BC-D1)
@@ -31,7 +30,7 @@ func jitterRampOffloadCfg(t *testing.T, seed int64) cluster.DeploymentConfig {
 		t.Fatalf("the kernel's per-block bytes must be > 0, got %d", offload.PerBlockBytes)
 	}
 	cfg := d.Config
-	cfg.KVCacheConfig = sim.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, sim.WithKVOffload(offload))
+	cfg.KVCacheConfig = cengine.NewKVCacheConfig(4096, d.BlockSize, 0, 0.9, 0, 0, cengine.WithKVOffload(offload))
 	return cfg
 }
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -36,7 +38,7 @@ schedulingProfiles:
 			reqs = append(reqs, r)
 		}
 	}
-	cs := cluster.NewClusterSimulator(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -100,7 +102,7 @@ schedulingProfiles:
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
 	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(New(Options{Model: "test-model", PodLabels: roleLabels, EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -154,8 +156,8 @@ flowControl:
 			}
 		}
 		dep := testDeployment(2)
-		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config(policy))}))
 		if err := cs.Run(); err != nil {
 			t.Fatalf("%s: Run: %v", policy, err)

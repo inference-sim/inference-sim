@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/blis-schemas/embed"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -59,8 +61,8 @@ func runBurst(t *testing.T, config string, n, numReqs int) runResult {
 	t.Helper()
 	reqs := testRequests(numReqs, 11, 1000, 0) // one arrival per millisecond
 	dep := testDeployment(n)
-	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0) // small batches: queues build and pools saturate
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) }) // small batches: queues build and pools saturate
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)})
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
@@ -143,8 +145,8 @@ flowControl:
 func TestFlowControl_INV1_UnderCapacityRejectionAndTTLExpiry(t *testing.T) {
 	reqs := testRequests(300, 5, 200, 0) // 5000 req/s on 2 small instances
 	dep := testDeployment(2)
-	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+boundedQueueConfig)})
 	cs.SetGateway(gw)
 	if err := cs.Run(); err != nil {
@@ -199,8 +201,8 @@ func TestFlowControl_SLODeadlineOrdersBySimulatedTargets(t *testing.T) {
 			}
 		}
 		dep := testDeployment(2)
-		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+orderingConfig(policy))})
 		cs.SetGateway(gw)
 		if err := cs.Run(); err != nil {
@@ -234,8 +236,8 @@ func TestFlowControl_RequestTTLHeaderOrdersByClientDeadlines(t *testing.T) {
 			}
 		}
 		dep := testDeployment(2)
-		dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-		cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 		gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+orderingConfig(policy))})
 		cs.SetGateway(gw)
 		if err := cs.Run(); err != nil {
@@ -312,8 +314,8 @@ func clientDeadlineWhileQueued(t *testing.T) {
 		r.Deadline = r.ArrivalTime + 20000 // the client waits at most 20 ms
 	}
 	dep := testDeployment(2)
-	dep.BatchConfig = sim.NewBatchConfig(4, 2048, 0)
-	cs := cluster.NewClusterSimulator(dep, cluster.NewSliceRequestSource(reqs), nil)
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+globalStrictConfig)})
 	// Each held request's cancellation reaches the router at its client deadline, and the
 	// router's ContextCancelled outcome lands at that same simulated instant (INV-6: no
@@ -427,7 +429,7 @@ flowControl:
 ` + flowControl
 			reqs := testRequests(1, 3, 0, 0)
 			reqs[0].ArrivalTime = 1_000_000 // after the startup scrape has gone stale
-			cs := cluster.NewClusterSimulator(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+			cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
 			// Metrics refreshed every three hours: after the startup scrape they are stale, which the
 			// utilization detector reads as saturated, so flow control holds the request.
 			cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--refresh-metrics-interval=3h", "--config-text="+config)}))
@@ -449,7 +451,7 @@ func TestClientDeadline_SameInstantAsTheDecision(t *testing.T) {
 	for _, r := range reqs {
 		r.Deadline = r.ArrivalTime // due the instant the router decides
 	}
-	cs := cluster.NewClusterSimulator(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
 	gw := New(Options{Model: "test-model"})
 	dispatched := 0
 	gw.observe = func(kind, detail string) {

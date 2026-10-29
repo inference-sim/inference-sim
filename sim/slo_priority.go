@@ -1,3 +1,7 @@
+// Moved from blis-vllm/compat/engine/slo_priority.go at 6b1d026, the host's own: the 0.29/0.31
+// compatibility engine now runs behind engine.Engine (blis-vllm compat/contract), and these are
+// the host's records, not the engine's (phase 2c).
+
 package sim
 
 import "fmt"
