@@ -210,19 +210,19 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 ### INV-8: Work-Conserving Property
 
-**Statement:** After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while there is work waiting.
+**Statement:** After every step completion, if the engine has work waiting, the driver steps it again (a step-end or wake event exists in the event queue). The simulator must not idle while there is work waiting.
 
-**Verification:** `sim/simulator_test.go` — `TestWorkConserving_StepRestartsWhenWaitQNonEmpty`. Deterministic test with `MaxNumSeqs=1`, two requests arriving simultaneously. Without the property, the second request is stranded forever (no arrival to trigger a new StepEvent). With the property, both complete.
+**Verification:** `sim/engine_driver_test.go`: `TestEngineDriver_StepsBackToBackAndStopsWhenIdle` and `TestEngineDriver_ArrivalDuringAStepWaitsForIt`; the engine's own liveness (`NextWake` after a schedule that ran nothing) is blis-schemas' `enginetest` conformance law, which blis-vllm's engines pass.
 
 **Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
 
 **Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
 
-**Data-parallel lockstep (#1909):** for the ranks of one DP group the property holds per group: while any rank has waiting or running work, the group's single `StepEvent` is armed in rank 0's queue and every rank's step guard points at it (`sim/dp_lockstep.go`). Verified after every event of random multi-rank workloads by the rapid property `TestLockstepGroup_WorkConservingAndWaveEnd` (`sim/dp_lockstep_test.go`), which also checks that a wave ends on a sync step fewer than 16 dummy steps after its last request.
+**Data-parallel lockstep (#1909):** for the ranks of one DP group the property holds per group: while any rank has work, the group steps as one engine (blis-vllm's DP group, driven by `sim/engine_driver_group.go`).
 
-**Code location:** Search for `// Work-conserving:` comment in `sim/simulator.go` — the `else` branch of `len(remaining) > 0` checks `WaitQ.Len() > 0` and schedules a new `StepEvent`.
+**Code location:** the engine's, in blis-vllm (the compatibility engine's step loop in `compat/engine`, and vLLM's own loop in `core/vllm` for 0.32.0); `sim.EngineDriver` steps it whenever it has work (`sim/engine_driver.go`).
 
-**One forward pass at a time.** Work-conserving never means overlapping: a step triggered by new work on an idle instance (an arrival, a timeout, an injected decode sub-request, `ScheduleStepIfIdle`) starts no earlier than the end of the step still executing (`Simulator.idleStepTime`). A step whose requests all finish empties the batch at the step's start, so before this clause an arrival during it began the next step at once; a P/D prefill pool, whose every sub-request finishes in its one prefill step, ran its steps in parallel. Verified by `sim/step_busy_test.go` — `TestStep_NoStepStartsBeforeThePreviousEnds` (rapid) and `TestStep_EverySiteWaitsForTheExecutingStep` (each of the four sites) (#1944). vLLM's async scheduling, which overlaps the next step's scheduling with the current one's execution, is not modelled.
+**One forward pass at a time.** Work-conserving never means overlapping: a step triggered by new work on an idle instance starts no earlier than the end of the step still executing (`TestEngineDriver_ArrivalDuringAStepWaitsForIt`). Under async scheduling the engine may queue a second batch (`InFlightLimit`), which runs after the first (`TestEngineDriver_SecondBatchInFlightWaitsForTheGPU`).
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7).
 

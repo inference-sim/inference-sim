@@ -10,7 +10,7 @@ A new llm-d plugin type becomes usable in BLIS once the fork has audited it for 
 
 ## Adding New Instance Schedulers
 
-The instance schedulers live in blis-vllm's compatibility engine (`compat/engine`, moved from `sim/` by #2021); package `sim` re-exports their names (`sim/engine_aliases.go`). A new scheduler is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)). To add a new instance-level scheduler (wait-queue ordering):
+The instance schedulers live in blis-vllm's compatibility engine (`compat/engine`); the 0.32.0 engine's scheduler is vLLM's, in blis-vllm `core/sched`. A new scheduler is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)). To add a new instance-level scheduler (wait-queue ordering):
 
 1. **Implement the `InstanceScheduler` interface** in blis-vllm `compat/engine/scheduler.go` (receives `requests` + `clock` only).
 2. **Register in two places** (both required): add the name to `ValidSchedulers` and a `case` to `NewScheduler`, both in blis-vllm `compat/engine/scheduler.go`; `sim/bundle.go` validates against that table. CLI error messages derive from `ValidSchedulerNames()`.
@@ -22,7 +22,7 @@ Examples:
 
 ## Extending KV Cache Tiers
 
-The KV store lives in blis-vllm's compatibility engine: its interface in `compat/engine/kv_store.go`, its implementations in `compat/kv` (moved from `sim/kv` by #2021). A new tier is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)). To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
+The KV store lives in blis-vllm's compatibility engine: its interface in `compat/engine/kv_store.go`, its implementations in `compat/kv`. A new tier is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)). To add a new KV tier (e.g., NVMe offloading for 3-tier GPU+CPU+NVMe):
 
 1. **Implement the `KVStore` interface** in blis-vllm `compat/kv` (11 methods: allocate, get cached, release, capacity queries, metrics, `SetClock`, `ConsumePendingTransferLatency`)
 2. **Compose existing tiers** — e.g., wrap `TieredKVCache` (GPU+CPU) with NVMe logic, following the same delegation pattern

@@ -2,6 +2,8 @@
 
 Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any router configuration with any scheduler.
 
+The schedulers and priority on this page are the compatibility engine's (`engine_version` 0.29.0 and 0.31.0). On 0.32.0 the engine orders requests by its engine block's `scheduling_policy`, as vLLM does, and priority scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`, `--preemption-policy priority`, SLO priority overrides) is refused for now.
+
 ```bash
 # Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \

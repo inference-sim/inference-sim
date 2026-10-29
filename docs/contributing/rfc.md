@@ -44,7 +44,7 @@ For each new package or component, provide the **module contract**:
 
 | Field | Description |
 |-------|-------------|
-| **Name** | Package path (e.g., `sim/kv/tierchain`) |
+| **Name** | Package path (e.g., `sim/cluster/autoscaler`) |
 | **Responsibility** | One sentence — what this package does |
 | **Surface** | What it exports (function signatures in plain English) |
 | **Allowed imports** | What it may depend on (whitelist — anything else is denied) |

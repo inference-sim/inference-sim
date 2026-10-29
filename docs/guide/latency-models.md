@@ -2,7 +2,7 @@
 
 BLIS takes its latency model from one source: **blis-latency-kernel**
 (Go module `github.com/inference-sim/blis-latency-kernel`, at the version `go.mod` pins). The adapter
-in blis-vllm `compat/kernelmodel` (moved from `sim/kernelmodel` by #2021) translates a BLIS batch into the kernel's request shapes and converts
+in blis-vllm `compat/kernelmodel` translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no `--latency-model` flag: the roofline and trained-physics backends, the
 alpha/beta coefficients, `hardware_config.json` calibration, and the
@@ -125,12 +125,12 @@ A scenario that cannot be resolved -- absent file, unreadable coefficient set, u
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
 
-The scenario's `engine_version` must be a release the engine models. Today that is `0.29.0`
-or `0.31.0`: the simulator runs blis-vllm's compatibility engine, which reproduces how those
-releases ran before blis-vllm existed. A scenario stating any other release, `0.32.0`
-included, is refused before anything runs, naming the release, even though blis-vllm carries
-a 0.32.0 rules pack. The v0.32.0 engine is wired in when the scenarios are re-baselined
-(inference-sim#2027).
+The scenario's `engine_version` must be a release blis-vllm models, and a scenario that states
+none is refused. `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine, priced with the
+kernel's 0.31.0 tuning (the run says so on stderr); it needs `max_model_len`, `max_num_seqs` and
+`max_num_batched_tokens` stated, and refuses priority scheduling for now. `0.29.0` and `0.31.0`
+run blis-vllm's compatibility engine, whose output is unchanged from earlier BLIS releases. Any
+other release is refused, naming it.
 
 ## Prefill/decode disaggregation
 
@@ -478,10 +478,11 @@ or without an engine log) changes the ALL row as well.
 
 ## The interface
 
-The simulator consumes latency through the `sim.LatencyModel` interface
-(blis-vllm `compat/engine/latency_model.go`, aliased in `sim/engine_aliases.go`): `StepTime(batch)`, `QueueingTime(req)`,
+The engine consumes latency through blis-vllm's `LatencyModel` interface
+(blis-vllm `compat/engine/latency_model.go`): `StepTime(batch)`, `QueueingTime(req)`,
 `OutputTokenProcessingTime()` and `PostDecodeFixedOverhead()`, all in microseconds (ticks).
-blis-vllm `compat/kernelmodel` is its only production implementation. Improving or extending latency
+blis-vllm `compat/kernelmodel` is its only production implementation; the simulator reaches the
+engine, and so its step times, only through blis-schemas' `engine.Engine` interface. Improving or extending latency
 pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
 coefficients), not here; see [Extension Recipes](../contributing/extension-recipes.md).
 

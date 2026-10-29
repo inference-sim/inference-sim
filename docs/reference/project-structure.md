@@ -102,7 +102,7 @@ inference-sim/
 │                               #  blis-registry's coefficient sets at testdata/registry/, and this repo's
 │                               #  own scenario fixtures (P/D, MTP) at testdata/scenarios/.)
 ├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
-│   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (moved from sim/kernelmodel/harness; the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel since #2021)
+│   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel)
 │   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
 │   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
 │   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
