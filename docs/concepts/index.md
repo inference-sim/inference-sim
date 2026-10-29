@@ -7,8 +7,8 @@ These pages explain BLIS's architecture and core mechanisms at the level needed 
 | Page | Description |
 |------|-------------|
 | [Glossary](glossary.md) | Definitions of BLIS-specific terminology |
-| [Cluster Architecture](architecture.md) | The five BLIS repositories and how they divide the work; multi-instance simulation: the embedded llm-d router, its request path and DES hosting runtime, shared-clock event loop |
-| [Core Engine](core-engine.md) | Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models |
+| [Cluster Architecture](architecture.md) | The six BLIS repositories and how they divide the work; multi-instance simulation: the embedded llm-d router, its request path and DES hosting runtime, shared-clock event loop |
+| [Core Engine](core-engine.md) | One instance: the event loop, the engine driver and its `engine.Engine` calls, request lifecycle, preemption and dropped requests, latency pricing, metrics |
 
 ## Diagrams
 

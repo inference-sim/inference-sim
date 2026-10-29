@@ -93,7 +93,7 @@ export BLIS_CATALOG=$PWD/blis-catalog
 
 A scenario file holds two YAML documents in the blis-schemas format:
 
-- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). `engine_version` is required and selects the engine: `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine, `0.29.0` and `0.31.0` its compatibility engine; any other is refused (see [latency models](../guide/latency-models.md)).
+- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). `engine_version` is required: `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine; any other is refused (see [latency models](../guide/latency-models.md)).
 - **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `cache_dtype`, `cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
@@ -221,7 +221,7 @@ priority:
     critical: 10
 ```
 
-The mapping lives in blis-vllm `compat/engine/slo_priority.go` (`SLOPriorityMap`, aliased as `sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
+The mapping lives in `sim/slo_priority.go` (`sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
 ## Scheduling and Priority
 

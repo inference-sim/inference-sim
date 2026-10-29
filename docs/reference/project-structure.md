@@ -21,7 +21,7 @@ inference-sim/
 │   ├── observe_cmd.go         # `blis observe` command (deprecated, #1901): flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a model's config.json is read within it
+│   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a run reads a model's `models/<name>/graph.yaml` within it
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. catalogProvenanceEmitOptions is the single shared helper both `blis run` and `blis replay` pass to sim.EmitOutput (file-only, INV-6/INV-13)
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload`, `blis convert preset` and `blis observe --workload`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
 │   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
@@ -49,8 +49,8 @@ inference-sim/
 │   └── internal/              # Shared internal packages
 │       └── testutil/          # Shared test infrastructure (golden dataset loading, the fake latency model)
 │                              # (The engine itself -- request scheduling, batch formation, the KV cache,
-│                              #  LoRA, the kernel adapter -- is blis-vllm's: compat/ for 0.29/0.31,
-│                              #  core/vllm for 0.32.0; see github.com/inference-sim/blis-vllm.)
+│                              #  LoRA, the kernel adapter -- is blis-vllm's: core/vllm (vLLM v0.32.0);
+│                              #  see github.com/inference-sim/blis-vllm.)
 ├── sim/cluster/               # Multi-replica cluster simulation
 │   ├── instance.go            # InstanceSimulator: one instance's engine (a sim.EngineDriver, built by NewEngineInstance) with the cluster's lifecycle and placement state for it
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, hands arrivals to the Gateway, and aggregates metrics; Run() returns error
@@ -142,7 +142,7 @@ inference-sim/
 │   │   └── workload-spec.md   # Workload spec YAML schema
 │   ├── methodology/           # Research methodology
 │   │   ├── index.md           # Methodology overview
-│   │   └── principles.md      # Discovered principles catalog
+│   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
 │   │   ├── index.md           # Contributing landing page
 │   │   ├── extension-recipes.md # Step-by-step extension guides

@@ -14,7 +14,7 @@ The process of selecting which requests from the wait queue join the running bat
 
 ### blis-vllm
 
-The Go module (`github.com/inference-sim/blis-vllm`) that is BLIS's vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM, plus the 0.29/0.31 compatibility engine, the vLLM engine configuration and rules, and the kernel adapter. inference-sim reaches it only through the [engine](#engine) interface. See [Cluster Architecture](architecture.md#the-blis-repositories).
+The Go module (`github.com/inference-sim/blis-vllm`) that is BLIS's vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM, plus the vLLM engine configuration and rules, and the kernel adapter. inference-sim reaches it only through the [engine](#engine) interface. See [Cluster Architecture](architecture.md#the-blis-repositories).
 
 ### blis-latency-kernel
 
@@ -62,7 +62,7 @@ Total time from request arrival to final token completion. Computed as `TTFT + s
 
 ### Engine
 
-What runs one instance's batches, reached through blis-schemas' `engine.Engine` interface (`Add`, `Schedule`, `StepTime`, `Complete`, `Finish`, `NextWake`, ...). `sim.EngineDriver` drives it from the event loop. A scenario's `engine_version` selects it: `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine, `0.29.0` and `0.31.0` its compatibility engine; with none stated the scenario is refused. See [Core Engine](core-engine.md).
+What runs one instance's batches, reached through blis-schemas' `engine.Engine` interface (`Add`, `Schedule`, `StepTime`, `Complete`, `Finish`, `NextWake`, ...). `sim.EngineDriver` drives it from the event loop. A scenario's `engine_version: "0.32.0"` selects blis-vllm's translated vLLM v0.32.0 engine; with none stated the scenario is refused. See [Core Engine](core-engine.md).
 
 ### EndpointPickerConfig
 
@@ -122,7 +122,7 @@ An open-source LLM inference routing and serving framework that BLIS is designed
 
 ### MaxModelLen
 
-Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len` and is read from each scenario pool's `engine.max_model_len`: a count, `auto` (the model graph's context window shrunk to what one rank's KV cache holds), or unstated (the graph's context window). Requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. Past admission, the engine stops a request at the context window as vLLM's `check_stop` does (`num_tokens >= max_model_len`), so a length-capped request emits `maxModelLen - inputLen` output tokens. The 0.32.0 engine requires it stated. See [Latency Models Guide](../guide/latency-models.md#scenario-structure).
+Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's `--max-model-len` and is read from each scenario pool's `engine.max_model_len`, which must be an explicit number (unstated or `auto` is refused). Requests whose input alone fills the context window (`input >= MaxModelLen`) or whose input + output budget exceeds it are dropped before entering the wait queue. Past admission, the engine stops a request at the context window as vLLM's `check_stop` does (`num_tokens >= max_model_len`), so a length-capped request emits `maxModelLen - inputLen` output tokens. See [Latency Models Guide](../guide/latency-models.md#scenario-structure).
 
 ### MoE (Mixture of Experts)
 
@@ -142,7 +142,7 @@ A YAML configuration file (`--policy-config`) that specifies priority, schedulin
 
 ### Preemption
 
-KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (`--preemption-policy fcfs`), BLIS evicts from the batch tail. With `--preemption-policy priority`, the least-urgent SLO tier is evicted first. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
+KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (`--preemption-policy fcfs`), BLIS evicts from the batch tail. `--preemption-policy priority` is refused on 0.32.0 for now. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
 
 ### Prefill Phase
 
@@ -218,7 +218,7 @@ Initial requests dispatched by `blis observe` that are excluded from trace outpu
 
 ### Work-Conserving
 
-The property that the simulator never idles while requests are waiting. After every step completion, if the wait queue is non-empty, a new `StepEvent` is scheduled immediately (INV-8). See [Core Engine: Event Queue](core-engine.md#overview).
+The property that the simulator never idles while requests are waiting. After every step's end (`driverStepEnd`), the engine driver steps the engine again, so a non-empty wait queue is scheduled at once (INV-8). See [Core Engine: Event Queue](core-engine.md#overview).
 
 ### Workload Specification
 

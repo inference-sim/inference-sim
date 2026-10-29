@@ -2,10 +2,10 @@
 
 Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any router configuration with any scheduler.
 
-The schedulers and priority on this page are the compatibility engine's (`engine_version` 0.29.0 and 0.31.0). On 0.32.0 the engine orders requests by its engine block's `scheduling_policy`, as vLLM does, and priority scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`, `--preemption-policy priority`, SLO priority overrides) is refused for now.
+On vLLM v0.32.0, each instance's engine orders its requests by the pool's engine block `scheduling_policy`, as vLLM does. Priority scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`, `--preemption-policy priority`, SLO priority overrides) is refused for now. Other `--scheduler` values are not applied on 0.32.0; the run warns. The priority and scheduler sections below are not yet available on 0.32.0.
 
 ```bash
-# Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
+# Not yet available on 0.32.0 (refused): priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
@@ -14,6 +14,9 @@ The schedulers and priority on this page are the compatibility engine's (`engine
 ```
 
 ## How Priority Works
+
+!!! note "Not yet available on 0.32.0"
+    Priority scheduling is refused on 0.32.0 for now.
 
 Request priority is **static** — set once when the request enters the instance, and never changed.
 
@@ -49,6 +52,9 @@ priority:
 
 ## Available Schedulers
 
+!!! note "Not yet available on 0.32.0"
+    `--scheduler` is not applied on 0.32.0 (the run warns), and `priority-fcfs` and `reverse-priority` are refused; the engine orders by `scheduling_policy`.
+
 Each scheduler implements the `InstanceScheduler` interface: a single `OrderQueue` method called every step to reorder the wait queue before batch formation.
 
 | Scheduler | Flag Value | Strategy | Notes |
@@ -61,6 +67,9 @@ Each scheduler implements the `InstanceScheduler` interface: a single `OrderQueu
 All schedulers use `sort.SliceStable` for deterministic ordering (INV-6).
 
 ## How Scheduling and Priority Interact
+
+!!! note "Not yet available on 0.32.0"
+    This section describes the `--scheduler` policies, which 0.32.0 does not apply.
 
 The scheduler and priority are composed at each simulation step:
 
@@ -87,9 +96,12 @@ BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request
 
 This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With `priority-fcfs` and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.
 
-By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). A scenario stating `engine.scheduling_policy: priority` selects both `priority-fcfs` queueing and `priority` preemption, as vLLM does (`fcfs` selects `fcfs` for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file ([Scenario Overrides](results.md#scenario-overrides)).
+By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. `--preemption-policy priority` and `scheduling_policy: priority` are refused on 0.32.0 for now; the rest of this paragraph describes them. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). A scenario stating `engine.scheduling_policy: priority` selects both `priority-fcfs` queueing and `priority` preemption, as vLLM does (`fcfs` selects `fcfs` for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file ([Scenario Overrides](results.md#scenario-overrides)).
 
 ## When to Use Which
+
+!!! note "Not yet available on 0.32.0"
+    On 0.32.0 set the order with the engine block's `scheduling_policy: fcfs`; the `--scheduler` choices below are not applied.
 
 | Workload | Recommended Configuration | Why |
 |----------|--------------------------|-----|

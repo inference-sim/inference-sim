@@ -217,7 +217,7 @@ Configuration parameters must be grouped by module — not added to a monolithic
 
 **Evidence:** `SimConfig` previously combined hardware identity, model parameters, simulation parameters, and policy choices in 23 flat fields. Resolved in #350: `SimConfig` now embeds 6 module-scoped sub-configs (`KVCacheConfig`, `BatchConfig`, `LatencyCoeffs`, `ModelHardwareConfig`, `PolicyConfig`, `WorkloadConfig`). Factory signatures accept the narrowest sub-config (e.g., `NewKVStore(KVCacheConfig)`).
 
-**Check:** New config parameters go into the appropriate sub-config in blis-vllm `compat/engine/config.go` (moved from `sim/config.go` by #2021), not directly into `SimConfig`.
+**Check:** New config parameters go into the appropriate sub-config in blis-vllm `compat/engine/config.go`, not directly into `SimConfig`.
 
 **Enforced:** Micro-plan Phase 8.
 

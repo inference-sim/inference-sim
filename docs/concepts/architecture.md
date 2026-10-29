@@ -11,7 +11,7 @@ BLIS is six repositories, each owning one kind of thing:
 | repository | role | owns |
 |---|---|---|
 | **inference-sim** (this repo) | simulates | the end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the hosting of the llm-d router, metrics and reports; no vLLM code |
-| **blis-vllm** | runs the engine | the vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM; the 0.29/0.31 compatibility engine; the vLLM engine configuration and rules; the kernel adapter |
+| **blis-vllm** | runs the engine | the vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter |
 | **blis-latency-kernel** | prices | step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads |
 | **blis-catalog** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
 | **blis-registry** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |

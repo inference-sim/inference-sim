@@ -55,7 +55,7 @@ A scenario is a blis-schemas file of two YAML documents, a `Scenario` and a `Dep
 ```yaml
 kind: Scenario
 name: llama-3.1-70b-instruct-h200-fp8-vllm-tp4
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads,
                cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -125,12 +125,11 @@ A scenario that cannot be resolved -- absent file, unreadable coefficient set, u
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
 
-The scenario's `engine_version` must be a release blis-vllm models, and a scenario that states
-none is refused. `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine, priced with the
-kernel's 0.31.0 tuning (the run says so on stderr); it needs `max_model_len`, `max_num_seqs` and
-`max_num_batched_tokens` stated, and refuses priority scheduling for now. `0.29.0` and `0.31.0`
-run blis-vllm's compatibility engine, whose output is unchanged from earlier BLIS releases. Any
-other release is refused, naming it.
+The scenario's `engine_version` must be `"0.32.0"`, and a scenario that states none is refused.
+It runs blis-vllm's translated vLLM v0.32.0 engine, priced with the kernel's 0.31.0 tuning (the
+run says so on stderr), and refuses priority scheduling for now. The engine block must state
+`max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs` and
+`max_num_batched_tokens`. Any other release is refused, naming it.
 
 ## Prefill/decode disaggregation
 

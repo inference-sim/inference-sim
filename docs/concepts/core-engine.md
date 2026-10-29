@@ -11,13 +11,8 @@ engine it reaches only through blis-schemas' `engine.Engine` interface. The driv
 clock and the event queue, the client timeouts and the metrics; the engine makes every
 scheduling, KV-cache and output decision and prices its own steps. The engine is
 [blis-vllm](https://github.com/inference-sim/blis-vllm), built at one site,
-`cmd/engine_build.go`, for the scenario's `engine_version`:
-
-- `"0.32.0"`: blis-vllm's translated vLLM v0.32.0 engine;
-- `"0.29.0"`, `"0.31.0"`: blis-vllm's compatibility engine, whose output is unchanged from
-  earlier BLIS releases.
-
-A scenario with no `engine_version` is refused. The core loop is:
+`cmd/engine_build.go`, for the scenario's `engine_version: "0.32.0"`: blis-vllm's translated
+vLLM v0.32.0 engine. A scenario with no `engine_version` is refused. The core loop is:
 
 ```
 while events remain and clock < horizon:
@@ -32,15 +27,18 @@ The driver turns its events into calls on `engine.Engine`:
 
 | Driver event | Engine calls | Effect |
 |---|---|---|
-| arrival (`driverArrivalEvent`) | — | prices the request's front-end time (rendering, tokenization) and schedules its hand-off |
-| queued (`driverQueuedEvent`) | `Add` | the request enters the engine's waiting queue |
-| step end (`driverStepEnd`) | `Complete` | the engine applies the batch's output: emitted tokens, first tokens, finishes, KV events |
+| arrival (`driverArrivalEvent`) | — | prices the request's front-end time (rendering, tokenization) and schedules its hand-off; it does not step the engine |
+| queued (`driverQueuedEvent`) | `Add` | the request enters the engine's waiting queue; with no batch in flight, a step is queued at that instant (`driverArrivalStep`), after every arrival of the instant |
+| step end (`driverStepEnd`) | `Complete` | at the step's end, the engine applies the oldest in-flight batch's output: emitted tokens, first tokens, finishes, KV events |
 | wake (`driverWakeEvent`) | — | the engine asked to be stepped at an instant (`NextWake`) |
 | timeout (`driverTimeoutEvent`) | `Finish` | a client deadline ends the request |
 
-After each of these the driver steps the engine (`kick`): it calls `Schedule`, then `StepTime`,
-for as many batches as the engine admits while the GPU has a free slot. The engine forms each
-batch as vLLM's scheduler does and says how long it runs.
+Every event but the arrival and the queued request then steps the engine (`kick`): it calls
+`Schedule`, then `StepTime`, for as many batches as the engine admits while the GPU has a free
+slot. The engine forms each batch as vLLM's scheduler does and says how long it runs.
+
+**Clock monotonicity (INV-3):** the simulation clock never decreases; events are processed in
+(timestamp, priority, seqID) order.
 
 `InFlightLimit` bounds the batches in flight (vLLM's `max_concurrent_batches`, for example 2 under
 async scheduling on one pipeline stage), and `Metrics`/`Snapshot` give the engine's `vllm:*` series and state for the
@@ -117,7 +115,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority` (compatibility engine only; refused on 0.32.0), the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
+1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. `--preemption-policy priority` is refused on 0.32.0 for now.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -153,16 +151,7 @@ This matches vLLM, where CPU post-processing runs concurrently with GPU executio
 
 ## Scheduling Policies
 
-Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance, on the compatibility engine (`engine_version` 0.29.0 and 0.31.0); on 0.32.0 the engine orders by its engine block's `scheduling_policy`, and priority scheduling is refused for now. To add a new scheduling policy, see [Extension Recipes](../contributing/extension-recipes.md).
-
-| Policy | Ordering Rule | Use Case |
-|--------|---------------|----------|
-| `fcfs` | No reordering (arrival order) | Default, fair |
-| `priority-fcfs` | Priority **ascending** (lower value = more urgent, vLLM convention), then arrival ascending | SLO-aware scheduling with `slo_class` in workload spec |
-| `sjf` | Input token count ascending, then arrival ascending | Shortest-job-first for TTFT optimization |
-| `reverse-priority` | Priority descending (highest value = least urgent scheduled first) | Pathological testing only |
-
-Request priorities are **static** — set once at enqueue via `SLOPriorityMap.InvertForVLLM(SLOClass)` (vLLM convention: lower integer = more urgent). Default mapping: `critical=0`, `standard=1`, `batch=5`, `sheddable=6`, `background=7`. No per-step recomputation.
+Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. Priority scheduling and `--preemption-policy priority` are refused on 0.32.0 for now. See [Scheduling & Priority](../guide/scheduling.md).
 
 ## Metrics
 
