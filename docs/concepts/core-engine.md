@@ -34,13 +34,16 @@ The driver turns its events into calls on `engine.Engine`:
 |---|---|---|
 | arrival (`driverArrivalEvent`) | — | prices the request's front-end time (rendering, tokenization) and schedules its hand-off |
 | queued (`driverQueuedEvent`) | `Add` | the request enters the engine's waiting queue |
-| step start | `Schedule`, then `StepTime` | the engine forms the next batch, as vLLM's scheduler does, and says how long it runs |
 | step end (`driverStepEnd`) | `Complete` | the engine applies the batch's output: emitted tokens, first tokens, finishes, KV events |
-| wake (`driverWakeEvent`) | `Schedule` | the engine asked to be stepped at an instant (`NextWake`) |
+| wake (`driverWakeEvent`) | — | the engine asked to be stepped at an instant (`NextWake`) |
 | timeout (`driverTimeoutEvent`) | `Finish` | a client deadline ends the request |
 
-`InFlightLimit` bounds the batches in flight (vLLM's `max_concurrent_batches`: 2 under async
-scheduling), and `Metrics`/`Snapshot` give the engine's `vllm:*` series and state for the
+After each of these the driver steps the engine (`kick`): it calls `Schedule`, then `StepTime`,
+for as many batches as the engine admits while the GPU has a free slot. The engine forms each
+batch as vLLM's scheduler does and says how long it runs.
+
+`InFlightLimit` bounds the batches in flight (vLLM's `max_concurrent_batches`, for example 2 under
+async scheduling on one pipeline stage), and `Metrics`/`Snapshot` give the engine's `vllm:*` series and state for the
 router's scrapes and the report. Batch formation, preemption, prefix caching, speculative
 decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
 [README](https://github.com/inference-sim/blis-vllm#readme) and its

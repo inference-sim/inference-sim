@@ -33,8 +33,8 @@ The dependencies run one way: blis-schemas ← blis-latency-kernel ← blis-vllm
 The simulator owns the clock and decides *when* each instance is stepped; the engine decides
 *what* a step runs, as vLLM's scheduler does; the kernel says *how long* it takes and *how much*
 memory is left for KV. The simulator reaches the engine only through blis-schemas'
-`engine.Engine` interface ([Core Engine](core-engine.md)), and imports blis-vllm at one build
-site, `cmd/engine_build.go`. A deployment choice -- which chip, how many GPUs,
+`engine.Engine` interface ([Core Engine](core-engine.md)); within `sim/` and `cmd/` it imports
+blis-vllm at one build site, `cmd/engine_build.go`. A deployment choice -- which chip, how many GPUs,
 what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
 the scenario a run names, not in the catalog or registry. Data the kernel reads is never
 copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
