@@ -90,9 +90,8 @@ pools:
 
 The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
-block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (a count is kept; unstated takes the model
-graph's context window; `auto` or `-1` takes that window shrunk to what one rank's KV cache
-holds, as vLLM v0.31.0 starts; a window one rank cannot hold, or none at all, is refused), prefix caching, the KV cache dtype, and the speculative draft length and
+block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (must be stated as an explicit count on 0.32.0; unstated or `auto` is refused,
+as is a window one rank's KV cache cannot hold), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (`--model`, `--hardware`, `--tp`, `--dp`,
 `--total-kv-blocks`, `--max-num-seqs`, `--max-model-len`, `--kv-cache-dtype`,
 `--num-speculative-tokens`, ...) no longer exist; to change one, edit the scenario.
