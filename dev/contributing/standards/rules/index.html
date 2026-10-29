@@ -3952,7 +3952,7 @@
 <h3 id="r5-resource-allocation-must-not-leave-partial-state-on-failure">R5: Resource allocation must not leave partial state on failure<a class="headerlink" href="#r5-resource-allocation-must-not-leave-partial-state-on-failure" title="Permanent link">&para;</a></h3>
 <p>Any code that allocates resources (blocks, slots, counters) must ensure no partial mutations remain on failure. Two strategies are valid: (a) <strong>check-then-act</strong> — verify capacity before any mutation, so failure returns before state is touched (preferred; used by KV cache <code>AllocateKVBlocks</code>, matching vLLM's <code>kv_cache_manager.py:334-336</code>); (b) <strong>rollback</strong> — undo all mutations from prior iterations on mid-loop failure.</p>
 <p><strong>Evidence:</strong> KV block allocation originally used rollback, but <code>rollbackAllocation</code> had a bug (#1061) that deleted <code>RequestMap</code> for continuing requests, orphaning blocks and causing deadlocks. The check-then-act refactor eliminates this bug class entirely.</p>
-<p><strong>Additional evidence:</strong> H12 hypothesis experiment — preemption loop in <code>sim/simulator.go:383</code> accesses <code>RunningBatch.Requests[len-1]</code> without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).</p>
+<p><strong>Additional evidence:</strong> H12 hypothesis experiment — preemption loop in the host loop of the time (<code>sim/simulator.go:383</code>, since moved to blis-vllm) accesses <code>RunningBatch.Requests[len-1]</code> without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).</p>
 <p><strong>Check:</strong> For every loop that mutates state, verify either: (a) a pre-check gate prevents entry when capacity is insufficient, or (b) the failure path rolls back all mutations.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
 <hr />
@@ -4021,7 +4021,7 @@
 <h3 id="r16-group-configuration-by-module">R16: Group configuration by module<a class="headerlink" href="#r16-group-configuration-by-module" title="Permanent link">&para;</a></h3>
 <p>Configuration parameters must be grouped by module — not added to a monolithic config struct mixing unrelated concerns. Each module's config should be independently specifiable and validatable.</p>
 <p><strong>Evidence:</strong> <code>SimConfig</code> previously combined hardware identity, model parameters, simulation parameters, and policy choices in 23 flat fields. Resolved in #350: <code>SimConfig</code> now embeds 6 module-scoped sub-configs (<code>KVCacheConfig</code>, <code>BatchConfig</code>, <code>LatencyCoeffs</code>, <code>ModelHardwareConfig</code>, <code>PolicyConfig</code>, <code>WorkloadConfig</code>). Factory signatures accept the narrowest sub-config (e.g., <code>NewKVStore(KVCacheConfig)</code>).</p>
-<p><strong>Check:</strong> New config parameters go into the appropriate sub-config in blis-vllm <code>compat/engine/config.go</code> (moved from <code>sim/config.go</code> by #2021), not directly into <code>SimConfig</code>.</p>
+<p><strong>Check:</strong> New config parameters go into the appropriate sub-config in blis-vllm <code>compat/engine/config.go</code>, not directly into <code>SimConfig</code>.</p>
 <p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
 <p><em>Previously: principle in CLAUDE.md "Configuration design" section. Promoted to numbered rule for checkability.</em></p>
 <hr />

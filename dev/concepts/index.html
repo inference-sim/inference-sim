@@ -3175,11 +3175,11 @@
 </tr>
 <tr>
 <td><a href="architecture/">Cluster Architecture</a></td>
-<td>The five BLIS repositories and how they divide the work; multi-instance simulation: the embedded llm-d router, its request path and DES hosting runtime, shared-clock event loop</td>
+<td>The six BLIS repositories and how they divide the work; multi-instance simulation: the embedded llm-d router, its request path and DES hosting runtime, shared-clock event loop</td>
 </tr>
 <tr>
 <td><a href="core-engine/">Core Engine</a></td>
-<td>Single-instance DES engine: event queue, Step() phases, request lifecycle, batch formation, KV cache, latency models</td>
+<td>One instance: the event loop, the engine driver and its <code>engine.Engine</code> calls, request lifecycle, preemption and dropped requests, latency pricing, metrics</td>
 </tr>
 </tbody>
 </table>
@@ -3188,7 +3188,7 @@
 <ul>
 <li><strong><a href="architecture/#overview">Cluster Data Flow</a></strong> — End-to-end cluster pipeline: request arrival through metrics output</li>
 <li><strong><a href="core-engine/#request-lifecycle">Request Lifecycle</a></strong> — Request state machine: states, transitions, and metric recording points</li>
-<li><strong><a href="core-engine/#event-queue">Event Processing Loop</a></strong> — DES event loop: min-heap queue, clock advancement, Step() decomposition</li>
+<li><strong><a href="core-engine/#overview">Event Processing Loop</a></strong> — DES event loop: min-heap queue, clock advancement, and the engine reached through <code>engine.Engine</code></li>
 </ul>
 <h2 id="reading-order">Reading Order<a class="headerlink" href="#reading-order" title="Permanent link">&para;</a></h2>
 <p>For newcomers to BLIS:</p>

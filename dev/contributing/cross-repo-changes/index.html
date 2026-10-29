@@ -3248,7 +3248,7 @@ page adds the cross-repository steps around them.</p>
    kernel's <code>testdata/upstream.lock</code> names their releases;
    <code>TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases</code> (<code>sim/vendored</code>) holds this
    repository's vendored copies to it, as <code>TestTheVendoredCatalogAndRegistryAreTheLockedReleases</code>
-   (blis-vllm <code>compat/kernelmodel</code>, moved from <code>sim/kernelmodel</code> by #2021) holds blis-vllm's own.</li>
+   (blis-vllm <code>compat/kernelmodel</code>) holds blis-vllm's own.</li>
 <li>Documentation that pins a catalog release (<code>docs/getting-started/installation.md</code>) moves with
    it; <code>TestDocExamplesPinTheCatalogVersion</code> checks it.</li>
 <li><code>go test ./...</code> and <code>golangci-lint run ./...</code>.</li>

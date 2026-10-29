@@ -844,6 +844,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#blis-vllm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis-vllm
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#blis-latency-kernel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -958,6 +969,17 @@
     <span class="md-ellipsis">
       
         E2E (End-to-End Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Engine
       
     </span>
   </a>
@@ -3758,6 +3780,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#blis-vllm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis-vllm
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#blis-latency-kernel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3872,6 +3905,17 @@
     <span class="md-ellipsis">
       
         E2E (End-to-End Latency)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Engine
       
     </span>
   </a>
@@ -4344,29 +4388,33 @@
 <h3 id="admission">Admission<a class="headerlink" href="#admission" title="Permanent link">&para;</a></h3>
 <p>The llm-d router's decision to accept or deny a request. With the <code>flowControl</code> feature gate off, the router's legacy admission controller sheds sheddable requests (priority &lt; 0) when the <a href="#saturation-detector">saturation detector</a> reports a saturated pool; an admitter plugin (<code>probabilistic-admitter</code>) may also deny requests. A denied request is counted as <code>rejected_requests</code>. See <a href="../../guide/admission/">Admission Control</a>.</p>
 <h3 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h3>
-<p>The process of selecting which requests from the wait queue join the running batch for the next step. BLIS implements vLLM-style continuous batching with chunked prefill and preemption. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<p>The process of selecting which requests from the wait queue join the running batch for the next step: vLLM's continuous batching with chunked prefill and preemption. The <a href="#engine">engine</a> does it, in blis-vllm. See <a href="../core-engine/#the-engine-interface">Core Engine: The engine interface</a>.</p>
+<h3 id="blis-vllm">blis-vllm<a class="headerlink" href="#blis-vllm" title="Permanent link">&para;</a></h3>
+<p>The Go module (<code>github.com/inference-sim/blis-vllm</code>) that is BLIS's vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM, plus the vLLM engine configuration and rules, and the kernel adapter. inference-sim reaches it only through the <a href="#engine">engine</a> interface. See <a href="../architecture/#the-blis-repositories">Cluster Architecture</a>.</p>
 <h3 id="blis-latency-kernel">blis-latency-kernel<a class="headerlink" href="#blis-latency-kernel" title="Permanent link">&para;</a></h3>
 <p>The Go module (<code>github.com/inference-sim/blis-latency-kernel</code>) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-catalog and fitted coefficients from blis-registry. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="block-kv-block">Block (KV Block)<a class="headerlink" href="#block-kv-block" title="Permanent link">&para;</a></h3>
-<p>The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<p>The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See <a href="../core-engine/#the-engine-interface">Core Engine: KV Cache</a>.</p>
 <h3 id="calibration-report">Calibration Report<a class="headerlink" href="#calibration-report" title="Permanent link">&para;</a></h3>
 <p>The JSON output of <code>blis calibrate</code> comparing real observed latencies against simulator predictions. Contains per-request TTFT and E2E deltas, aggregate error metrics (MAPE, Pearson correlation, percentile comparisons), bias assessment, and a quality rating. See <a href="../../guide/observe-replay-calibrate/#blis-calibrate-deprecated">Observe / Replay / Calibrate</a>.</p>
 <h3 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h3>
-<p>A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (<code>max-num-batched-tokens</code>). Controlled by the scenario's <code>engine.long_prefill_token_threshold</code>. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<p>A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (<code>max-num-batched-tokens</code>). Controlled by the scenario's <code>engine.long_prefill_token_threshold</code>. See <a href="../core-engine/#the-engine-interface">Core Engine: Batch Formation</a>.</p>
 <h3 id="cohort">Cohort<a class="headerlink" href="#cohort" title="Permanent link">&para;</a></h3>
 <p>A workload primitive that models a population of similar clients sharing the same arrival process, token distributions, and SLO class, with an optional time-varying lifecycle modifier. A cohort specifies a <code>population</code> count and one of three lifecycle patterns (<code>diurnal</code>, <code>spike</code>, <code>drain</code>); BLIS expands it into individual <code>ClientSpec</code> entries at workload generation time, each seeded independently for staggered arrival times. Distinct from a single <code>ClientSpec</code> in that cohorts directly model populations of concurrent users rather than a single traffic source. See <a href="../../guide/workloads/#cohort-dynamics">Workload Specifications: Cohort Dynamics</a> and <a href="../../reference/workload-spec/">Workload Spec Schema</a>.</p>
 <h3 id="continuous-batching">Continuous Batching<a class="headerlink" href="#continuous-batching" title="Permanent link">&para;</a></h3>
-<p>The serving strategy where new requests can join the running batch between decode steps, rather than waiting for the entire batch to complete. BLIS models this by re-evaluating the batch composition at every step. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<p>The serving strategy where new requests can join the running batch between decode steps, rather than waiting for the entire batch to complete. BLIS models this by re-evaluating the batch composition at every step. See <a href="../core-engine/#the-engine-interface">Core Engine: Batch Formation</a>.</p>
 <h3 id="counterfactual-regret">Counterfactual Regret<a class="headerlink" href="#counterfactual-regret" title="Permanent link">&para;</a></h3>
 <p>A trace-level metric from <code>--trace-level decisions</code>: for each routing decision, <code>regret = best_score - chosen_score</code> over the scores the llm-d router's primary scheduling profile gave every endpoint. With <code>max-score-picker</code> the chosen endpoint is always the best-scoring one, so regret is zero; it is non-zero only with pickers that may choose a lower-scoring endpoint. <code>--counterfactual-k</code> ranks the top-k endpoints. See <a href="../../guide/cluster/#decision-tracing">Cluster Simulation: Decision Tracing</a>.</p>
 <h3 id="decode-phase">Decode Phase<a class="headerlink" href="#decode-phase" title="Permanent link">&para;</a></h3>
 <p>The token generation phase where the model produces output tokens one at a time (or in parallel within a step). Each decode token uses the KV cache from all prior tokens. Decode steps are typically memory-bandwidth-bound. Contrast with <em>Prefill Phase</em>.</p>
 <h3 id="discrete-event-simulation-des">Discrete Event Simulation (DES)<a class="headerlink" href="#discrete-event-simulation-des" title="Permanent link">&para;</a></h3>
-<p>A simulation paradigm where the system state changes only at discrete event times. BLIS maintains a priority queue of timestamped events and advances the simulation clock by jumping between events, rather than stepping through fixed time intervals. See <a href="../core-engine/#event-queue">Core Engine: Event Queue</a>.</p>
+<p>A simulation paradigm where the system state changes only at discrete event times. BLIS maintains a priority queue of timestamped events and advances the simulation clock by jumping between events, rather than stepping through fixed time intervals. See <a href="../core-engine/#overview">Core Engine: Event Queue</a>.</p>
 <h3 id="distribution-synthesis">Distribution Synthesis<a class="headerlink" href="#distribution-synthesis" title="Permanent link">&para;</a></h3>
 <p>The <code>--rate</code> mode of <code>blis observe</code> that generates workload from statistical distributions (prompt/output token counts, arrival rate) instead of a workload spec YAML file. Useful for quick single-client experiments without crafting a full workload specification. See <a href="../../guide/observe-replay-calibrate/#distribution-synthesis-flags">Observe / Replay / Calibrate: Distribution Synthesis Flags</a>.</p>
 <h3 id="e2e-end-to-end-latency">E2E (End-to-End Latency)<a class="headerlink" href="#e2e-end-to-end-latency" title="Permanent link">&para;</a></h3>
 <p>Total time from request arrival to final token completion. Computed as <code>TTFT + sum(ITLs)</code>, where each ITL includes step time plus per-token output processing overhead. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
+<h3 id="engine">Engine<a class="headerlink" href="#engine" title="Permanent link">&para;</a></h3>
+<p>What runs one instance's batches, reached through blis-schemas' <code>engine.Engine</code> interface (<code>Add</code>, <code>Schedule</code>, <code>StepTime</code>, <code>Complete</code>, <code>Finish</code>, <code>NextWake</code>, ...). <code>sim.EngineDriver</code> drives it from the event loop. A scenario's <code>engine_version: "0.32.0"</code> selects blis-vllm's translated vLLM v0.32.0 engine; with none stated the scenario is refused. See <a href="../core-engine/">Core Engine</a>.</p>
 <h3 id="endpointpickerconfig">EndpointPickerConfig<a class="headerlink" href="#endpointpickerconfig" title="Permanent link">&para;</a></h3>
 <p>The llm-d router's configuration file (<code>kind: EndpointPickerConfig</code>): the plugins, the <a href="#scheduling-profile">scheduling profiles</a> that compose them, feature gates and the flow-control block. BLIS reads it from the scenario deployment's <code>router.endpoint_picker_config</code> unchanged from a real deployment. See <a href="../../guide/routing/#the-routers-inputs">Routing</a>.</p>
 <h3 id="epp-endpoint-picker">EPP (Endpoint Picker)<a class="headerlink" href="#epp-endpoint-picker" title="Permanent link">&para;</a></h3>
@@ -4390,13 +4438,13 @@
 <h3 id="itl-inter-token-latency">ITL (Inter-Token Latency)<a class="headerlink" href="#itl-inter-token-latency" title="Permanent link">&para;</a></h3>
 <p>The observed time between consecutive decode steps for a single request. Without speculative decoding, a request generating N output tokens produces N-1 ITL entries (one per inter-token gap); under speculative decoding one entry covers several accepted tokens, so the entry count is lower than N-1. ITL varies with batch composition changes between steps. The per-request mean ITL is reported as TPOT (Time Per Output Token) — the ITL sum over <code>N-1</code>, where N is the number of output tokens the request <em>actually emitted</em> (for a <a href="#maxmodellen">length-capped</a> request that is <code>maxModelLen - inputLen</code>, not its assigned output length). The aggregate <code>itl_mean_ms</code> and ITL percentiles are instead computed over the pooled per-step ITL samples across all requests (see <a href="../../guide/latency-models/">Latency Models</a>).</p>
 <h3 id="kv-cache">KV Cache<a class="headerlink" href="#kv-cache" title="Permanent link">&para;</a></h3>
-<p>GPU memory organized as blocks that store key-value tensors computed during attention. BLIS simulates block allocation, prefix sharing, LRU eviction, and optional CPU offloading without actual GPU memory. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<p>GPU memory organized as blocks that store key-value tensors computed during attention. The <a href="#engine">engine</a> simulates block allocation, prefix sharing, LRU eviction, and optional CPU offloading without actual GPU memory; the kernel sizes the block budget. See <a href="../../guide/kv-cache/">KV Cache</a>.</p>
 <h3 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h3>
-<p>The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: <a href="#blis-latency-kernel">blis-latency-kernel</a>, adapted to the <code>sim.LatencyModel</code> interface by blis-vllm <code>compat/kernelmodel</code>. See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a> and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
+<p>The component that predicts GPU execution time for a batch step, plus host overheads around it. BLIS uses one: <a href="#blis-latency-kernel">blis-latency-kernel</a>, which the <a href="#engine">engine</a> asks to price each batch through blis-vllm's kernel adapter (<code>compat/kernelmodel</code>). See <a href="../core-engine/#latency-models">Core Engine: Latency Models</a> and <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="llm-d">llm-d<a class="headerlink" href="#llm-d" title="Permanent link">&para;</a></h3>
 <p>An open-source LLM inference routing and serving framework that BLIS is designed to simulate and validate against. BLIS routes every cluster run with llm-d's own router (<a href="#epp-endpoint-picker">EPP</a>), embedded in-process from the inference-sim fork of llm-d-router, so a deployment's router configuration runs in BLIS unchanged. See <a href="../../guide/routing/">Routing</a>.</p>
 <h3 id="maxmodellen">MaxModelLen<a class="headerlink" href="#maxmodellen" title="Permanent link">&para;</a></h3>
-<p>Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's <code>--max-model-len</code> and is read from each scenario pool's <code>engine.max_model_len</code>: a count, <code>auto</code> (the model graph's context window shrunk to what one rank's KV cache holds), or unstated (the graph's context window). Requests whose input alone fills the context window (<code>input &gt;= MaxModelLen</code>) or whose input + output budget exceeds it are dropped before entering the wait queue. A three-part proactive cap matches vLLM <code>scheduler.py:773-774</code>: FormBatch clamps token scheduling to <code>maxModelLen - 1 - ProgressIndex</code>, executeBatchStep skips decode when 0 tokens allocated, and processCompletions force-completes at the <code>maxModelLen - 1</code> boundary. Output per length-capped request: <code>maxModelLen - inputLen</code>, matching vLLM's <code>check_stop</code> (<code>num_tokens &gt;= max_model_len</code>) — <code>ProgressIndex</code> is <code>num_computed_tokens</code>, one behind the generated-token count because the first output token is charged to prefill, so the boundary token is generated and counted. See <a href="../../guide/latency-models/#scenario-structure">Latency Models Guide</a>.</p>
+<p>Maximum total sequence length (input + output) for a single request, in tokens. Mirrors vLLM's <code>--max-model-len</code> and is read from each scenario pool's <code>engine.max_model_len</code>, which must be an explicit number (unstated or <code>auto</code> is refused). Requests whose input alone fills the context window (<code>input &gt;= MaxModelLen</code>) or whose input + output budget exceeds it are dropped before entering the wait queue. Past admission, the engine stops a request at the context window as vLLM's <code>check_stop</code> does (<code>num_tokens &gt;= max_model_len</code>), so a length-capped request emits <code>maxModelLen - inputLen</code> output tokens. See <a href="../../guide/latency-models/#scenario-structure">Latency Models Guide</a>.</p>
 <h3 id="moe-mixture-of-experts">MoE (Mixture of Experts)<a class="headerlink" href="#moe-mixture-of-experts" title="Permanent link">&para;</a></h3>
 <p>A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. blis-latency-kernel reads expert geometry (expert count, top-k) from the model graph in the catalog. A scenario's <code>dp &gt; 1</code> runs one replica per data-parallel rank; <code>enable_expert_parallel</code> is priced by the kernel. See <a href="../../guide/latency-models/#data-and-expert-parallelism-moe">Latency Models Guide</a>.</p>
 <h3 id="observe-replay-calibrate-pipeline">Observe / Replay / Calibrate Pipeline<a class="headerlink" href="#observe-replay-calibrate-pipeline" title="Permanent link">&para;</a></h3>
@@ -4406,11 +4454,11 @@
 <h3 id="policy-bundle">Policy Bundle<a class="headerlink" href="#policy-bundle" title="Permanent link">&para;</a></h3>
 <p>A YAML configuration file (<code>--policy-config</code>) that specifies priority, scheduling, preemption, node pools, autoscaling and instance lifecycle in one place. CLI flags override bundle values when explicitly set. Admission, routing and flow control are not in the bundle: they are the llm-d router's configuration. See <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 <h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
-<p>KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (<code>--preemption-policy fcfs</code>), BLIS evicts from the batch tail. With <code>--preemption-policy priority</code>, the least-urgent SLO tier is evicted first. See <a href="../core-engine/#batch-formation">Core Engine: Batch Formation</a>.</p>
+<p>KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (<code>--preemption-policy fcfs</code>), BLIS evicts from the batch tail. <code>--preemption-policy priority</code> is refused on 0.32.0 for now. See <a href="../core-engine/#the-engine-interface">Core Engine: Batch Formation</a>.</p>
 <h3 id="prefill-phase">Prefill Phase<a class="headerlink" href="#prefill-phase" title="Permanent link">&para;</a></h3>
 <p>The initial processing phase where the model computes attention over all input tokens. Prefill is compute-bound for large inputs. After prefill completes, the request transitions to decode. TTFT is recorded at this boundary.</p>
 <h3 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h3>
-<p>Reuse of KV blocks across requests that share a common input prefix. BLIS uses hierarchical block hashing: each block's hash chains with the prior block's hash, enabling semantic prefix matching. Shared blocks are reference-counted and exempt from eviction while in use. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<p>Reuse of KV blocks across requests that share a common input prefix. BLIS uses hierarchical block hashing: each block's hash chains with the prior block's hash, enabling semantic prefix matching. Shared blocks are reference-counted and exempt from eviction while in use. See <a href="../core-engine/#the-engine-interface">Core Engine: KV Cache</a>.</p>
 <h3 id="priority-policy">Priority Policy<a class="headerlink" href="#priority-policy" title="Permanent link">&para;</a></h3>
 <p>A per-instance policy that assigns a numeric priority score to each request before batch formation. Used by priority-aware schedulers to reorder the wait queue. Built-in policies: <code>constant</code>, <code>slo-based</code>, <code>inverted-slo</code> (testing only). Note: despite its name, <code>slo-based</code> currently uses only request age (favoring older requests), not per-request SLO metadata. See <a href="../core-engine/#scheduling-policies">Core Engine: Scheduling</a>.</p>
 <h3 id="saturation-detector">Saturation Detector<a class="headerlink" href="#saturation-detector" title="Permanent link">&para;</a></h3>
@@ -4428,13 +4476,13 @@
 <h3 id="slo-class">SLO Class<a class="headerlink" href="#slo-class" title="Permanent link">&para;</a></h3>
 <p>A label that categorizes each request by service-level objective sensitivity: <code>critical</code>, <code>standard</code>, <code>batch</code>, <code>sheddable</code>, <code>background</code>. In a cluster it reaches the llm-d router as the request's <a href="#inferenceobjective">InferenceObjective</a> name, whose priority governs shedding and flow-control ordering. Inside each instance, the engine priority from the SLO priority map (default <code>critical</code> 4, <code>standard</code> 3, <code>batch</code> −1, <code>sheddable</code> −2, <code>background</code> −3, overridable with <code>priority.slo_priorities</code> in the policy bundle) drives priority scheduling and preemption. Classes are also reported per class in metrics. Set via <code>slo_class</code> in the workload spec YAML. See <a href="../../guide/workloads/#slo-classes">Workload Specifications</a> and <a href="../../guide/admission/">Admission Control</a>.</p>
 <h3 id="step">Step<a class="headerlink" href="#step" title="Permanent link">&para;</a></h3>
-<p>A single iteration of the inference engine. Each step processes one batch: prefill tokens for new/continuing requests and decode tokens for generating output. Step time is predicted by the latency model. See <a href="../core-engine/#step-phases">Core Engine: Step Phases</a>.</p>
+<p>A single iteration of the inference engine. Each step processes one batch: prefill tokens for new/continuing requests and decode tokens for generating output. Step time is predicted by the latency model. See <a href="../core-engine/#the-engine-interface">Core Engine: The engine interface</a>.</p>
 <h3 id="tensor-parallelism-tp">Tensor Parallelism (TP)<a class="headerlink" href="#tensor-parallelism-tp" title="Permanent link">&para;</a></h3>
 <p>A parallelism strategy that shards a model's weight tensors across multiple GPUs, reducing per-GPU compute load and KV memory requirements at the cost of per-layer collective communication, which blis-latency-kernel prices. Stated in the scenario as a pool's <code>parallel.tp</code>. Increasing the instance count (replication) instead increases throughput without reducing per-request latency. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="tick">Tick<a class="headerlink" href="#tick" title="Permanent link">&para;</a></h3>
 <p>The fundamental time unit in BLIS, representing one microsecond. All timestamps, durations, and latencies are measured in ticks. The simulation clock advances in ticks.</p>
 <h3 id="tiered-kv-cache">Tiered KV Cache<a class="headerlink" href="#tiered-kv-cache" title="Permanent link">&para;</a></h3>
-<p>An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceeds a threshold, blocks are offloaded to CPU memory. On cache miss, blocks can be reloaded from CPU with a transfer latency penalty. See <a href="../core-engine/#kv-cache-management">Core Engine: KV Cache</a>.</p>
+<p>An extension of the KV cache with GPU and CPU tiers. When GPU utilization exceeds a threshold, blocks are offloaded to CPU memory. On cache miss, blocks can be reloaded from CPU with a transfer latency penalty. See <a href="../core-engine/#the-engine-interface">Core Engine: KV Cache</a>.</p>
 <h3 id="tpot-time-per-output-token">TPOT (Time Per Output Token)<a class="headerlink" href="#tpot-time-per-output-token" title="Permanent link">&para;</a></h3>
 <p>The mean inter-token latency across all decode steps for a request, computed as <code>mean(ITL)</code>. TPOT represents the steady-state token generation speed once prefill completes; lower TPOT means faster streaming throughput. Each ITL sample includes the step time plus the per-token output-processing overhead. Reported as the <code>itl_mean_ms</code> field in JSON output. See <a href="#itl-inter-token-latency">ITL</a> and <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="tracev2">TraceV2<a class="headerlink" href="#tracev2" title="Permanent link">&para;</a></h3>
@@ -4444,7 +4492,7 @@
 <h3 id="warmup-requests">Warmup Requests<a class="headerlink" href="#warmup-requests" title="Permanent link">&para;</a></h3>
 <p>Initial requests dispatched by <code>blis observe</code> that are excluded from trace output (<code>--warmup-requests N</code>). Warmup requests allow the server to populate its KV cache and reach steady-state scheduling before measurement begins, avoiding cold-start artifacts in the recorded trace. See <a href="../../guide/observe-replay-calibrate/#blis-observe-deprecated">Observe / Replay / Calibrate: blis observe</a>.</p>
 <h3 id="work-conserving">Work-Conserving<a class="headerlink" href="#work-conserving" title="Permanent link">&para;</a></h3>
-<p>The property that the simulator never idles while requests are waiting. After every step completion, if the wait queue is non-empty, a new <code>StepEvent</code> is scheduled immediately (INV-8). See <a href="../core-engine/#event-queue">Core Engine: Event Queue</a>.</p>
+<p>The property that the simulator never idles while requests are waiting. After every step's end (<code>driverStepEnd</code>), the engine driver steps the engine again, so a non-empty wait queue is scheduled at once (INV-8). See <a href="../core-engine/#overview">Core Engine: Event Queue</a>.</p>
 <h3 id="workload-specification">Workload Specification<a class="headerlink" href="#workload-specification" title="Permanent link">&para;</a></h3>
 <p>A YAML file (<code>--workload-spec</code>) defining multi-client workloads with per-client arrival distributions, token length distributions, prefix groups, and SLO classes. Supports <code>poisson</code>, <code>gamma</code>, <code>weibull</code>, and <code>constant</code> arrival processes and <code>gaussian</code>, <code>exponential</code>, <code>pareto_lognormal</code>, <code>constant</code>, and <code>empirical</code> token distributions. See <a href="../../reference/configuration/#workload-modes">Configuration Reference</a>.</p>
 

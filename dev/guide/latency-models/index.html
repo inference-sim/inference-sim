@@ -3573,7 +3573,7 @@
 <h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
 <p>BLIS takes its latency model from one source: <strong>blis-latency-kernel</strong>
 (Go module <code>github.com/inference-sim/blis-latency-kernel</code>, at the version <code>go.mod</code> pins). The adapter
-in blis-vllm <code>compat/kernelmodel</code> (moved from <code>sim/kernelmodel</code> by #2021) translates a BLIS batch into the kernel's request shapes and converts
+in blis-vllm <code>compat/kernelmodel</code> translates a BLIS batch into the kernel's request shapes and converts
 the kernel's answers to BLIS ticks; it computes no cost of its own. There is no other
 backend and no <code>--latency-model</code> flag: the roofline and trained-physics backends, the
 alpha/beta coefficients, <code>hardware_config.json</code> calibration, and the
@@ -3632,7 +3632,7 @@ scenarios it was scored on, at
 <p>A scenario is a blis-schemas file of two YAML documents, a <code>Scenario</code> and a <code>Deployment</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Scenario</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama-3.1-70b-instruct-h200-fp8-vllm-tp4</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">engine_version</span><span class="p">:</span><span class="w"> </span><span class="s">"0.29.0"</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">engine_version</span><span class="p">:</span><span class="w"> </span><span class="s">"0.32.0"</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama-3.1-70b-instruct</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">coefficients</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">cost-model-primitives</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-collectives</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-host-overheads</span><span class="p p-Indicator">,</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">               </span><span class="nv">cost-model-attention</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-recurrent</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-memory</span><span class="p p-Indicator">]</span>
@@ -3665,9 +3665,8 @@ scenarios it was scored on, at
 <h3 id="what-comes-from-the-scenario-and-what-stays-on-the-cli">What comes from the scenario, and what stays on the CLI<a class="headerlink" href="#what-comes-from-the-scenario-and-what-stays-on-the-cli" title="Permanent link">&para;</a></h3>
 <p>The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
-block size, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code> (a count is kept; unstated takes the model
-graph's context window; <code>auto</code> or <code>-1</code> takes that window shrunk to what one rank's KV cache
-holds, as vLLM v0.31.0 starts; a window one rank cannot hold, or none at all, is refused), prefix caching, the KV cache dtype, and the speculative draft length and
+block size, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code> (must be stated as an explicit count on 0.32.0; unstated or <code>auto</code> is refused,
+as is a window one rank's KV cache cannot hold), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (<code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--dp</code>,
 <code>--total-kv-blocks</code>, <code>--max-num-seqs</code>, <code>--max-model-len</code>, <code>--kv-cache-dtype</code>,
 <code>--num-speculative-tokens</code>, ...) no longer exist; to change one, edit the scenario.</p>
@@ -3697,12 +3696,11 @@ the <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 <p>A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.</p>
-<p>The scenario's <code>engine_version</code> must be a release the engine models. Today that is <code>0.29.0</code>
-or <code>0.31.0</code>: the simulator runs blis-vllm's compatibility engine, which reproduces how those
-releases ran before blis-vllm existed. A scenario stating any other release, <code>0.32.0</code>
-included, is refused before anything runs, naming the release, even though blis-vllm carries
-a 0.32.0 rules pack. The v0.32.0 engine is wired in when the scenarios are re-baselined
-(inference-sim#2027).</p>
+<p>The scenario's <code>engine_version</code> must be <code>"0.32.0"</code>, and a scenario that states none is refused.
+It runs blis-vllm's translated vLLM v0.32.0 engine, priced with the kernel's 0.31.0 tuning (the
+run says so on stderr), and refuses priority scheduling for now. The engine block must state
+<code>max_model_len</code> as an explicit number (unstated or <code>auto</code> is refused), plus <code>max_num_seqs</code> and
+<code>max_num_batched_tokens</code>. Any other release is refused, naming it.</p>
 <h2 id="prefilldecode-disaggregation">Prefill/decode disaggregation<a class="headerlink" href="#prefilldecode-disaggregation" title="Permanent link">&para;</a></h2>
 <p>A scenario with a <code>prefill</code> pool and a <code>decode</code> pool, run with <code>--prefill-instances</code> and
 <code>--decode-instances</code>. BLIS builds one kernel per pool, so each pool is priced at its own
@@ -4057,10 +4055,11 @@ anchor is EXACT.</p>
 <p>A figure quoted without its tier and <code>-framework</code> cannot be checked. <code>-config-tier</code> (sweeps with
 or without an engine log) changes the ALL row as well.</p>
 <h2 id="the-interface">The interface<a class="headerlink" href="#the-interface" title="Permanent link">&para;</a></h2>
-<p>The simulator consumes latency through the <code>sim.LatencyModel</code> interface
-(blis-vllm <code>compat/engine/latency_model.go</code>, aliased in <code>sim/engine_aliases.go</code>): <code>StepTime(batch)</code>, <code>QueueingTime(req)</code>,
+<p>The engine consumes latency through blis-vllm's <code>LatencyModel</code> interface
+(blis-vllm <code>compat/engine/latency_model.go</code>): <code>StepTime(batch)</code>, <code>QueueingTime(req)</code>,
 <code>OutputTokenProcessingTime()</code> and <code>PostDecodeFixedOverhead()</code>, all in microseconds (ticks).
-blis-vllm <code>compat/kernelmodel</code> is its only production implementation. Improving or extending latency
+blis-vllm <code>compat/kernelmodel</code> is its only production implementation; the simulator reaches the
+engine, and so its step times, only through blis-schemas' <code>engine.Engine</code> interface. Improving or extending latency
 pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
 coefficients), not here; see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>

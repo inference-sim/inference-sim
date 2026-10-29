@@ -3581,7 +3581,7 @@ metrics collection.</p>
 <li>This ensures determinism (INV-6) but means results differ from a simple M/M/k queueing model</li>
 </ul>
 <h2 id="work-conserving-property">Work-Conserving Property<a class="headerlink" href="#work-conserving-property" title="Permanent link">&para;</a></h2>
-<p>BLIS is work-conserving (INV-8): it never idles while requests wait. After every step completion, if the WaitQ has requests, a new StepEvent is immediately scheduled. Real systems may have scheduling delays not modeled here.</p>
+<p>BLIS is work-conserving (INV-8): it never idles while requests wait. After every step's end (<code>driverStepEnd</code>), the engine driver steps the engine again, so waiting requests are scheduled at once. Real systems may have scheduling delays not modeled here.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../concepts/architecture/">Cluster Architecture</a> — internal mechanics of the shared-clock event loop</li>
