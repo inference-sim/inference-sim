@@ -156,7 +156,7 @@ The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event
 
 ## Work-Conserving Property
 
-BLIS is work-conserving (INV-8): it never idles while requests wait. After every step completion, if the WaitQ has requests, a new StepEvent is immediately scheduled. Real systems may have scheduling delays not modeled here.
+BLIS is work-conserving (INV-8): it never idles while requests wait. After every step's end (`driverStepEnd`), the engine driver steps the engine again, so waiting requests are scheduled at once. Real systems may have scheduling delays not modeled here.
 
 ## Further Reading
 

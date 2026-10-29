@@ -256,6 +256,6 @@ done
 
 ## Further Reading
 
-- [Core Engine: KV Cache](../concepts/core-engine.md#kv-cache-management) — internal mechanics
+- [Core Engine: The engine interface](../concepts/core-engine.md#the-engine-interface) — where the engine's KV cache sits
 - [Configuration Reference](../reference/configuration.md#kv-cache-configuration) — all KV cache flags
 - [Metrics & Results](results.md) — understanding preemption rate, cache hit rate, KV thrashing

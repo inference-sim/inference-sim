@@ -21,11 +21,12 @@ is needed.
 
 ## How BLIS fits together
 
-A BLIS run draws on five repositories. Each owns one kind of thing.
+A BLIS run draws on six repositories. Each owns one kind of thing.
 
 | Repository | Role | Holds |
 |---|---|---|
-| **inference-sim** (this one) | *simulates* | The end-to-end simulation: arrivals, the embedded llm-d router (admission, flow control, routing), scheduling, KV block accounting, placement, metrics. |
+| **inference-sim** (this one) | *simulates* | The end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the embedded llm-d router (admission, flow control, routing), metrics and reports. It holds no vLLM code. |
+| [`blis-vllm`](https://github.com/inference-sim/blis-vllm) | *runs the engine* | The vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors, translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. The only latency backend. |
 | [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets — declared facts, nothing fitted. |
 | [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | Coefficient sets the kernel prices with, each with its provenance and scope. |
@@ -36,11 +37,17 @@ The key relationships:
 - A **scenario** (a blis-schemas Scenario + Deployment YAML) names a model and a chip from
   the catalog, coefficient sets from the registry, and the deployment: cluster nodes and
   fabric, and each pool's role, parallelism and engine settings.
-- **inference-sim** reads the scenario, builds one kernel per pool, and simulates traffic
-  through the stack. Every time it needs a cost — a batch step, a KV budget, a KV handoff, an
-  offload transfer — it asks the kernel.
+- **inference-sim** reads the scenario and simulates traffic through the stack. It drives each
+  instance's engine only through blis-schemas' `engine.Engine` interface, and asks the engine
+  for every step: what runs, how long it takes, and what it emits.
+- **blis-vllm** is that engine. It decides each batch as vLLM does and asks the kernel what the
+  step costs.
 - **blis-latency-kernel** computes that cost from the catalog's facts and the registry's
   coefficients. It holds no data of its own.
+
+The dependencies run one way: blis-schemas ← blis-latency-kernel ← blis-vllm ← inference-sim.
+The kernel imports only blis-schemas. Non-test code under `sim/` and `cmd/` imports blis-vllm at
+one build site, `cmd/engine_build.go`.
 
 Deployment choices live in the scenario; facts live in the catalog; fitted numbers live in the
 registry. Nothing is fetched at run time.
@@ -76,6 +83,14 @@ Every `blis run` and `blis replay` needs four inputs:
 
 The clones are pinned to the releases BLIS is tested against; see
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
+
+**vLLM versions.** Every scenario states `engine_version: "0.32.0"`; one that omits it is
+refused. It runs blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning
+prices it, and the run says so on stderr). Older engine versions are being retired. Priority
+scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`,
+`--preemption-policy priority`, SLO priority overrides) is refused for now. The engine block must
+state `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs`
+and `max_num_batched_tokens`.
 
 The quickstart's `--rate 10 --num-requests 100` is a synthetic workload for a quick first run.
 [`examplescenarios/`](examplescenarios/) also ships MoE deployments to try the same commands

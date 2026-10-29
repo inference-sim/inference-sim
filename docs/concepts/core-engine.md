@@ -6,7 +6,13 @@ This page describes BLIS's single-instance discrete event simulation engine. For
 
 ## Overview
 
-Each BLIS instance is a self-contained discrete event simulator. The engine maintains an event queue (min-heap), processes events in timestamp order, and advances a simulation clock. The core loop is:
+Each BLIS instance pairs a host-side driver (`sim.EngineDriver`, `sim/engine_driver.go`) with an
+engine it reaches only through blis-schemas' `engine.Engine` interface. The driver owns the
+clock and the event queue, the client timeouts and the metrics; the engine makes every
+scheduling, KV-cache and output decision and prices its own steps. The engine is
+[blis-vllm](https://github.com/inference-sim/blis-vllm), built at one site,
+`cmd/engine_build.go`, for the scenario's `engine_version: "0.32.0"`: blis-vllm's translated
+vLLM v0.32.0 engine. A scenario with no `engine_version` is refused. The core loop is:
 
 ```
 while events remain and clock < horizon:
@@ -15,82 +21,31 @@ while events remain and clock < horizon:
     execute event (may produce new events)
 ```
 
-The engine models the full vLLM inference pipeline: request arrival, queueing, batch formation, step execution, KV cache management, and latency estimation — all without real GPU hardware.
+## The engine interface
 
-## Event Queue
+The driver turns its events into calls on `engine.Engine`:
 
-The event queue is a min-heap ordered by event timestamp. Events represent state transitions in the simulation:
+| Driver event | Engine calls | Effect |
+|---|---|---|
+| arrival (`driverArrivalEvent`) | — | prices the request's front-end time (rendering, tokenization) and schedules its hand-off; it does not step the engine |
+| queued (`driverQueuedEvent`) | `Add` | the request enters the engine's waiting queue; with no batch in flight, a step is queued at that instant (`driverArrivalStep`), after every arrival of the instant |
+| step end (`driverStepEnd`) | `Complete` | at the step's end, the engine applies the oldest in-flight batch's output: emitted tokens, first tokens, finishes, KV events |
+| wake (`driverWakeEvent`) | — | the engine asked to be stepped at an instant (`NextWake`) |
+| timeout (`driverTimeoutEvent`) | `Finish` | a client deadline ends the request |
 
-| Event Type | Trigger | Effect |
-|------------|---------|--------|
-| `ArrivalEvent` | Request enters system | Computes queueing delay (host overhead priced by the kernel), schedules `QueuedEvent` |
-| `QueuedEvent` | Request enters wait queue | Adds request to wait queue; if no `StepEvent` exists, schedules one (work-conserving) |
-| `StepEvent` | Batch ready for execution | Runs the 4-phase Step() cycle (see below) |
-| `ScheduledEvent` | Request moves to running batch | Timeline marker for tracing (scheduling delay recorded in `scheduleBatch`) |
-| `RequestLeftEvent` | Request completes | Timeline marker for tracing (E2E metrics recorded in `processCompletions`) |
+Every event but the arrival and the queued request then steps the engine (`kick`): it calls
+`Schedule`, then `StepTime`, for as many batches as the engine admits while the GPU has a free
+slot. The engine forms each batch as vLLM's scheduler does and says how long it runs.
 
-**Clock monotonicity (INV-3):** The simulation clock never decreases. Each processed event has a timestamp >= its predecessor's — except when restoring an optimistic advance after a lazily-cancelled event, where no event was processed. See [`invariants.md`](../contributing/standards/invariants.md) for the carve-out.
+**Clock monotonicity (INV-3):** the simulation clock never decreases; events are processed in
+(timestamp, priority, seqID) order.
 
-**Work-conserving (INV-8):** After every step completion, if the wait queue is non-empty, a `StepEvent` must exist in the event queue. The simulator never idles while work is waiting.
-
-```mermaid
-flowchart TD
-    EQ["Event Queue (min-heap)<br/>Ordered by timestamp"] -->|Pop min| Clock["Advance clock<br/>to event.timestamp"]
-    Clock --> Exec["Execute Event Handler<br/>Arrival → Queued → WaitQ<br/>Step → Step() phases<br/>Completion → metrics"]
-    Exec -->|produces new events| EQ
-    Exec -->|clock ≥ horizon<br/>or queue empty| Done["Simulation<br/>Complete"]
-
-    style EQ fill:#fff9db
-    style Clock fill:#a5d8ff
-    style Exec fill:#b2f2bb
-    style Done fill:#c8e6c9
-```
-
-## Step Phases
-
-The `Step()` function is a 4-line orchestrator that delegates to four phases:
-
-```mermaid
-flowchart TD
-    P1["1. scheduleBatch<br/>Priority assignment<br/>Queue reordering<br/>Batch formation"]
-    P2["2. executeBatchStep<br/>Latency estimation<br/>Prefill/decode progress<br/>TTFT at boundary"]
-    P3["3. processCompletions<br/>Release KV blocks<br/>Record E2E metrics<br/>Schedule RequestLeft"]
-    P4["4. scheduleNextStep<br/>Batch has work → Step<br/>Queue has work → Step<br/>Both empty → idle"]
-
-    P1 --> P2 --> P3 --> P4
-
-    style P1 fill:#d0bfff
-    style P2 fill:#d0bfff
-    style P3 fill:#d0bfff
-    style P4 fill:#d0bfff
-```
-
-### Phase 1: Schedule Batch (`scheduleBatch`)
-
-1. Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-FCFS). Request priorities are **static** — set once at enqueue via `SLOPriorityMap.InvertForVLLM(SLOClass)`, not recomputed per step.
-2. (step loop reordering — see above)
-3. Invoke batch formation to select which requests enter the running batch
-4. Record preemption metrics for any evicted requests
-5. Schedule `ScheduledEvent` for any newly admitted requests
-
-### Phase 2: Execute Batch Step (`executeBatchStep`)
-
-1. Compute step time via the latency model based on batch composition
-2. For each request in the batch:
-   - If in prefill phase: advance the progress index through input tokens (respecting chunked prefill limits)
-   - If in decode phase: advance the progress index by one output token
-   - Record TTFT at the prefill-to-decode boundary
-3. Return the computed step time to Phase 4 for scheduling the next `StepEvent` (the clock itself advances only at the event-loop level when the next event is popped)
-
-### Phase 3: Process Completions (`processCompletions`)
-
-Identify completed requests (all output tokens generated), release their KV blocks, record E2E metrics, and schedule `RequestLeftEvent`. Note: TTFT is already recorded in Phase 2 at the prefill-to-decode boundary, so Phase 3 only handles E2E and completion bookkeeping. This separation (TTFT in Phase 2, E2E in Phase 3) is the "two-pass" design that ensures TTFT is recorded before E2E.
-
-### Phase 4: Schedule Next Step (`scheduleNextStep`)
-
-1. If the running batch still has requests, schedule the next `StepEvent` at `now + stepTime`
-2. If the running batch is empty but the wait queue has requests, schedule the next `StepEvent` at `now + stepTime` (work-conserving)
-3. If both are empty, do nothing (next event will be a future arrival)
+`InFlightLimit` bounds the batches in flight (vLLM's `max_concurrent_batches`, for example 2 under
+async scheduling on one pipeline stage), and `Metrics`/`Snapshot` give the engine's `vllm:*` series and state for the
+router's scrapes and the report. Batch formation, preemption, prefix caching, speculative
+decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
+[README](https://github.com/inference-sim/blis-vllm#readme) and its
+[feature matrix](https://github.com/inference-sim/blis-vllm/blob/main/docs/feature-matrix.md).
 
 ## Request Lifecycle
 
@@ -160,7 +115,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority`, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
+1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. `--preemption-policy priority` is refused on 0.32.0 for now.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -171,79 +126,18 @@ Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and the
 
 Requests are dropped as unservable at enqueue time (incrementing `DroppedUnservable`) via two guards:
 
-1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
+1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the engine's runtime stop handles output growth).
 2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
 
-Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, a proactive cap in `FormBatch` clamps token scheduling to `maxModelLen - 1 - ProgressIndex` (matching vLLM `scheduler.py:773-774`), a decode guard in `executeBatchStep` prevents phantom token generation when 0 tokens are allocated, and `processCompletions` force-completes any request whose `ProgressIndex` reaches `MaxModelLen - 1`. Output tokens per length-capped request: `MaxModelLen - len(InputTokens)`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`). `ProgressIndex` is BLIS's `num_computed_tokens`, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's `num_computed_tokens` lags `num_tokens` by the token the forward pass has just appended — so the `MaxModelLen - 1` boundary is reached with the final token already generated, and it is counted.
-
-## Batch Formation
-
-BLIS models vLLM's continuous batching algorithm through the `VLLMBatchFormation` implementation.
-
-### Two-Phase Algorithm
-
-**Phase 1: Continuing Requests**
-Process requests already in the running batch:
-- Apply chunked prefill limits (the scenario's `engine.long_prefill_token_threshold`)
-- Allocate token budget for decode tokens
-- If KV allocation fails for a continuing request, preempt requests from the batch tail to free blocks
-
-**Phase 2: New Requests**
-Dequeue requests from the wait queue:
-- Compute cached prefix blocks (prefix caching reduces allocation needs)
-- Allocate KV blocks for uncached prefix tokens being processed this step (bounded by chunked prefill threshold and remaining token budget)
-- Stop dequeuing when: max batch size reached (`max_num_seqs`), allocation fails (cache full), token budget exhausted, or a preemption occurred during Phase 1
-
-### Constraints
-
-| Constraint | Source | Effect |
-|------------|------|--------|
-| Max batch size | scenario `max_num_seqs` | Limits number of concurrent requests in the running batch |
-| Token budget | scenario `max_num_batched_tokens` | Limits total new tokens across all running requests per step |
-| Chunked prefill | scenario `engine.long_prefill_token_threshold` | Splits long prefills across multiple steps |
-
-### Preemption Strategy
-
-When KV allocation fails for a continuing request:
-1. Select a victim: by default (`--preemption-policy fcfs`), evict from the batch tail (reverse order of admission). With `--preemption-policy priority`, evict the running request with the lowest SLO tier priority (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
-2. Free the victim's KV blocks
-3. Re-enqueue evicted requests at the front of the wait queue
-4. Retry allocation for the original request
-5. **Circuit breaker:** Stop if allocation still fails after exhausting the batch, or if the request itself is unservable
-
-## KV Cache Management
-
-The KV cache simulates GPU memory organized as fixed-size blocks. Each block holds the scenario's `block_size` tokens; the block budget comes from blis-latency-kernel's memory methods, per data-parallel rank.
-
-### Single-Tier Cache
-
-The default KV cache operates entirely in GPU memory:
-
-- **Block allocation:** Requests are allocated blocks proportional to their token count
-- **Prefix caching:** Hierarchical block hashing enables prefix sharing across requests. Each block's hash chains with the prior block's hash, creating semantic prefix signatures. When a new request shares a prefix with an existing request, the cached blocks are reused rather than reallocated.
-- **LRU eviction:** Free blocks are managed via a doubly-linked list with LRU ordering
-- **Reference counting:** Shared blocks (prefix caching) are reference-counted and exempt from eviction while any request references them
-- **Transactional allocation:** Multi-block allocations are rolled back on failure (no partial allocation)
-
-**Conservation invariant (INV-4):** `allocated_blocks + free_blocks = total_blocks` at all times.
-
-### Tiered Cache (GPU + CPU)
-
-When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache:
-
-- **GPU tier:** Full KV cache with prefix caching and LRU eviction
-- **CPU tier:** Simple capacity store for offloaded blocks
-- **Offload trigger:** When GPU utilization exceeds `--kv-offload-threshold` (default: 0.9), blocks are offloaded to CPU
-- **Reload:** On GPU allocation failure, blocks are reloaded from CPU with a transfer latency penalty
-- **Transfer latency:** each reloaded block is charged a per-block reload time that blis-latency-kernel prices from the catalog `cpu_dram` device. Accumulated across all reloaded blocks; non-blocking (added to step time). See [Tiered Caching](../guide/kv-cache.md#tiered-caching-gpu--cpu-offload).
-- **Thrashing detection:** Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter
+Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Past admission, the engine caps a request at `max_model_len` as vLLM's `check_stop` does (`num_tokens >= max_model_len`): a length-capped request emits `MaxModelLen - len(InputTokens)` output tokens.
 
 ## Latency Models
 
-Step time and host overheads come from **blis-latency-kernel**, through the
-`sim.LatencyModel` interface (adapter: blis-vllm `compat/kernelmodel`). The simulator decides when a step
-runs and which requests it holds; the kernel prices that batch from the model graph, chip and
-coefficients the scenario names. See the [Latency Models guide](../guide/latency-models.md).
+Step time and host overheads come from **blis-latency-kernel**. The engine asks the kernel to
+price each batch it forms (blis-vllm's kernel adapter, `compat/kernelmodel`), from the model
+graph, chip and coefficients the scenario names; the 0.32.0 engine is priced with the kernel's
+0.31.0 tuning, and a run says so on stderr. See the
+[Latency Models guide](../guide/latency-models.md).
 
 Host overheads are charged around the GPU step, never on it:
 
@@ -257,16 +151,7 @@ This matches vLLM, where CPU post-processing runs concurrently with GPU executio
 
 ## Scheduling Policies
 
-Scheduling policies control the order in which queued requests are selected for batch formation. They operate per-instance. To add a new scheduling policy, see [Extension Recipes](../contributing/extension-recipes.md).
-
-| Policy | Ordering Rule | Use Case |
-|--------|---------------|----------|
-| `fcfs` | No reordering (arrival order) | Default, fair |
-| `priority-fcfs` | Priority **ascending** (lower value = more urgent, vLLM convention), then arrival ascending | SLO-aware scheduling with `slo_class` in workload spec |
-| `sjf` | Input token count ascending, then arrival ascending | Shortest-job-first for TTFT optimization |
-| `reverse-priority` | Priority descending (highest value = least urgent scheduled first) | Pathological testing only |
-
-Request priorities are **static** — set once at enqueue via `SLOPriorityMap.InvertForVLLM(SLOClass)` (vLLM convention: lower integer = more urgent). Default mapping: `critical=0`, `standard=1`, `batch=5`, `sheddable=6`, `background=7`. No per-step recomputation.
+Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. Priority scheduling and `--preemption-policy priority` are refused on 0.32.0 for now. See [Scheduling & Priority](../guide/scheduling.md).
 
 ## Metrics
 

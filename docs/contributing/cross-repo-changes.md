@@ -23,7 +23,7 @@ page adds the cross-repository steps around them.
    kernel's `testdata/upstream.lock` names their releases;
    `TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases` (`sim/vendored`) holds this
    repository's vendored copies to it, as `TestTheVendoredCatalogAndRegistryAreTheLockedReleases`
-   (blis-vllm `compat/kernelmodel`, moved from `sim/kernelmodel` by #2021) holds blis-vllm's own.
+   (blis-vllm `compat/kernelmodel`) holds blis-vllm's own.
 4. Documentation that pins a catalog release (`docs/getting-started/installation.md`) moves with
    it; `TestDocExamplesPinTheCatalogVersion` checks it.
 5. `go test ./...` and `golangci-lint run ./...`.
