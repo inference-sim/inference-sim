@@ -13,6 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by `blis-latency-kernel` (the only latency backend; adapter blis-vllm `compat/kernelmodel`).
 
+This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-schemas' `engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-schemas ← blis-latency-kernel ← blis-vllm ← inference-sim. Every scenario states `engine_version: "0.32.0"` (no default), which runs blis-vllm's translated vLLM v0.32.0 engine.
+
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
 ## Catalog and deployment rules (mandatory)
@@ -62,7 +64,7 @@ go build -o blis main.go
 ```bash
 go test ./...                      # all tests
 go test ./sim/...                  # a package tree
-go test ./sim/... -run TestSimulator_GoldenDataset # a single test
+go test ./sim/cluster/ -run TestInstance_GoldenDataset # a single test
 go test -cover ./...               # with coverage
 golangci-lint run ./...            # lint (v2.14.0); run before pushing
 ```
@@ -102,7 +104,7 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 
 ### Code Style
 
-- Composition over inheritance (e.g. `InstanceSimulator` wraps existing `sim` components).
+- Composition over inheritance (e.g. `InstanceSimulator` wraps a `sim.EngineDriver`).
 - Timestamp-based event ordering via min-heap; cluster and per-instance queues use `(timestamp, priority, seqID)`; cluster ties broken by lowest instance index.
 - Partitioned RNG per subsystem to isolate randomness.
 
@@ -115,7 +117,7 @@ GitHub Actions run on all PRs to main:
 
 ## Cross-Repository Changes (BLIS repositories)
 
-A change that also touches blis-schemas, blis-catalog, blis-registry or blis-latency-kernel follows the canonical process in blis-schemas (`docs/contributing/cross-repo-changes.md`); this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `docs/contributing/llm-d-router-fork.md`), and push schemas -> catalog/registry/kernel -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (schemas validators, snapshot pin check, push gate, `git merge-tree --write-tree origin/main HEAD`).
+A change that also touches blis-schemas, blis-catalog, blis-registry, blis-latency-kernel or blis-vllm follows the canonical process in blis-schemas (`docs/contributing/cross-repo-changes.md`); this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `docs/contributing/llm-d-router-fork.md`), and push schemas -> catalog/registry/kernel -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (schemas validators, snapshot pin check, push gate, `git merge-tree --write-tree origin/main HEAD`).
 
 ## Agent Behavioral Instructions
 

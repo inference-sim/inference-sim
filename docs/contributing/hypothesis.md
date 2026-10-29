@@ -586,7 +586,7 @@ After convergence and PR creation, walk the findings classification table in FIN
 
 | Issue Type | Label | When to file | Title format | Example |
 |------------|-------|-------------|--------------|---------|
-| **Bug** | `--label bug` | Code defect discovered during experiment | `bug: <component> — <defect>` | `bug: sim/simulator.go — preempt() panics on empty RunningBatch` (H12) |
+| **Bug** | `--label bug` | Code defect discovered during experiment | `bug: <component> — <defect>` | `bug: <file> — preempt() panics on empty RunningBatch` (H12; the file was the since-deleted host loop, now in blis-vllm) |
 | **Enhancement** | `--label enhancement` | New feature, rule, or documentation improvement needed | `enhancement: <area> — <improvement>` | `enhancement: CLI — document token-bucket per-input-token cost model` (H5) |
 | **New hypothesis** | `--label hypothesis` | Follow-up experiment spawned by current findings | `hypothesis: <claim to test>` | `hypothesis: test tiered KV at GPU=1500 blocks to trigger preemption-path offload` (H10) |
 | **Design limitation** | `--label design` | System works as coded but has undocumented behavioral limitation | `design: <limitation>` | `design: no burst-smoothing sweet spot under Gamma CV>3` (H5) |

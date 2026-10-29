@@ -1,6 +1,8 @@
 # Project Structure
 
-The simulator uses a discrete-event architecture with a min-heap event queue.
+The simulator uses a discrete-event architecture with a min-heap event queue. Its engine is
+[blis-vllm](https://github.com/inference-sim/blis-vllm), reached through blis-schemas'
+`engine.Engine` interface; the paths below are this repository's (`git ls-files`).
 
 ```
 inference-sim/
@@ -19,39 +21,38 @@ inference-sim/
 │   ├── observe_cmd.go         # `blis observe` command (deprecated, #1901): flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── hfconfig.go            # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731) and read-only lookup of a model's config.json within it (refuses an uncatalogued model)
+│   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a run reads a model's `models/<name>/graph.yaml` within it
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. catalogProvenanceEmitOptions is the single shared helper both `blis run` and `blis replay` pass to sim.EmitOutput (file-only, INV-6/INV-13)
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload`, `blis convert preset` and `blis observe --workload`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
 │   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 │   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
-├── sim/                       # The host of one instance; the engine it runs is blis-vllm's compatibility engine
+├── sim/                       # The host of one instance: clock, event queue, timeouts and metrics; the engine is blis-vllm's, through engine.Engine
 │   ├── doc.go                 # Package overview
-│   ├── engine_aliases.go      # Package sim's names for the engine (compat/engine), the P/D link arbiter (compat/kvtransfer), the prompt-chain hash (compat/prefix), the DP load balancer (compat/dplb) and NIXL's lease rules (compat/nixl): aliases and forwards, so callers still write sim.Request, sim.KVStore, sim.SimConfig
-│   ├── engine_build.go        # NewEngine: the one place an instance's engine is assembled (KV store from the registered constructor, latency model with the LoRA overhead, Simulator)
-│   ├── simulator.go           # Simulator: the host half of an instance -- clock, horizon, event queue (timestamp, priority, seqID), when to step and when to park; embeds the engine (EngineCore). NewSimulator(SimConfig, KVStore, LatencyModel). All workload generation external via InjectArrival().
-│   ├── idle_park.go           # Idle park: an engine whose step scheduled nothing waits for an event instead of polling
-│   ├── dp_lockstep.go         # LockstepGroup: the data-parallel ranks of one MoE replica step together
+│   ├── engine_driver.go       # EngineDriver: drives one engine.Engine from the host's event loop (Add, Schedule, StepTime, Complete, Finish, NextWake) and records the report
+│   ├── engine_driver_group.go # A data-parallel group's ranks stepped as one engine
+│   ├── engine_driver_handoff.go # P/D: the decode side's remote prefill and KV handoff through the engine
+│   ├── engine_records.go      # The engine's results as the host's records
+│   ├── event_queue.go         # The host's event queue: (timestamp, priority, seqID) ordering
+│   ├── instance_config.go     # InstanceConfig: the host's settings for one instance, and the engine's configuration held unopened
+│   ├── request.go             # Request: the host's view of one request (states, timestamps, SLO class)
+│   ├── renderer.go            # The API-server front end: rendering and tokenization before a request reaches the engine
 │   ├── progress_hook.go       # ProgressHook: periodic read-only state snapshots during a run
 │   ├── recorder.go            # The *Metrics side of the engine's recorder seam
 │   ├── routing.go             # RoutingSnapshot: a lightweight view of one instance's live state (EffectiveLoad()), read by the model autoscaler; routing itself is the llm-d router's
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) built by the cluster for its own policies
 │   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
-│   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft, Timeout) with (timestamp, priority, seqID) ordering
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 │   ├── vendored/              # Names this repository as the kernel adapter's vendoring root (testdata/catalog, testdata/registry)
 │   └── internal/              # Shared internal packages
 │       └── testutil/          # Shared test infrastructure (golden dataset loading, the fake latency model)
-│                              # (moved to github.com/inference-sim/blis-vllm by #2021: the engine -- config
-│                              #  sub-configs, request, scheduler, queue, batch formation, KV store interface,
-│                              #  LatencyModel interface, engine metrics, SLO priority, RNG, renderer -- to
-│                              #  compat/engine; sim/kv to compat/kv; sim/lora to compat/lora; the block hasher,
-│                              #  KV block keying, TokenID, util and the KV-transfer station to compat/prefix,
-│                              #  compat/kvkey, compat/tokenid, compat/internal/util and compat/kvtransfer)
+│                              # (The engine itself -- request scheduling, batch formation, the KV cache,
+│                              #  LoRA, the kernel adapter -- is blis-vllm's: core/vllm (vLLM v0.32.0);
+│                              #  see github.com/inference-sim/blis-vllm.)
 ├── sim/cluster/               # Multi-replica cluster simulation
-│   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
+│   ├── instance.go            # InstanceSimulator: one instance's engine (a sim.EngineDriver, built by NewEngineInstance) with the cluster's lifecycle and placement state for it
 │   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, hands arrivals to the Gateway, and aggregates metrics; Run() returns error
 │   ├── cluster_event.go       # ClusterArrivalEvent, ScalingTickEvent, ScaleActuationEvent; cluster event queue
 │   ├── gateway.go             # Gateway interface (everything between arrival and dispatch: admission, flow control, endpoint picking), GatewayHost, Placement, Rejection (INV-1 buckets), IdleFastForwarder; sim/llmd is the production implementation
@@ -101,7 +102,7 @@ inference-sim/
 │                               #  blis-registry's coefficient sets at testdata/registry/, and this repo's
 │                               #  own scenario fixtures (P/D, MTP) at testdata/scenarios/.)
 ├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
-│   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (moved from sim/kernelmodel/harness; the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel since #2021)
+│   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel)
 │   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
 │   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
 │   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
@@ -139,6 +140,7 @@ inference-sim/
 │   │   ├── configuration.md   # Configuration reference
 │   │   ├── models.md          # Model compatibility and validation
 │   │   └── workload-spec.md   # Workload spec YAML schema
+│   ├── methodology/           # Research methodology
 │   │   ├── index.md           # Methodology overview
 │   │   └── principles.md     # Discovered principles catalog (30 principles)
 │   ├── contributing/          # Contributor documentation
@@ -150,10 +152,7 @@ inference-sim/
 │   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
 │   │   └── templates/         # Artifact templates
 │   │       ├── design-guidelines.md  # DES foundations, module architecture
-│   ├── templates/             # Claude prompt templates
-│   │   └── rfc-to-plan.md    # Prompt: encode .archon + create sub-issues
 │   └── plans/                 # Active implementation plans (excluded from MkDocs)
-│       └── archive/           # Completed design docs (architectural reference)
 ├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
 └── mkdocs.yml                 # MkDocs Material site configuration
 ```
