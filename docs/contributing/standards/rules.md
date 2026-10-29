@@ -79,7 +79,7 @@ Any code that allocates resources (blocks, slots, counters) must ensure no parti
 
 **Evidence:** KV block allocation originally used rollback, but `rollbackAllocation` had a bug (#1061) that deleted `RequestMap` for continuing requests, orphaning blocks and causing deadlocks. The check-then-act refactor eliminates this bug class entirely.
 
-**Additional evidence:** H12 hypothesis experiment — preemption loop in `sim/simulator.go:383` accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
+**Additional evidence:** H12 hypothesis experiment — preemption loop in the host loop of the time (`sim/simulator.go:383`, since moved to blis-vllm) accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
 
 **Check:** For every loop that mutates state, verify either: (a) a pre-check gate prevents entry when capacity is insufficient, or (b) the failure path rolls back all mutations.
 
