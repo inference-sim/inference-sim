@@ -6,11 +6,12 @@ This page describes how BLIS simulates multi-instance inference serving clusters
 
 ## The BLIS repositories
 
-BLIS is five repositories, each owning one kind of thing:
+BLIS is six repositories, each owning one kind of thing:
 
 | repository | role | owns |
 |---|---|---|
-| **inference-sim** (this repo) | simulates | the end-to-end simulation: arrivals, the hosting of the llm-d router, scheduling, KV block accounting, placement, metrics |
+| **inference-sim** (this repo) | simulates | the end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the hosting of the llm-d router, metrics and reports; no vLLM code |
+| **blis-vllm** | runs the engine | the vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM; the 0.29/0.31 compatibility engine; the vLLM engine configuration and rules; the kernel adapter |
 | **blis-latency-kernel** | prices | step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads |
 | **blis-catalog** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
 | **blis-registry** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
@@ -21,13 +22,19 @@ flowchart LR
     SC["Scenario<br/>(blis-schemas format)"] --> SIM
     CAT["blis-catalog<br/>facts"] --> K
     REG["blis-registry<br/>coefficients"] --> K
-    SC --> K
-    SIM["inference-sim<br/>simulates"] -- "batch, transfer, tier" --> K["blis-latency-kernel<br/>prices"]
-    K -- "durations, memory" --> SIM
+    SC --> E
+    SIM["inference-sim<br/>simulates"] -- "engine.Engine:<br/>add, schedule, complete" --> E["blis-vllm<br/>runs the engine"]
+    E -- "batch, transfer, tier" --> K["blis-latency-kernel<br/>prices"]
+    K -- "durations, memory" --> E
+    E -- "batches, step times, results" --> SIM
 ```
 
-The simulator decides *when* a step runs and *what* it holds; the kernel says *how long* it
-takes and *how much* memory is left for KV. A deployment choice -- which chip, how many GPUs,
+The dependencies run one way: blis-schemas ← blis-latency-kernel ← blis-vllm ← inference-sim.
+The simulator owns the clock and decides *when* each instance is stepped; the engine decides
+*what* a step runs, as vLLM's scheduler does; the kernel says *how long* it takes and *how much*
+memory is left for KV. The simulator reaches the engine only through blis-schemas'
+`engine.Engine` interface ([Core Engine](core-engine.md)), and imports blis-vllm at one build
+site, `cmd/engine_build.go`. A deployment choice -- which chip, how many GPUs,
 what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
 the scenario a run names, not in the catalog or registry. Data the kernel reads is never
 copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
