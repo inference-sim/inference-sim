@@ -16,7 +16,7 @@ Each concept page includes inline Mermaid diagrams:
 
 - **[Cluster Data Flow](architecture.md#overview)** — End-to-end cluster pipeline: request arrival through metrics output
 - **[Request Lifecycle](core-engine.md#request-lifecycle)** — Request state machine: states, transitions, and metric recording points
-- **[Event Processing Loop](core-engine.md#event-queue)** — DES event loop: min-heap queue, clock advancement, Step() decomposition
+- **[Event Processing Loop](core-engine.md#overview)** — DES event loop: min-heap queue, clock advancement, and the engine reached through `engine.Engine`
 
 ## Reading Order
 

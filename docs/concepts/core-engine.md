@@ -114,7 +114,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority`, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
+1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority` (compatibility engine only; refused on 0.32.0), the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -125,10 +125,10 @@ Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and the
 
 Requests are dropped as unservable at enqueue time (incrementing `DroppedUnservable`) via two guards:
 
-1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the runtime stop in `processCompletions` handles output growth).
+1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the engine's runtime stop handles output growth).
 2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
 
-Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Additionally, a proactive cap in `FormBatch` clamps token scheduling to `maxModelLen - 1 - ProgressIndex` (matching vLLM `scheduler.py:773-774`), a decode guard in `executeBatchStep` prevents phantom token generation when 0 tokens are allocated, and `processCompletions` force-completes any request whose `ProgressIndex` reaches `MaxModelLen - 1`. Output tokens per length-capped request: `MaxModelLen - len(InputTokens)`, matching vLLM's `check_stop` (`num_tokens >= max_model_len`). `ProgressIndex` is BLIS's `num_computed_tokens`, which lags the generated-token count by one — BLIS charges the first output token to prefill completion, as vLLM's `num_computed_tokens` lags `num_tokens` by the token the forward pass has just appended — so the `MaxModelLen - 1` boundary is reached with the final token already generated, and it is counted.
+Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Past admission, the engine caps a request at `max_model_len` as vLLM's `check_stop` does (`num_tokens >= max_model_len`): a length-capped request emits `MaxModelLen - len(InputTokens)` output tokens.
 
 ## Latency Models
 
