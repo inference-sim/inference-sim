@@ -470,6 +470,13 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 	return engine.Duration(k.m.StepTimeOfShapes(shapes(b)))
 }
 
+// TransferTime implements core/vllm.TransferPricer: an offload transfer of t.Blocks GPU blocks
+// to or from the CPU tier, as the kernel prices it (TierTime at cpu_dram, one at a time, as
+// vLLM's offload handler runs its copies on one stream chain: kv_offload/cpu/gpu_worker.py).
+func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
+	return engine.Duration(k.m.TierTransferTicks("cpu_dram", t.Kind == engine.TransferStore, int64(t.Blocks)))
+}
+
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage
 // (compat/kernelmodel.StageTimesOfShapes), summing to StepTime.
 func (k kernelPricer) StageTimes(b engine.Batch) []engine.Duration {

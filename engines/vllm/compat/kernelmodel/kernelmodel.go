@@ -541,6 +541,19 @@ func mtpDraftLayersOf(g *model.Graph, sp *engineconfig.Speculative) int {
 	return g.Speculator.Stack.Layers()
 }
 
+// TierTransferTicks prices moving blocks of this pool's KV to (toTier) or from an offload tier
+// device class, one transfer at a time, at the pool's per-block bytes: the kernel's TierTime,
+// rounded up to whole ticks. An unknown tier prices at the kernel's sentinel, which a caller
+// refuses at startup (compat/build priceOffload checks the tier first).
+func (m *Model) TierTransferTicks(tier string, toTier bool, blocks int64) int64 {
+	dir := kernel.DirectionFromTier
+	if toTier {
+		dir = kernel.DirectionToTier
+	}
+	bytes := blocks * m.k.SequenceVariableBytes(m.engine.BlockSize)
+	return max(1, ticks(m.k.TierTime(tier, dir, bytes, 1)))
+}
+
 // ReqShape is one request's share of a batch in the kernel's terms (blis-schemas
 // kernel.ReqShape), for a caller pricing batches it formed itself, such as blis-vllm's v0.32.0
 // engine through vllmengine.

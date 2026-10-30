@@ -463,6 +463,23 @@ func (e *Engine) StageTimes(b engine.Batch) []engine.Duration {
 	return st
 }
 
+// TransferPricer prices an engine's asynchronous KV transfers to and from an offload tier.
+type TransferPricer interface {
+	TransferTime(t engine.Transfer) engine.Duration
+}
+
+// TransferTime is how long one of the engine's offload-tier transfers takes, as its pricer
+// prices it (the latency kernel's TierTime for the CPU tier), at least one microsecond; false
+// when the pricer prices none. A simulator reads it by type-asserting
+// interface{ TransferTime(engine.Transfer) (engine.Duration, bool) } on the engine.Engine.
+func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
+	p, ok := e.pricer.(TransferPricer)
+	if !ok {
+		return 0, false
+	}
+	return max(p.TransferTime(t), 1), true
+}
+
 // Assumptions are the pricer's disclosed assumptions, when it records any: for the latency
 // kernel, that it prices vLLM 0.31.0's engine behaviour for a 0.32.0 scenario. A simulator reads
 // them by type-asserting interface{ Assumptions() []string } on the engine.Engine.
