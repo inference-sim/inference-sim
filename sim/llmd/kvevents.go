@@ -136,7 +136,11 @@ func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, eve
 	held := g.kvHeld[inst.ID()]
 	for _, e := range events {
 		if e.Removed && held[e.Hash] > 0 {
-			held[e.Hash]--
+			// A chain no store holds any more leaves the instance's holdings, so they stay the
+			// engine's cached set rather than every chain it ever published.
+			if held[e.Hash]--; held[e.Hash] == 0 {
+				delete(held, e.Hash)
+			}
 			g.canon.unpin(e.Hash)
 		}
 	}
