@@ -4,7 +4,7 @@
 A golden trace is vLLM's own output for a scenario, and what it records beside its
 `provenance` block is what blis-vllm is checked against. Every golden directory holds them:
 the scheduler's (core/sched), the EngineCore's and the DP loop's (core/engine), the NIXL
-connector's (core/connector/nixl) and the metric series' (core/metrics); and core/kv's block
+connector's (core/connector/nixl), the OffloadingConnector's (core/connector/offloading) and the metric series' (core/metrics); and core/kv's block
 hashes (GOLDEN_FILES), which are vLLM's own hash_block_tokens output. A commit that changes
 the recorded content of an existing golden, or deletes one, must carry a
 `golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario (in a
@@ -27,6 +27,7 @@ GOLDEN_DIRS = (
     "core/engine/testdata/golden-dp/",
     "core/engine/testdata/golden-dp-async/",
     "core/connector/nixl/testdata/golden/",
+    "core/connector/offloading/testdata/golden/",
     "core/metrics/testdata/golden/",
 )
 

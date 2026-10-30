@@ -112,11 +112,14 @@ type TransferOutcome struct {
 	FailedRecving []string
 	// InvalidBlocks are block IDs whose externally computed KV failed to load.
 	InvalidBlocks []int
+	// WorkerMeta is kv_connector_worker_meta (vllm/v1/outputs.py:221@5df63a72): what the worker
+	// side reports to the connector's scheduler side (update_connector_output), nil for none.
+	WorkerMeta any
 }
 
 func (o TransferOutcome) empty() bool {
 	return len(o.FinishedRecving) == 0 && len(o.FinishedSending) == 0 && len(o.FailedRecving) == 0 &&
-		len(o.InvalidBlocks) == 0
+		len(o.InvalidBlocks) == 0 && o.WorkerMeta == nil
 }
 
 // FetchStage is a request's KV-fetch stage (KV_FETCH_STAGES, vllm/v1/metrics/stats.py:212-219).
@@ -290,6 +293,7 @@ func (s *Scheduler) freeRequest(r *Request, delayFree bool) {
 	delete(s.inflight, r)
 	s.setFetchStage(r, fetchNone)
 	s.finishedPending++
+	s.noteFinished(r)
 	if s.connector != nil && s.connectorFinished(r) {
 		delayFree = true
 	}

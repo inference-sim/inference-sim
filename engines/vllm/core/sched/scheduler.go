@@ -191,6 +191,9 @@ type Output struct {
 	// SpecDecode is scheduled_spec_decode_tokens: the drafts each request verifies this step
 	// (-1 for first-decode padding).
 	SpecDecode map[string][]int64
+	// KVConnectorMetadata is kv_connector_metadata: what a MetaBuilder connector's
+	// build_connector_meta returned for the step (scheduler.py:1527-1530), nil otherwise.
+	KVConnectorMetadata any
 }
 
 // Finished is one request update_from_output finished.
@@ -243,6 +246,11 @@ type Scheduler struct {
 	// requiresKVDelivery is requires_kv_delivery (:168-170, 194): a preempted request's
 	// in-flight output is dropped, not delivered (_preempt_request's drop_stale_output, :839).
 	requiresKVDelivery bool
+	// tableLens and finishedIDs are what a MetaBuilder connector's step output is built from
+	// (connector_offload.go): each running request's block table lengths before the step's
+	// allocation, and finished_req_ids.
+	tableLens   map[string][]int
+	finishedIDs []string
 }
 
 // New builds a scheduler.
@@ -380,7 +388,7 @@ func (s *Scheduler) HasRequests() bool {
 	if s.HasUnfinished() || s.finishedPending > 0 {
 		return true
 	}
-	return s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()
+	return s.connector != nil && (len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len() || s.hasPushWork())
 }
 
 // Deferred is how many waiting requests the last waiting pass skipped (deferred_waiting).
@@ -523,6 +531,9 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			continue
 		}
 		ok := false
+		if s.connector != nil {
+			s.noteTable(r)
+		}
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r)}) {
@@ -650,7 +661,13 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				if s.connector != nil {
 					// The connector sees the block-aligned local hit (:968-980). A hit here is
 					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
-					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
+					var deferred bool
+					external, async, deferred = s.matchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
+					if deferred {
+						// The connector cannot size the hit yet (None, :983-988).
+						skip(q)
+						continue
+					}
 				}
 				numComputed = newLocal + external
 				// SWA bounded replay (:1047-1066): a hit no longer than the replayed window would be
@@ -779,6 +796,9 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	}
 	for _, r := range preempted {
 		out.Preempted = append(out.Preempted, r.ID)
+	}
+	if s.connector != nil {
+		s.buildConnectorMeta(&out, scheduledRunning, admitted)
 	}
 	// The fence advances only for steps that write KV (:1549-1552).
 	if s.deferBlockFree && len(out.Scheduled) > 0 {

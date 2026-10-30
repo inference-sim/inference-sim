@@ -202,7 +202,8 @@ func TestAnUnregisteredConnectorIsNotServed(t *testing.T) {
 	}
 }
 
-// Load reads the embedded registry: NIXL is served for P/D transfer and nothing else.
+// Load reads the embedded registry: NIXL is served for P/D transfer and nothing else, the
+// OffloadingConnector for offload and nothing else.
 func TestLoadServesTheRegisteredConnectors(t *testing.T) {
 	r, err := Load()
 	if err != nil {
@@ -215,6 +216,12 @@ func TestLoadServesTheRegisteredConnectors(t *testing.T) {
 		if r.Serves(name, connector.RoleOffload) {
 			t.Errorf("%s is served for offload, which no diff test checks", name)
 		}
+	}
+	if !r.Serves("OffloadingConnector", connector.RoleOffload) {
+		t.Error("OffloadingConnector is not served for offload")
+	}
+	if r.Serves("OffloadingConnector", connector.RolePDTransfer) {
+		t.Error("OffloadingConnector is served for pd_transfer, which no diff test checks")
 	}
 }
 

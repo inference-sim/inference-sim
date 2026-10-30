@@ -340,6 +340,27 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
+      # Tier 4: vLLM's real OffloadingConnector scheduler side over its CPU tier (CPUOffloadingManager,
+      # LRU), with only the worker mocked (completions as OffloadingWorkerMetadata), on every
+      # offloading scenario and 2000 fuzz seeds (1000 with hybrid KV cache groups).
+      - name: run every offloading scenario through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-offloading
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
+      - name: every offloading golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/offloading/testdata/golden oracle/out/scenarios-offloading
+      - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
+        env:
+          BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-offloading
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestOffloadingAgainstVLLM|TestOffloadingFuzzCorpusAgainstVLLM' ./core/connector/offloading/ | tee oracle/out/offloading-results.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
