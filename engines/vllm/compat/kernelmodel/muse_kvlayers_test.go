@@ -120,7 +120,6 @@ func TestRolePoolsIndexesEachRole(t *testing.T) {
 	}
 }
 
-
 // RolePools refuses a deployment stating one role in more than one pool: one engine layout per
 // role is what a simulated pool runs, and Spec.Pool could select only one of them.
 func TestRolePoolsRefusesARepeatedRole(t *testing.T) {

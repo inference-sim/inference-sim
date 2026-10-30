@@ -580,7 +580,6 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 	}
 }
 
-
 // A pool's kv_transfer names the deployment's pd_transfer.connector, whatever it is: a deployment
 // naming NixlPullConnector runs NixlPullConnector (vLLM's factory resolves both to the pull
 // scheduler, factory.py:177-189@5df63a72).
