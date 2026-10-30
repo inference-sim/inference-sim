@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,7 +51,7 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	refused := map[string]string{
 		"muse-h200-ib-dep8-dspark.yaml": "To serve at least one request with the model's max seq len (262144)",
 	}
-	run := func(name string) (map[string]any, string, error) {
+	run := func(name string) (map[string]float64, string, error) {
 		args := []string{"run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,
 			"--registry", registry, "--rate", "2", "--num-requests", "8",
 			"--prompt-tokens", "4096", "--prompt-tokens-min", "4096", "--prompt-tokens-max", "4096",
@@ -69,25 +67,15 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 		var out, errBuf bytes.Buffer
 		c.Stdout, c.Stderr = &out, &errBuf
 		err := c.Run()
-		// The cluster's block: the only one on one instance, the one so named beside the
-		// instances' on several.
-		var m map[string]any
-		for rest := out.String(); ; {
-			i := strings.Index(rest, "{")
-			if i < 0 {
-				break
-			}
-			dec := json.NewDecoder(strings.NewReader(rest[i:]))
-			var b map[string]any
-			if dec.Decode(&b) != nil {
-				break
-			}
-			if m == nil || b["instance_id"] == "cluster" {
-				m = b
-			}
-			rest = rest[i+int(dec.InputOffset()):]
+		if err != nil {
+			return nil, errBuf.String(), err
 		}
-		return m, errBuf.String(), err
+		// The cluster's figures, from the one Result document stdout holds (#2058): the INV-1
+		// ledger and the engine's whole-run rates (clusterFigures).
+		m := clusterFigures(t, out.String())
+		v, _ := resultValue(resultDoc(t, out.String()), "engine.cluster.whole_run.tokens_per_sec")
+		m["tokens_per_sec"], _ = asFloat(v)
+		return m, errBuf.String(), nil
 	}
 	tps := map[string]float64{}
 	for _, f := range files {
@@ -103,13 +91,13 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 			if err != nil || m == nil {
 				t.Fatalf("did not complete: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if got := m["completed_requests"]; got != float64(8) {
+			if got := m["completed_requests"]; got != 8 {
 				t.Errorf("completed %v of 8 requests", got)
 			}
-			if got := m["dropped_unservable"]; got != nil && got != float64(0) {
+			if got := m["dropped_unservable"]; got != 0 {
 				t.Errorf("dropped %v requests as unservable", got)
 			}
-			tps[name], _ = m["tokens_per_sec"].(float64)
+			tps[name] = m["tokens_per_sec"]
 		})
 	}
 	for _, layout := range []string{"pp2tp8", "tep16"} {
@@ -173,15 +161,8 @@ func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
 		if err := c.Run(); err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, lastLines(errBuf.String(), 6))
 		}
-		_, after, ok := strings.Cut(out.String(), "Cache Hit Rate: ")
-		if !ok {
-			t.Fatalf("%s: no cache hit rate in the summary", name)
-		}
-		var v float64
-		if _, err := fmt.Sscanf(after, "%f", &v); err != nil {
-			t.Fatalf("%s: cache hit rate: %v", name, err)
-		}
-		return v
+		// The whole-run prefix-cache hit rate the text summary printed, from the Result (#2058).
+		return clusterFigures(t, out.String())["cache_hit_rate_whole_run"]
 	}
 	precise := hitRate(dir, "muse-h200-ib-tep8-dspark-routed.yaml")
 	load := hitRate(tmp, "load-only.yaml")
