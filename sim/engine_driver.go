@@ -982,6 +982,11 @@ func (d *EngineDriver) finish(r *driverReq, f engine.Finished, end int64) {
 	}
 	// Its deadline, if one is pending, no longer applies (driverTimeoutEvent).
 	d.unserved[req.ID] = true
+	// A drop reaches the done callback as StateQueued, as a request the engine refuses at Add
+	// does: SessionManager.OnComplete cancels the session on it (BC-17) and the cluster reports
+	// it DoneDropped. A request the engine had admitted is StateRunning here, which both would
+	// read as a completion, so a session would go on to its next round.
+	req.State = StateQueued
 	d.done(req, end)
 }
 
