@@ -1,8 +1,7 @@
 # Vendored blis-catalog subset
 
 A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) at the
-commit recorded in `.upstream-commit` (TEMPORARY: the pushed head of
-inference-sim/blis-catalog#47, which adds Muse-Spark-Open-816B-A42B, until it is released), shaped as a catalog clone root so the Go
+commit recorded in `.upstream-commit` (release 0.5.0, which adds Muse-Spark-Open-816B-A42B), shaped as a catalog clone root so the Go
 tests can resolve models, presets, chips and devices offline. Nothing here is edited: a file is
 either copied unchanged from that release or absent. Operators do not use this copy; they clone
 the release and point `--catalog` / `BLIS_CATALOG` at it

@@ -5,8 +5,8 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-schemas v0.9.2-0.20261030162312-3465d9d16dfc // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261030165917-fba40f993f31 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
+	github.com/inference-sim/blis-schemas v0.10.0
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261030184648-840f1dda6dfc // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -62,7 +62,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/inference-sim/blis-latency-kernel v0.4.2-0.20261030162513-1fbc78e0bd53 // indirect; TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
+	github.com/inference-sim/blis-latency-kernel v0.4.2-0.20261030184459-cfbdf5db0732 // indirect; TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -130,4 +130,4 @@ require (
 // the only way to substitute it (docs/contributing/llm-d-router-fork.md).
 // TEMPORARY: the head of inference-sim/llm-d-router#4 (prefix-cache-affinity-filter hosted), for
 // inference-sim/inference-sim#2059; moves to the fork's tag once that PR merges and is tagged.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1.0.20261030035204-4cc406b5c000
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1.0.20261030181212-83fe33450a62
