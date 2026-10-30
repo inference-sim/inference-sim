@@ -428,6 +428,54 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 }
 
+// inference-sim imports blis-vllm and blis-schemas, never blis-latency-kernel (#2060): the
+// kernel is priced through blis-vllm's adapter (compat/kernelmodel) and its formats are read
+// through blis-schemas, so it is only an indirect dependency. Every package in this module,
+// tests and tools included, is checked; a direct import leaves go.mod's kernel line without
+// its "// indirect" marker, which is checked too.
+func TestInferenceSimDoesNotImportTheLatencyKernel(t *testing.T) {
+	const kernel = "github.com/inference-sim/blis-latency-kernel"
+	out, err := exec.Command("go", "list", "-test",
+		"-f", "{{.ImportPath}}|{{join .Imports \",\"}},{{join .TestImports \",\"}},{{join .XTestImports \",\"}}",
+		"../...").Output()
+	if err != nil {
+		t.Fatalf("go list -test: %v", err)
+	}
+	checked := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pkg, imports, _ := strings.Cut(line, "|")
+		if !strings.HasPrefix(pkg, "github.com/inference-sim/inference-sim") {
+			continue
+		}
+		checked++
+		for _, imp := range strings.Split(imports, ",") {
+			if imp == kernel || strings.HasPrefix(imp, kernel+"/") {
+				t.Errorf("%s imports %s; inference-sim reaches the kernel only through blis-vllm", pkg, imp)
+			}
+		}
+	}
+	if checked < 10 {
+		t.Fatalf("go list -test saw %d inference-sim packages; the check is vacuous", checked)
+	}
+
+	gomod, err := os.ReadFile(filepath.Join("..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, l := range strings.Split(string(gomod), "\n") {
+		if f := strings.Fields(l); len(f) >= 2 && f[0] == kernel {
+			found = true
+			if !strings.Contains(l, "// indirect") {
+				t.Errorf("go.mod requires %s directly (%q); it is blis-vllm's dependency, not this module's", kernel, strings.TrimSpace(l))
+			}
+		}
+	}
+	if !found {
+		t.Errorf("go.mod names no %s line; the indirect check sees nothing", kernel)
+	}
+}
+
 // inference-sim reaches blis-vllm's v0.32.0 engine only through blis-schemas' engine.Engine
 // contract (GOAL.md): no inference-sim package imports blis-vllm/core/... directly, the
 // build site's registration package included only through its facade, and the host's driver
