@@ -48,7 +48,7 @@ var capClusterNames = map[string]string{
 	"total_input_tokens":        "engine.cluster.total_input_tokens",
 	"total_output_tokens":       "engine.cluster.total_output_tokens",
 	"vllm_estimated_duration_s": "engine.cluster.simulated_duration_s",
-	"engine_accepted_requests":  "engine.cluster.engine_accepted_requests",
+	"engine_admissions":         "engine.cluster.engine_admissions",
 }
 
 func parseCapOut(t *testing.T, stdout string) capOut {
@@ -613,11 +613,11 @@ const inferencePerfSpec = "version: \"2\"\nseed: 7\ninference_perf:\n  stages:\n
 // capSpecBody writes a workload spec from its full YAML body.
 func capSpecBody(t *testing.T, body string) string { return capFile(t, "spec.yaml", body) }
 
-// meanPrompt is the mean prompt length of the requests the engines accepted: total_input_tokens
-// counts a prompt when an engine accepts it, and a request the horizon caught before its engine
+// meanPrompt is the mean prompt length over engine admissions: total_input_tokens counts a
+// prompt when an engine admits it, and a request the horizon caught before its engine
 // (still queued in the host's render pipeline, INV-1) has none counted.
 func (o capOut) meanPrompt() float64 {
-	return o.num("total_input_tokens") / o.num("engine_accepted_requests")
+	return o.num("total_input_tokens") / o.num("engine_admissions")
 }
 
 // TestCapabilityMatrix_Workloads is section 5 of the PR: each workload source runs on the

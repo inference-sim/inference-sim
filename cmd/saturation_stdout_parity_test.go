@@ -69,8 +69,8 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 		return stdout.String()
 	}
 
-	// parseSaturation extracts the "saturation" field (nil if absent) from the
-	// "=== Simulation Metrics ===" JSON block on stdout.
+	// parseSaturation extracts the final labels (nil if absent) from the Result's saturation
+	// section on stdout.
 	parseSaturation := func(t *testing.T, stdout string) (map[string]string, bool) {
 		t.Helper()
 		r := parseResult(t, stdout)

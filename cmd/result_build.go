@@ -77,8 +77,8 @@ type resultMetrics struct {
 	Kernel map[string]any
 	// InjectedByClass is the cluster's per-SLO-class arrival count, goodput's denominator.
 	InjectedByClass map[string]int64
-	// ClockUs is the cluster's clock when the run ended.
-	ClockUs int64
+	// ClockUs is the cluster's clock when the run ended, and HorizonUs the horizon it ran to.
+	ClockUs, HorizonUs int64
 }
 
 // buildResult assembles the Result document.
@@ -108,7 +108,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 		r.Name = resultName(r)
 	}
 
-	r.Window = windowOf(m, sum, out.ClockUs)
+	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
 	r.MetricDefs, r.Metrics = standardMetrics(sum, in.GPUs, r.Window.DurationS)
 	r.Breakdowns = breakdownsOf(m, sum, r.MetricDefs, out.PD)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass)
@@ -122,12 +122,16 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 }
 
 // windowOf states the measured window the metrics are over.
-func windowOf(m *sim.Metrics, sum sim.MeasuredSummary, clockUs int64) result.Window {
+func windowOf(m *sim.Metrics, sum sim.MeasuredSummary, clockUs, horizonUs int64) result.Window {
 	if sum.MeasuredWindowS <= 0 {
 		// No measured request completed, so no window bounds one: the zero rates are stated
 		// over the simulated run, which is what such a run measured. An idle engine's own clock
-		// never advances, so the span is the cluster's clock when it ran longer.
+		// never advances, so the span is the cluster's clock when it ran longer; a run that saw
+		// nothing at all before its horizon spanned the horizon.
 		end := max(m.SimEndedTime, clockUs)
+		if end <= 0 && horizonUs > 0 && horizonUs < math.MaxInt64 {
+			end = horizonUs
+		}
 		return result.Window{Start: windowStartRun, Stop: windowStopRun,
 			DurationS: float64(end) / 1e6, Requests: sum.MeasuredCompletedRequests}
 	}
@@ -321,14 +325,23 @@ func pdBreakdown(pd *cluster.PDMetrics) map[string]float64 {
 	if pd.LinkPeakConcurrent != nil && pd.TransferQueueDelay.Count > 0 {
 		dist("kv_transfer_queue_delay", pd.TransferQueueDelay)
 		out["kv_transfer_queue_delay_p90_ms"] = pd.TransferQueueDelayP90 / 1e3
-		for link, n := range pd.LinkPeakConcurrent {
-			out["link_peak_concurrent_transfers_"+slugPart(link)] = float64(n)
+		for _, link := range sortedMapKeys(pd.LinkPeakConcurrent) {
+			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(pd.LinkPeakConcurrent[link]))
 		}
 	}
-	for pool, rate := range pd.CPUTierHitRate {
-		out["cpu_tier_hit_rate_"+slugPart(pool)] = rate
+	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
+		putUnique(out, "cpu_tier_hit_rate_"+slugPart(pool), pd.CPUTierHitRate[pool])
 	}
 	return out
+}
+
+// putUnique sets out[key], panicking when two names reduced to the same slug: the second would
+// silently replace the first (R1).
+func putUnique(out map[string]float64, key string, v float64) {
+	if _, ok := out[key]; ok {
+		panic(fmt.Sprintf("result breakdown: two names reduce to the key %q", key))
+	}
+	out[key] = v
 }
 
 // sessionBreakdown is the multi-turn session split.
@@ -433,14 +446,19 @@ func slugPart(s string) string {
 // stringMapAny copies a string map into a generic one, in sorted key order (the encoder
 // sorts anyway; the copy is for the type).
 func stringMapAny(in map[string]string) map[string]any {
-	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	out := make(map[string]any, len(in))
-	for _, k := range keys {
+	for _, k := range sortedMapKeys(in) {
 		out[k] = in[k]
 	}
 	return out
+}
+
+// sortedMapKeys is m's keys, sorted.
+func sortedMapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

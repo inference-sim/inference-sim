@@ -271,7 +271,7 @@ routes with the router the scenario states, or the router's default configuratio
 | **Arrival times** | Synthesized by arrival process (Poisson, etc.) | Exact timestamps from trace |
 | **Token counts** | Sampled from distributions | Actual observed values |
 | **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
-| **Output format** | Full `MetricsOutput` JSON on stdout | Same full `MetricsOutput` JSON on stdout; `--results-path` additionally writes a `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for `blis calibrate` |
+| **Output format** | One `Result` document on stdout ([Metrics & Results](results.md)) | The same `Result` document; `--results-path` (deprecated) additionally writes a `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for `blis calibrate` |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
 
@@ -793,7 +793,7 @@ The report uses two levels of analysis because they catch different problems. **
     `blis run` and `blis replay` report **scheduling delay** — the time a request
     waited in the simulator's internal queue before being selected for batch execution.
     This appears in per-request `RequestMetrics.SchedulingDelay` and in the aggregate
-    `scheduling_delay_p99_ms` field of `MetricsOutput` (printed to stdout).
+    `scheduling_delay_p99_ms` (the Result's `engine.cluster.scheduling_delay_p99_ms`).
 
     `blis observe` **cannot** record scheduling delay because real inference servers
     do not expose per-request queue wait time through their HTTP APIs. A client sees

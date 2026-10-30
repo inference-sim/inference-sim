@@ -277,7 +277,7 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 		"step_interval_p99_ms":               sum.StepIntervalP99Ms,
 		"step_interval_percentile_method":    sim.PercentileMethodNumpyLinear,
 		"total_input_tokens":                 m.TotalInputTokens,
-		"engine_accepted_requests":           m.EngineAccepted,
+		"engine_admissions":                  m.EngineAccepted,
 		"total_output_tokens":                m.TotalOutputTokens,
 		"simulated_duration_s":               float64(m.SimEndedTime) / 1e6,
 		"measured_cancelled_requests":        sum.CancelledRequests,
@@ -440,14 +440,14 @@ func resultArtifacts(files []artifactFile) (map[string]result.Artifact, error) {
 }
 
 // artifactRef is path relative to the Result document, as blis-schemas states an artifact's
-// ref: relative to --output's directory, or to the working directory when the document goes to
-// stdout only. A path that cannot be made relative is kept as given.
+// ref: relative to --output's directory. With no --output the document has no location, so the
+// path is recorded as the command was given it (a working-directory-dependent ref would make two
+// runs of one input differ, INV-6).
 func artifactRef(path string) string {
-	base := "."
-	if resultOutput != "" {
-		base = filepath.Dir(resultOutput)
+	if resultOutput == "" {
+		return filepath.ToSlash(path)
 	}
-	absBase, err1 := filepath.Abs(base)
+	absBase, err1 := filepath.Abs(filepath.Dir(resultOutput))
 	absPath, err2 := filepath.Abs(path)
 	if err1 != nil || err2 != nil {
 		return path

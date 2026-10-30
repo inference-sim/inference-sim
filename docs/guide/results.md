@@ -37,7 +37,7 @@ jq '.metrics.ttft_p99_ms' result.json
 | `kernel` | blis-latency-kernel's coefficient provenance per pool role. |
 | `saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
 | `overrides` | Every setting the run simulated differently from its scenario, and what chose it. |
-| `artifacts` | Files the run wrote, by path relative to `--output`'s directory and sha256: `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
+| `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
 ### Standard metrics
@@ -69,7 +69,7 @@ document, or is listed here as dropped with the reason.
 <!-- result-field-map -->
 | `MetricsOutput` field | Result home |
 |---|---|
-| `instance_id` | dropped: the document is the cluster's; each instance's own figures are keyed by id under `engine.instances` |
+| `instance_id` | dropped: the document is the cluster's; in a run of more than one instance each instance's own figures are keyed by id under `engine.instances` |
 | `completed_requests` | `requests.completed` |
 | `still_queued` | `requests.still_queued` |
 | `still_running` | `requests.still_running` |
@@ -120,6 +120,11 @@ document, or is listed here as dropped with the reason.
 | `acceptance` | `engine.cluster.acceptance` |
 | `prefix_cache` | `engine.<pool role>.prefix_cache` |
 <!-- /result-field-map -->
+
+`input.run.num_requests` is the bound the run kept: `--num-requests` (or the spec's
+`num_requests`), raised to `requests.generated` when closed-loop session rounds generated more
+during the run. `blis observe` (deprecated, #1901) is unchanged: it still prints the
+`=== Simulation Metrics ===` JSON.
 
 The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
 sessions, P/D, fitness, trace summary) are what `--view summary` renders to stderr.
@@ -370,13 +375,8 @@ When anomalies are detected, `--view summary` prints `=== Anomaly Counters ===`:
 Each counter is one INV-1 bucket; see [Admission Control](admission.md) for how router outcomes
 map onto them.
 
-!!! note "Stdout-only vs JSON counters"
-    **Dropped Unservable**, **Timed Out Requests**, and **Length-Capped Requests** also appear as fields in the `--metrics-path` JSON output (see [Primary Metrics](#primary-metrics-json-output): `dropped_unservable`, `timed_out_requests`, `length_capped_requests`).
-
-    All other counters in this table — including **Shed (tier)**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** — are in the Result's `requests` ledger and `router.shed_by_class`, and do not appear in the `--metrics-path` file.
-
-!!! note "blis replay anomaly block"
-    `blis replay` produces a subset of this output: **Timed Out Requests**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** are currently missing from the `blis replay` anomaly block even when non-zero (tracked in issue #1184).
+!!! note "Where the counters are in the Result"
+    Every INV-1 counter is in the Result's `requests` ledger; **Shed (tier)** is `router.shed_by_class`, and **Priority Inversions** and **HOL Blocking Events** are `router.priority_inversions` and `router.hol_blocking_events`. `blis run` and `blis replay` render this section from one shared path, so both print the same counters. Of these, the deprecated `--metrics-path` file carries only `dropped_unservable`, `timed_out_requests` and `length_capped_requests` (see [`--metrics-path` file](#-metrics-path-file-deprecated)).
 
 ## KV Cache Metrics
 

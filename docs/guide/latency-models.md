@@ -183,7 +183,7 @@ one; any other connector is refused. Three further rules follow from vLLM:
   does not disaggregate), but never a remotely prefilled prompt, which NIXL, listed first,
   loads. A 0-byte tier is refused, as vLLM refuses it.
 
-The PD section on stdout, and the results file's `pd` block, report the handoffs, their p50
+The Result's `breakdowns.pd`, and the results file's `pd` block, report the handoffs, their p50
 and p90 durations, the queueing delay contention added (duration minus the uncontended
 price), each link's peak concurrent handoffs, the prefill KV hold's peak, and each pool's
 CPU-tier hit rate.

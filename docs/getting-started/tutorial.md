@@ -36,7 +36,7 @@ Before scaling up, measure the throughput of a single instance under load. Run e
   --rate 500 --num-requests 2000
 ```
 
-Check the `responses_per_sec` value in the output. For this deployment with the default workload (512 input / 512 output tokens), a saturated instance handles roughly **11 requests/second**.
+Check `metrics.request_throughput` in the output (`jq .metrics.request_throughput`). For this deployment with the default workload (512 input / 512 output tokens), a saturated instance handles roughly **11 requests/second**.
 
 !!! note "Why measure at high load?"
     With continuous batching, throughput depends on batch size. At low arrival rates (e.g., `--rate 2`), requests trickle in one at a time and the instance processes only ~2 req/s — not because it's slow, but because there's nothing else to batch. At saturation, many concurrent requests share each decode step, amortizing overhead. Always measure capacity under load.

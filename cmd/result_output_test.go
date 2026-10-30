@@ -341,3 +341,45 @@ func TestResult_UnknownFormatOrViewIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A run whose horizon ends before any request arrives is a valid run that measured nothing:
+// it prints a Result with zero rates over the horizon and the requests it was asked for, not a
+// validation failure.
+func TestResult_ARunWithNoArrivalsBeforeTheHorizonStillEmits(t *testing.T) {
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+		"--num-requests", "50", "--rate", "1", "--horizon", "10")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	r := parseResult(t, stdout)
+	if r.Requests.Generated != 0 || r.Input.Run.NumRequests != 50 {
+		t.Errorf("generated %d, num_requests %d; want 0 and the 50 asked for", r.Requests.Generated, r.Input.Run.NumRequests)
+	}
+	if r.Window.DurationS != 10e-6 || r.Metrics["request_throughput"] != 0 {
+		t.Errorf("window %+v, request_throughput %v; want the 10 us horizon and 0", r.Window, r.Metrics["request_throughput"])
+	}
+}
+
+// --view summary renders the sections in the order run and replay printed them: on a P/D run
+// with SLO targets, the per-SLO section precedes the P/D section, and the anomaly and KV
+// sections, when present, precede both.
+func TestResult_ViewSummaryKeepsTheSectionOrder(t *testing.T) {
+	_, stderr, err := runKernelCLI(t, append([]string{"run", "--view", "summary", "--slo-ttft", "default=1ms"}, pdBurst...)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	last := -1
+	for _, section := range []string{"=== Result ", "=== Per-SLO Metrics ===", "=== PD Metrics ==="} {
+		at := strings.Index(stderr, section)
+		if at < 0 {
+			t.Fatalf("--view summary rendered no %q:\n%s", section, lastLines(stderr, 30))
+		}
+		if at < last {
+			t.Errorf("%q is out of order", section)
+		}
+		last = at
+	}
+	if !strings.Contains(stderr, "Disaggregated Requests: 40") {
+		t.Errorf("the P/D section does not report the 40 disaggregated requests:\n%s", lastLines(stderr, 20))
+	}
+}

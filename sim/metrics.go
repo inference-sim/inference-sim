@@ -18,7 +18,8 @@ import (
 type Metrics struct {
 	CompletedRequests int // Number of requests completed
 	TotalInputTokens  int // Total number of input tokens
-	// EngineAccepted counts the requests an engine accepted, whose prompts TotalInputTokens sums.
+	// EngineAccepted counts engine admissions, the prompts TotalInputTokens sums: a request a
+	// drain re-routes is admitted by each engine it reaches, and counted each time.
 	EngineAccepted       int
 	TotalOutputTokens    int     // Total number of output tokens
 	SimEndedTime         int64   // Sim clock time in ticks when simulation ends
@@ -414,11 +415,11 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 	return adapters
 }
 
-// EmitOption customizes the FILE half of EmitOutput. It exists for metadata that
-// belongs in the results file but must never reach stdout, so it cannot be supplied by
-// mutating the MetricsOutput before the call (the build-then-mutate-then-emit pattern
-// goodput and saturation use, which lands on stdout by design). Variadic so all
-// existing EmitOutput call sites are untouched (R4).
+// EmitOption customizes the --metrics-path file (WriteMetricsFile, EmitOutput's file half). It
+// exists for metadata that belongs in the results file and not in the printed JSON, so it
+// cannot be supplied by mutating the MetricsOutput before the call (the
+// build-then-mutate-then-emit pattern goodput and saturation use). Variadic so all existing
+// call sites are untouched (R4).
 type EmitOption func(*emitOptions)
 
 // emitOptions is the resolved option set for one EmitOutput call.
@@ -446,8 +447,8 @@ func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
 	return func(o *emitOptions) { o.provenance = p }
 }
 
-// WithBuildVersions records the build's module versions in the --metrics-path file only:
-// two builds of one commit can differ in them, so they stay off stdout (INV-6).
+// WithBuildVersions records the build's module versions in the --metrics-path file. (blis run
+// and blis replay state them in the Result document's revisions.)
 func WithBuildVersions(v *BuildVersions) EmitOption {
 	return func(o *emitOptions) { o.versions = v }
 }
@@ -456,8 +457,8 @@ func WithBuildVersions(v *BuildVersions) EmitOption {
 // in the --metrics-path file only. A nil provenance is a no-op (the block stays absent),
 // so a caller that could not resolve a catalog passes nil rather than a half-filled
 // block. Supplying the option with no output file path is likewise a no-op: the
-// provenance is file-only metadata, and stdout is the byte-identical channel INV-6
-// protects.
+// provenance (a path, a fact of the host) is file-only metadata and never enters the
+// printed JSON.
 func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
 	return func(o *emitOptions) { o.catalog = p }
 }
@@ -573,7 +574,7 @@ func (m *Metrics) WriteMetricsFile(output MetricsOutput, outputFilePath string, 
 // RequestRows returns one row per registered request (not only completed ones, so an
 // incomplete request appears with zero-valued latencies), with its latencies in
 // milliseconds and its completion index, sorted by arrival. They are the --metrics-path
-// file's requests array and the Result document's per_request artifact.
+// file's requests array.
 func (m *Metrics) RequestRows() []RequestMetrics {
 	rows := make([]RequestMetrics, 0, len(m.Requests))
 	for _, id := range sortedRequestIDs(m.Requests) {

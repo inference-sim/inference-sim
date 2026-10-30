@@ -135,6 +135,7 @@ func emitRunResult(p postRun) {
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
 		InjectedByClass: cs.InjectedByClass(),
 		ClockUs:         cs.Clock(),
+		HorizonUs:       cs.Horizon(),
 	}
 	// blis-schemas reads num_requests as the most requests the run generates. BLIS's
 	// --num-requests caps the requests the workload generator emits; a closed-loop session's
