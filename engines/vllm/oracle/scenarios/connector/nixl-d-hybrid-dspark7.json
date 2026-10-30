@@ -1,0 +1,255 @@
+{
+ "name": "nixl-d-hybrid-dspark7",
+ "description": "The motivating layout, scaled: full attention + a sliding window (16) with a DSpark drafter of 7 drafts (sample_from_anchor, the default: 6 draft slots, lookahead 7, no prefill backoff), decoder side: pulls, first-decode padding to 1 + 7, accepted drafts per the plan.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 160,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 16
+   }
+  ],
+  "speculative": {
+   "method": "dspark",
+   "num_speculative_tokens": 7
+  },
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    3646,
+    2248,
+    4207,
+    767,
+    1018,
+    3277,
+    1763,
+    4759,
+    921,
+    1445,
+    4727,
+    601,
+    2918,
+    4986,
+    2485,
+    41,
+    256,
+    243,
+    2477,
+    2261,
+    2062,
+    486,
+    1674,
+    3941,
+    1517,
+    1240
+   ],
+   "output": [
+    4370,
+    1676,
+    1186,
+    4235,
+    4848,
+    1154,
+    3266,
+    2162,
+    2580,
+    2431,
+    1727,
+    2654,
+    628,
+    3204,
+    2444,
+    4745,
+    4419,
+    864
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "accepted": [
+    1,
+    1,
+    4,
+    2,
+    7,
+    7,
+    0,
+    0,
+    5,
+    4,
+    6,
+    1
+   ]
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    129,
+    1675,
+    925,
+    4470,
+    169,
+    3462,
+    3687,
+    3343,
+    951,
+    945,
+    662,
+    4057,
+    2923
+   ],
+   "output": [
+    4379,
+    1898,
+    37,
+    730,
+    3806,
+    2208,
+    3483,
+    4147,
+    1526,
+    3537,
+    4345
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2,
+   "accepted": [
+    3,
+    6,
+    3,
+    2,
+    3,
+    0,
+    1,
+    6,
+    2,
+    3,
+    3,
+    7
+   ]
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    2772,
+    1002,
+    3938,
+    10,
+    841,
+    2993,
+    580,
+    3290,
+    2708
+   ],
+   "output": [
+    3410,
+    3086,
+    2712,
+    4675,
+    2042,
+    444,
+    323,
+    2915,
+    3486,
+    2883,
+    4391,
+    2115,
+    847,
+    3234
+   ],
+   "accepted": [
+    7,
+    6,
+    4,
+    3,
+    0,
+    5,
+    5,
+    4,
+    3,
+    6,
+    6,
+    5
+   ]
+  },
+  {
+   "id": "d2",
+   "arrival_step": 3,
+   "prompt": [
+    4607,
+    2668,
+    4035,
+    1752,
+    3308,
+    2076,
+    1321,
+    1823,
+    1283,
+    769,
+    2837,
+    1824,
+    1466,
+    1126,
+    2358,
+    1427,
+    1210,
+    4730,
+    4792,
+    4530,
+    3151,
+    183,
+    3755,
+    4016,
+    2257,
+    2735,
+    2747,
+    2997,
+    2395,
+    2374,
+    3316
+   ],
+   "output": [
+    4495,
+    4669,
+    1487,
+    834,
+    1817,
+    3868
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "recv_failed": true,
+   "accepted": [
+    7,
+    6,
+    4,
+    6,
+    4,
+    5,
+    2,
+    1
+   ]
+  }
+ ]
+}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -31,7 +32,18 @@ type scenario struct {
 		EnablePrefixCaching       *bool   `json:"enable_prefix_caching"`
 		EnableChunkedPrefill      *bool   `json:"enable_chunked_prefill"`
 		SchedulingPolicy          string  `json:"scheduling_policy"`
-		Connector                 struct {
+		// KVGroups are a hybrid model's KV cache groups, as tier 2 states them.
+		KVGroups []struct {
+			Kind          string `json:"kind"`
+			SlidingWindow int    `json:"sliding_window"`
+		} `json:"kv_groups"`
+		// Speculative is the drafter, as tier 2 states it.
+		Speculative *struct {
+			Method    string `json:"method"`
+			NumTokens int    `json:"num_speculative_tokens"`
+			Draft     string `json:"draft"`
+		} `json:"speculative"`
+		Connector struct {
 			Name                string         `json:"name"`
 			KVRole              string         `json:"kv_role"`
 			KVLoadFailurePolicy string         `json:"kv_load_failure_policy"`
@@ -51,6 +63,8 @@ type scenario struct {
 		RecvFailed    bool    `json:"recv_failed"`
 		InvalidBlocks []int   `json:"invalid_blocks"`
 		SendDelay     int     `json:"send_delay"`
+		// Accepted is the GPU mock's draft acceptance: drafts accepted at each verify step.
+		Accepted []int `json:"accepted"`
 		// AbortStep, when set, is the step the client aborts the request at.
 		AbortStep *int `json:"abort_step"`
 	} `json:"requests"`
@@ -58,16 +72,20 @@ type scenario struct {
 }
 
 type step struct {
-	Step       int                `json:"step"`
-	Scheduled  map[string]int     `json:"scheduled"`
-	Preempted  []string           `json:"preempted"`
-	Finished   []string           `json:"finished"`
-	FreeBlocks int                `json:"free_blocks"`
-	Running    []string           `json:"running"`
-	NumRunning int                `json:"num_running"`
-	NumWaiting int                `json:"num_waiting"`
-	KVUsage    float64            `json:"kv_usage"`
-	Blocks     map[string][][]any `json:"blocks"`
+	Step       int            `json:"step"`
+	Scheduled  map[string]int `json:"scheduled"`
+	Preempted  []string       `json:"preempted"`
+	Finished   []string       `json:"finished"`
+	FreeBlocks int            `json:"free_blocks"`
+	Running    []string       `json:"running"`
+	NumRunning int            `json:"num_running"`
+	NumWaiting int            `json:"num_waiting"`
+	KVUsage    float64        `json:"kv_usage"`
+	// Blocks are each running request's blocks by content; with several KV cache groups, one
+	// list per group (a null slot as ["null", 0]).
+	Blocks map[string]any `json:"blocks"`
+	// SpecScheduled is the drafts each request verified this step, when any did.
+	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	// The connector-visible state.
 	WaitingForRemoteKV []string `json:"waiting_for_remote_kv"`
 	RecvLanded         []string `json:"recv_landed"`
@@ -118,16 +136,33 @@ func run(t *testing.T, sc scenario) trace {
 	if c.EnableChunkedPrefill != nil {
 		chunked = *c.EnableChunkedPrefill
 	}
+	var spec sched.Spec
+	if sp := c.Speculative; sp != nil {
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens,
+			NextnPredictLayers: draftNextnLayers(t, sp.Draft)})
+	}
+	var layers []kv.Group
+	for _, g := range c.KVGroups {
+		switch g.Kind {
+		case "full":
+			layers = append(layers, kv.Group{Kind: kv.FullAttention})
+		case "sliding_window":
+			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow})
+		default:
+			t.Fatalf("unknown KV cache group kind %q", g.Kind)
+		}
+	}
 	s, err := sched.New(sched.Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
-		ReserveFullSequence: true, Watermark: c.Watermark,
+		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, false),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ncfg := Default()
+	ncfg.PrefillBackoff = Backoff(spec)
 	if v, ok := c.Connector.ExtraConfig["kv_recompute_threshold"].(float64); ok {
 		ncfg.RecomputeThreshold = int(v)
 	}
@@ -151,6 +186,7 @@ func run(t *testing.T, sc scenario) trace {
 		byID[r.ID] = i
 	}
 	sampled := map[string]int{}
+	verifies := map[string]int{}
 	finishedAt := map[string]int{}
 	loadStarted := map[string]int{}
 	tr := trace{Finished: map[string]finishRecord{}}
@@ -190,21 +226,41 @@ func run(t *testing.T, sc scenario) trace {
 				loadStarted[id] = i
 			}
 		}
-		// The GPU mock.
+		// The GPU mock: one token, plus, when the step verifies drafts, the scenario's accepted
+		// count for that verify step (at most the real drafts; a -1 placeholder is always
+		// rejected), as oracle/run_connector.py samples them.
 		mock := map[string][]int64{}
+		specScheduled := map[string]int{}
 		for id := range out.Scheduled {
 			r := s.Request(id)
 			if r.IsPrefillChunk {
 				continue
 			}
-			o := reqs[byID[id]].Output
-			k := sampled[id]
-			if k == len(o)-1 {
-				mock[id] = []int64{eosToken}
-			} else {
-				mock[id] = []int64{o[k]}
+			n := 1
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				specScheduled[id] = len(drafts)
+				real := 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+				plan, v := reqs[byID[id]].Accepted, verifies[id]
+				verifies[id] = v + 1
+				if v < len(plan) {
+					n += min(plan[v], real)
+				}
 			}
-			sampled[id] = k + 1
+			o := reqs[byID[id]].Output
+			for j := 0; j < n && sampled[id] < len(o); j++ {
+				k := sampled[id]
+				if k == len(o)-1 {
+					mock[id] = append(mock[id], eosToken)
+				} else {
+					mock[id] = append(mock[id], o[k])
+				}
+				sampled[id] = k + 1
+			}
 		}
 		// The transport mock: what the worker reports this step.
 		var o sched.TransferOutcome
@@ -266,7 +322,22 @@ func run(t *testing.T, sc scenario) trace {
 			st.Aborted = []string{}
 		}
 		var done []string
-		for _, f := range s.UpdateWith(out, mock, o) {
+		fins := s.UpdateWith(out, mock, o)
+		if spec.NumTokens > 0 && len(out.Scheduled) > 0 {
+			// The drafter proposes K drafts for every request the step ran, as the oracle's
+			// mock hands them over after update_from_output (EngineCore.post_step).
+			drafts := map[string][]int64{}
+			for id := range out.Scheduled {
+				if s.Request(id) != nil {
+					drafts[id] = make([]int64, spec.NumTokens)
+				}
+			}
+			s.UpdateDrafts(drafts)
+		}
+		if len(specScheduled) > 0 {
+			st.SpecScheduled = specScheduled
+		}
+		for _, f := range fins {
 			done = append(done, f.ID)
 			if _, ok := finishedAt[f.ID]; !ok {
 				finishedAt[f.ID] = i
@@ -278,15 +349,17 @@ func run(t *testing.T, sc scenario) trace {
 		nr, nw := s.Counts()
 		st.Step, st.Scheduled, st.Preempted, st.Finished = i, out.Scheduled, sortedStrings(out.Preempted), sortedStrings(done)
 		st.FreeBlocks, st.Running, st.NumRunning, st.NumWaiting = s.KV.Pool.NumFree(), sortedStrings(s.Running()), nr, nw
-		st.KVUsage, st.Blocks = s.KV.Pool.Usage(), map[string][][]any{}
+		st.KVUsage, st.Blocks = s.KV.Pool.Usage(), map[string]any{}
 		for _, id := range st.Running {
-			for _, b := range s.KV.Blocks(id) {
-				var h any
-				if b.Hash != nil {
-					h = hex.EncodeToString(b.Hash)
-				}
-				st.Blocks[id] = append(st.Blocks[id], []any{h, float64(b.RefCnt)})
+			if s.KV.NumGroups() == 1 {
+				st.Blocks[id] = blockRows(s.KV.Blocks(id), false)
+				continue
 			}
+			rows := []any{}
+			for g := 0; g < s.KV.NumGroups(); g++ {
+				rows = append(rows, blockRows(s.KV.GroupBlocks(g, id), true))
+			}
+			st.Blocks[id] = rows
 		}
 		st.WaitingForRemoteKV = sortedStrings(s.WaitingForRemoteKV())
 		st.RecvLanded = sortedStrings(s.RecvLanded())
@@ -298,6 +371,37 @@ func run(t *testing.T, sc scenario) trace {
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
+}
+
+// blockRows writes a request's blocks by content as the oracle does (run_scheduler.py
+// kv_state): [hash or nil, ref count], and with several groups a null slot as ["null", 0].
+func blockRows(bs []*kv.Block, hybrid bool) []any {
+	rows := []any{}
+	for _, b := range bs {
+		if hybrid && b.Null {
+			rows = append(rows, []any{"null", float64(0)})
+			continue
+		}
+		var h any
+		if b.Hash != nil {
+			h = hex.EncodeToString(b.Hash)
+		}
+		rows = append(rows, []any{h, float64(b.RefCnt)})
+	}
+	return rows
+}
+
+// draftNextnLayers is a draft checkpoint's num_nextn_predict_layers (oracle/drafts), 0 for none.
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var c struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "..", "oracle", "drafts", draft, "config.json"), &c)
+	return c.Layers
 }
 
 func uniqueInts(in []int) int {
@@ -344,6 +448,7 @@ func earliestDivergence(want, got trace) string {
 			{"num_requests", w.NumRequests, g.NumRequests},
 			{"free_blocks", w.FreeBlocks, g.FreeBlocks},
 			{"kv_usage", fmt.Sprintf("%.12f", w.KVUsage), fmt.Sprintf("%.12f", g.KVUsage)},
+			{"spec_scheduled", nonNil(w.SpecScheduled), nonNil(g.SpecScheduled)},
 			{"blocks", nonNilBlocks(w.Blocks), nonNilBlocks(g.Blocks)},
 		} {
 			if !reflect.DeepEqual(f.w, f.g) {
@@ -364,9 +469,9 @@ func nonNil(m map[string]int) map[string]int {
 	return m
 }
 
-func nonNilBlocks(m map[string][][]any) map[string][][]any {
+func nonNilBlocks(m map[string]any) map[string]any {
 	if m == nil {
-		return map[string][][]any{}
+		return map[string]any{}
 	}
 	return m
 }

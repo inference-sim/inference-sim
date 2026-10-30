@@ -293,6 +293,16 @@ func (m *Manager) Blocks(id string) []*Block { return m.groups[0].reqBlocks[id] 
 // GroupBlocks returns the request's block table in group g. The slice is the manager's own.
 func (m *Manager) GroupBlocks(g int, id string) []*Block { return m.groups[g].reqBlocks[id] }
 
+// GroupBlockSize is group g's own block size, in tokens.
+func (m *Manager) GroupBlockSize(g int) int { return m.groups[g].blockSize }
+
+// GroupSpec is group g's spec.
+func (m *Manager) GroupSpec(g int) Group { return m.groups[g].spec }
+
+// RemoveSkipped is remove_skipped_blocks (kv_cache_manager.py:631-649@5df63a72): each sliding
+// window frees the request's blocks wholly below its window for processed computed tokens.
+func (m *Manager) RemoveSkipped(id string, processed int) { m.removeSkipped(id, processed) }
+
 // ComputedBlocks is get_computed_blocks (kv_cache_manager.py:265-319): the longest prefix
 // every group can serve from cached blocks, capped so the last token is always recomputed
 // (max_cache_hit_length = num_tokens - 1), each group's blocks for it, and the tokens they

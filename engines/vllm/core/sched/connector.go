@@ -29,6 +29,19 @@ type Connector interface {
 	AfterOutput(o TransferOutcome)
 }
 
+// SupportsHMA is a connector that supports the hybrid memory allocator (SupportsHMA,
+// vllm/distributed/kv_transfer/kv_connector/v1/base.py:100-125@5df63a72): the scheduler hands it
+// the finished request's block ids of every KV cache group (request_finished_all_groups,
+// scheduler.py:3045-3058), so it may run beside several KV cache groups. A connector without
+// it is called with group 0's ids through Finished, and only with one group (:3046-3053).
+type SupportsHMA interface {
+	// FinishedAllGroups is request_finished_all_groups: blockIDs are the request's block ids
+	// covering its computed tokens, one list per KV cache group in group order
+	// (get_block_ids_for_computed_tokens, vllm/v1/core/kv_cache_manager.py:731-749@5df63a72), a
+	// sliding window's freed slots as the null block's id.
+	FinishedAllGroups(r *Request, blockIDs [][]int) (delayFree bool)
+}
+
 // TransferParams are a request's kv_transfer_params (Request.kv_transfer_params) as the
 // scheduler and the NIXL connector read and update them: what a P/D proxy hands each side
 // (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py@5df63a72).
@@ -48,13 +61,40 @@ type TransferParams struct {
 	RemoteNumTokens int
 	// RemoteBlocksProcessed is _remote_blocks_processed.
 	RemoteBlocksProcessed bool
+	// PSideTruncated is _p_side_truncated: the prefiller has dropped the prompt's trailing
+	// prefill-backoff tokens (nixl/base_scheduler.py:405-438@5df63a72).
+	PSideTruncated bool
 }
 
-// AllocatedBlocks is what update_state_after_alloc sees of a request's blocks: each block
-// in its table, whether it is prefix-cached (has a hash) and whether it is the null block.
+// Capabilities are the configurations beside which a connector's scheduler side is modelled
+// and diff-tested against vLLM; SetConnector refuses the rest (https://github.com/inference-sim/blis-vllm/issues/34).
+type Capabilities struct {
+	// HybridGroups: several KV cache groups (full attention and sliding windows); the
+	// connector must also be SupportsHMA.
+	HybridGroups bool
+	// Drafters: speculative decoding.
+	Drafters bool
+	// ConcurrentBatches: async scheduling or max_concurrent_batches > 1.
+	ConcurrentBatches bool
+}
+
+// ConnectorCapabilities is a connector that states its Capabilities; one that does not is
+// modelled for one full-attention group, synchronous scheduling and no drafter.
+type ConnectorCapabilities interface {
+	ConnectorModels() Capabilities
+}
+
+// AllocatedBlocks is what update_state_after_alloc sees of a request's blocks
+// (kv_cache_manager.get_blocks, scheduler.py:1288-1293@5df63a72).
 type AllocatedBlocks struct {
+	// IDs and Hashed are group 0's blocks: each block's id, and whether it is prefix-cached
+	// (has a hash) and not the null block.
 	IDs    []int
 	Hashed []bool
+	// Groups are the block ids of every KV cache group, in group order: KVCacheBlocks.
+	// get_block_ids() (vllm/v1/core/kv_cache_manager.py:81-107@5df63a72). A sliding window's
+	// freed slot is the null block's id, 0.
+	Groups [][]int
 }
 
 // TransferOutcome is the worker side's report for one step (KVConnectorOutput,
@@ -196,20 +236,35 @@ func (s *Scheduler) freeRequest(r *Request, delayFree bool) {
 	delete(s.inflight, r)
 	s.setFetchStage(r, fetchNone)
 	s.finishedPending++
-	if s.connector != nil {
-		blocks := s.KV.Blocks(r.ID)
-		n := min(cdiv(r.NumComputed, s.cfg.BlockSize), len(blocks))
-		ids := make([]int, n)
-		for i := 0; i < n; i++ {
-			ids[i] = blocks[i].ID
-		}
-		if s.connector.Finished(r, ids) {
-			delayFree = true
-		}
+	if s.connector != nil && s.connectorFinished(r) {
+		delayFree = true
 	}
 	if !delayFree {
 		s.freeBlocks(r)
 	}
+}
+
+// connectorFinished is _connector_finished (scheduler.py:3005-3058): each sliding window first
+// frees the blocks wholly below its window, on the processed-token basis (:3024-3031), then the
+// connector sees the block ids covering the computed tokens, per group
+// (get_block_ids_for_computed_tokens, vllm/v1/core/kv_cache_manager.py:731-749@5df63a72). A
+// SupportsHMA connector gets every group's (request_finished_all_groups); any other runs only
+// beside one group (SetConnector) and gets group 0's (:3045-3053).
+func (s *Scheduler) connectorFinished(r *Request) bool {
+	s.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))
+	ids := make([][]int, s.KV.NumGroups())
+	for g := range ids {
+		blocks := s.KV.GroupBlocks(g, r.ID)
+		n := min(cdiv(r.NumComputed, s.KV.GroupBlockSize(g)), len(blocks))
+		ids[g] = make([]int, n)
+		for i := 0; i < n; i++ {
+			ids[g][i] = blocks[i].ID
+		}
+	}
+	if h, ok := s.connector.(SupportsHMA); ok {
+		return h.FinishedAllGroups(r, ids)
+	}
+	return s.connector.Finished(r, ids[0])
 }
 
 // freeBlocks is _free_blocks (scheduler.py:2745-2748).

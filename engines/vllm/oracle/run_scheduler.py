@@ -477,16 +477,8 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
                 specs = [KVCacheGroupSpec([name], spec) for name, spec in layers.items()]
         return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors, kv_cache_groups=specs)
 
-    # DSpark runs only on vLLM's V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72), which
-    # needs Triton on the host (:724). The scheduler is the same class either way; selecting the
-    # V2 runner is the environment of a GPU host, not a decision (docs/testing.md).
-    import vllm.config.vllm as vllm_config_module  # noqa: E402
-
-    saved_triton, saved_env = vllm_config_module.HAS_TRITON, os.environ.get("VLLM_USE_V2_MODEL_RUNNER")
     v2 = (bool(spec) and spec["method"] == "dspark") or bool((extra or {}).get("use_v2_model_runner"))
-    if v2:
-        vllm_config_module.HAS_TRITON = True
-        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+    restore_env = v2_runner_env(v2)
     helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
     helpers.KVCacheConfig = kv_cache_config
     real_scheduler_cls = (extra or {}).get("scheduler_cls")
@@ -525,11 +517,31 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     finally:
         helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config
         helpers.KVCacheConfig = real_kv_cache_config
+        restore_env()
+
+
+def v2_runner_env(v2: bool):
+    """The environment of a GPU host that selects vLLM's V2 model runner, which DSpark needs
+    (vllm/config/vllm.py:2976-2979@5df63a72) and which needs Triton on the host (:724, 3189): with
+    v2, HAS_TRITON is set True and VLLM_USE_V2_MODEL_RUNNER=1 (oracle/mocks.json). The scheduler
+    is the same class either way; selecting the V2 runner is the environment, not a decision
+    (docs/testing.md). Returns the function that restores both. oracle/run_connector.py's
+    drafter scenarios use it too."""
+    import vllm.config.vllm as vllm_config_module  # noqa: E402
+
+    saved_triton, saved_env = vllm_config_module.HAS_TRITON, os.environ.get("VLLM_USE_V2_MODEL_RUNNER")
+    if v2:
+        vllm_config_module.HAS_TRITON = True
+        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+
+    def restore():
         vllm_config_module.HAS_TRITON = saved_triton
         if saved_env is None:
             os.environ.pop("VLLM_USE_V2_MODEL_RUNNER", None)
         else:
             os.environ["VLLM_USE_V2_MODEL_RUNNER"] = saved_env
+
+    return restore
 
 
 class KVEventTap:

@@ -1,0 +1,167 @@
+{
+ "name": "nixl-p-hybrid-dspark7",
+ "description": "Prefiller side of the motivating layout, scaled: full attention + a sliding window (16), DSpark with 7 drafts; held blocks per group until read, the window trimmed first.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 50,
+  "max_model_len": 160,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 16
+   }
+  ],
+  "speculative": {
+   "method": "dspark",
+   "num_speculative_tokens": 7
+  },
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    1498,
+    247,
+    1146,
+    4893,
+    4140,
+    4209,
+    14,
+    3524,
+    1896,
+    4087,
+    2048,
+    467,
+    4216,
+    2425,
+    4877,
+    2711,
+    610,
+    1876,
+    2130,
+    31,
+    1865,
+    2932,
+    3496,
+    3488,
+    3473,
+    2553,
+    2751,
+    4063,
+    4887,
+    638,
+    3241,
+    2867,
+    2606,
+    1577,
+    1461,
+    977,
+    4813,
+    4076,
+    2776,
+    588
+   ],
+   "output": [
+    422
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    2434,
+    3913,
+    4376,
+    2542,
+    3805,
+    2597,
+    4402,
+    2182,
+    4752,
+    3216,
+    1464,
+    3371,
+    554,
+    2716,
+    3687,
+    1316,
+    3710,
+    439,
+    2932,
+    4367,
+    1647,
+    2206
+   ],
+   "output": [
+    1523
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    3559,
+    4280,
+    1059,
+    91,
+    3869,
+    457,
+    4060,
+    3505,
+    120,
+    3554
+   ],
+   "output": [
+    2810,
+    2269,
+    37,
+    4570,
+    237,
+    2719,
+    2952,
+    620,
+    1211,
+    4604,
+    3560,
+    1913,
+    4209,
+    4698,
+    1781
+   ],
+   "accepted": [
+    6,
+    0,
+    2,
+    3,
+    6,
+    6,
+    4,
+    4,
+    7,
+    6,
+    1,
+    4
+   ]
+  }
+ ]
+}

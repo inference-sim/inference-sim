@@ -31,6 +31,17 @@ a transfer it has finished. The GPU is the tier-2 mock (sampled tokens, the last
 Every replacement is listed in oracle/mocks.json; no scheduler, KV-cache or connector
 decision is patched.
 
+A scenario may also state a hybrid model's KV cache groups ("kv_groups", as tier 2 states them:
+full attention and sliding windows, built from vLLM's own spec classes and handed to the
+helper's create_scheduler as its kv_cache_config) and a drafter ("speculative", tier 2's: vLLM's
+own SpeculativeConfig, a configuration-only draft checkpoint under oracle/drafts, with the
+GPU mock's acceptance plan per request, "accepted", and the drafter's proposals after every
+step that ran, as EngineCore.post_step hands them over, vllm/v1/engine/core.py:689-696@5df63a72).
+NIXL is SupportsHMA (nixl/connector.py:78), so vLLM keeps the hybrid KV cache manager on with
+it (vllm/config/vllm.py:2170-2192); a block-level load failure ("invalid_blocks") is refused
+beside several groups, because NIXL's worker never reports one there (nixl/base_worker.py:
+2910-2914) and the scheduler would refuse it (scheduler.py:3365-3374).
+
 Per step it records what tier 2 records (tokens scheduled, preempted, finished, the KV state
 by content) plus the connector-visible state: the requests waiting for remote KV, the ones
 whose pull has landed and are not yet admitted, the finished requests whose blocks the
@@ -93,6 +104,14 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     conn = cfg["connector"]
     block_size = cfg["block_size"]
 
+    from run_scheduler import v2_runner_env  # noqa: E402
+
+    spec = cfg.get("speculative")
+    groups = cfg.get("kv_groups")
+    if groups and len(groups) > 1 and any(r.get("invalid_blocks") for r in sc["requests"]):
+        sys.exit(f"{scenario_path}: invalid_blocks beside several KV cache groups: NIXL's worker reports no "
+                 "block-level failure under HMA (nixl/base_worker.py:2910-2914) and the scheduler refuses one "
+                 "(scheduler.py:3365-3374)")
     vllm_config = helpers.create_vllm_config(
         model=model,
         max_num_seqs=cfg["max_num_seqs"],
@@ -105,6 +124,25 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         kv_connector_extra_config=conn.get("extra_config") or {},
         enable_chunked_prefill=cfg.get("enable_chunked_prefill", True),
     )
+    # DSpark runs only on the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72): the
+    # environment of a GPU host selects it (run_scheduler.py v2_runner_env, oracle/mocks.json).
+    restore_env = v2_runner_env(bool(spec) and spec["method"] == "dspark")
+    if spec:
+        # The drafter: vLLM's own SpeculativeConfig on a configuration-only draft checkpoint, as
+        # tier 2 builds it (run_scheduler.py build_scheduler), and the helper's VllmConfig built
+        # again by vLLM's own constructor with it, as `vllm serve --speculative-config` builds
+        # one (VllmConfig.__post_init__ derives every value the scheduler and the connector
+        # read: lookahead, prefill lookahead, draft slots). Nothing is written into an object.
+        import dataclasses  # noqa: E402
+
+        from vllm.config import SpeculativeConfig  # noqa: E402
+
+        args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
+        if spec.get("draft"):
+            args["model"] = os.path.join(here, "drafts", spec["draft"])
+        vllm_config = dataclasses.replace(vllm_config, speculative_config=SpeculativeConfig(
+            target_model_config=vllm_config.model_config, target_parallel_config=vllm_config.parallel_config,
+            **args))
     # create_vllm_config always enables prefix caching and leaves the scheduling policy, the
     # long-prefill cap and the watermark at their defaults; the scenario states them
     # (environment set-up of vLLM's own config objects, read when the Scheduler is built).
@@ -118,8 +156,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # --max-model-len` does, and run the startup check the edits above bypassed.
     vllm_config.model_config.max_model_len = cfg["max_model_len"]
     vllm_config.scheduler_config.verify_max_model_len(cfg["max_model_len"])
-    scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"])
+    try:
+        scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"],
+                                             kv_cache_config=kv_cache_config(cfg, vllm_config))
+    finally:
+        restore_env()
     assert scheduler.max_model_len == cfg["max_model_len"], "the Scheduler does not read the scenario's max_model_len"
+    num_spec = scheduler.num_spec_tokens
+    accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
+    verify_steps = {r["id"]: 0 for r in sc["requests"]}
 
     init_none_hash(sha256)
     hasher = get_request_block_hasher(block_size, sha256)
@@ -188,17 +233,35 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         }
         # The GPU mock (tier 2): a request completing its known tokens samples its next
         # assigned token, the last one as EOS.
+        # With a drafter, a verify step also samples the scenario's accepted count of the drafts
+        # it verified, at most the real ones (a -1 placeholder is always rejected,
+        # vllm/v1/sample/rejection_sampler.py:762-763), as tier 2's mock does.
         req_ids, sampled = [], []
+        spec_scheduled = {}
         for rid in out.num_scheduled_tokens:
             req = scheduler.requests[rid]
             req_ids.append(rid)
             if not req.is_prefill_chunk:
-                k = sampled_so_far[rid]
+                n = 1
+                drafts = out.scheduled_spec_decode_tokens.get(rid, [])
+                if drafts:
+                    spec_scheduled[rid] = len(drafts)
+                    plan, i = accepted_plan[rid], verify_steps[rid]
+                    verify_steps[rid] = i + 1
+                    n = 1 + min(plan[i] if i < len(plan) else 0, len([d for d in drafts if d >= 0]))
                 outp = by_id[rid]["output"]
-                sampled.append([helpers.EOS_TOKEN_ID if k == len(outp) - 1 else outp[k]])
-                sampled_so_far[rid] = k + 1
+                toks = []
+                for _ in range(n):
+                    k = sampled_so_far[rid]
+                    if k >= len(outp):
+                        break
+                    toks.append(helpers.EOS_TOKEN_ID if k == len(outp) - 1 else outp[k])
+                    sampled_so_far[rid] = k + 1
+                sampled.append(toks)
             else:
                 sampled.append([])
+        if spec_scheduled:
+            record["spec_scheduled"] = dict(sorted(spec_scheduled.items()))
         # The transport mock: what the worker side reports this step.
         recving, sending, failed, invalid = set(), set(), set(), set()
         for rid, r in by_id.items():
@@ -214,12 +277,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 recving.add(rid)
                 if r.get("recv_failed"):
                     failed.add(rid)
-                pulled = [b.block_id for b in
-                          scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[rid]
-                          if b.block_hash is None and not b.is_null]
+                # The blocks the pull fills, per KV cache group: the request's unhashed blocks of
+                # each group (get_unhashed_block_ids_all_groups, kv_cache_manager.py:114-124, which
+                # NIXL hands its worker, pull_scheduler.py:149-156@5df63a72). A block-level failure
+                # names blocks of the one group (refused above beside several).
+                pulled = [[b.block_id for b in m.req_to_blocks.get(rid, []) if b.block_hash is None and not b.is_null]
+                          for m in scheduler.kv_cache_manager.coordinator.single_type_managers]
                 for i in r.get("invalid_blocks", []):
-                    if i < len(pulled):
-                        invalid.add(pulled[i])
+                    if i < len(pulled[0]):
+                        invalid.add(pulled[0][i])
             if r.get("remote_decode") and rid in finished_at and req.is_finished() and \
                     step == finished_at[rid] + max(r.get("send_delay", 1), 1):
                 sending.add(rid)
@@ -244,6 +310,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             sampled_token_ids=sampled, logprobs=None, prompt_logprobs_dict={}, pooler_output=[],
             kv_connector_output=kv_out)
         engine_outputs = scheduler.update_from_output(out, mro)
+        if spec and out.total_num_scheduled_tokens > 0:
+            # The drafter proposes for every request the step ran, as EngineCore.post_step hands
+            # them over without async scheduling (core.py:689-696); the scheduler ignores
+            # proposals for prefill chunks (scheduler.py:2560-2564). Only the count reaches a
+            # decision.
+            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+            ids = [rid for rid in out.num_scheduled_tokens if rid in scheduler.requests]
+            scheduler.update_draft_token_ids(DraftTokenIds(ids, [[0] * num_spec for _ in ids]))
         done = []
         for eco in engine_outputs.values():
             for o in eco.outputs:
@@ -261,6 +336,41 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov = provenance(vllm_root, scenario_path)
     prov["tier"] = 4
     return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+
+
+def kv_cache_config(cfg: dict, vllm_config):
+    """The scenario's KV cache groups for the helper's create_scheduler (its kv_cache_config
+    argument), or None for the helper's one full-attention group. Each group is one 1-head,
+    1-dim float32 layer of vLLM's own FullAttentionSpec or SlidingWindowSpec, as tier 2 builds
+    them (run_scheduler.py build_scheduler), each sliding window tagged with
+    extra_retained_tokens = num_prefill_lookahead_tokens - 1 from the built VllmConfig, as a
+    launch tags it (get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72)."""
+    groups = cfg.get("kv_groups")
+    if not groups:
+        return None
+    import torch  # noqa: E402
+    from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
+    from vllm.v1.kv_cache_interface import (  # noqa: E402
+        FullAttentionSpec,
+        KVCacheConfig,
+        KVCacheGroupSpec,
+        SlidingWindowSpec,
+    )
+
+    register_all_kvcache_specs(vllm_config)
+    extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
+    specs = []
+    for i, g in enumerate(groups):
+        common = {"block_size": cfg["block_size"], "num_kv_heads": 1, "head_size": 1, "dtype": torch.float32}
+        if g["kind"] == "full":
+            layer = FullAttentionSpec(**common)
+        elif g["kind"] == "sliding_window":
+            layer = SlidingWindowSpec(sliding_window=g["sliding_window"], extra_retained_tokens=extra_retained,
+                                      **common)
+        else:
+            raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
+        specs.append(KVCacheGroupSpec([f"layer{i}"], layer))
+    return KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=specs)
 
 
 if __name__ == "__main__":

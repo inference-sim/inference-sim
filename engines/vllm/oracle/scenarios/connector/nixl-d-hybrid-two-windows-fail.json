@@ -1,0 +1,162 @@
+{
+ "name": "nixl-d-hybrid-two-windows-fail",
+ "description": "Decoder with full attention + two sliding windows (4 and 12): whole-load failures under kv_load_failure_policy recompute (block-level failures are not reported under HMA, nixl/base_worker.py:2910-2914), a landing that frees a later window's blocks.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 12,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 4
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 12
+   }
+  ],
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    4952,
+    4930,
+    3237,
+    785,
+    4658,
+    2140,
+    3562,
+    4989,
+    295,
+    1370,
+    3650,
+    3209,
+    789,
+    3784,
+    2474,
+    1522,
+    366
+   ],
+   "output": [
+    1961,
+    4351,
+    3336,
+    2847,
+    1774,
+    2574
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "recv_failed": true,
+   "priority": 1
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    900,
+    3762,
+    3079,
+    1535,
+    1838,
+    1620,
+    595,
+    4576,
+    1812,
+    430,
+    231,
+    2151,
+    2916,
+    1918,
+    2619,
+    4192,
+    2507,
+    3033,
+    3603,
+    1374,
+    4606
+   ],
+   "output": [
+    2482,
+    4770,
+    3728,
+    2181
+   ],
+   "remote_prefill": true,
+   "recv_delay": 3,
+   "priority": 0
+  },
+  {
+   "id": "d2",
+   "arrival_step": 2,
+   "prompt": [
+    4850,
+    4135,
+    2581,
+    2892,
+    3834,
+    1927,
+    647,
+    450,
+    1268
+   ],
+   "output": [
+    1907,
+    2917,
+    3020,
+    3907,
+    3446
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "recv_failed": true,
+   "priority": 2
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    919,
+    1719,
+    4599,
+    3881,
+    1396,
+    2059,
+    1089,
+    521,
+    3993,
+    1304,
+    2233
+   ],
+   "output": [
+    4801,
+    2748,
+    4572,
+    1156,
+    2063,
+    3137,
+    1014,
+    3011,
+    3997
+   ],
+   "priority": 1
+  }
+ ]
+}
