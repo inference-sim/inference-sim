@@ -3563,9 +3563,9 @@ are sorted so repeated runs are byte-identical (INV-6).</p>
 <a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="p">]</span>
 <a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="p">}</span>
 </code></pre></div>
-<p>The same <code>final</code> map is also spliced onto the metrics JSON on stdout (a run
-<em>without</em> <code>--detectors</code> stays byte-identical to the historical no-feature
-output).</p>
+<p>For <code>blis run</code> and <code>blis replay</code> the same <code>final</code> map is the Result document's
+<code>saturation.final</code> (a run <em>without</em> <code>--detectors</code> has no <code>saturation</code> section);
+<code>blis observe</code> splices it onto its metrics JSON.</p>
 <h2 id="design-principles">Design principles<a class="headerlink" href="#design-principles" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Four small methods</strong>: <code>Name</code>/<code>Observe</code>/<code>Detect</code>/<code>Reset</code>. No batch path.</li>

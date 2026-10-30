@@ -3768,7 +3768,7 @@ graph, chip and coefficients the scenario names; the 0.32.0 engine is priced wit
 <p>That five-term form is the single-instance specialisation, not the general rule. The canonical form is an eleven-term cluster equation: a cluster run adds six buckets for the embedded llm-d router's outcomes — routing rejections, flow-control queue depth and capacity rejections, in-flight eviction, TTL expiry, and encode-pool routing. Asserting the five-term form against cluster output is incomplete — see canonical <a href="../../contributing/standards/invariants/">INV-1</a> for the full equation and the shared helpers that implement it.</p>
 <p>This is the fundamental accounting invariant that ensures no requests are silently lost.</p>
 <h2 id="determinism">Determinism<a class="headerlink" href="#determinism" title="Permanent link">&para;</a></h2>
-<p>BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).</p>
+<p>BLIS guarantees deterministic output: the same input at the same revisions produces a byte-identical <code>Result</code> document outside its <code>runtime</code> block (INV-6).</p>
 <p>Key mechanisms:
 - <strong>Partitioned RNG:</strong> Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others
 - <strong>Sorted map iteration:</strong> Where map iteration order affects output, keys are sorted first

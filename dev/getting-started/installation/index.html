@@ -3475,7 +3475,7 @@ for details.</p>
 <p><code>blis</code> carries the repository's <code>defaults.yaml</code> (the LoRA cost constants) compiled in, so it runs
 from any directory. A <code>defaults.yaml</code> in the working directory, or <code>--defaults-filepath &lt;file&gt;</code>,
 takes precedence over the compiled-in copy.</p>
-<p>You should see JSON output on stdout containing fields like <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code>, and <code>responses_per_sec</code>. This confirms BLIS is working correctly.</p>
+<p>You should see a Result document on stdout (<code>"kind": "Result"</code>) whose <code>metrics</code> include <code>ttft_mean_ms</code>, <code>e2e_mean_ms</code> and <code>request_throughput</code>. This confirms BLIS is working correctly.</p>
 <h2 id="optional-local-documentation">Optional: Local Documentation<a class="headerlink" href="#optional-local-documentation" title="Permanent link">&para;</a></h2>
 <p>To preview the documentation site locally:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material<span class="o">==</span><span class="m">9</span>.7.3

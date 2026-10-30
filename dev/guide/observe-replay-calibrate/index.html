@@ -4505,7 +4505,7 @@ routes with the router the scenario states, or the router's default configuratio
 <p>The deployment is not round-tripped through the trace header: replay rebuilds it from
 <code>--scenario</code> (and the kernel's KV budget) exactly as <code>blis run</code> does. A trace exported by
 <code>blis run</code> and replayed with the <strong>same scenario and identical flags, including
-<code>--horizon</code></strong>, produces byte-identical stdout (INV-13). Pass <code>--horizon</code> on both legs:
+<code>--horizon</code></strong>, produces equal <code>metrics</code>, <code>requests</code> and <code>breakdowns</code> (INV-13). Pass <code>--horizon</code> on both legs:
 <code>blis run</code> defaults it to unlimited while <code>blis replay</code> auto-computes 2x the max arrival
 time (see the table below), so a default-horizon replay may truncate a run that was still
 draining. An MoE scenario with <code>dp &gt; 1</code> replays the same way — one replica per
@@ -4555,8 +4555,8 @@ data-parallel rank on both legs. The autoscaler and node pools are rejected by
 </tr>
 <tr>
 <td><strong>Output format</strong></td>
-<td>Full <code>MetricsOutput</code> JSON on stdout</td>
-<td>Same full <code>MetricsOutput</code> JSON on stdout; <code>--results-path</code> additionally writes a <code>SimResult</code> JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for <code>blis calibrate</code></td>
+<td>One <code>Result</code> document on stdout (<a href="../results/">Metrics &amp; Results</a>)</td>
+<td>The same <code>Result</code> document; <code>--results-path</code> (deprecated) additionally writes a <code>SimResult</code> JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for <code>blis calibrate</code></td>
 </tr>
 <tr>
 <td><strong>Session support</strong></td>
@@ -5173,7 +5173,7 @@ lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.</
 <p><code>blis run</code> and <code>blis replay</code> report <strong>scheduling delay</strong> — the time a request
 waited in the simulator's internal queue before being selected for batch execution.
 This appears in per-request <code>RequestMetrics.SchedulingDelay</code> and in the aggregate
-<code>scheduling_delay_p99_ms</code> field of <code>MetricsOutput</code> (printed to stdout).</p>
+<code>scheduling_delay_p99_ms</code> (the Result's <code>engine.cluster.scheduling_delay_p99_ms</code>).</p>
 <p><code>blis observe</code> <strong>cannot</strong> record scheduling delay because real inference servers
 do not expose per-request queue wait time through their HTTP APIs. A client sees
 only TTFT and E2E; the server never reveals how long a request queued before

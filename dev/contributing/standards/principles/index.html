@@ -3408,7 +3408,7 @@
 </ul>
 <h2 id="output-channel-separation">Output Channel Separation<a class="headerlink" href="#output-channel-separation" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>stdout</strong> (deterministic): simulation results — metrics JSON, fitness scores, anomaly counters, KV cache metrics, per-SLO metrics, trace summaries. Use <code>fmt.Println</code>/<code>fmt.Printf</code>.</li>
+<li><strong>stdout</strong> (deterministic): simulation results. For <code>blis run</code> and <code>blis replay</code> that is exactly one <code>Result</code> document (#1871); their human-readable sections (fitness, anomaly counters, KV cache, per-SLO, trace summary) are <code>--view summary</code>, on stderr.</li>
 <li><strong>stderr</strong> (diagnostic): configuration echoes, progress markers, warnings, errors. Use <code>logrus.*</code>, controlled by <code>--log</code>.</li>
 <li>Rule of thumb: if a user piping to a file would want to capture it, use <code>fmt</code>. If it's debugging context, use <code>logrus</code>.</li>
 </ul>

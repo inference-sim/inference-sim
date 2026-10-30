@@ -1202,16 +1202,66 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#primary-metrics-json-output" class="md-nav__link">
+  <a href="#the-result-document" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Primary Metrics (JSON Output)
+        The Result document
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Primary Metrics (JSON Output)">
+    <nav class="md-nav" aria-label="The Result document">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-each-metricsoutput-field-went" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where each MetricsOutput field went
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecated-results-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated results files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecated results files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#-metrics-path-file-deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        --metrics-path file (deprecated)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#measured-window-aggregates-metrics-path-file" class="md-nav__link">
@@ -3446,16 +3496,66 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#primary-metrics-json-output" class="md-nav__link">
+  <a href="#the-result-document" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Primary Metrics (JSON Output)
+        The Result document
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Primary Metrics (JSON Output)">
+    <nav class="md-nav" aria-label="The Result document">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standard-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-each-metricsoutput-field-went" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where each MetricsOutput field went
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecated-results-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated results files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecated results files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#-metrics-path-file-deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        --metrics-path file (deprecated)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#measured-window-aggregates-metrics-path-file" class="md-nav__link">
@@ -3759,16 +3859,375 @@
 
 
 <h1 id="metrics-results">Metrics &amp; Results<a class="headerlink" href="#metrics-results" title="Permanent link">&para;</a></h1>
-<p>This guide covers how to read BLIS output — from the primary JSON metrics to anomaly counters, KV cache diagnostics, per-SLO breakdowns, fitness scores, and trace summaries.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Quick example: run with all diagnostic output enabled</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--trace-level<span class="w"> </span>decisions<span class="w"> </span>--summarize-trace<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
+<p><code>blis run</code> and <code>blis replay</code> print one document to stdout and nothing else: a blis-schemas
+<strong>Result</strong> (<code>kind: Result</code>, schema reference: blis-schemas <code>docs/reference/result.md</code>). It is
+JSON by default; <code>--format yaml</code> prints the same document as YAML; <code>--output &lt;file&gt;</code> writes
+the same bytes to a file. The document is validated with blis-schemas' own validator before it
+is printed, and a document that does not validate is a fatal error naming the problem.
+Diagnostics go to stderr.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span>--output<span class="w"> </span>result.json
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># The same, for a person: the text sections, rendered to stderr from the Result.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--registry<span class="w"> </span><span class="nv">$PWD</span>/blis-registry<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">200</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">1000</span><span class="w"> </span>--view<span class="w"> </span>summary
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Read a metric</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>jq<span class="w"> </span><span class="s1">'.metrics.ttft_p99_ms'</span><span class="w"> </span>result.json
 </code></pre></div>
-<h2 id="primary-metrics-json-output">Primary Metrics (JSON Output)<a class="headerlink" href="#primary-metrics-json-output" title="Permanent link">&para;</a></h2>
-<p>The JSON output on stdout (and in the <code>--metrics-path</code> file when set) contains:</p>
+<h2 id="the-result-document">The Result document<a class="headerlink" href="#the-result-document" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code></td>
+<td>The resolved <code>scenario</code> and <code>deployment</code>, the run controls under <code>run</code> (<code>load</code>, <code>num_requests</code>, <code>seed</code> (<code>--seed</code>, which seeds the engines and the router), <code>horizon_s</code> (for a replay, the horizon it ran to: <code>--horizon</code>, or 2x the trace's last arrival), <code>workload</code>: a catalog preset as <code>shape</code>, a replayed trace as <code>trace</code> pinned by sha256, an agentic replay as <code>replay</code>), and a <code>--policy-config</code> bundle verbatim under <code>policy</code>.</td>
+</tr>
+<tr>
+<td><code>revisions</code></td>
+<td>The BLIS build, the blis-schemas, blis-latency-kernel and llm-d router releases it was built against, the engine model, and the catalog and registry git revisions (<code>-dirty</code> when the checkout has uncommitted content; <code>unknown</code> when it is not a git checkout).</td>
+</tr>
+<tr>
+<td><code>metric_defs</code>, <code>metrics</code></td>
+<td>Standard-named metrics over the measured <code>window</code>, each defined in blis-schemas' measurement vocabulary on the <code>simulated</code> clock (below).</td>
+</tr>
+<tr>
+<td><code>window</code></td>
+<td>The measured window: requests not in warm-up, first arrival to last completion (or a replay's explicit profiling window). A run in which no measured request completed states its zero rates over the simulated run (<code>simulation_start</code> to <code>simulation_end</code>).</td>
+</tr>
+<tr>
+<td><code>requests</code></td>
+<td>INV-1's ledger: <code>generated</code>, <code>rejected</code>, <code>injected</code> and the eleven terminal buckets, plus <code>length_capped</code>. <code>generated</code> is the cluster's own arrival count, so blis-schemas' check that <code>injected</code> equals the sum of the buckets is not a restatement of a sum.</td>
+</tr>
+<tr>
+<td><code>goodput</code></td>
+<td>With SLO targets: the targets, <code>goodput_rps</code>, <code>slo_attainment</code>, and per class <code>completed</code> and <code>met</code>. Unlike every other rate, <code>goodput_rps</code> is over the whole simulated run (<code>engine.cluster.simulated_duration_s</code>), not the measured window, as the results file always computed it.</td>
+</tr>
+<tr>
+<td><code>breakdowns</code></td>
+<td><code>per_model</code>, <code>per_tenant</code>, <code>per_adapter</code> (the run's own metrics over each key's requests), <code>pd</code> (the prefill/decode split, in ms), <code>sessions</code>.</td>
+</tr>
+<tr>
+<td><code>engine</code></td>
+<td>What the engines reported: under <code>cluster</code> the step-interval series, preemptions, KV figures, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under <code>whole_run</code>; under each pool role its prefix-cache record; under <code>instances</code> each instance's own figures.</td>
+</tr>
+<tr>
+<td><code>router</code></td>
+<td>The embedded router's requirements (<code>embed.Requirements</code>), sheds by SLO class, and the priority-inversion and head-of-line counters; with <code>--fitness-weights</code>, the score under <code>fitness</code> (<code>score</code>, <code>components</code>, <code>weights</code>); with <code>--summarize-trace</code>, the decision-trace summary under <code>trace_summary</code>.</td>
+</tr>
+<tr>
+<td><code>kernel</code></td>
+<td>blis-latency-kernel's coefficient provenance per pool role.</td>
+</tr>
+<tr>
+<td><code>saturation</code></td>
+<td>The detectors' final labels under <code>final</code>, when <code>--detectors</code> ran.</td>
+</tr>
+<tr>
+<td><code>overrides</code></td>
+<td>Every setting the run simulated differently from its scenario, and what chose it: a <code>--scheduler</code> or <code>--preemption-policy</code> against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (<code>--timeout</code>, <code>--num-instances</code>, <code>--prefix-tokens</code>, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as <code>setting</code> (the flag), <code>run</code> (its value; a file flag by <code>sha256:&lt;digest&gt;</code>) and <code>source</code>. A workload spec run without <code>--seed</code> adds <code>workload_seed</code> (the spec's own request seed). Flags that only select what is reported (<code>--output</code>, <code>--format</code>, <code>--view</code>, <code>--log</code>, output paths, <code>--detectors</code>, ...) are not recorded; <code>cmd/result_flags.go</code> lists each with the reason, and a test fails for a new flag listed in neither place. The run's <code>name</code> carries a digest of the overrides, so two runs that differ only in a flag get different names.</td>
+</tr>
+<tr>
+<td><code>artifacts</code></td>
+<td>Files the run wrote, by sha256 and by path relative to <code>--output</code>'s directory (as given, with no <code>--output</code>): <code>trace_header</code>/<code>trace_data</code> (<code>--trace-output</code> on run), <code>metrics_file</code> (<code>--metrics-path</code>), <code>sim_results</code> (<code>replay --results-path</code>).</td>
+</tr>
+<tr>
+<td><code>runtime</code></td>
+<td>Wall-clock seconds, start time and host. The only block that depends on the host or the clock.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="standard-metrics">Standard metrics<a class="headerlink" href="#standard-metrics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Definition (<code>formula</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ttft_{mean,p50,p90,p95,p99}_ms</code></td>
+<td>arrival to first output token (<code>ttft</code>)</td>
+</tr>
+<tr>
+<td><code>itl_{mean,p50,p90,p99}_ms</code></td>
+<td>per request <code>(latency - ttft) / (output_tokens - 1)</code>, per <strong>token</strong> (<code>tpot_excl_first</code>)</td>
+</tr>
+<tr>
+<td><code>e2e_{mean,p50,p90,p95,p99}_ms</code></td>
+<td>arrival to last streamed token (<code>e2el</code>)</td>
+</tr>
+<tr>
+<td><code>interactivity_mean</code></td>
+<td>mean of <code>1000 / itl_ms</code> over requests (<code>user_tps</code>)</td>
+</tr>
+<tr>
+<td><code>interactivity_p50</code>, <code>interactivity_p90</code></td>
+<td><code>1000 / itl_p50_ms</code>, <code>1000 / itl_p90_ms</code> (<code>interactivity</code>)</td>
+</tr>
+<tr>
+<td><code>output_tok_s</code></td>
+<td>output tokens over the window (<code>output_throughput</code>, <code>profiling_window</code>)</td>
+</tr>
+<tr>
+<td><code>output_tok_s_per_gpu</code></td>
+<td><code>output_tok_s</code> over the GPUs the run's instances occupy (<code>per_gpu</code>)</td>
+</tr>
+<tr>
+<td><code>request_throughput</code></td>
+<td>completed requests over the window (<code>request_throughput</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>A latency family is stated only when it has a sample: a run that completed nothing states no
+latency rather than a zero. The ITL family needs a request with two or more output tokens;
+<code>interactivity_p50</code> and <code>interactivity_p90</code> additionally need that percentile of ITL to be
+positive (they are its reciprocal), and <code>interactivity_mean</code> needs a request with a positive
+ITL. A run can therefore state <code>interactivity_mean</code> without the percentiles. Percentiles are numpy-linear.</p>
+<p><code>itl_*</code> is always per token. Under speculative decoding one decode step emits several tokens, so
+the per-decode-step interval (the legacy <code>itl_*</code> keys of <code>MetricsOutput</code>) is longer by the
+accepted length; it is the engine's <code>step_interval_*</code>, never <code>itl_*</code>.</p>
+<h3 id="where-each-metricsoutput-field-went">Where each <code>MetricsOutput</code> field went<a class="headerlink" href="#where-each-metricsoutput-field-went" title="Permanent link">&para;</a></h3>
+<p>Every field of the JSON object run and replay printed before the Result has a home in the
+document, or is listed here as dropped with the reason.
+<code>TestResultFieldMap_EveryMetricsOutputFieldHasAHome</code> keeps this table complete.</p>
+<!-- result-field-map -->
+<table>
+<thead>
+<tr>
+<th><code>MetricsOutput</code> field</th>
+<th>Result home</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>instance_id</code></td>
+<td>dropped: the document is the cluster's; in a run of more than one instance each instance's own figures are keyed by id under <code>engine.instances</code></td>
+</tr>
+<tr>
+<td><code>completed_requests</code></td>
+<td><code>requests.completed</code></td>
+</tr>
+<tr>
+<td><code>still_queued</code></td>
+<td><code>requests.still_queued</code></td>
+</tr>
+<tr>
+<td><code>still_running</code></td>
+<td><code>requests.still_running</code></td>
+</tr>
+<tr>
+<td><code>injected_requests</code></td>
+<td><code>requests.injected</code></td>
+</tr>
+<tr>
+<td><code>dropped_unservable</code></td>
+<td><code>requests.dropped_unservable</code></td>
+</tr>
+<tr>
+<td><code>timed_out_requests</code></td>
+<td><code>requests.timed_out</code></td>
+</tr>
+<tr>
+<td><code>length_capped_requests</code></td>
+<td><code>requests.length_capped</code></td>
+</tr>
+<tr>
+<td><code>total_input_tokens</code></td>
+<td><code>engine.cluster.total_input_tokens</code></td>
+</tr>
+<tr>
+<td><code>total_output_tokens</code></td>
+<td><code>engine.cluster.total_output_tokens</code></td>
+</tr>
+<tr>
+<td><code>vllm_estimated_duration_s</code></td>
+<td><code>engine.cluster.simulated_duration_s</code></td>
+</tr>
+<tr>
+<td><code>responses_per_sec</code></td>
+<td><code>metrics.request_throughput</code> over the window; whole run <code>engine.cluster.whole_run.responses_per_sec</code></td>
+</tr>
+<tr>
+<td><code>tokens_per_sec</code></td>
+<td><code>metrics.output_tok_s</code> over the window; whole run <code>engine.cluster.whole_run.tokens_per_sec</code></td>
+</tr>
+<tr>
+<td><code>ttft_mean_ms</code>, <code>ttft_p90_ms</code>, <code>ttft_p95_ms</code>, <code>ttft_p99_ms</code></td>
+<td><code>metrics.ttft_*_ms</code> over the window; whole run <code>engine.cluster.whole_run.ttft_*_ms</code></td>
+</tr>
+<tr>
+<td><code>e2e_mean_ms</code>, <code>e2e_p90_ms</code>, <code>e2e_p95_ms</code>, <code>e2e_p99_ms</code></td>
+<td><code>metrics.e2e_*_ms</code> over the window; whole run <code>engine.cluster.whole_run.e2e_*_ms</code></td>
+</tr>
+<tr>
+<td><code>itl_mean_ms</code>, <code>itl_p90_ms</code>, <code>itl_p95_ms</code>, <code>itl_p99_ms</code></td>
+<td>per decode step, so <code>engine.cluster.step_interval_*_ms</code> (window) and <code>engine.cluster.whole_run.step_interval_*_ms</code>; the Result's <code>itl_*_ms</code> is per token</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_p99_ms</code></td>
+<td><code>engine.cluster.scheduling_delay_p99_ms</code></td>
+</tr>
+<tr>
+<td><code>kv_allocation_failures</code></td>
+<td><code>engine.cluster.kv_allocation_failures</code></td>
+</tr>
+<tr>
+<td><code>preemption_count</code></td>
+<td><code>engine.cluster.preemptions</code></td>
+</tr>
+<tr>
+<td><code>cache_hit_rate</code></td>
+<td><code>engine.cluster.cache_hit_rate</code> (window); <code>engine.cluster.cache_hit_rate_whole_run</code></td>
+</tr>
+<tr>
+<td><code>requests</code></td>
+<td><code>artifacts.metrics_file</code> (the deprecated file's per-request rows, by digest)</td>
+</tr>
+<tr>
+<td><code>saturation</code></td>
+<td><code>saturation.final</code></td>
+</tr>
+<tr>
+<td><code>goodput_rps</code>, <code>slo_attainment</code></td>
+<td><code>goodput.goodput_rps</code>, <code>goodput.slo_attainment</code></td>
+</tr>
+<tr>
+<td><code>per_class</code></td>
+<td><code>goodput.per_class</code> (<code>completed</code>, <code>met</code>); the per-class latency summaries are <code>--view summary</code>'s Per-SLO section</td>
+</tr>
+<tr>
+<td><code>adapters</code></td>
+<td><code>engine.cluster.adapters</code>, and <code>breakdowns.per_adapter</code></td>
+</tr>
+<tr>
+<td><code>catalog</code></td>
+<td><code>revisions.catalog</code> (the revision, <code>-dirty</code> when uncommitted); the path is dropped: where a catalog sits is a fact of the host, not of the result</td>
+</tr>
+<tr>
+<td><code>overrides</code></td>
+<td><code>overrides</code></td>
+</tr>
+<tr>
+<td><code>agentic</code></td>
+<td><code>engine.cluster.agentic</code></td>
+</tr>
+<tr>
+<td><code>pd</code></td>
+<td><code>breakdowns.pd</code></td>
+</tr>
+<tr>
+<td><code>server_series</code></td>
+<td><code>engine.cluster.server_series</code></td>
+</tr>
+<tr>
+<td><code>percentile_method</code></td>
+<td>each percentile's <code>metric_defs</code> entry (<code>percentile_method: numpy_linear</code>)</td>
+</tr>
+<tr>
+<td><code>ttft_p50_ms</code>, <code>e2e_p50_ms</code></td>
+<td><code>metrics.ttft_p50_ms</code>, <code>metrics.e2e_p50_ms</code></td>
+</tr>
+<tr>
+<td><code>request_itl_mean_ms</code>, <code>request_itl_p50_ms</code>, <code>request_itl_p90_ms</code>, <code>request_itl_p99_ms</code></td>
+<td><code>metrics.itl_*_ms</code></td>
+</tr>
+<tr>
+<td><code>interactivity_p50</code>, <code>interactivity_p90</code></td>
+<td><code>metrics.interactivity_p50</code>, <code>metrics.interactivity_p90</code></td>
+</tr>
+<tr>
+<td><code>output_tok_per_user_mean</code></td>
+<td><code>metrics.interactivity_mean</code></td>
+</tr>
+<tr>
+<td><code>step_interval_mean_ms</code>, <code>step_interval_p90_ms</code>, <code>step_interval_p99_ms</code></td>
+<td><code>engine.cluster.step_interval_*_ms</code> (with <code>p50</code>, <code>p95</code>)</td>
+</tr>
+<tr>
+<td><code>output_throughput_tok_s</code></td>
+<td><code>metrics.output_tok_s</code></td>
+</tr>
+<tr>
+<td><code>measured_window_s</code></td>
+<td><code>window.duration_s</code></td>
+</tr>
+<tr>
+<td><code>measured_window_source</code></td>
+<td><code>window.start</code> and <code>window.stop</code> (<code>first_arrival_after_warmup</code>/<code>last_completion</code> derived, <code>profiling_start</code>/<code>profiling_end</code> explicit)</td>
+</tr>
+<tr>
+<td><code>measured_completed_requests</code></td>
+<td><code>window.requests</code></td>
+</tr>
+<tr>
+<td><code>cancelled_requests</code>, <code>context_overflow_requests</code>, <code>failed_requests</code></td>
+<td><code>engine.cluster.measured_cancelled_requests</code>, <code>..._context_overflow_requests</code>, <code>..._failed_requests</code></td>
+</tr>
+<tr>
+<td><code>cpu_tier_hit_rate</code></td>
+<td><code>engine.cluster.cpu_tier_hit_rate</code></td>
+</tr>
+<tr>
+<td><code>gateway_queue_delay_mean_ms</code>, <code>gateway_queue_delay_p90_ms</code></td>
+<td><code>engine.cluster.gateway_queue_delay_*_ms</code></td>
+</tr>
+<tr>
+<td><code>in_flight_requests_mean</code>, <code>in_flight_requests_max</code></td>
+<td><code>engine.cluster.in_flight_requests_*</code></td>
+</tr>
+<tr>
+<td><code>kv_capacity_tokens_per_replica</code></td>
+<td><code>engine.cluster.kv_capacity_tokens_per_replica</code></td>
+</tr>
+<tr>
+<td><code>whole_run</code></td>
+<td><code>engine.cluster.whole_run</code></td>
+</tr>
+<tr>
+<td><code>kernel_provenance</code></td>
+<td><code>kernel</code></td>
+</tr>
+<tr>
+<td><code>blis_version</code>, <code>kernel_version</code>, <code>schemas_version</code></td>
+<td><code>revisions.blis</code>, <code>revisions.blis_latency_kernel</code>, <code>revisions.blis_schemas</code></td>
+</tr>
+<tr>
+<td><code>acceptance</code></td>
+<td><code>engine.cluster.acceptance</code></td>
+</tr>
+<tr>
+<td><code>prefix_cache</code></td>
+<td><code>engine.&lt;pool role&gt;.prefix_cache</code></td>
+</tr>
+</tbody>
+</table>
+<!-- /result-field-map -->
+
+<p><code>input.run.num_requests</code> is the bound the run kept: <code>--num-requests</code> (or the spec's
+<code>num_requests</code>). When closed-loop session rounds generated more during the run (they are
+generated on top of the cap, and blis-schemas v0.9.1 states no separate follow-up count), it is
+raised to <code>requests.generated</code> and the cap as given is an <code>overrides</code> row, <code>num_requests_cap</code>;
+an uncapped run in which nothing arrived records 1, the smallest bound the
+schema accepts. A run in which nothing arrived and no <code>--horizon</code> bounded simulated time has no
+span to report over and is refused. <code>blis observe</code> (deprecated, #1901) is unchanged: it still prints the
+<code>=== Simulation Metrics ===</code> JSON.</p>
+<p>The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
+sessions, P/D, fitness, trace summary) are what <code>--view summary</code> renders to stderr.</p>
+<h2 id="deprecated-results-files">Deprecated results files<a class="headerlink" href="#deprecated-results-files" title="Permanent link">&para;</a></h2>
+<p><code>--metrics-path</code> (run and replay) and <code>replay --results-path</code> keep the content documented below
+for one release and log a deprecation pointing at <code>--output</code>; the Result references each by
+digest under <code>artifacts</code>. They are then removed.</p>
+<h3 id="-metrics-path-file-deprecated"><code>--metrics-path</code> file (deprecated)<a class="headerlink" href="#-metrics-path-file-deprecated" title="Permanent link">&para;</a></h3>
+<p>The <code>--metrics-path</code> file contains:</p>
 <table>
 <thead>
 <tr>
@@ -3926,12 +4385,12 @@
 <tr>
 <td><code>catalog</code></td>
 <td>object</td>
-<td>Model-catalog provenance: path, git revision, dirty flag — <strong><code>--metrics-path</code> file only, never stdout</strong> (see <a href="#catalog-provenance">Catalog Provenance</a>)</td>
+<td>Model-catalog provenance: path, git revision, dirty flag (see <a href="#catalog-provenance">Catalog Provenance</a>); the Result records the revision under <code>revisions.catalog</code></td>
 </tr>
 <tr>
 <td><code>overrides</code></td>
 <td>array</td>
-<td>Settings the run simulated differently from its scenario, each <code>{setting, scenario, run, source}</code> — <strong><code>--metrics-path</code> file only, never stdout</strong>; absent when the run follows its scenario (see <a href="#scenario-overrides">Scenario Overrides</a>)</td>
+<td>Settings the run simulated differently from its scenario, each <code>{setting, scenario, run, source}</code>; absent when the run follows its scenario (see <a href="#scenario-overrides">Scenario Overrides</a>); the Result carries the same list under <code>overrides</code></td>
 </tr>
 <tr>
 <td><code>cache_hit_rate</code></td>
@@ -3979,7 +4438,7 @@ percentiles are numpy-linear (<code>percentile_method: "numpy_linear"</code>).</
 </tr>
 <tr>
 <td><code>e2e_{mean,p50,p90,p95,p99}_ms</code></td>
-<td>arrival → last streamed token (aiperf's request latency; excludes the completion overhead stdout's E2E carries)</td>
+<td>arrival → last streamed token (aiperf's request latency; excludes the completion overhead the whole-run E2E carries)</td>
 </tr>
 <tr>
 <td><code>request_itl_{mean,p50,p90,p99}_ms</code></td>
@@ -4011,7 +4470,7 @@ percentiles are numpy-linear (<code>percentile_method: "numpy_linear"</code>).</
 </tr>
 <tr>
 <td><code>whole_run</code></td>
-<td>the whole-run <code>ttft_*</code>, <code>e2e_*</code> and <code>cache_hit_rate</code> stdout reports, for consumers of the old meaning (<code>blis calibrate</code>)</td>
+<td>the whole-run <code>ttft_*</code>, <code>e2e_*</code> and <code>cache_hit_rate</code>, for consumers of the old meaning (<code>blis calibrate</code>)</td>
 </tr>
 <tr>
 <td><code>gateway_queue_delay_{mean,p90}_ms</code></td>
@@ -4027,10 +4486,10 @@ percentiles are numpy-linear (<code>percentile_method: "numpy_linear"</code>).</
 </tr>
 </tbody>
 </table>
-<p>In the file, <code>ttft_*</code>, <code>e2e_*</code> and <code>cache_hit_rate</code> take these measured-window values; stdout
-keeps the whole-run figures (TTFT there also counts requests that emitted a first token but did
+<p>In the file, <code>ttft_*</code>, <code>e2e_*</code> and <code>cache_hit_rate</code> take these measured-window values; the
+top-level whole-run keys keep the whole-run figures (TTFT there also counts requests that emitted a first token but did
 not complete), and the file repeats them under <code>whole_run</code>.
-The legacy <code>itl_*</code> keys are <strong>unchanged on both channels</strong> for backward compatibility — they
+The legacy <code>itl_*</code> keys are <strong>unchanged</strong> for backward compatibility — they
 remain per verification step under speculative decoding — and <code>completed_requests</code> stays the
 run-wide INV-1 count. Invariants: INV-M1 … INV-M4.</p>
 <p><strong>Comparing a hit rate with aiperf 0.12.0.</strong> Compare aiperf's <code>server_metrics_export.json</code>
@@ -4088,7 +4547,7 @@ point, and the results file says so:</p>
 <p>In a prefill/decode deployment each pool runs its own engine's policy, so a run-level choice
 is recorded once per pool whose engine stated otherwise, as <code>"scheduler (prefill pool)"</code> or
 <code>"preemption_policy (decode pool)"</code>.</p>
-<p>A warning on stderr says the same. Like <code>catalog</code>, the block is file-only.</p>
+<p>A warning on stderr says the same. The Result carries the same list under <code>overrides</code>.</p>
 <h3 id="catalog-provenance">Catalog Provenance<a class="headerlink" href="#catalog-provenance" title="Permanent link">&para;</a></h3>
 <p>The <code>catalog</code> field records <strong>which model catalog produced the result</strong> (#1732), so a results
 file is attributable and an <em>experiment</em> is distinguishable from a <em>reproducible run</em>. It is
@@ -4117,12 +4576,10 @@ written by both <code>blis run --metrics-path</code> and <code>blis replay --met
   revision — there is no committed state to differ from.</li>
 </ul>
 <div class="admonition note">
-<p class="admonition-title">File-only, by design</p>
-<p>Provenance appears <strong>only</strong> in the <code>--metrics-path</code> file, never on stdout. Catalog git
-state legitimately differs between two otherwise identical runs, and stdout is the
-byte-identical channel INV-6 protects. A run without <code>--metrics-path</code> never consults git
-at all — and a results file written by a run whose catalog could not be resolved simply
-omits the block.</p>
+<p class="admonition-title">In the Result</p>
+<p>The Result records the catalog's revision (and <code>-dirty</code>) under <code>revisions.catalog</code>: a
+revision is an input of the run, so two runs on catalogs at different revisions are
+different inputs (INV-6). It never records the path, a fact of the host.</p>
 </div>
 <h3 id="saturation-detection">Saturation Detection<a class="headerlink" href="#saturation-detection" title="Permanent link">&para;</a></h3>
 <p>Post-hoc saturation analysis classifies a completed run as <code>STABLE</code>, <code>BACKLOGGED</code> or
@@ -4231,7 +4688,7 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 </tbody>
 </table>
 <h2 id="anomaly-counters">Anomaly Counters<a class="headerlink" href="#anomaly-counters" title="Permanent link">&para;</a></h2>
-<p>When anomalies are detected, BLIS prints <code>=== Anomaly Counters ===</code>:</p>
+<p>When anomalies are detected, <code>--view summary</code> prints <code>=== Anomaly Counters ===</code>:</p>
 <table>
 <thead>
 <tr>
@@ -4306,16 +4763,11 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 <p>Each counter is one INV-1 bucket; see <a href="../admission/">Admission Control</a> for how router outcomes
 map onto them.</p>
 <div class="admonition note">
-<p class="admonition-title">Stdout-only vs JSON counters</p>
-<p><strong>Dropped Unservable</strong>, <strong>Timed Out Requests</strong>, and <strong>Length-Capped Requests</strong> also appear as fields in the <code>--metrics-path</code> JSON output (see <a href="#primary-metrics-json-output">Primary Metrics</a>: <code>dropped_unservable</code>, <code>timed_out_requests</code>, <code>length_capped_requests</code>).</p>
-<p>All other counters in this table — including <strong>Shed (tier)</strong>, <strong>Gateway Queue Depth (horizon)</strong>, and <strong>Gateway Queue Shed</strong> — are <strong>stdout-only</strong> and do not appear in the JSON file.</p>
-</div>
-<div class="admonition note">
-<p class="admonition-title">blis replay anomaly block</p>
-<p><code>blis replay</code> produces a subset of this output: <strong>Timed Out Requests</strong>, <strong>Gateway Queue Depth (horizon)</strong>, and <strong>Gateway Queue Shed</strong> are currently missing from the <code>blis replay</code> anomaly block even when non-zero (tracked in issue #1184).</p>
+<p class="admonition-title">Where the counters are in the Result</p>
+<p>Every INV-1 counter is in the Result's <code>requests</code> ledger; <strong>Shed (tier)</strong> is <code>router.shed_by_class</code>, and <strong>Priority Inversions</strong> and <strong>HOL Blocking Events</strong> are <code>router.priority_inversions</code> and <code>router.hol_blocking_events</code>. <code>blis run</code> and <code>blis replay</code> render this section from one shared path, so both print the same counters. Of these, the deprecated <code>--metrics-path</code> file carries only <code>dropped_unservable</code>, <code>timed_out_requests</code> and <code>length_capped_requests</code> (see <a href="#-metrics-path-file-deprecated"><code>--metrics-path</code> file</a>).</p>
 </div>
 <h2 id="kv-cache-metrics">KV Cache Metrics<a class="headerlink" href="#kv-cache-metrics" title="Permanent link">&para;</a></h2>
-<p>When KV cache activity is nonzero, BLIS prints <code>=== KV Cache Metrics ===</code>:</p>
+<p>When KV cache activity is nonzero, <code>--view summary</code> prints <code>=== KV Cache Metrics ===</code>:</p>
 <table>
 <thead>
 <tr>
@@ -4343,18 +4795,18 @@ map onto them.</p>
 </tbody>
 </table>
 <h2 id="per-slo-class-metrics">Per-SLO-Class Metrics<a class="headerlink" href="#per-slo-class-metrics" title="Permanent link">&para;</a></h2>
-<p>When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that <code>critical</code> requests meet SLOs even when <code>batch</code> traffic is heavy.</p>
+<p>When multiple SLO classes are present in the workload, <code>--view summary</code> prints per-class TTFT and E2E distributions. This lets you verify that <code>critical</code> requests meet SLOs even when <code>batch</code> traffic is heavy.</p>
 <h2 id="per-model-metrics">Per-Model Metrics<a class="headerlink" href="#per-model-metrics" title="Permanent link">&para;</a></h2>
-<p>When instances serve different models (multi-model deployment), BLIS prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:</p>
+<p>When instances serve different models (multi-model deployment), <code>--view summary</code> prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>=== Per-Model Metrics ===
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  qwen/qwen3-14b:
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
 </code></pre></div>
-<p>Per-model metrics appear on stdout only. The <code>--metrics-path</code> JSON file (see <a href="#primary-metrics-json-output">Primary Metrics</a>) contains only the aggregate <code>MetricsOutput</code> fields. The same applies to per-tenant, session, and PD metrics — all are stdout-only sections.</p>
+<p>These sections are <code>--view summary</code>'s rendering, on stderr; the Result carries the same splits under <code>breakdowns</code> (<code>per_model</code>, <code>per_tenant</code>, <code>sessions</code>, <code>pd</code>).</p>
 <h2 id="per-tenant-metrics">Per-Tenant Metrics<a class="headerlink" href="#per-tenant-metrics" title="Permanent link">&para;</a></h2>
-<p>When requests carry <code>tenant_id</code> labels, BLIS prints per-tenant request counts, total output tokens served, and a <a href="https://en.wikipedia.org/wiki/Fairness_measure">Jain Fairness Index</a> over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).</p>
+<p>When requests carry <code>tenant_id</code> labels, <code>--view summary</code> prints per-tenant request counts, total output tokens served, and a <a href="https://en.wikipedia.org/wiki/Fairness_measure">Jain Fairness Index</a> over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>=== Per-Tenant Metrics ===
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  alice: requests=50, tokens=12500
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  bob: requests=50, tokens=12480
@@ -4371,7 +4823,7 @@ map onto them.</p>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
 </code></pre></div>
 <h2 id="session-metrics">Session Metrics<a class="headerlink" href="#session-metrics" title="Permanent link">&para;</a></h2>
-<p>When a workload contains multi-turn sessions (requests with <code>session_id</code>), BLIS prints a <code>=== Session Metrics ===</code> block:</p>
+<p>When a workload contains multi-turn sessions (requests with <code>session_id</code>), <code>--view summary</code> prints a <code>=== Session Metrics ===</code> block:</p>
 <table>
 <thead>
 <tr>
@@ -4400,7 +4852,7 @@ map onto them.</p>
 </table>
 <p>Cold vs. warm TTFT split reveals prefix cache effectiveness: if <code>TTFT warm</code> ≈ <code>TTFT cold</code>, prefix caching is not activating for continuations — check that the router configuration includes the <code>prefix-cache-scorer</code> and that its weight is not dominated by load scorers.</p>
 <h2 id="pd-disaggregation-metrics">PD Disaggregation Metrics<a class="headerlink" href="#pd-disaggregation-metrics" title="Permanent link">&para;</a></h2>
-<p>When PD disaggregation is active (<code>--prefill-instances &gt; 0</code>), BLIS prints a <code>=== PD Metrics ===</code> block:</p>
+<p>When PD disaggregation is active (<code>--prefill-instances &gt; 0</code>), <code>--view summary</code> prints a <code>=== PD Metrics ===</code> block:</p>
 <table>
 <thead>
 <tr>
@@ -4444,6 +4896,9 @@ map onto them.</p>
 <p>For automated multi-configuration comparison:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
 </code></pre></div>
+<p>The score, its per-metric components and the weights are in the Result at <code>router.fitness</code>;
+<code>--view summary</code> also prints them on stderr. <code>--summarize-trace</code> (with <code>--trace-level decisions</code>)
+is likewise at <code>router.trace_summary</code>.</p>
 <p>Valid metric keys: <code>throughput</code>, <code>tokens_per_sec</code>, <code>p99_ttft</code>, <code>p50_ttft</code>, <code>mean_ttft</code>, <code>p99_e2e</code>, <code>p50_e2e</code>, <code>mean_e2e</code>.</p>
 <h3 id="how-normalization-works">How Normalization Works<a class="headerlink" href="#how-normalization-works" title="Permanent link">&para;</a></h3>
 <ul>
