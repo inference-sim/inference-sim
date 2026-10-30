@@ -421,6 +421,11 @@ func (m *Model) OffloadCopies() int64 {
 	return int64(m.id.rankGPUs)
 }
 
+// WorldSize is one engine's parallel world size, pp x tp x pcp (ParallelConfig.world_size): the
+// workers a KV connector runs on, which the OffloadingConnector pends every job on
+// (num_workers, vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:335@5df63a72).
+func (m *Model) WorldSize() int { return m.id.rankGPUs }
+
 // RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
 // at most this many in the pool.

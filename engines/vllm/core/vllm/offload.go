@@ -96,7 +96,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, prefixCaching bool) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, queue int, prefixCaching bool) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -155,6 +155,19 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, prefixC
 		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
+	}
+	switch {
+	case queue > 1:
+		// defer_block_free, requires_kv_delivery and the batch queue's interleaving of the
+		// connector's metadata with outputs in flight (vllm/v1/core/sched/scheduler.py:184-194,
+		// vllm/v1/engine/core.py:698-810@5df63a72) are not yet diff-tested beside the connector.
+		return nil, fmt.Errorf("vllm: kv_offload with async scheduling or pipeline parallelism (max_concurrent_batches %d) "+
+			"is not modelled yet: the OffloadingConnector is diff-tested with one batch in flight (%s, part 3)",
+			queue, offloading.Issue)
+	case spec.NumTokens > 0:
+		// The connector's EAGLE-group handling and a drafter's lookahead beside its stores
+		// (offloading/scheduler.py:473-481, 856-874@5df63a72) are not yet diff-tested.
+		return nil, fmt.Errorf("vllm: kv_offload with speculative decoding is not modelled yet (%s, part 3)", offloading.Issue)
 	}
 	o := &offload{conn: conn, blockSize: bs, early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
 		flushed: map[int]bool{}, recv: map[string]bool{}, loadReq: map[int]string{}}

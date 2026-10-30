@@ -1,0 +1,37 @@
+kind: Scenario
+name: muse-h100-roce-armD-pp1-sync
+engine_version: "0.32.0"
+model: muse-spark-open-816b-a42b-nvfp4
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: h100
+  fabric: roce-200g
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: muse-h100-roce-armD-pp1-sync
+pools:
+  - role: colocated
+    nodes: 1
+    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 8192
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      cache_dtype: fp8
+      async_scheduling: false
+      moe_backend: marlin
+# Arm D on one node at PP1 x TP8, synchronous scheduling and no drafter: what the engine runs beside
+# the OffloadingConnector until blis-vllm#14 part 3. One H100 node's KV memory beside the weights
+# (0.16 GiB a GPU) holds at most an 11,664-token sequence, and vLLM refuses a longer max_model_len
+# at start-up, so the twin serves 8,192 tokens. The OffloadingConnector's CPU tier, LRU: the
+# node's 512 GiB of host DRAM (the engine's cpu_bytes_to_use).
+offload:
+  connector: OffloadingConnector
+  eviction_policy: lru
+  tiers:
+    - {tier: cpu_dram, bytes: 549755813888}

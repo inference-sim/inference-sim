@@ -161,7 +161,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 	}
 	e.gpu.pd = e.pd
 	if st.offload != nil {
-		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.sched.EnablePrefixCaching); err != nil {
+		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.queueSize, st.sched.EnablePrefixCaching); err != nil {
 			return nil, err
 		}
 		e.gpu.off = e.off

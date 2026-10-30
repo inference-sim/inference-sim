@@ -28,6 +28,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // The Roots keys the factory reads.
@@ -72,6 +74,9 @@ type pool struct {
 	// prefill or decode pool runs as kv_producer or kv_consumer.
 	role      deployment.Role
 	connector string
+	// offload is the deployment's offload block as the engine block's kv_offload, nil when it
+	// states none (offloadOf).
+	offload *yaml.Node
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
@@ -115,8 +120,134 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
+	off, err := offloadOf(m, shape.Offload)
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
 	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
-		role: m.Role(), connector: shape.PDConnector}, nil
+		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
+}
+
+// offloadIssue tracks the offload hierarchies the engine does not model; secondaryTierIssue the
+// tiers below the CPU one.
+const (
+	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/14"
+	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/13"
+)
+
+// cpuTier is the catalog device class of host DRAM, the OffloadingConnector's CPU tier.
+const cpuTier = "cpu_dram"
+
+// offloadOf maps a deployment's offload block onto the engine block's kv_offload, or refuses what
+// the engine does not model. The OffloadingConnector's kv_connector_extra_config is its CPU tier:
+// cpu_bytes_to_use is the tier's bytes, the engine's, which vLLM divides among its workers'
+// copies (vllm/v1/kv_offload/cpu/spec.py:103-121@5df63a72), as the compatibility engine reads the
+// same tier (compat/build KVOffloadBlockFromDeployment), so one deployment's 0.31.0 and 0.32.0
+// runs hold one CPU tier. eviction_policy and spec_name pass through, and blocks_per_chunk comes from the connector options. What vLLM derives at start-up
+// the kernel states: one worker's KV bytes for one GPU block over the offloaded groups
+// (worker_kv_bytes_per_block, offloading/config.py:136-151), the engine's world size (num_workers,
+// offloading/scheduler.py:335) and how many workers' copies of a block the tier holds
+// (OffloadCopies: one for the replicated latent layout, offloading/config.py:158-171).
+func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) {
+	if o == nil {
+		return nil, nil
+	}
+	if o.Connector != "" && o.Connector != "OffloadingConnector" {
+		return nil, fmt.Errorf("offload.connector %q is not built by the v0.32.0 engine, which runs vLLM's "+
+			"OffloadingConnector (%s)", o.Connector, offloadIssue)
+	}
+	if o.PrefetchDepth != 0 {
+		return nil, fmt.Errorf("offload.prefetch_depth %d is not a vLLM setting: the OffloadingConnector loads a hit "+
+			"when the scheduler admits the request (%s)", o.PrefetchDepth, offloadIssue)
+	}
+	var cpu int64
+	for i, t := range o.Tiers {
+		if t.Device != cpuTier || i > 0 {
+			return nil, fmt.Errorf("offload.tiers[%d] (%q): only one %s tier, the OffloadingConnector's CPU tier, is "+
+				"modelled; secondary tiers (TieringOffloadingSpec's) are not (%s)", i, t.Device, cpuTier, secondaryTierIssue)
+		}
+		cpu = t.Bytes
+	}
+	if cpu <= 0 {
+		return nil, fmt.Errorf("offload states no %s tier: the OffloadingConnector's tier is host DRAM "+
+			"(cpu_bytes_to_use, required by vLLM, cpu/spec.py:97-101@5df63a72)", cpuTier)
+	}
+	opts, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions)
+	if err != nil {
+		return nil, fmt.Errorf("offload.connector_options: %w", err)
+	}
+	bpc := 0
+	if opts != nil {
+		bpc = opts.BlocksPerChunk
+		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk}
+		if again, _ := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); again != nil && !reflect.DeepEqual(*again, *opts) {
+			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk is an OffloadingConnector option (%s)",
+				offloadIssue)
+		}
+	}
+	perBlock, err := offloadBytesPerBlock(m)
+	if err != nil {
+		return nil, err
+	}
+	e, err := m.Engine()
+	if err != nil {
+		return nil, err
+	}
+	c := map[string]any{
+		"connector":       "OffloadingConnector",
+		"cpu_bytes":       cpu,
+		"bytes_per_block": perBlock,
+		"workers":         m.WorldSize(),
+		"copies":          m.OffloadCopies(),
+	}
+	if o.Spec != "" {
+		c["spec"] = o.Spec
+	}
+	if o.EvictionPolicy != "" {
+		c["eviction_policy"] = o.EvictionPolicy
+	}
+	if bpc > 0 {
+		c["block_size"] = bpc * e.BlockSize
+	}
+	var n yaml.Node
+	if err := n.Encode(c); err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+// offloadBytesPerBlock is one worker's KV bytes for one GPU block: the kernel's per-block KV bytes
+// for a model of one full-attention group, and the pool's widest KV cache group's bytes for a
+// hybrid model, as vLLM's KV tensor holds them (poolBlocks). Under pipeline parallelism it is the
+// binding stage's, the one the kernel's bytes describe.
+func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
+	b, err := m.KVBudget()
+	if err != nil {
+		return 0, err
+	}
+	runs, err := m.KVLayers()
+	if err != nil || len(runs) == 0 {
+		return b.PerBlockBytes, err
+	}
+	e, err := m.Engine()
+	if err != nil {
+		return 0, err
+	}
+	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
+	if pp := m.PipelineStages(); pp > 1 {
+		var widest []kernelmodel.KVLayerRun
+		for s := range pp {
+			stage, err := m.KVLayersOfStage(s)
+			if err != nil {
+				return 0, err
+			}
+			if kvElems(stage) > kvElems(widest) {
+				widest = stage
+			}
+		}
+		runs = widest
+	}
+	return vllm.KVPoolBytesPerBlock(vllmRuns(runs), disable, e.BlockSize, b.PerBlockBytes)
 }
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
@@ -275,6 +406,10 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		setIfAbsent(&kt, "connector", p.connector)
 		setIfAbsent(&kt, "kv_role", role)
 		setNodeIfAbsent(&block, "kv_transfer", &kt)
+	}
+	if p.offload != nil {
+		// The deployment's offload block as the OffloadingConnector's configuration (offloadOf).
+		setNodeIfAbsent(&block, "kv_offload", cloneNode(p.offload))
 	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the

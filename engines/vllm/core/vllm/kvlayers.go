@@ -71,6 +71,19 @@ func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Grou
 // layers' elements is refused, naming both, rather than sized from a guessed dtype. Layers that
 // state a packed state's bytes, DeepSeek V4's, are sized as stated.
 func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock, availableBytes int64) (int64, error) {
+	per, err := KVPoolBytesPerBlock(runs, disableHybrid, blockSize, kernelPerBlock)
+	if err != nil {
+		return 0, err
+	}
+	return availableBytes / per, nil
+}
+
+// KVPoolBytesPerBlock is the bytes one block takes in the KV pool KVPoolBlocks sizes: the widest
+// KV cache group's (kv.PoolBytesPerBlock), with the layers' element sizes resolved from
+// kernelPerBlock as KVPoolBlocks resolves them. It is the worker_kv_bytes_per_block an
+// OffloadingConnector sizes its CPU tier from (the KV tensor's bytes over its blocks,
+// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:136-147@5df63a72).
+func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock int64) (int64, error) {
 	layers, err := KVLayers(runs)
 	if err != nil {
 		return 0, err
@@ -84,7 +97,7 @@ func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPe
 	if err != nil {
 		return 0, fmt.Errorf("vllm: kv_layers: %w", err)
 	}
-	return availableBytes / per, nil
+	return per, nil
 }
 
 // deriveElemBytes gives every layer that states no element size the bytes kernelPerBlock leaves
