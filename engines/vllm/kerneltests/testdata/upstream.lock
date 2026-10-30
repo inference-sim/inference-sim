@@ -5,7 +5,6 @@
 # The commit is what is fetched and verified; the tag is for the reader. Bump a line,
 # run the script, and run `go test ./...`: a renamed chip or coefficient is supposed to
 # break the fixtures that name it.
-# TEMPORARY: the catalog line pins the pushed head of inference-sim/blis-catalog#47 (Muse Spark), until it is released.
-catalog  https://github.com/inference-sim/blis-catalog  pr47    c85ee78379483854b06995bc5e51b38146612ed8  hardware/*.yaml networks/*.yaml devices/storage.yaml models/*/graph.yaml
+catalog  https://github.com/inference-sim/blis-catalog  0.5.0    b5550f750cb51571498577fbdc1c68f78cda67db  hardware/*.yaml networks/*.yaml devices/storage.yaml models/*/graph.yaml
 # TEMPORARY: the registry line pins the pushed head of inference-sim/blis-registry#62 (Muse Spark), until it is released.
-registry https://github.com/inference-sim/blis-registry pr62    474f6b79c451438b6768df98a981db62d069e42d  coefficients/*.yaml
+registry https://github.com/inference-sim/blis-registry pr62    e8f5af3ed01827f58e6bbc9e3773e2ccb0e01e43  coefficients/*.yaml
