@@ -3,6 +3,8 @@ package kernelmodel
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 )
 
 // Muse-Spark-Open-816B-A42B's KV layers, as vLLM v0.32.0 registers them: 16 full-attention and
@@ -100,5 +102,18 @@ func TestPipelineStagesSplitLayersAsVLLMDoes(t *testing.T) {
 				t.Errorf("%d layers over pp %d, stage %d: [%d, %d), vLLM gives %v", c.layers, c.pp, s, lo, hi, w)
 			}
 		}
+	}
+}
+
+// RolePools indexes a P/D deployment's pools by role, as engine.Spec.Pool selects them.
+func TestRolePoolsIndexesEachRole(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../vllmengine/testdata"
+	got, err := RolePools("muse-h100-roce-1p1d.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[deployment.RolePrefill] != 0 || got[deployment.RoleDecode] != 1 || len(got) != 2 {
+		t.Fatalf("pools by role %v, want prefill 0 and decode 1", got)
 	}
 }

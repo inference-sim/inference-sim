@@ -365,6 +365,25 @@ func newModel(k kernel.Kernel, id identity) (*Model, error) {
 	}, nil
 }
 
+// RolePools are the indexes, in the deployment's pools, of the pool serving each role, refusing
+// a scenario that states one role in more than one pool. An engine.Spec selects its pool by this
+// index (Spec.Pool).
+func RolePools(scenario string, r Repos) (map[deployment.Role]int, error) {
+	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	if err != nil {
+		return nil, err
+	}
+	out := map[deployment.Role]int{}
+	for i, p := range dep.Pools {
+		if _, dup := out[p.Role]; dup {
+			return nil, fmt.Errorf("%s states more than one %s pool; one engine layout per role is "+
+				"what a simulated pool runs", scenario, p.Role)
+		}
+		out[p.Role] = i
+	}
+	return out, nil
+}
+
 // OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
 // a disaggregated deployment -- refusing a scenario that states no such pool or more than one.
 func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
