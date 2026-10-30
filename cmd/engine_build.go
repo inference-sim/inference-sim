@@ -505,15 +505,16 @@ func setAcceptanceOverrides(fl *pflag.FlagSet, k int) {
 // acceptanceOverridesOf is the run's acceptance layers beyond the scenario file
 // (setAcceptanceOverrides).
 func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverrides {
-	var o kernelmodel.AcceptanceOverrides
+	var cli *acceptance.Value
 	switch {
 	case fl.Changed(build.AcceptanceRateFlag):
 		r := speculativeAcceptance
-		o.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceRate: &r, Source: "--" + build.AcceptanceRateFlag}
+		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceRate: &r, Source: "--" + build.AcceptanceRateFlag}
 	case fl.Changed(build.AcceptanceLengthFlag):
 		l := speculativeAcceptanceLength
-		o.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
+		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
 	}
+	var terms *acceptance.Workload
 	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {
 		var w acceptance.Workload
 		if workloadAcceptance != nil {
@@ -525,10 +526,9 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 		if fl.Changed(build.AcceptanceCategoryFlag) {
 			w.Category = speculativeCategory
 		}
-		o.Workload = &w
+		terms = &w
 	}
-	o.FallbackCategory = speculativeFallbackCategory
-	return o
+	return kernelmodel.AcceptanceOverrides{CLI: cli, Workload: terms, FallbackCategory: speculativeFallbackCategory}
 }
 
 // currentRoutingOverridesOf is the routing layer the pools will open with.
