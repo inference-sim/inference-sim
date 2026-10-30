@@ -26,7 +26,7 @@ pools:
       max_model_len: 262144
       enable_prefix_caching: true
       gpu_memory_utilization: 0.9
-      async_scheduling: false
+      async_scheduling: true
       moe_backend: marlin
   - role: decode
     nodes: 2
@@ -38,7 +38,7 @@ pools:
       max_model_len: 262144
       enable_prefix_caching: true
       gpu_memory_utilization: 0.9
-      async_scheduling: false
+      async_scheduling: true
       moe_backend: marlin
 pd_transfer:
   connector: NixlConnector
