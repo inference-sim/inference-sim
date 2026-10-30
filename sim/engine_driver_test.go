@@ -346,3 +346,50 @@ func TestEngineDriver_RecordsEachRequestsFirstPrefixLookup(t *testing.T) {
 			m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens)
 	}
 }
+
+// A request that reached the host but has not reached the engine when the horizon ends the run
+// -- its render still an event in the pipeline -- is still queued (INV-1): it is in the host's
+// records and in no other terminal bucket, so leaving it out of still_queued loses it from the
+// conservation ledger. A request whose client deadline already passed in the pipeline is timed
+// out, its own bucket, and is not also still queued.
+func TestEngineDriver_ARequestStillInThePipelineAtTheHorizonIsStillQueued(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		deadline         int64 // the late request's client deadline (0 = none)
+		queued, timedOut int
+	}{
+		{"render still running at the horizon", 0, 1, 0},
+		{"timed out during its render", 950, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A 500 us render, so a request arriving at 900 is still rendering at the 1000 us horizon.
+			d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1000, QueueingTime: func(*Request) int64 { return 500 }})
+			early := &Request{ID: "early", InputTokens: tokens(8), OutputTokens: tokens(2), ArrivalTime: 0}
+			late := &Request{ID: "late", InputTokens: tokens(8), OutputTokens: tokens(2), ArrivalTime: 900, Deadline: tc.deadline}
+			d.InjectArrival(early)
+			d.InjectArrivalAt(late, late.ArrivalTime)
+			if tc.deadline > 0 {
+				// The host's client timeout: it fires before the render ends, marking the request.
+				d.schedule(&driverTimeoutEvent{at: tc.deadline, req: late})
+			}
+			d.Run()
+			m := d.Metrics
+			if _, ok := m.Requests["late"]; !ok {
+				t.Fatal("non-vacuity: the late request is not in the host's records")
+			}
+			if m.CompletedRequests != 1 {
+				t.Fatalf("non-vacuity: completed %d, want the early request only", m.CompletedRequests)
+			}
+			if m.StillQueued != tc.queued || m.TimedOutRequests != tc.timedOut {
+				t.Errorf("still queued %d, timed out %d; want %d and %d", m.StillQueued, m.TimedOutRequests, tc.queued, tc.timedOut)
+			}
+			if accounted := inv1Accounted(m); accounted != len(m.Requests) {
+				t.Errorf("INV-1: %d requests registered, %d accounted for", len(m.Requests), accounted)
+			}
+		})
+	}
+}

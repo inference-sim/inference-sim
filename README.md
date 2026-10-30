@@ -97,9 +97,10 @@ The quickstart's `--rate 10 --num-requests 100` is a synthetic workload for a qu
 against — `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml` (B300, MTP) and the multi-node
 `kimi-k3-h200-tp8dp4ep32-balanced.yaml`; each file's header records its provenance.
 
-The run prints JSON metrics on stdout — TTFT, ITL and E2E distributions
-(`ttft_mean_ms`, `itl_p99_ms`, `e2e_p99_ms`, ...), throughput (`responses_per_sec`,
-`tokens_per_sec`), `completed_requests` and `preemption_count`. See
+The run prints one Result document on stdout (JSON; `--format yaml` for YAML, `--output` for a
+file): its input, metrics over the measured window (`ttft_p99_ms`, `itl_p99_ms` per token,
+`e2e_p99_ms`, `output_tok_s`, `request_throughput`, ...) and the request ledger (`requests`).
+`--view summary` prints a readable summary to stderr. See
 [Interpreting Results](docs/guide/results.md).
 
 The examples below use `examplescenarios/gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml`, a two-node

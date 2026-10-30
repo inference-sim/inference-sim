@@ -262,7 +262,9 @@ func assertProvenance(t *testing.T, label string, out sim.MetricsOutput, wantPat
 // TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical is the AC-1/AC-2/
 // AC-3/AC-4 end-to-end contract for `blis run`: the results file names the catalog, its
 // revision and its dirty state, the dirty flag flips when a catalog config.json is edited
-// without committing, and stdout is byte-identical across the two runs (INV-6).
+// without committing, the Result's revisions.catalog records the same revision and dirty
+// state, and the Result is otherwise byte-identical across the two runs (INV-6: the same
+// resolved input; only the catalog's revision differs).
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testing.T) {
@@ -275,24 +277,31 @@ func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testi
 	dirtyStdout, dirtyFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
 	assertProvenance(t, "dirty run", dirtyFile, catalogRoot, head, true)
 
-	// AC-4 / INV-6: the only difference between the two runs is catalog git state, which
-	// is file-only metadata — stdout must not move. The fixture edit is whitespace-only,
-	// so the simulation's inputs are identical and any stdout difference is the
-	// provenance leaking.
-	if !bytes.Equal(cleanStdout, dirtyStdout) {
-		t.Errorf("INV-6 VIOLATION: `blis run` stdout differs between a clean and a dirty "+
-			"catalog.\n--- clean ---\n%s\n--- dirty ---\n%s", cleanStdout, dirtyStdout)
+	// AC-4 / INV-6: the only difference between the two runs is catalog git state. The
+	// fixture edit is whitespace-only, so the simulation's inputs are identical: the Result
+	// records the two revisions and is otherwise byte-identical.
+	assertCatalogRevision(t, "clean run", cleanStdout, head)
+	assertCatalogRevision(t, "dirty run", dirtyStdout, head+"-dirty")
+	if a, b := withoutRevisionsAndRuntime(t, string(cleanStdout)), withoutRevisionsAndRuntime(t, string(dirtyStdout)); a != b {
+		t.Errorf("INV-6 VIOLATION: `blis run` Result differs between a clean and a dirty catalog "+
+			"outside revisions and runtime.\n--- clean ---\n%s\n--- dirty ---\n%s", a, b)
 	}
-	if !bytes.Contains(cleanStdout, []byte("=== Simulation Metrics ===")) {
-		t.Fatalf("non-vacuity: stdout carries no metrics block:\n%s", cleanStdout)
-	}
-	if bytes.Contains(cleanStdout, []byte(catalogRoot)) || bytes.Contains(cleanStdout, []byte(head)) {
-		t.Errorf("INV-6 VIOLATION: provenance appears on stdout:\n%s", cleanStdout)
+	if bytes.Contains(cleanStdout, []byte(catalogRoot)) {
+		t.Errorf("the Result names the catalog's location, a fact of the host:\n%s", cleanStdout)
 	}
 	// Non-vacuity for the run itself: a run that completed nothing would make the
 	// stdout comparison trivial.
 	if cleanFile.CompletedRequests == 0 {
 		t.Fatalf("non-vacuity: the run completed no requests, so stdout parity is trivial")
+	}
+}
+
+// assertCatalogRevision checks the Result's revisions.catalog is the catalog's git revision.
+func assertCatalogRevision(t *testing.T, label string, stdout []byte, want string) {
+	t.Helper()
+	c := parseResult(t, string(stdout)).Revisions.Catalog
+	if c == nil || c.Revision != want {
+		t.Errorf("%s: revisions.catalog = %+v, want revision %q", label, c, want)
 	}
 }
 
@@ -316,12 +325,14 @@ func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
 	dirtyStdout, dirtyFile := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
 	assertProvenance(t, "dirty replay", dirtyFile, catalogRoot, head, true)
 
-	if !bytes.Equal(cleanStdout, dirtyStdout) {
-		t.Errorf("INV-6 VIOLATION: `blis replay` stdout differs between a clean and a dirty "+
-			"catalog.\n--- clean ---\n%s\n--- dirty ---\n%s", cleanStdout, dirtyStdout)
+	assertCatalogRevision(t, "clean replay", cleanStdout, head)
+	assertCatalogRevision(t, "dirty replay", dirtyStdout, head+"-dirty")
+	if a, b := withoutRevisionsAndRuntime(t, string(cleanStdout)), withoutRevisionsAndRuntime(t, string(dirtyStdout)); a != b {
+		t.Errorf("INV-6 VIOLATION: `blis replay` Result differs between a clean and a dirty catalog "+
+			"outside revisions and runtime.\n--- clean ---\n%s\n--- dirty ---\n%s", a, b)
 	}
-	if bytes.Contains(cleanStdout, []byte(catalogRoot)) || bytes.Contains(cleanStdout, []byte(head)) {
-		t.Errorf("INV-6 VIOLATION: provenance appears on replay stdout:\n%s", cleanStdout)
+	if bytes.Contains(cleanStdout, []byte(catalogRoot)) {
+		t.Errorf("the replay's Result names the catalog's location, a fact of the host:\n%s", cleanStdout)
 	}
 	if cleanFile.CompletedRequests == 0 {
 		t.Fatalf("non-vacuity: the replay completed no requests")
@@ -329,12 +340,13 @@ func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
 }
 
 // TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere pins that a run WITHOUT
-// --metrics-path is byte-identical to a pre-#1732 build: no provenance on stdout, and no
-// file written. The shared helper short-circuits before consulting git at all.
+// --metrics-path writes no results file and that its Result never names the catalog's
+// location: the catalog is recorded by its revision (revisions.catalog), a fact of its
+// content, never by the path it was found at, a fact of the host.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
-	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath, _ := setupGitCatalogFixtures(t)
 
 	orig := captureCmdLevelVars()
 	origResolvedCatalog := resolvedCatalogRoot
@@ -373,10 +385,10 @@ func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
 	}
 
 	stdout := captureRunStdout(t, func() { runCmd.Run(testCmd, nil) })
-	for _, forbidden := range []string{catalogRoot, head, `"catalog"`, `"revision"`, `"dirty"`} {
-		if strings.Contains(string(stdout), forbidden) {
-			t.Errorf("INV-6 VIOLATION: stdout-only run leaked provenance fragment %q:\n%s",
-				forbidden, stdout)
-		}
+	if strings.Contains(string(stdout), catalogRoot) {
+		t.Errorf("the Result names the catalog's location %q, a fact of the host:\n%s", catalogRoot, stdout)
+	}
+	if r := parseResult(t, string(stdout)); len(r.Artifacts) != 0 {
+		t.Errorf("a run without --metrics-path references artifacts %v", r.Artifacts)
 	}
 }

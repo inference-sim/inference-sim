@@ -229,7 +229,7 @@ independent processes.
 `blis replay` runs a captured TraceV2 (one exported by `blis run --trace-output`, or one
 produced by `blis convert weka|otel|inference-perf|servegen`) through the same DES pipeline
 and the same scenario-driven deployment path as `blis run`. A run's exported trace replayed
-with identical flags (including `--horizon`) yields byte-identical stdout (INV-13). The trace
+with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` in its `Result` (INV-13). The trace
 header records the router inputs (EPP flags with the configuration inlined, manifests, pod
 labels, gateway latency, scrape jitter, KV-event delay), so a replay rebuilds the same router; a replay whose
 scenario `router:` block, pool labels or router environment flags state a different router is

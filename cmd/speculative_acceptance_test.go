@@ -332,8 +332,8 @@ func TestAcceptanceRunReplayParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 4))
 	}
-	if runOut != repOut {
-		t.Errorf("INV-13: the replay's stdout differs from the run's")
+	if inv13View(t, runOut) != inv13View(t, repOut) {
+		t.Errorf("INV-13: the replay's Result differs from the run's")
 	}
 	if !reflect.DeepEqual(runRec, repRec) {
 		t.Errorf("run recorded %+v, replay %+v", runRec, repRec)

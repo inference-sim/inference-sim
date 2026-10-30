@@ -146,7 +146,7 @@ func TestReplayCmd_KernelBackend_ReproducesALoRARunUnderKVPressure(t *testing.T)
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if repOut != runOut {
+	if inv13View(t, repOut) != inv13View(t, runOut) {
 		t.Errorf("the LoRA run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }

@@ -30,9 +30,9 @@ GPULLM_REPO=/path/to/GPULLMAdapterOptimization \
   python3 lora-control/experiments/export_dt_reference.py /tmp/dt-ref-out
 # 2. Build a BLIS TraceV2 + LoRAConfig from the exported arrival stream, then
 #    replay it twice (aware = with --lora-config, blind = without) and capture the
-#    aggregate MetricsOutput. `blis replay` intentionally exposes only
-#    --results-path (BC-2), so read the "=== Simulation Metrics ===" JSON block
-#    from replay's stdout and trim to the aggregate fields above.
+#    aggregate MetricsOutput with `blis replay --metrics-path` (deprecated by
+#    #1871; the Result document on stdout carries the same figures) and trim to
+#    the aggregate fields above.
 ```
 
 ## Producing `--sim-metrics` yourself

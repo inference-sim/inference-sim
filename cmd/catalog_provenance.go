@@ -22,8 +22,9 @@ import (
 // + the blis-catalog repository), a result must be attributable, and an EXPERIMENT
 // (uncommitted edits to a catalog config.json) must be distinguishable from a
 // REPRODUCIBLE run. This file captures the catalog path, its git revision, and a dirty
-// flag; sim.EmitOutput writes them into the --metrics-path file ONLY, so stdout stays
-// byte-identical (INV-6) — provenance legitimately varies with catalog git state.
+// flag: the deprecated --metrics-path file records all three, and the Result document
+// records the revision and dirty flag under revisions.catalog (#1871) -- never the path,
+// which is a fact of the host rather than of the input.
 //
 // There was no existing git-provenance pattern in sim/ or cmd/ to reuse, so the capture
 // is net-new. It lives in cmd/ rather than sim/ because sim/ is a library that must not
@@ -110,14 +111,13 @@ func runCatalogGit(dir string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// resultsFileEmitOptions builds the sim.EmitOutput options that add a results file's
-// file-only blocks: catalog provenance, and the settings the run took from somewhere other
-// than its scenario (scenarioOverrides). It is the SINGLE shared helper both `blis run` and
-// `blis replay` call at their EmitOutput sites, so neither command can drift into recording
-// provenance the other omits (INV-13, R23).
+// resultsFileEmitOptions builds the sim.EmitOption values that add the --metrics-path file's
+// own blocks: catalog provenance, and the settings the run took from somewhere other than its
+// scenario (scenarioOverrides). `blis run` and `blis replay` write the file from one shared
+// site (emitRunResult) with it, so neither command can drift into recording provenance the
+// other omits (INV-13, R23).
 //
-// It returns no options when outputFilePath is empty: provenance is file-only, so a
-// stdout-only run must not pay for a git subprocess it would then discard.
+// It returns no options when outputFilePath is empty.
 func resultsFileEmitOptions(outputFilePath, catalogRoot string) []sim.EmitOption {
 	if outputFilePath == "" {
 		return nil

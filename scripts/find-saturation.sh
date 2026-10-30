@@ -96,19 +96,19 @@ for R in $RATES; do
     --saturation-report "$SAT_REPORT" \
     > "$RAW" 2> "$LOG"
 
-  # Extract throughput stats from the run's stdout JSON
-  METRICS=$(awk '/^=== Simulation Metrics ===/{flag=1; next} flag' "$RAW")
+  # Extract throughput stats from the run's stdout: one Result document (#1871).
   read -r OFF GOOD TIMEOUT_FRAC E2E_P99 TTFT_P99 SQ SR <<<"$(jq -r '
     def n: . // 0;
+    (.engine.cluster.simulated_duration_s | n) as $dur |
     [
-      (if (.vllm_estimated_duration_s | n) > 0 then ((.injected_requests | n) / .vllm_estimated_duration_s) else 0 end),
-      (.responses_per_sec | n),
-      (if (.injected_requests | n) > 0 then ((.timed_out_requests | n) / .injected_requests) else 0 end),
-      (.e2e_p99_ms | n),
-      (.ttft_p99_ms | n),
-      (.still_queued | n),
-      (.still_running | n)
-    ] | @tsv' <<<"$METRICS")"
+      (if $dur > 0 then ((.requests.injected | n) / $dur) else 0 end),
+      (.metrics.request_throughput | n),
+      (if (.requests.injected | n) > 0 then ((.requests.timed_out | n) / .requests.injected) else 0 end),
+      (.metrics.e2e_p99_ms | n),
+      (.metrics.ttft_p99_ms | n),
+      (.requests.still_queued | n),
+      (.requests.still_running | n)
+    ] | @tsv' "$RAW")"
 
   # Extract each detector's final verdict from the saturation report's "final" map.
   COMPOSITE_VERDICT=$(final_label "$SAT_REPORT" composite)

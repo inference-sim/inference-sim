@@ -1179,12 +1179,14 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	_, _ = io.Copy(&buf, r)
 	out := buf.String()
 
-	// THEN: anomaly block fires and "Timed Out Requests: 1" appears (BC-1)
-	if !strings.Contains(out, "=== Anomaly Counters ===") {
-		t.Errorf("BC-1: expected anomaly block header in output:\n%s", out)
+	// THEN: the Result's ledger records the timeout (BC-1): the one request timed out and
+	// nothing completed, so the run predicts no latency.
+	doc := parseResult(t, out)
+	if doc.Requests.TimedOut != 1 || doc.Requests.Completed != 0 {
+		t.Errorf("BC-1: ledger timed_out %d completed %d, want 1 and 0", doc.Requests.TimedOut, doc.Requests.Completed)
 	}
-	if !strings.Contains(out, "Timed Out Requests: 1") {
-		t.Errorf("BC-1: expected 'Timed Out Requests: 1' in anomaly block, got:\n%s", out)
+	if _, ok := doc.Metrics["ttft_mean_ms"]; ok {
+		t.Errorf("a run that completed nothing must state no latency, got ttft_mean_ms %v", doc.Metrics["ttft_mean_ms"])
 	}
 }
 
@@ -1853,31 +1855,24 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	return buf.String()
 }
 
-// extractMetricsJSON extracts the first top-level JSON object from replay's
-// stdout (the "=== Simulation Metrics ===" block emitted by Metrics.EmitOutput),
-// ignoring any human-readable text that follows (anomaly counters, per-SLO
-// metrics, session metrics, etc.). Uses brace balancing rather than a fixed
-// end marker since the amount of trailing text varies by run.
+// extractMetricsJSON returns what a replay computed, as one JSON object: the run's cluster
+// figures under the names the MetricsOutput JSON gave them (completed_requests,
+// total_input_tokens, ...), and the Result's INV-13 sections. Two replays of one corpus that
+// agree on it agree on everything they simulated.
 func extractMetricsJSON(t *testing.T, out string) string {
 	t.Helper()
-	start := strings.Index(out, "{")
-	if start < 0 {
-		t.Fatalf("no JSON object found in stdout:\n%s", out)
+	view := map[string]any{}
+	for k, v := range clusterFigures(t, out) {
+		view[k] = v
 	}
-	depth := 0
-	for i := start; i < len(out); i++ {
-		switch out[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return out[start : i+1]
-			}
-		}
+	if err := json.Unmarshal([]byte(inv13View(t, out)), &view); err != nil {
+		t.Fatal(err)
 	}
-	t.Fatalf("unbalanced JSON object in stdout:\n%s", out)
-	return ""
+	data, err := json.MarshalIndent(view, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 // TestReplayCmd_SessionPool_Deterministic verifies INV-6 (Task 4, Step 8):
@@ -1908,8 +1903,8 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 	}
 	a := runReplayCaptureStdout(t, args)
 	b := runReplayCaptureStdout(t, args)
-	if a != b {
-		t.Errorf("stdout not deterministic across identical --concurrent-sessions runs (INV-6)")
+	if withoutRuntime(t, a) != withoutRuntime(t, b) {
+		t.Errorf("the Result is not deterministic outside runtime across identical --concurrent-sessions runs (INV-6)")
 	}
 }
 

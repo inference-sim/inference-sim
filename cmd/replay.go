@@ -14,9 +14,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-schemas/spec/measurement"
+	"github.com/inference-sim/blis-schemas/spec/result"
+	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -70,6 +72,8 @@ Example:
 		}
 		logrus.SetLevel(level)
 		validateRouterFlags()
+		checkResultFlags()
+		snapshotResultFlags("replay", cmd)
 
 		// Validate required inputs (BC-6, BC-8). An agentic replay (#1937) reads its
 		// corpus instead of a TraceV2 file.
@@ -587,166 +591,13 @@ Example:
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, traceData.Header.GoodputSLOTargets, nil)
 
-		// NOTE (#1630): the --trace-output re-export block moved to the END of Run (after
-		// EmitOutput / --results-path). The re-export is a SECONDARY artifact; a failure in
-		// it (a reconstruction error, or a disk write error) must not discard the primary
-		// simulation metrics of a run that may have taken minutes/hours.
-
-		// Save aggregate metrics to stdout (same as runCmd). Per-instance output
-		// carries no saturation field — the final label is a cluster-level verdict
-		// emitted on the aggregate below (#1517).
-		if numInstances > 1 {
-			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), cs.Horizon(), totalKVBlocks, ""); err != nil {
-					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
-				}
-			}
-		}
-		// Save aggregate (always print to stdout; SimResult output uses separate file)
-		// goodputTargets resolved above for trace re-export; reused here (#1413, BC-1, BC-4).
-		// The saturation reducer runs BEFORE EmitOutput and mutates clusterOutput.Saturation
-		// (#1517), mirroring goodput's build-then-mutate-then-emit pattern.
-		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster")
-		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
-			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-
-		// Saturation (#1516 single detector / #1519 bank / #1517 final label): same
-		// pipeline as run/observe, sim-derived input. run → replay of the same trace
-		// is byte-identical (INV-13). Guard on the tracer so the common no-detector
-		// path skips the O(n log n) sort + O(n) copy in CompletedRequestMetrics().
-		if satTracer != nil {
-			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
-			if err != nil {
-				logrus.Fatalf("Saturation: %v", err)
-			}
-			if len(final) > 0 {
-				clusterOutput.Saturation = final
-			}
-		}
-
-		// --metrics-path (#1583): write the aggregate MetricsOutput JSON (which gains
-		// the file-only cache_hit_rate) so `blis calibrate --sim-metrics` can read the
-		// simulator's hit-rate. Empty path → stdout only, byte-identical to before
-		// (BC-8). run and replay --metrics-path of the same trace produce identical
-		// cache_hit_rate (INV-13).
-		// Catalog provenance (#1732): the same file-only block `blis run` records, via
-		// the same shared helper, so a replay's results file is attributable to the
-		// catalog that supplied its model config too (INV-13). Passed as an EmitOutput
-		// option rather than mutated onto clusterOutput, so stdout stays byte-identical
-		// (INV-6).
-		// An agentic replay (#1937) adds the measured window and its agentic block.
-		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
-		pdMetrics := cs.PDMetrics()
-		extra := append([]sim.EmitOption{sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(cs.ServerSeries())}, agx.emitOptions(aggregated)...)
-		if err := aggregated.EmitOutput(clusterOutput, replayMetricsPath,
-			append(resultsFileEmitOptions(replayMetricsPath, resolvedCatalogRoot), extra...)...); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
-		}
-
-		rawMetrics := cluster.CollectRawMetrics(
-			cs.AggregatedMetrics(),
-			cs.PerInstanceMetrics(),
-			cs.RejectedRequests(),
-			scheduler,
-			cs.RoutingRejections(),
-			cs.EncodeRoutingRejections(),
-			cs.InjectedByClass(),
-		)
-		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
-		rawMetrics.PD = pdMetrics
-		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
-		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
-
-		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
-			fmt.Println("=== Anomaly Counters ===")
-			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
-			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
-			if len(rawMetrics.ShedByTier) > 0 {
-				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
-				for k := range rawMetrics.ShedByTier {
-					tierKeys = append(tierKeys, k)
-				}
-				sort.Strings(tierKeys) // R2/INV-6: deterministic output order
-				for _, tier := range tierKeys {
-					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
-				}
-			}
-			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
-			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
-			fmt.Printf("Timed Out Requests: %d\n", rawMetrics.TimedOutRequests)
-			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
-			if rawMetrics.GatewayQueueDepth > 0 {
-				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
-			}
-			if rawMetrics.GatewayQueueRejected > 0 {
-				fmt.Printf("Gateway Queue Rejected: %d\n", rawMetrics.GatewayQueueRejected)
-			}
-			if rawMetrics.GatewayEvicted > 0 {
-				fmt.Printf("Gateway Evicted (in-flight): %d\n", rawMetrics.GatewayEvicted)
-			}
-			if rawMetrics.GatewayExpired > 0 {
-				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
-			}
-			if rawMetrics.EncodeRoutingRejections > 0 {
-				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
-			}
-		}
-
-		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
-
-		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
-		printPerSLOMetrics(os.Stdout, sloDistributions, len(goodputTargets) > 0)
-
-		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
-		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
-		printPerModelMetrics(os.Stdout, perModelMetrics)
-
-		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
-		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
-		printPerTenantMetrics(os.Stdout, perTenantMetrics)
-
-		// Print session metrics if any request carries a session label (#1058)
-		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
-		printSessionMetrics(os.Stdout, sessionMetrics)
-
-		printPDMetrics(os.Stdout, rawMetrics.PD)
-
-		if cs.Trace() != nil && summarizeTrace {
-			traceSummary := trace.Summarize(cs.Trace())
-			fmt.Println("=== Trace Summary ===")
-			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
-			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
-			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
-			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
-			if len(traceSummary.TargetDistribution) > 0 {
-				fmt.Println("Target Distribution:")
-				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
-				for k := range traceSummary.TargetDistribution {
-					targetKeys = append(targetKeys, k)
-				}
-				sort.Strings(targetKeys)
-				for _, k := range targetKeys {
-					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
-				}
-			}
-			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
-			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
-		}
-
-		// Warn if --fitness-weights is set (not supported in replay mode per R1)
-		if fitnessWeights != "" {
-			logrus.Warnf("--fitness-weights has no effect in replay mode (fitness evaluation not supported for replay)")
-		}
-
-		// Write SimResult JSON for calibrate consumption (BC-2)
+		// --results-path (deprecated, #1871) is written before the re-export below, so a
+		// failure there cannot discard the per-request rows of a long replay (#1630).
+		simResultRows := 0
 		if resultsPath != "" {
+			warnDeprecatedFile("--results-path", resultsPath)
 			simResults := extractSimResults(cs.AggregatedMetrics())
+			simResultRows = len(simResults)
 			data, err := json.MarshalIndent(simResults, "", "  ")
 			if err != nil {
 				logrus.Fatalf("Failed to marshal SimResults: %v", err)
@@ -756,6 +607,27 @@ Example:
 			}
 			logrus.Infof("SimResults written to %s (%d entries)", resultsPath, len(simResults))
 		}
+
+		// Warn if --fitness-weights is set (not supported in replay mode per R1)
+		if fitnessWeights != "" {
+			logrus.Warnf("--fitness-weights has no effect in replay mode (fitness evaluation not supported for replay)")
+		}
+
+		// The Result document (#1871), through the path run shares (INV-13). It is emitted
+		// before the --trace-output re-export below, so a re-export failure cannot discard it
+		// (#1630); the re-exported trace is therefore not among its artifacts.
+		var artifacts []artifactFile
+		if resultsPath != "" {
+			artifacts = append(artifacts, artifactFile{role: "sim_results", path: resultsPath, rows: simResultRows})
+		}
+		// An agentic replay sets the measured window on the aggregate (emitOptions) before the
+		// document is computed from it, so the Result and the file measure the same window.
+		agentic := agx.emitOptions(cs.AggregatedMetrics())
+		emitRunResult(postRun{
+			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
+			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
+			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
+		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
 		// #1630 Issue C: a secondary-artifact failure must not discard primary results).
@@ -817,13 +689,15 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption. Kept for one release.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
-	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "File to write aggregate MetricsOutput JSON (incl. cache_hit_rate for 'blis calibrate --sim-metrics', #1583). Symmetric with 'blis run --metrics-path'; stdout is unaffected.")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate for 'blis calibrate --sim-metrics', #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
 	registerAgentXReplayFlags(replayCmd)
+	// The Result document's encoding, file and summary view (#1871).
+	registerResultFlags(replayCmd)
 
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace), "closed-loop" (load-adaptive follow-ups via SessionManager), or "fixed-accumulate" (recorded arrivals + reconstructed accumulate-delta inputs; faithful replay of high-concurrency agentic corpora, #1692)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
@@ -879,6 +753,32 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 		}
 	}
 	return computeHorizonFromMaxArrival(maxArrival)
+}
+
+// replayRunControls are the run controls a replay records: the trace's offered load (or the
+// agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
+// recorded for a trace: a replay measures every request (the header's warm_up_requests is
+// read only by calibrate), and an agentic replay's warmup is part of its workload.replay.
+func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
+	numRequests, load := len(requests), measurement.Load{}
+	var binding *schemaworkload.Binding
+	if agx == nil && trace != nil {
+		numRequests = max(numRequests, len(trace.Records))
+		load = traceLoad(trace)
+		b, err := traceBinding(traceDataPath, trace.Header, len(trace.Records))
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		binding = b
+	}
+	if agx != nil {
+		load = measurement.Load{Concurrency: agx.spec.Concurrency}
+		binding = &schemaworkload.Binding{Replay: agx.spec}
+	}
+	// The horizon the replay ran to: --horizon, or the one replay derives from the trace (2x
+	// its last arrival), or the end an agentic replay moved it to, so a rerun from the document
+	// stops where this one did (#1871 B2).
+	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizonSeconds(horizonUs), Workload: binding}
 }
 
 // extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.

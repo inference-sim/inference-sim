@@ -304,9 +304,9 @@ are sorted so repeated runs are byte-identical (INV-6).
 }
 ```
 
-The same `final` map is also spliced onto the metrics JSON on stdout (a run
-*without* `--detectors` stays byte-identical to the historical no-feature
-output).
+For `blis run` and `blis replay` the same `final` map is the Result document's
+`saturation.final` (a run *without* `--detectors` has no `saturation` section);
+`blis observe` splices it onto its metrics JSON.
 
 ## Design principles
 

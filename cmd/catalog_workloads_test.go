@@ -777,8 +777,8 @@ func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if first == "" {
 		t.Fatal("non-vacuity: a preset-driven run produced no stdout")
 	}
-	if first != second {
-		t.Errorf("a preset-driven run must be byte-identical across runs (INV-6):\n--- first ---\n%s\n--- second ---\n%s",
+	if withoutRuntime(t, first) != withoutRuntime(t, second) {
+		t.Errorf("a preset-driven run must be byte-identical outside runtime across runs (INV-6):\n--- first ---\n%s\n--- second ---\n%s",
 			first, second)
 	}
 

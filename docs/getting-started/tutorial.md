@@ -36,7 +36,7 @@ Before scaling up, measure the throughput of a single instance under load. Run e
   --rate 500 --num-requests 2000
 ```
 
-Check the `responses_per_sec` value in the output. For this deployment with the default workload (512 input / 512 output tokens), a saturated instance handles roughly **11 requests/second**.
+Check `metrics.request_throughput` in the output (`jq .metrics.request_throughput`). For this deployment with the default workload (512 input / 512 output tokens), a saturated instance handles roughly **11 requests/second**.
 
 !!! note "Why measure at high load?"
     With continuous batching, throughput depends on batch size. At low arrival rates (e.g., `--rate 2`), requests trickle in one at a time and the instance processes only ~2 req/s — not because it's slow, but because there's nothing else to batch. At saturation, many concurrent requests share each decode step, amortizing overhead. Always measure capacity under load.
@@ -149,13 +149,14 @@ For automated comparison across many configurations, use fitness evaluation:
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 8 --rate 40 --num-requests 4000 \
-  --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
+  --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2" --view summary
 ```
 
-The fitness score is a weighted sum of normalized metrics — **higher is better**. Each latency metric is normalized to a [0, 1] range using `1/(1+x/1000)`, and throughput is normalized to [0, 1] using `throughput/max_throughput`. With weights `p99_ttft:3, mean_e2e:1, throughput:2`, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).
+The score is in the Result at `router.fitness` (`score`, `components`, `weights`); `--view summary`
+also prints it on stderr. The fitness score is a weighted sum of normalized metrics — **higher is better**. Each latency metric is normalized to a [0, 1] range using `1/(1+x/1000)`, and throughput is normalized to [0, 1] using `throughput/max_throughput`. With weights `p99_ttft:3, mean_e2e:1, throughput:2`, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).
 
 !!! warning "Fitness score normalization"
-    The `1/(1+x/1000)` normalization compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics (`ttft_p99_ms`, `e2e_mean_ms`, `responses_per_sec`) alongside fitness scores when making capacity decisions.
+    The `1/(1+x/1000)` normalization compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics (`metrics.ttft_p99_ms`, `metrics.e2e_mean_ms`, `metrics.request_throughput`) alongside fitness scores when making capacity decisions.
 
 ## Step 7: Validate Against Your SLO
 

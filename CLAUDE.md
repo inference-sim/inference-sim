@@ -87,15 +87,15 @@ BLIS follows a layered design-document hierarchy (read the design guidelines fir
 - **BDD/TDD:** write behavioral contracts first, tests before code, table-driven tests, test laws not just values, and prefer tests that survive a rewrite. Canonical: `docs/contributing/standards/principles.md` (BDD/TDD section).
 - **PR workflow:** follow `docs/contributing/pr-workflow.md` (worktree → source audit → plan → review → implement → self-audit → commit). Before approving a plan, validate it: task dependencies are startable, all template sections present, the executive summary is clear to a newcomer, and no task is under-specified. An RFC (`docs/contributing/rfc.md`) precedes implementation for changes that introduce/modify module boundaries; smaller changes go straight to the PR workflow.
 - **Code review:** check antipattern rules R1–R23 — `docs/contributing/standards/rules.md`. Watch R8–R10 (exported mutable maps, YAML pointer types, strict config parsing). Always run `go test ./...` and lint after fixes.
-- **Engineering principles** (`docs/contributing/standards/principles.md`): `sim/` is a library (never terminates); dependency direction `cmd/ → sim/cluster/ → sim/`; single-method interfaces with factory validation; config grouped by module (R16); canonical constructors in one place (R4); **stdout = deterministic results, stderr = diagnostics**; CLI errors → `logrus.Fatalf`, library → `error`/`panic`, never a silent `continue` (R1).
+- **Engineering principles** (`docs/contributing/standards/principles.md`): `sim/` is a library (never terminates); dependency direction `cmd/ → sim/cluster/ → sim/`; single-method interfaces with factory validation; config grouped by module (R16); canonical constructors in one place (R4); **stdout = one `Result` document (#1871), stderr = diagnostics**; CLI errors → `logrus.Fatalf`, library → `error`/`panic`, never a silent `continue` (R1).
 
 ### Key Invariants
 
 Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
 - **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (eleven-term cluster form; five-term single-instance form).
-- **INV-6 Determinism** — same seed ⇒ byte-identical **stdout**; wall-clock timing goes to stderr.
-- **INV-13 Run/Replay parity** — a trace exported by `run` and replayed with identical flags (including `--horizon`) yields byte-identical stdout; unsupported replay features `logrus.Fatalf` at startup.
+- **INV-6 Determinism** — same resolved input at the same revisions ⇒ byte-identical `Result` (stdout) outside `runtime`; wall-clock timing goes to stderr.
+- **INV-13 Run/Replay parity** — a trace exported by `run` and replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns`; unsupported replay features `logrus.Fatalf` at startup.
 - **NS-6 Catalog is authoritative and read-only** — see *Catalog and deployment rules* above; binds the CLI only.
 
 ### Notable subsystems (pointers)

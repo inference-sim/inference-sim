@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -43,7 +42,7 @@ func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
 	if got := clusterMetricInt(t, runOut, "completed_requests"); got != n {
 		t.Errorf("completed %d of %d requests", got, n)
 	}
-	if !strings.Contains(runOut, fmt.Sprintf("Disaggregated Requests: %d", n)) {
+	if got, _ := pdFigure(t, runOut, "disaggregated_requests"); int(got) != n {
 		t.Errorf("not every request was disaggregated:\n%s", runOut)
 	}
 
@@ -52,7 +51,7 @@ func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if repOut != runOut {
+	if inv13View(t, repOut) != inv13View(t, runOut) {
 		t.Errorf("the dp=2 disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }

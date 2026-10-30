@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,61 +29,64 @@ import (
 // eight instances, in this repository's scenario fixtures.
 const capScenario = "llama-3.1-70b-instruct-h200-tp4-4node.yaml"
 
-// capOut is one run's stdout, parsed.
+// capOut is one run's stdout, the Result document (#1871), parsed.
 type capOut struct {
 	stdout    string
-	cluster   map[string]float64   // the "cluster" metrics object
-	instances []map[string]float64 // every per-instance object, in output order
-	anomalies map[string]int       // the top-level "Anomaly Counters" lines
-	pd        map[string]string    // the "PD Metrics" lines, unparsed values
+	cluster   map[string]float64 // the run's cluster figures, under the names the matrix compares
+	instances []map[string]any   // every engine instance's own figures (multi-instance runs)
+	ledger    map[string]int     // the INV-1 ledger (requests)
+	pd        map[string]float64 // breakdowns.pd
 }
 
-var capAnomalyLine = regexp.MustCompile(`^([A-Z][A-Za-z ()-]+): (\d+)$`)
+// capClusterNames maps the figures the matrix compares onto their Result homes: the measured
+// window's metrics, and the engine's whole-run cluster figures.
+var capClusterNames = map[string]string{
+	"ttft_mean_ms":              "metrics.ttft_mean_ms",
+	"ttft_p99_ms":               "metrics.ttft_p99_ms",
+	"e2e_mean_ms":               "metrics.e2e_mean_ms",
+	"responses_per_sec":         "metrics.request_throughput",
+	"total_input_tokens":        "engine.cluster.total_input_tokens",
+	"total_output_tokens":       "engine.cluster.total_output_tokens",
+	"vllm_estimated_duration_s": "engine.cluster.simulated_duration_s",
+	"engine_admissions":         "engine.cluster.engine_admissions",
+}
 
 func parseCapOut(t *testing.T, stdout string) capOut {
 	t.Helper()
-	o := capOut{stdout: stdout, anomalies: map[string]int{}, pd: map[string]string{}}
-	for _, raw := range extractJSONObjects(stdout) {
-		var obj map[string]any
-		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-			continue
-		}
-		id, ok := obj["instance_id"].(string)
-		if !ok {
-			continue
-		}
-		nums := map[string]float64{}
-		for k, v := range obj {
+	r := parseResult(t, stdout)
+	doc := resultDoc(t, stdout)
+	o := capOut{stdout: stdout, cluster: map[string]float64{}, ledger: map[string]int{}, pd: map[string]float64{}}
+	q := r.Requests
+	for k, v := range map[string]int{
+		"generated": q.Generated, "rejected": q.Rejected, "injected": q.Injected, "completed": q.Completed,
+		"still_queued": q.StillQueued, "still_running": q.StillRunning, "dropped_unservable": q.DroppedUnservable,
+		"timed_out": q.TimedOut, "routing_rejections": q.RoutingRejections, "gateway_queue_depth": q.GatewayQueueDepth,
+		"gateway_queue_rejected": q.GatewayQueueRejected, "gateway_evicted": q.GatewayEvicted,
+		"gateway_expired": q.GatewayExpired, "encode_routing_rejections": q.EncodeRoutingRejections,
+	} {
+		o.ledger[k] = v
+	}
+	o.cluster["injected_requests"] = float64(q.Injected)
+	o.cluster["completed_requests"] = float64(q.Completed)
+	for name, path := range capClusterNames {
+		if v, ok := resultValue(doc, path); ok {
 			if f, ok := v.(float64); ok {
-				nums[k] = f
-			}
-		}
-		if id == "cluster" {
-			o.cluster = nums
-		} else {
-			o.instances = append(o.instances, nums)
-		}
-	}
-	section := ""
-	for _, line := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(line, "=== ") {
-			section = line
-			continue
-		}
-		switch section {
-		case "=== Anomaly Counters ===":
-			if m := capAnomalyLine.FindStringSubmatch(line); m != nil {
-				n, _ := strconv.Atoi(m[2])
-				o.anomalies[m[1]] = n
-			}
-		case "=== PD Metrics ===":
-			if k, v, ok := strings.Cut(line, ": "); ok {
-				o.pd[k] = v
+				o.cluster[name] = f
 			}
 		}
 	}
-	if o.cluster == nil {
-		t.Fatalf("no cluster metrics in stdout:\n%s", lastLines(stdout, 30))
+	if insts, ok := resultValue(doc, "engine.instances"); ok {
+		ids := make([]string, 0)
+		for id := range insts.(map[string]any) {
+			ids = append(ids, id)
+		}
+		slices.Sort(ids)
+		for _, id := range ids {
+			o.instances = append(o.instances, insts.(map[string]any)[id].(map[string]any))
+		}
+	}
+	if r.Breakdowns != nil {
+		o.pd = r.Breakdowns.PD
 	}
 	return o
 }
@@ -99,17 +101,34 @@ func capRun(t *testing.T, args ...string) capOut {
 	return parseCapOut(t, stdout)
 }
 
-func (o capOut) num(k string) float64 { return o.cluster[k] }
+// num is a cluster figure by its MetricsOutput name; a name the run does not report fails the
+// test rather than reading as zero.
+func (o capOut) num(k string) float64 {
+	v, ok := o.cluster[k]
+	if !ok {
+		panic(fmt.Sprintf("capOut.num: the run reports no cluster figure %q (known: %v)", k, sortedKeysOf2(o.cluster)))
+	}
+	return v
+}
 
-// arrivals is every request the run accounted for: those that reached an instance plus every
-// request turned away before one -- admission, routing, and the gateway queue's rejections,
-// TTL expiries, in-flight evictions and requests still queued at the horizon.
+func sortedKeysOf2(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// arrivals is every request the run accounted for: the sum of INV-1's eleven terminal
+// buckets plus the admission rejections, read bucket by bucket, so it is independent of the
+// ledger's own generated count and compares with the fixture's.
 func (o capOut) arrivals() int {
-	n := int(o.num("injected_requests"))
-	for _, k := range []string{"Rejected Requests (Admission)", "Rejected Requests (Routing)",
-		"Gateway Queue Rejected", "Gateway Expired (TTL)", "Gateway Queue Depth (horizon)",
-		"Gateway Evicted (in-flight)"} {
-		n += o.anomalies[k]
+	n := o.ledger["rejected"]
+	for _, k := range []string{"completed", "still_queued", "still_running", "dropped_unservable", "timed_out",
+		"routing_rejections", "gateway_queue_depth", "gateway_queue_rejected", "gateway_evicted",
+		"gateway_expired", "encode_routing_rejections"} {
+		n += o.ledger[k]
 	}
 	return n
 }
@@ -119,8 +138,7 @@ func (o capOut) arrivals() int {
 func (o capOut) conserves(t *testing.T, generated int) {
 	t.Helper()
 	if got := o.arrivals(); got != generated {
-		t.Errorf("INV-1: %d of %d generated requests accounted for (injected %v, anomalies %v)",
-			got, generated, o.num("injected_requests"), o.anomalies)
+		t.Errorf("INV-1: %d of %d generated requests accounted for (ledger %v)", got, generated, o.ledger)
 	}
 	if o.num("completed_requests") <= 0 {
 		t.Errorf("no request completed")
@@ -143,9 +161,9 @@ func capRunReplay(t *testing.T, common, runOnly, replayOnly []string) capOut {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if repOut != runOut {
-		t.Errorf("INV-13: the replay's stdout differs from the run's\n--- run\n%s\n--- replay\n%s",
-			lastLines(runOut, 40), lastLines(repOut, 40))
+	if a, b := inv13View(t, runOut), inv13View(t, repOut); a != b {
+		t.Errorf("INV-13: the replay's Result differs from the run's\n--- run\n%s\n--- replay\n%s",
+			lastLines(a, 40), lastLines(b, 40))
 	}
 	return parseCapOut(t, runOut)
 }
@@ -325,17 +343,13 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 			o := capRun(t, runArgs(colocated(1), "--num-requests", "600", "--rate", rate, "--prompt-tokens", "2000",
 				"--output-tokens", "200", "--detectors", "all")...)
 			o.conserves(t, 600)
-			var cluster struct {
-				Saturation map[string]string `json:"saturation"`
-			}
-			for _, raw := range extractJSONObjects(o.stdout) {
-				if strings.Contains(raw, `"instance_id": "cluster"`) {
-					if err := json.Unmarshal([]byte(raw), &cluster); err != nil {
-						t.Fatal(err)
-					}
+			labels := map[string]string{}
+			if r := parseResult(t, o.stdout); r.Saturation != nil {
+				for d, l := range r.Saturation["final"].(map[string]any) {
+					labels[d] = l.(string)
 				}
 			}
-			return cluster.Saturation
+			return labels
 		}
 		light, heavy := label("1"), label("60")
 		// backlog-drift is not held to this law, because it fails it: through this overload's
@@ -359,10 +373,10 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 			"instance_lifecycle:\n  loading_delay: {mean: 2.0, stddev: 0.0}\n  warm_start_initial_instances: false\n"))...)
 		warm.conserves(t, 60)
 		cold.conserves(t, 60)
-		if warm.anomalies["Rejected Requests (Routing)"] != 0 || cold.anomalies["Rejected Requests (Routing)"] == 0 {
+		if warm.ledger["routing_rejections"] != 0 || cold.ledger["routing_rejections"] == 0 {
 			t.Errorf("routing rejections %d with instances ready at start, %d with a 2 s load; the load must "+
-				"turn away the first arrivals", warm.anomalies["Rejected Requests (Routing)"],
-				cold.anomalies["Rejected Requests (Routing)"])
+				"turn away the first arrivals", warm.ledger["routing_rejections"],
+				cold.ledger["routing_rejections"])
 		}
 	})
 }
@@ -475,8 +489,8 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 				o = capRun(t, runArgs(args, load...)...)
 			}
 			o.conserves(t, 24)
-			if o.pd["Disaggregated Requests"] != "24" {
-				t.Fatalf("%s pools, acceptance %s: %q of 24 requests disaggregated", dir, acceptance, o.pd["Disaggregated Requests"])
+			if o.pd["disaggregated_requests"] != 24 {
+				t.Fatalf("%s pools, acceptance %s: %v of 24 requests disaggregated", dir, acceptance, o.pd["disaggregated_requests"])
 			}
 			return o.num("e2e_mean_ms")
 		}
@@ -616,8 +630,12 @@ const inferencePerfSpec = "version: \"2\"\nseed: 7\ninference_perf:\n  stages:\n
 // capSpecBody writes a workload spec from its full YAML body.
 func capSpecBody(t *testing.T, body string) string { return capFile(t, "spec.yaml", body) }
 
-// meanPrompt is the mean prompt length the run injected.
-func (o capOut) meanPrompt() float64 { return o.num("total_input_tokens") / o.num("injected_requests") }
+// meanPrompt is the mean prompt length over engine admissions: total_input_tokens counts a
+// prompt when an engine admits it, and a request the horizon caught before its engine
+// (still queued in the host's render pipeline, INV-1) has none counted.
+func (o capOut) meanPrompt() float64 {
+	return o.num("total_input_tokens") / o.num("engine_admissions")
+}
 
 // TestCapabilityMatrix_Workloads is section 5 of the PR: each workload source runs on the
 // kernel, conserves its requests, replays byte-identically where INV-13 applies, and shapes
@@ -733,8 +751,8 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		for _, closed := range []bool{true, false} {
 			args := runArgs(colocated(1), "--workload-spec", session(closed))
 			a, b := capRun(t, args...), capRun(t, args...)
-			if a.stdout != b.stdout {
-				t.Errorf("closed_loop %t: two runs at one seed differ (INV-6)", closed)
+			if withoutRuntime(t, a.stdout) != withoutRuntime(t, b.stdout) {
+				t.Errorf("closed_loop %t: two runs at one seed differ outside runtime (INV-6)", closed)
 			}
 			if a.num("completed_requests") < 6 || int(a.num("completed_requests"))%3 != 0 {
 				t.Errorf("closed_loop %t: %v requests completed; want whole 3-round sessions", closed, a.num("completed_requests"))
@@ -770,15 +788,7 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 
 	t.Run("prefix groups, tenants and goodput SLOs: each is honoured and replays", func(t *testing.T) {
 		t.Parallel()
-		hit := func(o capOut) float64 {
-			for _, line := range strings.Split(o.stdout, "\n") {
-				if v, ok := strings.CutPrefix(line, "Cache Hit Rate: "); ok {
-					f, _ := strconv.ParseFloat(v, 64)
-					return f
-				}
-			}
-			return 0 // printed only when nonzero
-		}
+		hit := func(o capOut) float64 { return resultNum(t, o.stdout, "engine.cluster.cache_hit_rate_whole_run") }
 		shared := capRunReplay(t, colocated(2), []string{"--workload-spec", capSpec(t, 4, 40,
 			capClient("a", "standard", 1, 1500, 64, "    prefix_group: g\n    prefix_length: 1200\n"))}, nil)
 		private := capRunReplay(t, colocated(2), []string{"--workload-spec", capSpec(t, 4, 40,
@@ -786,10 +796,13 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		if hit(shared) <= hit(private) {
 			t.Errorf("a 1200-token shared prefix gave cache hit rate %.3f, none gave %.3f", hit(shared), hit(private))
 		}
-		// tenants: the per-tenant section accounts for every request.
-		o := capRun(t, runArgs(colocated(2), "--workload-spec", tenantMix(t, "standard"))...)
+		// tenants: the per-tenant section of --view summary accounts for every request.
+		_, summary, err := runKernelCLI(t, append(runArgs(colocated(2), "--workload-spec", tenantMix(t, "standard")), "--view", "summary")...)
+		if err != nil {
+			t.Fatal(err)
+		}
 		total := 0
-		for _, line := range strings.Split(o.stdout, "\n") {
+		for _, line := range strings.Split(summary, "\n") {
 			if _, rest, ok := strings.Cut(line, ": requests="); ok {
 				n, _ := strconv.Atoi(strings.SplitN(rest, ",", 2)[0])
 				total += n
@@ -801,17 +814,15 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		// goodput: a TTFT target the run misses scores zero attainment, one it meets scores one.
 		attain := func(target string) float64 {
 			o := capRun(t, runArgs(colocated(2), "--workload-spec", classMix(t), "--slo-ttft", "critical="+target)...)
-			var cluster struct {
-				PerClass map[string]struct {
-					Attainment float64 `json:"slo_attainment"`
-				} `json:"per_class"`
+			g := parseResult(t, o.stdout).Goodput
+			if g == nil {
+				t.Fatal("a run with SLO targets reports no goodput")
 			}
-			for _, raw := range extractJSONObjects(o.stdout) {
-				if strings.Contains(raw, `"instance_id": "cluster"`) {
-					_ = json.Unmarshal([]byte(raw), &cluster)
-				}
+			c := g.PerClass["critical"]
+			if c.Completed == 0 {
+				return 0
 			}
-			return cluster.PerClass["critical"].Attainment
+			return float64(c.Met) / float64(c.Completed)
 		}
 		if tight, loose := attain("1ms"), attain("600s"); tight != 0 || loose != 1 {
 			t.Errorf("critical TTFT attainment %.2f at 1 ms and %.2f at 600 s; want 0 and 1", tight, loose)

@@ -43,7 +43,12 @@ type ClusterSimulator struct {
 	shedByTier        map[string]int // per-SLOClass shedding: admission rejections + flow-control rejections and expiries + in-flight evictions
 	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
-	injectedByClass  map[string]int64
+	injectedByClass map[string]int64
+	// arrivals counts the requests that arrived at the cluster (ClusterArrivalEvent passed the
+	// arrival gate), each once: a drain redirect re-arrives a request and is not counted again.
+	// It is observed independently of INV-1's terminal buckets, so generated == arrivals and
+	// injected == arrivals - rejected can be checked against their sum (#1871).
+	arrivals         int
 	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -1389,6 +1394,17 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	return c.aggregatedMetrics
 }
 
+// Arrivals returns the number of requests that arrived at the cluster, each counted once
+// (a drain redirect is not a new arrival). Every arrival is either rejected at admission
+// (RejectedRequests) or injected, and every injected request ends in one of INV-1's eleven
+// terminal buckets. Panics if called before Run() completes.
+func (c *ClusterSimulator) Arrivals() int {
+	if !c.hasRun {
+		panic("ClusterSimulator.Arrivals() called before Run()")
+	}
+	return c.arrivals
+}
+
 // RejectedRequests returns the count of requests an admission check of the embedded router
 // refused (an admitter plugin, or the legacy admission controller shedding a sheddable
 // request from a saturated pool) (EC-2).
@@ -1624,6 +1640,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		m := inst.Metrics()
 		merged.CompletedRequests += m.CompletedRequests
 		merged.TotalInputTokens += m.TotalInputTokens
+		merged.EngineAccepted += m.EngineAccepted
 		merged.TotalOutputTokens += m.TotalOutputTokens
 		merged.TTFTSum += m.TTFTSum
 		merged.ITLSum += m.ITLSum

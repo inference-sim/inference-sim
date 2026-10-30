@@ -1,19 +1,150 @@
 # Metrics & Results
 
-This guide covers how to read BLIS output — from the primary JSON metrics to anomaly counters, KV cache diagnostics, per-SLO breakdowns, fitness scores, and trace summaries.
+`blis run` and `blis replay` print one document to stdout and nothing else: a blis-schemas
+**Result** (`kind: Result`, schema reference: blis-schemas `docs/reference/result.md`). It is
+JSON by default; `--format yaml` prints the same document as YAML; `--output <file>` writes
+the same bytes to a file. The document is validated with blis-schemas' own validator before it
+is printed, and a document that does not validate is a fatal error naming the problem.
+Diagnostics go to stderr.
 
 ```bash
-# Quick example: run with all diagnostic output enabled
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
-  --num-instances 4 --rate 200 --num-requests 1000 \
-  --trace-level decisions --summarize-trace \
-  --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
+  --num-instances 4 --rate 200 --num-requests 1000 --output result.json
+
+# The same, for a person: the text sections, rendered to stderr from the Result.
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
+  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --num-instances 4 --rate 200 --num-requests 1000 --view summary
+
+# Read a metric
+jq '.metrics.ttft_p99_ms' result.json
 ```
 
-## Primary Metrics (JSON Output)
+## The Result document
 
-The JSON output on stdout (and in the `--metrics-path` file when set) contains:
+| Section | What it holds |
+|---|---|
+| `input` | The resolved `scenario` and `deployment`, the run controls under `run` (`load`, `num_requests`, `seed` (`--seed`, which seeds the engines and the router), `horizon_s` (for a replay, the horizon it ran to: `--horizon`, or 2x the trace's last arrival), `workload`: a catalog preset as `shape`, a replayed trace as `trace` pinned by sha256, an agentic replay as `replay`), and a `--policy-config` bundle verbatim under `policy`. |
+| `revisions` | The BLIS build, the blis-schemas, blis-latency-kernel and llm-d router releases it was built against, the engine model, and the catalog and registry git revisions (`-dirty` when the checkout has uncommitted content; `unknown` when it is not a git checkout). |
+| `metric_defs`, `metrics` | Standard-named metrics over the measured `window`, each defined in blis-schemas' measurement vocabulary on the `simulated` clock (below). |
+| `window` | The measured window: requests not in warm-up, first arrival to last completion (or a replay's explicit profiling window). A run in which no measured request completed states its zero rates over the simulated run (`simulation_start` to `simulation_end`). |
+| `requests` | INV-1's ledger: `generated`, `rejected`, `injected` and the eleven terminal buckets, plus `length_capped`. `generated` is the cluster's own arrival count, so blis-schemas' check that `injected` equals the sum of the buckets is not a restatement of a sum. |
+| `goodput` | With SLO targets: the targets, `goodput_rps`, `slo_attainment`, and per class `completed` and `met`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
+| `breakdowns` | `per_model`, `per_tenant`, `per_adapter` (the run's own metrics over each key's requests), `pd` (the prefill/decode split, in ms), `sessions`. |
+| `engine` | What the engines reported: under `cluster` the step-interval series, preemptions, KV figures, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
+| `router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness` (`score`, `components`, `weights`); with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
+| `kernel` | blis-latency-kernel's coefficient provenance per pool role. |
+| `saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
+| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that only select what is reported (`--output`, `--format`, `--view`, `--log`, output paths, `--detectors`, ...) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
+| `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
+| `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
+
+### Standard metrics
+
+| Name | Definition (`formula`) |
+|---|---|
+| `ttft_{mean,p50,p90,p95,p99}_ms` | arrival to first output token (`ttft`) |
+| `itl_{mean,p50,p90,p99}_ms` | per request `(latency - ttft) / (output_tokens - 1)`, per **token** (`tpot_excl_first`) |
+| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival to last streamed token (`e2el`) |
+| `interactivity_mean` | mean of `1000 / itl_ms` over requests (`user_tps`) |
+| `interactivity_p50`, `interactivity_p90` | `1000 / itl_p50_ms`, `1000 / itl_p90_ms` (`interactivity`) |
+| `output_tok_s` | output tokens over the window (`output_throughput`, `profiling_window`) |
+| `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy (`per_gpu`) |
+| `request_throughput` | completed requests over the window (`request_throughput`) |
+
+A latency family is stated only when it has a sample: a run that completed nothing states no
+latency rather than a zero. The ITL family needs a request with two or more output tokens;
+`interactivity_p50` and `interactivity_p90` additionally need that percentile of ITL to be
+positive (they are its reciprocal), and `interactivity_mean` needs a request with a positive
+ITL. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are numpy-linear.
+
+`itl_*` is always per token. Under speculative decoding one decode step emits several tokens, so
+the per-decode-step interval (the legacy `itl_*` keys of `MetricsOutput`) is longer by the
+accepted length; it is the engine's `step_interval_*`, never `itl_*`.
+
+### Where each `MetricsOutput` field went
+
+Every field of the JSON object run and replay printed before the Result has a home in the
+document, or is listed here as dropped with the reason.
+`TestResultFieldMap_EveryMetricsOutputFieldHasAHome` keeps this table complete.
+
+<!-- result-field-map -->
+| `MetricsOutput` field | Result home |
+|---|---|
+| `instance_id` | dropped: the document is the cluster's; in a run of more than one instance each instance's own figures are keyed by id under `engine.instances` |
+| `completed_requests` | `requests.completed` |
+| `still_queued` | `requests.still_queued` |
+| `still_running` | `requests.still_running` |
+| `injected_requests` | `requests.injected` |
+| `dropped_unservable` | `requests.dropped_unservable` |
+| `timed_out_requests` | `requests.timed_out` |
+| `length_capped_requests` | `requests.length_capped` |
+| `total_input_tokens` | `engine.cluster.total_input_tokens` |
+| `total_output_tokens` | `engine.cluster.total_output_tokens` |
+| `vllm_estimated_duration_s` | `engine.cluster.simulated_duration_s` |
+| `responses_per_sec` | `metrics.request_throughput` over the window; whole run `engine.cluster.whole_run.responses_per_sec` |
+| `tokens_per_sec` | `metrics.output_tok_s` over the window; whole run `engine.cluster.whole_run.tokens_per_sec` |
+| `ttft_mean_ms`, `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms` | `metrics.ttft_*_ms` over the window; whole run `engine.cluster.whole_run.ttft_*_ms` |
+| `e2e_mean_ms`, `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms` | `metrics.e2e_*_ms` over the window; whole run `engine.cluster.whole_run.e2e_*_ms` |
+| `itl_mean_ms`, `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms` | per decode step, so `engine.cluster.step_interval_*_ms` (window) and `engine.cluster.whole_run.step_interval_*_ms`; the Result's `itl_*_ms` is per token |
+| `scheduling_delay_p99_ms` | `engine.cluster.scheduling_delay_p99_ms` |
+| `kv_allocation_failures` | `engine.cluster.kv_allocation_failures` |
+| `preemption_count` | `engine.cluster.preemptions` |
+| `cache_hit_rate` | `engine.cluster.cache_hit_rate` (window); `engine.cluster.cache_hit_rate_whole_run` |
+| `requests` | `artifacts.metrics_file` (the deprecated file's per-request rows, by digest) |
+| `saturation` | `saturation.final` |
+| `goodput_rps`, `slo_attainment` | `goodput.goodput_rps`, `goodput.slo_attainment` |
+| `per_class` | `goodput.per_class` (`completed`, `met`); the per-class latency summaries are `--view summary`'s Per-SLO section |
+| `adapters` | `engine.cluster.adapters`, and `breakdowns.per_adapter` |
+| `catalog` | `revisions.catalog` (the revision, `-dirty` when uncommitted); the path is dropped: where a catalog sits is a fact of the host, not of the result |
+| `overrides` | `overrides` |
+| `agentic` | `engine.cluster.agentic` |
+| `pd` | `breakdowns.pd` |
+| `server_series` | `engine.cluster.server_series` |
+| `percentile_method` | each percentile's `metric_defs` entry (`percentile_method: numpy_linear`) |
+| `ttft_p50_ms`, `e2e_p50_ms` | `metrics.ttft_p50_ms`, `metrics.e2e_p50_ms` |
+| `request_itl_mean_ms`, `request_itl_p50_ms`, `request_itl_p90_ms`, `request_itl_p99_ms` | `metrics.itl_*_ms` |
+| `interactivity_p50`, `interactivity_p90` | `metrics.interactivity_p50`, `metrics.interactivity_p90` |
+| `output_tok_per_user_mean` | `metrics.interactivity_mean` |
+| `step_interval_mean_ms`, `step_interval_p90_ms`, `step_interval_p99_ms` | `engine.cluster.step_interval_*_ms` (with `p50`, `p95`) |
+| `output_throughput_tok_s` | `metrics.output_tok_s` |
+| `measured_window_s` | `window.duration_s` |
+| `measured_window_source` | `window.start` and `window.stop` (`first_arrival_after_warmup`/`last_completion` derived, `profiling_start`/`profiling_end` explicit) |
+| `measured_completed_requests` | `window.requests` |
+| `cancelled_requests`, `context_overflow_requests`, `failed_requests` | `engine.cluster.measured_cancelled_requests`, `..._context_overflow_requests`, `..._failed_requests` |
+| `cpu_tier_hit_rate` | `engine.cluster.cpu_tier_hit_rate` |
+| `gateway_queue_delay_mean_ms`, `gateway_queue_delay_p90_ms` | `engine.cluster.gateway_queue_delay_*_ms` |
+| `in_flight_requests_mean`, `in_flight_requests_max` | `engine.cluster.in_flight_requests_*` |
+| `kv_capacity_tokens_per_replica` | `engine.cluster.kv_capacity_tokens_per_replica` |
+| `whole_run` | `engine.cluster.whole_run` |
+| `kernel_provenance` | `kernel` |
+| `blis_version`, `kernel_version`, `schemas_version` | `revisions.blis`, `revisions.blis_latency_kernel`, `revisions.blis_schemas` |
+| `acceptance` | `engine.cluster.acceptance` |
+| `prefix_cache` | `engine.<pool role>.prefix_cache` |
+<!-- /result-field-map -->
+
+`input.run.num_requests` is the bound the run kept: `--num-requests` (or the spec's
+`num_requests`). When closed-loop session rounds generated more during the run (they are
+generated on top of the cap, and blis-schemas v0.9.1 states no separate follow-up count), it is
+raised to `requests.generated` and the cap as given is an `overrides` row, `num_requests_cap`;
+an uncapped run in which nothing arrived records 1, the smallest bound the
+schema accepts. A run in which nothing arrived and no `--horizon` bounded simulated time has no
+span to report over and is refused. `blis observe` (deprecated, #1901) is unchanged: it still prints the
+`=== Simulation Metrics ===` JSON.
+
+The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
+sessions, P/D, fitness, trace summary) are what `--view summary` renders to stderr.
+
+## Deprecated results files
+
+`--metrics-path` (run and replay) and `replay --results-path` keep the content documented below
+for one release and log a deprecation pointing at `--output`; the Result references each by
+digest under `artifacts`. They are then removed.
+
+### `--metrics-path` file (deprecated)
+
+The `--metrics-path` file contains:
 
 | Field | Unit | Description |
 |-------|------|-------------|
@@ -46,8 +177,8 @@ The JSON output on stdout (and in the `--metrics-path` file when set) contains:
 | `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
 | `timed_out_requests` | count | Requests that exceeded their deadline |
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
-| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag — **`--metrics-path` file only, never stdout** (see [Catalog Provenance](#catalog-provenance)) |
-| `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}` — **`--metrics-path` file only, never stdout**; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)) |
+| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag (see [Catalog Provenance](#catalog-provenance)); the Result records the revision under `revisions.catalog` |
+| `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}`; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)); the Result carries the same list under `overrides` |
 | `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file, the whole run's under `whole_run` — **file only** |
 | measured-window keys | — | `ttft_p50_ms`, `request_itl_*`, `interactivity_*`, `step_interval_*`, `output_throughput_tok_s`, … — **file only**; see [Measured-Window Aggregates](#measured-window-aggregates-metrics-path-file) |
 | `kernel_provenance` | object | Per-pool coefficient evidence, assumptions and skipped release rules — **file only**; see [Kernel Provenance](#kernel-provenance) |
@@ -64,7 +195,7 @@ percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
 | Field | Definition |
 |---|---|
 | `ttft_{mean,p50,p90,p95,p99}_ms` | arrival → first output token |
-| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival → last streamed token (aiperf's request latency; excludes the completion overhead stdout's E2E carries) |
+| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival → last streamed token (aiperf's request latency; excludes the completion overhead the whole-run E2E carries) |
 | `request_itl_{mean,p50,p90,p99}_ms` | per request `(latency − ttft) / (output_tokens − 1)`, requests with ≥ 2 output tokens: per **token** |
 | `interactivity_p50`, `interactivity_p90` | `1000 / request_itl_p50_ms`, `1000 / request_itl_p90_ms` (tokens/s/user) |
 | `output_tok_per_user_mean` | mean of `1000 / request_itl_ms` over requests with a non-zero ITL |
@@ -72,15 +203,15 @@ percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
 | `output_throughput_tok_s`, `measured_window_s`, `measured_window_source` | measured output tokens / window; `explicit` when the replay set the profiling window, `derived` (first measured arrival → last measured completion) otherwise |
 | `measured_completed_requests`, `cancelled_requests`, `context_overflow_requests`, `failed_requests` | counts in the window (INV-M1): cancelled = in flight when it closed or completed after its end; failed = timed out, dropped, rejected or shed |
 | `cpu_tier_hit_rate` | prompt tokens the CPU tier supplied / prompt tokens queried (measured admissions) |
-| `whole_run` | the whole-run `ttft_*`, `e2e_*` and `cache_hit_rate` stdout reports, for consumers of the old meaning (`blis calibrate`) |
+| `whole_run` | the whole-run `ttft_*`, `e2e_*` and `cache_hit_rate`, for consumers of the old meaning (`blis calibrate`) |
 | `gateway_queue_delay_{mean,p90}_ms` | flow-control queueing per measured request (0 without flow control) |
 | `in_flight_requests_{mean,max}` | engine-side in-flight requests (dispatched, not completed), time-weighted over the window |
 | `kv_capacity_tokens_per_replica` | GPU KV pool of the smallest instance, tokens |
 
-In the file, `ttft_*`, `e2e_*` and `cache_hit_rate` take these measured-window values; stdout
-keeps the whole-run figures (TTFT there also counts requests that emitted a first token but did
+In the file, `ttft_*`, `e2e_*` and `cache_hit_rate` take these measured-window values; the
+top-level whole-run keys keep the whole-run figures (TTFT there also counts requests that emitted a first token but did
 not complete), and the file repeats them under `whole_run`.
-The legacy `itl_*` keys are **unchanged on both channels** for backward compatibility — they
+The legacy `itl_*` keys are **unchanged** for backward compatibility — they
 remain per verification step under speculative decoding — and `completed_requests` stays the
 run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
 
@@ -151,7 +282,7 @@ In a prefill/decode deployment each pool runs its own engine's policy, so a run-
 is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill pool)"` or
 `"preemption_policy (decode pool)"`.
 
-A warning on stderr says the same. Like `catalog`, the block is file-only.
+A warning on stderr says the same. The Result carries the same list under `overrides`.
 
 ### Catalog Provenance
 
@@ -183,12 +314,10 @@ written by both `blis run --metrics-path` and `blis replay --metrics-path`:
   does not mark the run an experiment. `dirty` is always `false` alongside an unknown
   revision — there is no committed state to differ from.
 
-!!! note "File-only, by design"
-    Provenance appears **only** in the `--metrics-path` file, never on stdout. Catalog git
-    state legitimately differs between two otherwise identical runs, and stdout is the
-    byte-identical channel INV-6 protects. A run without `--metrics-path` never consults git
-    at all — and a results file written by a run whose catalog could not be resolved simply
-    omits the block.
+!!! note "In the Result"
+    The Result records the catalog's revision (and `-dirty`) under `revisions.catalog`: a
+    revision is an input of the run, so two runs on catalogs at different revisions are
+    different inputs (INV-6). It never records the path, a fact of the host.
 
 ### Saturation Detection
 
@@ -233,7 +362,7 @@ When the `requests` array is non-empty, each entry contains:
 
 ## Anomaly Counters
 
-When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
+When anomalies are detected, `--view summary` prints `=== Anomaly Counters ===`:
 
 | Counter | What It Means | Action |
 |---------|--------------|--------|
@@ -253,17 +382,12 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 Each counter is one INV-1 bucket; see [Admission Control](admission.md) for how router outcomes
 map onto them.
 
-!!! note "Stdout-only vs JSON counters"
-    **Dropped Unservable**, **Timed Out Requests**, and **Length-Capped Requests** also appear as fields in the `--metrics-path` JSON output (see [Primary Metrics](#primary-metrics-json-output): `dropped_unservable`, `timed_out_requests`, `length_capped_requests`).
-
-    All other counters in this table — including **Shed (tier)**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** — are **stdout-only** and do not appear in the JSON file.
-
-!!! note "blis replay anomaly block"
-    `blis replay` produces a subset of this output: **Timed Out Requests**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** are currently missing from the `blis replay` anomaly block even when non-zero (tracked in issue #1184).
+!!! note "Where the counters are in the Result"
+    Every INV-1 counter is in the Result's `requests` ledger; **Shed (tier)** is `router.shed_by_class`, and **Priority Inversions** and **HOL Blocking Events** are `router.priority_inversions` and `router.hol_blocking_events`. `blis run` and `blis replay` render this section from one shared path, so both print the same counters. Of these, the deprecated `--metrics-path` file carries only `dropped_unservable`, `timed_out_requests` and `length_capped_requests` (see [`--metrics-path` file](#-metrics-path-file-deprecated)).
 
 ## KV Cache Metrics
 
-When KV cache activity is nonzero, BLIS prints `=== KV Cache Metrics ===`:
+When KV cache activity is nonzero, `--view summary` prints `=== KV Cache Metrics ===`:
 
 | Metric | Meaning | Concern Threshold |
 |--------|---------|-------------------|
@@ -273,11 +397,11 @@ When KV cache activity is nonzero, BLIS prints `=== KV Cache Metrics ===`:
 
 ## Per-SLO-Class Metrics
 
-When multiple SLO classes are present in the workload, BLIS prints per-class TTFT and E2E distributions. This lets you verify that `critical` requests meet SLOs even when `batch` traffic is heavy.
+When multiple SLO classes are present in the workload, `--view summary` prints per-class TTFT and E2E distributions. This lets you verify that `critical` requests meet SLOs even when `batch` traffic is heavy.
 
 ## Per-Model Metrics
 
-When instances serve different models (multi-model deployment), BLIS prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:
+When instances serve different models (multi-model deployment), `--view summary` prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:
 
 ```
 === Per-Model Metrics ===
@@ -287,11 +411,11 @@ When instances serve different models (multi-model deployment), BLIS prints per-
     Throughput: 50.00 req/s, 6400.00 tok/s
 ```
 
-Per-model metrics appear on stdout only. The `--metrics-path` JSON file (see [Primary Metrics](#primary-metrics-json-output)) contains only the aggregate `MetricsOutput` fields. The same applies to per-tenant, session, and PD metrics — all are stdout-only sections.
+These sections are `--view summary`'s rendering, on stderr; the Result carries the same splits under `breakdowns` (`per_model`, `per_tenant`, `sessions`, `pd`).
 
 ## Per-Tenant Metrics
 
-When requests carry `tenant_id` labels, BLIS prints per-tenant request counts, total output tokens served, and a [Jain Fairness Index](https://en.wikipedia.org/wiki/Fairness_measure) over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).
+When requests carry `tenant_id` labels, `--view summary` prints per-tenant request counts, total output tokens served, and a [Jain Fairness Index](https://en.wikipedia.org/wiki/Fairness_measure) over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).
 
 ```
 === Per-Tenant Metrics ===
@@ -316,7 +440,7 @@ cohorts:
 
 ## Session Metrics
 
-When a workload contains multi-turn sessions (requests with `session_id`), BLIS prints a `=== Session Metrics ===` block:
+When a workload contains multi-turn sessions (requests with `session_id`), `--view summary` prints a `=== Session Metrics ===` block:
 
 | Line | What It Means |
 |------|--------------|
@@ -329,7 +453,7 @@ Cold vs. warm TTFT split reveals prefix cache effectiveness: if `TTFT warm` ≈ 
 
 ## PD Disaggregation Metrics
 
-When PD disaggregation is active (`--prefill-instances > 0`), BLIS prints a `=== PD Metrics ===` block:
+When PD disaggregation is active (`--prefill-instances > 0`), `--view summary` prints a `=== PD Metrics ===` block:
 
 | Field | What It Means |
 |-------|--------------|
@@ -350,6 +474,10 @@ For automated multi-configuration comparison:
 ```bash
 --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
 ```
+
+The score, its per-metric components and the weights are in the Result at `router.fitness`;
+`--view summary` also prints them on stderr. `--summarize-trace` (with `--trace-level decisions`)
+is likewise at `router.trace_summary`.
 
 Valid metric keys: `throughput`, `tokens_per_sec`, `p99_ttft`, `p50_ttft`, `mean_ttft`, `p99_e2e`, `p50_e2e`, `mean_e2e`.
 

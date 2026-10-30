@@ -77,7 +77,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("flag offload run: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if scen != flag {
+			if simulated(t, scen) != simulated(t, flag) {
 				t.Errorf("the scenario's offload block and the equivalent --kv-offload-config differ\n--- scenario\n%s\n--- flag\n%s", scen, flag)
 			}
 			hs, hf := readFile(t, filepath.Join(tmp, "scen.yaml")), readFile(t, filepath.Join(tmp, "flag.yaml"))
@@ -85,7 +85,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 				t.Errorf("trace headers differ or carry no kv_offload:\n--- scenario\n%s\n--- flag\n%s", hs, hf)
 			}
 			both, stderr, err := run(withBlock, filepath.Join(tmp, "both"), "--kv-offload-config", file)
-			if err != nil || both != scen {
+			if err != nil || simulated(t, both) != simulated(t, scen) {
 				t.Errorf("an agreeing flag beside the scenario block must change nothing: err=%v\n%s", err, lastLines(stderr, 3))
 			}
 			// The scenario cannot state blocks_per_chunk (no blis-schemas field), so a flag beside
@@ -98,11 +98,11 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if h := readFile(t, filepath.Join(tmp, "c4.yaml")); !strings.Contains(h, "blocks_per_chunk: 4") {
 				t.Errorf("the trace header does not record blocks_per_chunk 4:\n%s", h)
 			}
-			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || alone != c4 {
+			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || simulated(t, alone) != simulated(t, c4) {
 				t.Errorf("blocks_per_chunk 4 from the flag alone differs from the flag beside the scenario block: err=%v", err)
 			}
 			if rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "c4.yaml"),
-				"--trace-data", filepath.Join(tmp, "c4.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario, "--kv-offload-config", chunked)...); err != nil || rep != c4 {
+				"--trace-data", filepath.Join(tmp, "c4.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario, "--kv-offload-config", chunked)...); err != nil || inv13View(t, rep) != inv13View(t, c4) {
 				t.Errorf("the blocks_per_chunk 4 run's replay differs: err=%v\n%s", err, lastLines(stderr, 3))
 			}
 			if _, stderr, err := run(withBlock, filepath.Join(tmp, "bad"), "--kv-offload-config", other); err == nil ||
@@ -111,7 +111,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			}
 			rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "scen.yaml"),
 				"--trace-data", filepath.Join(tmp, "scen.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario)...)
-			if err != nil || rep != scen {
+			if err != nil || inv13View(t, rep) != inv13View(t, scen) {
 				t.Errorf("the scenario-offload run's replay differs: err=%v\n%s", err, lastLines(stderr, 3))
 			}
 			bigger := writeOffloadScenario(t, tc.src, tc.scenario, tc.marker, strings.Replace(tier, "bytes: 1099511627776", "bytes: 2199023255552", 1))
