@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -257,23 +256,18 @@ schedulingProfiles:
 	if err != nil {
 		t.Fatalf("replay with kernel topology: %v\n%s", err, lastLines(stderr, 8))
 	}
-	if replayed != boundary {
+	if inv13View(t, replayed) != inv13View(t, boundary) {
 		t.Errorf("kernel topology changed the run/replay output")
 	}
 }
 
 func transferMeanUs(t *testing.T, stdout string) float64 {
 	t.Helper()
-	const label = "KV Transfer Duration (us): mean="
-	at := strings.Index(stdout, label)
-	if at < 0 {
-		t.Fatal("no KV-transfer duration in output")
+	ms, ok := pdFigure(t, stdout, "kv_transfer_mean_ms")
+	if !ok {
+		t.Fatal("no KV-transfer duration in the Result")
 	}
-	var mean float64
-	if _, err := fmt.Sscanf(stdout[at+len(label):], "%f", &mean); err != nil {
-		t.Fatal(err)
-	}
-	return mean
+	return ms * 1e3
 }
 
 // Keep a copy of the pinned router fork's stock P/D topology config in
@@ -298,19 +292,15 @@ func TestScenarioRouter_UpstreamTopologySampleStarts(t *testing.T) {
 
 func instanceMetricInt(t *testing.T, stdout, id, field string) int {
 	t.Helper()
-	for _, raw := range extractJSONObjects(stdout) {
-		var obj map[string]any
-		if json.Unmarshal([]byte(raw), &obj) != nil || obj["instance_id"] != id {
-			continue
-		}
-		value, ok := obj[field].(float64)
-		if !ok {
-			t.Fatalf("%s metrics have no numeric %s", id, field)
-		}
-		return int(value)
+	inst, ok := instanceFigures(t, stdout)[id]
+	if !ok {
+		t.Fatalf("no %s figures in the Result", id)
 	}
-	t.Fatalf("no %s metrics object in output", id)
-	return 0
+	value, ok := inst[field].(float64)
+	if !ok {
+		t.Fatalf("%s metrics have no numeric %s", id, field)
+	}
+	return int(value)
 }
 
 // A router block naming a file that does not exist, or naming the configuration twice, is an
@@ -390,7 +380,7 @@ func TestReplay_ScenarioRouterContradictingTheHeaderFatal(t *testing.T) {
 		out, stderr, err := replay(tt.dir)
 		if err != nil {
 			t.Errorf("%s: replay refused: %v\n%s", tt.name, err, lastLines(stderr, 3))
-		} else if out != runOut {
+		} else if inv13View(t, out) != inv13View(t, runOut) {
 			t.Errorf("%s: INV-13: the replay differs from the run", tt.name)
 		}
 	}
@@ -486,7 +476,7 @@ func TestExampleRouterScenariosRun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v\n%s", err, lastLines(stderr, 5))
 			}
-			if pd && !strings.Contains(out, "Disaggregated Requests: 8") {
+			if got, _ := pdFigure(t, out, "disaggregated_requests"); pd && got != 8 {
 				t.Errorf("the P/D example did not disaggregate every request:\n%s", lastLines(out, 12))
 			}
 		})
@@ -580,7 +570,7 @@ metadata:
 	if err != nil {
 		t.Fatalf("zone topology replay: %v\n%s", err, lastLines(stderr, 12))
 	}
-	if replayed != out {
+	if inv13View(t, replayed) != inv13View(t, out) {
 		t.Error("declared zone topology changed run/replay output")
 	}
 }

@@ -179,6 +179,10 @@ type flight struct {
 // Seed is the seed the router runs with. It is valid once the router has started.
 func (g *Gateway) Seed() int64 { return g.rt.seed }
 
+// Requirements returns what the router's configuration requires of its host, as the router
+// reported it when it started (embed.Requirements); the zero value before Start.
+func (g *Gateway) Requirements() embed.Requirements { return g.req }
+
 // New builds an embedded router. The router itself is assembled in Start, when the instances
 // exist.
 func New(opts Options) *Gateway {

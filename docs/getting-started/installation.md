@@ -108,7 +108,7 @@ for details.
 from any directory. A `defaults.yaml` in the working directory, or `--defaults-filepath <file>`,
 takes precedence over the compiled-in copy.
 
-You should see JSON output on stdout containing fields like `ttft_mean_ms`, `e2e_mean_ms`, and `responses_per_sec`. This confirms BLIS is working correctly.
+You should see a Result document on stdout (`"kind": "Result"`) whose `metrics` include `ttft_mean_ms`, `e2e_mean_ms` and `request_throughput`. This confirms BLIS is working correctly.
 
 ## Optional: Local Documentation
 

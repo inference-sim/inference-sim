@@ -43,7 +43,7 @@ func TestINV13_RunReplayParity_SpecDecode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if replayOut != runOut {
+			if inv13View(t, replayOut) != inv13View(t, runOut) {
 				t.Errorf("INV-13: the replay of a drafting run differs from the run\n--- run\n%s\n--- replay\n%s",
 					runOut, replayOut)
 			}

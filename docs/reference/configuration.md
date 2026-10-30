@@ -123,10 +123,13 @@ Top-level settings that control the simulation run.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
+| `--seed` | int64 | 42 | Random seed for deterministic simulation. The same input at the same revisions produces a byte-identical `Result` outside `runtime` (INV-6). |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the file-only `cache_hit_rate`, `catalog`, measured-window aggregates (#1938), `kernel_provenance` (#1942) and build-version fields; see the results guide). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
+| `--format` | string | `json` | Encoding of the `Result` document on stdout and in `--output`: `json` or `yaml` (#1871). `run` and `replay`. |
+| `--output` | string | "" | File to write the `Result` document to: the same bytes stdout carries. `run` and `replay`. |
+| `--view` | string | "" | `summary` also renders the text sections (anomaly counters, KV cache, per-SLO, per-model, per-tenant, sessions, P/D, fitness, trace summary) to stderr, from the `Result`. `run` and `replay`. |
+| `--metrics-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the file-only `cache_hit_rate`, `catalog`, measured-window aggregates (#1938), `kernel_provenance` (#1942) and build-version fields; see the results guide). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -424,7 +427,7 @@ lora:
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-transfer-contention`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **Router** | the scenario's `router:` block and `pools[].labels`; `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--format`, `--output`, `--view`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 
@@ -487,7 +490,7 @@ Used when `--rate` is set instead of `--workload-spec`. Same flag names and defa
 
 ## blis replay
 
-Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields byte-identical stdout (INV-13).
+Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` (INV-13).
 
 ### Replay-Specific Flags
 
@@ -495,7 +498,7 @@ Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`)
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
+| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
 
 `blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
 [Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the

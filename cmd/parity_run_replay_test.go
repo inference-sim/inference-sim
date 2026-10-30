@@ -479,12 +479,12 @@ func TestParity_RunStdout_DeterministicAndEagerLazyIdentical(t *testing.T) {
 	if len(eager) == 0 {
 		t.Fatal("run produced empty stdout; test is vacuous")
 	}
-	// INV-6 (determinism): two lazy runs at the same seed match.
-	if !bytes.Equal(lazy, lazy2) {
-		t.Fatalf("lazy stdout non-deterministic across two runs at seed %d", seed)
+	// INV-6 (determinism): two lazy runs at the same seed match outside runtime.
+	if withoutRuntime(t, string(lazy)) != withoutRuntime(t, string(lazy2)) {
+		t.Fatalf("lazy Result non-deterministic outside runtime across two runs at seed %d", seed)
 	}
-	// eager ≡ lazy at the stdout level.
-	if !bytes.Equal(eager, lazy) {
+	// eager ≡ lazy at the Result level.
+	if withoutFlagRecord(t, string(eager)) != withoutFlagRecord(t, string(lazy)) {
 		t.Fatalf("stdout diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", eager, lazy)
 	}
 }

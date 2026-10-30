@@ -115,12 +115,10 @@ type MetricsOutput struct {
 	KVAllocationFailures int64   `json:"kv_allocation_failures,omitempty"`
 	PreemptionCount      int64   `json:"preemption_count"`
 	// CacheHitRate is the aggregate KV-cache hit rate (a fraction in [0,1]) at
-	// finalization (#1583). It is populated ONLY into the --metrics-path file (the
-	// file branch of EmitOutput), alongside the file-only Requests[] — never onto
-	// stdout, so a run's stdout stays byte-identical to a pre-feature build (INV-6,
-	// BC-9). A nil pointer (default) is dropped by omitempty; the human-readable rate
-	// is still printed to stdout via printKVCacheMetrics. `blis calibrate --sim-metrics`
-	// reads it as the simulator's hit-rate for the real-vs-sim comparison.
+	// finalization (#1583). It is populated only in the --metrics-path file
+	// (WriteMetricsFile), alongside Requests[]; the printed JSON (EmitOutput's stdout half,
+	// which blis observe uses) omits it. `blis calibrate --sim-metrics` reads it as the
+	// simulator's hit-rate for the real-vs-sim comparison.
 	CacheHitRate         *float64         `json:"cache_hit_rate,omitempty"`
 	DroppedUnservable    int              `json:"dropped_unservable"`
 	LengthCappedRequests int              `json:"length_capped_requests"`
@@ -173,8 +171,8 @@ type MetricsOutput struct {
 	ServerSeries *ServerSeriesOutput `json:"server_series,omitempty"`
 
 	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
-	// into the top level. File-only, like CacheHitRate: EmitOutput sets it in the
-	// --metrics-path branch, and the nil pointer drops every key from stdout (INV-6).
+	// into the top level. File-only, like CacheHitRate: WriteMetricsFile sets it, and the nil
+	// pointer drops every key from the printed JSON.
 	*MeasuredMetrics
 
 	// WholeRun keeps the whole-run values of the keys the file restates over the measured

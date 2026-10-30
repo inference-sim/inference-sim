@@ -15,7 +15,6 @@ package cmd
 // Every leg re-execs this test binary as a real `blis` command (runKernelCLI).
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -29,27 +28,15 @@ import (
 // from the trace, a difference orthogonal to DP that would otherwise truncate the replay.
 var dpParityHorizon = strconv.FormatInt(math.MaxInt64, 10)
 
-// clusterMetricInt returns one integer field of the "cluster" aggregate metrics
-// object in blis stdout. Used for non-vacuity checks (a parity assertion over two
-// empty runs passes trivially). Reuses extractJSONObjects from dp_placement_test.go.
+// clusterMetricInt is a whole-run cluster figure, by the name the MetricsOutput JSON gave it,
+// read from the Result document (clusterFigures maps each name onto its home).
 func clusterMetricInt(t *testing.T, stdout, field string) int {
 	t.Helper()
-	for _, raw := range extractJSONObjects(stdout) {
-		var obj map[string]interface{}
-		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-			continue
-		}
-		if obj["instance_id"] != "cluster" {
-			continue
-		}
-		v, ok := obj[field].(float64)
-		if !ok {
-			t.Fatalf("cluster metrics missing numeric field %q", field)
-		}
-		return int(v)
+	v, ok := clusterFigures(t, stdout)[field]
+	if !ok {
+		t.Fatalf("the Result has no cluster figure %q", field)
 	}
-	t.Fatalf("no cluster aggregate metrics object found in stdout:\n%s", stdout)
-	return 0
+	return int(v)
 }
 
 // dpExportTrace runs the dp=2 scenario over numInstances logical instances and exports its
@@ -92,9 +79,9 @@ func TestINV13_RunReplayParity_MoEDPPlacement(t *testing.T) {
 				t.Fatalf("activation: %d logical x dp 2 must run %d replicas, got %v", n, 2*n, ids)
 			}
 			replayOut := dpReplay(t, prefix+".yaml", prefix+".csv", n)
-			if replayOut != runOut {
+			if a, b := inv13View(t, runOut), inv13View(t, replayOut); a != b {
 				t.Errorf("INV-13: the replay of a dp=2 run's trace differs from the run\n--- run\n%s\n--- replay\n%s",
-					runOut, replayOut)
+					a, b)
 			}
 		})
 	}
@@ -130,7 +117,7 @@ func TestReplayCmd_MoEDPPlacement_SpawnsReplicas(t *testing.T) {
 			t.Errorf("BC-1: replay over %d logical x dp 2 must run %d replicas, got %v", n, 2*n, ids)
 		}
 		clusterConservationHolds(t, out, rows)
-		if again := dpReplay(t, header, data, n); again != out {
+		if again := dpReplay(t, header, data, n); withoutRuntime(t, again) != withoutRuntime(t, out) {
 			t.Errorf("INV-6: two identical dp=2 replays over %d logical instances differ", n)
 		}
 	}

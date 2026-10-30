@@ -217,3 +217,53 @@ func extraQueries(rows []genRow) int64 {
 	}
 	return q
 }
+
+// The measured aggregates are a function of the measured requests, not of their IDs: renaming
+// every request (a replay numbers them afresh) leaves every aggregate bit-for-bit equal, so a
+// run and the replay of its trace report the same figures (INV-13). A sum taken in ID order
+// would differ in the last place whenever the renaming reorders the requests.
+func TestBuildMeasured_RenamingRequestsChangesNothing(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		rows := drawRows(rt)
+		a, la := metricsOf(rows).buildMeasured()
+		renamed := metricsOf(rows)
+		perm := rapid.Permutation(func() []int {
+			out := make([]int, len(rows))
+			for i := range out {
+				out[i] = i
+			}
+			return out
+		}()).Draw(rt, "perm")
+		renamed = renameRequests(renamed, perm)
+		b, lb := renamed.buildMeasured()
+		if a != b || la != lb {
+			rt.Fatalf("renaming the requests changed the aggregates:\n%+v %+v\n%+v %+v", a, la, b, lb)
+		}
+	})
+}
+
+// renameRequests gives request req_i the ID req_perm[i] in every per-request map.
+func renameRequests(m *Metrics, perm []int) *Metrics {
+	out := NewMetrics()
+	*out = *m
+	out.Requests = map[string]RequestMetrics{}
+	out.RequestTTFTs = map[string]float64{}
+	out.RequestE2Es = map[string]float64{}
+	out.RequestCompletionTimes = map[string]float64{}
+	for i, to := range perm {
+		from, id := fmt.Sprintf("req_%d", i), fmt.Sprintf("req_%d", to)
+		rm := m.Requests[from]
+		rm.ID = id
+		out.Requests[id] = rm
+		if v, ok := m.RequestTTFTs[from]; ok {
+			out.RequestTTFTs[id] = v
+		}
+		if v, ok := m.RequestE2Es[from]; ok {
+			out.RequestE2Es[id] = v
+		}
+		if v, ok := m.RequestCompletionTimes[from]; ok {
+			out.RequestCompletionTimes[id] = v
+		}
+	}
+	return out
+}

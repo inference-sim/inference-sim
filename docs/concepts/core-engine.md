@@ -186,7 +186,7 @@ This is the fundamental accounting invariant that ensures no requests are silent
 
 ## Determinism
 
-BLIS guarantees deterministic output: the same seed produces byte-identical stdout across runs (INV-6).
+BLIS guarantees deterministic output: the same input at the same revisions produces a byte-identical `Result` document outside its `runtime` block (INV-6).
 
 Key mechanisms:
 - **Partitioned RNG:** Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others

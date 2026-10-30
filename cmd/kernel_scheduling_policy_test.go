@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -127,7 +126,7 @@ func TestRunCmd_PrioritySchedulingPolicyPreemptsTheLeastUrgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, lastLines(stderr, 3))
 	}
-	if !strings.Contains(out, `"preemption_count": `) || strings.Contains(out, `"preemption_count": 0,`) {
+	if clusterMetricInt(t, out, "preemption_count") <= 0 {
 		t.Fatalf("the fixture must preempt for the victim choice to matter:\n%s", lastLines(out, 40))
 	}
 	withPriority := meanE2EByClass(t, args...)
@@ -300,12 +299,12 @@ func TestRunCmd_AnOmittedPoolPolicyIsVLLMsDefaultNotTheOtherPools(t *testing.T) 
 		{"both omitted", "", "", "fcfs", "fcfs"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if stdout(tt.omittedP, tt.omittedD) != stdout(tt.statedP, tt.statedD) {
+			if simulated(t, stdout(tt.omittedP, tt.omittedD)) != simulated(t, stdout(tt.statedP, tt.statedD)) {
 				t.Errorf("omitting the field differs from stating vLLM's default fcfs")
 			}
 		})
 	}
-	if stdout("priority", "priority") == stdout("priority", "fcfs") {
+	if simulated(t, stdout("priority", "priority")) == simulated(t, stdout("priority", "fcfs")) {
 		t.Fatal("the decode pool's policy changes nothing here; the case does not distinguish an inherited policy")
 	}
 }

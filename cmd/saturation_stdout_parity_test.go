@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -70,26 +69,23 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 		return stdout.String()
 	}
 
-	// parseSaturation extracts the "saturation" field (nil if absent) from the
-	// "=== Simulation Metrics ===" JSON block on stdout.
+	// parseSaturation extracts the final labels (nil if absent) from the Result's saturation
+	// section on stdout.
 	parseSaturation := func(t *testing.T, stdout string) (map[string]string, bool) {
 		t.Helper()
-		const marker = "=== Simulation Metrics ==="
-		idx := bytes.Index([]byte(stdout), []byte(marker))
-		if idx < 0 {
-			t.Fatalf("stdout missing metrics marker:\n%s", stdout)
+		r := parseResult(t, stdout)
+		if r.Saturation == nil {
+			return nil, false
 		}
-		jsonStr := stdout[idx+len(marker):]
-		var parsed struct {
-			Saturation map[string]string `json:"saturation"`
+		final, ok := r.Saturation["final"].(map[string]any)
+		if !ok {
+			t.Fatalf("the Result's saturation has no final labels: %v", r.Saturation)
 		}
-		// The metrics block is the first JSON object after the marker; decode with a
-		// streaming decoder so any trailing session/goodput text is ignored.
-		dec := json.NewDecoder(bytes.NewReader([]byte(jsonStr)))
-		if err := dec.Decode(&parsed); err != nil {
-			t.Fatalf("decode metrics JSON: %v\n%s", err, jsonStr)
+		out := make(map[string]string, len(final))
+		for d, l := range final {
+			out[d] = l.(string)
 		}
-		return parsed.Saturation, parsed.Saturation != nil
+		return out, true
 	}
 
 	plain := runVariant("plain")
@@ -135,8 +131,8 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 		t.Errorf("--detectors all saturation should have exactly %d keys (one per roster entry), got %d (%v)", want, len(bankSat), bankSat)
 	}
 
-	// INV-6: two identical --detectors all runs produce byte-identical stdout.
-	if again := runVariant("bank"); again != bankStdout {
+	// INV-6: two identical --detectors all runs produce a byte-identical Result outside runtime.
+	if again := runVariant("bank"); withoutRuntime(t, again) != withoutRuntime(t, bankStdout) {
 		t.Errorf("INV-6 VIOLATION: two identical --detectors all runs differ.\n--- run 1 ---\n%s\n--- run 2 ---\n%s", bankStdout, again)
 	}
 }

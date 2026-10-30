@@ -89,7 +89,7 @@ func TestBlisBinary_UsesItsEmbeddedDefaults(t *testing.T) {
 		t.Fatal("the working directory has a defaults.yaml; the case would not exercise the bundled copy")
 	}
 	out, stderr, err := run()
-	if err != nil || !strings.Contains(out, `"completed_requests": 4`) {
+	if err != nil || !completedIs(out, 4) {
 		t.Fatalf("a run with no defaults file did not complete: %v\n%s", err, lastLines(stderr, 3))
 	}
 	if !strings.Contains(stderr, "using the defaults compiled into blis") {

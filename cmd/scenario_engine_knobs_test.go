@@ -45,13 +45,13 @@ func TestRunCmd_ScenarioEngineKnobsAreTheSourceAndFlagsOnlyRestate(t *testing.T)
 			if err != nil {
 				t.Fatalf("flag run: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if fromScenario != fromFlag {
+			if simulated(t, fromScenario) != simulated(t, fromFlag) {
 				t.Errorf("the scenario's %s and the equivalent %s differ", tc.name, tc.flag)
 			}
-			if plain, _, _ := run(unstated); plain == fromScenario {
+			if plain, _, _ := run(unstated); simulated(t, plain) == simulated(t, fromScenario) {
 				t.Errorf("non-vacuous: %s %s changed nothing on this fixture", tc.name, tc.value)
 			}
-			if both, stderr, err := run(stated, tc.flag, tc.value); err != nil || both != fromScenario {
+			if both, stderr, err := run(stated, tc.flag, tc.value); err != nil || simulated(t, both) != simulated(t, fromScenario) {
 				t.Errorf("an agreeing %s must change nothing: %v\n%s", tc.flag, err, lastLines(stderr, 3))
 			}
 			_, stderr, err = run(stated, tc.flag, tc.other)
@@ -108,14 +108,14 @@ func TestRunCmd_PDPoolsRunTheirOwnLongPrefillThreshold(t *testing.T) {
 	}
 	unstated := must(run(pdKnobVariant(t, "", "", "", "")))
 	prefillOnly := must(run(pdKnobVariant(t, threshold, "", "", "")))
-	if prefillOnly == unstated {
+	if simulated(t, prefillOnly) == simulated(t, unstated) {
 		t.Fatal("non-vacuous: a 256-token prefill threshold changed nothing on concurrent 16000-token prompts")
 	}
-	if decodeOnly := must(run(pdKnobVariant(t, "", threshold, "", ""))); decodeOnly != unstated {
+	if decodeOnly := must(run(pdKnobVariant(t, "", threshold, "", ""))); simulated(t, decodeOnly) != simulated(t, unstated) {
 		t.Error("a threshold stated on the decode pool alone changed the prefills")
 	}
 	differing := pdKnobVariant(t, threshold, "      long_prefill_token_threshold: 512\n", "", "")
-	if out := must(run(differing)); out != prefillOnly {
+	if out := must(run(differing)); simulated(t, out) != simulated(t, prefillOnly) {
 		t.Error("the prefill pool's 256 must decide the prefills whatever the decode pool states")
 	}
 }

@@ -62,10 +62,10 @@ func TestReplayAgentX_ScenarioOffloadBlockIsTheTiers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("agentic replay with --kv-offload-config: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if fromBlock != fromFlag {
-				t.Error("the scenario's offload block and the equivalent --kv-offload-config differ")
+			if a, b := simulated(t, fromBlock), simulated(t, fromFlag); a != b {
+				t.Errorf("the scenario's offload block and the equivalent --kv-offload-config differ\n%s", firstDiff(a, b))
 			}
-			if both, stderr, err := run(withBlock, "--kv-offload-config", file); err != nil || both != fromBlock {
+			if both, stderr, err := run(withBlock, "--kv-offload-config", file); err != nil || simulated(t, both) != simulated(t, fromBlock) {
 				t.Errorf("an agreeing flag beside the block must change nothing: %v\n%s", err, lastLines(stderr, 3))
 			}
 			if _, stderr, err := run(withBlock, "--kv-offload-config", other); err == nil ||

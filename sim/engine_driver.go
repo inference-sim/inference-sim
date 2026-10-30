@@ -185,6 +185,25 @@ func (d *EngineDriver) schedule(ev DriverEvent) {
 	heap.Push(&d.eventQueue, eventEntry{event: &driverShim{ev: ev, d: d}, seqID: d.seqCounter})
 }
 
+// inPipeline counts the requests whose arrival or render is still a queued event: accepted by
+// the host and not yet handed to the engine, and not timed out (a timeout is its own bucket).
+func (d *EngineDriver) inPipeline() int {
+	n := 0
+	for _, e := range d.eventQueue {
+		var req *Request
+		switch ev := e.event.(*driverShim).ev.(type) {
+		case *driverArrivalEvent:
+			req = ev.req
+		case *driverQueuedEvent:
+			req = ev.req
+		}
+		if req != nil && req.State != StateTimedOut {
+			n++
+		}
+	}
+	return n
+}
+
 // HasPendingEvents reports whether an event is queued.
 func (d *EngineDriver) HasPendingEvents() bool { return len(d.eventQueue) > 0 }
 
@@ -234,7 +253,9 @@ func (d *EngineDriver) Run() {
 	d.Finalize()
 }
 
-// Finalize records end-of-run state.
+// Finalize records end-of-run state. A request the host accepted that the horizon caught in the
+// pipeline before the engine -- its arrival or its render still an event -- is waiting too: it is
+// in the host's records and in no other INV-1 bucket.
 func (d *EngineDriver) Finalize() {
 	waiting, running := 0, 0
 	for _, r := range d.reqs {
@@ -244,6 +265,7 @@ func (d *EngineDriver) Finalize() {
 			waiting++
 		}
 	}
+	waiting += d.inPipeline()
 	d.Metrics.StillQueued = waiting
 	d.Metrics.StillRunning = running
 	if q, ok := d.eng.(interface {
@@ -368,6 +390,7 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 		return
 	}
 	d.Metrics.TotalInputTokens += len(req.InputTokens)
+	d.Metrics.EngineAccepted++
 	req.State = StateQueued
 	d.reqs[req.ID] = &driverReq{req: req}
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {

@@ -804,8 +804,9 @@ type completionEvent struct {
 	wallClock int64 // wall-clock microseconds at completion
 }
 
-// printObserveMetrics prints the observe latency summary in the same JSON format
-// as blis run and blis replay (=== Simulation Metrics === header + JSON body).
+// printObserveMetrics prints the observe latency summary as the "=== Simulation Metrics ==="
+// header and a MetricsOutput JSON body, the format blis run and blis replay printed before they
+// emitted the Result document (#1871); observe is deprecated (#1901) and keeps it.
 // Always emits the header even when no valid records exist (BC-5).
 // saturationResult is optional (can be nil); when provided, it's populated in output.Saturation field.
 // goodputTargets is optional; when non-empty, emits goodput_rps/slo_attainment/per_class fields

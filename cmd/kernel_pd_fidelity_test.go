@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,14 +21,15 @@ var pdTopology = []string{"--scenarios", pdScenarios, "--scenario", "glm-5-h200-
 var pdBurst = append(append([]string(nil), pdTopology...), "--num-requests", "40", "--rate", "500", "--prompt-tokens", "2000", "--prompt-tokens-stdev", "0",
 	"--prompt-tokens-min", "2000", "--prompt-tokens-max", "2000", "--output-tokens", "20")
 
-// pdLine returns stdout's line beginning with prefix, or "".
-func pdLine(stdout, prefix string) string {
-	for _, l := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(l), prefix) {
-			return strings.TrimSpace(l)
-		}
+// pdFigure is a value of the Result's breakdowns.pd, and whether the run reports it.
+func pdFigure(t *testing.T, stdout, name string) (float64, bool) {
+	t.Helper()
+	b := parseResult(t, stdout).Breakdowns
+	if b == nil {
+		return 0, false
 	}
-	return ""
+	v, ok := b.PD[name]
+	return v, ok
 }
 
 // With contention on, overlapping handoffs queue on the shared NICs: the run reports a
@@ -45,19 +45,21 @@ func TestRunCmd_KernelBackend_PDTransferContention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if strings.Contains(off, "Queueing Delay") || strings.Contains(off, "Peak Concurrent") {
-		t.Errorf("without contention the PD section must not report link sharing:\n%s", off)
+	for name := range parseResult(t, off).Breakdowns.PD {
+		if strings.HasPrefix(name, "kv_transfer_queue_delay") || strings.HasPrefix(name, "link_peak_concurrent_transfers") {
+			t.Errorf("without contention the P/D breakdown must not report link sharing: %s", name)
+		}
 	}
-	delay := pdLine(on, "KV Transfer Queueing Delay")
-	if delay == "" || strings.Contains(delay, "mean=0.0 ") {
-		t.Errorf("overlapping handoffs report no queueing delay: %q", delay)
+	if delay, ok := pdFigure(t, on, "kv_transfer_queue_delay_mean_ms"); !ok || delay <= 0 {
+		t.Errorf("overlapping handoffs report no queueing delay: %v (reported %t)", delay, ok)
 	}
-	if !strings.Contains(on, "Peak Concurrent Transfers (nic/ingress/node/3): ") ||
-		strings.Contains(on, "Peak Concurrent Transfers (nic/ingress/node/3): 1\n") {
-		t.Errorf("the decode node's ingress must carry overlapping handoffs:\n%s", on)
+	if peak, ok := pdFigure(t, on, "link_peak_concurrent_transfers_nic-ingress-node-3"); !ok || peak <= 1 {
+		t.Errorf("the decode node's ingress must carry overlapping handoffs: peak %v (reported %t)", peak, ok)
 	}
-	if pdLine(on, "KV Transfer Duration") == pdLine(off, "KV Transfer Duration") {
-		t.Errorf("contention left every handoff duration unchanged: %q", pdLine(on, "KV Transfer Duration"))
+	onMean, _ := pdFigure(t, on, "kv_transfer_mean_ms")
+	offMean, _ := pdFigure(t, off, "kv_transfer_mean_ms")
+	if onMean == offMean {
+		t.Errorf("contention left every handoff duration unchanged: mean %v ms", onMean)
 	}
 	clusterConservationHolds(t, on, 40)
 
@@ -66,21 +68,21 @@ func TestRunCmd_KernelBackend_PDTransferContention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if rep != on {
+	if inv13View(t, rep) != inv13View(t, on) {
 		t.Errorf("the contended run's replay differs\n--- run\n%s\n--- replay\n%s", on, rep)
 	}
 }
 
 // Every NIXL handoff holds the prefill KV until the pull completes: a kernel P/D run reports
-// the hold's peak, and the results file carries the pd block with the keys the campaign
-// adapter reads.
+// the hold's peak, the deprecated results file still carries the pd block with the keys the
+// campaign adapter reads, and its values are the Result's breakdowns.pd.
 func TestRunCmd_KernelBackend_PDResultsFileBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "m.json")
 	out, stderr, err := runKernelCLI(t, append([]string{"run", "--pd-transfer-contention", "--metrics-path", path}, pdBurst...)...)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if pdLine(out, "Prefill KV Hold Peak (tokens):") == "" {
+	if _, ok := pdFigure(t, out, "prefill_kv_hold_peak_tokens"); !ok {
 		t.Errorf("a NIXL P/D run must report its prefill KV hold:\n%s", out)
 	}
 	raw, err := os.ReadFile(path)
@@ -112,18 +114,15 @@ func TestRunCmd_KernelBackend_PDResultsFileBlock(t *testing.T) {
 	if got.Transfers != 40 {
 		t.Errorf("pd.transfers = %d, want 40", got.Transfers)
 	}
-	// The file's values are stdout's PD section in milliseconds.
-	if want := fmt.Sprintf("p50=%.1f", got.P50*1e3); !strings.Contains(pdLine(out, "KV Transfer Duration"), want) {
-		t.Errorf("pd.transfer_time_p50_ms %v disagrees with stdout %q", got.P50, pdLine(out, "KV Transfer Duration"))
+	// The file's values are the Result's breakdowns.pd.
+	if v, _ := pdFigure(t, out, "kv_transfer_p50_ms"); v != got.P50 {
+		t.Errorf("pd.transfer_time_p50_ms %v disagrees with the Result's kv_transfer_p50_ms %v", got.P50, v)
 	}
-	if want := fmt.Sprintf("p90=%.1f", got.DelayP90*1e3); got.DelayP90 <= 0 || !strings.Contains(pdLine(out, "KV Transfer Queueing Delay"), want) {
-		t.Errorf("pd.transfer_queue_delay_p90_ms %v: want > 0 and equal to stdout %q", got.DelayP90, pdLine(out, "KV Transfer Queueing Delay"))
+	if v, _ := pdFigure(t, out, "kv_transfer_queue_delay_p90_ms"); got.DelayP90 <= 0 || v != got.DelayP90 {
+		t.Errorf("pd.transfer_queue_delay_p90_ms %v: want > 0 and equal to the Result's %v", got.DelayP90, v)
 	}
-	if want := fmt.Sprintf("Prefill KV Hold Peak (tokens): %d", got.Hold); got.Hold <= 0 || pdLine(out, "Prefill KV Hold Peak") != want {
-		t.Errorf("pd.prefill_kv_hold_peak_tokens %d: want > 0 and equal to stdout %q", got.Hold, pdLine(out, "Prefill KV Hold Peak"))
-	}
-	if strings.Contains(out, `"pd"`) {
-		t.Errorf("the pd block is file-only; stdout must not carry it")
+	if v, _ := pdFigure(t, out, "prefill_kv_hold_peak_tokens"); got.Hold <= 0 || int64(v) != got.Hold {
+		t.Errorf("pd.prefill_kv_hold_peak_tokens %d: want > 0 and equal to the Result's %v", got.Hold, v)
 	}
 }
 
@@ -146,7 +145,7 @@ func TestRunCmd_KernelBackend_PDWithOffloadTiers(t *testing.T) {
 			t.Fatalf("run %v: %v\n%s", extra, err, lastLines(stderr, 3))
 		}
 		clusterConservationHolds(t, out, 30)
-		if !strings.Contains(out, "Disaggregated Requests: 30") {
+		if n, _ := pdFigure(t, out, "disaggregated_requests"); n != 30 {
 			t.Errorf("run %v: not every request was disaggregated:\n%s", extra, out)
 		}
 		if !strings.Contains(stderr, "simulated as NixlConnector listed before OffloadingConnector") {
@@ -157,7 +156,7 @@ func TestRunCmd_KernelBackend_PDWithOffloadTiers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("replay %v: %v\n%s", extra, err, lastLines(stderr, 3))
 		}
-		if rep != out {
+		if inv13View(t, rep) != inv13View(t, out) {
 			t.Errorf("the offloaded P/D run's replay differs (%v)\n--- run\n%s\n--- replay\n%s", extra, out, rep)
 		}
 	}

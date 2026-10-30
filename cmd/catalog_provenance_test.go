@@ -268,11 +268,10 @@ func TestCatalogProvenanceEmitOptions_FileOnly(t *testing.T) {
 }
 
 // TestCatalogProvenance_EveryFileEmitSitePassesProvenance is the R23 drift guard for
-// INV-13: every production EmitOutput call in cmd/ must route through
-// resultsFileEmitOptions, so a new emit site cannot silently produce a results file
-// with no provenance while its sibling command records one. (The per-instance
-// stdout-only path goes through SaveResults, which writes no file and is not an
-// EmitOutput site.)
+// INV-13: every production call in cmd/ that writes the --metrics-path file (WriteMetricsFile,
+// and EmitOutput, which also prints) must route through resultsFileEmitOptions, so a new
+// site cannot silently produce a results file with no provenance while its sibling command
+// records one. run and replay write the file from one shared site (emitRunResult, #1871).
 func TestCatalogProvenance_EveryFileEmitSitePassesProvenance(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -287,20 +286,20 @@ func TestCatalogProvenance_EveryFileEmitSitePassesProvenance(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("read %s: %v", file, readErr)
 		}
-		for _, call := range emitOutputCallArgs(string(src)) {
+		for _, call := range append(emitOutputCallArgs(string(src), ".EmitOutput("),
+			emitOutputCallArgs(string(src), ".WriteMetricsFile(")...) {
 			sites++
 			if !strings.Contains(call.args, "resultsFileEmitOptions") {
-				t.Errorf("%s:%d: EmitOutput call must pass resultsFileEmitOptions(...) "+
+				t.Errorf("%s:%d: a results-file call must pass resultsFileEmitOptions(...) "+
 					"so its results file records catalog provenance (#1732, INV-13):\n\t%s",
 					file, call.line, strings.Join(strings.Fields(call.args), " "))
 			}
 		}
 	}
-	// Non-vacuity: the two known emit sites (run + replay) must be found, otherwise the
-	// scan is looking at nothing and would pass after a rename.
-	if sites < 2 {
-		t.Fatalf("non-vacuity: expected at least the `blis run` and `blis replay` EmitOutput "+
-			"sites, found %d", sites)
+	// Non-vacuity: the shared run/replay file site must be found, otherwise the scan is
+	// looking at nothing and would pass after a rename.
+	if sites < 1 {
+		t.Fatalf("non-vacuity: expected the shared run/replay results-file site, found %d", sites)
 	}
 }
 
@@ -314,8 +313,7 @@ type emitOutputCall struct {
 // emitOutputCallArgs extracts every `.EmitOutput(...)` call's argument text from Go source
 // by matching parentheses, so a call broken across lines is examined as one unit (a
 // line-wise grep would miss an option passed on a continuation line).
-func emitOutputCallArgs(src string) []emitOutputCall {
-	const marker = ".EmitOutput("
+func emitOutputCallArgs(src, marker string) []emitOutputCall {
 	var calls []emitOutputCall
 	for offset := 0; ; {
 		idx := strings.Index(src[offset:], marker)

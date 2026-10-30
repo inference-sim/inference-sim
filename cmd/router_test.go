@@ -334,7 +334,7 @@ func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
 	if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
 		t.Fatalf("parity check would be vacuous: the run completed %d requests", completed)
 	}
-	if !strings.Contains(runOut, "Gateway Queue Rejected:") {
+	if parseResult(t, runOut).Requests.GatewayQueueRejected == 0 {
 		t.Errorf("the bounded flow-control queue never rejected; the router inputs may not have taken effect\n%s", runOut)
 	}
 	header, err := os.ReadFile(prefix + ".yaml")
@@ -353,7 +353,7 @@ func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
@@ -377,7 +377,7 @@ func TestINV13_RunReplayParity_PrefixSharingWorkload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 	// Non-vacuity: on this workload the default router's placement depends on prompt content
@@ -420,7 +420,7 @@ func TestINV13_RunReplayParity_PrecisePrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
@@ -445,7 +445,7 @@ func TestINV13_RunReplayParity_RequestTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
@@ -463,7 +463,7 @@ func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
-	if !strings.Contains(runOut, "Gateway Evicted (in-flight): ") {
+	if parseResult(t, runOut).Requests.GatewayEvicted == 0 {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
 	}
 	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
@@ -471,7 +471,7 @@ func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }
@@ -517,7 +517,7 @@ func TestINV13_RunReplayParity_InFlightEvictionDisaggregated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
-	if !strings.Contains(runOut, "Gateway Evicted (in-flight): ") {
+	if parseResult(t, runOut).Requests.GatewayEvicted == 0 {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
 	}
 	header := readFile(t, prefix+".yaml")
@@ -530,7 +530,7 @@ func TestINV13_RunReplayParity_InFlightEvictionDisaggregated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if replayOut != runOut {
+	if inv13View(t, replayOut) != inv13View(t, runOut) {
 		t.Errorf("INV-13: the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, replayOut)
 	}
 }

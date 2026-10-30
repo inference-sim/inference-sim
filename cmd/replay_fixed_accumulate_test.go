@@ -10,7 +10,6 @@ package cmd
 // NOTE: these tests mutate package-level CLI vars and MUST NOT use t.Parallel().
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -136,25 +135,26 @@ func TestReplayFixedAccumulate_EndToEnd(t *testing.T) {
 	if len(s) == 0 {
 		t.Fatal("expected non-empty stdout")
 	}
-	// The aggregate metrics JSON reports completed requests; all 5 rounds should complete.
-	if !strings.Contains(s, "\"completed_requests\": 5") && !strings.Contains(s, "\"completed_requests\":5") {
-		t.Errorf("expected 5 completed_requests in output (all rounds), got:\n%s", s)
+	// The Result's ledger reports completed requests; all 5 rounds should complete.
+	q := parseResult(t, s).Requests
+	if q.Completed != 5 {
+		t.Errorf("expected 5 completed requests (all rounds), got %d:\n%s", q.Completed, s)
 	}
 	// INV-1 conservation companion: all 5 rounds injected, and all 5 completed
 	// (nothing queued/dropped) — the corpus arrivals span 2s, well within the horizon.
-	if !strings.Contains(s, "\"injected_requests\": 5") && !strings.Contains(s, "\"injected_requests\":5") {
-		t.Errorf("expected 5 injected_requests (INV-1 conservation), got:\n%s", s)
+	if q.Injected != 5 {
+		t.Errorf("expected 5 injected requests (INV-1 conservation), got %d", q.Injected)
 	}
 }
 
 // TestReplayFixedAccumulate_Deterministic (BC-4, INV-6): two fixed-accumulate replays at
-// the same seed produce byte-identical stdout.
+// the same seed produce a byte-identical Result outside runtime.
 func TestReplayFixedAccumulate_Deterministic(t *testing.T) {
 	headerPath, dataPath := writeAccumulateCorpus(t)
 	a := runFixedAccumulateReplay(t, headerPath, dataPath, 777)
 	b := runFixedAccumulateReplay(t, headerPath, dataPath, 777)
-	if !bytes.Equal(a, b) {
-		t.Fatalf("fixed-accumulate stdout non-deterministic across runs\nRUN A:\n%s\nRUN B:\n%s", a, b)
+	if withoutRuntimeOrArtifactPaths(t, string(a)) != withoutRuntimeOrArtifactPaths(t, string(b)) {
+		t.Fatalf("fixed-accumulate Result non-deterministic outside runtime across runs\nRUN A:\n%s\nRUN B:\n%s", a, b)
 	}
 	if len(a) == 0 {
 		t.Fatal("stdout is empty; determinism test must produce output to be meaningful")
