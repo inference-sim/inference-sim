@@ -225,12 +225,12 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 // kv_cache_utils.py:2289; vllm/v1/engine/core.py:339@5df63a72), whose KV tensor is the shared
 // block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2664-2675).
 func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
-	b, err := m.KVBudget()
+	runs, err := m.KVLayers()
 	if err != nil {
 		return 0, err
 	}
-	runs, err := m.KVLayers()
-	if err != nil || len(runs) == 0 {
+	if len(runs) == 0 {
+		b, err := m.KVBudget()
 		return b.PerBlockBytes, err
 	}
 	p, err := stagePoolsOf(m, runs)
@@ -287,7 +287,9 @@ type stagePools struct {
 // every KV layer (KVLayerPageBytes), window layers included, not from SequenceVariableBytes,
 // which is only the share that grows with context.
 func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePools, error) {
-	b, err := m.KVBudget()
+	// KVBudget's memory half: the pool is cut from the groups' pages below, so a model whose every
+	// layer is bounded, whose growing-context page is zero, is still sized (KVMemory).
+	b, err := m.KVMemory()
 	if err != nil {
 		return stagePools{}, err
 	}

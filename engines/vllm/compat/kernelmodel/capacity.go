@@ -95,60 +95,30 @@ func (m *Model) KVBudget() (KVBudget, error) { return m.KVBudgetReserving(0) }
 // sharded like weights, so each GPU gives up reservedBytes / tp of the budget the kernel's
 // per-GPU occupancy figures are measured against.
 func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
-	if reservedBytes < 0 {
-		return KVBudget{}, fmt.Errorf("kernelmodel: reserved bytes must be >= 0, got %d", reservedBytes)
-	}
-	// From the kernel, which resolved this pool. Reading the Deployment document instead
-	// would mean holding it alongside and indexing back in -- a second answer to "which
-	// pool is this", which can disagree with the one the pricing used.
-	e := m.engine
-	util := e.GPUMemoryUtilization
-	if util <= 0 || util > 1 {
-		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: gpu_memory_utilization must be in (0, 1], got %v", util)
-	}
-	blockSize := e.BlockSize
-	if blockSize <= 0 {
-		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: block_size must be > 0, got %d", blockSize)
-	}
+	return m.kvBudget(reservedBytes, false)
+}
 
-	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
-	budget := int64(float64(deviceBytes) * util)
-	fixed := m.k.FixedBytes().Total()
-
-	// A per-rank figure above the device's own memory cannot be per-rank, and dividing a
-	// budget by it would produce a capacity number that looks plausible and is not. See
-	// the guard note below for what it catches and why it refuses rather than
-	// compensates.
-	if fixed >= deviceBytes {
-		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: the kernel reports %.1f GiB of per-rank fixed occupancy on a "+
-				"%.1f GiB device (%s, tp=%d, expert-parallel width %d). A per-rank figure "+
-				"cannot exceed the part, so a sharding term in the kernel's memory path "+
-				"is wrong. No budget is guessed: one divided out of an impossible "+
-				"occupancy would look plausible and set the wrong resident batch",
-			float64(fixed)/float64(gibToBytes),
-			float64(deviceBytes)/float64(gibToBytes),
-			m.id.model, m.k.Resolved().TensorParallel(),
-			m.k.Resolved().ExpertParallel())
+// kvBudget is KVBudgetReserving. grouped is set for an engine that cuts its pool into the model's
+// KV cache groups (SettingsCheckedByGroups): there a model whose every layer is bounded -- whose
+// growing-context page is zero -- still has pool blocks, each one block of every KV layer
+// (KVLayerPageBytes, window rings included), which is the page vLLM's pool of one such group is
+// cut from (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72).
+// The engine sizes the pool itself, over every group (vllmengine poolBlocks); this is the
+// simulator's figure for it.
+func (m *Model) kvBudget(reservedBytes int64, grouped bool) (KVBudget, error) {
+	mem, err := m.kvMemory(reservedBytes)
+	if err != nil {
+		return KVBudget{}, err
 	}
-
-	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
-	if allocatable <= 0 {
-		// vLLM's start-up refusal when nothing is left for the cache
-		// (_check_enough_kv_cache_memory, vllm/v1/core/kv_cache_utils.py:904-913 at v0.31.0).
-		return KVBudget{}, fmt.Errorf(
-			"kernelmodel: No available memory for the cache blocks. Try increasing "+
-				"`gpu_memory_utilization` when initializing the engine (no room for KV: a %.1f GiB "+
-				"device at utilization %.2f gives a %.1f GiB budget against %.1f GiB of fixed "+
-				"occupancy per rank)",
-			float64(deviceBytes)/float64(gibToBytes), util,
-			float64(budget)/float64(gibToBytes), float64(fixed)/float64(gibToBytes))
-	}
+	blockSize, allocatable := m.engine.BlockSize, mem.AllocatableBytes
 
 	// One page of KV for one sequence, as the kernel prices it. Page-quantized already.
 	perBlock := m.k.SequenceVariableBytes(blockSize)
+	if perBlock <= 0 && grouped {
+		if s, ok := m.k.(stageMemorist); ok {
+			perBlock = s.KVLayerPageBytes(blockSize)
+		}
+	}
 	if perBlock <= 0 {
 		return KVBudget{}, fmt.Errorf(
 			"kernelmodel: per-block KV resolved to %d bytes; a budget cannot be divided "+
@@ -195,9 +165,9 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		TotalBlocks:             blocks,
 		PerRankBlocks:           perRank,
 		BlockSize:               blockSize,
-		DeviceBytes:             deviceBytes,
-		BudgetBytes:             budget,
-		FixedBytes:              fixed,
+		DeviceBytes:             mem.DeviceBytes,
+		BudgetBytes:             mem.BudgetBytes,
+		FixedBytes:              mem.FixedBytes,
 		AllocatableBytes:        allocatable,
 		PerBlockBytes:           perBlock,
 		DPScaled:                scaled,
@@ -206,6 +176,73 @@ func (m *Model) KVBudgetReserving(reservedBytes int64) (KVBudget, error) {
 		SequenceSteadyBytes:     steady,
 		SequenceSteadyBlocks:    (steady + perBlock - 1) / perBlock,
 	}, nil
+}
+
+// KVMemory is a rank's memory for its KV cache: the device, the engine's share of it, the
+// kernel's request-independent occupancy and what is left. It is KVBudget's memory half, which
+// needs no page size: an engine that cuts the pool into KV cache groups sizes its blocks from
+// every group's pages (KVLayerPageBytes), window rings included, so a model whose every layer is
+// bounded -- whose growing-context page (SequenceVariableBytes) is zero -- still has a pool.
+type KVMemory struct {
+	DeviceBytes, BudgetBytes, FixedBytes, AllocatableBytes int64
+}
+
+// KVMemory is the pool's rank's KV memory at the engine's gpu_memory_utilization, refusing what
+// KVBudget refuses before it divides by a page.
+func (m *Model) KVMemory() (KVMemory, error) { return m.kvMemory(0) }
+
+func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
+	if reservedBytes < 0 {
+		return KVMemory{}, fmt.Errorf("kernelmodel: reserved bytes must be >= 0, got %d", reservedBytes)
+	}
+	// From the kernel, which resolved this pool. Reading the Deployment document instead
+	// would mean holding it alongside and indexing back in -- a second answer to "which
+	// pool is this", which can disagree with the one the pricing used.
+	e := m.engine
+	util := e.GPUMemoryUtilization
+	if util <= 0 || util > 1 {
+		return KVMemory{}, fmt.Errorf(
+			"kernelmodel: gpu_memory_utilization must be in (0, 1], got %v", util)
+	}
+	if e.BlockSize <= 0 {
+		return KVMemory{}, fmt.Errorf(
+			"kernelmodel: block_size must be > 0, got %d", e.BlockSize)
+	}
+
+	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
+	budget := int64(float64(deviceBytes) * util)
+	fixed := m.k.FixedBytes().Total()
+
+	// A per-rank figure above the device's own memory cannot be per-rank, and dividing a
+	// budget by it would produce a capacity number that looks plausible and is not. See
+	// the guard note below for what it catches and why it refuses rather than
+	// compensates.
+	if fixed >= deviceBytes {
+		return KVMemory{}, fmt.Errorf(
+			"kernelmodel: the kernel reports %.1f GiB of per-rank fixed occupancy on a "+
+				"%.1f GiB device (%s, tp=%d, expert-parallel width %d). A per-rank figure "+
+				"cannot exceed the part, so a sharding term in the kernel's memory path "+
+				"is wrong. No budget is guessed: one divided out of an impossible "+
+				"occupancy would look plausible and set the wrong resident batch",
+			float64(fixed)/float64(gibToBytes),
+			float64(deviceBytes)/float64(gibToBytes),
+			m.id.model, m.k.Resolved().TensorParallel(),
+			m.k.Resolved().ExpertParallel())
+	}
+
+	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
+	if allocatable <= 0 {
+		// vLLM's start-up refusal when nothing is left for the cache
+		// (_check_enough_kv_cache_memory, vllm/v1/core/kv_cache_utils.py:904-913 at v0.31.0).
+		return KVMemory{}, fmt.Errorf(
+			"kernelmodel: No available memory for the cache blocks. Try increasing "+
+				"`gpu_memory_utilization` when initializing the engine (no room for KV: a %.1f GiB "+
+				"device at utilization %.2f gives a %.1f GiB budget against %.1f GiB of fixed "+
+				"occupancy per rank)",
+			float64(deviceBytes)/float64(gibToBytes), util,
+			float64(budget)/float64(gibToBytes), float64(fixed)/float64(gibToBytes))
+	}
+	return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: budget, FixedBytes: fixed, AllocatableBytes: allocatable}, nil
 }
 
 // admissionReserver is the kernel's bounded per-sequence state, exported by
@@ -273,7 +310,9 @@ func (m *Model) StageBudgets() ([]StageBudget, error) {
 	if len(stages) == 0 {
 		return nil, nil
 	}
-	b, err := m.KVBudget()
+	// The memory half only: a stage's pool is cut from its groups' pages (PageBytes), so an
+	// all-window model, whose growing-context page is zero, is still sized.
+	b, err := m.KVMemory()
 	if err != nil {
 		return nil, err
 	}

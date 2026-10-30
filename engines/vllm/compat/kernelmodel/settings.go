@@ -87,7 +87,9 @@ func (m *Model) settings(reservedBytes int64, startupCheck bool) (Settings, erro
 	if err != nil {
 		return Settings{}, err
 	}
-	b, err := m.KVBudgetReserving(reservedBytes)
+	// A group-aware engine (startupCheck off) sizes an all-bounded model's pool from its groups'
+	// pages (kvBudget).
+	b, err := m.kvBudget(reservedBytes, !startupCheck)
 	if err != nil {
 		return Settings{}, err
 	}
