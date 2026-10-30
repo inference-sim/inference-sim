@@ -51,8 +51,18 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	armD := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	o, _ := preparedOffload(t, armD)
 	if o.Connector != "OffloadingConnector" || o.CPUBytes != 1<<40 || o.Workers != 16 || o.Copies != 16 ||
-		o.EvictionPolicy != "lru" || o.BytesPerBlock <= 0 {
-		t.Fatalf("arm D's kv_offload %+v, want OffloadingConnector over 1 TiB, lru, 16 workers and copies", o)
+		o.EvictionPolicy != "lru" || o.BytesPerBlock != 32768 {
+		t.Fatalf("arm D's kv_offload %+v, want OffloadingConnector over 1 TiB, lru, 16 workers and copies, "+
+			"32768 bytes a block", o)
+	}
+	// A worker's bytes a block are its KV tensor over its blocks (worker_kv_bytes_per_block,
+	// offloading/config.py:136-145@5df63a72): vLLM groups Muse's layers so each worker's block is 8
+	// layer pages at PP2 (16 at PP1), each 16 tokens x 2 KV heads a rank at TP8 x 64 x K,V x 1 byte
+	// of fp8 = 4096 bytes.
+	twinO, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+		Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")})
+	if twinO.BytesPerBlock != 65536 || twinO.Workers != 8 || twinO.Copies != 8 {
+		t.Fatalf("the PP1 twin's kv_offload %+v, want 65536 bytes a block over 8 workers and copies", twinO)
 	}
 	// Arm D's own pool holds 1,062,119 blocks, which a test cannot cycle through to make the GPU's
 	// prefix cache forget a prompt. Its engine block is handed over with two numbers stated
@@ -206,5 +216,29 @@ func TestOffloadMappingBlocksPerChunk(t *testing.T) {
 	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
 	if o.BlockSize != 64 {
 		t.Fatalf("kv_offload block_size %d, want 4 blocks of 16 tokens", o.BlockSize)
+	}
+}
+
+// An offload transfer moves a worker's blocks at the pool's own bytes a block, the figure
+// cpu_bytes_to_use is divided by (worker_kv_bytes_per_block): the price of a store of n blocks is
+// the kernel's cpu_dram TierTime for n x those bytes.
+func TestAnOffloadTransferMovesThePoolsBytes(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
+	o, _ := preparedOffload(t, spec)
+	p, err := pricerFor(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := p.(kernelPricer)
+	for _, n := range []int{1, 64, 896} {
+		got := k.TransferTime(engine.Transfer{Kind: engine.TransferStore, Tier: "cpu", Blocks: n})
+		want := engine.Duration(k.m.TierTransferTicksOf("cpu_dram", true, int64(n)*o.BytesPerBlock, int64(n)))
+		if got != want || got < 1 {
+			t.Fatalf("a %d-block store prices %d, want %d (%d bytes a block)", n, got, want, o.BytesPerBlock)
+		}
+	}
+	if k.blockBytes != o.BytesPerBlock {
+		t.Fatalf("the pricer moves %d bytes a block, the offload's are %d", k.blockBytes, o.BytesPerBlock)
 	}
 }

@@ -579,3 +579,37 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 		t.Fatalf("the decoder emitted %d of 32 tokens", emitted)
 	}
 }
+
+
+// A pool's kv_transfer names the deployment's pd_transfer.connector, whatever it is: a deployment
+// naming NixlPullConnector runs NixlPullConnector (vLLM's factory resolves both to the pull
+// scheduler, factory.py:177-189@5df63a72).
+func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
+	Register()
+	src, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-1p1d.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	alt := strings.Replace(string(src), "connector: NixlConnector", "connector: NixlPullConnector", 1)
+	if err := os.WriteFile(filepath.Join(dir, "pull.yaml"), []byte(alt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := roots(t, "muse-h100-roce-1p1d.yaml")
+	r[RootScenario] = filepath.Join(dir, "pull.yaml")
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block struct {
+		KV struct {
+			Connector string `yaml:"connector"`
+		} `yaml:"kv_transfer"`
+	}
+	if err := done.Config.Decode(&block); err != nil {
+		t.Fatal(err)
+	}
+	if block.KV.Connector != "NixlPullConnector" {
+		t.Fatalf("kv_transfer.connector %q, want the deployment's NixlPullConnector", block.KV.Connector)
+	}
+}

@@ -554,6 +554,20 @@ func (m *Model) TierTransferTicks(tier string, toTier bool, blocks int64) int64 
 	return max(1, ticks(m.k.TierTime(tier, dir, bytes, 1)))
 }
 
+// TierTransferTicksOf is TierTransferTicks for a transfer of bytes, the caller's own per-block
+// figure times the blocks (a hybrid pool's page bytes), or of blocks at the kernel's per-block
+// bytes when bytes is 0.
+func (m *Model) TierTransferTicksOf(tier string, toTier bool, bytes, blocks int64) int64 {
+	if bytes <= 0 {
+		return m.TierTransferTicks(tier, toTier, blocks)
+	}
+	dir := kernel.DirectionFromTier
+	if toTier {
+		dir = kernel.DirectionToTier
+	}
+	return max(1, ticks(m.k.TierTime(tier, dir, bytes, 1)))
+}
+
 // ReqShape is one request's share of a batch in the kernel's terms (blis-schemas
 // kernel.ReqShape), for a caller pricing batches it formed itself, such as blis-vllm's v0.32.0
 // engine through vllmengine.

@@ -488,13 +488,22 @@ func pricerFor(s engine.Spec) (vllm.Pricer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kernelPricer{m: p.model}, nil
+	k := kernelPricer{m: p.model}
+	if per, err := offloadBytesPerBlock(p.model); err == nil {
+		k.blockBytes = per
+	}
+	return k, nil
 }
 
 // kernelPricer prices an engine.Batch with the latency kernel, as compat/kernelmodel prices the
 // compatibility engine's batches (Model.StepTime): the kernel's StepTime of the batch, its
 // NoOverlap figure, in microseconds, at least one.
-type kernelPricer struct{ m *kernelmodel.Model }
+type kernelPricer struct {
+	m *kernelmodel.Model
+	// blockBytes is a worker's KV bytes a GPU block, the pool's own (offloadBytesPerBlock), which
+	// an offload transfer moves per block; 0 prices at the kernel's per-block bytes.
+	blockBytes int64
+}
 
 // StepTime implements core/vllm.Pricer.
 func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
@@ -505,7 +514,8 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 // to or from the CPU tier, as the kernel prices it (TierTime at cpu_dram, one at a time, as
 // vLLM's offload handler runs its copies on one stream chain: kv_offload/cpu/gpu_worker.py).
 func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
-	return engine.Duration(k.m.TierTransferTicks("cpu_dram", t.Kind == engine.TransferStore, int64(t.Blocks)))
+	return engine.Duration(k.m.TierTransferTicksOf("cpu_dram", t.Kind == engine.TransferStore, int64(t.Blocks)*k.blockBytes,
+		int64(t.Blocks)))
 }
 
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage

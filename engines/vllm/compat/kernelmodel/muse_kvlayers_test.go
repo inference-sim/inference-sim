@@ -1,7 +1,9 @@
 package kernelmodel
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
@@ -115,5 +117,25 @@ func TestRolePoolsIndexesEachRole(t *testing.T) {
 	}
 	if got[deployment.RolePrefill] != 0 || got[deployment.RoleDecode] != 1 || len(got) != 2 {
 		t.Fatalf("pools by role %v, want prefill 0 and decode 1", got)
+	}
+}
+
+
+// RolePools refuses a deployment stating one role in more than one pool: one engine layout per
+// role is what a simulated pool runs, and Spec.Pool could select only one of them.
+func TestRolePoolsRefusesARepeatedRole(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "vllmengine", "testdata", "muse-h100-roce-1p1d.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	twoPrefill := strings.Replace(string(src), "  - role: decode", "  - role: prefill", 1)
+	if err := os.WriteFile(filepath.Join(dir, "two.yaml"), []byte(twoPrefill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := repos()
+	r.Scenarios = dir
+	if _, err := RolePools("two.yaml", r); err == nil || !strings.Contains(err.Error(), "more than one prefill pool") {
+		t.Fatalf("two prefill pools: %v, want refused", err)
 	}
 }
