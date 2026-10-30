@@ -62,3 +62,55 @@ func TestEngineDriver_TierTransfersRunOneStreamPerDirectionAfterTheirStep(t *tes
 		}
 	}
 }
+
+// emptyTiered is a FIFO whose first schedule that runs nothing, after one that ran a batch,
+// starts one CPU-tier store priced at 100 us.
+type emptyTiered struct {
+	*enginetest.FIFO
+	ran, started bool
+	done         map[engine.TransferID]int64
+}
+
+func (e *emptyTiered) Schedule(now engine.Time) (engine.Batch, error) {
+	b, err := e.FIFO.Schedule(now)
+	if err != nil {
+		return b, err
+	}
+	if !b.Empty() {
+		e.ran = true
+		return b, nil
+	}
+	if e.ran && !e.started {
+		e.started = true
+		b.TransfersStarted = []engine.Transfer{{ID: 1001, Kind: engine.TransferStore, Tier: "cpu", Blocks: 1}}
+	}
+	return b, nil
+}
+
+func (e *emptyTiered) TransferTime(engine.Transfer) (engine.Duration, bool) { return 100, true }
+
+func (e *emptyTiered) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	if id > 1000 {
+		e.done[id] = now
+		return nil
+	}
+	return e.FIFO.TransferDone(id, ok, now)
+}
+
+// A copy a schedule that ran no forward pass starts still waits on the compute stream, which
+// holds the batch already in flight (SingleDirectionOffloadingHandler.transfer_async's wait on
+// the current stream, vllm/v1/kv_offload/cpu/gpu_worker.py:665-670@5df63a72): with a 50 us batch
+// in flight from 0, a 100 us store an empty schedule at 0 starts runs 50-150, not 0-100.
+func TestEngineDriver_TierTransferOfAnEmptyScheduleWaitsForTheBatchInFlight(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 2, StepBaseUs: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &emptyTiered{FIFO: fifo, done: map[engine.TransferID]int64{}}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
+	d.Run()
+	if !eng.started || eng.done[1001] != 150 {
+		t.Fatalf("store started %v, done at %d; want done at 150", eng.started, eng.done[1001])
+	}
+}

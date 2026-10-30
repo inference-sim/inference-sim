@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/inference-sim/blis-schemas/engine"
@@ -513,22 +514,48 @@ func TestEngineDriver_OneStageBatchDoesNotOvertakeThePipeline(t *testing.T) {
 //   - a decode of a at batch 0 holds batch 2 back even though batch 2 runs c: ends 28, 36, 56;
 //   - a non-final chunk of a at batch 0 does not hold a's next chunk at batch 2: 28, 36, 44;
 //   - a decode of a at batch 0, preempted at batch 1, does not hold batch 2: 28, 36, 44.
+//
+// Whether step T-pp sampled for a request is computed + scheduled >= prefill_len, less a final
+// prefill chunk whose one token reaches the length cap (compute_need_sampled_mask, pp_utils.py:
+// 37-51@5df63a72). prefill_len is the prompt plus the outputs before the request's admission
+// (states.py:104-110@5df63a72), and the cap is prompt + max_tokens (states.py:104):
+//   - a final chunk that reaches prefill_len exactly samples, so it holds batch 2: 56;
+//   - a final chunk of a max_tokens-1 request (every P/D prefill leg) samples nothing: 44;
+//   - a resumed request's recompute of its prompt alone, short of prompt + outputs, samples
+//     nothing: 44;
+//   - a request finished (aborted or timed out) before batch 1's schedule is freed by it
+//     (finished_req_ids, model_runner.py:1152-1166@5df63a72), so batch 2 does not wait: 44;
+//   - finished before batch 2's own schedule, it is freed only after batch 2 consumed batch 0's
+//     slot (update_pp_decode_requests runs before finish_requests, model_runner.py:1732-1733): 56.
 func TestEngineDriver_PipelinedStepWaitsOnTheSampledStepPPBack(t *testing.T) {
 	decode := engine.Scheduled{ID: "a", Tokens: 1, Computed: 8, PromptLen: 8}
 	chunk := engine.Scheduled{ID: "a", Tokens: 4, Computed: 0, PromptLen: 12}
+	final := engine.Scheduled{ID: "a", Tokens: 4, Computed: 8, PromptLen: 12}
 	b := engine.Batch{Reqs: []engine.Scheduled{{ID: "b", Tokens: 1, Computed: 8, PromptLen: 8}}}
+	other := engine.Batch{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}
+	queued := func(maxOut, emitted int) map[string]*driverReq {
+		return map[string]*driverReq{"a": {req: &Request{ID: "a", MaxOutputLen: maxOut, State: StateQueued}, emitted: emitted}}
+	}
 	for _, c := range []struct {
 		name    string
 		batches []engine.Batch
+		reqs    map[string]*driverReq
+		freeAt  int // the a is finished just before batch freeAt is timed (0: never)
 		want    int64
 	}{
+		{"final chunk at prefill_len", []engine.Batch{{Reqs: []engine.Scheduled{final}}, b, other}, nil, 0, 56},
+		{"length-capped final chunk", []engine.Batch{{Reqs: []engine.Scheduled{final}}, b, other}, queued(1, 0), 0, 44},
+		{"resumed recompute", []engine.Batch{{Reqs: []engine.Scheduled{{ID: "a", Tokens: 8, Computed: 0, PromptLen: 8}}}, b, other},
+			queued(0, 3), 0, 44},
+		{"finished before batch 1", []engine.Batch{{Reqs: []engine.Scheduled{decode}}, b, other}, nil, 1, 44},
+		{"finished before batch 2", []engine.Batch{{Reqs: []engine.Scheduled{decode}}, b, other}, nil, 2, 56},
 		{"unshared decode", []engine.Batch{{Reqs: []engine.Scheduled{decode}}, b,
-			{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}}, 56},
+			{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}}, nil, 0, 56},
 		{"prefill chunk", []engine.Batch{{Reqs: []engine.Scheduled{chunk}}, b,
-			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 4, Computed: 4, PromptLen: 12}}}}, 44},
+			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 4, Computed: 4, PromptLen: 12}}}}, nil, 0, 44},
 		{"preempted", []engine.Batch{{Reqs: []engine.Scheduled{decode}},
 			{Reqs: b.Reqs, Preempted: []string{"a"}},
-			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 9, Computed: 0, PromptLen: 8}}}}, 44},
+			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 9, Computed: 0, PromptLen: 8}}}}, nil, 0, 44},
 	} {
 		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
 		if err != nil {
@@ -536,12 +563,96 @@ func TestEngineDriver_PipelinedStepWaitsOnTheSampledStepPPBack(t *testing.T) {
 		}
 		d := NewEngineDriver(&unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}},
 			EngineDriverConfig{Horizon: 1 << 40})
+		if c.reqs != nil {
+			d.reqs = c.reqs
+		}
 		var end int64
-		for _, bt := range c.batches {
+		for i, bt := range c.batches {
+			if c.freeAt > 0 && i == c.freeAt {
+				d.noteFreed("a")
+			}
 			_, end = d.timeBatch(bt, 0)
 		}
 		if end != c.want {
 			t.Errorf("%s: batch 2 ends at %d, want %d", c.name, end, c.want)
 		}
+	}
+}
+
+// ringStages is unevenStages through an engine that counts its runner steps (RunnerSteps), as
+// blis-vllm core/vllm does: steps is set by the test, one per schedule.
+type ringStages struct {
+	*unevenStages
+	steps int
+}
+
+func (r *ringStages) RunnerSteps() int { return r.steps }
+
+// vLLM's slot ring advances on every execute_model call, a schedule that ran nothing included:
+// update_pp_decode_requests pops the slot pp steps back and reserves an empty one before the early
+// return (model_runner.py:1729-1747; pp_utils.py:125-137@5df63a72). So at pp 2, with batch 0 (a
+// decode), an empty schedule, batch 1 and batch 2, batch 1 is runner step 2 and waits on batch 0,
+// and batch 2 is runner step 3 and waits on the empty step's slot, which is nothing. Splits [8,20],
+// [1,8], [20,8]: ends 28, 37, 57. An engine that counts no runner steps keeps the driver's own
+// count, the batches it timed: 28, 36, 56.
+func TestEngineDriver_PipelinedStepGatesOnTheRunnerStepPPBack(t *testing.T) {
+	decode := func(id string) engine.Batch {
+		return engine.Batch{Reqs: []engine.Scheduled{{ID: id, Tokens: 1, Computed: 8, PromptLen: 8}}}
+	}
+	for _, c := range []struct {
+		name string
+		ring bool
+		want []int64
+	}{{"runner steps", true, []int64{28, 37, 57}}, {"batches timed", false, []int64{28, 36, 56}}} {
+		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := &unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}}
+		r := &ringStages{unevenStages: u}
+		var eng engine.Engine = u
+		if c.ring {
+			eng = r
+		}
+		d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+		var ends []int64
+		r.steps++
+		_, e := d.timeBatch(decode("a"), 0)
+		ends = append(ends, e)
+		r.steps++
+		d.noteEmptyStep(engine.Batch{})
+		for _, id := range []string{"b", "c"} {
+			r.steps++
+			_, e := d.timeBatch(decode(id), 0)
+			ends = append(ends, e)
+		}
+		if !reflect.DeepEqual(ends, c.want) {
+			t.Errorf("%s: batch ends %v, want %v", c.name, ends, c.want)
+		}
+	}
+}
+
+// An empty runner step still waits on its slot pp steps back (the wait_event on the main stream,
+// pp_utils.py:152@5df63a72), so the next forward starts no earlier. Batch 0 a decode [8,20] ending
+// at 28, batch 1 a non-final chunk [1,8] ending at 36, then an empty step that waits on batch 0,
+// then batch 2 [20,8], whose own slot (batch 1) sampled nothing: batch 2 starts at 28, ends at 56,
+// not 44.
+func TestEngineDriver_EmptyRunnerStepWaitHoldsTheNextForward(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &ringStages{unevenStages: &unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}}}
+	d := NewEngineDriver(r, EngineDriverConfig{Horizon: 1 << 40})
+	r.steps++
+	d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: "a", Tokens: 1, Computed: 8, PromptLen: 8}}}, 0)
+	r.steps++
+	d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: "b", Tokens: 4, Computed: 0, PromptLen: 12}}}, 0)
+	r.steps++
+	d.noteEmptyStep(engine.Batch{})
+	r.steps++
+	start, end := d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}, 0)
+	if start != 28 || end != 56 {
+		t.Fatalf("batch 2 runs %d-%d, want 28-56", start, end)
 	}
 }

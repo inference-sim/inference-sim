@@ -106,6 +106,7 @@ func (d *EngineDriver) AbortRemote(req *Request, now int64) {
 	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	d.kick(now)
 }
 
