@@ -147,6 +147,10 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	//   3. EnqueueRequest guard drops (req.State == StateQueued) — handled here
 	//   4. detectDecodeCompletions (cluster.go) — req.State set to StateCompleted
 	//      before invocation; not a drop path (issue #884)
+	//   5. EngineDriver drops (engine_driver.go): an engine refusal at Add, and a request
+	//      the engine finished as FinishError with no output (finish), which resets
+	//      req.State to StateQueued first, so an admitted request is not read as completed
+	//      (TestSession_EngineFailedRoundCancelsTheSession)
 	// A legitimately queued request never triggers this callback.
 	// If a future code path invokes OnRequestDone for a queued request that is
 	// NOT dropped, this detection would incorrectly cancel the session. Review

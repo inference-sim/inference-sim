@@ -1,0 +1,105 @@
+# The llm-d router configuration internal deployment measurements serve Muse-Spark-Open-816B-A42B
+# with: precise prefix-cache routing from the engines' KV events, with prompts rendered by vLLM;
+# a prefix-cache affinity gate that breaks stickiness when the sticky pod's estimated TTFT
+# (in-flight tokens over a peak prefill rate) is 4.5 s worse; a token-load scorer; and flow
+# control holding requests once a pod has 32 in flight or a queue builds. Derived: the
+# deployment's pod discovery and service URL are replaced by the simulated pool.
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: token-producer
+  parameters:
+    modelName: muse-spark-open-816b-a42b-nvfp4
+    vllm:
+      url: http://muse-spark:8000
+- type: precise-prefix-cache-producer
+  name: precise-prefix-cache-producer
+  parameters:
+    tokenProcessorConfig:
+      blockSizeTokens: 16
+    speculativeIndexing: false
+    indexerConfig:
+      kvBlockIndexConfig:
+        enableMetrics: false
+        inMemoryConfig:
+          size: 10000000
+          podCacheSize: 1024
+      kvCacheBackendConfigs:
+      - name: gpu
+        weight: 1.0
+- type: endpoint-notification-source
+- type: inflight-load-producer
+  name: inflight-load-producer
+  parameters:
+    addEstimatedOutputTokens: false
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: concurrency-detector
+  name: concurrency-guard
+  parameters:
+    concurrencyMode: hybrid
+    maxConcurrency: 32
+    maxTokenConcurrency: 1000000
+    headroom: 0
+    inFlightLoadProducerName: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  name: gpu-prefix-cache-affinity-filter
+  parameters:
+    affinityThreshold: 0.5
+    explorationProbability: 0
+    inFlightLoadProducerName: inflight-load-producer
+    maxTTFTPenaltyMs: 4500
+    peakPrefillThroughput: 15000
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: token-load-scorer
+- name: metrics-source
+  type: metrics-data-source
+  parameters:
+    scheme: http
+    families:
+    - vllm:num_requests_waiting
+    - vllm:num_requests_running
+    - vllm:kv_cache_usage_perc
+    - vllm:lora_requests_info
+    - vllm:cache_config_info
+- name: metrics-extractor
+  type: core-metrics-extractor
+- name: round-robin-fairness-policy
+  type: round-robin-fairness-policy
+- name: fcfs-ordering-policy
+  type: fcfs-ordering-policy
+- type: utilization-detector
+  name: waiting-queue
+  parameters:
+    queueDepthThreshold: 2
+    kvCacheUtilThreshold: 1.0
+    metricsStalenessThreshold: 1s
+- type: max-saturation-detector
+  name: saturation
+  parameters:
+    detectors: [concurrency-guard, waiting-queue]
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: gpu-prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+dataLayer:
+  injectDefaults: false
+  sources:
+  - pluginRef: endpoint-notification-source
+    extractors:
+    - pluginRef: precise-prefix-cache-producer
+  - pluginRef: metrics-source
+    extractors:
+    - pluginRef: metrics-extractor
+flowControl:
+  enableEviction: false
+  defaultRequestTTL: 300s
+  maxBytes: 1073741824
+  defaultPriorityBand:
+    maxRequests: 100000
+    fairnessPolicyRef: round-robin-fairness-policy
+    orderingPolicyRef: fcfs-ordering-policy
+  saturationDetector:
+    pluginRef: saturation

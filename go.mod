@@ -5,8 +5,8 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-schemas v0.9.1
-	github.com/inference-sim/blis-vllm v0.32.0
+	github.com/inference-sim/blis-schemas v0.10.0
+	github.com/inference-sim/blis-vllm v0.32.0-blis.1
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -62,7 +62,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/inference-sim/blis-latency-kernel v0.4.0 // indirect
+	github.com/inference-sim/blis-latency-kernel v0.5.0 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -128,4 +128,6 @@ require (
 
 // The one permitted replace: the llm-d router fork keeps upstream's module path, so a replace is
 // the only way to substitute it (docs/contributing/llm-d-router-fork.md).
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1
+// v1.0.0-blis.2 hosts prefix-cache-affinity-filter on its in-flight-load TTFT source
+// (inference-sim/llm-d-router#4).
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2

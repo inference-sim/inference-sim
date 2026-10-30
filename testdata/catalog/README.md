@@ -1,7 +1,7 @@
 # Vendored blis-catalog subset
 
-A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) release
-**`0.3.0`** (commit recorded in `.upstream-commit`), shaped as a catalog clone root so the Go
+A verbatim subset of [`blis-catalog`](https://github.com/inference-sim/blis-catalog) at the
+commit recorded in `.upstream-commit` (release 0.5.0, which adds Muse-Spark-Open-816B-A42B), shaped as a catalog clone root so the Go
 tests can resolve models, presets, chips and devices offline. Nothing here is edited: a file is
 either copied unchanged from that release or absent. Operators do not use this copy; they clone
 the release and point `--catalog` / `BLIS_CATALOG` at it
@@ -9,7 +9,7 @@ the release and point `--catalog` / `BLIS_CATALOG` at it
 
 | path | what | read by |
 |---|---|---|
-| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 21 models | the HF-config backends, the kernel, the catalog gate |
+| `models/<name>/` | `config.json`, `graph.yaml`, `model.yaml` for 24 models | the HF-config backends, the kernel, the catalog gate |
 | `hardware/`, `networks/` | chip and fabric descriptors | the kernel, the catalog gate |
 | `devices/storage.yaml` | KV-offload storage tiers | `--kv-offload-config` device classes, the legacy CPU tier |
 | `workloads/` | the named presets, and the `agentx-mvp` replay workload (blis-catalog#34) | `run --workload`, `observe --workload`, `convert preset`; the replay through `replay --workload-spec` |

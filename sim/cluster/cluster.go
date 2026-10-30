@@ -82,9 +82,13 @@ type ClusterSimulator struct {
 	// mid-transfer), and degenerate completions scheduled by dropAtStart.
 	transfersCompleted      int
 	pdPrefillCompletedCount int // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount  int // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount   int // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV       int // requests dropped due to insufficient KV at decode
+	// pdPrefillOutputTokens are the tokens completed prefill sub-requests sampled (the proxy's
+	// max_tokens 1 leg, PDPrefillSamplesFirstToken): the prefill instance generated them, but the
+	// client receives the decode leg's output only, so the cluster's output count excludes them.
+	pdPrefillOutputTokens  int
+	pdDecodeCompletedCount int // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount  int // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV      int // requests dropped due to insufficient KV at decode
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
@@ -836,6 +840,9 @@ func (c *ClusterSimulator) Run() error {
 	if c.pdPrefillCompletedCount > 0 {
 		c.aggregatedMetrics.CompletedRequests -= c.pdPrefillCompletedCount
 	}
+	// Likewise the prefill leg's sampled token: the decode leg generates the client's full output
+	// (INV-9), so counting the prefill's token as well would count the first token twice.
+	c.aggregatedMetrics.TotalOutputTokens -= c.pdPrefillOutputTokens
 	// Requests dropped at decode KV allocation: the prefill sub-request already
 	// completed (counted above and subtracted), but the original request is lost.
 	// Count as DroppedUnservable for INV-1 conservation.
@@ -1133,7 +1140,7 @@ func (c *ClusterSimulator) inputTokensTotal() int {
 }
 
 func (c *ClusterSimulator) outputTokensTotal() int {
-	total := 0
+	total := -c.pdPrefillOutputTokens // the client's output, as the aggregate counts it
 	for _, inst := range c.instances {
 		total += inst.Metrics().TotalOutputTokens
 	}
@@ -1265,6 +1272,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
 		c.pdPrefillCompletedCount++
+		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
 		c.startPrefillHold(parent)
 
 		// Schedule KV transfer

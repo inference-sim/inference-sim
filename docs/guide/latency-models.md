@@ -139,6 +139,13 @@ instance is priced by the kernel's `PDTransferTime` over the scenario's fabric, 
 two instances' placements (NVLink when they share a node). Each instance count must not
 exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pcp).
 
+At `engine_version: "0.32.0"` each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
+NIXL scheduler as the pool's `kv_role`: `kv_producer` for the prefill pool and `kv_consumer` for the
+decode pool. The prefill leg samples one token and holds its blocks for the pull. The decode leg waits
+in `WAITING_FOR_REMOTE_KVS` until the pull lands. Under PP the engine refuses what vLLM's NIXL worker
+refuses: a decoder, or a hybrid KV layout. Async scheduling with a connector is not built yet
+(blis-vllm#34). An example is `testdata/scenarios/muse-spark/muse-h100-roce-1p1d.yaml`.
+
 Refused: a P/D topology over a colocated scenario; a disaggregated scenario run without
 `--prefill-instances`/`--decode-instances`; pools that differ in block size, dp or draft
 configuration; a handoff connector other than NIXL's; shared (`--prefill-decode-instances`) or

@@ -510,6 +510,15 @@ func (i *InstanceSimulator) SetKVEventSink(sink func(at int64, events []sim.KVEv
 	}
 }
 
+// KVEventsRefusal is why a router cannot index the engine's KV events, nil when it can
+// (sim.EngineDriver.KVEventsRefusal).
+func (i *InstanceSimulator) KVEventsRefusal() error {
+	if i.drv == nil {
+		return nil
+	}
+	return i.drv.KVEventsRefusal()
+}
+
 // HasWork reports whether the engine has running or waiting requests.
 func (i *InstanceSimulator) HasWork() bool {
 	return i.drv.HasWork()

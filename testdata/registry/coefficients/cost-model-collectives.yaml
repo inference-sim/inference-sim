@@ -2984,95 +2984,95 @@ coefficients:
       rationale: >
         293.75 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.302x under the two-parameter form to 1.136x. Below the asymptote, which is 0.77 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
   - collective_floor_all_reduce_fp16_2rank_h100:
-      value: 4.18
+      value: 3.01
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 5.85us at 2 ranks against 4.183us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_h100:
-      value: 166770.0
+      value: 167099.4
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 166.77 GB/s.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 167.10 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_2rank_h100:
-      value: 128000.0
+      value: 122250.0
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.251x under max(size/peak, floor) to 1.075x. 128.00 GB/s.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.082x against 1.273x under max(size/peak, floor). 122.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_h100:
-      value: 4.52
+      value: 3.06
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 9.31us at 4 ranks against 4.517us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_h100:
-      value: 118380.0
+      value: 106199.9
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 118.38 GB/s.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 106.20 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_4rank_h100:
-      value: 89750.0
+      value: 103250.0
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.283x under max(size/peak, floor) to 1.119x. 89.75 GB/s.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.065x against 1.185x under max(size/peak, floor). 103.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_8rank_h100:
-      value: 4.61
+      value: 3.27
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 15.59us at 8 ranks against 4.608us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_8rank_h100:
-      value: 133910.0
+      value: 115057.5
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 133.91 GB/s.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 115.06 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_8rank_h100:
-      value: 97000.0
+      value: 108500.0
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.411x under max(size/peak, floor) to 1.203x. 97.00 GB/s.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.124x against 1.257x under max(size/peak, floor). 108.50 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_int8_2rank_h100:
       value: 6.38
       units: us_per_transfer
@@ -3786,95 +3786,95 @@ coefficients:
       rationale: >
         296.00 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.358x under the two-parameter form to 1.192x. Below the asymptote, which is 0.77 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
   - collective_floor_all_reduce_fp16_2rank_h200:
-      value: 4.38
+      value: 2.7
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 6.01us at 2 ranks against 4.378us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_h200:
-      value: 165100.0
+      value: 165886.6
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 165.10 GB/s.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 165.89 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_2rank_h200:
-      value: 130000.0
+      value: 122000.0
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.222x under max(size/peak, floor) to 1.062x. 130.00 GB/s.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.078x against 1.269x under max(size/peak, floor). 122.00 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_h200:
-      value: 4.43
+      value: 2.82
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 9.44us at 4 ranks against 4.428us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_h200:
-      value: 118660.0
+      value: 111607.2
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 118.66 GB/s.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 111.61 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_4rank_h200:
-      value: 95750.0
-      units: bytes_per_us
-      method: measured
-      fitted: true
-      scope: {hardware: [h200]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
-      rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.272x under max(size/peak, floor) to 1.114x. 95.75 GB/s.
-  - collective_floor_all_reduce_fp16_8rank_h200:
-      value: 4.71
-      units: us_per_transfer
-      method: measured
-      fitted: true
-      scope: {hardware: [h200]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
-      rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve, and the two differ materially. On h200 the NCCL-derived floor runs 15.98us at 8 ranks against 4.711us measured here, and the gap widens with width because a ring floor grows with rank count where a one-shot kernel's barely does. The CUDA-graph lane is the one a decode step runs in.
-  - collective_peak_rate_all_reduce_fp16_8rank_h200:
-      value: 134260.0
-      units: bytes_per_us
-      method: measured
-      fitted: true
-      scope: {hardware: [h200]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
-      rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 134.26 GB/s.
-  - collective_transition_rate_all_reduce_fp16_8rank_h200:
       value: 104250.0
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.24.0/custom_allreduce_perf.parquet (vLLM 0.24.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. It improves the geometric error from 1.351x under max(size/peak, floor) to 1.171x. 104.25 GB/s.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.067x against 1.194x under max(size/peak, floor). 104.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_floor_all_reduce_fp16_8rank_h200:
+      value: 3.05
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+      rationale: >
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_peak_rate_all_reduce_fp16_8rank_h200:
+      value: 121573.1
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 121.57 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_transition_rate_all_reduce_fp16_8rank_h200:
+      value: 112500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.148x against 1.284x under max(size/peak, floor). 112.50 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_int8_2rank_h200:
       value: 6.2
       units: us_per_transfer
@@ -7216,7 +7216,7 @@ coefficients:
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
   # --- h200 16-rank group: derived, see each entry ---
   - collective_floor_all_reduce_fp16_16rank_h200:
-      value: 5.15
+      value: 3.52
       units: us_per_transfer
       method: assumed
       fitted: false
@@ -7224,9 +7224,9 @@ coefficients:
       sources:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
-        ASSUMED, not measured: no sweep in the tree carries a 16-rank all_reduce for this part, on any lane -- checked across nccl, vllm, trtllm and sglang. A 16-rank group is routine (expert width is tp x max(dp,pcp), so tp=8 dp=2 reaches it), and with no entry the kernel refuses to price the deployment rather than mispricing it. DIMENSION (derived). floor(n) = a + b*(n-1), least squares over this part's OWN measured widths: 2-rank 4.38us, 4-rank 4.43us, 8-rank 4.71us, giving 5.15us at 16. Holdout-validated at the width it is used for: gb200-nvl72 is the one part with a measured 16-rank floor, and fitting its 2/4/8 to predict its 16 gives median 2.141x and worst 2.141x over 2 (operator, dtype) cells. The textbook ring hop-count model was refuted first -- it predicts a 4->8 ratio of 1.167 against a measured median of 1.703, because a collective floor is dominated by per-rank synchronisation rather than hops. MAGNITUDE (the caveat). Extrapolated from this part, never borrowed from another. THE HOLDOUT ON THIS LANE IS POOR (2.141x) AND IS REPORTED RATHER THAN RELIED ON, because it measures something this coefficient deliberately excludes. gb300's measured vLLM floors jump 13.16us to 45.90us from 8 to 16 ranks, which is a TOPOLOGY discontinuity -- a Grace-Blackwell tray is four GPUs, so 16 ranks spans four trays. blis-latency-kernel prices that separately: resolve.Fabric.Ratio() is IntraNodeBwGBps/InterNodeBwGBps and kernel.go splits a collective's bytes into on-node and cross-node, scaling the second by that ratio. So a collective coefficient is the INTRA-NODE curve and the boundary penalty is applied on top; fitting the cliff in here would double-count it. The linear form extrapolates the intra-node scaling, which is smooth. TO REPLACE THIS WITH A MEASUREMENT: a 16-rank sweep for this part on the lane this operator runs on; fit_collectives.py needs no change, only the rows.
+        ASSUMED, not measured: no sweep in the tree carries a 16-rank all_reduce for this part, on any lane -- checked across nccl, vllm, trtllm and sglang. A 16-rank group is routine (expert width is tp x max(dp,pcp), so tp=8 dp=2 reaches it), and with no entry the kernel refuses to price the deployment rather than mispricing it. DIMENSION (derived). floor(n) = a + b*(n-1), least squares over this part's OWN measured widths: 2-rank 2.7us, 4-rank 2.82us, 8-rank 3.05us, giving 3.52us at 16. Holdout-validated at the width it is used for: gb200-nvl72 is the one part with a measured 16-rank floor, and fitting its 2/4/8 to predict its 16 gives median 2.141x and worst 2.141x over 2 (operator, dtype) cells. The textbook ring hop-count model was refuted first -- it predicts a 4->8 ratio of 1.167 against a measured median of 1.703, because a collective floor is dominated by per-rank synchronisation rather than hops. MAGNITUDE (the caveat). Extrapolated from this part, never borrowed from another. THE HOLDOUT ON THIS LANE IS POOR (2.141x) AND IS REPORTED RATHER THAN RELIED ON, because it measures something this coefficient deliberately excludes. gb300's measured vLLM floors jump 13.16us to 45.90us from 8 to 16 ranks, which is a TOPOLOGY discontinuity -- a Grace-Blackwell tray is four GPUs, so 16 ranks spans four trays. blis-latency-kernel prices that separately: resolve.Fabric.Ratio() is IntraNodeBwGBps/InterNodeBwGBps and kernel.go splits a collective's bytes into on-node and cross-node, scaling the second by that ratio. So a collective coefficient is the INTRA-NODE curve and the boundary penalty is applied on top; fitting the cliff in here would double-count it. The linear form extrapolates the intra-node scaling, which is smooth. TO REPLACE THIS WITH A MEASUREMENT: a 16-rank sweep for this part on the lane this operator runs on; fit_collectives.py needs no change, only the rows.
   - collective_peak_rate_all_reduce_fp16_16rank_h200:
-      value: 134260.0
+      value: 121573.1
       units: bytes_per_us
       method: assumed
       fitted: false
@@ -7236,7 +7236,7 @@ coefficients:
       rationale: >
         ASSUMED: this part's own measured 8-rank peak, carried to 16 ranks. NOT extrapolated, deliberately. Every rate extrapolator tested was biased low (geometric decay 0.84x-0.95x, ring-bandwidth law 0.91x-0.94x), and gb200's measured 16/8 peak ratios are 0.95-1.00, so the rate is nearly flat past 8 ranks. Carrying the 8-rank figure gives a rate at or slightly above the true one, which bounds throughput from above and transfer time from below.
   - collective_transition_rate_all_reduce_fp16_16rank_h200:
-      value: 104250.0
+      value: 112500.0
       units: bytes_per_us
       method: assumed
       fitted: false
@@ -7247,7 +7247,7 @@ coefficients:
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
   # --- h100 16-rank group: derived, see each entry ---
   - collective_floor_all_reduce_fp16_16rank_h100:
-      value: 5.17
+      value: 3.62
       units: us_per_transfer
       method: assumed
       fitted: false
@@ -7255,9 +7255,9 @@ coefficients:
       sources:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
-        ASSUMED, not measured: no sweep in the tree carries a 16-rank all_reduce for this part, on any lane -- checked across nccl, vllm, trtllm and sglang. A 16-rank group is routine (expert width is tp x max(dp,pcp), so tp=8 dp=2 reaches it), and with no entry the kernel refuses to price the deployment rather than mispricing it. DIMENSION (derived). floor(n) = a + b*(n-1), least squares over this part's OWN measured widths: 2-rank 4.18us, 4-rank 4.52us, 8-rank 4.61us, giving 5.17us at 16. Holdout-validated at the width it is used for: gb200-nvl72 is the one part with a measured 16-rank floor, and fitting its 2/4/8 to predict its 16 gives median 2.141x and worst 2.141x over 2 (operator, dtype) cells. The textbook ring hop-count model was refuted first -- it predicts a 4->8 ratio of 1.167 against a measured median of 1.703, because a collective floor is dominated by per-rank synchronisation rather than hops. MAGNITUDE (the caveat). Extrapolated from this part, never borrowed from another. THE HOLDOUT ON THIS LANE IS POOR (2.141x) AND IS REPORTED RATHER THAN RELIED ON, because it measures something this coefficient deliberately excludes. gb300's measured vLLM floors jump 13.16us to 45.90us from 8 to 16 ranks, which is a TOPOLOGY discontinuity -- a Grace-Blackwell tray is four GPUs, so 16 ranks spans four trays. blis-latency-kernel prices that separately: resolve.Fabric.Ratio() is IntraNodeBwGBps/InterNodeBwGBps and kernel.go splits a collective's bytes into on-node and cross-node, scaling the second by that ratio. So a collective coefficient is the INTRA-NODE curve and the boundary penalty is applied on top; fitting the cliff in here would double-count it. The linear form extrapolates the intra-node scaling, which is smooth. TO REPLACE THIS WITH A MEASUREMENT: a 16-rank sweep for this part on the lane this operator runs on; fit_collectives.py needs no change, only the rows.
+        ASSUMED, not measured: no sweep in the tree carries a 16-rank all_reduce for this part, on any lane -- checked across nccl, vllm, trtllm and sglang. A 16-rank group is routine (expert width is tp x max(dp,pcp), so tp=8 dp=2 reaches it), and with no entry the kernel refuses to price the deployment rather than mispricing it. DIMENSION (derived). floor(n) = a + b*(n-1), least squares over this part's OWN measured widths: 2-rank 3.01us, 4-rank 3.06us, 8-rank 3.27us, giving 3.62us at 16. Holdout-validated at the width it is used for: gb200-nvl72 is the one part with a measured 16-rank floor, and fitting its 2/4/8 to predict its 16 gives median 2.141x and worst 2.141x over 2 (operator, dtype) cells. The textbook ring hop-count model was refuted first -- it predicts a 4->8 ratio of 1.167 against a measured median of 1.703, because a collective floor is dominated by per-rank synchronisation rather than hops. MAGNITUDE (the caveat). Extrapolated from this part, never borrowed from another. THE HOLDOUT ON THIS LANE IS POOR (2.141x) AND IS REPORTED RATHER THAN RELIED ON, because it measures something this coefficient deliberately excludes. gb300's measured vLLM floors jump 13.16us to 45.90us from 8 to 16 ranks, which is a TOPOLOGY discontinuity -- a Grace-Blackwell tray is four GPUs, so 16 ranks spans four trays. blis-latency-kernel prices that separately: resolve.Fabric.Ratio() is IntraNodeBwGBps/InterNodeBwGBps and kernel.go splits a collective's bytes into on-node and cross-node, scaling the second by that ratio. So a collective coefficient is the INTRA-NODE curve and the boundary penalty is applied on top; fitting the cliff in here would double-count it. The linear form extrapolates the intra-node scaling, which is smooth. TO REPLACE THIS WITH A MEASUREMENT: a 16-rank sweep for this part on the lane this operator runs on; fit_collectives.py needs no change, only the rows.
   - collective_peak_rate_all_reduce_fp16_16rank_h100:
-      value: 133910.0
+      value: 115057.5
       units: bytes_per_us
       method: assumed
       fitted: false
@@ -7267,7 +7267,7 @@ coefficients:
       rationale: >
         ASSUMED: this part's own measured 8-rank peak, carried to 16 ranks. NOT extrapolated, deliberately. Every rate extrapolator tested was biased low (geometric decay 0.84x-0.95x, ring-bandwidth law 0.91x-0.94x), and gb200's measured 16/8 peak ratios are 0.95-1.00, so the rate is nearly flat past 8 ranks. Carrying the 8-rank figure gives a rate at or slightly above the true one, which bounds throughput from above and transfer time from below.
   - collective_transition_rate_all_reduce_fp16_16rank_h100:
-      value: 97000.0
+      value: 108500.0
       units: bytes_per_us
       method: assumed
       fitted: false

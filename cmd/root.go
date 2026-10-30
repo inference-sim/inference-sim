@@ -1315,6 +1315,7 @@ var runCmd = &cobra.Command{
 			PDTransferContention:           pdTransferContention,
 			PDTransferDemand:               pdTransferDemand,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
+			PDPrefillSamplesFirstToken:     coreEngineVersions[scenarioShape.EngineVersion],
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,

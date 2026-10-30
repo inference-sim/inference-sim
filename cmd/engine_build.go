@@ -5,8 +5,11 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"
@@ -122,6 +125,11 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	for _, f := range a.Ignored {
 		logrus.Warnf("--%s is ignored: scenario %q does not speculate", f, kernelScenario)
 	}
+	// The command line's and the workload's acceptance layers reach the engine's kernel too: a
+	// pool verifying adaptively sizes its draft budget from the run's acceptance
+	// (kernelmodel.SetAcceptanceOverrides, blis-latency-kernel#89), which must be the one the run
+	// resolved here. The engines are built after this (engineDriverFactory).
+	setAcceptanceOverrides(fl, k)
 	return a, speculating
 }
 
@@ -184,6 +192,29 @@ func openKernelPools(catalogRoot string) *kernelPools {
 	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
 	kernelPDOpened = p
 	return p
+}
+
+// poolOfInstance is the engine.Spec pool index each instance's engine is built from: the
+// colocated run's one pool, or the prefill or decode pool whose kernel the instance's role
+// configuration carries (rolesOf), by its index in the deployment (build.PoolIndices).
+func (p *kernelPools) poolOfInstance() func(sim.InstanceConfig) int {
+	if p == nil {
+		return func(sim.InstanceConfig) int { return 0 }
+	}
+	indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir,
+		Catalog: resolvedCatalogRoot, Registry: kernelRegistry})
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return func(c sim.InstanceConfig) int {
+		switch engineConfigIn(c).LatencyModel {
+		case latencyModel(p.prefill):
+			return indices[deployment.RolePrefill]
+		case latencyModel(p.decode):
+			return indices[deployment.RoleDecode]
+		}
+		panic("engine build: a disaggregated run's instance takes neither the prefill nor the decode pool")
+	}
 }
 
 // holdsPrefillKV reports whether the run's prefill engines hold a finished request's KV for
@@ -463,6 +494,42 @@ type (
 
 // setRoutingOverrides hands the command line's routing layer to the pools about to open.
 func setRoutingOverrides(o routingOverrides) { kernelmodel.SetRoutingOverrides(o) }
+
+// setAcceptanceOverrides hands the kernel the acceptance layers beyond the scenario file, the
+// ones build.ResolveAcceptance read: the command line's value, the workload's terms (a catalog
+// preset, with the command line's category and thinking mode applied), and the fallback category.
+func setAcceptanceOverrides(fl *pflag.FlagSet, k int) {
+	kernelmodel.SetAcceptanceOverrides(acceptanceOverridesOf(fl, k))
+}
+
+// acceptanceOverridesOf is the run's acceptance layers beyond the scenario file
+// (setAcceptanceOverrides).
+func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverrides {
+	var cli *acceptance.Value
+	switch {
+	case fl.Changed(build.AcceptanceRateFlag):
+		r := speculativeAcceptance
+		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceRate: &r, Source: "--" + build.AcceptanceRateFlag}
+	case fl.Changed(build.AcceptanceLengthFlag):
+		l := speculativeAcceptanceLength
+		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
+	}
+	var terms *acceptance.Workload
+	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {
+		var w acceptance.Workload
+		if workloadAcceptance != nil {
+			w = *workloadAcceptance
+		}
+		if fl.Changed(build.AcceptanceThinkingFlag) {
+			w.Thinking = acceptance.Thinking(speculativeThinking)
+		}
+		if fl.Changed(build.AcceptanceCategoryFlag) {
+			w.Category = speculativeCategory
+		}
+		terms = &w
+	}
+	return kernelmodel.AcceptanceOverrides{CLI: cli, Workload: terms, FallbackCategory: speculativeFallbackCategory}
+}
 
 // currentRoutingOverridesOf is the routing layer the pools will open with.
 func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }

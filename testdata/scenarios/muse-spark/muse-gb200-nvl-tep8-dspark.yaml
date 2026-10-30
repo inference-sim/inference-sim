@@ -1,0 +1,35 @@
+kind: Scenario
+name: muse-gb200-nvl-tep8-dspark
+engine_version: "0.32.0"
+model: muse-spark-open-816b-a42b-nvfp4
+acceptance:
+  value:
+    num_spec_tokens: 7
+    acceptance_length: 2.84
+    source: "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: gb200-nvl72
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 4
+  gpus_per_rack: 72
+---
+kind: Deployment
+name: muse-gb200-nvl-tep8-dspark
+pools:
+  - role: colocated
+    nodes: 2
+    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 262144
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      async_scheduling: true
+      speculative:
+        method: dspark
+        num_spec_tokens: 7
+        draft_model: muse-spark-open-dspark

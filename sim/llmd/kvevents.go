@@ -1,6 +1,7 @@
 package llmd
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -30,11 +31,13 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 		return
 	}
 	g.kvHeld[inst.ID()] = map[string]int{}
+	g.kvChains[inst.ID()] = map[string]*engineChain{}
 	inst.SetKVEventSink(func(at int64, events []sim.KVEvent) {
 		held := g.kvHeld[inst.ID()]
 		if held == nil {
 			return // the router has cleared the pod: nothing it publishes is delivered
 		}
+		events = chainEvents(g.kvChains[inst.ID()], events)
 		// Pin each chain the engine stores, at publication: its canonical tokens must not change
 		// while the router may still index the block (promptCanon). A removal unpins only when
 		// the router receives it (deliverKVEvents).
@@ -50,6 +53,63 @@ func (g *Gateway) subscribeKVEvents(inst *cluster.InstanceSimulator) {
 		// looked idle), so a block's store never reaches the router ahead of its parent's.
 		g.host.Schedule(g.kvDeliveryTime(inst.ID(), at), PriorityKVEvents, true, func() { g.deliverKVEvents(inst, at, events) })
 	})
+}
+
+// engineChain is the prefix chain an engine-keyed block hash names, and how many of the engine's
+// published stores hold it.
+type engineChain struct {
+	chain  string
+	stores int
+}
+
+// chainEvents rewrites events an engine keys in its own form into BLIS's prefix chains. An engine
+// whose prefix cache keys blocks as BLIS does (the compatibility engines: SHA-256 chain hashes in
+// hex) is passed through. vLLM v0.32.0 keys a block by its own 64-bit hash, published in decimal;
+// its stored block's chain is BLIS's hash of its parent's chain and its tokens, the same
+// hashBlock the canonicalizer applies to the prompt (promptCanon.canonical), so a block the
+// engine cached from a prompt names the chain the router was shown for it. Removals resolve
+// through the chains of the stores they undo; the mapping is dropped once no store holds it.
+func chainEvents(chains map[string]*engineChain, events []sim.KVEvent) []sim.KVEvent {
+	if len(events) == 0 || isChainHash(events[0].Hash) {
+		return events
+	}
+	out := make([]sim.KVEvent, len(events))
+	for i, e := range events {
+		parent := ""
+		if c := chains[e.Parent]; c != nil {
+			parent = c.chain
+		} else if e.Parent != "" && !e.Removed {
+			panic(fmt.Sprintf("llmd: the engine stored block %s under parent %s, which it has not published", e.Hash, e.Parent))
+		}
+		c := chains[e.Hash]
+		if e.Removed {
+			if c == nil {
+				panic(fmt.Sprintf("llmd: the engine removed block %s, which it has not published", e.Hash))
+			}
+			if c.stores--; c.stores == 0 {
+				delete(chains, e.Hash)
+			}
+			out[i] = sim.KVEvent{Removed: true, Hash: c.chain, Tier: e.Tier}
+			continue
+		}
+		chain := hashBlock(parent, e.Tokens)
+		if c == nil {
+			c = &engineChain{chain: chain}
+			chains[e.Hash] = c
+		}
+		c.stores++
+		out[i] = sim.KVEvent{Hash: c.chain, Parent: parent, Tokens: e.Tokens, Tier: e.Tier}
+	}
+	return out
+}
+
+// isChainHash reports whether h is a BLIS prefix-chain hash: a SHA-256 digest in hex.
+func isChainHash(h string) bool {
+	if len(h) != 2*sha256.Size {
+		return false
+	}
+	_, err := hex.DecodeString(h)
+	return err == nil
 }
 
 // kvDeliveryTime is when the router receives what instance id publishes at time at: after the
@@ -76,7 +136,11 @@ func (g *Gateway) deliverKVEvents(inst *cluster.InstanceSimulator, at int64, eve
 	held := g.kvHeld[inst.ID()]
 	for _, e := range events {
 		if e.Removed && held[e.Hash] > 0 {
-			held[e.Hash]--
+			// A chain no store holds any more leaves the instance's holdings, so they stay the
+			// engine's cached set rather than every chain it ever published.
+			if held[e.Hash]--; held[e.Hash] == 0 {
+				delete(held, e.Hash)
+			}
 			g.canon.unpin(e.Hash)
 		}
 	}
@@ -103,6 +167,7 @@ func (g *Gateway) clearKVEvents(ep *endpoint) {
 		}
 	}
 	delete(g.kvHeld, ep.inst.ID())
+	delete(g.kvChains, ep.inst.ID())
 	if g.observe != nil {
 		g.observe("kvclear", string(ep.inst.ID()))
 	}

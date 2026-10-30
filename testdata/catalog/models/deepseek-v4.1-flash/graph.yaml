@@ -15,6 +15,7 @@ global:
     elements: 32
     bytes: 1
   context_window: 1048576
+  pipeline_boundary_bytes_per_token: 40976
 layer_kinds:
 - id: swa_first_moe
   nodes:
@@ -2589,3 +2590,7 @@ speculator:
     k: 256
     weight_dtype: bf16
     tp: replicated
+  aux_hidden_state_layers:
+  - 37
+  - 38
+  - 39

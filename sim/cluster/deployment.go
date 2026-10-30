@@ -108,6 +108,11 @@ type DeploymentConfig struct {
 	// expiry when the decode side vanishes (#1934, INV-PD-7). False frees them when the
 	// prefill finishes, the behaviour before #1934.
 	PDPrefillKVHold bool
+	// PDPrefillSamplesFirstToken gives a P/D prefill sub-request the request's first output token
+	// and max_tokens 1, as the P/D proxy sends the prefill leg (vLLM's toy_proxy_server.py:167-169;
+	// llm-d's CapSingleToken), for an engine that samples it (blis-vllm's v0.32.0 engine). The
+	// compatibility engines model the leg without output.
+	PDPrefillSamplesFirstToken bool
 	// PDKVLeaseUs is the handoff's kv_lease_duration in microseconds: how long a prefill
 	// engine keeps a finished request's blocks for a decode side that neither pulls them nor
 	// renews the lease. 0 takes the engine's default (NIXLLease).
