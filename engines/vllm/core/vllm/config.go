@@ -73,6 +73,10 @@ type Config struct {
 	// num_gpu_blocks from memory: the start-up check then states vLLM's numbers in GiB
 	// (kv_cache_utils.py:1031-1040@5df63a72). Unstated, it states them in blocks.
 	KVAvailableBytes int64 `yaml:"kv_available_bytes,omitempty"`
+	// KVTransfer is the pool's kv_transfer_config for P/D: the connector and the pool's kv_role.
+	// The deployment states the connector (pd_transfer.connector) and the pool's role; a caller
+	// restates them here. Unstated is no connector.
+	KVTransfer *connectorConfig `yaml:"kv_transfer,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -99,6 +103,10 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
+	// vLLM's NIXL worker checks it against.
+	connector *connectorConfig
+	pp        int
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
@@ -302,6 +310,7 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.connector, s.pp = c.KVTransfer, pp
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {

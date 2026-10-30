@@ -104,6 +104,8 @@ type Engine struct {
 	// gpu is the sampled tokens of the batch being completed, which Core's GPU interface asks
 	// for once per batch.
 	gpu batchOutput
+	// pd is the engine's P/D connector side, nil when it runs none (connector.go).
+	pd *pd
 }
 
 // reqState is what the engine keeps of a request beside the scheduler's own record.
@@ -126,6 +128,9 @@ type pendingBatch struct {
 // batchOutput is the GPU's answer for the batch being completed.
 type batchOutput struct {
 	tokens map[string][]int64
+	// pd is the engine's connector side, whose pending outcome the worker reports with each
+	// applied output (Transfers); nil when the engine runs none.
+	pd *pd
 }
 
 // Output implements core/engine.GPU.
@@ -147,6 +152,10 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		pp: max(st.sched.DecodeStagger, 1),
 	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
+	if e.pd, err = buildConnector(s, st.connector, st.pp, st.sched.Spec, len(st.sched.KVGroups) > 1); err != nil {
+		return nil, err
+	}
+	e.gpu.pd = e.pd
 	return e, nil
 }
 
@@ -212,6 +221,11 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if r.CacheSalt != "" {
 		sr.Keys.CacheSalt = r.CacheSalt
 	}
+	tp, err := e.pd.transferParams(r, e.s.BlockSize())
+	if err != nil {
+		return err
+	}
+	sr.Transfer = tp
 	if r.Adapter != "" {
 		if e.maxLoRAs == 0 {
 			// The input processor refuses an adapter when LoRA is off
@@ -322,7 +336,7 @@ func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
 		}
 	}
 	e.idleWake = 0
-	if !executed && e.s.HasRequests() && len(e.pending) == 0 {
+	if !executed && e.polls() && len(e.pending) == 0 {
 		// A step that ran no model sleeps 1 ms before the loop steps again
 		// (vllm/v1/engine/core.py:1611-1616@5df63a72).
 		e.idleWake = now + idlePollUs
@@ -357,7 +371,7 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 		e.core.Drop(cb)
 		e.finishStep(cb, nil, nil, now)
 		e.idleWake = 0
-		if e.s.HasRequests() && len(e.pending) == 0 {
+		if e.polls() && len(e.pending) == 0 {
 			e.idleWake = now + idlePollUs
 		}
 		return b, nil
@@ -388,6 +402,7 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 		b.Reqs = append(b.Reqs, sc)
 	}
 	b.Preempted = append([]string(nil), cb.Out.Preempted...)
+	b.TransfersStarted = e.pd.started(e.s)
 	for _, id := range cb.Out.Preempted {
 		e.reqs[id].preemptions++
 	}
@@ -568,6 +583,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 		res.Finished = append(res.Finished, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
 	}
 	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
+	res.Handoffs = e.pd.handoffs(e.s, fins)
 	e.finishStep(pb.b, emitted, fins, end)
 	// A request that finished here has had its final step consumed: its result and its metrics
 	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
@@ -602,11 +618,24 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	return res, fins
 }
 
-// TransferDone implements engine.Engine. No connector is modelled through this adapter yet,
-// so no transfer is ever started and every ID is unknown.
-func (e *Engine) TransferDone(engine.TransferID, bool, engine.Time) error {
-	return engine.ErrUnknownTransfer
+// TransferDone implements engine.Engine: a P/D transfer's end, which the worker reports with
+// the next applied output (connector.go). A failed pull aborts its request here: the simulator
+// has given up on it. An engine with no connector starts none, so every ID
+// is unknown. The simulator steps the engine after a transfer completion at the same instant
+// (the engine package's same-instant order), and that step's output carries it.
+func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	failed, err := e.pd.done(id, ok)
+	if err != nil || failed == "" {
+		return err
+	}
+	return e.Finish(failed, engine.FinishAbort, now)
 }
+
+// polls reports whether vLLM's loop, after a step that ran no model, would step again with no
+// new input: unfinished requests, or a transfer outcome its next step reports. Finished requests
+// whose blocks the connector holds change nothing until the simulator ends the hold, so they do
+// not keep the engine polling (the wake protocol's "with no new input").
+func (e *Engine) polls() bool { return e.s.HasUnfinished() || e.pd.pending() }
 
 // Finish implements engine.Engine: finish_requests(FINISHED_ABORTED), a no-op for an unknown
 // or finished request, as vLLM's is.
@@ -617,6 +646,7 @@ func (e *Engine) Finish(id string, _ engine.FinishReason, _ engine.Time) error {
 	}
 	st.finished = true
 	e.s.Abort([]string{id})
+	e.pd.aborted(id)
 	if e.inFlight(id) {
 		// A batch in flight still names it: its entry goes once that batch completes (apply).
 		e.aborted[id] = true
