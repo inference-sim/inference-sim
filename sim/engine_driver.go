@@ -82,8 +82,10 @@ type EngineDriver struct {
 	// splits its steps by stage (engine.Pipelined); nil for one stage, where gpuFreeAt is the
 	// one device's.
 	stageFreeAt []int64
-	// tierFreeAt is when the engine's offload-tier stream finishes the transfer it holds.
-	tierFreeAt int64
+	// tierFreeAt is when the engine's offload-tier streams finish the transfers they hold, by
+	// direction: vLLM's CPU offload worker runs stores and loads on separate handlers, each
+	// chaining its own transfers (startTierTransfer).
+	tierFreeAt map[engine.TransferKind]int64
 	// recentStages are the last pipelined batches scheduled, newest last, at most one per stage:
 	// each one's requests and when it leaves the last stage (timeBatch's T-pp dependency).
 	recentStages []stagedBatch
@@ -579,11 +581,14 @@ func (d *EngineDriver) kick(now int64) {
 			panic(fmt.Sprintf("engine driver: Schedule at %d: %v", now, err))
 		}
 		d.notePreempted(b)
-		d.startTransfers(b.TransfersStarted, now)
 		if b.Empty() {
+			d.startTransfers(b.TransfersStarted, now)
 			break
 		}
 		start, end := d.timeBatch(b, now)
+		// The worker submits a step's offload copies after its forward pass, and each copy's
+		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
+		d.startTransfersAfter(b.TransfersStarted, now, end)
 		d.stepIdx++
 		d.admit(b, now, start)
 		if d.cfg.ApplyAtStepStart {

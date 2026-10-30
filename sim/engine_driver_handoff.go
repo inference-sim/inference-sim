@@ -38,11 +38,18 @@ func (d *EngineDriver) AddRemote(req *Request, now int64) {
 	d.rearmWake(now)
 }
 
-// startTransfers reports the pulls a schedule at now started to the host.
+// startTransfers reports the transfers a schedule at now that ran no forward pass started: its
+// offload-tier copies start once the compute already queued ends (startTierTransfer).
 func (d *EngineDriver) startTransfers(ts []engine.Transfer, now int64) {
+	d.startTransfersAfter(ts, now, max(now, d.BusyUntil()))
+}
+
+// startTransfersAfter reports the pulls a schedule at now started to the host, and starts its
+// offload-tier copies no earlier than computeEnd, when the compute stream they wait on frees.
+func (d *EngineDriver) startTransfersAfter(ts []engine.Transfer, now, computeEnd int64) {
 	for _, t := range ts {
 		if t.Tier != "" {
-			d.startTierTransfer(t, now)
+			d.startTierTransfer(t, computeEnd)
 			continue
 		}
 		req := d.remote[t.Request]
@@ -139,9 +146,16 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 
 // startTierTransfer prices an engine's load from or store to an offload tier (Transfer.Tier,
 // blis-vllm's OffloadingConnector) by the engine's own pricer, and reports it done when it lands.
-// The tier's transfers run one at a time on their own stream (vLLM's offload handler), so each
-// starts when the one before it lands. An engine that starts one and prices none is refused.
-func (d *EngineDriver) startTierTransfer(t engine.Transfer, now int64) {
+// vLLM's CPU offload worker has one handler a direction (store_handler, load_handler), each
+// starting a transfer only after the one before it on that handler ends (stream.wait_event of the
+// last transfer's end event), and every transfer's stream first waits on the compute stream
+// (stream.wait_stream(current_stream)), so it starts after the forward pass of the step that
+// carried it (SingleDirectionOffloadingHandler.transfer_async, vllm/v1/kv_offload/cpu/
+// gpu_worker.py:665-670, 834-852@5df63a72): a step's loads are submitted in its post_forward and
+// its stores in the next step's pre_forward, before that step's forward is queued
+// (vllm/v1/worker/gpu/kv_connector.py:81, 131-138; offloading/worker.py:218-236). Loads therefore never overlap each other, nor stores each other, but a load and a
+// store do. An engine that starts one and prices none is refused.
+func (d *EngineDriver) startTierTransfer(t engine.Transfer, after int64) {
 	p, ok := d.eng.(interface {
 		TransferTime(engine.Transfer) (engine.Duration, bool)
 	})
@@ -152,9 +166,12 @@ func (d *EngineDriver) startTierTransfer(t engine.Transfer, now int64) {
 	if !ok {
 		panic(fmt.Sprintf("engine driver: the engine started a %s transfer to tier %q, and prices none", t.Kind, t.Tier))
 	}
-	start := max(now, d.tierFreeAt)
-	d.tierFreeAt = start + int64(dur)
-	d.schedule(&driverTierTransferDone{at: d.tierFreeAt, id: t.ID})
+	if d.tierFreeAt == nil {
+		d.tierFreeAt = map[engine.TransferKind]int64{}
+	}
+	start := max(after, d.tierFreeAt[t.Kind])
+	d.tierFreeAt[t.Kind] = start + int64(dur)
+	d.schedule(&driverTierTransferDone{at: d.tierFreeAt[t.Kind], id: t.ID})
 }
 
 // driverTierTransferDone reports an offload-tier transfer landed. Transfer completions run after
