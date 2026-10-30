@@ -240,11 +240,8 @@ func TestPPBoundaryCarriesTheDrafterAuxStates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := k.graph.Speculator.AuxHiddenStateLayers; len(got) == 0 {
-			// TEMPORARY: until testdata/upstream.lock pins a catalog whose DSpark graph states
-			// aux_hidden_state_layers (blis-catalog 74b8f13).
-			t.Skip("the pinned catalog's drafter graph states no aux_hidden_state_layers")
-		} else if len(got) != 5 {
+		// blis-catalog 0.5.0's DSpark graph states aux_hidden_state_layers.
+		if got := k.graph.Speculator.AuxHiddenStateLayers; len(got) != 5 {
 			t.Fatalf("the drafter graph states aux layers %v, want Muse's five", got)
 		}
 		for i := 0; 2*i < len(c.aux); i++ {
@@ -416,10 +413,9 @@ func TestMusePoolerShardsAtDecodeOnBlackwell(t *testing.T) {
 			unpool = g
 		}
 	}
+	// blis-catalog 0.5.0's Muse graphs mark the pooler and unpooler sharded_at_decode.
 	if pool == nil || unpool == nil {
-		// TEMPORARY: until testdata/upstream.lock pins a catalog whose Muse graphs state
-		// sharded_at_decode (blis-catalog af32dd0).
-		t.Skip("the pinned catalog's Muse graph marks no pooler or unpooler sharded_at_decode")
+		t.Fatal("the pinned catalog's Muse graph marks no pooler or unpooler sharded_at_decode")
 	}
 	for _, c := range []struct {
 		tokens       int
