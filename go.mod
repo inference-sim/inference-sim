@@ -7,7 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030031437-e0377f3f6e79 // TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
 	github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261030033048-6e8049b4b792 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261030040231-e7b6bfdeb7b5 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -128,4 +128,6 @@ require (
 
 // The one permitted replace: the llm-d router fork keeps upstream's module path, so a replace is
 // the only way to substitute it (docs/contributing/llm-d-router-fork.md).
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1
+// TEMPORARY: the head of inference-sim/llm-d-router#4 (prefix-cache-affinity-filter hosted), for
+// inference-sim/inference-sim#2059; moves to the fork's tag once that PR merges and is tagged.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1.0.20261030035204-4cc406b5c000

@@ -39,6 +39,31 @@ H100 and H200 serve the NVFP4 experts with Marlin (`moe_backend: marlin`). That 
 
 DSpark acceptance is pinned in each file at an acceptance length of 2.84. That figure comes from internal deployment measurements of 1.84 accepted tokens per draft with a fixed 7-token verify.
 
+## Routed
+
+Three files (`*-routed.yaml`) serve one measured layout per cluster as two replicas behind the
+llm-d router configuration of internal deployment measurements,
+[`router/precise-affinity-flow-control.yaml`](router/precise-affinity-flow-control.yaml):
+
+- precise prefix-cache routing, fed by the engines' KV events;
+- `prefix-cache-affinity-filter`, which keeps a request on the pods that cache at least half its
+  prompt, unless their estimated TTFT is 4.5 s worse (in-flight tokens over 15,000 tokens/s);
+- `token-load-scorer`;
+- flow control, holding requests once a pod has 32 in flight or a queue builds.
+
+The deployment's pod discovery and service URL are replaced by the simulated pool. Run them
+with `--num-instances 2`.
+
+| File | Layout |
+|---|---|
+| `muse-h100-roce-armC-routed.yaml` | arm C (PP2 x TP8 + DSpark), two replicas on four nodes |
+| `muse-h200-ib-tep8-dspark-routed.yaml` | TP8 + EP + DSpark, two one-node replicas |
+| `muse-gb200-nvl-tep8-dspark-routed.yaml` | TP8 + EP + DSpark, two two-tray replicas |
+
+`TestMuseSparkPrecisePrefixRoutingFollowsTheCache` checks that the router routes by the engines'
+caches. Eight agents each send turns on their own 16k-token context. Behind this router the two
+H200 replicas hit their prefix caches more often than behind a load-only router.
+
 ## What vLLM refuses
 
 - `muse-h200-ib-dep8-dspark.yaml` at 262,144 tokens is refused at start-up. A rank's pool is smaller than one full-context request's full-attention group, and vLLM v0.32.0 refuses the same pool. The `-128k` twin runs.

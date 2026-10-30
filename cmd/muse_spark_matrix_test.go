@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,12 +23,17 @@ import (
 // H200 and NVLink GB200 pools differ by interconnect, and a nominal-bandwidth model priced them
 // alike.
 //
+// The -routed files serve a measured layout as two replicas behind the llm-d router
+// configuration of internal deployment measurements (precise prefix-cache routing from the
+// engines' KV events, prefix-cache affinity on the in-flight load, a token-load scorer, flow
+// control), and run with --num-instances 2.
+//
 // What vLLM refuses, the scenario set states as such: H200 DP8 x EP8 with DSpark at 262,144
 // tokens leaves a rank fewer blocks than one full-context request's full-attention group, and
 // vLLM refuses it at start-up; the 131,072-token arm runs.
 func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds the binary and runs 36 scenarios")
+		t.Skip("builds the binary and runs 39 scenarios")
 	}
 	blis := builtBlis(t)
 	_, catalog, registry := kernelRepos(t)
@@ -37,25 +43,42 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	}
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil || len(files) < 30 {
-		t.Fatalf("found %d Muse scenarios (%v); the matrix is 36", len(files), err)
+		t.Fatalf("found %d Muse scenarios (%v); the matrix is 39", len(files), err)
 	}
 	sort.Strings(files)
 	refused := map[string]string{
 		"muse-h200-ib-dep8-dspark.yaml": "cannot hold one max_model_len 262144 sequence",
 	}
 	run := func(name string) (map[string]any, string, error) {
-		c := exec.Command(blis, "run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,
+		args := []string{"run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,
 			"--registry", registry, "--rate", "2", "--num-requests", "8",
 			"--prompt-tokens", "4096", "--prompt-tokens-min", "4096", "--prompt-tokens-max", "4096",
 			"--prompt-tokens-stdev", "0", "--output-tokens", "64", "--output-tokens-min", "64",
-			"--output-tokens-max", "64", "--output-tokens-stdev", "0")
+			"--output-tokens-max", "64", "--output-tokens-stdev", "0"}
+		if strings.HasSuffix(name, "-routed.yaml") {
+			args = append(args, "--num-instances", "2")
+		}
+		c := exec.Command(blis, args...)
 		var out, errBuf bytes.Buffer
 		c.Stdout, c.Stderr = &out, &errBuf
 		err := c.Run()
-		i := strings.Index(out.String(), "{")
+		// The cluster's block: the only one on one instance, the one so named beside the
+		// instances' on several.
 		var m map[string]any
-		if i >= 0 {
-			_ = json.NewDecoder(strings.NewReader(out.String()[i:])).Decode(&m)
+		for rest := out.String(); ; {
+			i := strings.Index(rest, "{")
+			if i < 0 {
+				break
+			}
+			dec := json.NewDecoder(strings.NewReader(rest[i:]))
+			var b map[string]any
+			if dec.Decode(&b) != nil {
+				break
+			}
+			if m == nil || b["instance_id"] == "cluster" {
+				m = b
+			}
+			rest = rest[i+int(dec.InputOffset()):]
 		}
 		return m, errBuf.String(), err
 	}
@@ -90,3 +113,82 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 		t.Error("the runnable 131,072-token H200 DP8 DSpark arm is missing")
 	}
 }
+
+// The report's router configuration routes Muse by its KV cache: on a workload of eight agents,
+// each with its own 16k-token context, two H200 replicas behind it hit their prefix caches more
+// often than behind a load-only router, which places each agent's turns without regard to where
+// its context is cached. It holds only if the 0.32.0 engines' KV events reach the router's
+// precise-prefix producer and name the chains the router was shown.
+func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the binary and runs two clusters")
+	}
+	blis := builtBlis(t)
+	_, catalog, registry := kernelRepos(t)
+	dir, err := filepath.Abs(filepath.Join("..", "testdata", "scenarios", "muse-spark"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	workload := filepath.Join(tmp, "agents.yaml")
+	if err := os.WriteFile(workload, []byte(museAgents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	routed, err := os.ReadFile(filepath.Join(dir, "muse-h200-ib-tep8-dspark-routed.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadOnly, err := filepath.Abs(filepath.Join("..", "examples", "llm-d", "load-only.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const key = "endpoint_picker_config: router/precise-affinity-flow-control.yaml"
+	other := strings.Replace(string(routed), key, "endpoint_picker_config: "+loadOnly, 1)
+	if other == string(routed) {
+		t.Fatal("the routed scenario does not name the report's router configuration")
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "load-only.yaml"), []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hitRate := func(scenarios, name string) float64 {
+		c := exec.Command(blis, "run", "--scenarios", scenarios, "--scenario", name, "--catalog", catalog,
+			"--registry", registry, "--num-instances", "2", "--num-requests", "64", "--workload-spec", workload)
+		var out, errBuf bytes.Buffer
+		c.Stdout, c.Stderr = &out, &errBuf
+		if err := c.Run(); err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, lastLines(errBuf.String(), 6))
+		}
+		_, after, ok := strings.Cut(out.String(), "Cache Hit Rate: ")
+		if !ok {
+			t.Fatalf("%s: no cache hit rate in the summary", name)
+		}
+		var v float64
+		if _, err := fmt.Sscanf(after, "%f", &v); err != nil {
+			t.Fatalf("%s: cache hit rate: %v", name, err)
+		}
+		return v
+	}
+	precise := hitRate(dir, "muse-h200-ib-tep8-dspark-routed.yaml")
+	load := hitRate(tmp, "load-only.yaml")
+	if precise <= load {
+		t.Errorf("precise prefix routing hit %.4f, load-only %.4f: routing ignores the engines' caches", precise, load)
+	}
+}
+
+// museAgents is eight agents at 3 requests/s in all, each turn a 512-token message after the
+// agent's own 16,384-token context.
+const museAgents = `version: "2"
+seed: 7
+category: language
+aggregate_rate: 3.0
+cohorts:
+  - id: agents
+    population: 8
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    prefix_group: agent
+    prefix_sharing: per_member
+    prefix_length: 16384
+    input_distribution: {type: constant, params: {value: 512}}
+    output_distribution: {type: constant, params: {value: 64}}
+`

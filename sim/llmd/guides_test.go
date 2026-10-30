@@ -21,13 +21,12 @@ import (
 func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 	want := map[string]string{ // guide -> "" (runs) or a substring of its startup refusal
 		"flow-control.yaml": "",
-		// prefix-cache-affinity-filter reads the external latency predictor's sidecar, which a
-		// simulation has no stand-in for (sim/llmd/support.go).
-		"optimized-baseline.yaml": `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
-		"pd-disaggregation.yaml":  `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
-		// Past the block-size check (run on 64-token engines below), it is refused for its
-		// prefix-cache-affinity-filter too.
-		"precise-prefix-cache-routing.yaml": `"prefix-cache-affinity-filter" (type prefix-cache-affinity-filter): it consumes the external latency predictor`,
+		// prefix-cache-affinity-filter gates on the in-flight load (its default TTFT source), which
+		// the fork hosts with its exploration on the runtime's stream (#1991).
+		"optimized-baseline.yaml": "",
+		"pd-disaggregation.yaml":  "",
+		// Run on 64-token engines below, past the producer's block-size check.
+		"precise-prefix-cache-routing.yaml": "",
 		"tiered-prefix-cache-cpu.yaml":      "",
 		// Its revision split draws from process-wide randomness, which would break INV-6.
 		"wide-ep.yaml": `"disaggregatedset-rollout-screener" (type disaggregatedset-rollout-screener): its revision split draws from process-wide randomness`,
