@@ -56,6 +56,19 @@ type Pricer interface {
 	StepTime(b engine.Batch) engine.Duration
 }
 
+// VerifyingPricer is a Pricer that also says how many of each request's scheduled drafts the
+// verifier runs, for a pool whose runner trims them: DSpark adaptive verification, where vLLM's
+// scheduler still budgets 1 + K tokens a decode and the V2 runner verifies only a
+// confidence-chosen budget of the drafts (get_num_tokens and reallocate_drafts,
+// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350,392-448@5df63a72).
+// VerifiedDrafts answers for the batch StepTime prices: one entry for each of b.Reqs, or nil
+// when every scheduled draft is verified. The engine caps each request's accepted drafts at its
+// entry (apply).
+type VerifyingPricer interface {
+	Pricer
+	VerifiedDrafts(b engine.Batch) []int
+}
+
 // FixedPricer prices every step at the same duration, for tests and for a behavioural run that
 // holds step time fixed.
 type FixedPricer engine.Duration
@@ -108,6 +121,10 @@ type Engine struct {
 	pd *pd
 	// off is the engine's KV offload side, nil when it runs none (offload.go).
 	off *offload
+	// verified are, for each in-flight batch the pricer trims (VerifyingPricer), by core
+	// batch ID, how many drafts each of its requests had verified; apply caps their acceptance
+	// at it and drops the entry.
+	verified map[int]map[string]int
 	// emptyFinished are requests a schedule that ran no tokens finished (a failed load under
 	// kv_load_failure_policy "fail": update_from_output finishes it as an error,
 	// scheduler.py:2306-2325@5df63a72), not yet reported: the next Batch's Finished reports them.
@@ -457,6 +474,9 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 		}
 		b.Reqs = append(b.Reqs, sc)
 	}
+	if err := e.noteVerified(cb.ID, b); err != nil {
+		return engine.Batch{}, err
+	}
 	b.Preempted = append([]string(nil), cb.Out.Preempted...)
 	b.TransfersStarted = e.pd.started(e.s)
 	if e.off != nil {
@@ -466,6 +486,41 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 		e.reqs[id].preemptions++
 	}
 	return b, nil
+}
+
+// noteVerified records, for a batch whose pricer trims the verified drafts (VerifyingPricer),
+// how many drafts each drafting request has verified, which apply caps its acceptance at. A
+// pricer that trims nothing leaves no record, and the cap is the scheduled drafts as before.
+func (e *Engine) noteVerified(id int, b engine.Batch) error {
+	p, ok := e.pricer.(VerifyingPricer)
+	if !ok {
+		return nil
+	}
+	drafting := false
+	for _, r := range b.Reqs {
+		drafting = drafting || r.Drafts > 0
+	}
+	if !drafting {
+		return nil
+	}
+	widths := p.VerifiedDrafts(b)
+	if widths == nil {
+		return nil
+	}
+	if len(widths) != len(b.Reqs) {
+		return fmt.Errorf("vllm: the pricer gave %d verified widths for a batch of %d requests", len(widths), len(b.Reqs))
+	}
+	got := map[string]int{}
+	for i, r := range b.Reqs {
+		if r.Drafts > 0 {
+			got[r.ID] = min(max(widths[i], 0), r.Drafts)
+		}
+	}
+	if e.verified == nil {
+		e.verified = map[int]map[string]int{}
+	}
+	e.verified[id] = got
+	return nil
 }
 
 // StepTime implements engine.Engine.
@@ -578,6 +633,8 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	tokens := map[string][]int64{}
 	firsts := []string{}
 	emitted := map[string]int{}
+	verified, trimmed := e.verified[b.ID]
+	delete(e.verified, b.ID)
 	for _, rid := range pb.b.Samples {
 		st := e.reqs[rid]
 		if st == nil || st.finished {
@@ -593,6 +650,15 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 						real++
 					}
 				}
+			}
+			if trimmed {
+				// Under adaptive verification the rejection sampler runs over the compacted
+				// logits, each request's span of cu_num_logits holding only the drafts the
+				// budget admitted (reallocate_drafts, adaptive_verification.py:430-435@5df63a72),
+				// so it can accept no draft past them (rejection_sampler_utils.py:343-351@5df63a72).
+				// The scheduler still rolls back the rest of the K it scheduled as rejected
+				// (vllm/v1/core/sched/scheduler.py:2116-2126@5df63a72).
+				real = min(real, verified[rid])
 			}
 			n += min(max(outcome.Accepted[rid], 0), real)
 		}
