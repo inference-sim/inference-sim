@@ -124,7 +124,7 @@ func (s *Scheduler) truncateForPrefill(r *sched.Request) {
 // ConnectorModels implements sched.ConnectorCapabilities: what this model of NIXL's scheduler
 // side is diff-tested beside, against vLLM v0.32.0 (oracle/run_connector.py).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true, Drafters: true}
+	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true}
 }
 
 // MatchedTokens is get_num_new_matched_tokens (pull_scheduler.py:34-106).

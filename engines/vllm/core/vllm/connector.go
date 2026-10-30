@@ -8,8 +8,8 @@ import (
 
 	"github.com/inference-sim/blis-schemas/engine"
 
-	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/connector/nixl"
+	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -108,7 +108,11 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	cfg.PrefillBackoff = nixl.Backoff(spec)
 	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
 		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{}}
-	if err := s.SetConnector(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute}); err != nil {
+	// is_kv_consumer and is_kv_producer (vllm/config/kv_transfer.py:130-136@5df63a72) set
+	// defer_block_free and requires_kv_delivery beside more than one batch in flight
+	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
+	if err := s.SetConnector(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
+		Consumer: c.Role == roleConsumer, Producer: c.Role == roleProducer}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	return p, nil

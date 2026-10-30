@@ -6,7 +6,11 @@
 
 package sched
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/inference-sim/blis-vllm/core/kv"
+)
 
 // Connector is the scheduler side of a KV connector (KVConnectorBase_V1's scheduler-role
 // methods, vllm/distributed/kv_transfer/kv_connector/v1/base.py@5df63a72), called at exactly
@@ -130,6 +134,56 @@ type ConnectorConfig struct {
 	// RecomputeLoadFailures is kv_load_failure_policy == "recompute"
 	// (vllm/config/kv_transfer.py:88@5df63a72; scheduler.py:181-182).
 	RecomputeLoadFailures bool
+	// Consumer and Producer are is_kv_consumer and is_kv_producer
+	// (vllm/config/kv_transfer.py:130-136@5df63a72): kv_consumer, kv_producer, or both for kv_both.
+	Consumer, Producer bool
+}
+
+// KVDelivery is a connector that states requires_kv_delivery
+// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:196-206@5df63a72); one that does not has
+// the base class's default, the producer role (ConnectorConfig.Producer).
+type KVDelivery interface {
+	RequiresKVDelivery() bool
+}
+
+// deferredFree is one deferred_frees entry (scheduler.py:415-417): blocks a step still in flight
+// may write, returned to the pool once processedSeq reaches fence.
+type deferredFree struct {
+	fence  int
+	blocks []*kv.Block
+}
+
+// canFreeBlocks is _request_blocks_can_be_freed (scheduler.py:2759-2764): with defer_block_free,
+// a request's blocks are freed at once only when no step that scheduled it is still in flight.
+func (s *Scheduler) canFreeBlocks(r *Request) bool {
+	return !s.deferBlockFree || r.lastSchedSeq <= s.processedSeq
+}
+
+// freeRequestBlocks is _free_request_blocks (scheduler.py:2766-2775): the request's blocks go
+// back to the pool, or, while a step in flight may still write them, wait in deferred_frees.
+func (s *Scheduler) freeRequestBlocks(r *Request) {
+	if s.canFreeBlocks(r) {
+		s.KV.Free(r.ID)
+		return
+	}
+	if blocks := s.KV.PopBlocks(r.ID); len(blocks) > 0 {
+		s.deferredFrees = append(s.deferredFrees, deferredFree{fence: s.schedSeq, blocks: blocks})
+	}
+}
+
+// drainDeferredFrees is _drain_deferred_frees (scheduler.py:2788-2800): the deferred blocks whose
+// fence step has completed, oldest first, stopping at the first that has not, each entry freed in
+// reverse so its tail blocks are evicted first.
+func (s *Scheduler) drainDeferredFrees() {
+	for len(s.deferredFrees) > 0 && s.deferredFrees[0].fence <= s.processedSeq {
+		bs := s.deferredFrees[0].blocks
+		s.deferredFrees = s.deferredFrees[1:]
+		rev := make([]*kv.Block, len(bs))
+		for i, b := range bs {
+			rev[len(bs)-1-i] = b
+		}
+		s.KV.Pool.Free(rev)
+	}
 }
 
 // setFetchStage is _set_kv_fetch_stage (scheduler.py:3078-3086).
@@ -269,7 +323,7 @@ func (s *Scheduler) connectorFinished(r *Request) bool {
 
 // freeBlocks is _free_blocks (scheduler.py:2745-2748).
 func (s *Scheduler) freeBlocks(r *Request) {
-	s.KV.Free(r.ID)
+	s.freeRequestBlocks(r)
 	delete(s.requests, r.ID)
 }
 

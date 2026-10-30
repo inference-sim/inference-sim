@@ -27,6 +27,7 @@ import sys
 
 LENGTH_CAP_SEEDS = 10000
 HYBRID_SEEDS = 20000
+QUEUED_SEEDS = 30000
 
 
 def out_len(rng: random.Random, max_len: int, plen: int, capped: bool) -> int:
@@ -57,6 +58,8 @@ def hybrid_dims(rng: random.Random, block: int) -> dict:
 
 
 def scenario(seed: int) -> dict:
+    if seed >= QUEUED_SEEDS:
+        return queued_scenario(seed)
     if seed >= HYBRID_SEEDS:
         return hybrid_scenario(seed)
     # Seeds from LENGTH_CAP_SEEDS on let a request run past max_model_len: its assigned output
@@ -161,6 +164,31 @@ def hybrid_scenario(seed: int) -> dict:
     # more: the base draw's pool is scaled so admissions still sometimes wait.
     lookahead = -(-(spec["num_speculative_tokens"] + 1) // sc["config"]["block_size"]) if spec else 0
     sc["config"]["num_blocks"] = ngroups * (sc["config"]["num_blocks"] + lookahead) + 1
+    return sc
+
+
+def queued_scenario(seed: int) -> dict:
+    """A seed from QUEUED_SEEDS: a hybrid seed's draw (a quarter with neither groups nor a
+    drafter), then, from a third stream, the batch queue."""
+    q_rng = random.Random(seed * 104729 + 3)
+    sc = hybrid_scenario(seed)
+    cfg = sc["config"]
+    if q_rng.random() < 0.25:
+        cfg.pop("kv_groups", None)
+        if cfg.pop("speculative", None):
+            for r in sc["requests"]:
+                r.pop("accepted", None)
+    producer_one_group = cfg["connector"]["kv_role"] == "kv_producer" and len(cfg.get("kv_groups", [])) <= 1
+    roll = q_rng.random()
+    if producer_one_group and roll < 0.3:
+        cfg["pipeline_parallel_size"] = q_rng.choice([2, 4])
+        if q_rng.random() < 0.5:
+            cfg["async_scheduling"], cfg["use_v2_model_runner"] = True, True
+    else:
+        cfg["async_scheduling"] = True
+        if q_rng.random() < 0.4:
+            cfg["use_v2_model_runner"] = True
+    sc["max_steps"] = 600
     return sc
 
 

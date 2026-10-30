@@ -360,16 +360,23 @@ def restore_async(scheduler, async_sched: bool, v2: bool):
     (vllm/platforms/cpu.py:329-331); max_concurrent_batches (vllm/config/vllm.py:577-588) is
     evaluated with the scenario's model-runner choice: the CPU wheel cannot select the V2 runner
     (no Triton). oracle/run_dp.py's batch-queue ranks use it too."""
+    vllm_config = scheduler.vllm_config
+    return vllm_config, set_async(vllm_config, async_sched, v2)
+
+
+def set_async(vllm_config, async_sched: bool, v2: bool) -> int:
+    """Sets the scenario's async scheduling back on vllm_config after the CPU platform turned it
+    off (vllm/platforms/cpu.py:329-331), and returns vLLM's own max_concurrent_batches for it
+    (vllm/config/vllm.py:577-588) at the scenario's model-runner choice. oracle/run_connector.py
+    calls it before it builds its Scheduler, which reads both at construction."""
     from types import SimpleNamespace  # noqa: E402
     from vllm.config import VllmConfig  # noqa: E402
 
-    vllm_config = scheduler.vllm_config
     vllm_config.scheduler_config.async_scheduling = async_sched
-    batch_queue_size = VllmConfig.max_concurrent_batches.fget(SimpleNamespace(
+    return VllmConfig.max_concurrent_batches.fget(SimpleNamespace(
         parallel_config=vllm_config.parallel_config,
         scheduler_config=vllm_config.scheduler_config,
         use_v2_model_runner=v2))
-    return vllm_config, batch_queue_size
 
 
 def engine_core(scheduler, vllm_config, batch_queue_size: int, async_sched: bool, drafts: bool, gpu,

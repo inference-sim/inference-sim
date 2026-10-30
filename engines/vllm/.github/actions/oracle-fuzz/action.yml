@@ -24,7 +24,7 @@ runs:
           echo "FUZZ_T2_SEEDS=1000-2000_5000-2000"
           echo "FUZZ_T3_SEEDS=1000-1000"
           echo "FUZZ_DP_SEEDS=1000-500_2000-500"
-          echo "FUZZ_CONNECTOR_SEEDS=1-1000_10000-300"
+          echo "FUZZ_CONNECTOR_SEEDS=1-1000_10000-300_20000-1000_30000-1000"
           echo "FUZZ_VLLM_COMMIT=5df63a7203cdb9328d824a27b682e77c7b9928be"
           echo "FUZZ_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6"
         } >> "$GITHUB_ENV"
@@ -41,7 +41,7 @@ runs:
         base="${ImageOS:-unknown}-${{ runner.arch }}-py${{ inputs.python-version }}-env-${{ hashFiles('oracle-env.lock') }}-vllm-${FUZZ_VLLM_COMMIT}-model-${FUZZ_MODEL_REVISION}"
         echo "t2=oracle-fuzz-t2-${base}-${FUZZ_T2_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_metrics.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "t3=oracle-fuzz-t3-${base}-${FUZZ_T3_SEEDS}-dp-${FUZZ_DP_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/gen_fuzz_t3.py', 'oracle/gen_fuzz_dp.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_dp.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
-        echo "connector=oracle-fuzz-connector-${base}-${FUZZ_CONNECTOR_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_connector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_connector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
+        echo "connector=oracle-fuzz-connector-${base}-${FUZZ_CONNECTOR_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_connector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
 
     # Tier 2: 4000 random scenarios through vLLM's Scheduler and its Prometheus logger.
     - id: t2
@@ -101,7 +101,7 @@ runs:
           oracle/out/fuzz-t3-dp
         key: ${{ steps.keys.outputs.t3 }}
 
-    # Tier 4: 1300 NIXL connector scenarios through vLLM's Scheduler with the real connector.
+    # Tier 4: 3300 NIXL connector scenarios through vLLM's Scheduler with the real connector.
     - id: connector
       name: restore the connector fuzz corpus and vLLM's traces
       uses: actions/cache/restore@v4
@@ -118,7 +118,8 @@ runs:
       run: |
         export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
         mkdir -p oracle/out/fuzz-connector
-        # Seeds 10000+ run requests into max_model_len (the connector side's length caps).
+        # Seeds 10000+ run requests into max_model_len (the connector side's length caps); 20000+
+        # add hybrid KV cache groups and drafters; 30000+ the batch queue (async scheduling, PP).
         for r in ${FUZZ_CONNECTOR_SEEDS//_/ }; do python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector "${r%-*}" "${r#*-}"; done
         python -I oracle/run_connector.py vllm-source oracle/out/fuzz-connector
     - name: save the connector fuzz corpus and vLLM's traces (cache miss)

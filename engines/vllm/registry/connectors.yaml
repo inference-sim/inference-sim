@@ -12,9 +12,9 @@ connectors:
     upstream: KVConnectorBase_V1
     behaves_like: nixl-pull
     roles: [pd_transfer]
-    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 22 scenarios + 1300 fuzz seeds at 0 mismatches"
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 36 scenarios + 3300 fuzz seeds at 0 mismatches"
   NixlPullConnector:
     upstream: KVConnectorBase_V1
     behaves_like: nixl-pull
     roles: [pd_transfer]
-    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 22 scenarios + 1300 fuzz seeds at 0 mismatches"
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 36 scenarios + 3300 fuzz seeds at 0 mismatches"

@@ -942,4 +942,17 @@ func (m *Manager) Free(id string) {
 	}
 }
 
+// PopBlocks is pop_blocks_for_free (kv_cache_coordinator.py:410-427@5df63a72): it drops the
+// request's bookkeeping in every group and returns its blocks without freeing them, each
+// group's in allocation order, group after group. The caller frees them later, reversed.
+func (m *Manager) PopBlocks(id string) []*Block {
+	var out []*Block
+	for _, g := range m.groups {
+		out = append(out, g.reqBlocks[id]...)
+		delete(g.reqBlocks, id)
+		delete(g.numCached, id)
+	}
+	return out
+}
+
 func cdiv(a, b int) int { return (a + b - 1) / b }

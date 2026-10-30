@@ -129,6 +129,12 @@ type Request struct {
 	numStale int
 	// nextDecodeStep is next_decode_eligible_step.
 	nextDecodeStep int
+	// lastSchedSeq is last_sched_seq: the step sequence that last scheduled the request, kept
+	// with defer_block_free (scheduler.py:1631-1633).
+	lastSchedSeq int
+	// dropStale is drop_stale_output: the in-flight output a preemption made stale is dropped
+	// rather than delivered (scheduler.py:1603-1605), as a connector requiring KV delivery asks.
+	dropStale bool
 	// ReplayStart is replay_start (vllm/v1/request.py:209@5df63a72): where a bounded-replay
 	// prefix hit's recomputed window begins, 0 when nothing is replayed (markPrefixReplay).
 	ReplayStart int
@@ -226,6 +232,17 @@ type Scheduler struct {
 	deferred map[string]bool
 	// capacityBound is prefill_capacity_bound (scheduler.py:370, :1397-1401).
 	capacityBound bool
+	// deferBlockFree is defer_block_free: a KV consumer with more than one batch in flight
+	// defers freeing a request's blocks while a step that may write them is in flight, since a
+	// load may refill them unordered against that write (scheduler.py:184-192). schedSeq and
+	// processedSeq are sched_step_seq and processed_step_seq, the non-empty steps scheduled and
+	// processed (:411-417), and deferredFrees the blocks waiting for their fence.
+	deferBlockFree         bool
+	schedSeq, processedSeq int
+	deferredFrees          []deferredFree
+	// requiresKVDelivery is requires_kv_delivery (:168-170, 194): a preempted request's
+	// in-flight output is dropped, not delivered (_preempt_request's drop_stale_output, :839).
+	requiresKVDelivery bool
 }
 
 // New builds a scheduler.
@@ -338,6 +355,12 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 			connectorRefusalIssue)
 	}
 	s.connector, s.conf = c, conf
+	// defer_block_free and requires_kv_delivery (scheduler.py:184-194@5df63a72).
+	s.deferBlockFree = max(s.cfg.MaxConcurrentBatches, 1) > 1 && conf.Consumer
+	s.requiresKVDelivery = conf.Producer
+	if d, ok := c.(KVDelivery); ok {
+		s.requiresKVDelivery = d.RequiresKVDelivery()
+	}
 	return nil
 }
 
@@ -509,6 +532,14 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			var victim *Request
 			if s.cfg.Policy == Priority {
 				victim = maxRunning(s.running)
+			} else {
+				victim = s.running[len(s.running)-1]
+			}
+			if !s.canFreeBlocks(victim) {
+				// A deferred free will not help with immediate allocation (:803-806).
+				break
+			}
+			if s.cfg.Policy == Priority {
 				vi := indexOf(s.running, victim)
 				s.running = append(s.running[:vi], s.running[vi+1:]...)
 				if vi < reqIndex {
@@ -523,7 +554,6 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					inputBudget += restored + draftSlots
 				}
 			} else {
-				victim = s.running[len(s.running)-1]
 				s.running = s.running[:len(s.running)-1]
 			}
 			s.preempt(victim)
@@ -596,7 +626,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				skip(q)
 				continue
 			}
-			if r.numStale > 0 {
+			if r.numStale > 0 && !r.dropStale {
 				// Deliverable stale output still in flight: resuming now could resample a
 				// position it later delivers (:934-938).
 				skip(q)
@@ -750,12 +780,19 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	for _, r := range preempted {
 		out.Preempted = append(out.Preempted, r.ID)
 	}
+	// The fence advances only for steps that write KV (:1549-1552).
+	if s.deferBlockFree && len(out.Scheduled) > 0 {
+		s.schedSeq++
+	}
 	// _update_after_schedule (:1616-1648): advance computed tokens now, so a prefill can
 	// be scheduled again next step.
 	for id, n := range out.Scheduled {
 		r := s.requests[id]
 		r.NumComputed += n
 		r.numInFlight += n
+		if s.deferBlockFree {
+			r.lastSchedSeq = s.schedSeq
+		}
 		r.IsPrefillChunk = r.NumComputed < r.NumTokens()+r.Placeholders
 		if s.cfg.Async && !r.IsPrefillChunk {
 			// AsyncScheduler._update_after_schedule (async_scheduler.py:25-58): the token this
@@ -830,10 +867,12 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 // scheduling the request's in-flight output becomes stale: it still returns, but must not
 // move the counters the preemption reset (:1596-1607).
 func (s *Scheduler) preempt(r *Request) {
-	s.KV.Free(r.ID)
+	s.freeRequestBlocks(r)
 	r.Status = Preempted
 	r.NumComputed = 0
 	r.SpecTokens = nil
+	// An undrained drop-mode share stays dropped: its positions have been resampled (:1596-1605).
+	r.dropStale = s.requiresKVDelivery || (r.dropStale && r.numStale > 0)
 	r.numStale = r.numInFlight
 	r.Placeholders = 0
 	r.NumPreemptions++
@@ -865,6 +904,12 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 	var stopped []*Request
 	var skip map[string]bool
 	var fail []string
+	// Every GPU write this and earlier steps enqueued has completed: deferred blocks whose fence
+	// has passed go back to the pool (:2044-2048).
+	if s.deferBlockFree && len(out.Scheduled) > 0 {
+		s.processedSeq++
+		s.drainDeferredFrees()
+	}
 	if !o.empty() {
 		skip, fail = s.failedLoads(o, out.Scheduled)
 	}
@@ -883,6 +928,10 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 			continue
 		}
 		if r == nil || r.Status >= FinishedStopped {
+			continue
+		}
+		if stale && r.dropStale {
+			// Drop-mode stale output is discarded entirely (:2101-2103).
 			continue
 		}
 		toks := sampled[id]
