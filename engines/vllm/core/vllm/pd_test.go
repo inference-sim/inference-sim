@@ -237,3 +237,25 @@ func TestPDPrefillLegSamplesOneToken(t *testing.T) {
 		}
 	}
 }
+
+// A hybrid model's handoff holds the prompt's full-attention blocks: every one of its tokens,
+// even where group 0 is a sliding window whose early slots are freed.
+func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
+	const windowFirst = "kv_layers:\n" +
+		"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n" +
+		"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n"
+	p := mustEngine(t, producer+windowFirst)
+	r := req("a", 160, 1)
+	r.RemoteDecode = true
+	if err := p.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	results, _, _ := runOne(t, p, 0)
+	var h []engine.Handoff
+	for _, res := range results {
+		h = append(h, res.Handoffs...)
+	}
+	if len(h) != 1 || len(h[0].Blocks) != 10 {
+		t.Fatalf("handoffs %+v, want the 160-token prompt's 10 blocks", h)
+	}
+}

@@ -190,8 +190,18 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 		}
 		p.next++
 		p.holds[p.next] = f.ID
+		// The prompt's blocks: a full-attention group's, which hold every token, rather than a
+		// sliding window's, whose freed slots are the null block (a hybrid model's group 0 may be
+		// either).
+		g := 0
+		for i := 0; i < s.KV.NumGroups(); i++ {
+			if s.KV.PrefixIndexable(uint32(i)) {
+				g = i
+				break
+			}
+		}
 		var blocks []int64
-		for _, b := range s.KV.Blocks(f.ID) {
+		for _, b := range s.KV.GroupBlocks(g, f.ID) {
 			if !b.Null {
 				blocks = append(blocks, int64(b.ID))
 			}
