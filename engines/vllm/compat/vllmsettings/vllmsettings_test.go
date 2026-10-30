@@ -163,3 +163,20 @@ func TestOfPoolDecodesThePoolsBlock(t *testing.T) {
 		t.Errorf("an unstated block: OfPool = %+v, %v; want no settings and no error", empty, err)
 	}
 }
+
+// speculative.enable_adaptive_verification reaches the kernel as stated, and an unstated flag
+// is vLLM's default, off (vllm/config/speculative.py:551@5df63a72).
+func TestOfCarriesAdaptiveVerification(t *testing.T) {
+	on, off := true, false
+	for _, c := range []struct {
+		name string
+		flag *bool
+		want bool
+	}{{"unstated", nil, false}, {"false", &off, false}, {"true", &on, true}} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: "dspark", NumSpecTokens: 7,
+			EnableAdaptiveVerification: c.flag}}
+		if got := Of(e).Speculative.EnableAdaptiveVerification; got != c.want {
+			t.Errorf("%s: EnableAdaptiveVerification = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
