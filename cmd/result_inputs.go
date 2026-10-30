@@ -19,7 +19,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/embed"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/measurement"
@@ -90,10 +90,11 @@ func dataRepoRevision(root string) *result.DataRepo {
 	return &result.DataRepo{Revision: rev}
 }
 
-// resultScenarioDocs reads the scenario and deployment the run used, as the kernel decoded them.
+// resultScenarioDocs reads the scenario and deployment the run used, through blis-schemas' own
+// strict bundle loader (the same decoding the kernel applies).
 func resultScenarioDocs() (resultDocs, error) {
 	path := filepath.Join(kernelScenarioDir, kernelScenario)
-	sc, dep, err := latencykernel.LoadBundle(path)
+	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return resultDocs{}, fmt.Errorf("re-reading the scenario for the Result document: %w", err)
 	}
