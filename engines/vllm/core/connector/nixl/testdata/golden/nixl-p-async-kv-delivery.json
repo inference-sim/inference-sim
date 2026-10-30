@@ -27,14 +27,14 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "61d62fd49ffaa25a77c56701a9a3544bfc279370",
+  "blis_vllm_commit": "4c8097731e44be7af46f3ed26f192d8cca872516",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
    "scheduler_class": "AsyncScheduler"
   },
   "lockfile_sha256": "54d4c6c9f165370faaddbc8e59fdb6a80bd9fb12550e725eb5610b5f9cf588c9",
-  "mock_version": "gpu-mock/3+ea15d51fe3e4",
+  "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
