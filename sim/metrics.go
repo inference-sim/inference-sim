@@ -16,8 +16,10 @@ import (
 // for final reporting. Useful for evaluating system performance
 // and debugging behavior over time.
 type Metrics struct {
-	CompletedRequests    int     // Number of requests completed
-	TotalInputTokens     int     // Total number of input tokens
+	CompletedRequests int // Number of requests completed
+	TotalInputTokens  int // Total number of input tokens
+	// EngineAccepted counts the requests an engine accepted, whose prompts TotalInputTokens sums.
+	EngineAccepted       int
 	TotalOutputTokens    int     // Total number of output tokens
 	SimEndedTime         int64   // Sim clock time in ticks when simulation ends
 	KVBlocksUsed         float64 // Integral of KVBlockUsage over time
@@ -502,12 +504,6 @@ func WithServerSeries(s *ServerSeriesOutput) EmitOption {
 // opts carry file-only additions (see EmitOption); they are applied after the stdout
 // marshal so they cannot perturb stdout (INV-6).
 func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
-	var resolvedOpts emitOptions
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&resolvedOpts)
-		}
-	}
 	// Always emit the metrics section so callers can reliably parse output,
 	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
 	fmt.Println("=== Simulation Metrics ===")
@@ -518,67 +514,79 @@ func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts .
 	fmt.Println(string(data))
 
 	if outputFilePath != "" {
-		// Aggregate KV-cache hit rate (#1583): file-only, alongside Requests[] below.
-		// Kept off stdout (the marshal above already ran) so stdout stays
-		// byte-identical to a pre-feature build (INV-6, BC-9). calibrate --sim-metrics
-		// reads this as the simulator's hit rate. run and replay of the same trace
-		// produce identical values (INV-13).
-		hitRate := m.CacheHitRate
-
-		// Catalog provenance (#1732): same file-only discipline as cache_hit_rate above
-		// — the stdout marshal has already run, and `output` is a value copy, so this
-		// assignment cannot reach stdout or the caller's struct. Nil (no catalog
-		// resolved, or a caller that passed no option) leaves the block absent.
-		output.Catalog = resolvedOpts.catalog
-		output.Overrides = resolvedOpts.overrides
-		output.Acceptance = resolvedOpts.acceptance
-		output.PrefixCache = resolvedOpts.prefix
-		output.Agentic = resolvedOpts.agentic
-		output.PD = resolvedOpts.pd
-		output.ServerSeries = resolvedOpts.series
-		if resolvedOpts.provenance != nil {
-			output.KernelProvenance = &resolvedOpts.provenance
-		}
-		output.BuildVersions = resolvedOpts.versions
-
-		// Measured-window aggregates (#1938): file-only for the same reason. The latency
-		// families stdout already reports (ttft_*, e2e_*) take their measured-window values
-		// here, so the file states one definition per key. The legacy per-step itl_* keys and
-		// the run-wide counts (completed_requests, INV-1) are kept as they are;
-		// step_interval_* restates itl_* over the measured window.
-		measured, lat := m.buildMeasured()
-		output.MeasuredMetrics = &measured
-		output.applyMeasured(lat, hitRate)
-
-		// request-level metrics for detailed output in file
-		// Iterate over all registered requests (not just completed prefill)
-		// so incomplete requests appear with zero-valued metrics.
-		for _, id := range sortedRequestIDs(m.Requests) {
-			detail := m.Requests[id]
-			detail.TTFT = m.RequestTTFTs[id] / 1e3                                // zero if not in map
-			detail.E2E = m.RequestE2Es[id] / 1e3                                  // zero if not in map
-			detail.ITL = m.RequestITLs[id] / 1e3                                  // ticks → ms (consistent with TTFT, E2E)
-			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
-			output.Requests = append(output.Requests, detail)
-		}
-		m.assignCompletionIndices(output.Requests)
-
-		sort.Slice(output.Requests, func(i, j int) bool {
-			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
-		})
-
-		data, err := json.MarshalIndent(output, "", "  ")
-		if err != nil {
-			return fmt.Errorf("error marshalling metrics to JSON: %w", err)
-		}
-
-		writeErr := os.WriteFile(outputFilePath, data, 0644)
-		if writeErr != nil {
-			return fmt.Errorf("error writing JSON file: %w", writeErr)
-		}
-		logrus.Infof("Metrics written to: %s", outputFilePath)
+		return m.WriteMetricsFile(output, outputFilePath, opts...)
 	}
 	return nil
+}
+
+// WriteMetricsFile writes the --metrics-path file: output with the file-only blocks opts
+// carry, the measured-window aggregates and the per-request rows. It is EmitOutput's file
+// half, for a caller whose stdout carries something else (blis run and blis replay emit the
+// Result document, #1871). output is a value copy, so the caller's struct is unchanged.
+func (m *Metrics) WriteMetricsFile(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
+	var resolvedOpts emitOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&resolvedOpts)
+		}
+	}
+	// Aggregate KV-cache hit rate (#1583), file-only alongside Requests[] below. calibrate
+	// --sim-metrics reads this as the simulator's hit rate. run and replay of the same trace
+	// produce identical values (INV-13).
+	hitRate := m.CacheHitRate
+
+	// Catalog provenance (#1732) and the other file-only blocks: `output` is a value copy,
+	// so these assignments cannot reach the caller's struct.
+	output.Catalog = resolvedOpts.catalog
+	output.Overrides = resolvedOpts.overrides
+	output.Acceptance = resolvedOpts.acceptance
+	output.PrefixCache = resolvedOpts.prefix
+	output.Agentic = resolvedOpts.agentic
+	output.PD = resolvedOpts.pd
+	output.ServerSeries = resolvedOpts.series
+	if resolvedOpts.provenance != nil {
+		output.KernelProvenance = &resolvedOpts.provenance
+	}
+	output.BuildVersions = resolvedOpts.versions
+
+	// Measured-window aggregates (#1938). The latency families (ttft_*, e2e_*) take their
+	// measured-window values here, so the file states one definition per key. The legacy
+	// per-step itl_* keys and the run-wide counts (completed_requests, INV-1) are kept as
+	// they are; step_interval_* restates itl_* over the measured window.
+	measured, lat := m.buildMeasured()
+	output.MeasuredMetrics = &measured
+	output.applyMeasured(lat, hitRate)
+
+	output.Requests = m.RequestRows()
+
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling metrics to JSON: %w", err)
+	}
+	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
+		return fmt.Errorf("error writing JSON file: %w", err)
+	}
+	logrus.Infof("Metrics written to: %s", outputFilePath)
+	return nil
+}
+
+// RequestRows returns one row per registered request (not only completed ones, so an
+// incomplete request appears with zero-valued latencies), with its latencies in
+// milliseconds and its completion index, sorted by arrival. They are the --metrics-path
+// file's requests array and the Result document's per_request artifact.
+func (m *Metrics) RequestRows() []RequestMetrics {
+	rows := make([]RequestMetrics, 0, len(m.Requests))
+	for _, id := range sortedRequestIDs(m.Requests) {
+		detail := m.Requests[id]
+		detail.TTFT = m.RequestTTFTs[id] / 1e3                                // zero if not in map
+		detail.E2E = m.RequestE2Es[id] / 1e3                                  // zero if not in map
+		detail.ITL = m.RequestITLs[id] / 1e3                                  // ticks -> ms (consistent with TTFT, E2E)
+		detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks -> ms
+		rows = append(rows, detail)
+	}
+	m.assignCompletionIndices(rows)
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ArrivedAt < rows[j].ArrivedAt })
+	return rows
 }
 
 // SaveResults computes aggregate metrics and emits them to stdout and an optional

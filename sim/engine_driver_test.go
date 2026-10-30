@@ -346,3 +346,43 @@ func TestEngineDriver_RecordsEachRequestsFirstPrefixLookup(t *testing.T) {
 			m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens)
 	}
 }
+
+// A request that reached the host but has not reached the engine when the horizon ends the run
+// -- its arrival or its render is still an event in the pipeline -- is still queued (INV-1): it
+// is in the host's records and in no other terminal bucket, so leaving it out of still_queued
+// loses it from the conservation ledger.
+func TestEngineDriver_ARequestStillInThePipelineAtTheHorizonIsStillQueued(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		render int64 // the front end's render time
+		at     int64 // when the request arrives
+	}{
+		{"arrival after the horizon's last step", 0, 950},
+		{"render still running at the horizon", 500, 900},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1000,
+				QueueingTime: func(*Request) int64 { return tc.render }})
+			early := &Request{ID: "early", InputTokens: tokens(8), OutputTokens: tokens(2), ArrivalTime: 0}
+			late := &Request{ID: "late", InputTokens: tokens(8), OutputTokens: tokens(2), ArrivalTime: tc.at}
+			d.InjectArrival(early)
+			d.InjectArrivalAt(late, tc.at)
+			d.Run()
+			m := d.Metrics
+			if _, ok := m.Requests["late"]; !ok {
+				t.Fatal("non-vacuity: the late request is not in the host's records")
+			}
+			if m.CompletedRequests != 1 {
+				t.Fatalf("non-vacuity: completed %d, want the early request only", m.CompletedRequests)
+			}
+			if accounted := inv1Accounted(m); accounted != len(m.Requests) {
+				t.Errorf("INV-1: %d requests registered, %d accounted for (completed %d, still queued %d, running %d)",
+					len(m.Requests), accounted, m.CompletedRequests, m.StillQueued, m.StillRunning)
+			}
+		})
+	}
+}

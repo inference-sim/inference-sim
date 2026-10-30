@@ -48,33 +48,26 @@ priced by `blis-latency-kernel`.
 
 ### Reading the Output
 
-BLIS prints diagnostic logs to stderr and results to stdout. You'll see log lines (prefixed with `INFO` or `WARN`) followed by a `=== Simulation Metrics ===` header and pretty-printed JSON:
+BLIS prints diagnostic logs to stderr and one **Result** document to stdout: JSON by default,
+YAML with `--format yaml`; `--output result.json` writes the same bytes to a file, and
+`--view summary` renders a readable summary to stderr. The metrics are over the measured
+window, under blis-schemas' standard names ([Metrics & Results](../guide/results.md)):
 
-**Latency metrics** (all in milliseconds, reported as mean/p90/p95/p99):
+| Path | What It Measures |
+|------|-----------------|
+| `metrics.ttft_mean_ms`, `metrics.ttft_p99_ms` | **Time to First Token**: how long until the first output token. |
+| `metrics.e2e_mean_ms`, `metrics.e2e_p99_ms` | **End-to-End latency**: request arrival to the last output token. |
+| `metrics.itl_mean_ms`, `metrics.itl_p99_ms` | **Inter-Token Latency**, per token: (E2E - TTFT) / (output tokens - 1). |
+| `metrics.output_tok_s`, `metrics.request_throughput` | Output tokens and completed requests per second. |
+| `requests.completed`, `requests.injected` | The request ledger (INV-1): every injected request ends in one bucket. |
+| `requests.still_queued`, `requests.still_running` | Not done when the run ended: the workload outlasted the horizon. |
+| `engine.cluster.preemptions` | Running requests evicted to make room. Non-zero suggests overload. |
 
-| Field | What It Measures |
-|-------|-----------------|
-| `ttft_mean_ms`, `ttft_p99_ms` | **Time to First Token** — how long until the first output token is generated. Lower is better for interactive use. |
-| `e2e_mean_ms`, `e2e_p99_ms` | **End-to-End latency** — total time from request arrival to final output token. |
-| `itl_mean_ms`, `itl_p99_ms` | **Inter-Token Latency** — time between consecutive output tokens. Lower means smoother streaming. |
-| `scheduling_delay_p99_ms` | Wait time from request arrival until processing begins (includes any queueing). |
-
-**Throughput:**
-
-| Field | What It Measures |
-|-------|-----------------|
-| `responses_per_sec` | Completed requests per second. |
-| `tokens_per_sec` | Output tokens generated per second. |
-| `completed_requests` | How many requests finished within the simulation window. |
-| `total_input_tokens`, `total_output_tokens` | Total tokens processed across all completed requests. |
-
-**Health indicators:**
-
-| Field | What It Measures |
-|-------|-----------------|
-| `preemption_count` | Number of times a running request was evicted to make room for others. Non-zero suggests the system is overloaded. |
-| `dropped_unservable` | Requests rejected because they were too large for the configured memory or context length. |
-| `still_queued`, `still_running` | Requests not yet completed when the simulation ended. Non-zero means the workload outlasted the simulation window. |
+```bash
+./blis run --scenarios $SCENARIOS \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
+  --rate 10 --num-requests 100 2>/dev/null | jq '.metrics.ttft_p99_ms'
+```
 
 ## Cluster Mode
 
@@ -93,8 +86,10 @@ ranks, up to eight instances):
 
 This simulates a 4-instance cluster receiving 100 requests/second. Every cluster run routes with the llm-d router (the Endpoint Picker) embedded in the simulator; with no router configuration it uses the router's built-in default configuration (queue, KV-cache utilization and prefix-cache scorers). A real deployment's router configuration is stated by the scenario's `router:` block and pool labels; see [Routing](../guide/routing.md).
 
-!!! note "Multi-instance output format"
-    In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has `"instance_id": "cluster"`. If piping to `jq`, use `--slurp` to handle multiple JSON objects: `./blis run ... 2>/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'` to extract the cluster summary.
+!!! note "Multi-instance output"
+    The Result's `metrics` and `requests` are the whole cluster's. Each instance's own figures
+    are under `engine.instances`, keyed by instance id:
+    pipe the run above to `jq '.engine.instances.instance_0.completed_requests'`.
 
 ## Try Different Configurations
 

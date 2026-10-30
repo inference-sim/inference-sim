@@ -36,8 +36,9 @@ var contractKeys = []string{
 // Under DSpark K=5 a verify step advances AL = 1 + alpha*K tokens on average, so aiperf's
 // per-token request ITL is the per-step interval divided by AL (#1938 acceptance). The run is
 // light enough that step times barely vary, which is what lets the two p90s be compared.
-// The same run pins that the file carries every contract key at top level and stdout none of
-// the new ones (INV-6).
+// The same run pins that the file carries every contract key at top level, and that the
+// Result names the two series as blis-schemas does (#1871): its itl_p90_ms is the per-token
+// request ITL, never the per-step interval, which it reports as engine step_interval_p90_ms.
 func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *testing.T) {
 	const alpha, k = 0.502, 5
 	acceptedLength := 1 + alpha*k
@@ -61,10 +62,14 @@ func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *t
 			t.Errorf("--metrics-path file lacks contract key %q", key)
 		}
 	}
-	for _, key := range []string{"request_itl_p90_ms", "step_interval_p90_ms", "kernel_provenance", "blis_version"} {
-		if strings.Contains(stdout, `"`+key+`"`) {
-			t.Errorf("stdout carries the file-only key %q (INV-6)", key)
-		}
+	if got, want := metric(t, stdout, "itl_p90_ms"), file["request_itl_p90_ms"].(float64); got != want {
+		t.Errorf("the Result's itl_p90_ms = %v, want the per-token request_itl_p90_ms %v", got, want)
+	}
+	if got, want := resultNum(t, stdout, "engine.cluster.step_interval_p90_ms"), file["step_interval_p90_ms"].(float64); got != want {
+		t.Errorf("the Result's engine step_interval_p90_ms = %v, want the file's %v", got, want)
+	}
+	if def := parseResult(t, stdout).MetricDefs["itl_p90_ms"]; def.Formula != "tpot_excl_first" {
+		t.Errorf("itl_p90_ms is defined as %q, want tpot_excl_first (per token)", def.Formula)
 	}
 	if got := file["measured_completed_requests"].(float64); got != 40 {
 		t.Fatalf("%v of 40 requests completed in the measured window; the comparison would be vacuous", got)

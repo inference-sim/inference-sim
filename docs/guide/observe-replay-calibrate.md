@@ -243,7 +243,7 @@ routes with the router the scenario states, or the router's default configuratio
     The deployment is not round-tripped through the trace header: replay rebuilds it from
     `--scenario` (and the kernel's KV budget) exactly as `blis run` does. A trace exported by
     `blis run` and replayed with the **same scenario and identical flags, including
-    `--horizon`**, produces byte-identical stdout (INV-13). Pass `--horizon` on both legs:
+    `--horizon`**, produces equal `metrics`, `requests` and `breakdowns` (INV-13). Pass `--horizon` on both legs:
     `blis run` defaults it to unlimited while `blis replay` auto-computes 2x the max arrival
     time (see the table below), so a default-horizon replay may truncate a run that was still
     draining. An MoE scenario with `dp > 1` replays the same way — one replica per

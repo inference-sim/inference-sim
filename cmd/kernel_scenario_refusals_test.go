@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -109,7 +110,7 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 	// The accepted neighbours: the plain fixture, and a node pool of the scenario's chip at
 	// the catalog chip's memory.
 	for _, args := range [][]string{run(plain), run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "139.80072021"))} {
-		if out, stderr, err := runKernelCLI(t, args...); err != nil || !strings.Contains(out, `"completed_requests": 4`) {
+		if out, stderr, err := runKernelCLI(t, args...); err != nil || !completedIs(out, 4) {
 			t.Errorf("%v was not served: %v\n%s", args, err, lastLines(stderr, 3))
 		}
 	}
@@ -144,7 +145,7 @@ func TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart(t *testing.T) {
 			t.Errorf("gmu %s: want exit 1 with a fatal %q, got err=%v\n%s", tt.gmu, tt.want, err, lastLines(stderr, 4))
 		}
 	}
-	if out, stderr, err := runKernelCLI(t, run(variant("0.85"))...); err != nil || !strings.Contains(out, `"completed_requests"`) {
+	if out, stderr, err := runKernelCLI(t, run(variant("0.85"))...); err != nil || !completedAny(out) {
 		t.Errorf("gmu 0.85 on the vendored pins holds one window and must start: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
@@ -251,8 +252,14 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("results file overrides %+v, want %+v", got, tt.want)
 			}
-			if strings.Contains(stdout, `"overrides"`) {
-				t.Error("the overrides block reached stdout; it is file-only (INV-6)")
+			// The Result records the same overrides: an input the run simulated differently is part
+			// of what the document says it predicts (blis-schemas#41 section A).
+			var inDoc []override
+			for _, o := range parseResult(t, stdout).Overrides {
+				inDoc = append(inDoc, override{o.Setting, o.Input, o.Run, o.Source})
+			}
+			if !reflect.DeepEqual(inDoc, tt.want) {
+				t.Errorf("Result overrides %+v, want %+v", inDoc, tt.want)
 			}
 		})
 	}
@@ -284,7 +291,7 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a 0.32.0 scenario must run through the contract: %v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
-	if !strings.Contains(stdout, `"completed_requests": 4`) {
+	if !completedIs(stdout, 4) {
 		t.Errorf("want 4 completed requests; stdout:\n%s", stdout)
 	}
 	if !strings.Contains(stderr, "engine assumption: engine_version = 0.31.0") {
@@ -313,7 +320,7 @@ func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
 		t.Errorf("a 0.32.0 replay must run the engine built through the contract, which discloses the "+
 			"kernel's 0.31.0 tuning; stderr:\n%s", lastLines(repErr, 6))
 	}
-	if runOut != repOut {
+	if inv13View(t, runOut) != inv13View(t, repOut) {
 		t.Errorf("a 0.32.0 replay does not reproduce its run (INV-13):\nrun:\n%s\nreplay:\n%s",
 			lastLines(runOut, 30), lastLines(repOut, 30))
 	}
@@ -331,13 +338,7 @@ func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v\nstderr:\n%s", version, err, lastLines(stderr, 5))
 		}
-		for _, l := range strings.Split(stdout, "\n") {
-			if strings.HasPrefix(l, "Cache Hit Rate: ") {
-				return strings.TrimPrefix(l, "Cache Hit Rate: ")
-			}
-		}
-		t.Fatalf("%s: no Cache Hit Rate line in stdout:\n%s", version, lastLines(stdout, 30))
-		return ""
+		return fmt.Sprintf("%.4f", resultNum(t, stdout, "engine.cluster.cache_hit_rate_whole_run"))
 	}
 	got, want := rate("0.32.0"), rate("0.29.0")
 	if got == "0.0000" {
@@ -411,14 +412,7 @@ func TestRunCmd_A032ScenarioRendersOnTheHostFrontEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s %v: %v\nstderr:\n%s", version, extra, err, lastLines(stderr, 5))
 		}
-		for _, raw := range extractJSONObjects(stdout) {
-			var obj map[string]any
-			if json.Unmarshal([]byte(raw), &obj) == nil && obj["instance_id"] == "cluster" {
-				return obj["ttft_mean_ms"].(float64)
-			}
-		}
-		t.Fatalf("no cluster metrics in stdout:\n%s", stdout)
-		return 0
+		return metric(t, stdout, "ttft_mean_ms")
 	}
 	off := []string{"--renderer-num-workers", "0"}
 	queued31, free31 := ttft("0.31.0"), ttft("0.31.0", off...)
@@ -501,7 +495,7 @@ func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
 		t.Errorf("a 0.32.0 scenario stating priority scheduling: want a refusal naming the policy, got err=%v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if stdout, stderr, err := runKernelCLI(t, priority("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+	if stdout, stderr, err := runKernelCLI(t, priority("0.31.0")...); err != nil || !completedIs(stdout, 4) {
 		t.Errorf("the same priority scenario at 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
@@ -524,7 +518,7 @@ func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
 		t.Errorf("a 0.32.0 run with an SLO priority override: want a refusal naming the override, got err=%v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+	if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !completedIs(stdout, 4) {
 		t.Errorf("the same override on 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
@@ -544,7 +538,7 @@ func TestRunCmd_A032ScenarioRefusesAPrioritySchedulerFlag(t *testing.T) {
 			!strings.Contains(stderr, "so scheduler") || !strings.Contains(stderr, flags[1]) {
 			t.Errorf("a 0.32.0 run with %v: want a refusal naming it, got err=%v\n%s", flags, err, lastLines(stderr, 3))
 		}
-		if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !strings.Contains(stdout, `"completed_requests": 4`) {
+		if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !completedIs(stdout, 4) {
 			t.Errorf("%v on 0.31.0 must run: %v\n%s", flags, err, lastLines(stderr, 3))
 		}
 	}
@@ -584,7 +578,7 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 	if strings.Contains(stderr, "DP-as-placement") {
 		t.Errorf("a 0.32.0 DP group must not be expanded into rank replicas; stderr:\n%s", lastLines(stderr, 6))
 	}
-	if !strings.Contains(stdout, `"completed_requests": 8`) {
+	if !completedIs(stdout, 8) {
 		t.Errorf("want all 8 requests completed; stdout:\n%s", lastLines(stdout, 30))
 	}
 }
@@ -624,14 +618,7 @@ func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) 
 		if err != nil {
 			t.Fatalf("%v: %v\nstderr:\n%s", extra, err, lastLines(stderr, 5))
 		}
-		for _, raw := range extractJSONObjects(stdout) {
-			var obj map[string]any
-			if json.Unmarshal([]byte(raw), &obj) == nil && obj["instance_id"] == "cluster" {
-				return obj["ttft_mean_ms"].(float64)
-			}
-		}
-		t.Fatalf("no cluster metrics in stdout:\n%s", stdout)
-		return 0
+		return metric(t, stdout, "ttft_mean_ms")
 	}
 	byDefault, stated := ttft(), ttft("--api-server-count", "2")
 	if byDefault != stated {

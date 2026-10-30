@@ -174,11 +174,11 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 	}
 
 	// Non-vacuity: an empty or metric-less stdout would make the comparison trivial.
-	if !strings.Contains(viaBundled, "completed_requests") {
+	if !completedAny(viaBundled) {
 		t.Fatalf("non-vacuity: offload run produced no metrics:\n%s", viaBundled)
 	}
-	if viaBundled != viaTemp {
-		t.Errorf("stdout must be byte-identical for two catalogs holding the same device table (INV-6)\nbundled:\n%s\ntemp:\n%s",
+	if withoutRevisionsAndRuntime(t, viaBundled) != withoutRevisionsAndRuntime(t, viaTemp) {
+		t.Errorf("the Result must be byte-identical outside revisions and runtime for two catalogs holding the same device table (INV-6)\nbundled:\n%s\ntemp:\n%s",
 			viaBundled, viaTemp)
 	}
 
@@ -261,7 +261,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 		t.Fatalf("replay with the same device table must reconcile with the header (INV-13): %v\nstdout:\n%s\nstderr:\n%s",
 			err, out, errOut)
 	}
-	if !strings.Contains(out, "completed_requests") {
+	if !completedAny(out) {
 		t.Fatalf("non-vacuity: replay produced no metrics:\n%s", out)
 	}
 

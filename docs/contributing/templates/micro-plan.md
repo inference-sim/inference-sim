@@ -42,7 +42,7 @@ BC-1: <Name>
 - [ ] R6: no logrus.Fatalf in sim/ (library code)
 - [ ] R8: no exported mutable maps
 - [ ] INV-1: request conservation holds
-- [ ] INV-6: determinism (same seed = byte-identical stdout)
+- [ ] INV-6: determinism (same input and revisions = byte-identical `Result` outside `runtime`)
 ```
 
 ---

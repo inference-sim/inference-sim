@@ -5,29 +5,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
-// completedRequestsRe extracts the completed_requests count from a metrics-JSON stdout.
-var completedRequestsRe = regexp.MustCompile(`"completed_requests":\s*(\d+)`)
-
-// requireCompletedRequests asserts the run's stdout is a metrics JSON whose
-// completed_requests is > 0 — a non-vacuity gate stronger than a bare substring check
-// (which `"completed_requests": 0` would satisfy), so a leg that resolved the model but
-// simulated nothing cannot pass as a successful run.
+// requireCompletedRequests fails unless stdout is one Result that completed at least one
+// request -- a non-vacuity gate, so a leg that resolved the model but served nothing does not
+// pass as a successful run.
 func requireCompletedRequests(t *testing.T, label, stdout string) {
 	t.Helper()
-	m := completedRequestsRe.FindStringSubmatch(stdout)
-	if m == nil {
-		t.Fatalf("non-vacuity: %s produced no completed_requests metric:\n%s", label, stdout)
-	}
-	if n, err := strconv.Atoi(m[1]); err != nil || n <= 0 {
-		t.Fatalf("non-vacuity: %s completed %s requests (want > 0):\n%s", label, m[1], stdout)
+	if n := parseResult(t, stdout).Requests.Completed; n <= 0 {
+		t.Fatalf("non-vacuity: %s completed %d requests (want > 0):\n%s", label, n, stdout)
 	}
 }
 
@@ -158,8 +148,8 @@ func TestRunCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	// a metrics JSON — a run that resolved the model but completed nothing would otherwise
 	// pass on the substring alone.
 	requireCompletedRequests(t, "clone-root run leg", first)
-	if first != second {
-		t.Errorf("stdout must be byte-identical across runs of the clone-root layout (INV-6)\nfirst:\n%s\nsecond:\n%s",
+	if withoutRuntime(t, first) != withoutRuntime(t, second) {
+		t.Errorf("the Result must be byte-identical outside runtime across runs of the clone-root layout (INV-6)\nfirst:\n%s\nsecond:\n%s",
 			first, second)
 	}
 }
@@ -184,8 +174,8 @@ func TestReplayCmd_CatalogCloneRootLayout_ResolvesAndRuns(t *testing.T) {
 	second := runCatalogLayoutLeg(t, name, "replay", catalog, tracePrefix)
 
 	requireCompletedRequests(t, "clone-root replay leg", first)
-	if first != second {
-		t.Errorf("replay stdout must be byte-identical across runs of the clone-root layout (INV-13)\nfirst:\n%s\nsecond:\n%s",
+	if withoutRuntime(t, first) != withoutRuntime(t, second) {
+		t.Errorf("the replay Result must be byte-identical outside runtime across runs of the clone-root layout (INV-6)\nfirst:\n%s\nsecond:\n%s",
 			first, second)
 	}
 }

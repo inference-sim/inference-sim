@@ -300,6 +300,14 @@ func horizonCap(cmd *cobra.Command) int64 {
 }
 
 // summary is the results file's agentic block.
+// resultSummary is the agentic block the Result document carries, nil for any other replay.
+func (a *agentXRun) resultSummary() any {
+	if a == nil {
+		return nil
+	}
+	return a.summary()
+}
+
 func (a *agentXRun) summary() simworkload.AgentXSummary {
 	return a.driver.Summary(a.corpus, a.limit, a.spec.Corpus.SHA256 != "")
 }

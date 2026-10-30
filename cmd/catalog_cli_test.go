@@ -91,7 +91,7 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 				}
 				// Non-vacuity: the leg must actually have simulated something, otherwise a
 				// silently-empty run would satisfy "no error".
-				if !strings.Contains(stdout, "completed_requests") {
+				if !completedAny(stdout) {
 					t.Errorf("expected simulation metrics on stdout, got:\n%s", stdout)
 				}
 				return
@@ -138,11 +138,11 @@ func TestRunCmd_CatalogLocation_ByteIdenticalAcrossForms(t *testing.T) {
 		t.Fatalf("%s leg failed: %v\nstderr:\n%s", catalogEnvVar, err, stderrEnv)
 	}
 	// Non-vacuity: an empty stdout would make any comparison trivially pass.
-	if !strings.Contains(viaFlag, "completed_requests") {
+	if !completedAny(viaFlag) {
 		t.Fatalf("non-vacuity: --catalog leg produced no metrics:\n%s", viaFlag)
 	}
-	if viaFlag != viaEnv {
-		t.Errorf("stdout must be byte-identical whichever form locates the catalog (INV-6)\n--catalog:\n%s\n%s:\n%s",
+	if withoutRuntime(t, viaFlag) != withoutRuntime(t, viaEnv) {
+		t.Errorf("the Result must be byte-identical outside runtime whichever form locates the catalog (INV-6)\n--catalog:\n%s\n%s:\n%s",
 			viaFlag, catalogEnvVar, viaEnv)
 	}
 }

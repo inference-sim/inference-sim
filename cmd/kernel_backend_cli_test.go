@@ -160,7 +160,7 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 				t.Fatalf("expected the run to succeed, got %v\nstderr:\n%s", err, stderr)
 			}
 			// Non-vacuity: a silently-empty run would otherwise satisfy "no error".
-			if !strings.Contains(stdout, "completed_requests") {
+			if !completedAny(stdout) {
 				t.Errorf("expected simulation metrics on stdout, got:\n%s", stdout)
 			}
 		})
@@ -324,11 +324,11 @@ func TestReplayCmd_KernelBackend_ReproducesTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, repErr)
 	}
-	if !strings.Contains(runOut, `"completed_requests": 40`) {
+	if !completedIs(runOut, 40) {
 		t.Fatalf("the run did not complete its 40 requests; the comparison would be vacuous:\n%s", runOut)
 	}
-	if repOut != runOut {
-		t.Errorf("replay stdout differs from the run it replays\n--- run\n%s\n--- replay\n%s", runOut, repOut)
+	if inv13View(t, repOut) != inv13View(t, runOut) {
+		t.Errorf("the replay's Result differs from the run it replays\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }
 
@@ -358,15 +358,15 @@ func TestReplayCmd_KernelBackend_ReplaysAnAgenticTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, stderr)
 	}
-	if !strings.Contains(first, `"completed_requests": 18`) {
+	if !completedIs(first, 18) {
 		t.Errorf("6 sessions x 3 rounds should complete 18 requests:\n%s", first)
 	}
 	second, _, err := runKernelCLI(t, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second != first {
-		t.Error("two replays at one seed differ")
+	if withoutRuntime(t, second) != withoutRuntime(t, first) {
+		t.Error("two replays at one seed differ outside runtime (INV-6)")
 	}
 }
 
@@ -414,7 +414,7 @@ func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v\n%s", err, stderr)
 			}
-			if !strings.Contains(stdout, `"completed_requests": 30`) {
+			if !completedIs(stdout, 30) {
 				t.Errorf("the cluster did not complete its 30 requests:\n%s", stdout)
 			}
 		})
@@ -497,7 +497,7 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("offload run: %v\n%s", err, stderr)
 	}
-	if !strings.Contains(runOut, `"completed_requests": 30`) {
+	if !completedIs(runOut, 30) {
 		t.Fatalf("the offload run did not complete its 30 requests:\n%s", runOut)
 	}
 	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
@@ -505,12 +505,12 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("offload replay: %v\n%s", err, stderr)
 	}
-	if repOut != runOut {
+	if inv13View(t, repOut) != inv13View(t, runOut) {
 		t.Errorf("the offload run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 
 	legacy, stderr, err := runKernelCLI(t, append([]string{"run", "--kv-cpu-blocks", "2000"}, base...)...)
-	if err != nil || !strings.Contains(legacy, `"completed_requests": 30`) {
+	if err != nil || !completedIs(legacy, 30) {
 		t.Errorf("legacy CPU tier run: %v\n%s\n%s", err, legacy, stderr)
 	}
 
@@ -687,21 +687,7 @@ func TestApplyKernelLoRAReservation_ShrinksThePoolByTheKernelsAnswer(t *testing.
 // e2eMean reads the cluster's mean end-to-end latency from a run's stdout.
 func e2eMean(t *testing.T, stdout string) float64 {
 	t.Helper()
-	i := strings.Index(stdout, `"instance_id": "cluster"`)
-	if i < 0 {
-		i = 0
-	}
-	const key = `"e2e_mean_ms": `
-	j := strings.Index(stdout[i:], key)
-	if j < 0 {
-		t.Fatalf("no e2e_mean_ms in:\n%s", stdout)
-	}
-	rest := stdout[i+j+len(key):]
-	v, err := strconv.ParseFloat(strings.TrimRight(rest[:strings.IndexAny(rest, ",\n")], " "), 64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
+	return metric(t, stdout, "e2e_mean_ms")
 }
 
 // Speculation comes from the scenario: a scenario that drafts tokens needs an acceptance (a
@@ -828,7 +814,7 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 	}
 	// The pools hold exactly 3 prefill and 1 decode rank: that topology runs.
 	if out, stderr, err := runKernelCLI(t, pd(plain, topology...)...); err != nil ||
-		!strings.Contains(out, `"completed_requests": 6`) {
+		!completedIs(out, 6) {
 		t.Errorf("a topology exactly filling the pools was not served: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
@@ -847,7 +833,7 @@ func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
 		"--horizon", "600000000"}
 	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "24", "--rate", "6",
 		"--trace-output", prefix}, common...)...)
-	if err != nil || !strings.Contains(runOut, `"completed_requests": 24`) {
+	if err != nil || !completedIs(runOut, 24) {
 		t.Fatalf("run: %v\n%s\n%s", err, runOut, lastLines(stderr, 3))
 	}
 	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
@@ -855,7 +841,7 @@ func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if repOut != runOut {
+	if inv13View(t, repOut) != inv13View(t, runOut) {
 		t.Errorf("the disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }
@@ -880,7 +866,7 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 		args := append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix,
 			"--speculative-acceptance-rate", acc}, common...)
 		runOut, stderr, err := runKernelCLI(t, args...)
-		if err != nil || !strings.Contains(runOut, `"completed_requests": 16`) {
+		if err != nil || !completedIs(runOut, 16) {
 			t.Fatalf("acceptance %s: %v\n%s", acc, err, lastLines(stderr, 3))
 		}
 		repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
@@ -888,7 +874,7 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("acceptance %s replay: %v\n%s", acc, err, lastLines(stderr, 3))
 		}
-		if repOut != runOut {
+		if inv13View(t, repOut) != inv13View(t, runOut) {
 			t.Errorf("acceptance %s: the replay differs from the run\n--- run\n%s\n--- replay\n%s", acc, runOut, repOut)
 		}
 		got := clusterMetricInt(t, runOut, "total_output_tokens")
@@ -935,7 +921,7 @@ func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
 			args := append(append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix},
 				tt.offload...), common...)
 			runOut, stderr, err := runKernelCLI(t, args...)
-			if err != nil || !strings.Contains(runOut, `"completed_requests": 16`) {
+			if err != nil || !completedIs(runOut, 16) {
 				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
 			}
 			replay := append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, common...)
@@ -946,7 +932,7 @@ func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
 			if err != nil {
 				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if repOut != runOut {
+			if inv13View(t, repOut) != inv13View(t, runOut) {
 				t.Errorf("the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 			}
 		})

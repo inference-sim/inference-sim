@@ -114,6 +114,15 @@ type measuredLatencies struct {
 	ttftMean, ttftP90, ttftP95, ttftP99 float64
 	e2eMean, e2eP90, e2eP95, e2eP99     float64
 	cacheHitRate                        float64
+	// stepP50 and stepP95 complete the step-interval series' percentiles for the Result
+	// document (the file keeps the mean, p90 and p99 it always wrote).
+	stepP50, stepP95 float64
+	// itlCount and perUserCount are the samples behind request_itl_* and
+	// output_tok_per_user_mean, so a reader can tell a zero from no sample.
+	itlCount, perUserCount int
+	// startUs and endUs bound the window the aggregates were computed over (0, 0 when it
+	// is empty).
+	startUs, endUs int64
 }
 
 // WholeRunLatency keeps, in the --metrics-path file, the whole-run figures stdout prints for
@@ -138,6 +147,66 @@ func (m *Metrics) Measured() MeasuredMetrics {
 	return out
 }
 
+// MeasuredSummary is the measured-window aggregates of MeasuredMetrics together with the
+// latency families MetricsOutput already had keys for (ttft_*, e2e_*), over the same
+// window, and the window's bounds in ticks. It is what the Result document's metrics are
+// read from (#1871).
+type MeasuredSummary struct {
+	MeasuredMetrics
+	TTFTMeanMs, TTFTP90Ms, TTFTP95Ms, TTFTP99Ms float64
+	E2EMeanMs, E2EP90Ms, E2EP95Ms, E2EP99Ms     float64
+	// CacheHitRate is the measured requests' prompt-lookup hit rate.
+	CacheHitRate float64
+	// StepIntervalP50Ms and StepIntervalP95Ms complete MeasuredMetrics' step-interval
+	// percentiles.
+	StepIntervalP50Ms, StepIntervalP95Ms float64
+	// RequestITLCount is the number of requests behind request_itl_* (output of two or more
+	// tokens), and PerUserCount those behind output_tok_per_user_mean (a positive ITL).
+	RequestITLCount, PerUserCount int
+	// WindowStartUs and WindowEndUs bound the window; both 0 when it is empty.
+	WindowStartUs, WindowEndUs int64
+}
+
+// Summary returns the measured-window aggregates and latencies of m.
+func (m *Metrics) Summary() MeasuredSummary {
+	out, lat := m.buildMeasured()
+	return summaryOf(out, lat)
+}
+
+// SummaryOver returns the measured-window aggregates of the requests include selects,
+// over the fixed window [startUs, endUs]: a split of a run (by model, tenant or adapter)
+// computed with the definitions of the whole, over the whole's window. Only the
+// per-request families are meaningful in a split; the step, cache and in-flight figures
+// are the whole's and are left zero.
+func (m *Metrics) SummaryOver(include func(RequestMetrics) bool, startUs, endUs int64) MeasuredSummary {
+	sub := &Metrics{
+		Requests:               make(map[string]RequestMetrics),
+		RequestTTFTs:           m.RequestTTFTs,
+		RequestE2Es:            m.RequestE2Es,
+		RequestCompletionTimes: m.RequestCompletionTimes,
+		MeasuredWindow:         &MeasuredWindow{StartUs: startUs, EndUs: endUs},
+	}
+	for id, rm := range m.Requests {
+		if include(rm) {
+			sub.Requests[id] = rm
+		}
+	}
+	out, lat := sub.buildMeasured()
+	return summaryOf(out, lat)
+}
+
+func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
+	return MeasuredSummary{
+		MeasuredMetrics: out,
+		TTFTMeanMs:      lat.ttftMean, TTFTP90Ms: lat.ttftP90, TTFTP95Ms: lat.ttftP95, TTFTP99Ms: lat.ttftP99,
+		E2EMeanMs: lat.e2eMean, E2EP90Ms: lat.e2eP90, E2EP95Ms: lat.e2eP95, E2EP99Ms: lat.e2eP99,
+		CacheHitRate:      lat.cacheHitRate,
+		StepIntervalP50Ms: lat.stepP50, StepIntervalP95Ms: lat.stepP95,
+		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount,
+		WindowStartUs: lat.startUs, WindowEndUs: lat.endUs,
+	}
+}
+
 // buildMeasured computes the measured-window aggregates from m.
 func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out := MeasuredMetrics{PercentileMethod: PercentileMethodNumpyLinear}
@@ -156,9 +225,9 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		return m.MeasuredWindow == nil || m.MeasuredWindow.EndUs <= 0 || completionUs <= m.MeasuredWindow.EndUs
 	}
 
-	var ttfts, e2es, itls, gateway []float64
-	var perUserSum float64
-	perUserCount := 0
+	// perUser is summed in sorted order below, as every other mean is, so the aggregate is a
+	// function of the request set and not of the IDs it is iterated in (INV-13).
+	var ttfts, e2es, itls, gateway, perUser []float64
 	var outputTokens int64
 	for _, id := range sortedRequestIDs(m.Requests) {
 		rm := m.Requests[id]
@@ -202,8 +271,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 			// aiperf output_token_throughput_metrics.py:74-77 raises NoMetricValue for ITL == 0,
 			// so such a record has no per-user value: it leaves the sum and the count.
 			if itl > 0 {
-				perUserSum += 1e6 / itl
-				perUserCount++
+				perUser = append(perUser, 1e6/itl)
 			}
 		}
 	}
@@ -232,19 +300,28 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.RequestITLP99Ms = CalculatePercentile(itls, 99)
 	out.InteractivityP50 = reciprocalPerSecond(out.RequestITLP50Ms)
 	out.InteractivityP90 = reciprocalPerSecond(out.RequestITLP90Ms)
-	if perUserCount > 0 {
-		out.OutputTokPerUserMean = perUserSum / float64(perUserCount)
+	if len(perUser) > 0 {
+		sort.Float64s(perUser)
+		var sum float64
+		for _, v := range perUser {
+			sum += v
+		}
+		out.OutputTokPerUserMean = sum / float64(len(perUser))
 	}
+	lat.itlCount, lat.perUserCount = len(itls), len(perUser)
 
 	steps := measuredStepIntervals(m.AllITLs, m.StepOwners, inWindow)
 	out.StepIntervalMeanMs = CalculateMean(steps)
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
+	lat.stepP50 = CalculatePercentile(steps, 50)
+	lat.stepP95 = CalculatePercentile(steps, 95)
 
 	out.GatewayQueueDelayMeanMs = CalculateMean(gateway)
 	out.GatewayQueueDelayP90Ms = CalculatePercentile(gateway, 90)
 
 	if endUs > startUs {
+		lat.startUs, lat.endUs = startUs, endUs
 		out.MeasuredWindowS = float64(endUs-startUs) / 1e6
 		out.OutputThroughputTokS = float64(outputTokens) / out.MeasuredWindowS
 		out.InFlightRequestsMean, out.InFlightRequestsMax = inFlightOver(m.InFlightSamples, startUs, endUs)

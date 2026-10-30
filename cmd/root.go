@@ -14,6 +14,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-schemas/spec/measurement"
+	"github.com/inference-sim/blis-schemas/spec/result"
+	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -860,6 +863,7 @@ var runCmd = &cobra.Command{
 		}
 		logrus.SetLevel(level)
 		validateRouterFlags()
+		checkResultFlags()
 
 		// The deployment comes from the scenario, so that resolution runs BEFORE the
 		// gates below: those refuse a run whose deployment nobody chose, and the scenario
@@ -1456,179 +1460,65 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
 		}
 
-		if numInstances > 1 {
-			// Print per-instance metrics to stdout (multi-instance only). Per-instance
-			// output carries no saturation field — the final label is a cluster-level
-			// verdict, emitted on the aggregate below (#1517).
-			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
-					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
-				}
-			}
+		// The Result document (#1871): stdout is exactly one blis-schemas Result, and
+		// --output the same bytes. The run's figures, the deprecated --metrics-path file and
+		// --view summary all come from the one path replay shares (INV-13).
+		runNumRequests := cs.Arrivals()
+		if maxRequests > 0 {
+			runNumRequests = int(maxRequests)
 		}
-		// Build aggregate output, inject goodput, run the saturation reducer, then
-		// emit (#1413 goodput / #1517 saturation share the build-then-mutate-then-emit
-		// pattern). The saturation label must reach stdout, so the tracer runs BEFORE
-		// EmitOutput and mutates clusterOutput.Saturation — sim/ builds the struct and
-		// knows nothing about saturation; cmd/ sets the field.
-		aggregated := cs.AggregatedMetrics()
-		clusterOutput := aggregated.BuildOutput("cluster")
-		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
-			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
-
-		// Saturation (#1516 single detector / #1519 bank / #1517 final label): stream
-		// the selected detector(s) over the aggregate's completed-request metrics,
-		// write the per-event verdict trace to --saturation-report (if given), and
-		// splice the per-detector final label onto stdout. Same pipeline as
-		// replay/observe; only the input slice differs (here it is sim-derived,
-		// INV-13). Guard on the tracer so the common no-detector path skips the
-		// O(n log n) sort + O(n) copy in CompletedRequestMetrics().
-		if satTracer != nil {
-			final, err := satTracer.run(aggregated.CompletedRequestMetrics())
-			if err != nil {
-				logrus.Fatalf("Saturation: %v", err)
-			}
-			if len(final) > 0 {
-				clusterOutput.Saturation = final
-			}
+		run := result.Run{
+			Load:        runLoadOf(spec, arrivalTimes(cs.AggregatedMetrics())),
+			NumRequests: runNumRequests,
+			Seed:        spec.Seed,
+			HorizonS:    horizonSeconds(simulationHorizon),
+			Workload:    runWorkloadBinding(),
 		}
-
-		// Catalog provenance (#1732): file-only, so it is passed as an EmitOutput option
-		// rather than mutated onto clusterOutput above — stdout must stay byte-identical
-		// (INV-6). Same shared helper on the replay path (INV-13).
-		// P/D metrics (#1922/#1934/#1940): stdout's PD section and the file's pd block.
-		pdMetrics := cs.PDMetrics()
-		if err := aggregated.EmitOutput(clusterOutput, metricsPath,
-			append(resultsFileEmitOptions(metricsPath, resolvedCatalogRoot), sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(cs.ServerSeries()))...); err != nil {
-			logrus.Fatalf("SaveResults: %v", err)
+		var artifacts []artifactFile
+		if traceOutput != "" {
+			artifacts = traceArtifacts(traceOutput, len(traceArrivals))
 		}
-
-		// Collect RawMetrics and compute fitness (PR9)
-		rawMetrics := cluster.CollectRawMetrics(
-			cs.AggregatedMetrics(),
-			cs.PerInstanceMetrics(),
-			cs.RejectedRequests(),
-			scheduler,
-			cs.RoutingRejections(),
-			cs.EncodeRoutingRejections(),
-			cs.InjectedByClass(),
-		)
-
-		rawMetrics.PD = pdMetrics
-		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
-		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
-
-		if fitnessWeights != "" {
-			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
-			if err != nil {
-				logrus.Fatalf("Invalid fitness weights: %v", err)
-			}
-			fitness, fitErr := cluster.ComputeFitness(rawMetrics, weights)
-			if fitErr != nil {
-				logrus.Fatalf("Fitness evaluation failed: %v", fitErr)
-			}
-			fmt.Println("=== Fitness Evaluation ===")
-			fmt.Printf("Score: %.6f\n", fitness.Score)
-			// Sort keys for deterministic output order
-			componentKeys := make([]string, 0, len(fitness.Components))
-			for k := range fitness.Components {
-				componentKeys = append(componentKeys, k)
-			}
-			sort.Strings(componentKeys)
-			for _, k := range componentKeys {
-				fmt.Printf("  %s: %.6f\n", k, fitness.Components[k])
-			}
-		}
-
-		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
-			fmt.Println("=== Anomaly Counters ===")
-			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
-			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
-			if len(rawMetrics.ShedByTier) > 0 {
-				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
-				for k := range rawMetrics.ShedByTier {
-					tierKeys = append(tierKeys, k)
-				}
-				sort.Strings(tierKeys) // R2/INV-6: deterministic output order
-				for _, tier := range tierKeys {
-					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
-				}
-			}
-			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
-			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
-			fmt.Printf("Timed Out Requests: %d\n", rawMetrics.TimedOutRequests)
-			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
-			if rawMetrics.GatewayQueueDepth > 0 {
-				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
-			}
-			if rawMetrics.GatewayQueueRejected > 0 {
-				fmt.Printf("Gateway Queue Rejected: %d\n", rawMetrics.GatewayQueueRejected)
-			}
-			if rawMetrics.GatewayEvicted > 0 {
-				fmt.Printf("Gateway Evicted (in-flight): %d\n", rawMetrics.GatewayEvicted)
-			}
-			if rawMetrics.GatewayExpired > 0 {
-				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
-			}
-			if rawMetrics.EncodeRoutingRejections > 0 {
-				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
-			}
-		}
-
-		// Print KV cache metrics if any nonzero (BC-1, BC-2)
-		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
-
-		// Print per-SLO metrics. With goodput targets configured, the section prints
-		// even for a single class (#1413, BC-5). Without goodput, the legacy
-		// suppression for ≤1 class is preserved.
-		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
-		printPerSLOMetrics(os.Stdout, sloDistributions, len(goodputTargets) > 0)
-
-		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
-		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
-		printPerModelMetrics(os.Stdout, perModelMetrics)
-
-		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
-		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
-		printPerTenantMetrics(os.Stdout, perTenantMetrics)
-
-		// Print session metrics if any request carries a session label (#1058)
-		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
-		printSessionMetrics(os.Stdout, sessionMetrics)
-
-		// Print PD disaggregation metrics if disaggregation was active (PR4)
-		printPDMetrics(os.Stdout, rawMetrics.PD)
-
-		// Build and print trace summary if requested (BC-9)
-		if cs.Trace() != nil && summarizeTrace {
-			traceSummary := trace.Summarize(cs.Trace())
-			fmt.Println("=== Trace Summary ===")
-			fmt.Printf("Total Decisions: %d\n", traceSummary.TotalDecisions)
-			fmt.Printf("  Admitted: %d\n", traceSummary.AdmittedCount)
-			fmt.Printf("  Rejected: %d\n", traceSummary.RejectedCount)
-			fmt.Printf("Unique Targets: %d\n", traceSummary.UniqueTargets)
-			if len(traceSummary.TargetDistribution) > 0 {
-				fmt.Println("Target Distribution:")
-				targetKeys := make([]string, 0, len(traceSummary.TargetDistribution))
-				for k := range traceSummary.TargetDistribution {
-					targetKeys = append(targetKeys, k)
-				}
-				sort.Strings(targetKeys)
-				for _, k := range targetKeys {
-					fmt.Printf("  %s: %d\n", k, traceSummary.TargetDistribution[k])
-				}
-			}
-			fmt.Printf("Mean Regret: %.6f\n", traceSummary.MeanRegret)
-			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
-		}
+		emitRunResult(postRun{
+			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer,
+			metricsPath: metricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
+			fitnessWeights: fitnessWeights, started: startTime,
+		})
 
 		logrus.Info("Simulation complete.")
 	},
+}
+
+// runLoadOf is the offered load a run generated: --concurrency, a workload spec's own clients
+// or rate, or --rate. arrivals are the run's arrival times, for a spec that states no single
+// rate.
+func runLoadOf(spec *workload.WorkloadSpec, arrivals []int64) measurement.Load {
+	switch {
+	case workloadSpecPath != "":
+		return specLoad(spec, arrivals)
+	case concurrency > 0:
+		return measurement.Load{Concurrency: concurrency}
+	default:
+		return measurement.Load{RequestRate: rate}
+	}
+}
+
+// arrivalTimes are the arrival times, in ticks, of every request the run registered.
+func arrivalTimes(m *sim.Metrics) []int64 {
+	out := make([]int64, 0, len(m.Requests))
+	for _, rm := range m.Requests {
+		out = append(out, int64(math.Round(rm.ArrivedAt*1e6)))
+	}
+	return out
+}
+
+// runWorkloadBinding is the workload a run used as a blis-schemas binding: a named catalog
+// preset is a shape; a --workload-spec file or the distribution flags are recorded by the
+// load and the run's own workload, which no shape names, so nil.
+func runWorkloadBinding() *schemaworkload.Binding {
+	if workloadSpecPath == "" && concurrency == 0 && workloadType != "distribution" {
+		return &schemaworkload.Binding{Shape: workloadType}
+	}
+	return nil
 }
 
 // printKVCacheMetrics prints KV cache metrics to w when any value is nonzero.
@@ -1826,10 +1716,12 @@ func init() {
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
-	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
+	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, per-request rows). Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(runCmd)
+	// The Result document's encoding, file and summary view (#1871).
+	registerResultFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

@@ -138,6 +138,9 @@ func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	cs.injectedByClass[e.request.SLOClass]++
+	if !e.request.Redirected {
+		cs.arrivals++
+	}
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	// Fire the arrival hook (issue #1440): trace exporters see each fresh
 	// arrival exactly once, in clock-monotonic order (INV-3). REDIRECT

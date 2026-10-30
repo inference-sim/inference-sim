@@ -114,15 +114,16 @@ type agentXFile struct {
 	} `json:"requests"`
 }
 
-// TestReplayAgentX_DeterministicConservingAndTagged: INV-6 (two runs are byte-identical on
-// stdout and in the results file) and INV-AX1 through the real cluster (every request the
+// TestReplayAgentX_DeterministicConservingAndTagged: INV-6 (two runs' Results are
+// byte-identical outside runtime, and their results files byte-identical) and INV-AX1 through the real cluster (every request the
 // replay sent was injected, and ended completed or cancelled at the grace end), with every
 // request tagged with its phase and lane/tree/stream.
 func TestReplayAgentX_DeterministicConservingAndTagged(t *testing.T) {
 	a, fa := runAgentXReplay(t, "--concurrency", "3", "--max-context-length", "max_model_len")
 	b, fb := runAgentXReplay(t, "--concurrency", "3", "--max-context-length", "max_model_len")
-	if len(a) == 0 || !bytes.Equal(a, b) || !bytes.Equal(fa, fb) {
-		t.Fatalf("agentic replay is not byte-identical across runs (stdout equal: %v, file equal: %v)", bytes.Equal(a, b), bytes.Equal(fa, fb))
+	same := withoutRuntimeOrArtifactPaths(t, string(a)) == withoutRuntimeOrArtifactPaths(t, string(b))
+	if len(a) == 0 || !same || !bytes.Equal(fa, fb) {
+		t.Fatalf("agentic replay is not byte-identical across runs (Result equal outside runtime: %v, file equal: %v)", same, bytes.Equal(fa, fb))
 	}
 	var m agentXFile
 	if err := json.Unmarshal(fa, &m); err != nil {
@@ -302,8 +303,8 @@ func TestReplayAgentX_DescriptorAcceptanceIsTheWorkloadLayer(t *testing.T) {
 }
 
 // TestReplayAgentX_CorpusCacheIsInvisible: a run that writes the corpus snapshot and a run
-// that reads it are byte-identical, on stdout and in the results file, to a run without the
-// cache (INV-6), and a damaged snapshot is ignored and rewritten.
+// that reads it are byte-identical (the Result outside runtime, and the results file) to a run
+// without the cache (INV-6), and a damaged snapshot is ignored and rewritten.
 func TestReplayAgentX_CorpusCacheIsInvisible(t *testing.T) {
 	dir := t.TempDir()
 	base, fbase := runAgentXReplay(t, "--concurrency", "2")
@@ -318,11 +319,32 @@ func TestReplayAgentX_CorpusCacheIsInvisible(t *testing.T) {
 	}
 	dmg, fdmg := runAgentXReplay(t, "--concurrency", "2", "--corpus-cache", dir)
 	for name, out := range map[string][2][]byte{"miss": {miss, fmiss}, "hit": {hit, fhit}, "damaged": {dmg, fdmg}} {
-		if !bytes.Equal(out[0], base) || !bytes.Equal(out[1], fbase) {
+		if withoutRuntimeOrArtifactPaths(t, string(out[0])) != withoutRuntimeOrArtifactPaths(t, string(base)) || !bytes.Equal(out[1], fbase) {
 			t.Errorf("%s: output differs from an uncached run", name)
 		}
 	}
 	if b, _ := os.ReadFile(snaps[0]); bytes.Equal(b, []byte("damaged")) {
 		t.Error("the damaged snapshot was not rewritten")
+	}
+}
+
+// The Result of an agentic replay measures over the replay's profiling window, the same window
+// the results file's measured aggregates are over (#1871): window.duration_s is the file's
+// measured_window_s and the window is the explicit one.
+func TestReplayAgentX_ResultMeasuresTheProfilingWindow(t *testing.T) {
+	stdout, file := runAgentXReplay(t, "--concurrency", "2")
+	var f map[string]any
+	if err := json.Unmarshal(file, &f); err != nil {
+		t.Fatal(err)
+	}
+	r := parseResult(t, string(stdout))
+	if r.Window.Start != windowStartExplicit {
+		t.Errorf("window.start = %q, want the explicit profiling window %q", r.Window.Start, windowStartExplicit)
+	}
+	if want := f["measured_window_s"].(float64); want <= 0 || r.Window.DurationS != want {
+		t.Errorf("window.duration_s = %v, want the file's measured_window_s %v", r.Window.DurationS, want)
+	}
+	if r.Engine["cluster"].(map[string]any)["agentic"] == nil {
+		t.Error("the agentic replay's counts are not in engine.cluster.agentic")
 	}
 }

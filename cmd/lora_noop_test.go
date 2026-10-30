@@ -31,8 +31,8 @@ func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("adapter-blind run: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if _, body, err := splitMetricsOutput(blind); err != nil || !strings.Contains(body, "completed_requests") {
-		t.Fatalf("non-vacuity: the adapter-blind run printed no metrics (%v):\n%s", err, blind)
+	if !completedAny(blind) {
+		t.Fatalf("non-vacuity: the adapter-blind run completed no requests:\n%s", blind)
 	}
 	knobs, stderr, err := runKernelCLI(t, append(base,
 		"--lora-load-base-latency-us", "12345", "--lora-load-bandwidth-bytes-us", "7",
@@ -40,23 +40,10 @@ func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run with LoRA knobs and no adapters: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if knobs != blind {
+	if withoutRuntime(t, knobs) != withoutRuntime(t, blind) {
 		t.Errorf("INV-6 VIOLATION: LoRA cost knobs changed an adapter-blind run\n--- blind ---\n%s\n--- knobs ---\n%s",
 			blind, knobs)
 	}
-}
-
-// splitMetricsOutput separates the "=== Simulation Metrics ===" preamble from the
-// pretty-printed JSON metrics object. It returns the preamble (text before the first
-// '{'), the JSON substring (first '{' through the matching final '}'), and an error
-// if no JSON object is present.
-func splitMetricsOutput(out string) (preamble, jsonBody string, err error) {
-	start := strings.IndexByte(out, '{')
-	end := strings.LastIndexByte(out, '}')
-	if start < 0 || end < start {
-		return "", "", fmt.Errorf("no JSON object found in output")
-	}
-	return out[:start], out[start : end+1], nil
 }
 
 // compareMetricsJSON decodes both JSON documents and compares them recursively.
