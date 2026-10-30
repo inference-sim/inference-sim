@@ -12,6 +12,7 @@ global:
   weight_dtype: fp8
   architecture: DeepseekV4ForCausalLM
   context_window: 1048576
+  pipeline_boundary_bytes_per_token: 57344
 layer_kinds:
 - id: csa128_hash_first_moe
   nodes:

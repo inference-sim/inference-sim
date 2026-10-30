@@ -31,6 +31,7 @@ layer_kinds:
     n_kv: 16
     d_h: 64
     window: 2048
+    kv_heads_not_replicated: true
   - op: Elementwise
     role: o_norm_gate
     bytes_per_token: 49152
@@ -225,3 +226,10 @@ speculator:
     n: 202048
     k: 512
     tp: replicated
+  aux_hidden_state_layers:
+  - 14
+  - 30
+  - 46
+  - 58
+  - 62
+  aux_hidden_state_bytes_per_token: 32768

@@ -5,9 +5,9 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030045702-e5e5e7feba66 // TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
-	github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261030082848-4c431306b50d // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
+	github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030105539-448cbcac0c50 // TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
+	github.com/inference-sim/blis-schemas v0.8.1-0.20261030103752-99502b8e6ff8 // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261030105706-59edcbc5094f // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
